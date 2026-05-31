@@ -97,7 +97,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
 | `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
 | `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
-| `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 24h rolling rule + `can_manage_time` for editing others |
+| `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
 | `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
 | `/api/shift-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | |
 | `/api/blep-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | |

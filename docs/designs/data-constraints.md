@@ -128,7 +128,7 @@ unenclosed.
 `ShiftService.SELF_EDIT_WINDOW_HOURS = 30`. A worker may edit/create their own
 shift only when its `start_time` is within the last 30 hours; older shifts must
 go through a change request. Holders of `can_manage_time` (and superusers) edit
-any shift at any time. (Bleps keep a separate **24h** self-edit window — see
+any shift at any time. (Bleps use the same **30h** self-edit window — see
 §1.12.)
 
 #### ShiftChangeRequest / BlepChangeRequest
@@ -527,8 +527,8 @@ Depends on: Task, User.
   user (`shift.start <= blep.start and blep.end <= shift.end`). Bleps and
   Shifts relate by time overlap, not an FK. Enforced in the service layer; see
   §1.2a for the full invariant, the auto-clock-in / clock-out behaviour, and
-  the backfill. Self-edit window for direct user blep edits is **24h** (the
-  shift self-edit window is 30h — §1.2a).
+  the backfill. Self-edit window for direct user blep edits is **30h** (matches
+  the shift self-edit window — §1.2a).
 
 ---
 

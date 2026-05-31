@@ -155,7 +155,7 @@ class BlepCreateAPITest(BaseTestCase):
                                  self._payload(user=self.other), format='json')
         self.assertEqual(resp.status_code, 403)
 
-    def test_create_older_than_24h_without_manage_time_denied(self):
+    def test_create_older_than_30h_without_manage_time_denied(self):
         resp = self.client.post('/api/bleps/',
                                  self._payload(hours_ago=48, duration_hours=1),
                                  format='json')

@@ -412,15 +412,15 @@ bleps:
 - **Enclosure guard on create/edit.** A blep create or edit (live or
   historical) is rejected if no shift of that user encloses the resulting
   span (`enclosing_shift_for_blep` in `apps/core/time_integrity.py`). A worker
-  whose target time falls outside any shift, or outside their 24h self-edit
+  whose target time falls outside any shift, or outside their 30h self-edit
   window, files a `BlepChangeRequest` for a manager to approve.
 
-The 24-hour rolling rule applies to direct user edits, not to
+The 30-hour rolling rule applies to direct user edits, not to
 service-driven activity:
 
 - A user can create / edit / delete their own Blep if its `start_time`
-  is within the last 24 hours.
-- Editing or deleting another user's Blep, or any Blep older than 24
+  is within the last 30 hours.
+- Editing or deleting another user's Blep, or any Blep older than 30
   hours, requires the `can_manage_time` permission atom.
 - Reassigning a Blep to a different user also requires `can_manage_time`.
 - Starting or stopping another worker's live timer (`on_behalf_of` on
@@ -442,7 +442,7 @@ viewset, `ValidationError` to HTTP 400.
 
 | Public method | Purpose |
 |---|---|
-| `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 24h window + `can_manage_time` rules |
+| `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
 | `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
 | `delete(blep, actor)` | Same authorization rules |
 
@@ -452,7 +452,7 @@ Validation rules enforced inside `BlepService`:
 2. No interval overlap per user (open bleps are treated as
    `[start, now)` for the comparison; two different users may overlap
    on the same task)
-3. 24h rolling window for non-managers (create / update / delete)
+3. 30h rolling window for non-managers (create / update / delete)
 4. **Job-status guard:** a Blep may only be created on a Task whose Job
    is in a status where work belongs. Live `start_work` allows `approved`
    and `in_progress` only; backfilled `create_historical` also allows
@@ -787,7 +787,7 @@ manager-only task **Cancel** above.
 
 `components/home/RecentTimeList.svelte` (home **Time** tab) fetches
 `GET /api/bleps/?user=me&since=<7d ago>` — the signed-in user's own recent
-sessions. Each row offers **Edit** when the blep is editable (within the 24h
+sessions. Each row offers **Edit** when the blep is editable (within the 30h
 rolling window, or any blep for a `can_manage_time` manager); otherwise a
 **Request Edit** button — currently a stub that alerts "Not yet implemented"
 (see Unfinished Work).

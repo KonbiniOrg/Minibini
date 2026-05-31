@@ -19,7 +19,7 @@ from apps.estimates.models import (
 )
 from apps.inventory.models import PriceListItem
 from apps.core.models import Configuration
-from apps.core.services import NumberGenerationService, NotFoundError
+from apps.core.services import NumberGenerationService, NotFoundError, SELF_EDIT_WINDOW_HOURS
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -56,7 +56,7 @@ class TaskWorkerTimeRequired(Exception):
     pass
 
 
-_EDIT_WINDOW = timedelta(hours=24)
+_EDIT_WINDOW = timedelta(hours=SELF_EDIT_WINDOW_HOURS)  # matches ShiftService.SELF_EDIT_WINDOW_HOURS
 
 # Below this elapsed duration, a worker's Stop becomes Cancel (delete + undo).
 # Lazy default written into Configuration on first read (mirrors the schedule keys).
@@ -186,7 +186,7 @@ class BlepService:
         - actor: the user performing the action
         - target_user: user the blep belongs to (defaults to actor)
         - Creating for another user requires can_manage_time
-        - Creating older than 24h requires can_manage_time
+        - Creating older than 30h requires can_manage_time
         - Task must belong to a Job
         - end_time must be >= start_time
         - Must not overlap another blep for target_user
@@ -212,7 +212,7 @@ class BlepService:
             raise ValidationError("End time cannot be in the future.")
         if not _within_edit_window(start_time) and not _has_manage_time(actor):
             raise BlepPermissionError(
-                "Creating a time entry older than 24 hours requires can_manage_time."
+                "Creating a time entry older than 30 hours requires can_manage_time."
             )
         if _existing_overlaps(target_user, start_time, end_time):
             raise ValidationError(
@@ -239,7 +239,7 @@ class BlepService:
         if is_own:
             if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
                 raise BlepPermissionError(
-                    "Editing a time entry older than 24 hours requires can_manage_time."
+                    "Editing a time entry older than 30 hours requires can_manage_time."
                 )
         else:
             if not _has_manage_time(actor):
@@ -299,7 +299,7 @@ class BlepService:
         if is_own:
             if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
                 raise BlepPermissionError(
-                    "Deleting a time entry older than 24 hours requires can_manage_time."
+                    "Deleting a time entry older than 30 hours requires can_manage_time."
                 )
         else:
             if not _has_manage_time(actor):

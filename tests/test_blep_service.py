@@ -94,19 +94,25 @@ class CreateHistoricalTest(BaseTestCase):
         return (now - timedelta(hours=hours_ago_start),
                 now - timedelta(hours=hours_ago_end))
 
-    def test_create_for_self_within_24h(self):
+    def test_create_for_self_within_30h(self):
         start, end = self._times(2, 1)
         blep = BlepService.create_historical(self.user, self.task, start, end)
         self.assertEqual(blep.user, self.user)
         self.assertEqual(blep.start_time, start)
         self.assertEqual(blep.end_time, end)
 
-    def test_create_for_self_older_than_24h_requires_manage_time(self):
+    def test_create_for_self_25h_old_is_within_window(self):
+        # 25h is inside the 30h self-edit window (was outside the old 24h window).
+        start, end = self._times(25, 24)
+        blep = BlepService.create_historical(self.user, self.task, start, end)
+        self.assertEqual(blep.user, self.user)
+
+    def test_create_for_self_older_than_30h_requires_manage_time(self):
         start, end = self._times(48, 47)
         with self.assertRaises(BlepPermissionError):
             BlepService.create_historical(self.user, self.task, start, end)
 
-    def test_create_for_self_older_than_24h_manager_allowed(self):
+    def test_create_for_self_older_than_30h_manager_allowed(self):
         start, end = self._times(48, 47)
         blep = BlepService.create_historical(self.manager, self.task, start, end)
         self.assertEqual(blep.user, self.manager)
@@ -242,6 +248,13 @@ class UpdateBlepTest(BaseTestCase):
         updated = BlepService.update(blep, self.user, end_time=new_end)
         self.assertEqual(updated.end_time, new_end)
 
+    def test_update_own_25h_old_blep_is_within_window(self):
+        # 25h is inside the 30h self-edit window (was outside the old 24h window).
+        blep = self._blep(self.user, hours_ago_start=25, hours_ago_end=24)
+        new_end = blep.end_time + timedelta(minutes=5)
+        updated = BlepService.update(blep, self.user, end_time=new_end)
+        self.assertEqual(updated.end_time, new_end)
+
     def test_update_own_old_blep_requires_manage_time(self):
         blep = self._blep(self.user, hours_ago_start=48, hours_ago_end=47)
         with self.assertRaises(BlepPermissionError):
@@ -324,6 +337,12 @@ class DeleteBlepTest(BaseTestCase):
 
     def test_delete_own_recent(self):
         blep = self._blep(self.user)
+        BlepService.delete(blep, self.user)
+        self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
+
+    def test_delete_own_25h_old_is_within_window(self):
+        # 25h is inside the 30h self-edit window (was outside the old 24h window).
+        blep = self._blep(self.user, hours_ago_start=25)
         BlepService.delete(blep, self.user)
         self.assertFalse(Blep.objects.filter(pk=blep.blep_id).exists())
 
