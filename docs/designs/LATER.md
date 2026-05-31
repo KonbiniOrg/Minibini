@@ -120,3 +120,14 @@ proper issue.
   backfill addendum in `docs/plans/2026-05-30-work-shifts-design.md` §14). Make `user`
   required once any existing null-`user` bleps are cleaned up.
   _Done when:_ `Blep.user` is non-nullable and the data has no orphaned (null-`user`) bleps.
+
+- **Notify the requester when an approval request is approved/denied.** — _added 2026-05-31_
+  Workers get no feedback when a manager acts on their request — they only find out by
+  re-checking the list. Applies to **time-change requests** (shift + blep, the
+  `ShiftChangeRequest`/`BlepChangeRequest` approve/deny actions) AND **expense
+  reimbursements** (the expense approve/reject flow). Want some notification channel
+  (in-app banner/badge, email, or a "what changed since you last looked" surface) so the
+  requester learns the outcome without polling. Ties into the broader cross-client
+  live-refresh idea ([[project_general_repolling]]).
+  _Done when:_ a requester is notified (by whatever agreed channel) of approve/deny
+  outcomes for both time-change requests and expense reimbursements.
