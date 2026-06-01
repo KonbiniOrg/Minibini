@@ -278,6 +278,8 @@ class EstimateEmailService:
     DEFAULT_BODY = (
         'Hi {contact_fname},\n\n'
         'Please find attached our estimate {document_number} for {job_name}. '
+        'You can review it and accept or decline it online here:\n'
+        '{object_url}\n\n'
         'Let us know if you have any questions.\n\n'
         'Thanks,\n{my_user_name}'
     )
