@@ -21,6 +21,22 @@ proper issue.
 
 ## Open
 
+- **Audit Configuration keys for settings-UI coverage.** — _added 2026-05-31_
+  Some Configuration keys have no user-facing editor — `our_public_url` had none until
+  the Business tab was added, and others likely lack UI too. Review every key the
+  backend reads/writes (document-number sequences/counters, units, QBO accounts, email
+  templates, retention/expiry days, `our_domain`, schedule keys, etc.) and make sure
+  each user-settable one is editable somewhere in Settings. Exclude auto-managed keys
+  (e.g. counters that increment on their own) from needing an editor.
+  _Done when:_ every user-settable Configuration key has a settings-UI editor, and the
+  audit has confirmed nothing is silently un-editable.
+
+- **Send-email form: accept comma-separated recipients in To and Bcc, not just Cc.** — _added 2026-05-31_
+  The document-send form (`DocumentSendForm.svelte`) accepts a comma-separated list in
+  the Cc box but the To field doesn't take one; Bcc unverified. All three (To / Cc /
+  Bcc) should accept a comma-separated list of addresses consistently.
+  _Done when:_ To, Cc, and Bcc each accept and correctly send to a comma-separated list.
+
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
   intentionally have no draft state. SMTP failure with a page reload loses whatever the
