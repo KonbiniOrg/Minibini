@@ -90,6 +90,7 @@ router.register(r'blep-change-requests', BlepChangeRequestViewSet, basename='ble
 urlpatterns = [
     path('', api_root, name='api-root'),
     path('auth/', include('apps.api.auth.urls')),
+    path('portal/', include('apps.api.portal.urls')),
     path('emails/', include('apps.api.email.urls')),
     path('search/', search_view, name='api-search'),
     path('schedule/', schedule_view, name='api-schedule'),

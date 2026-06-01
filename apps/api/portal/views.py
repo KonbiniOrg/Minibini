@@ -6,7 +6,16 @@ estimate's opaque public_token.
 """
 from decimal import Decimal
 
+from django.db import transaction
+from rest_framework import status
+from rest_framework.decorators import (
+    api_view, authentication_classes, permission_classes,
+)
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+
 from apps.estimates.models import Estimate
+from apps.estimates.services import EstimateEmailService, EstimateService
 
 
 def _money(value):
@@ -71,3 +80,65 @@ def build_estimate_payload(estimate):
     if estimate.status == Estimate.STATUS_SUPERSEDED:
         payload['current_token'] = _current_token(estimate)
     return payload
+
+
+def _not_available():
+    return Response({'detail': 'Not available.'},
+                    status=status.HTTP_404_NOT_FOUND)
+
+
+def _actor_for(estimate, reason=None):
+    contact = estimate.job.contact if estimate.job_id else None
+    return {
+        'contact_id': contact.pk if contact else None,
+        'email': (contact.email if contact else '') or '',
+        'reason': reason,
+    }
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def portal_estimate(request, token):
+    estimate = Estimate.objects.filter(public_token=token).first()
+    if estimate is None:
+        return _not_available()
+    return Response(build_estimate_payload(estimate))
+
+
+def _decide(token, target_status, decision_word, reason=None):
+    with transaction.atomic():
+        estimate = (Estimate.objects
+                    .select_for_update()
+                    .filter(public_token=token)
+                    .first())
+        if estimate is None:
+            return _not_available()
+        # Only act from 'open'; a click racing the shop is a no-op.
+        if estimate.status == Estimate.STATUS_OPEN:
+            EstimateService.update_status(
+                estimate.pk, target_status,
+                actor=_actor_for(estimate, reason))
+            acted = True
+        else:
+            acted = False
+        estimate.refresh_from_db()
+    if acted:
+        EstimateEmailService.notify_shop_of_decision(
+            estimate, decision_word, reason=reason or '')
+    return Response(build_estimate_payload(estimate))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def portal_estimate_accept(request, token):
+    return _decide(token, Estimate.STATUS_ACCEPTED, 'accepted')
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def portal_estimate_reject(request, token):
+    reason = (request.data.get('reason') or '').strip()
+    return _decide(token, Estimate.STATUS_REJECTED, 'declined', reason=reason)
