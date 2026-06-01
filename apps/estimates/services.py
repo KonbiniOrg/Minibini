@@ -53,14 +53,41 @@ class EstimateService:
         return estimate
 
     @staticmethod
-    def update_status(pk, new_status):
-        """Update estimate status. Model validates transitions."""
+    def update_status(pk, new_status, actor=None):
+        """Update estimate status. Model validates transitions.
+
+        When ``actor`` is given (a dict describing a customer who acted via
+        the portal link, e.g. ``{'contact_id': N, 'email': str,
+        'reason': str|None}``), write an explicit, user-less action
+        HistoryEntry recording the decision and the customer context.
+        """
         try:
             estimate = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        old_status = estimate.status
         estimate.status = new_status
         estimate.save()  # Model.save() calls full_clean() and handles dates
+
+        if actor:
+            from apps.core.models import HistoryEntry
+            label = {
+                Estimate.STATUS_ACCEPTED: 'Accepted via customer link',
+                Estimate.STATUS_REJECTED: 'Declined via customer link',
+            }.get(new_status, f'{new_status} via customer link')
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='estimate',
+                object_id=estimate.pk,
+                user=None,
+                changes={
+                    'status': {'old': old_status, 'new': new_status},
+                    '_action': label,
+                    'contact_id': actor.get('contact_id'),
+                    'customer_email': actor.get('email'),
+                },
+                text=actor.get('reason') or '',
+            )
         return estimate
 
     @staticmethod
