@@ -101,7 +101,7 @@ def _actor_for(estimate, reason=None):
 @permission_classes([AllowAny])
 def portal_estimate(request, token):
     estimate = Estimate.objects.filter(public_token=token).first()
-    if estimate is None:
+    if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
         return _not_available()
     return Response(build_estimate_payload(estimate))
 
@@ -112,7 +112,7 @@ def _decide(token, target_status, decision_word, reason=None):
                     .select_for_update()
                     .filter(public_token=token)
                     .first())
-        if estimate is None:
+        if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
             return _not_available()
         # Only act from 'open'; a click racing the shop is a no-op.
         if estimate.status == Estimate.STATUS_OPEN:

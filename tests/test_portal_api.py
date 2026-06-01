@@ -67,3 +67,10 @@ class PortalApiTest(TestCase):
         r = self.http.post(f'/api/portal/estimates/{self.token}/accept/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()['status'], 'accepted')
+
+    def test_get_draft_token_not_available(self):
+        draft = EstimateService.create_for_job(self.job.pk)
+        draft.refresh_from_db()
+        r = self.http.get(f'/api/portal/estimates/{draft.public_token}/')
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.json()['detail'], 'Not available.')

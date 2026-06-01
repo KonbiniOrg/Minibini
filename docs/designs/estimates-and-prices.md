@@ -1194,7 +1194,7 @@ previous stub internal URL. This is the value that lands in
 The payload (`build_estimate_payload`) returns deliverables, line
 items, and status; no internal IDs or operator data.
 
-Only an **unknown/unmatched token** returns the generic `Not available.` 404 (no enumeration signal). A **valid token always returns the payload regardless of estimate status**; the page derives available actions from status (`accept`/`reject` shown only when `open`), and terminal, superseded, or expired states render a read-only status message with no action buttons. A `draft` estimate with a valid token is a shouldn't-occur edge case (the token URL is only placed in the send email at send time, so a customer hitting a draft means the URL leaked before sending), but if reached it returns the payload read-only with no actions — not a "not available" response.
+An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; the page derives available actions from status (`accept`/`reject` shown only when `open`), and terminal, superseded, or expired states render a read-only status message with no action buttons.
 
 **Customer attribution.** Operator-side
 `EstimateService.update_status(pk, new_status, actor=customer_dict)`
