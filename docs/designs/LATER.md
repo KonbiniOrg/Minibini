@@ -21,6 +21,17 @@ proper issue.
 
 ## Open
 
+- **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
+  The job-duplicate "immediately approved" path produces a Job with **no estimate** —
+  deliverables, tasks, materials only. `DeliverableService.is_editable` keys on estimate /
+  CO state, so a no-estimate job's deliverables stay **editable in any status**, tightening
+  only as rows **anchor** (gain a `ShipmentItem`). Accepted for now, but we may want a
+  harder freeze point for no-estimate jobs (e.g. freeze on `in_progress`, or on first
+  shipment regardless of which row) so the agreed scope can't drift indefinitely. Revisit
+  if loose-forever deliverables on a duplicated approved job cause trouble in practice.
+  _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
+  freeze and either added one or recorded why anchoring alone is sufficient.
+
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
   intentionally have no draft state. SMTP failure with a page reload loses whatever the
