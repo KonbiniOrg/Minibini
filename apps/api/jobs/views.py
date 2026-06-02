@@ -175,6 +175,41 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(self.get_serializer(job).data)
 
+    @action(detail=True, methods=['post'], url_path='duplicate')
+    def duplicate(self, request, pk=None):
+        """Copy this Job into a new one. Body: {contact_id, path:'approved'|'estimate'}."""
+        from apps.contacts.models import Contact
+        source_job = self.get_object()
+        path = request.data.get('path')
+        if path not in ('approved', 'estimate'):
+            return Response(
+                {'path': ["Must be 'approved' or 'estimate'."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        contact_id = request.data.get('contact_id')
+        if not contact_id:
+            return Response(
+                {'contact_id': ['This field is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            contact = Contact.objects.get(pk=contact_id)
+        except (Contact.DoesNotExist, ValueError, TypeError):
+            # ValueError/TypeError: a non-numeric contact_id would otherwise 500.
+            return Response(
+                {'contact_id': ['Contact not found.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            new_job = JobService.duplicate_job(
+                source_job, contact=contact, path=path)
+        except ValidationError as e:
+            return Response(
+                {'detail': e.message if hasattr(e, 'message') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({'job_id': new_job.pk}, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='populate-from-template')
     def populate_from_template(self, request, pk=None):
         job = self.get_object()

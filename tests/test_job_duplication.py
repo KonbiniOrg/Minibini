@@ -250,3 +250,71 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
             PlanTask.objects.get(est_worksheet=ws, name='AdHoc').est_qty, Decimal('3.00'))
         self.assertEqual(
             PlanTask.objects.get(est_worksheet=ws, name='Bare').est_qty, Decimal('0.00'))
+
+
+class DuplicateApiTest(DuplicateJobTestBase):
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.mgr = User.objects.create_user(username='dup_mgr', password='x')
+        self.mgr.user_permissions.add(Permission.objects.get(
+            codename='can_manage_jobs', content_type__app_label='core'))
+        self.mgr = User.objects.get(pk=self.mgr.pk)  # refresh permission cache
+        self.worker = User.objects.create_user(username='dup_worker', password='x')
+
+    def _url(self):
+        return f'/api/jobs/{self.source.pk}/duplicate/'
+
+    def test_requires_can_manage_jobs(self):
+        self.client.force_authenticate(user=self.worker)
+        r = self.client.post(self._url(),
+                             {'contact_id': self.contact.pk, 'path': 'approved'},
+                             format='json')
+        self.assertEqual(r.status_code, 403, r.data)
+
+    def test_approved_path_returns_new_job_id(self):
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.post(self._url(),
+                             {'contact_id': self.other_contact.pk, 'path': 'approved'},
+                             format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        new_job = Job.objects.get(pk=r.data['job_id'])
+        self.assertEqual(new_job.status, Job.STATUS_APPROVED)
+        self.assertEqual(new_job.contact_id, self.other_contact.pk)
+
+    def test_estimate_path_returns_new_job_id(self):
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.post(self._url(),
+                             {'contact_id': self.contact.pk, 'path': 'estimate'},
+                             format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(
+            EstWorksheet.objects.filter(job_id=r.data['job_id']).exists())
+
+    def test_bad_path_is_400(self):
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.post(self._url(),
+                             {'contact_id': self.contact.pk, 'path': 'nope'},
+                             format='json')
+        self.assertEqual(r.status_code, 400, r.data)
+
+    def test_missing_contact_is_400(self):
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.post(self._url(), {'path': 'approved'}, format='json')
+        self.assertEqual(r.status_code, 400, r.data)
+
+    def test_unknown_contact_is_400(self):
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.post(self._url(),
+                             {'contact_id': 999999, 'path': 'approved'},
+                             format='json')
+        self.assertEqual(r.status_code, 400, r.data)
+
+    def test_non_numeric_contact_is_400(self):
+        # A non-numeric contact_id must be a clean 400, not a 500 from the ORM.
+        self.client.force_authenticate(user=self.mgr)
+        r = self.client.post(self._url(),
+                             {'contact_id': 'abc', 'path': 'approved'},
+                             format='json')
+        self.assertEqual(r.status_code, 400, r.data)
