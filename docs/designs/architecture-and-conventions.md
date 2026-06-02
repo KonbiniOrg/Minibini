@@ -162,6 +162,7 @@ apps/api/
                              #  (mounted at /api/shifts/); time-tracking/{status,active} still 501
     users/                   # User admin (CRUD, deactivate, reset password)
     worksheets/              # EstWorksheet
+    portal/                  # Customer portal (AllowAny; estimate read/accept/reject)
 ```
 
 The `WorkOrder` model has been removed; Tasks live directly on `Job`.
@@ -185,6 +186,14 @@ Session auth only. Configured in `settings.py` with DRF's
 middleware (which sets `request.user` on the session) works
 transparently. The frontend never sees a JWT — see `frontend/src/lib/api.js`,
 which only handles the CSRF cookie.
+
+**Exception — portal endpoints.** `apps/api/portal/` (`/api/portal/`)
+is the first `AllowAny` + `authentication_classes=[]` write surface.
+It is token-authorized (each `Estimate` carries a `public_token`
+column) rather than session-authorized. The customer is not a `User`;
+their action is attributed via an explicit `HistoryEntry` with
+`user=None`. See `estimates-and-prices.md` §15.1 and
+`users-and-permissions.md` §Portal endpoints.
 
 `apps/api/auth/views.py` implements:
 
@@ -408,6 +417,15 @@ because plain delete leaves gaps in `line_number`. See CLAUDE.md
   prod build emits `dist/` served by nginx.
 - Hash-based routing via `svelte-spa-router`.
 - No CSS framework; semantic HTML and per-component `<style>` blocks.
+
+**Second Vite entry — customer portal.** `frontend/portal/` is a
+separate entry point (listed in `vite.config.js`
+`build.rollupOptions.input`) that builds to `dist/portal/index.html`
+and is served at `/portal/`. It is login-not-required: no auth gate,
+no operator nav, no reference to `App.svelte` or the auth store. It is
+the customer surface for accepting or rejecting a sent Estimate (see
+`estimates-and-prices.md` §15.1). The same Vite dev server serves it;
+the same `/api` proxy covers its requests.
 
 ### 5.2 API client
 

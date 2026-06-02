@@ -41,6 +41,21 @@ proper issue.
   if loose-forever deliverables on a duplicated approved job cause trouble in practice.
   _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
   freeze and either added one or recorded why anchoring alone is sufficient.
+- **Audit Configuration keys for settings-UI coverage.** — _added 2026-05-31_
+  Some Configuration keys have no user-facing editor — `our_public_url` had none until
+  the Business tab was added, and others likely lack UI too. Review every key the
+  backend reads/writes (document-number sequences/counters, units, QBO accounts, email
+  templates, retention/expiry days, `our_domain`, schedule keys, etc.) and make sure
+  each user-settable one is editable somewhere in Settings. Exclude auto-managed keys
+  (e.g. counters that increment on their own) from needing an editor.
+  _Done when:_ every user-settable Configuration key has a settings-UI editor, and the
+  audit has confirmed nothing is silently un-editable.
+
+- **Send-email form: accept comma-separated recipients in To and Bcc, not just Cc.** — _added 2026-05-31_
+  The document-send form (`DocumentSendForm.svelte`) accepts a comma-separated list in
+  the Cc box but the To field doesn't take one; Bcc unverified. All three (To / Cc /
+  Bcc) should accept a comma-separated list of addresses consistently.
+  _Done when:_ To, Cc, and Bcc each accept and correctly send to a comma-separated list.
 
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
@@ -108,19 +123,15 @@ proper issue.
   surface for invoking these is the natural place. _Done when:_ the SPA has at
   least one thread-level bulk action wired up.
 
-- **Customer-facing public URLs for documents (`{object_url}` real resolution).** — _added 2026-05-29_
-  The Estimate / PO / Invoice send templates support an `{object_url}` placeholder today,
-  resolved against the `our_public_url` Configuration key as
-  `<our_public_url>/<entity-path>/<id>`. The URL is a stub — internal IDs aren't customer-
-  reachable, no public view exists, no auth model is in place. The real feature needs:
-  (1) signed tokens or per-document `public_token` columns so URLs aren't guessable;
-  (2) public read views per document type (Estimate / PO / Invoice / Bill), styled for
-  the customer; (3) for Estimates, a public accept/reject API surface. Once the real
-  resolution is in place, `build_object_url` in `apps.core.email_templates` swaps from
-  the stub URL to the signed-token URL and existing user-authored boilerplate keeps
-  working unchanged. _Done when:_ the feature has shipped end-to-end and a customer
-  can click a Send-Email URL and view-then-accept an Estimate without a Minibini
-  account.
+- **Customer-facing public URLs for documents (`{object_url}` real resolution) — ESTIMATES DONE.** — _added 2026-05-29; estimates resolved 2026-05-31_
+  Estimates are now fully shipped: `Estimate.public_token` is minted at creation;
+  `build_object_url('estimate', id)` resolves to `/portal/?token=<token>`; the
+  `/api/portal/estimates/<token>/` read/accept/reject endpoints are live (AllowAny,
+  token-authorized); the customer page is at `frontend/portal/` (second Vite entry).
+  See `estimates-and-prices.md` §15.1 for the full spec.
+  **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal view);
+  Change Order customer approval (blocked on CO send-to-customer flow — no CO PDF,
+  no CO email service, no CO entry in `build_object_url`).
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global

@@ -43,7 +43,9 @@ Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
 
 Additional keys: `email_retention_days`, `latest_email_date`,
-`email_display_limit`, `est_expire_days`.
+`email_display_limit`, `est_expire_days`, `business_email` (shop
+notification address for customer accept/reject events; if unset,
+notifications are silently skipped).
 
 Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
 (`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
@@ -583,6 +585,13 @@ Valid transitions:
 - **parent** (optional FK → self, SET_NULL): for version chains
 - **Only one accepted estimate per job**: if status is `accepted`, no other
   Estimate for the same Job can be `accepted`. Enforced in `clean()`.
+- **public_token** (`CharField(max_length=64, null=True, blank=True,
+  unique=True)`): opaque token minted at creation (`secrets.token_urlsafe(32)`,
+  ~43 chars) in `Estimate.save()` when `not self.pk and not self.public_token`.
+  Unique across all Estimate rows. Nullable so the column is additive (existing
+  rows backfilled by migration `0022`). Each revision row mints its own token.
+  Backs the customer-portal URL (`/portal/?token=<token>`) — see
+  `estimates-and-prices.md` §15.1. Never regenerated after creation.
 
 #### Date rules
 

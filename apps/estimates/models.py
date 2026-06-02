@@ -1,3 +1,4 @@
+import secrets
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
@@ -37,6 +38,12 @@ class Estimate(models.Model):
     closed_date = models.DateTimeField(null=True, blank=True)
     # date the estimate expired; set automatically when est is Sent based on Configuration key est_expire_days
     expiration_date = models.DateTimeField(null=True, blank=True)
+
+    # Unguessable token backing the customer-facing portal link. Minted at
+    # creation (see save()); per-row, so each revision gets its own.
+    public_token = models.CharField(
+        max_length=64, null=True, blank=True, unique=True,
+    )
 
     def clean(self):
         """Validate estimate status changes, date immutability, and uniqueness constraints."""
@@ -104,6 +111,10 @@ class Estimate(models.Model):
         """Override save to detect status changes, set dates, and send signals if needed."""
         from apps.core.models import Configuration
         from datetime import timedelta
+
+        # Mint the customer-portal token once, at creation.
+        if not self.pk and not self.public_token:
+            self.public_token = secrets.token_urlsafe(32)
 
         old_status = None
 

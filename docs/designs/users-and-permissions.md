@@ -149,6 +149,22 @@ The previously-stubbed `POST /api/shifts/clock-in/` and
 `POST /api/shifts/clock-out/` are now **live** (work-shifts feature) — see the
 endpoint table and the special cases above.
 
+## Portal endpoints
+
+`/api/portal/` sits **outside the four-atom permission model entirely**.
+
+- `AllowAny` permission class, `authentication_classes=[]` — no session required.
+- Authorized by the `Estimate.public_token` column (an opaque per-row
+  secret). The token is the bearer credential.
+- The customer is **not a User**. There is no login, no session, and no
+  `request.user`. Attribution for accept/reject actions is via an explicit
+  `HistoryEntry` with `user=None` (entry_type `'action'`), written by
+  `EstimateService.update_status(actor=customer_dict)`.
+- `is_superuser` bypass does not apply — there is no auth subject to bypass with.
+
+See `estimates-and-prices.md` §15.1 for the full endpoint table and
+`architecture-and-conventions.md` §3.2 for the auth note.
+
 ## Authentication
 
 Session authentication only — see `architecture-and-conventions.md` for the underlying DRF setup, CSRF handling, and `lib/api.js` client behaviour.
