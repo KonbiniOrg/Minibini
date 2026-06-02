@@ -749,7 +749,51 @@ class JobService:
 
     @staticmethod
     def _copy_work_to_worksheet(source_job, new_job):
-        raise NotImplementedError("estimate path implemented in Task 2")
+        """Outcome B: map execution Tasks/Materials into a fresh draft worksheet
+        as PlanTasks/PlanMaterials. PlanTask requires a non-null est_qty, so fall
+        back to actual_qty then 0.00 when the source Task has none. (PlanTask has
+        no hierarchy, so subtask nesting is flattened; sort_order is preserved.)"""
+        from decimal import Decimal
+        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import Task, PlanTask, copy_active_modifiers
+        from apps.inventory.models import Material, PlanMaterial
+
+        ws = EstWorksheet.objects.create(
+            job=new_job, status=EstWorksheet.STATUS_DRAFT, version=1,
+            parent=None, estimate=None,
+        )
+        task_map = {}  # source task_id -> new PlanTask
+        for task in Task.objects.filter(job=source_job).order_by('sort_order', 'pk'):
+            if task.est_qty is not None:
+                est_qty = task.est_qty
+            elif task.actual_qty is not None:
+                est_qty = task.actual_qty
+            else:
+                est_qty = Decimal('0.00')
+            plan_task = PlanTask.objects.create(
+                est_worksheet=ws,
+                name=task.name,
+                description=task.description,
+                sort_order=task.sort_order,
+                est_worker_time=task.est_worker_time,
+                est_qty=est_qty,
+                rate_scheme=task.rate_scheme,
+                active_modifiers=copy_active_modifiers(task.active_modifiers),
+            )
+            task_map[task.pk] = plan_task
+        for material in Material.objects.filter(job=source_job).order_by('pk'):
+            PlanMaterial.objects.create(
+                est_worksheet=ws,
+                plan_task=task_map.get(material.task_id),
+                description=material.description,
+                quantity=material.quantity,
+                units=material.units,
+                unit_cost=material.unit_cost,
+                sell_price=material.sell_price,
+                price_list_item=material.price_list_item,
+                accounting_category=material.accounting_category,
+            )
+        return ws
 
 
 class TaskService:

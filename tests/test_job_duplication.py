@@ -186,3 +186,67 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertEqual(self.source.status, Job.STATUS_DRAFT)
         self.assertEqual(self.source.contact_id, self.contact.pk)
         self.assertEqual(Task.objects.filter(job=self.source).count(), 2)
+
+
+class DuplicateEstimateTest(DuplicateJobTestBase):
+
+    def test_creates_draft_job_no_status_walk(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.other_contact, path='estimate')
+        self.assertEqual(new_job.status, Job.STATUS_DRAFT)
+        self.assertIsNone(new_job.start_date)
+        self.assertEqual(new_job.contact_id, self.other_contact.pk)
+
+    def test_creates_fresh_draft_worksheet(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='estimate')
+        ws = EstWorksheet.objects.get(job=new_job)
+        self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
+        self.assertEqual(ws.version, 1)
+        self.assertIsNone(ws.parent_id)
+        self.assertIsNone(ws.estimate_id)
+
+    def test_maps_tasks_to_plan_tasks(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='estimate')
+        ws = EstWorksheet.objects.get(job=new_job)
+        names = set(PlanTask.objects.filter(est_worksheet=ws).values_list('name', flat=True))
+        self.assertEqual(names, {'Build', 'Finish'})
+        build = PlanTask.objects.get(est_worksheet=ws, name='Build')
+        self.assertEqual(build.est_qty, Decimal('6'))
+        self.assertEqual(build.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(build.est_worker_time, timedelta(hours=4))  # carried over
+
+    def test_maps_materials_preserving_task_attachment(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='estimate')
+        ws = EstWorksheet.objects.get(job=new_job)
+        build = PlanTask.objects.get(est_worksheet=ws, name='Build')
+        attached = PlanMaterial.objects.get(est_worksheet=ws, price_list_item=self.plywood)
+        loose = PlanMaterial.objects.get(est_worksheet=ws, price_list_item=self.screws)
+        self.assertEqual(attached.plan_task, build)
+        self.assertIsNone(loose.plan_task_id)
+
+    def test_no_earmarks_on_estimate_path(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='estimate')
+        self.assertEqual(Earmark.objects.filter(job=new_job).count(), 0)
+
+    def test_est_qty_falls_back_to_actual_qty_then_zero(self):
+        # Task with no est_qty but an actual_qty -> PlanTask.est_qty = actual_qty.
+        Task.objects.create(
+            job=self.source, name='AdHoc', sort_order=3,
+            rate_scheme=self.scheme, est_qty=None, actual_qty=Decimal('3.00'),
+        )
+        # Task with neither -> PlanTask.est_qty = 0.00.
+        Task.objects.create(
+            job=self.source, name='Bare', sort_order=4,
+            rate_scheme=self.scheme, est_qty=None, actual_qty=None,
+        )
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='estimate')
+        ws = EstWorksheet.objects.get(job=new_job)
+        self.assertEqual(
+            PlanTask.objects.get(est_worksheet=ws, name='AdHoc').est_qty, Decimal('3.00'))
+        self.assertEqual(
+            PlanTask.objects.get(est_worksheet=ws, name='Bare').est_qty, Decimal('0.00'))
