@@ -475,8 +475,33 @@ Valid transitions:
 - **rate_scheme** (required FK → RateScheme, PROTECT): NOT NULL at DB level
 - **active_modifiers**: JSON — list of modifier keys, or
   `{"flat_fee_price": str}` for `flat_fee` schemes (see RateScheme §1.7)
-- **est_qty** (inherited from `TaskBase`): optional — for `flat_fee` it is
-  the billable quantity (charge is `flat_fee_price × est_qty`)
+- **est_qty** (inherited from `TaskBase`): nullable on Task — both at the DB
+  level and the application layer. Unlike `PlanTask`, `Task.clean()` does
+  **not** reject null (asymmetric enforcement; pinned by
+  `tests/test_plan_task_est_qty_required.py`). For `flat_fee` it is the
+  billable quantity (charge is `flat_fee_price × est_qty`), with
+  `RateScheme.get_actual_qty` falling back to `Decimal('1')` when null.
+
+  In practice a null `est_qty` can only arise on a task **added directly to
+  the Job with the quantity left blank** — specifically the two manual
+  direct-create routes, both of which send `est_qty` through unguarded:
+    - top-level task — `POST /api/jobs/{id}/tasks/` → `TaskService.create_direct`
+    - subtask — `POST /api/tasks/{id}/subtasks/` → `TaskSerializer.save()`
+      (the serializer treats `est_qty` as `required=False`)
+
+  Every other creation route guarantees a non-null value, so nothing carried
+  over from a worksheet or generated from a template is ever null:
+    - worksheet carry-over (`AtomCarryOverService._carry_over_plan_tasks`,
+      `JobService.copy_from_worksheet`) copies `PlanTask.est_qty`, which
+      `PlanTask.clean()` forces non-null
+    - direct-estimate line-item carry-over
+      (`_create_task_from_line_item`) uses `line_item.qty` (`BaseLineItem.qty`
+      is `default=0.00`, not nullable)
+    - `TaskService.create_from_template` defaults to the template's
+      `default_billable_qty` (NOT NULL)
+    - the job-side `add-from-template` API defaults a blank to `Decimal('1')`;
+      bulk template expansion uses `TemplateTaskAssociation.est_qty`
+      (`default=1`)
 - **est_worker_time**: optional Duration — but **required (and must be > 0)
   once `assignee` is set**; assigned work has to be schedulable
 - **actual_qty**: optional decimal — worker-entered qty for `entered_qty`
