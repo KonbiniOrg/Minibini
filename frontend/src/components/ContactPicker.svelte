@@ -12,6 +12,8 @@
   let showResults = $state(false);
   let selectedLabel = $state('');
   let labelForId = $state(null); // which id `selectedLabel` describes
+  let prevValue = $state(null);  // selection stashed when "Change" is clicked
+  let prevLabel = $state('');
 
   function labelOf(c) {
     return c.business ? `${c.name} from ${c.business.business_name}` : c.name;
@@ -34,15 +36,28 @@
     selectedLabel = labelOf(c);
     labelForId = c.contact_id;
     value = c.contact_id;
+    prevValue = null; // committed a new choice — nothing to cancel back to
+    prevLabel = '';
     query = '';
     results = [];
     showResults = false;
   }
 
   function change() {
+    prevValue = value; // remember the current pick so Cancel can restore it
+    prevLabel = selectedLabel;
     value = null;
-    selectedLabel = '';
-    labelForId = null;
+    query = '';
+    results = [];
+    showResults = false;
+  }
+
+  function cancelChange() {
+    value = prevValue;
+    selectedLabel = prevLabel;
+    labelForId = prevValue;
+    prevValue = null;
+    prevLabel = '';
     query = '';
     results = [];
     showResults = false;
@@ -64,6 +79,9 @@
 {:else}
   <input type="text" bind:value={query} oninput={search}
          placeholder="Search contacts by name, business, email, or phone…">
+  {#if prevValue != null}
+    <button type="button" onclick={cancelChange}>Cancel</button>
+  {/if}
   {#if showResults}
     {#if results.length}
       <ul>
