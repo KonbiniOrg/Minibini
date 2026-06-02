@@ -243,6 +243,12 @@ navigates to an intermediate page (`#/jobs/:id/duplicate`,
 (pre-filled from the source job's contact, editable) and a **path**
 (`approved` or `estimate`), then submits.
 
+The Customer field is a searchable picker (`ContactPicker.svelte`), not a
+dropdown — the contacts table is large, so it queries
+`/api/contacts/?search=` (which matches first/last name, business name,
+email, or phone) rather than listing every contact. It pre-fills the
+source job's contact and offers a Cancel-able "Change" action.
+
 **API:** `POST /api/jobs/{id}/duplicate/` — body `{contact_id, path}` —
 returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
 
