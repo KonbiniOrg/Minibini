@@ -51,14 +51,15 @@ class EstWorksheetSignalEfficiencyTest(TestCase):
             # Signal should NOT have been called
             mock_signal.assert_not_called()
 
-            # Check query count - 6 queries due to validation, status checks, and history:
+            # Check query count - 7 queries due to validation, status checks, and history:
             # 1. SELECT old status in save()
             # 2. SELECT to verify job exists (validation)
             # 3. SELECT old status again in clean()
-            # 4. SELECT to check unique constraint
-            # 5. UPDATE query
-            # 6. INSERT history entry (audit trail for estimate_number change)
-            self.assertEqual(len(connection.queries), 6)
+            # 4. SELECT to check estimate_number unique constraint
+            # 5. SELECT to check public_token unique constraint (added with the portal feature)
+            # 6. UPDATE query
+            # 7. INSERT history entry (audit trail for estimate_number change)
+            self.assertEqual(len(connection.queries), 7)
 
     @override_settings(DEBUG=True)
     def test_no_signal_on_irrelevant_status_change(self):
