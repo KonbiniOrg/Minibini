@@ -318,3 +318,42 @@ class DuplicateApiTest(DuplicateJobTestBase):
                              {'contact_id': 'abc', 'path': 'approved'},
                              format='json')
         self.assertEqual(r.status_code, 400, r.data)
+
+
+class DuplicateEmptySourceTest(BaseTestCase):
+    """A source Job with no tasks, materials, or deliverables still duplicates
+    cleanly on both paths (spec edge case: earmark creation early-returns and the
+    status walk must still succeed on a work-less job)."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-DUP-{counter:04d}'})
+        Configuration.objects.update_or_create(
+            key='job_counter', defaults={'value': '0'})
+        self.contact = Contact.objects.create(
+            first_name='Bare', last_name='Customer',
+            email='bare@example.com', work_number='555-0009',
+        )
+        self.source = Job.objects.create(
+            job_number='JOB-BARE-001', name='Bare job', description='',
+            contact=self.contact,
+        )
+
+    def test_approved_path_on_empty_source(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='approved')
+        self.assertEqual(new_job.status, Job.STATUS_APPROVED)
+        self.assertIsNotNone(new_job.start_date)
+        self.assertEqual(Task.objects.filter(job=new_job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=new_job).count(), 0)
+        self.assertEqual(Earmark.objects.filter(job=new_job).count(), 0)
+        self.assertEqual(Deliverable.objects.filter(job=new_job).count(), 0)
+
+    def test_estimate_path_on_empty_source(self):
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='estimate')
+        self.assertEqual(new_job.status, Job.STATUS_DRAFT)
+        ws = EstWorksheet.objects.get(job=new_job)
+        self.assertEqual(PlanTask.objects.filter(est_worksheet=ws).count(), 0)
+        self.assertEqual(PlanMaterial.objects.filter(est_worksheet=ws).count(), 0)
