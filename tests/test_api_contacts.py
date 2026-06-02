@@ -18,6 +18,19 @@ class ContactAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('results', response.data)
 
+    def test_search_matches_business_name(self):
+        match = Contact.objects.create(first_name='Pat', last_name='Quinn')
+        biz = Business.objects.create(
+            business_name='Zylotech Industries', default_contact=match)
+        match.business = biz
+        match.save()
+        other = Contact.objects.create(first_name='Sam', last_name='Reed')
+        response = self.client.get('/api/contacts/?search=Zylotech')
+        self.assertEqual(response.status_code, 200)
+        ids = [c['contact_id'] for c in response.data['results']]
+        self.assertIn(match.contact_id, ids)
+        self.assertNotIn(other.contact_id, ids)
+
     def test_create_contact(self):
         response = self.client.post('/api/contacts/', {
             'first_name': 'New',

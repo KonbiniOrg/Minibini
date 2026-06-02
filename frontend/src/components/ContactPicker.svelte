@@ -63,7 +63,7 @@
   <span>{selectedLabel} <button type="button" onclick={change}>Change</button></span>
 {:else}
   <input type="text" bind:value={query} oninput={search}
-         placeholder="Search contacts by name, email, or phone…">
+         placeholder="Search contacts by name, business, email, or phone…">
   {#if showResults}
     {#if results.length}
       <ul>
