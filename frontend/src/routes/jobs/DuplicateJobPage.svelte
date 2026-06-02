@@ -60,7 +60,7 @@
   $effect(() => {
     if (!loading && !loadError && canManageJobs && sourceJob
         && contacts.length && !contactPrefilled) {
-      selectedContactId = sourceJob.contact ? String(sourceJob.contact) : '';
+      selectedContactId = sourceJob.contact ?? '';
       contactPrefilled = true;
     }
   });
@@ -79,7 +79,7 @@
     <select id="contact" bind:value={selectedContactId} required>
       <option value="">-- Select contact --</option>
       {#each contacts as c}
-        <option value={String(c.contact_id)}>
+        <option value={c.contact_id}>
           {c.business ? `${c.name} from ${c.business.business_name}` : c.name}
         </option>
       {/each}
