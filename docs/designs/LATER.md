@@ -161,6 +161,10 @@ proper issue.
   (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
   human-meaningful lifecycle date per entity (decide which per entity at that time),
   whichever is cheaper than scrolling a long `<select>`.
+  - _Also affected (added 2026-06-01):_ `DuplicateJobPage.svelte`'s **Customer** picker
+    requests `/api/contacts/?page_size=100`. Beyond 100 contacts the source job's contact
+    may fall outside the list, so the pre-select silently shows "-- Select contact --" and
+    the customer can't be reached. Same fix (server-side search/typeahead) applies.
 
 - **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
   We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on
