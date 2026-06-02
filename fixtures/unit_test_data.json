@@ -271,6 +271,13 @@
         }
     },
     {
+        "model": "core.configuration",
+        "pk": "business_email",
+        "fields": {
+            "value": "office@example.com"
+        }
+    },
+    {
         "model": "core.accountingcategory",
         "pk": 901,
         "fields": {
@@ -414,7 +421,8 @@
             "status": "draft",
             "parent": null,
             "created_date": "2024-01-15T09:30:00Z",
-            "closed_date": null
+            "closed_date": null,
+            "public_token": "fixture-token-est-1"
         }
     },
     {
@@ -427,7 +435,8 @@
             "status": "superseded",
             "parent": null,
             "created_date": "2024-01-20T10:30:00Z",
-            "closed_date": "2024-01-21T14:00:00Z"
+            "closed_date": "2024-01-21T14:00:00Z",
+            "public_token": "fixture-token-est-2"
         }
     },
     {
@@ -440,7 +449,8 @@
             "status": "accepted",
             "parent": 2,
             "created_date": "2024-01-21T14:00:00Z",
-            "closed_date": null
+            "closed_date": null,
+            "public_token": "fixture-token-est-3"
         }
     },
     {

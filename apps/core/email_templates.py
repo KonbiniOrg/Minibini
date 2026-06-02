@@ -46,15 +46,25 @@ _OBJECT_URL_PATHS = {
 def build_object_url(kind, obj_id):
     """Resolve the ``{object_url}`` template placeholder for a given doc.
 
-    Reads the `our_public_url` Configuration key (default
-    `https://example.com`) and appends `/<entity-path>/<id>`. The URLs
-    don't actually work for unauthenticated customers today; this is the
-    placeholder shape that lets templates author against something real.
+    For ``estimate`` this resolves to the customer portal token URL
+    (``<base>/portal/?token=<token>``). Other kinds keep the legacy stub
+    ``<base>/<entity-path>/<id>`` until their own portal surfaces exist.
     """
     from apps.core.models import Configuration
     try:
         base = Configuration.objects.get(key='our_public_url').value
     except Configuration.DoesNotExist:
         base = DEFAULT_OUR_PUBLIC_URL
+    base = base.rstrip('/')
+
+    if kind == 'estimate':
+        from apps.estimates.models import Estimate
+        try:
+            token = Estimate.objects.get(pk=obj_id).public_token
+        except Estimate.DoesNotExist:
+            token = None
+        if token:
+            return f'{base}/portal/?token={token}'
+
     path = _OBJECT_URL_PATHS.get(kind, kind)
-    return f'{base.rstrip("/")}/{path}/{obj_id}'
+    return f'{base}/{path}/{obj_id}'

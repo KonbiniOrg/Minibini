@@ -2,6 +2,7 @@
 Service classes for Estimate generation and management.
 """
 
+import logging
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -14,6 +15,8 @@ from apps.estimates.models import (
 from apps.core.services import NumberGenerationService, NotFoundError
 from apps.core.wizard import BaseWizardService
 from apps.inventory.models import PriceListItem
+
+logger = logging.getLogger(__name__)
 
 
 class EstimateService:
@@ -53,14 +56,41 @@ class EstimateService:
         return estimate
 
     @staticmethod
-    def update_status(pk, new_status):
-        """Update estimate status. Model validates transitions."""
+    def update_status(pk, new_status, actor=None):
+        """Update estimate status. Model validates transitions.
+
+        When ``actor`` is given (a dict describing a customer who acted via
+        the portal link, e.g. ``{'contact_id': N, 'email': str,
+        'reason': str|None}``), write an explicit, user-less action
+        HistoryEntry recording the decision and the customer context.
+        """
         try:
             estimate = Estimate.objects.get(pk=pk)
         except Estimate.DoesNotExist:
             raise NotFoundError(f'Estimate {pk} not found')
+        old_status = estimate.status
         estimate.status = new_status
         estimate.save()  # Model.save() calls full_clean() and handles dates
+
+        if actor:
+            from apps.core.models import HistoryEntry
+            label = {
+                Estimate.STATUS_ACCEPTED: 'Accepted via customer link',
+                Estimate.STATUS_REJECTED: 'Declined via customer link',
+            }.get(new_status, f'{new_status} via customer link')
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='estimate',
+                object_id=estimate.pk,
+                user=None,
+                changes={
+                    'status': {'old': old_status, 'new': new_status},
+                    '_action': label,
+                    'contact_id': actor.get('contact_id'),
+                    'customer_email': actor.get('email'),
+                },
+                text=actor.get('reason') or '',
+            )
         return estimate
 
     @staticmethod
@@ -248,6 +278,8 @@ class EstimateEmailService:
     DEFAULT_BODY = (
         'Hi {contact_fname},\n\n'
         'Please find attached our estimate {document_number} for {job_name}. '
+        'You can review it and accept or decline it online here:\n'
+        '{object_url}\n\n'
         'Let us know if you have any questions.\n\n'
         'Thanks,\n{my_user_name}'
     )
@@ -310,6 +342,35 @@ class EstimateEmailService:
             'to': to, 'subject': subject, 'body': body,
             'attachments_preview': attachments_preview,
         }
+
+    @staticmethod
+    def notify_shop_of_decision(estimate, decision, reason=''):
+        """Best-effort email to the shop's business_email when a customer
+        accepts/rejects via the portal. Never raises — the customer's action
+        has already committed and must not be rolled back by a send failure.
+        """
+        from django.conf import settings
+        from django.core.mail import send_mail
+        from apps.core.models import Configuration
+
+        try:
+            addr = Configuration.objects.get(key='business_email').value.strip()
+        except Configuration.DoesNotExist:
+            addr = ''
+        if not addr:
+            return
+
+        job_name = estimate.job.name if estimate.job_id else ''
+        subject = f'Estimate {estimate.estimate_number} {decision} by customer'
+        body = (f'Estimate {estimate.estimate_number} for job "{job_name}" '
+                f'was {decision} by the customer.')
+        if reason:
+            body += f'\n\nReason given:\n{reason}'
+        try:
+            send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [addr])
+        except Exception:
+            logger.exception(
+                'Shop notification failed for estimate %s', estimate.pk)
 
     @staticmethod
     def send_estimate(estimate, *, to, subject, body, cc=None, bcc=None,

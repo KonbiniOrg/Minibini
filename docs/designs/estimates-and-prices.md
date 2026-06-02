@@ -1165,6 +1165,64 @@ exists (workers triggering the status change without sending is
 preserved as a back-door), but the normal flow is now Send Email,
 which transitions status as part of the send-success path.
 
+### 15.1 Customer approval (portal)
+
+A customer can accept or reject a sent Estimate by clicking the
+link in the send email — no Minibini account required.
+
+**`Estimate.public_token`** (`CharField(max_length=64, null=True,
+blank=True, unique=True)`) is minted in `Estimate.save()` at
+creation (`if not self.pk and not self.public_token`), so the token
+exists from the first write — well before any send. Each revision
+row mints its own token. The token never hard-expires; live estimate
+`status` determines what actions are available.
+
+**URL shape.** `build_object_url('estimate', id)` now returns
+`<our_public_url>/portal/?token=<public_token>` instead of the
+previous stub internal URL. This is the value that lands in
+`{object_url}` when composing the send email.
+
+**Portal API (`apps/api/portal/`, all `AllowAny`,
+`authentication_classes=[]`):**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/portal/estimates/<token>/` | Customer-safe payload: deliverables, line items, total, status |
+| `POST` | `/api/portal/estimates/<token>/accept/` | Accept the estimate |
+| `POST` | `/api/portal/estimates/<token>/reject/` | Reject with optional `reason` |
+
+The payload (`build_estimate_payload`) returns deliverables, line
+items, and status; no internal IDs or operator data.
+
+An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; the page derives available actions from status (`accept`/`reject` shown only when `open`), and terminal, superseded, or expired states render a read-only status message with no action buttons.
+
+**Customer attribution.** Operator-side
+`EstimateService.update_status(pk, new_status, actor=customer_dict)`
+writes a `HistoryEntry` (entry_type `'action'`, `user=None`) with
+the customer's name/contact from the `actor` dict, so the action
+appears in the Job history feed with proper attribution without
+requiring a User record.
+
+**Shop notification.** On accept or reject,
+`EstimateEmailService.notify_shop_of_decision(estimate, decision,
+reason='')` sends a best-effort email to the `business_email`
+Configuration key (see `data-constraints.md` §1.1). If `business_email`
+is unset the notification is silently skipped; the accept/reject still
+completes.
+
+**Customer page.** `frontend/portal/` is a second Vite entry (built
+by the same `npm run build`, served at `/portal/`). It is login-not-required,
+has no operator nav, and reads the token from the query string. It
+shows deliverables (top), line items + total, and a status banner.
+`open` estimates show Accept and Reject buttons, both requiring a
+confirmation dialog with plain-language consequences. A `superseded`
+estimate links to the current revision's portal URL. All other
+terminal statuses show a read-only status message.
+
+**Not yet built:** Change-order customer approval. COs have no
+send-to-customer flow today (no PDF, no email service, no CO entry in
+`build_object_url`), so CO approval waits for that infrastructure.
+
 ---
 
 ## 16. Unfinished work
