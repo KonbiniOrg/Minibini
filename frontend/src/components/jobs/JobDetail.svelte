@@ -18,7 +18,6 @@
     purchaseOrders = null,
     emails = null,
     onStatusChange = null,
-    onStartWizard = null,
   } = $props();
 
   // Permission check
@@ -417,10 +416,27 @@
     poList.filter(p => p.status !== 'cancelled')
           .reduce((s, p) => s + poTotal(p), 0)
   );
-  let canBuildInvoice = $derived(
+  const BILLABLE_JOB_STATUSES = [
+    'approved', 'in_progress', 'work_complete', 'completed', 'cancelled',
+  ];
+  let creatingInvoice = $state(false);
+  let canCreateInvoice = $derived(
     (canManageJobs || canManageFinancials) &&
-    (job.status === 'approved' || job.status === 'work_complete' || job.status === 'completed')
+    BILLABLE_JOB_STATUSES.includes(job.status) &&
+    !draftInvoice
   );
+
+  async function createInvoiceManual() {
+    creatingInvoice = true;
+    try {
+      const inv = await api.post('/api/invoices/', { job: job.job_id });
+      window.location.hash = `/invoices/${inv.invoice_id}`;
+    } catch (e) {
+      alert(e.data?.detail || e.message || 'Failed to create invoice.');
+    } finally {
+      creatingInvoice = false;
+    }
+  }
 
   let populating = $state(false);
   let populateError = $state('');
@@ -1011,14 +1027,11 @@
         </span>
         <span class="top-bar-actions">
           {#if displayedInvoice}
-            <a href="#/invoices/{displayedInvoice.invoice_id}">View Full Invoice</a>
+            <a href="#/invoices/{displayedInvoice.invoice_id}">View Invoice</a>
           {/if}
-          {#if canManageJobs && displayedInvoice && (displayedInvoice.status === 'open' || displayedInvoice.status === 'partly-paid')}
-            <a href="#/invoices/{displayedInvoice.invoice_id}/revise">Revise Invoice</a>
-          {/if}
-          {#if canBuildInvoice}
-            <button onclick={() => onStartWizard?.()}>
-              {draftInvoice ? `Continue draft (${draftInvoice.invoice_number})` : 'Build invoice'}
+          {#if canCreateInvoice}
+            <button type="button" onclick={createInvoiceManual} disabled={creatingInvoice}>
+              {creatingInvoice ? 'Creating…' : 'Create Invoice'}
             </button>
           {/if}
         </span>
