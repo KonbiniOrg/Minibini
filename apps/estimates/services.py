@@ -729,6 +729,20 @@ class EstimateWizardService(BaseWizardService):
             )
 
         with transaction.atomic():
+            # One estimate tree per job: adopt the job's existing draft estimate
+            # (e.g. one created directly via the Create Estimate button) rather
+            # than minting a second. Only create fresh when the job has none.
+            existing = (
+                Estimate.objects
+                .filter(job=worksheet.job, status=Estimate.STATUS_DRAFT)
+                .order_by('pk')
+                .first()
+            )
+            if existing is not None:
+                worksheet.estimate = existing
+                worksheet.save()
+                return existing
+
             estimate_number = NumberGenerationService.generate_next_number('estimate')
             estimate = Estimate.objects.create(
                 job=worksheet.job,

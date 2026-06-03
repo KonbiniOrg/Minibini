@@ -33,6 +33,18 @@ class OpenForWorksheetTest(TestCase):
         second = EstimateWizardService.open_for_worksheet(self.ws)
         self.assertEqual(first.pk, second.pk)
 
+    def test_adopts_jobs_existing_draft_estimate(self):
+        """One tree per job: if the job already has a draft estimate (e.g.
+        created directly via the Create Estimate button), generating from the
+        worksheet adopts that estimate rather than minting a second one."""
+        from apps.estimates.services import EstimateService
+        existing = EstimateService.create_for_job(self.job.pk)
+        result = EstimateWizardService.open_for_worksheet(self.ws)
+        self.assertEqual(result.pk, existing.pk)
+        self.assertEqual(Estimate.objects.filter(job=self.job).count(), 1)
+        self.ws.refresh_from_db()
+        self.assertEqual(self.ws.estimate, existing)
+
     def test_refuses_finalized_worksheet(self):
         self.ws.status = EstWorksheet.STATUS_FINAL
         self.ws.save()
