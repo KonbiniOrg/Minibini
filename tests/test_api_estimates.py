@@ -18,6 +18,17 @@ class EstimateAPITest(BaseTestCase):
         response = self.client.get('/api/estimates/')
         self.assertEqual(response.status_code, 200)
 
+    def test_create_rejected_when_job_already_has_estimate(self):
+        """One estimate tree per job: a second create is refused (400), not a
+        500 from the unique (job-derived) number collision."""
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='E', last_name='X', email='ex@dup.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-EST-DUP-1')
+        first = self.client.post('/api/estimates/', {'job': job.pk}, format='json')
+        self.assertIn(first.status_code, [200, 201])
+        second = self.client.post('/api/estimates/', {'job': job.pk}, format='json')
+        self.assertEqual(second.status_code, 400)
+
     def test_retrieve_estimate(self):
         estimate = Estimate.objects.first()
         response = self.client.get(f'/api/estimates/{estimate.pk}/')

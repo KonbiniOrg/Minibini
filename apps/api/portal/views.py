@@ -27,11 +27,13 @@ def _line_amount(li):
 
 
 def _current_token(estimate):
-    """The live head of the revision lineage for a superseded estimate:
-    highest-version row with the same estimate_number that isn't superseded.
+    """The live head of the revision lineage for a superseded estimate.
+
+    One estimate tree per job, so the live head is the job's highest-version
+    non-superseded estimate.
     """
     head = (Estimate.objects
-            .filter(estimate_number=estimate.estimate_number)
+            .filter(job_id=estimate.job_id)
             .exclude(status=Estimate.STATUS_SUPERSEDED)
             .order_by('-version')
             .first())

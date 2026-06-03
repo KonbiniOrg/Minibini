@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework import status, viewsets
+from rest_framework import serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -54,6 +54,14 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
         data = serializer.validated_data
         job = data.get('job')
         job_pk = job.pk if hasattr(job, 'pk') else job
+        # One estimate tree per job: refuse a second when a live (non-superseded)
+        # estimate already exists. Revise the existing one instead.
+        if Estimate.objects.filter(job_id=job_pk).exclude(
+            status=Estimate.STATUS_SUPERSEDED
+        ).exists():
+            raise drf_serializers.ValidationError(
+                {'detail': 'This job already has an estimate. Revise the existing one instead.'}
+            )
         estimate = EstimateService.create_for_job(job_pk)
         serializer.instance = estimate
 

@@ -26,30 +26,35 @@ class EstimateService:
     def create_direct(job, **kwargs):
         """
         Create Estimate directly. Starts in 'draft' status.
-        Estimate number is auto-generated.
+        Estimate number is the job number plus the revision (one estimate tree
+        per job): ``{job_number}-{version}``.
         """
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
-
+        version = kwargs.pop('version', 1)
+        estimate_number = kwargs.pop('estimate_number', f'{job.job_number}-{version}')
         return Estimate.objects.create(
             job=job,
             estimate_number=estimate_number,
+            version=version,
             status=Estimate.STATUS_DRAFT,
             **kwargs
         )
 
     @staticmethod
     def create_for_job(job_pk):
-        """Create a new draft Estimate for a job by PK."""
+        """Create a new draft Estimate for a job by PK.
+
+        The estimate number derives from the job number plus the revision:
+        ``{job_number}-1`` for the first version.
+        """
         from apps.jobs.models import Job
         try:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
 
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
         estimate = Estimate.objects.create(
             job=job,
-            estimate_number=estimate_number,
+            estimate_number=f'{job.job_number}-1',
             version=1,
             status=Estimate.STATUS_DRAFT,
         )
@@ -126,10 +131,11 @@ class EstimateService:
         if parent.status == Estimate.STATUS_DRAFT:
             raise ValidationError('Cannot revise a draft estimate. Edit it directly.')
 
+        new_version = parent.version + 1
         new_estimate = Estimate.objects.create(
             job=parent.job,
-            estimate_number=parent.estimate_number,
-            version=parent.version + 1,
+            estimate_number=f'{parent.job.job_number}-{new_version}',
+            version=new_version,
             status=Estimate.STATUS_DRAFT,
             parent=parent,
         )
@@ -733,10 +739,10 @@ class EstimateWizardService(BaseWizardService):
         if existing is not None:
             return existing
 
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
         return Estimate.objects.create(
             job=worksheet.job,
-            estimate_number=estimate_number,
+            estimate_number=f'{worksheet.job.job_number}-1',
+            version=1,
             status=Estimate.STATUS_DRAFT,
         )
 
