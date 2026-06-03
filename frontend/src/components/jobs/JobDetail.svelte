@@ -297,6 +297,26 @@
     }
   }
 
+  let creatingEstimate = $state(false);
+
+  let canCreateEstimate = $derived(
+    canManageJobs &&
+    (job.status === 'draft' || job.status === 'submitted') &&
+    !currentEstimate
+  );
+
+  async function createEstimate() {
+    creatingEstimate = true;
+    try {
+      const est = await api.post('/api/estimates/', { job: job.job_id });
+      window.location.hash = `/estimates/${est.estimate_id}`;
+    } catch (e) {
+      alert(e.data?.detail || e.message || 'Failed to create estimate.');
+    } finally {
+      creatingEstimate = false;
+    }
+  }
+
   async function createChangeOrder() {
     creatingCo = true;
     try {
@@ -635,12 +655,11 @@
             <a href="#/change-orders/{displayedVersion.co.change_order_id}">View Change Order</a>
           {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">View Full Estimate</a>
-            {#if canManageJobs && (displayedEstimate.status === 'open' || displayedEstimate.status === 'accepted')}
-              <a href="#/estimates/{displayedEstimate.estimate_id}/revise">Revise Estimate</a>
-            {/if}
           {/if}
-          {#if canManageJobs && !currentEstimate}
-            <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
+          {#if canCreateEstimate}
+            <button type="button" onclick={createEstimate} disabled={creatingEstimate}>
+              {creatingEstimate ? 'Creating…' : 'Create Estimate'}
+            </button>
           {/if}
           {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
             <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
