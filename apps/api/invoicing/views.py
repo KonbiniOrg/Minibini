@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceService, InvoiceWizardService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanManageFinancials
+from apps.api.permissions import CanManageFinancials, CanManageJobs
 from .serializers import InvoiceSerializer, InvoiceLineItemSerializer
 
 
@@ -20,6 +20,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
             return [IsAuthenticated()]
+        if self.action == 'create':
+            return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
         return [IsAuthenticated(), CanManageFinancials()]
 
     # Line item mixin config

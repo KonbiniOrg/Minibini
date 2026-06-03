@@ -551,10 +551,10 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 
 The Job overview page (invoice pillar) follows a Create/View model:
 
-- **"Create Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and navigates to the new invoice detail page.
+- **"Create Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and navigates to the new invoice detail page. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only).
 - **"View Invoice"** — shown whenever any invoice exists for the job, regardless of its status.
 
-Both can appear together: for example, a job may have a sent (`open`) invoice and no draft, in which case "View Invoice" and "Create Invoice" are both shown (the "Create" would open a second draft for the new billing event). One draft per job is enforced at the DB level — a second "Create" while a draft already exists returns the existing draft rather than creating a new one.
+Both can appear together: for example, a job may have a sent (`open`) invoice and no draft, in which case "View Invoice" and "Create Invoice" are both shown (the "Create" would open a second draft for the new billing event). One draft per job is guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job` — a second "Create" while a draft already exists returns the existing draft rather than creating a new one. (The `unique_draft_invoice_per_job` partial unique constraint is declared on the model but is **not** created on MySQL, which doesn't support conditional unique constraints — Django emits `models.W036` — so the invariant rests on the service, not the DB.)
 
 There is currently no separate `InvoiceListPage.svelte` route in `frontend/src/routes/invoices/` — invoice listing happens via the job board's "unpaid" view (`/api/jobs/board/unpaid/`) and per-job filters. A standalone invoice list is "Unfinished work."
 

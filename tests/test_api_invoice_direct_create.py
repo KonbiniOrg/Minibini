@@ -41,6 +41,18 @@ class InvoiceDirectCreateAPITest(TestCase):
         self.assertEqual(first.data['invoice_id'], second.data['invoice_id'])
         self.assertEqual(Invoice.objects.filter(job=self.billable_job).count(), 1)
 
+    def test_direct_create_allowed_for_can_manage_jobs_only(self):
+        from rest_framework.test import APIClient
+        jobs_user = User.objects.create_user(username='jobsonly', password='pw')
+        jobs_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_jobs')
+        )
+        client = APIClient()
+        client.force_authenticate(user=jobs_user)
+        resp = client.post('/api/invoices/', {'job': self.billable_job.pk}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['status'], Invoice.STATUS_DRAFT)
+
     def test_direct_create_rejected_for_non_billable_job(self):
         draft_job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002',
