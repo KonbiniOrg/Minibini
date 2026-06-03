@@ -139,9 +139,6 @@
     <a href={`/jobs/${invoice.job}`} use:link class="back-link">&laquo; back to overview</a>
     <span class="page-title">Invoice: {invoice.invoice_number}</span>
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
-    {#if invoice.status === 'draft' && canEditInvoice}
-      <a href={`/invoices/${invoice.invoice_id}/wizard`} use:link>Continue in wizard</a>
-    {/if}
     {#if canEditInvoice}
       <a class="action-link" href="#/invoices/{invoice.invoice_id}/send">
         {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
