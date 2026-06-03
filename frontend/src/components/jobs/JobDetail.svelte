@@ -211,7 +211,7 @@
 
   // Worksheet versions, sorted newest first
   let worksheetList = $derived(
-    [...(worksheets?.results || [])].sort((a, b) => b.version - a.version)
+    [...(worksheets?.results || [])].sort((a, b) => b.est_worksheet_id - a.est_worksheet_id)
   );
   // Latest worksheet (highest version)
   let currentWorksheet = $derived(worksheetList[0] || null);
@@ -537,8 +537,7 @@
       <div class="top-bar top-bar-ws">
         <span class="top-bar-title">
           WORKSHEET
-          {#if displayedWorksheet} · v{displayedWorksheet.version} · {displayedWorksheet.status}{:else} · None{/if}
-          {#if worksheetList.length > 1} · {worksheetList.length} versions{/if}
+          {#if !displayedWorksheet} · None{/if}
         </span>
         <span class="top-bar-actions">
           {#if displayedWorksheet}
@@ -549,20 +548,6 @@
           {/if}
         </span>
       </div>
-      {#if worksheetList.length > 1}
-        <div class="ws-tabs">
-          {#each worksheetList as ws}
-            <button
-              type="button"
-              class="ws-tab"
-              class:active={ws.est_worksheet_id === (displayedWorksheet?.est_worksheet_id)}
-              onclick={() => { selectedWorksheetId = ws.est_worksheet_id; }}
-            >
-              v{ws.version} <span class="ws-tab-status">({ws.status})</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
       <div class="body">
         {#if displayedWorksheet}
           {@const wsTasks = (displayedWorksheet.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))}

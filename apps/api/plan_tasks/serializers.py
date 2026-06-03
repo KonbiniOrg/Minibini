@@ -88,10 +88,12 @@ class PlanTaskDetailSerializer(serializers.ModelSerializer):
             return None
 
     def get_est_worksheet(self, obj):
+        from apps.estimates.services import WorksheetService
         ws = obj.est_worksheet
         job = ws.job
         return {
             'est_worksheet_id': ws.pk,
+            'editable': WorksheetService.is_editable(ws),
             'job': {
                 'id': job.pk,
                 'job_number': job.job_number,
