@@ -662,7 +662,7 @@ Permissions: read is `IsAuthenticated`; write actions require
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
 | `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Return to estimate detail) |
 | `CatalogPicker.svelte` | `frontend/src/components/` | Unified search over `TaskTemplate` + `PriceListItem` + Manual; shared by worksheet/job atom-add and direct-estimate line-item add |
-| `EstimateLineItemModal.svelte` | `frontend/src/components/` | Modal for direct (no-atom) line item create/edit on the Estimate detail page |
+| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit; used by both the Estimate and Invoice detail pages. Manual/catalog toggle on add; field-edit only on edit (see §11.3) |
 
 The invoice-side wizard is structurally parallel — same source pool,
 add-atoms, remove-atoms, in-sync rule. Components are partially
@@ -800,33 +800,79 @@ Route: `#/estimates/:id` → `EstimateDetailPage.svelte`
 
 Top-down:
 
-1. **JobHeader** — same component used on the Job detail page.
+1. **JobHeader** — same component used on the Job detail page, and
+   shared with the atom-pull (wizard) page.
 2. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
    buttons.
-3. **Field table** — estimate number, job link, worksheet link
-   (if any), version, status, dates.
-4. **Line items table** (`LineItemTable.svelte`) — line items with
+3. **Field table** — estimate number, job link, worksheet link (a link
+   to the worksheet detail page at `#/worksheets/{id}`, or "None" if no
+   worksheet is attached), version, status, dates.
+4. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
+   an actions row containing an "Add Line Item" button and, if a worksheet
+   is attached, a **"Show Worksheet"** link that navigates to the atom-pull
+   (wizard) page at `#/estimates/{id}/wizard`.
+5. **Line items table** (`LineItemTable.svelte`) — line items with
    per-row Edit / move-up / move-down / Delete affordances when the
    estimate is editable (`isDraft` and `can_manage_jobs`).
-5. **EstimateLineItemModal** — direct (no-atom) line item create/edit.
+6. **LineItemModal** — shared modal for direct (no-atom) line item
+   create/edit (see §11.3).
 
 ### 11.2 Action buttons
 
 | Status | Button | Handler |
 |---|---|---|
-| `draft` | "Send Estimate" | disabled stub (PDF + email not implemented) |
-| `draft` | "Mark as Sent" | `POST /api/estimates/{id}/mark-open/` |
-| `draft` | "Add Line Item" | opens `EstimateLineItemModal` |
-| `draft` (with worksheet) | "Open atoms wizard" | navigates to `#/estimates/{id}/wizard` |
+| `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
+| `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
+| `draft` | "Add Line Item" | opens `LineItemModal` |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
 Editing rules: `canEdit = canManageJobs && status === 'draft'`.
 
+### 11.3 Line item add/edit — manual and catalog
+
+`LineItemModal.svelte` (`frontend/src/components/`) is a shared modal
+used by both the estimate and invoice detail pages.
+
+**When adding** a line item on a draft estimate, the modal offers a
+toggle between **manual entry** and **"From Price List"** (catalog
+mode). In catalog mode, the user picks a `PriceListItem`; the form
+POSTs `{price_list_item, qty}` to the line-items endpoint and the
+server copies `description`, `units`, `selling_price`, and
+`accounting_category` from the PLI into the new `EstimateLineItem`.
+The catalog row stores `price_list_item` on the line item for carry-over
+(see §9.1 Phase B).
+
+**When editing** an existing line item, the toggle is absent — the
+modal edits the line's own fields only (description, qty, units,
+price, accounting_category).
+
+TaskTemplate-based catalog adds are not wired on the estimate detail
+page (PLI only). Template-driven atoms are added through the
+worksheet/wizard path.
+
 The legacy HTML view at `/estimates/` still exists in
 `apps/estimates/views.py` but is deprecated.
+
+### 11.4 Job overview — Create/View model
+
+The Job overview page (job detail, estimate pillar) follows a
+Create/View model:
+
+- **"Create Estimate"** — shown only when the job's status is `draft`
+  or `submitted` **and** no non-superseded estimate exists yet. POSTs
+  `{job}` to `/api/estimates/` (→ `EstimateService.create_for_job`,
+  always a new draft) and navigates to the new estimate detail page.
+  The UI enforces one active estimate tree per job; the backend permits
+  multiple estimates, but the button disappears once any live estimate
+  exists.
+- **"View Full Estimate"** (or equivalent) — shown whenever a
+  non-superseded estimate exists, regardless of job status. Can appear
+  alongside "Create Estimate" if the button hasn't been suppressed by
+  the rules above, but in practice only one state is active at a time:
+  once an estimate exists, the Create button no longer renders.
 
 ---
 
