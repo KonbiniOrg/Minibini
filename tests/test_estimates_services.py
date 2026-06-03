@@ -265,6 +265,47 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         with self.assertRaises(ValidationError):
             EstimateService.revise_estimate(est.pk)
 
+    def test_revise_moves_line_item_sources(self):
+        """Worksheet sources MOVE to the revision's copied line items — not
+        copied (the unique_together on the atom forbids two claims) and not
+        dropped. The atom stays claimed exactly once; the superseded parent's
+        line loses the claim."""
+        from apps.estimates.models import EstWorksheet, EstimateLineItemSource
+        from apps.jobs.models import PlanTask
+        ws = EstWorksheet.objects.create(job=self.job)
+        plan_task = PlanTask.objects.create(
+            est_worksheet=ws, name='Mill', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        )
+        est = EstimateService.create_for_job(self.job.pk)
+        li = EstimateLineItem.objects.create(
+            estimate=est, description='Mill', line_number=1,
+            qty=Decimal('2.00'), price=Decimal('50.00'), accounting_category=self.lit,
+        )
+        src = EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=plan_task.pk,
+        )
+        EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
+
+        new_est = EstimateService.revise_estimate(est.pk)
+
+        # The source row moved onto the revision's copied line item.
+        src.refresh_from_db()
+        new_li = EstimateLineItem.objects.get(estimate=new_est)
+        self.assertEqual(src.estimate_line_item_id, new_li.line_item_id)
+        # Parent's line item still exists (frozen) but no longer holds the claim.
+        old_li = EstimateLineItem.objects.get(estimate=est)
+        self.assertEqual(old_li.sources.count(), 0)
+        # Exactly one claim on the atom (unique_together still satisfied).
+        self.assertEqual(
+            EstimateLineItemSource.objects.filter(
+                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+                source_pk=plan_task.pk,
+            ).count(),
+            1,
+        )
+
 
 class EstimateServiceAddLineItemTest(EstimatesTestBase):
     """Tests for EstimateService.add_line_item and add_line_item_from_pli."""

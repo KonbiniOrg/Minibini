@@ -138,18 +138,25 @@ class EstimateService:
             parent=parent,
         )
 
-        # Copy line items (source rows are NOT carried forward; the new revision
-        # gets fresh atoms via worksheet revision or manual adds)
+        # Copy line items, MOVING each line's source rows (atom claims) onto the
+        # revision so it stays worksheet-backed and the atom remains claimed
+        # exactly once. (Copying the rows would violate EstimateLineItemSource's
+        # unique_together on the atom.) source_template is copied too so a
+        # catalog-backed line keeps its origin for carry-over.
         for li in EstimateLineItem.objects.filter(estimate=parent):
-            EstimateLineItem.objects.create(
+            new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
                 price_list_item=li.price_list_item,
+                source_template=li.source_template,
                 qty=li.qty,
                 units=li.units,
                 description=li.description,
                 price=li.price,
                 accounting_category=li.accounting_category,
             )
+            for src in li.sources.all():
+                src.estimate_line_item = new_li
+                src.save()
 
         # Supersede parent
         parent.status = Estimate.STATUS_SUPERSEDED
