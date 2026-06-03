@@ -307,3 +307,19 @@ proper issue.
   `2026-06-02-direct-create-and-catalog-line-items.md` plan) so the navigation feels seamless.
   _Done when:_ the detail page can switch between the line-item view and the atom-pull view
   without a route change, and the standalone wizard routes are retired.
+
+- **Audit frontend ↔ backend permission gating for parity.** — _added 2026-06-02_
+  The SPA frequently shows an action whose gate doesn't match the backend permission its
+  endpoint requires, so the user sees a button that then 403s (or, less often, a button is
+  hidden from someone the backend would allow). Known example: `InvoiceDetailPage.svelte`'s
+  "Send/Resend Invoice" link is gated on `canEditInvoice` (`can_manage_jobs` **or**
+  `can_manage_financials`), but the invoice `send` action requires `can_manage_financials`
+  only — a jobs-only user sees a Send button that 403s. (The "Continue in wizard" link had the
+  same mismatch and was removed.) This is a broad, recurring pattern, not a one-off — do a
+  systematic pass: for each gated action in the SPA, confirm the frontend visibility condition
+  matches the atom enforced by the corresponding viewset/`get_permissions` (atoms:
+  `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_manage_config`; see
+  `docs/designs/users-and-permissions.md` §3 for the endpoint-to-atom table). Prefer a small
+  shared permission helper/derived per atom so gates are consistent rather than ad-hoc per page.
+  _Done when:_ no SPA action is shown to a user the backend would reject (and none is hidden
+  from a user the backend would allow), verified against the endpoint-to-atom mapping.
