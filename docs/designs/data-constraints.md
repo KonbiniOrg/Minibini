@@ -35,9 +35,12 @@ Key-value store. No FK dependencies.
 
 Required keys for document numbering (each entity type needs both):
 - `job_number_sequence` / `job_counter`
-- `estimate_number_sequence` / `estimate_counter`
 - `invoice_number_sequence` / `invoice_counter`
 - `po_number_sequence` / `po_counter`
+- `estimate_number_sequence` / `estimate_counter` — **no longer used for
+  estimate numbering** (estimate numbers now derive from the job number:
+  `{job_number}-{version}`). The keys remain only for the generic
+  `NumberGenerationService` and may be retired.
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
@@ -381,41 +384,29 @@ guard on `in_progress → work_complete`.
 
 ### 1.9 EstWorksheet
 
-Depends on: Job, (optionally) Estimate, WorkTemplate.
+Depends on: Job.
 
-#### Status machine
-
-No explicit transition validation in `clean()`. Status is driven by Estimate
-status changes (see implied state and §2.4).
-
-Statuses: `draft`, `final`, `superseded`.
+**One mutable worksheet per job.** The worksheet is decoupled from the
+estimate — no FK to it, no status/version/parent. It relates to the estimate
+only through the shared `job` (one estimate tree per job).
 
 #### Fields
 
 - **job** (required FK → Job)
-- **estimate** (optional FK → Estimate, SET_NULL): if set, the worksheet was
-  used to generate that estimate
-- **version**: integer, default 1. Must be unique per job when combined with
-  parent chain.
-- **parent** (optional FK → self, SET_NULL): if set, parent must belong to the
-  same Job and have a lower version number. Parent should be in `superseded`
-  status.
 - **created_date**: set on creation
+
+(There is no `status`, `version`, `parent`, or `estimate` field.)
 
 #### Implied state from other models
 
-- If **estimate** is set and estimate status is `draft` → worksheet status
-  is `draft` (worksheet and estimate are edited together until the
-  estimate is sent — see open question in `estimates-and-prices.md`)
-- If **estimate** is set and estimate status is `open`, `accepted`, or
-  `rejected` → worksheet status must be `final`
-- If **estimate** is set and estimate status is `superseded` → worksheet
-  status must be `superseded`
-- If **estimate** is null → worksheet status is `draft` (no estimate
-  generated yet)
-- Worksheet's **job** must match its linked estimate's **job** (if estimate is
-  set)
-- Worksheet's `parent.job` must equal its own `job`
+- The worksheet has no stored status. Its **editability is derived** from the
+  job's live estimate (`WorksheetService.is_editable`): editable while the
+  job's latest non-superseded estimate is `draft` (or the job has no
+  estimate); **frozen** once an estimate is sent (`open`) and through accept.
+  Revising a sent estimate yields a new draft, which unlocks it again.
+- A worksheet cannot be deleted while one of its PlanTasks/PlanMaterials is
+  claimed by an `EstimateLineItemSource` (the estimate line items must be
+  removed first).
 
 ---
 

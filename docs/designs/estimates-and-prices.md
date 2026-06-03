@@ -10,8 +10,7 @@ pass-through. Read alongside:
   (`ServiceError` / `NotFoundError` / `SchemeSupersededError`).
 - `docs/designs/jobs-tasks-and-worksheets.md` — `Task`, `PlanTask`,
   `Job`/`EstWorksheet` containers, populate paths, signal receivers
-  (`estimate_accepted`, `estimate_status_changed_for_job`,
-  `estimate_status_changed_for_worksheet`).
+  (`estimate_accepted`, `estimate_status_changed_for_job`).
 - `docs/designs/materials-inventory-and-purchasing.md` — `Material`
   and `PlanMaterial` (the other atom family), `PriceListItem`.
 - `docs/designs/invoicing-and-expenses.md` — the parallel invoice
@@ -457,10 +456,13 @@ in `architecture-and-conventions.md` §9; it runs daily.
 
 1. Validates parent is **not** in `draft` (drafts edit in place).
 2. Creates a new `Estimate` with `parent=self`,
-   `version=self.version+1`, status `draft`, same `estimate_number`.
-3. Copies line items field-by-field. Source rows are **not** carried
-   forward — the new revision starts with no atom claims, so a fresh
-   worksheet revision (or manual adds) can wire it up.
+   `version=self.version+1`, status `draft`, and `estimate_number`
+   `{job_number}-{new_version}` (see §5.4).
+3. Copies line items field-by-field and **moves** each line's
+   `EstimateLineItemSource` rows onto the revision (reassigns the FK, not a
+   copy — the source `unique_together` forbids two claims on one atom). So a
+   revision stays worksheet-backed and the atom remains claimed exactly once;
+   a source is lost only when the user deletes that line.
 4. Marks the parent `superseded`.
 
 The `unique_together = ['estimate_number', 'version']` constraint
@@ -468,10 +470,14 @@ keeps revisions distinct.
 
 ### 5.4 Document numbering
 
-Pointer: `CLAUDE.md` "Document Numbering". `EstimateService.create_for_job`
-calls `NumberGenerationService.generate_next_number('estimate')`,
-which uses Configuration keys `estimate_number_sequence` and
-`estimate_counter`.
+One estimate tree per job, so the estimate's identity *is* the job's: the
+`estimate_number` is the **job number plus the revision** —
+`{job_number}-{version}`, including revision 1 (e.g. `JOB-2026-0001-1`,
+`-2`, …). It is set by `EstimateService.create_for_job` /
+`create_direct` / `EstimateWizardService.open_for_worksheet` at creation
+and by `revise_estimate` on each revision. The customer tracks one number
+across the conversation. (The old `estimate_number_sequence` /
+`estimate_counter` Configuration keys are no longer used for estimates.)
 
 ---
 
