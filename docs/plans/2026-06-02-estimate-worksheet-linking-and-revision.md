@@ -66,32 +66,38 @@ When making an estimate for a customer:
 
 ---
 
-## 4. Decisions locked so far
+## 4. The decided model
 
-- **Simplify.** There is "too much stuff happening" in the current supersession machinery; the redesign should reduce moving parts, not add them.
-- **One worksheet tree and one estimate tree per job** (unlike invoices, where multiple are allowed). This is the organizing constraint.
-- **Converge, don't duplicate.** Every create/link path should land on a *single linked pair* (the job's one live estimate + its one worksheet), adopting an existing half rather than minting a second. Concretely this means: Create Estimate adopts an orphan worksheet; Create Worksheet adopts the orphan draft estimate; the worksheet's generate-estimate adopts the job's existing draft estimate instead of creating a new one. (Agreed in principle; this is the "auto-link on create" the operator green-lit. It now lives in this redesign's scope, not the current branch.)
-- **A worksheet does NOT automatically follow to a new estimate revision.** Revising an estimate should not silently drag the worksheet onto the new version. (How exactly the worksheet *should* behave on estimate revision is still open — see §5.)
+The shape is settled. Estimate and worksheet are **decoupled** — no direct relationship — and find each other only through the shared **Job**. The worksheet has no lifecycle of its own; everything about it is derived from the job's estimate.
+
+**Structure:**
+- **Drop `EstWorksheet.estimate`** (the FK) entirely. A worksheet relates to a job; an estimate relates to a job; that's the only structural tie. ("Does this estimate have a worksheet?" becomes "does the job have a worksheet?"; "is this line worksheet-backed?" stays answerable via its `EstimateLineItemSource`.)
+- **One worksheet per job, mutable. Drop the worksheet `parent`/`version` chain** and `create_new_version`. No worksheet history as a first-class thing — the `HistoryEntry` audit trail covers "what did the plan look like before," and no operator scenario needs to pull up a prior worksheet *version* as an object.
+- **Drop `EstWorksheet.status` entirely** — no `draft`/`final`/`superseded` on the worksheet.
+- **Delete the `estimate_status_changed_for_worksheet` signal and `_get_worksheet_status`** — there is no worksheet status to drive.
+- **One estimate tree per job** (unlike invoices, which allow many). Estimates keep their `parent`/`version` chain — sent estimates are customer-facing documents with real external history.
+
+**Worksheet editability (derived, not stored):** the worksheet is editable **iff the job's live estimate is a draft, or the job has no estimate yet.** Sent / accepted / rejected / expired / superseded → frozen. **Freeze on send.** Revising any non-draft estimate produces a fresh draft, so **revise is always the unlock** — freezing is never a dead end. Rationale: no real-world case requires editing the plan while a quote is out with the customer (speculative prep belongs on the Job post-accept; cost drift or errors are a re-quote → revise, or an offline phone call), and freezing guarantees the worksheet that backs a sent quote stays stable, so carry-over on accept matches what was sent.
+
+**Revision keeps its sources.** `revise_estimate` copies the `EstimateLineItemSource` rows along with the line items, so a revised estimate stays worksheet-backed (the wizard still shows those atoms as claimed; the line still knows its origin). A source is lost **only** when the user deletes that line in the revision. (Change from today, which discards sources on revise.)
+
+**Carry-over stays worksheet-driven.** On accept, `carry_over_for_estimate` finds **the job's single worksheet** (by `job`, not the old FK) and carries its PlanTasks/PlanMaterials onto the Job, plus the estimate's direct line items (catalog/manual with template or PLI refs). It is explicitly a *starting point*: the **`accepted` job state is the prep buffer** — it exists so the shop can reconcile the prepped work before flipping to `in_progress`. The estimate's dollars are the customer agreement; the worksheet is the work plan; they need not be identical.
+
+**Converge, don't duplicate.** Every create/link path lands on the job's single estimate tree + single worksheet, adopting an existing piece rather than minting a second. In particular, `open_for_worksheet` (the worksheet's "generate estimate"/"Open estimate") must **adopt the job's live draft estimate** when one exists, and only create when none does — never mint a second estimate.
+
+**"Not the one to use" = revise.** The big-change workflow (§3.2) needs no new status: revising the estimate supersedes the old version (that's "not the one") and produces a draft, which unlocks the worksheet so the operator reworks the plan and re-pulls. Resolved.
 
 ---
 
-## 5. Open questions (resume here, piece by piece)
+## 5. Open questions (resume here)
 
-1. **On estimate revision, what happens to the worksheet?** Three honest options, none chosen yet:
-   - leave the worksheet **alive but unlinked** (a free worksheet you can re-attach),
-   - **supersede** it (today's behavior — worksheet dies with the estimate version),
-   - **auto-revise** the worksheet in lockstep (new worksheet draft, linked to the new estimate draft).
-   The operator: *"I don't know."* Leaning toward: small changes → revise the estimate alone (worksheet untouched/irrelevant); big changes → revise the *worksheet* first and mark the old estimate "not the one."
+1. **Button gating on the job overview.** Under the Create/View model from `feature/direct-create-line-items`: when is **Create Worksheet** shown vs. hidden (hide once the job has a worksheet?), and how do Create Estimate / Create Worksheet / the worksheet's "generate estimate" coexist so the operator is never offered an action that creates a duplicate or an orphan? Also: does the estimate page's **"Show Worksheet"** simply key off "job has a worksheet," and what does it do when the worksheet is frozen (view-only)?
 
-2. **How do we represent "this estimate is not the one to use" without it being `superseded`-by-a-newer-version?** The current `superseded` status is produced *by* creating a newer version in the same chain. The workflow in §3.2 wants to retire an estimate while reworking the worksheet — possibly *before* the replacement estimate exists. Do we need a new status / an explicit "shelve" action, or does revising-the-worksheet-then-the-estimate produce the right states naturally?
+2. **Migration.** Existing data carries `EstWorksheet.estimate`, worksheet `status`, and worksheet `version`/`parent` chains. Need a migration story: drop the columns; collapse any existing multi-version worksheet chains to a single worksheet per job (which version wins?); and confirm nothing else reads the dropped fields (`mark_open`'s worksheet-finalize step, `open_for_worksheet`, the serializer's `get_worksheet`, the signal, tests).
 
-3. **Do we keep worksheet version history at all?** Option: collapse to a **single mutable worksheet per job**, drop the worksheet `parent`/`version` chain, and rely on `HistoryEntry` for "what did the plan look like before." Trade-off: simpler model + simpler linkage vs. losing easy point-in-time worksheet snapshots. (Estimates likely still need their version chain because sent estimates are customer-facing documents.)
+3. **Does the worksheet need *any* persisted flag?** Editability is derived, but confirm there's no case that needs a stored bit (e.g. an explicitly "archived" worksheet on a dead job). Default assumption: no — fully derived.
 
-4. **`open_for_worksheet` under one-tree.** It must stop minting a second estimate when the job already has a draft. Redefine it to adopt the job's live draft estimate (link the worksheet to it) and only create when none exists.
-
-5. **Button gating on the job overview given one-tree.** With the current branch's Create/View model: when is **Create Worksheet** shown vs. hidden (e.g., hide once a live worksheet exists)? How do Create Estimate / Create Worksheet / "generate estimate from worksheet" coexist so the operator is never offered an action that would create a duplicate or an orphan?
-
-6. **Status coupling simplification.** The estimate→worksheet status-driving signal (`estimate_status_changed_for_worksheet`) is part of "too much stuff." Does a single-mutable-worksheet model (Q3) let us delete it, or does the worksheet still need a status that mirrors its estimate?
+4. **Interplay with change orders.** Change orders are their own flow on an approved job; confirm this redesign doesn't disturb them (they reference `Estimate`, not the worksheet FK being dropped — verify).
 
 ---
 
