@@ -6,6 +6,7 @@
   import { user } from '../../stores/auth.js';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
+  import LineItemModal from '../../components/LineItemModal.svelte';
 
   const { params = {} } = $props();
 
@@ -21,6 +22,67 @@
     ($user?.permissions?.includes('can_manage_jobs') ?? false) ||
     ($user?.permissions?.includes('can_manage_financials') ?? false)
   );
+
+  const canManageFinancials = $derived(
+    $user?.permissions?.includes('can_manage_financials') ?? false
+  );
+  let canEditLineItems = $derived(canManageFinancials && invoice?.status === 'draft');
+  // "Show Billables" when the job has anything billable to pull from — tasks
+  // OR materials. (A job can carry materials with no tasks; Material.job is a
+  // direct FK and JobSerializer exposes both `tasks` and `materials`.) The pool
+  // may still be empty of logged actuals — that's fine, we still offer the view.
+  let hasBillables = $derived(
+    (job?.tasks?.length ?? 0) > 0 || (job?.materials?.length ?? 0) > 0
+  );
+  // Revise placeholder: visible on sent invoices, not yet functional.
+  let canSeeRevise = $derived(
+    canManageFinancials && (invoice?.status === 'open' || invoice?.status === 'partly-paid')
+  );
+
+  let modalOpen = $state(false);
+  let modalMode = $state('create');
+  let modalItem = $state(null);
+
+  let lineItems = $derived(
+    (invoice?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
+  );
+
+  function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
+  function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
+  function handleSaved() { modalOpen = false; modalItem = null; loadInvoice(); }
+
+  async function handleDeleteItem(li) {
+    if (!confirm(`Delete line item "${li.description || 'No description'}"?`)) return;
+    try {
+      await api.delete(`/api/invoices/${invoice.invoice_id}/line-items/${li.line_item_id}/`);
+      await loadInvoice();
+    } catch (e) {
+      alert(e.message || 'Could not delete line item.');
+    }
+  }
+
+  async function handleReorder(itemIds) {
+    try {
+      await api.post(`/api/invoices/${invoice.invoice_id}/line-items/reorder/`, { item_ids: itemIds });
+      await loadInvoice();
+    } catch (e) {
+      alert(e.message || 'Could not reorder line items.');
+    }
+  }
+
+  function moveUp(index) {
+    if (index === 0) return;
+    const ids = lineItems.map(li => li.line_item_id);
+    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+    handleReorder(ids);
+  }
+
+  function moveDown(index) {
+    if (index >= lineItems.length - 1) return;
+    const ids = lineItems.map(li => li.line_item_id);
+    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+    handleReorder(ids);
+  }
 
   async function loadInvoice() {
     loading = true;
@@ -85,6 +147,11 @@
         {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
       </a>
     {/if}
+    {#if canSeeRevise}
+      <button type="button" disabled title="Invoice revisions are not available yet.">
+        Revise (coming soon)
+      </button>
+    {/if}
   </div>
 
   {#if success}
@@ -111,7 +178,38 @@
   </table>
 
   <h3>Line Items</h3>
-  <LineItemTable lineItems={invoice.line_items || []} {categories} />
+  {#if canEditLineItems}
+    <p>
+      <button type="button" onclick={openAddItem}>Add Line Item</button>
+      {#if hasBillables}
+        <a href={`/invoices/${invoice.invoice_id}/wizard`} use:link>Show Billables</a>
+      {/if}
+    </p>
+  {/if}
+
+  {#snippet actionsSnippet(li, i)}
+    <button type="button" onclick={() => openEditItem(li)}>Edit</button>
+    <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
+    <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
+    <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
+  {/snippet}
+
+  <LineItemTable
+    {lineItems}
+    {categories}
+    showSource={true}
+    actions={canEditLineItems ? actionsSnippet : null}
+  />
+
+  <LineItemModal
+    open={modalOpen}
+    mode={modalMode}
+    apiBase={`/api/invoices/${invoice.invoice_id}`}
+    item={modalItem}
+    {categories}
+    onSaved={handleSaved}
+    onClose={() => { modalOpen = false; }}
+  />
 {/if}
 
 <style>
