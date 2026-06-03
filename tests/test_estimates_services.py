@@ -210,20 +210,6 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
         updated = EstimateService.mark_open(est.pk)
         self.assertEqual(updated.status, Estimate.STATUS_OPEN)
 
-    def test_mark_open_updates_worksheet(self):
-        from apps.deliverables.models import Deliverable
-        est = EstimateService.create_for_job(self.job.pk)
-        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
-        Deliverable.objects.create(
-            job=self.job, description='Widget', qty_ordered=Decimal('1'), units='ea',
-        )
-        ws = EstWorksheet.objects.create(
-            job=self.job, estimate=est, status=Job.STATUS_DRAFT,
-        )
-        EstimateService.mark_open(est.pk)
-        ws.refresh_from_db()
-        self.assertEqual(ws.status, EstWorksheet.STATUS_FINAL)
-
     def test_mark_open_non_draft_raises(self):
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
@@ -420,7 +406,6 @@ class WorksheetServiceCreateTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         self.assertIsNotNone(ws.pk)
         self.assertEqual(ws.job, self.job)
-        self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
 
     def test_create_worksheet_job_not_found(self):
         from apps.estimates.services import WorksheetService
@@ -428,59 +413,36 @@ class WorksheetServiceCreateTest(EstimatesTestBase):
             WorksheetService.create_worksheet(99999)
 
 
-class WorksheetServiceReviseTest(EstimatesTestBase):
-    """Tests for WorksheetService.revise_worksheet."""
-
-    def test_revise_worksheet(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        # Add a task to make it non-empty
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Task 1', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        new_ws = WorksheetService.revise_worksheet(ws.pk)
-        self.assertEqual(new_ws.version, 2)
-        self.assertEqual(new_ws.status, EstWorksheet.STATUS_DRAFT)
-        ws.refresh_from_db()
-        self.assertEqual(ws.status, EstWorksheet.STATUS_SUPERSEDED)
-
-    def test_revise_copies_tasks(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Task A', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Task B', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        new_ws = WorksheetService.revise_worksheet(ws.pk)
-        new_tasks = PlanTask.objects.filter(est_worksheet=new_ws)
-        self.assertEqual(new_tasks.count(), 2)
-
-
 class WorksheetServiceDeleteTest(EstimatesTestBase):
     """Tests for WorksheetService.delete_worksheet."""
 
-    def test_deletes_worksheet_with_no_estimate(self):
+    def test_deletes_worksheet_with_no_claimed_atoms(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)
         ws_pk = ws.pk
         WorksheetService.delete_worksheet(ws)
         self.assertFalse(EstWorksheet.objects.filter(pk=ws_pk).exists())
 
-    def test_refuses_when_estimate_linked(self):
+    def test_refuses_when_atom_claimed_by_estimate(self):
+        """Deletion is refused while one of the worksheet's atoms is claimed by
+        an estimate line item (so the source row isn't orphaned)."""
         from apps.estimates.services import WorksheetService, EstimateWizardService
+        from apps.estimates.models import EstimateLineItemSource
         from django.core.exceptions import ValidationError
         ws = WorksheetService.create_worksheet(self.job.pk)
-        EstimateWizardService.open_for_worksheet(ws)
-        ws.refresh_from_db()
-        self.assertIsNotNone(ws.estimate_id)
+        pt = PlanTask.objects.create(
+            est_worksheet=ws, name='Task 1', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        est = EstimateWizardService.open_for_worksheet(ws)
+        li = EstimateLineItem.objects.create(estimate=est, description='T1', price=Decimal('10'))
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=pt.pk,
+        )
         with self.assertRaises(ValidationError):
             WorksheetService.delete_worksheet(ws)
-        # Worksheet survives
         self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())
 
 
@@ -520,13 +482,14 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         self.assertEqual(task.name, 'Custom task')
         self.assertEqual(task.est_worksheet, self.ws)
 
-    def test_add_task_to_non_draft_raises(self):
-        from apps.estimates.services import WorksheetService
-        self.ws.status = EstWorksheet.STATUS_FINAL
-        self.ws.save()
+    def test_add_task_refused_when_estimate_sent(self):
+        """The worksheet freezes once the job's estimate is sent."""
+        from apps.estimates.services import WorksheetService, EstimateWizardService
+        est = EstimateWizardService.open_for_worksheet(self.ws)
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             WorksheetService.add_task_manual(
-                self.ws.pk, name='X',
+                self.ws.pk, name='X', rate_scheme_id=self.scheme.pk,
             )
 
 
@@ -573,29 +536,6 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
 
 
 # --- WorksheetService.finalize ---
-
-class WorksheetServiceFinalizeTest(EstimatesTestBase):
-    """Tests for WorksheetService.finalize."""
-
-    def test_finalize_draft_worksheet(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        updated = WorksheetService.finalize(ws.pk)
-        self.assertEqual(updated.status, EstWorksheet.STATUS_FINAL)
-
-    def test_finalize_non_draft_raises(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        ws.status = EstWorksheet.STATUS_FINAL
-        ws.save()
-        with self.assertRaises(ValidationError):
-            WorksheetService.finalize(ws.pk)
-
-    def test_finalize_not_found(self):
-        from apps.estimates.services import WorksheetService
-        with self.assertRaises(NotFoundError):
-            WorksheetService.finalize(99999)
-
 
 # --- JobService.copy_from_worksheet ---
 

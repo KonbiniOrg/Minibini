@@ -96,7 +96,7 @@ class MaterialPropagateTests(_Setup):
 
 class PlanMaterialPropagateTests(_Setup):
     def test_propagate_via_plan_material_updates_pli(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
         )

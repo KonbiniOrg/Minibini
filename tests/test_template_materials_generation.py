@@ -46,7 +46,7 @@ class WorksheetGenerationTests(_Setup):
             work_template=self.wt, price_list_item=self.pli,
             quantity=Decimal('5'),
         )
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         self.wt.generate_tasks_for_worksheet(ws)
         self.wt.generate_materials_for_worksheet(ws)
 
@@ -62,7 +62,7 @@ class WorksheetGenerationTests(_Setup):
             template_task_association=self.tta,
             quantity=Decimal('2'),
         )
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         task_pairing = self.wt.generate_tasks_for_worksheet(ws)
         self.wt.generate_materials_for_worksheet(ws, task_pairing=task_pairing)
 
@@ -81,7 +81,7 @@ class WorksheetGenerationTests(_Setup):
         self.pli.selling_price = Decimal('78.00')
         self.pli.save()
 
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         self.wt.generate_tasks_for_worksheet(ws)
         self.wt.generate_materials_for_worksheet(ws)
 
@@ -95,7 +95,7 @@ class WorksheetGenerationTests(_Setup):
             template_task_association=self.tta,
             quantity=Decimal('2'),
         )
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         task_pairing = self.wt.generate_tasks_for_worksheet(ws, quantity=3)
         self.wt.generate_materials_for_worksheet(ws, quantity=3, task_pairing=task_pairing)
 

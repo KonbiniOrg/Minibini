@@ -21,9 +21,7 @@ class CopyFromWorksheetChargeTest(TestCase):
             name='Test Job', job_number='TEST-001', status='approved',
             contact=self.contact,
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status='final',
-        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='CNC Router Copy Test',
             algorithm=RateScheme.ENTERED_QTY,

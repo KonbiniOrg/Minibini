@@ -43,18 +43,17 @@ class PipelineSubStatusTest(FixtureTestCase):
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        EstWorksheet.objects.create(job=job, estimate=estimate, status='draft')
+        EstWorksheet.objects.create(job=job)
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
-    def test_estimating_when_worksheet_final_estimate_draft(self):
+    def test_estimating_when_worksheet_present_estimate_draft(self):
         from apps.jobs.services import BoardService
         job = self._make_job()
-        estimate = Estimate.objects.create(
+        Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        ws = EstWorksheet.objects.create(job=job, estimate=estimate)
-        EstWorksheet.objects.filter(pk=ws.pk).update(status='final')
+        EstWorksheet.objects.create(job=job)
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
@@ -105,8 +104,7 @@ class PipelineSubStatusTest(FixtureTestCase):
         est = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        ws = EstWorksheet.objects.create(job=job, estimate=est)
-        EstWorksheet.objects.filter(pk=ws.pk).update(status='final')
+        EstWorksheet.objects.create(job=job)
         Estimate.objects.filter(pk=est.pk).update(status='rejected')
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'needs-scoping')
@@ -619,16 +617,14 @@ class PipelineDocDataTest(FixtureTestCase):
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        ws = EstWorksheet.objects.create(
-            job=job, estimate=estimate, status='draft'
-        )
+        EstWorksheet.objects.create(job=job)
         EstimateLineItem.objects.create(
             estimate=estimate, qty=Decimal('2'), price=Decimal('100.00'),
         )
         result = BoardService.get_pipeline_data()
         job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
         self.assertEqual(len(job_data['worksheets']), 1)
-        self.assertEqual(job_data['worksheets'][0]['status'], 'draft')
+        self.assertIsNotNone(job_data['worksheets'][0]['created_date'])
         self.assertIsNotNone(job_data['worksheets'][0]['created_date'])
 
     def test_pipeline_job_includes_estimate_with_total(self):

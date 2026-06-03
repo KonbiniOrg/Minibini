@@ -1383,7 +1383,6 @@ class BoardService:
         for ws in job.estworksheet_set.order_by('-pk'):
             worksheets.append({
                 'est_worksheet_id': ws.est_worksheet_id,
-                'status': ws.status,
                 'created_date': ws.created_date.isoformat() if ws.created_date else None,
             })
         data['worksheets'] = worksheets

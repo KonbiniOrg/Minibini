@@ -107,11 +107,10 @@ class EstWorksheetSerializer(serializers.ModelSerializer):
         model = EstWorksheet
         fields = [
             'est_worksheet_id', 'job', 'job_number', 'job_name',
-            'template', 'estimate',
-            'status', 'version', 'parent', 'created_date',
+            'template', 'created_date',
             'tasks', 'taskless_materials',
         ]
-        read_only_fields = ['est_worksheet_id', 'created_date', 'status']
+        read_only_fields = ['est_worksheet_id', 'created_date']
 
     def get_taskless_materials(self, obj):
         materials = PlanMaterial.objects.filter(

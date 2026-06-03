@@ -92,7 +92,6 @@ class PlanTaskDetailSerializer(serializers.ModelSerializer):
         job = ws.job
         return {
             'est_worksheet_id': ws.pk,
-            'status': ws.status,
             'job': {
                 'id': job.pk,
                 'job_number': job.job_number,

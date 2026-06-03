@@ -368,9 +368,14 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_add_from_template_non_draft_worksheet(self):
-        self.worksheet.status = EstWorksheet.STATUS_FINAL
-        self.worksheet.save()
+    def test_add_from_template_refused_when_estimate_sent(self):
+        """The worksheet freezes once the job's estimate is sent."""
+        from apps.estimates.models import Estimate
+        est = Estimate.objects.create(
+            job=self.worksheet.job, estimate_number='EST-FROZE-1',
+            status=Estimate.STATUS_DRAFT,
+        )
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
             {'task_template_id': self.task_template.pk, 'est_qty': '1.00'},
