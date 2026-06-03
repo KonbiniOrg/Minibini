@@ -283,3 +283,27 @@ proper issue.
   no manager UI to create/edit an arbitrary worker's shift outside this queue's modal.
   _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
   directly from the review flow.
+
+- **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
+  Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
+  finalized and bills the actuals of Task A, then Task A gets more work logged, and later
+  invoice #2 is generated for the same job, it's unclear how Task A's actuals are handled on
+  the second invoice — does it re-bill the full actual (double-billing the earlier portion),
+  bill only the delta since invoice #1, or refuse the atom as already-claimed? The atom-claim
+  model (`InvoiceLineItemSource`) tracks which invoice claimed an atom, but a Task whose
+  actuals *grew* after being billed has no defined delta-billing behavior. Decide and enforce
+  the rule (likely: bill the unbilled delta, tracked per source).
+  _Done when:_ generating a later invoice for a Task already partially billed produces the
+  correct (non-duplicated) amount, with a test covering the grow-after-bill case.
+
+- **Merge the source-pull ("wizard") view into the detail page as an in-place toggle.** — _added 2026-06-02_
+  The estimate/invoice detail pages link out to a separate `/…/:id/wizard` route for the
+  atom-pull view ("Show Worksheet" / "Show Billables"). That's approach (a): a rename + a
+  navigation. Approach (b) — deferred here — is to make the source-pull surface an in-place
+  *view toggle* on the detail page itself (no separate route), so the "normal" and "pull from
+  source" views share one page, one header, and one load. Bigger restructure (folds
+  `EstimateWizardPage`/`InvoiceWizardPage` into the detail components). Until then, the two
+  views' headers are kept visually matched (see the
+  `2026-06-02-direct-create-and-catalog-line-items.md` plan) so the navigation feels seamless.
+  _Done when:_ the detail page can switch between the line-item view and the atom-pull view
+  without a route change, and the standalone wizard routes are retired.
