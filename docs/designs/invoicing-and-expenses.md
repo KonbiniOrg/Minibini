@@ -62,7 +62,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 
 ### "One draft per job" — design vs. reality
 
-Enforced by a partial unique constraint on `Invoice` (`unique_draft_invoice_per_job`, partial on `status='draft'`). `InvoiceWizardService.open_for_job` also enforces this at the application level by returning the existing draft if one is found.
+Guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job`, which returns the existing draft when one is found. A `unique_draft_invoice_per_job` partial unique constraint (on `status='draft'`) is declared on `Invoice`, but it is **not** created on MySQL — which doesn't support conditional unique constraints (Django emits `models.W036`) — so the invariant rests on the service, not the DB.
 
 `InvoiceViewSet.perform_create` routes every direct `POST /api/invoices/` through `InvoiceWizardService.open_for_job` — the same service entry point used by the atom-pull wizard. This means direct invoice creation is also subject to the get-or-create semantics (returns the existing draft if one exists) and the billable-job-status guard (returns HTTP 400 if the job's status is not in `BILLABLE_JOB_STATUSES`). There is no separate creation path that bypasses the service.
 
