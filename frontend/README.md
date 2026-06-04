@@ -52,6 +52,38 @@ npx vite build
 
 Output goes to `frontend/dist/`. In production, nginx serves these files directly.
 
+## Front-end testing
+
+Component and unit tests use [Vitest](https://vitest.dev/) with
+[@testing-library/svelte](https://testing-library.com/docs/svelte-testing-library/intro/).
+
+### Setup
+
+The test tooling is declared in `package.json` as devDependencies, so a normal
+install picks it up — no separate install step:
+
+```bash
+npm install
+```
+
+### Running tests
+
+```bash
+npm test         # watch mode — re-runs on change; use this during development
+npm run test:run # one-shot run — use for CI / a quick full pass
+```
+
+### Where tests live
+
+All tests live under `frontend/tests/`, mirroring the `src/` tree:
+
+- `tests/lib/<name>.test.js`        — pure module / function tests
+- `tests/components/<Name>.test.js` — Svelte component tests
+
+Import source with the `@` alias (e.g. `import { linkify } from '@/lib/linkify.js'`).
+Config lives in `vitest.config.js`, separate from `vite.config.js` so the
+production build is unaffected.
+
 ## Design Decisions
 
 ### API Responses
