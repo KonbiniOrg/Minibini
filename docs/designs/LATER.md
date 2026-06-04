@@ -371,12 +371,6 @@ proper issue.
   confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
   whether on the detail page or in the wizard.
 
-- **Revising an estimate doesn't move the Job out of `submitted` — workflow needs thought.** — _added 2026-06-03_
-  Graduated to a spec: `docs/plans/2026-06-03-portal-request-changes.md`. A customer portal
-  "Request changes" action auto-revises the estimate and reverts the job to `draft` (no new
-  states; one new `submitted → draft` transition; a derived "Revision" board badge).
-  _Done when:_ that spec is implemented.
-
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
   its "View Full Estimate" link correctly points to the old one. Open question: should clicking
