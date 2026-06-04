@@ -130,6 +130,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 
 - **`POST /api/jobs/{id}/tasks/`** — adding a task requires `can_manage_jobs`. **`GET /api/jobs/{id}/tasks/`** is `IsAuthenticated`.
 - **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
+- **`POST /api/jobs/{id}/duplicate/`** requires `can_manage_jobs`. Duplicates the Job into a new one; body `{contact_id, path}`, returns `{job_id}` at 201.
 - **`POST /api/jobs/{id}/start-invoice-wizard/`** accepts `can_manage_jobs` OR `can_manage_financials` — either side can spawn the draft so the other side can fill it.
 - **`POST /api/jobs/{id}/notes/`**, **`POST /api/contacts/{id}/notes/`**, **`POST /api/businesses/{id}/notes/`** are `IsAuthenticated` — anyone can add a note.
 - **`POST /api/shifts/clock-in/`**, **`POST /api/shifts/clock-out/`** are `IsAuthenticated` for self. Clocking another worker (via `?user=` / body `user`) requires `can_manage_time`; an unknown user id returns 404. Clock-out also closes the worker's open bleps.

@@ -641,6 +641,160 @@ class JobService:
 
         InventoryService.create_earmarks_for_job(job)
 
+    @staticmethod
+    def duplicate_job(source_job, *, contact, path):
+        """Copy `source_job` into a new Job. `path` is 'approved' or 'estimate'.
+        Work is always sourced from the source Job's execution Tasks/Materials.
+        Returns the new (refreshed) Job."""
+        if path not in ('approved', 'estimate'):
+            raise ValidationError(
+                f"Invalid path '{path}'; expected 'approved' or 'estimate'.")
+        with transaction.atomic():
+            new_job = JobService.create_job(
+                name=source_job.name,
+                description=source_job.description,
+                contact=contact,
+            )
+            JobService._copy_deliverables(source_job, new_job)
+            if path == 'approved':
+                JobService._copy_work_to_job(source_job, new_job)
+                from apps.inventory.services import InventoryService
+                InventoryService.create_earmarks_for_job(new_job)
+                JobService._advance_to_approved(new_job, source_job)
+            else:
+                JobService._copy_work_to_worksheet(source_job, new_job)
+            new_job.refresh_from_db()
+            return new_job
+
+    @staticmethod
+    def _copy_deliverables(source_job, new_job):
+        from apps.deliverables.services import DeliverableService
+        from apps.deliverables.models import Deliverable
+        for d in Deliverable.objects.filter(job=source_job).order_by('sort_order', 'pk'):
+            DeliverableService.create(
+                job_id=new_job.pk,
+                description=d.description,
+                qty_ordered=d.qty_ordered,
+                units=d.units,
+                sort_order=d.sort_order,
+            )
+
+    @staticmethod
+    def _copy_work_to_job(source_job, new_job):
+        """Outcome A: copy execution Tasks (reset, hierarchy preserved) + Materials."""
+        from apps.jobs.models import Task, copy_active_modifiers
+        from apps.inventory.models import Material
+        from apps.inventory.services import MaterialService
+
+        source_tasks = list(
+            Task.objects.filter(job=source_job).order_by('sort_order', 'pk'))
+        task_map = {}  # source task_id -> new Task
+        for task in source_tasks:
+            new_task = Task.objects.create(
+                job=new_job,
+                name=task.name,
+                description=task.description,
+                sort_order=task.sort_order,
+                est_worker_time=task.est_worker_time,
+                est_qty=task.est_qty,
+                rate_scheme=task.rate_scheme,
+                active_modifiers=copy_active_modifiers(task.active_modifiers),
+                status=Task.STATUS_PENDING,
+            )
+            task_map[task.pk] = new_task
+        # Second pass: wire parent_task hierarchy onto the new tasks.
+        for task in source_tasks:
+            if task.parent_task_id and task.parent_task_id in task_map:
+                new_task = task_map[task.pk]
+                new_task.parent_task = task_map[task.parent_task_id]
+                new_task.save()
+        # Materials (task-attached follow their remapped task; task-less stay loose).
+        for material in Material.objects.filter(job=source_job).order_by('pk'):
+            MaterialService.create_on_job(
+                job=new_job,
+                task=task_map.get(material.task_id),
+                description=material.description,
+                quantity=material.quantity,
+                units=material.units,
+                unit_cost=material.unit_cost,
+                sell_price=material.sell_price,
+                price_list_item=material.price_list_item,
+                accounting_category=material.accounting_category,
+            )
+
+    @staticmethod
+    def _advance_to_approved(new_job, source_job):
+        """Walk draft -> submitted -> approved through the service, recording a
+        HistoryEntry per hop. Mirrors apps/estimates/signals.py:96-116."""
+        from apps.core.models import HistoryEntry, User
+        system_user, _ = User.objects.get_or_create(
+            username='system',
+            defaults={'first_name': 'System', 'is_active': False},
+        )
+        action_desc = f"Duplicated from {source_job.job_number}"
+        JobService.update_status(new_job.pk, Job.STATUS_SUBMITTED)
+        HistoryEntry.objects.create(
+            entry_type='action', object_type='job', object_id=new_job.pk,
+            user=system_user,
+            changes={'status': {'old': Job.STATUS_DRAFT, 'new': Job.STATUS_SUBMITTED},
+                     '_action': action_desc},
+        )
+        JobService.update_status(new_job.pk, Job.STATUS_APPROVED)
+        HistoryEntry.objects.create(
+            entry_type='action', object_type='job', object_id=new_job.pk,
+            user=system_user,
+            changes={'status': {'old': Job.STATUS_SUBMITTED, 'new': Job.STATUS_APPROVED},
+                     '_action': action_desc},
+        )
+
+    @staticmethod
+    def _copy_work_to_worksheet(source_job, new_job):
+        """Outcome B: map execution Tasks/Materials into a fresh draft worksheet
+        as PlanTasks/PlanMaterials. PlanTask requires a non-null est_qty, so fall
+        back to actual_qty then 0.00 when the source Task has none. (PlanTask has
+        no hierarchy, so subtask nesting is flattened; sort_order is preserved.)"""
+        from decimal import Decimal
+        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import Task, PlanTask, copy_active_modifiers
+        from apps.inventory.models import Material, PlanMaterial
+
+        ws = EstWorksheet.objects.create(
+            job=new_job, status=EstWorksheet.STATUS_DRAFT, version=1,
+            parent=None, estimate=None,
+        )
+        task_map = {}  # source task_id -> new PlanTask
+        for task in Task.objects.filter(job=source_job).order_by('sort_order', 'pk'):
+            if task.est_qty is not None:
+                est_qty = task.est_qty
+            elif task.actual_qty is not None:
+                est_qty = task.actual_qty
+            else:
+                est_qty = Decimal('0.00')
+            plan_task = PlanTask.objects.create(
+                est_worksheet=ws,
+                name=task.name,
+                description=task.description,
+                sort_order=task.sort_order,
+                est_worker_time=task.est_worker_time,
+                est_qty=est_qty,
+                rate_scheme=task.rate_scheme,
+                active_modifiers=copy_active_modifiers(task.active_modifiers),
+            )
+            task_map[task.pk] = plan_task
+        for material in Material.objects.filter(job=source_job).order_by('pk'):
+            PlanMaterial.objects.create(
+                est_worksheet=ws,
+                plan_task=task_map.get(material.task_id),
+                description=material.description,
+                quantity=material.quantity,
+                units=material.units,
+                unit_cost=material.unit_cost,
+                sell_price=material.sell_price,
+                price_list_item=material.price_list_item,
+                accounting_category=material.accounting_category,
+            )
+        return ws
+
 
 class TaskService:
     """Service class for Task creation workflows."""

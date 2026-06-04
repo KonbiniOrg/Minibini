@@ -201,7 +201,7 @@ class EstimateSendTest(BaseTestCase):
         )
         response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
         self.assertEqual(response.status_code, 200)
-        expected_url = f'https://customer.nealscnc.com/estimates/{self.estimate.estimate_id}'
+        expected_url = f'https://customer.nealscnc.com/portal/?token={self.estimate.public_token}'
         self.assertIn(expected_url, response.data['body'])
 
     def test_send_defaults_object_url_defaults_to_example_com(self):
@@ -214,4 +214,4 @@ class EstimateSendTest(BaseTestCase):
         )
         response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('https://example.com/estimates/', response.data['body'])
+        self.assertIn('https://example.com/portal/?token=', response.data['body'])
