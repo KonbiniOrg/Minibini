@@ -73,11 +73,11 @@
         {/if}
       </p>
     {:else if data.status === 'expired'}
-      <p>This estimate expired{#if data.expiration_date} on {fmtDate(data.expiration_date)}{/if}. Please contact us.</p>
+      <p>This estimate expired{#if data.expiration_date}{' '}on {fmtDate(data.expiration_date)}{/if}. Please contact us.</p>
     {:else if data.status === 'rejected'}
-      <p>This estimate was declined{#if data.closed_date} on {fmtDate(data.closed_date)}{/if}.</p>
+      <p>This estimate was declined{#if data.closed_date}{' '}on {fmtDate(data.closed_date)}{/if}.</p>
     {:else if data.status === 'accepted'}
-      <p>You accepted this estimate{#if data.closed_date} on {fmtDate(data.closed_date)}{/if}. Thank you.</p>
+      <p>You accepted this estimate{#if data.closed_date}{' '}on {fmtDate(data.closed_date)}{/if}. Thank you.</p>
     {:else if data.closed_message}
       <p>{data.closed_message}</p>
     {/if}
