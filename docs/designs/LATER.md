@@ -323,3 +323,44 @@ proper issue.
   shared permission helper/derived per atom so gates are consistent rather than ad-hoc per page.
   _Done when:_ no SPA action is shown to a user the backend would reject (and none is hidden
   from a user the backend would allow), verified against the endpoint-to-atom mapping.
+
+- **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
+  Two users with the same job open: one creates the estimate, the other's Create-Estimate
+  button is still present and clickable. The backend correctly rejects the second create with
+  a note, but the stale view doesn't refresh — the dead button stays. General pattern: a page
+  showing another client's mutable state should both (a) surface the rejection cleanly and
+  (b) re-fetch so the now-invalid affordance disappears. A small live-refresh system already
+  exists for bleps/shifts; the natural move is to generalize it into one shared cross-client
+  refresh mechanism (see the "general repolling" project note) rather than bolt on per-page
+  polling. Not for this round. _Done when:_ a view that loses an action to a concurrent change
+  refreshes to hide the stale affordance, and the rejection is shown without a raw error.
+
+- **Make the Estimate and Invoice atom/source-pull UIs consistent.** — _added 2026-06-03_
+  The atom-pull ("wizard") surfaces for Estimates and Invoices look noticeably different, so a
+  user who learns one doesn't recognize the other. They should share interaction vocabulary and
+  layout so the pattern transfers. _Done when:_ the Estimate and Invoice atom-pull views present
+  the same structure and controls (differing only where the domains genuinely differ).
+
+- **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
+  Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
+  toggle), but adding one inside the wizard uses a separate inline editor (likely the same one
+  used when grouping atoms). Two different entry surfaces for "add a line item by hand" is
+  confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
+  whether on the detail page or in the wizard.
+
+- **Revising an estimate doesn't move the Job out of `submitted` — workflow needs thought.** — _added 2026-06-03_
+  When a job is in `submitted` and the shop revises the estimate, the job stays `submitted` even
+  though a fresh draft now exists. Should it revert to `draft` automatically? The hard case: the
+  customer then approves the *first* (now-superseded) estimate — the app has no signal that the
+  customer asked for a revision, so it can't safely infer intent. The shop isn't *supposed* to
+  revise without a customer request, but nothing models that. Needs a deliberate decision about
+  the revise-while-submitted workflow (and possibly an explicit "customer requested changes"
+  action) before changing behavior. _Done when:_ the revise-vs-job-status interaction is
+  specified and implemented (or explicitly decided to leave as-is, with reasoning recorded).
+
+- **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
+  In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
+  its "View Full Estimate" link correctly points to the old one. Open question: should clicking
+  the tab itself jump straight to the current live estimate instead of showing the superseded
+  one? Unsure which is less confusing. _Done when:_ the superseded-tab click behavior is decided
+  and consistent.

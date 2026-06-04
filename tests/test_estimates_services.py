@@ -507,6 +507,44 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
             )
 
 
+class WorksheetServiceIsEditableTest(EstimatesTestBase):
+    """Direct lifecycle test of WorksheetService.is_editable — the derived
+    editability boundary that the freeze-on-send / unlock-on-revise behavior
+    rests on. (add_task_refused_when_estimate_sent covers only the open path.)"""
+
+    def setUp(self):
+        super().setUp()
+        from apps.estimates.services import WorksheetService
+        self.ws = WorksheetService.create_worksheet(self.job.pk)
+
+    def test_editable_when_no_estimate(self):
+        from apps.estimates.services import WorksheetService
+        self.assertTrue(WorksheetService.is_editable(self.ws))
+
+    def test_editable_while_estimate_is_draft(self):
+        from apps.estimates.services import WorksheetService, EstimateWizardService
+        EstimateWizardService.open_for_worksheet(self.ws)  # creates a draft
+        self.assertTrue(WorksheetService.is_editable(self.ws))
+
+    def test_frozen_once_estimate_is_open(self):
+        from apps.estimates.services import WorksheetService, EstimateWizardService
+        est = EstimateWizardService.open_for_worksheet(self.ws)
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
+        self.assertFalse(WorksheetService.is_editable(self.ws))
+
+    def test_revise_unlocks_worksheet_again(self):
+        """Revising a sent estimate yields a fresh draft head, which makes the
+        worksheet editable again."""
+        from apps.estimates.services import (
+            WorksheetService, EstimateWizardService, EstimateService,
+        )
+        est = EstimateWizardService.open_for_worksheet(self.ws)
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
+        self.assertFalse(WorksheetService.is_editable(self.ws))
+        EstimateService.revise_estimate(est.pk)
+        self.assertTrue(WorksheetService.is_editable(self.ws))
+
+
 # --- WorkTemplateService.delete_association ---
 
 class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):

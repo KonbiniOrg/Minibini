@@ -241,9 +241,12 @@
     }
   }
 
-  // Delete is offered while editable; the server still refuses if any of the
-  // worksheet's atoms are claimed by an estimate line item.
-  const canDelete = $derived(canManageJobs && (worksheet?.editable ?? false));
+  // Delete is offered only when the server would actually allow it: the user can
+  // manage jobs, the worksheet is editable, and no atom is claimed by an estimate
+  // line item (`deletable` mirrors the backend delete check).
+  const canDelete = $derived(
+    canManageJobs && (worksheet?.editable ?? false) && (worksheet?.deletable ?? false)
+  );
 
   async function handleDeleteWorksheet() {
     if (!confirm('Delete this worksheet? Its plan tasks and materials will be removed.')) return;

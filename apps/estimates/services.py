@@ -578,11 +578,11 @@ class WorksheetService:
         return ws
 
     @staticmethod
-    def delete_worksheet(worksheet):
-        """Delete a worksheet. Refuses if any of its plan tasks/materials are
-        claimed by an estimate line item — those line items must be removed
-        first so their source rows don't outlive the atoms they reference.
-        """
+    def has_claimed_atoms(worksheet):
+        """True if any of the worksheet's plan tasks/materials are claimed by an
+        estimate line item source. Such a worksheet can't be deleted until those
+        line items are removed (the frontend uses this to suppress the Delete
+        button so the user never hits the 400)."""
         from django.db.models import Q
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
@@ -593,11 +593,18 @@ class WorksheetService:
         pm_ids = list(
             PlanMaterial.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
         )
-        claimed = EstimateLineItemSource.objects.filter(
+        return EstimateLineItemSource.objects.filter(
             Q(source_type=EstimateLineItemSource.SOURCE_PLAN_TASK, source_pk__in=pt_ids)
             | Q(source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL, source_pk__in=pm_ids)
         ).exists()
-        if claimed:
+
+    @staticmethod
+    def delete_worksheet(worksheet):
+        """Delete a worksheet. Refuses if any of its plan tasks/materials are
+        claimed by an estimate line item — those line items must be removed
+        first so their source rows don't outlive the atoms they reference.
+        """
+        if WorksheetService.has_claimed_atoms(worksheet):
             raise ValidationError(
                 'Cannot delete a worksheet whose tasks or materials are used by '
                 'an estimate. Remove those estimate line items first.'

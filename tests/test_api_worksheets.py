@@ -95,7 +95,18 @@ class WorksheetAPITest(BaseTestCase):
             source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
             source_pk=pt.pk,
         )
+        # The payload also reports the worksheet as non-deletable so the UI can
+        # suppress the button (rather than letting the user hit a 400).
+        payload = self.client.get(f'/api/est-worksheets/{ws.pk}/').json()
+        self.assertFalse(payload['deletable'])
+
         response = self.client.delete(f'/api/est-worksheets/{ws.pk}/')
         self.assertEqual(response.status_code, 400)
         self.assertIn('detail', response.json())
         self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())
+
+    def test_deletable_flag_true_when_no_atoms_claimed(self):
+        job = Job.objects.first()
+        ws = EstWorksheet.objects.create(job=job)
+        payload = self.client.get(f'/api/est-worksheets/{ws.pk}/').json()
+        self.assertTrue(payload['deletable'])
