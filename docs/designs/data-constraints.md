@@ -647,6 +647,16 @@ Enforced in `Estimate.clean()`.
   catalog ref for direct-estimate lines so carry-over can still create a
   Task at acceptance even with no PlanTask
 - **line_number**: auto-generated sequentially per estimate if null
+- **units** (required, max 50 chars, default `'none'`): **non-blank** —
+  `CharField` without `blank=True`, and `BaseLineItem.save()` always runs
+  `full_clean()`, so `''` is rejected (`{'units': ['This field cannot be
+  blank.']}`). A PLI-linked line backfills `units` from the PLI in
+  `_populate_from_pli()`; a freeform line must carry its own (default `'none'`).
+  This is a **BaseLineItem-wide** rule — it holds for InvoiceLineItem,
+  PurchaseOrderLineItem, BillLineItem, and ChangeOrderLineItem too. Empty-string
+  units can therefore only exist as legacy/bulk-inserted rows that bypassed
+  `save()`; the normal path can't produce them, and re-saving such a row (e.g.
+  `revise_estimate` copying line items) will raise.
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 - **accounting_category** (optional FK): null = silently tax-exempt;
   auto-populated from PLI when linked
