@@ -224,7 +224,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('patch', '/api/est-worksheets/1/', {'notes': 'test'}),
         ('delete', '/api/est-worksheets/1/', None),
         ('post', '/api/est-worksheets/1/tasks/', {'name': 'Test'}),
-        ('post', '/api/est-worksheets/1/revise/', {}),
     ]
 
     # ── Job task sub-resource + population writes (replaces WO endpoints) ──
@@ -426,8 +425,10 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
 
     def test_wrong_atom_manage_jobs_denied_invoice_writes(self):
         user = self.users['can_manage_jobs']
+        # Note: POST /api/invoices/ (create the job's draft) is intentionally
+        # allowed for can_manage_jobs — opening a draft invoice mirrors the
+        # estimate/worksheet flow. Other invoice writes remain financials-only.
         sample = [
-            ('post', '/api/invoices/', {'job': 1}),
             ('post', '/api/purchase-orders/', {'vendor': 1}),
             ('post', '/api/bills/', {'purchase_order': 1, 'vendor': 1}),
         ]

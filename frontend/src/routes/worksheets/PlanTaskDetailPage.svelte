@@ -31,7 +31,7 @@
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
-  const canEdit = $derived(canManageJobs && worksheet?.status === 'draft');
+  const canEdit = $derived(canManageJobs && (worksheet?.editable ?? false));
 
   async function loadTask() {
     loading = true;

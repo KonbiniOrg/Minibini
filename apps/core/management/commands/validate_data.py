@@ -138,9 +138,6 @@ class Command(BaseCommand):
         # Cross-model relationship invariants
         self.check_estimate_versioning()
         self.check_job_estimate_status_alignment()
-        self.check_estimate_worksheet_status_alignment()
-        self.check_worksheet_job_consistency()
-        self.check_worksheet_versioning()
         self.check_estimate_line_item_job_consistency()
         self.check_po_contact_business_match()
         self.check_bill_po_business_match()
@@ -268,11 +265,10 @@ class Command(BaseCommand):
     # ── Worksheets ────────────────────────────────────────────
 
     def check_worksheets(self):
-        from apps.estimates.models import EstWorksheet
-        valid_statuses = {s[0] for s in EstWorksheet.EST_WORKSHEET_STATUS_CHOICES}
-        for ws in EstWorksheet.objects.all():
-            if ws.status not in valid_statuses:
-                self.errors.append(f'EstWorksheet {ws.pk}: invalid status "{ws.status}"')
+        # Worksheets are decoupled from estimates and carry no status/version/
+        # parent of their own — nothing to validate here beyond the FK to a job
+        # (enforced by the schema).
+        return
 
     # ── Tasks ─────────────────────────────────────────────────
 
@@ -672,70 +668,6 @@ class Command(BaseCommand):
                         f'Estimate {e.estimate_number} v{e.version}: status is "{e.status}" '
                         f'but job {job.job_number} is "{job.status}"'
                     )
-
-    def check_estimate_worksheet_status_alignment(self):
-        """Worksheet status must be consistent with its linked estimate's status.
-
-        Generating an estimate from a worksheet locks the worksheet — once a
-        worksheet has an estimate attached, it should be 'final' (or
-        'superseded' if the estimate has been superseded), never 'draft'.
-
-        Rules:
-        - estimate superseded -> worksheet must be superseded
-        - any other estimate status (incl. draft) -> worksheet must be final
-        """
-        from apps.estimates.models import EstWorksheet
-
-        for ws in EstWorksheet.objects.select_related('estimate').filter(estimate__isnull=False):
-            if ws.estimate.status == Estimate.STATUS_SUPERSEDED:
-                if ws.status != EstWorksheet.STATUS_SUPERSEDED:
-                    self.errors.append(
-                        f'EstWorksheet {ws.pk} v{ws.version}: status is "{ws.status}" but '
-                        f'linked estimate {ws.estimate.estimate_number} is superseded '
-                        f'(worksheet should be "superseded")'
-                    )
-            else:
-                if ws.status != EstWorksheet.STATUS_FINAL:
-                    self.errors.append(
-                        f'EstWorksheet {ws.pk} v{ws.version}: status is "{ws.status}" but '
-                        f'has linked estimate {ws.estimate.estimate_number} '
-                        f'(worksheet should be "final" once an estimate is generated from it)'
-                    )
-
-    def check_worksheet_job_consistency(self):
-        """Worksheet's job must match its estimate's job (if estimate is linked)."""
-        from apps.estimates.models import EstWorksheet
-
-        for ws in EstWorksheet.objects.select_related('estimate', 'job').filter(estimate__isnull=False):
-            if ws.job_id != ws.estimate.job_id:
-                self.errors.append(
-                    f'EstWorksheet {ws.pk}: job is {ws.job_id} but '
-                    f'linked estimate {ws.estimate.estimate_number} belongs to job {ws.estimate.job_id}'
-                )
-
-    def check_worksheet_versioning(self):
-        """Worksheet version chains: parent worksheet should have lower version,
-        and superseded worksheets should have a child or be the result of
-        explicit supersession."""
-        from apps.estimates.models import EstWorksheet
-
-        for ws in EstWorksheet.objects.select_related('parent').filter(parent__isnull=False):
-            if ws.parent.version >= ws.version:
-                self.errors.append(
-                    f'EstWorksheet {ws.pk} v{ws.version}: parent is v{ws.parent.version} '
-                    f'(parent version should be lower)'
-                )
-            if ws.parent.status != EstWorksheet.STATUS_SUPERSEDED:
-                self.warnings.append(
-                    f'EstWorksheet {ws.pk} v{ws.version}: parent (pk={ws.parent.pk}) '
-                    f'status is "{ws.parent.status}" (expected "superseded")'
-                )
-            # Parent should belong to same job
-            if ws.parent.job_id != ws.job_id:
-                self.errors.append(
-                    f'EstWorksheet {ws.pk}: job is {ws.job_id} but '
-                    f'parent worksheet belongs to job {ws.parent.job_id}'
-                )
 
     def check_estimate_line_item_job_consistency(self):
         """EstimateLineItemSource rows must point at atoms (PlanTask or PlanMaterial)

@@ -48,7 +48,7 @@ class EstimateCreationWorkflowTest(TestCase):
 
         self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.job, self.job)
-        self.assertTrue(estimate.estimate_number.startswith('EST-'))
+        self.assertEqual(estimate.estimate_number, f'{self.job.job_number}-1')
 
 
 class TaskCreationWorkflowTest(TestCase):

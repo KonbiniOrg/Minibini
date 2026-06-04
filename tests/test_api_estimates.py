@@ -18,6 +18,17 @@ class EstimateAPITest(BaseTestCase):
         response = self.client.get('/api/estimates/')
         self.assertEqual(response.status_code, 200)
 
+    def test_create_rejected_when_job_already_has_estimate(self):
+        """One estimate tree per job: a second create is refused (400), not a
+        500 from the unique (job-derived) number collision."""
+        from apps.contacts.models import Contact
+        contact = Contact.objects.create(first_name='E', last_name='X', email='ex@dup.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-EST-DUP-1')
+        first = self.client.post('/api/estimates/', {'job': job.pk}, format='json')
+        self.assertIn(first.status_code, [200, 201])
+        second = self.client.post('/api/estimates/', {'job': job.pk}, format='json')
+        self.assertEqual(second.status_code, 400)
+
     def test_retrieve_estimate(self):
         estimate = Estimate.objects.first()
         response = self.client.get(f'/api/estimates/{estimate.pk}/')
@@ -188,8 +199,8 @@ class EstimateSendTest(BaseTestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_send_defaults_resolves_object_url_placeholder(self):
-        """Body templates can include {object_url} — it resolves to the
-        configured customer-facing URL for this estimate."""
+        """Body templates can include {object_url} — for an estimate it resolves
+        to the customer portal token URL (<base>/portal/?token=<token>)."""
         from apps.core.models import Configuration
         Configuration.objects.update_or_create(
             key='our_public_url',
@@ -201,7 +212,10 @@ class EstimateSendTest(BaseTestCase):
         )
         response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
         self.assertEqual(response.status_code, 200)
-        expected_url = f'https://customer.nealscnc.com/portal/?token={self.estimate.public_token}'
+        self.estimate.refresh_from_db()
+        expected_url = (
+            f'https://customer.nealscnc.com/portal/?token={self.estimate.public_token}'
+        )
         self.assertIn(expected_url, response.data['body'])
 
     def test_send_defaults_object_url_defaults_to_example_com(self):

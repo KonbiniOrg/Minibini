@@ -26,8 +26,13 @@ class AtomCarryOverService:
         tasks_created = 0
         materials_created = 0
 
-        # Phase A: walk worksheet atoms (if a worksheet exists)
-        worksheet = estimate.worksheets.first()
+        # Phase A: walk worksheet atoms (if the job has a worksheet)
+        from apps.estimates.models import EstWorksheet
+        worksheet = (
+            EstWorksheet.objects.filter(job_id=job.pk)
+            .order_by('-est_worksheet_id')
+            .first()
+        )
         if worksheet:
             tasks_created += AtomCarryOverService._carry_over_plan_tasks(worksheet, job)
             materials_created += AtomCarryOverService._carry_over_plan_materials(worksheet, job)

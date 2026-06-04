@@ -306,3 +306,81 @@ proper issue.
   no manager UI to create/edit an arbitrary worker's shift outside this queue's modal.
   _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
   directly from the review flow.
+
+- **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
+  Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
+  finalized and bills the actuals of Task A, then Task A gets more work logged, and later
+  invoice #2 is generated for the same job, it's unclear how Task A's actuals are handled on
+  the second invoice — does it re-bill the full actual (double-billing the earlier portion),
+  bill only the delta since invoice #1, or refuse the atom as already-claimed? The atom-claim
+  model (`InvoiceLineItemSource`) tracks which invoice claimed an atom, but a Task whose
+  actuals *grew* after being billed has no defined delta-billing behavior. Decide and enforce
+  the rule (likely: bill the unbilled delta, tracked per source).
+  _Done when:_ generating a later invoice for a Task already partially billed produces the
+  correct (non-duplicated) amount, with a test covering the grow-after-bill case.
+
+- **Invoice revisions — back the "Revise (coming soon)" placeholder.** — _added 2026-06-04_
+  `InvoiceDetailPage.svelte` shows a **disabled** "Revise (coming soon)" button on sent
+  invoices (`canSeeRevise`), shipped as a placeholder — there is no invoice-revision backend
+  (no `InvoiceService.revise`, no supersede/version chain like estimates have). Decide
+  whether invoices need a revise flow at all (vs. cancel + new invoice) and, if so, build the
+  backend + wire the button. _Done when:_ either the placeholder is backed by a working
+  invoice-revise flow, or it's removed with a recorded decision that invoices don't revise.
+
+- **Merge the source-pull ("wizard") view into the detail page as an in-place toggle.** — _added 2026-06-02_
+  The estimate/invoice detail pages link out to a separate `/…/:id/wizard` route for the
+  atom-pull view ("Show Worksheet" / "Show Billables"). That's approach (a): a rename + a
+  navigation. Approach (b) — deferred here — is to make the source-pull surface an in-place
+  *view toggle* on the detail page itself (no separate route), so the "normal" and "pull from
+  source" views share one page, one header, and one load. Bigger restructure (folds
+  `EstimateWizardPage`/`InvoiceWizardPage` into the detail components). Until then, the two
+  views' headers are kept visually matched so the navigation feels seamless.
+  _Done when:_ the detail page can switch between the line-item view and the atom-pull view
+  without a route change, and the standalone wizard routes are retired.
+
+- **Audit frontend ↔ backend permission gating for parity.** — _added 2026-06-02_
+  The SPA frequently shows an action whose gate doesn't match the backend permission its
+  endpoint requires, so the user sees a button that then 403s (or, less often, a button is
+  hidden from someone the backend would allow). Known example: `InvoiceDetailPage.svelte`'s
+  "Send/Resend Invoice" link is gated on `canEditInvoice` (`can_manage_jobs` **or**
+  `can_manage_financials`), but the invoice `send` action requires `can_manage_financials`
+  only — a jobs-only user sees a Send button that 403s. (The "Continue in wizard" link had the
+  same mismatch and was removed.) This is a broad, recurring pattern, not a one-off — do a
+  systematic pass: for each gated action in the SPA, confirm the frontend visibility condition
+  matches the atom enforced by the corresponding viewset/`get_permissions` (atoms:
+  `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_manage_config`; see
+  `docs/designs/users-and-permissions.md` §3 for the endpoint-to-atom table). Prefer a small
+  shared permission helper/derived per atom so gates are consistent rather than ad-hoc per page.
+  _Done when:_ no SPA action is shown to a user the backend would reject (and none is hidden
+  from a user the backend would allow), verified against the endpoint-to-atom mapping.
+
+- **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
+  Two users with the same job open: one creates the estimate, the other's Create-Estimate
+  button is still present and clickable. The backend correctly rejects the second create with
+  a note, but the stale view doesn't refresh — the dead button stays. General pattern: a page
+  showing another client's mutable state should both (a) surface the rejection cleanly and
+  (b) re-fetch so the now-invalid affordance disappears. A small live-refresh system already
+  exists for bleps/shifts; the natural move is to generalize it into one shared cross-client
+  refresh mechanism (see the "general repolling" project note) rather than bolt on per-page
+  polling. Not for this round. _Done when:_ a view that loses an action to a concurrent change
+  refreshes to hide the stale affordance, and the rejection is shown without a raw error.
+
+- **Make the Estimate and Invoice atom/source-pull UIs consistent.** — _added 2026-06-03_
+  The atom-pull ("wizard") surfaces for Estimates and Invoices look noticeably different, so a
+  user who learns one doesn't recognize the other. They should share interaction vocabulary and
+  layout so the pattern transfers. _Done when:_ the Estimate and Invoice atom-pull views present
+  the same structure and controls (differing only where the domains genuinely differ).
+
+- **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
+  Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
+  toggle), but adding one inside the wizard uses a separate inline editor (likely the same one
+  used when grouping atoms). Two different entry surfaces for "add a line item by hand" is
+  confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
+  whether on the detail page or in the wizard.
+
+- **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
+  In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
+  its "View Full Estimate" link correctly points to the old one. Open question: should clicking
+  the tab itself jump straight to the current live estimate instead of showing the superseded
+  one? Unsure which is less confusing. _Done when:_ the superseded-tab click behavior is decided
+  and consistent.

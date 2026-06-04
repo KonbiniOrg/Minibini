@@ -1,7 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
   import JobDetail from '../../components/jobs/JobDetail.svelte';
-  import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
 
@@ -42,15 +41,6 @@
     }
   }
 
-  async function startWizard() {
-    try {
-      const { invoice_id } = await api.post(`/api/jobs/${job.job_id}/start-invoice-wizard/`);
-      push(`/invoices/${invoice_id}/wizard`);
-    } catch (e) {
-      error = e.message || 'Failed to start wizard';
-    }
-  }
-
   $effect(() => {
     void params.id;
     loadJob();
@@ -80,6 +70,5 @@
     {purchaseOrders}
     {emails}
     onStatusChange={loadJob}
-    onStartWizard={startWizard}
   />
 {/if}

@@ -96,6 +96,13 @@ class EstWorksheetSerializer(serializers.ModelSerializer):
     taskless_materials = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
+    # Derived: editable while the job's live estimate is draft/absent, frozen
+    # once it's sent (see WorksheetService.is_editable).
+    editable = serializers.SerializerMethodField()
+    # Derived: deletable unless an atom is claimed by an estimate line item —
+    # mirrors WorksheetService.delete_worksheet so the UI can suppress the
+    # Delete button instead of letting the user hit a 400.
+    deletable = serializers.SerializerMethodField()
     # Write-only: lets the create endpoint accept a WorkTemplate id to populate
     # tasks/materials from at create time. Not stored on the worksheet.
     template = serializers.PrimaryKeyRelatedField(
@@ -107,11 +114,18 @@ class EstWorksheetSerializer(serializers.ModelSerializer):
         model = EstWorksheet
         fields = [
             'est_worksheet_id', 'job', 'job_number', 'job_name',
-            'template', 'estimate',
-            'status', 'version', 'parent', 'created_date',
+            'template', 'created_date', 'editable', 'deletable',
             'tasks', 'taskless_materials',
         ]
-        read_only_fields = ['est_worksheet_id', 'created_date', 'status']
+        read_only_fields = ['est_worksheet_id', 'created_date']
+
+    def get_editable(self, obj):
+        from apps.estimates.services import WorksheetService
+        return WorksheetService.is_editable(obj)
+
+    def get_deletable(self, obj):
+        from apps.estimates.services import WorksheetService
+        return not WorksheetService.has_claimed_atoms(obj)
 
     def get_taskless_materials(self, obj):
         materials = PlanMaterial.objects.filter(

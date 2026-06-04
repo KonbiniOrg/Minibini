@@ -70,7 +70,7 @@ class FreeformMaterialRequiresCategoryTests(_Setup):
 
 class FreeformPlanMaterialRequiresCategoryTests(_Setup):
     def test_post_freeform_plan_material_without_category_fails(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         resp = self.client.post(
             f'/api/est-worksheets/{ws.pk}/plan-materials/',
             {'description': 'x', 'quantity': '1'},

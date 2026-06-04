@@ -758,10 +758,7 @@ class JobService:
         from apps.jobs.models import Task, PlanTask, copy_active_modifiers
         from apps.inventory.models import Material, PlanMaterial
 
-        ws = EstWorksheet.objects.create(
-            job=new_job, status=EstWorksheet.STATUS_DRAFT, version=1,
-            parent=None, estimate=None,
-        )
+        ws = EstWorksheet.objects.create(job=new_job)
         task_map = {}  # source task_id -> new PlanTask
         for task in Task.objects.filter(job=source_job).order_by('sort_order', 'pk'):
             if task.est_qty is not None:
@@ -1537,7 +1534,6 @@ class BoardService:
         for ws in job.estworksheet_set.order_by('-pk'):
             worksheets.append({
                 'est_worksheet_id': ws.est_worksheet_id,
-                'status': ws.status,
                 'created_date': ws.created_date.isoformat() if ws.created_date else None,
             })
         data['worksheets'] = worksheets
@@ -1555,6 +1551,7 @@ class BoardService:
                 'total': total,
             })
         data['estimates'] = estimates
+        data['is_revision'] = BoardService.is_revision(job)
         return data
 
     @staticmethod
@@ -1671,6 +1668,18 @@ class BoardService:
             'initials': initials,
             'name': short_name,
         }
+
+    @staticmethod
+    def is_revision(job):
+        """True when the job's live (non-superseded) estimate is a draft revision
+        (version > 1) — a re-quote in progress, e.g. after a customer change
+        request. Drives the 'Revision' board badge."""
+        from apps.estimates.models import Estimate
+        live = (job.estimate_set
+                .exclude(status=Estimate.STATUS_SUPERSEDED)
+                .order_by('-version', '-pk')
+                .first())
+        return bool(live and live.status == Estimate.STATUS_DRAFT and live.version > 1)
 
     @staticmethod
     def compute_sub_status(job):
