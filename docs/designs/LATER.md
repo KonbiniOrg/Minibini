@@ -21,6 +21,26 @@ proper issue.
 
 ## Open
 
+- **`EstWorksheet.create_new_version` loses fields when cloning PlanTasks/PlanMaterials.** — _added 2026-06-01_
+  Noticed while building job-duplication's worksheet copy (`JobService._copy_work_to_worksheet`,
+  which copies these correctly). When revising a worksheet, `create_new_version`
+  (`apps/estimates/models.py`) copies PlanTasks **without** `sort_order` or `est_worker_time`,
+  and PlanMaterials **without** `units`. It also only walks each PlanTask's `plan_materials`,
+  so any **task-less** PlanMaterial on the worksheet is silently dropped from the new version.
+  Result: a revised worksheet can lose task ordering, scheduling durations, material units, and
+  loose materials. _Done when:_ `create_new_version` carries `sort_order` + `est_worker_time`
+  on PlanTasks, `units` on PlanMaterials, and includes task-less PlanMaterials.
+
+- **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
+  The job-duplicate "immediately approved" path produces a Job with **no estimate** —
+  deliverables, tasks, materials only. `DeliverableService.is_editable` keys on estimate /
+  CO state, so a no-estimate job's deliverables stay **editable in any status**, tightening
+  only as rows **anchor** (gain a `ShipmentItem`). Accepted for now, but we may want a
+  harder freeze point for no-estimate jobs (e.g. freeze on `in_progress`, or on first
+  shipment regardless of which row) so the agreed scope can't drift indefinitely. Revisit
+  if loose-forever deliverables on a duplicated approved job cause trouble in practice.
+  _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
+  freeze and either added one or recorded why anchoring alone is sufficient.
 - **Audit Configuration keys for settings-UI coverage.** — _added 2026-05-31_
   Some Configuration keys have no user-facing editor — `our_public_url` had none until
   the Business tab was added, and others likely lack UI too. Review every key the
@@ -152,6 +172,9 @@ proper issue.
   (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
   human-meaningful lifecycle date per entity (decide which per entity at that time),
   whichever is cheaper than scrolling a long `<select>`.
+  - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
+    `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
+    with prefill-by-id — the shape these capped pickers should move to.
 
 - **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
   We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on

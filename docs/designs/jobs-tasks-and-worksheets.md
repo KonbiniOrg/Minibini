@@ -234,6 +234,91 @@ Job numbers are auto-generated in `JobService.create_job` via
 `NumberGenerationService.generate_next_number('job')`. See `CLAUDE.md`
 for the pattern/counter mechanism.
 
+### 3.6 Job duplication
+
+A Job can be duplicated into a brand-new Job via the "Duplicate…" link
+in the SPA Job detail header (gated on `can_manage_jobs`). The link
+navigates to an intermediate page (`#/jobs/:id/duplicate`,
+`DuplicateJobPage.svelte`) where the user chooses a **Customer**
+(pre-filled from the source job's contact, editable) and a **path**
+(`approved` or `estimate`), then submits.
+
+The Customer field is a searchable picker (`ContactPicker.svelte`), not a
+dropdown — the contacts table is large, so it queries
+`/api/contacts/?search=` (which matches first/last name, business name,
+email, or phone) rather than listing every contact. It pre-fills the
+source job's contact and offers a Cancel-able "Change" action.
+
+**API:** `POST /api/jobs/{id}/duplicate/` — body `{contact_id, path}` —
+returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
+
+`JobService.duplicate_job(source_job, *, contact, path)` in
+`apps/jobs/services.py` runs the entire operation inside one
+`transaction.atomic()`.
+
+#### Always-copied fields (both paths)
+
+- **Job metadata**: `name`, `description`, the chosen `contact`.
+- **Fresh values**: a new `job_number` (via `NumberGenerationService`),
+  a new `created_date`, a fresh `accent_color` (least-used from the fixed
+  palette, via `_pick_least_used_accent_color`).
+- **Not copied**: `customer_po_number`, `due_date`, `hold_reason`.
+- **Deliverables**: each source Deliverable's `description`,
+  `qty_ordered`, `units`, and `sort_order` are carried over via
+  `DeliverableService.create`.
+- **Work source**: work is always sourced from the source Job's
+  *execution layer* — its live `Task`s and `Material`s — never from any
+  old worksheet or estimate.
+- **Tasks** are copied with billing fields intact but execution state
+  fully reset: `status=pending`, no bleps, no assignee, `actual_qty=None`,
+  `worker_queue=None`, `blocked_reason=''`, and `source_template` /
+  `source_plan_task` cleared. Carried: `name`, `description`,
+  `sort_order`, `est_worker_time`, `est_qty`, `rate_scheme`,
+  `active_modifiers` (via `copy_active_modifiers`).
+- **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
+  `sell_price`, `price_list_item`, `accounting_category`, and their task
+  attachment (task-less materials stay loose). Inventory state is fully
+  reset: `consumption_state=pending`, `restocked_qty=0`,
+  `po_line_item=None`, `source_plan_material=None`.
+
+#### Outcome A — `path='approved'`
+
+The new Job is created at `draft`, then walked `draft → submitted →
+approved` through two calls to `JobService.update_status`. Each hop
+records a `HistoryEntry` of `entry_type='action'` — "Duplicated from
+\<source job_number\>" — and, because `Job` is `@history`-tracked, also
+auto-creates an `audit` field-diff entry per hop. The `approved`
+transition sets `start_date` (per §3.2), mirroring the
+estimate-acceptance precedent in `apps/estimates/signals.py`.
+
+- Tasks and Materials land directly on the new Job as its execution
+  layer. Subtask hierarchy (`parent_task`) is preserved via a two-pass
+  remap so parent Tasks are created before their children.
+- Earmarks are created via `InventoryService.create_earmarks_for_job`.
+- No estimate and no worksheet are created. Deliverables remain editable
+  (no estimate → editable per `DeliverableService.is_editable`) until
+  they anchor on a Shipment.
+
+#### Outcome B — `path='estimate'`
+
+The new Job stays at `draft`. A fresh `EstWorksheet` (version 1, status
+`draft`, no parent, no linked Estimate) is created and populated with
+`PlanTask` and `PlanMaterial` rows mapped from the source's execution
+Tasks and Materials. Task attachment is preserved (task-less Materials
+become loose PlanMaterials). Because `PlanTask` requires a non-null
+`est_qty`, the service falls back to `actual_qty`, then `Decimal('0.00')`
+if both are absent. PlanTask has no hierarchy, so subtask nesting from
+the source is **flattened** (sort_order is preserved). No earmarks are
+created.
+
+The user then runs the normal re-quote → send → accept → carry-over
+flow from the new worksheet.
+
+#### Never copied (either path)
+
+Estimates, invoices, purchase orders, bills, shipments, change orders,
+history entries, and bleps are never carried over to the new Job.
+
 ## 4. Task
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job

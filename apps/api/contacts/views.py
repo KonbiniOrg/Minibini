@@ -67,7 +67,8 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             q = (
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
-                Q(email__icontains=search)
+                Q(email__icontains=search) |
+                Q(business__business_name__icontains=search)
             )
             if phone_search:
                 q |= (
