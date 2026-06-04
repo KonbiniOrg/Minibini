@@ -21,6 +21,16 @@ proper issue.
 
 ## Open
 
+- **Audit `$state` seeded from a prop — stale on prop change.** — _added 2026-06-04_
+  The Svelte compiler warns `state_referenced_locally` in `Accordion.svelte`
+  (`let isOpen = $state(open)`) and `TagEditor.svelte` (`let tags = $state([...initialTags])`):
+  local `$state` initialized from a prop captures only the prop's *initial* value, so if the
+  parent later changes that prop the component won't react. Harmless where the prop is
+  effectively mount-only (current usage), a latent bug if it ever updates. Surfaced while
+  writing component tests (the tests don't exercise the prop-change path).
+  _Done when:_ the `$state`-seeded-from-prop sites have been grepped, and each is either
+  confirmed mount-only or converted (e.g. `$derived`, or a reset via `$effect`).
+
 - **`EstWorksheet.create_new_version` loses fields when cloning PlanTasks/PlanMaterials.** — _added 2026-06-01_
   Noticed while building job-duplication's worksheet copy (`JobService._copy_work_to_worksheet`,
   which copies these correctly). When revising a worksheet, `create_new_version`
