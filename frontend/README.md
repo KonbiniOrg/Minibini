@@ -84,6 +84,9 @@ Import source with the `@` alias (e.g. `import { linkify } from '@/lib/linkify.j
 Config lives in `vitest.config.js`, separate from `vite.config.js` so the
 production build is unaffected.
 
+For how to write tests (patterns, the behavior-vs-display triage, conventions,
+the jsdom storage shim), see `docs/designs/frontend-testing.md`.
+
 ## Design Decisions
 
 ### API Responses
