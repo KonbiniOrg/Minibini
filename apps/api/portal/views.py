@@ -16,6 +16,25 @@ from rest_framework.response import Response
 
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateEmailService, EstimateService
+from apps.jobs.models import Job
+
+
+# Shown when an estimate is still `open` but its job has moved on (the shop
+# cancelled/rejected/advanced/reopened it) — the customer can no longer respond.
+CLOSED_MESSAGE = (
+    'This estimate is not open for response.  Please contact us for further '
+    'information.'
+)
+
+
+def _is_actionable(estimate):
+    """Customer may act only on an OPEN estimate whose job is still awaiting the
+    customer (SUBMITTED). The shop can move the job independently (cancel,
+    reject, manual approve, reopen) without touching the estimate; the portal
+    respects job status but never mutates the estimate from the job side."""
+    if estimate.status != Estimate.STATUS_OPEN:
+        return False
+    return estimate.job_id is not None and estimate.job.status == Job.STATUS_SUBMITTED
 
 
 def _money(value):
@@ -27,24 +46,29 @@ def _line_amount(li):
 
 
 def _current_token(estimate):
-    """The live head of the revision lineage for a superseded estimate.
-
-    One estimate tree per job, so the live head is the job's highest-version
-    non-superseded estimate.
+    """Token of the latest *non-draft* version for the job, for a superseded
+    estimate to link forward to. Drafts are excluded — they aren't viewable in
+    the portal, so we never send the customer to an unsent revision. Returns
+    None when the latest non-draft is this estimate itself (e.g. the only newer
+    version is an unsent draft), so no dead link is shown.
     """
     head = (Estimate.objects
             .filter(job_id=estimate.job_id)
-            .exclude(status=Estimate.STATUS_SUPERSEDED)
-            .order_by('-version')
+            .exclude(status=Estimate.STATUS_DRAFT)
+            .order_by('-version', '-pk')
             .first())
-    return head.public_token if head else None
+    return head.public_token if head and head.pk != estimate.pk else None
 
 
 def build_estimate_payload(estimate):
     """Customer-safe dict for an estimate. Exposes only what a customer
     needs to decide — never the internal serializer's fields."""
-    actions = (['accept', 'request_changes', 'reject']
-               if estimate.status == Estimate.STATUS_OPEN else [])
+    actionable = _is_actionable(estimate)
+    actions = ['accept', 'request_changes', 'reject'] if actionable else []
+    # An open estimate on a job that has moved on: read-only, with a message.
+    closed_message = (CLOSED_MESSAGE
+                      if estimate.status == Estimate.STATUS_OPEN and not actionable
+                      else None)
 
     line_items = []
     total = Decimal('0')
@@ -78,6 +102,8 @@ def build_estimate_payload(estimate):
         'line_items': line_items,
         'grand_total': _money(total),
         'actions': actions,
+        'actionable': actionable,
+        'closed_message': closed_message,
     }
     if estimate.status == Estimate.STATUS_SUPERSEDED:
         payload['current_token'] = _current_token(estimate)
@@ -116,8 +142,10 @@ def _decide(token, target_status, decision_word, reason=None):
                     .first())
         if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
             return _not_available()
-        # Only act from 'open'; a click racing the shop is a no-op.
-        if estimate.status == Estimate.STATUS_OPEN:
+        # Act only when actionable (open estimate + submitted job). A click
+        # racing the shop — whether the shop closed the estimate or moved the
+        # job — is a no-op.
+        if _is_actionable(estimate):
             EstimateService.update_status(
                 estimate.pk, target_status,
                 actor=_actor_for(estimate, reason))
@@ -160,7 +188,7 @@ def portal_estimate_request_changes(request, token):
                     .first())
         if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
             return _not_available()
-        if estimate.status == Estimate.STATUS_OPEN:
+        if _is_actionable(estimate):
             EstimateService.request_changes(
                 estimate.pk, _actor_for(estimate, reason))
             acted = True

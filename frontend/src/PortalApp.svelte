@@ -78,6 +78,8 @@
       <p>This estimate was declined{#if data.closed_date} on {fmtDate(data.closed_date)}{/if}.</p>
     {:else if data.status === 'accepted'}
       <p>You accepted this estimate{#if data.closed_date} on {fmtDate(data.closed_date)}{/if}. Thank you.</p>
+    {:else if data.closed_message}
+      <p>{data.closed_message}</p>
     {/if}
 
     {#if data.deliverables && data.deliverables.length}

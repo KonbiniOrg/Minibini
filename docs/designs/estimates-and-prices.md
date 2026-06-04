@@ -1272,7 +1272,26 @@ latest comment (`JobSerializer.latest_change_request`, detail-only). The shop
 edits the draft and re-sends; the customer can't request again until then
 (the draft isn't portal-visible).
 
-An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; the page derives available actions from status (`accept`/`reject` shown only when `open`), and terminal, superseded, or expired states render a read-only status message with no action buttons.
+An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; terminal, superseded, or expired states render a read-only status message with no action buttons.
+
+**Actionability respects job status (`_is_actionable`).** The estimate is
+customer-actionable only when **`estimate.status == open` AND
+`job.status == submitted`**. The shop can move the job independently — cancel,
+reject, manually approve, or reopen it — without touching the estimate (an open
+estimate on a moved job is a legitimate real-world state). The portal **never
+mutates the estimate from the job side**; it just respects job status. When an
+estimate is `open` but its job is no longer `submitted`, the payload carries
+`actionable=false`, an empty `actions` list, and `closed_message` = *"This
+estimate is not open for response.  Please contact us for further
+information."*, and the page renders that read-only message instead of buttons.
+The three POST handlers (`accept`/`reject`/`request-changes`) apply the same
+`_is_actionable` guard, so a stale browser tab can't act once the job has moved.
+
+**Superseded → current revision link.** For a `superseded` estimate the payload
+includes `current_token` — the token of the **latest non-draft version** for
+the job (`_current_token`). Drafts are excluded (they aren't portal-viewable),
+so a customer is never linked to an unsent revision; if the only newer version
+is an unsent draft, `current_token` is `null` and no forward link is shown.
 
 **Customer attribution.** Operator-side
 `EstimateService.update_status(pk, new_status, actor=customer_dict)`
@@ -1292,13 +1311,15 @@ completes.
 by the same `npm run build`, served at `/portal/`). It is login-not-required,
 has no operator nav, and reads the token from the query string. It
 shows deliverables (top), line items + total, and a status banner.
-`open` estimates show Accept, Request changes, and Decline buttons, each
-opening a confirmation panel with plain-language consequences (Request
-changes and Decline take an optional comment). After a successful Request
-changes the page shows a "we'll send a revised estimate" message rather
-than the generic superseded notice. A `superseded` estimate links to the
-current revision's portal URL. All other terminal statuses show a
-read-only status message.
+**Actionable** estimates (open + submitted job) show Accept, Request changes,
+and Decline buttons, each opening a confirmation panel with plain-language
+consequences (Request changes and Decline take an optional comment). After a
+successful Request changes the page shows a "we'll send a revised estimate"
+message rather than the generic superseded notice. An `open` estimate whose
+job has moved on renders `closed_message` read-only (no buttons). A
+`superseded` estimate links to the latest non-draft revision's portal URL (or
+no link if the only newer version is an unsent draft). All other terminal
+statuses show a read-only status message.
 
 **Not yet built:** Change-order customer approval. COs have no
 send-to-customer flow today (no PDF, no email service, no CO entry in

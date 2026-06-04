@@ -41,10 +41,22 @@ class PortalPayloadTest(TestCase):
         data = build_estimate_payload(self.est)
         self.assertEqual(data['actions'], [])
 
-    def test_superseded_exposes_current_token(self):
+    def test_superseded_exposes_current_token_for_sent_revision(self):
         EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         new_est = EstimateService.revise_estimate(self.est.pk)
+        # current_token points to the latest *non-draft* version, so the
+        # revision must be sent before it's offered to the customer.
+        EstimateService.update_status(new_est.pk, Estimate.STATUS_OPEN)
+        new_est.refresh_from_db()
         self.est.refresh_from_db()
         data = build_estimate_payload(self.est)
         self.assertEqual(data['status'], 'superseded')
         self.assertEqual(data['current_token'], new_est.public_token)
+
+    def test_superseded_with_unsent_draft_revision_has_no_current_token(self):
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
+        EstimateService.revise_estimate(self.est.pk)  # draft, unsent
+        self.est.refresh_from_db()
+        data = build_estimate_payload(self.est)
+        self.assertEqual(data['status'], 'superseded')
+        self.assertIsNone(data['current_token'])
