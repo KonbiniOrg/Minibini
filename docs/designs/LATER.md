@@ -319,6 +319,14 @@ proper issue.
   _Done when:_ generating a later invoice for a Task already partially billed produces the
   correct (non-duplicated) amount, with a test covering the grow-after-bill case.
 
+- **Invoice revisions — back the "Revise (coming soon)" placeholder.** — _added 2026-06-04_
+  `InvoiceDetailPage.svelte` shows a **disabled** "Revise (coming soon)" button on sent
+  invoices (`canSeeRevise`), shipped as a placeholder — there is no invoice-revision backend
+  (no `InvoiceService.revise`, no supersede/version chain like estimates have). Decide
+  whether invoices need a revise flow at all (vs. cancel + new invoice) and, if so, build the
+  backend + wire the button. _Done when:_ either the placeholder is backed by a working
+  invoice-revise flow, or it's removed with a recorded decision that invoices don't revise.
+
 - **Merge the source-pull ("wizard") view into the detail page as an in-place toggle.** — _added 2026-06-02_
   The estimate/invoice detail pages link out to a separate `/…/:id/wizard` route for the
   atom-pull view ("Show Worksheet" / "Show Billables"). That's approach (a): a rename + a
@@ -326,8 +334,7 @@ proper issue.
   *view toggle* on the detail page itself (no separate route), so the "normal" and "pull from
   source" views share one page, one header, and one load. Bigger restructure (folds
   `EstimateWizardPage`/`InvoiceWizardPage` into the detail components). Until then, the two
-  views' headers are kept visually matched (see the
-  `2026-06-02-direct-create-and-catalog-line-items.md` plan) so the navigation feels seamless.
+  views' headers are kept visually matched so the navigation feels seamless.
   _Done when:_ the detail page can switch between the line-item view and the atom-pull view
   without a route change, and the standalone wizard routes are retired.
 
