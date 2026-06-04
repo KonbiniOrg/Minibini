@@ -88,6 +88,36 @@ class PipelineSubStatusTest(FixtureTestCase):
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
+    def test_is_revision_true_for_draft_revision(self):
+        """A draft estimate at version > 1 (superseded predecessor) is a re-quote
+        in progress — drives the 'Revision' board badge."""
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        old = Estimate.objects.create(
+            job=job, estimate_number='JOB-TEST-0001-1', status='draft')
+        Estimate.objects.filter(pk=old.pk).update(status='superseded')
+        Estimate.objects.create(
+            job=job, estimate_number='JOB-TEST-0001-2', version=2, status='draft')
+        self.assertTrue(BoardService.is_revision(job))
+
+    def test_is_revision_false_for_fresh_draft(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        Estimate.objects.create(
+            job=job, estimate_number='JOB-TEST-0001-1', status='draft')
+        self.assertFalse(BoardService.is_revision(job))
+
+    def test_is_revision_false_when_live_estimate_open(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        old = Estimate.objects.create(
+            job=job, estimate_number='JOB-TEST-0001-1', status='draft')
+        Estimate.objects.filter(pk=old.pk).update(status='superseded')
+        v2 = Estimate.objects.create(
+            job=job, estimate_number='JOB-TEST-0001-2', version=2, status='draft')
+        Estimate.objects.filter(pk=v2.pk).update(status='open')
+        self.assertFalse(BoardService.is_revision(job))
+
     def test_needs_scoping_when_only_terminal_estimate_no_worksheet(self):
         from apps.jobs.services import BoardService
         job = self._make_job()

@@ -167,6 +167,44 @@ class EstimateService:
         return new_estimate
 
     @staticmethod
+    def request_changes(pk, actor):
+        """Customer-initiated revision from the portal.
+
+        Records the customer's comment, revises the estimate (new draft, parent
+        superseded), and reverts the job ``submitted -> draft`` so a draft job +
+        draft estimate keep it in the quoting pipeline. ``actor`` is the portal
+        actor dict ``{'contact_id', 'email', 'reason'}``. Returns the new draft.
+        """
+        from apps.core.models import HistoryEntry
+        from apps.jobs.models import Job
+        from apps.jobs.services import JobService
+        try:
+            parent = Estimate.objects.get(pk=pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {pk} not found')
+        with transaction.atomic():
+            # Record the change request against the estimate the customer saw,
+            # reusing the customer-action HistoryEntry shape (see update_status).
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='estimate',
+                object_id=parent.pk,
+                user=None,
+                changes={
+                    '_action': 'Changes requested via customer link',
+                    'contact_id': actor.get('contact_id'),
+                    'customer_email': actor.get('email'),
+                },
+                text=actor.get('reason') or '',
+            )
+            new_estimate = EstimateService.revise_estimate(parent.pk)
+            # Revising supersedes the parent but doesn't touch job status.
+            job = parent.job
+            if job.status == Job.STATUS_SUBMITTED:
+                JobService.update_status(job.pk, Job.STATUS_DRAFT)
+        return new_estimate
+
+    @staticmethod
     def add_line_item(estimate_pk, **kwargs):
         """Add a manual line item to a draft estimate."""
         try:

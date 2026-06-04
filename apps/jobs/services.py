@@ -1551,6 +1551,7 @@ class BoardService:
                 'total': total,
             })
         data['estimates'] = estimates
+        data['is_revision'] = BoardService.is_revision(job)
         return data
 
     @staticmethod
@@ -1667,6 +1668,18 @@ class BoardService:
             'initials': initials,
             'name': short_name,
         }
+
+    @staticmethod
+    def is_revision(job):
+        """True when the job's live (non-superseded) estimate is a draft revision
+        (version > 1) — a re-quote in progress, e.g. after a customer change
+        request. Drives the 'Revision' board badge."""
+        from apps.estimates.models import Estimate
+        live = (job.estimate_set
+                .exclude(status=Estimate.STATUS_SUPERSEDED)
+                .order_by('-version', '-pk')
+                .first())
+        return bool(live and live.status == Estimate.STATUS_DRAFT and live.version > 1)
 
     @staticmethod
     def compute_sub_status(job):

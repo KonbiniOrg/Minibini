@@ -4,10 +4,11 @@
   let data = $state(null);
   let loading = $state(true);
   let error = $state('');
-  let confirming = $state('');   // '' | 'accept' | 'reject'
+  let confirming = $state('');   // '' | 'accept' | 'reject' | 'changes'
   let rejectReason = $state('');
+  let changesComment = $state('');
   let submitting = $state(false);
-  let done = $state('');         // '' | 'accepted' | 'declined'
+  let done = $state('');         // '' | 'accepted' | 'declined' | 'requested'
 
   const token = new URLSearchParams(window.location.search).get('token') || '';
 
@@ -24,12 +25,17 @@
   }
 
   async function submit(decision) {
+    // decision: 'accept' | 'reject' | 'request-changes'
     submitting = true; error = '';
     try {
       const url = `/api/portal/estimates/${encodeURIComponent(token)}/${decision}/`;
-      const body = decision === 'reject' ? { reason: rejectReason } : null;
+      let body = null;
+      if (decision === 'reject') body = { reason: rejectReason };
+      else if (decision === 'request-changes') body = { reason: changesComment };
       data = await api.post(url, body);
-      done = decision === 'accept' ? 'accepted' : 'declined';
+      done = decision === 'accept' ? 'accepted'
+           : decision === 'reject' ? 'declined'
+           : 'requested';
       confirming = '';
     } catch (e) {
       error = e.message || 'Something went wrong. Please contact us.';
@@ -58,7 +64,9 @@
   {:else if data}
     <h1>Estimate {data.estimate_number}</h1>
 
-    {#if data.status === 'superseded'}
+    {#if done === 'requested'}
+      <p>Thank you — we've received your request and will send you a revised estimate shortly.</p>
+    {:else if data.status === 'superseded'}
       <p>A newer version of this estimate has been issued.
         {#if data.current_token}
           <a href={`/portal/?token=${data.current_token}`}>View the current estimate</a>.
@@ -99,6 +107,7 @@
     {#if canAct && !done}
       <p>
         <button type="button" onclick={() => confirming = 'accept'}>Accept estimate</button>
+        <button type="button" onclick={() => confirming = 'changes'}>Request changes</button>
         <button type="button" onclick={() => confirming = 'reject'}>Decline estimate</button>
       </p>
     {/if}
@@ -108,6 +117,15 @@
         <legend><strong>Confirm acceptance</strong></legend>
         <p>Accepting this estimate authorizes us to begin the work it describes.</p>
         <button type="button" disabled={submitting} onclick={() => submit('accept')}>Yes, accept</button>
+        <button type="button" onclick={() => confirming = ''}>Cancel</button>
+      </fieldset>
+    {:else if confirming === 'changes'}
+      <fieldset>
+        <legend><strong>Request changes</strong></legend>
+        <p>Tell us what you'd like changed and we'll send you a revised estimate. This
+          keeps your job open — it isn't declined.</p>
+        <p><label>What would you like changed?<br><textarea bind:value={changesComment}></textarea></label></p>
+        <button type="button" disabled={submitting} onclick={() => submit('request-changes')}>Send request</button>
         <button type="button" onclick={() => confirming = ''}>Cancel</button>
       </fieldset>
     {:else if confirming === 'reject'}

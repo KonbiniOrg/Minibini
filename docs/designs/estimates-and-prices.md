@@ -1241,10 +1241,36 @@ previous stub internal URL. This is the value that lands in
 |---|---|---|
 | `GET` | `/api/portal/estimates/<token>/` | Customer-safe payload: deliverables, line items, total, status |
 | `POST` | `/api/portal/estimates/<token>/accept/` | Accept the estimate |
+| `POST` | `/api/portal/estimates/<token>/request-changes/` | Ask for changes (optional `reason`); auto-revises, keeps the job alive |
 | `POST` | `/api/portal/estimates/<token>/reject/` | Reject with optional `reason` |
 
 The payload (`build_estimate_payload`) returns deliverables, line
-items, and status; no internal IDs or operator data.
+items, and status; no internal IDs or operator data. The `actions`
+list is `['accept', 'request_changes', 'reject']` while `open`, else `[]`.
+
+**Customer-requested revision (`request-changes`).** Distinct from reject:
+the customer wants the job but needs changes. Reject declines the *job*
+(terminal); request-changes keeps it alive. The endpoint only acts from
+`open` (a click racing the shop is a no-op), and calls
+`EstimateService.request_changes(pk, actor)`, which:
+
+1. Writes the customer's comment as an `action` HistoryEntry on the estimate
+   (`_action='Changes requested via customer link'`, `user=None`, `text=`
+   the comment) — the same plumbing as accept/reject.
+2. Calls `revise_estimate` (§5.3): a fresh `draft` revision, sources moved,
+   parent `superseded`.
+3. Reverts the Job `submitted → draft` (a transition added for this; see
+   `jobs-tasks-and-worksheets.md`), so a draft job + draft estimate keep it
+   in the pipeline. Reverting to `draft` fires no job-status side effects.
+4. Emails the shop via `notify_shop_of_decision(estimate, 'requested changes',
+   reason=...)`.
+
+The shop sees the auto-staged revision two ways: a derived **"Revision"**
+badge on the board card (`BoardService.is_revision` — the live estimate is a
+`draft` with `version > 1`), and a banner on the Job detail page echoing the
+latest comment (`JobSerializer.latest_change_request`, detail-only). The shop
+edits the draft and re-sends; the customer can't request again until then
+(the draft isn't portal-visible).
 
 An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; the page derives available actions from status (`accept`/`reject` shown only when `open`), and terminal, superseded, or expired states render a read-only status message with no action buttons.
 
@@ -1266,10 +1292,13 @@ completes.
 by the same `npm run build`, served at `/portal/`). It is login-not-required,
 has no operator nav, and reads the token from the query string. It
 shows deliverables (top), line items + total, and a status banner.
-`open` estimates show Accept and Reject buttons, both requiring a
-confirmation dialog with plain-language consequences. A `superseded`
-estimate links to the current revision's portal URL. All other
-terminal statuses show a read-only status message.
+`open` estimates show Accept, Request changes, and Decline buttons, each
+opening a confirmation panel with plain-language consequences (Request
+changes and Decline take an optional comment). After a successful Request
+changes the page shows a "we'll send a revised estimate" message rather
+than the generic superseded notice. A `superseded` estimate links to the
+current revision's portal URL. All other terminal statuses show a
+read-only status message.
 
 **Not yet built:** Change-order customer approval. COs have no
 send-to-customer flow today (no PDF, no email service, no CO entry in

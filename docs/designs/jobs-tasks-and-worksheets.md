@@ -95,7 +95,7 @@ Valid transitions (`Job.clean()` at `apps/jobs/models.py`):
 
 ```
 draft         → submitted, rejected
-submitted     → approved, rejected
+submitted     → approved, rejected, draft
 approved      → in_progress, on_hold, cancelled
 in_progress   → work_complete, on_hold, cancelled
 on_hold       → approved, in_progress, cancelled
@@ -113,6 +113,15 @@ Estimate-driven transitions: sending an estimate fires `submitted`, and
 accepting one fires `approved`. An **open** estimate going to `rejected`
 (customer decline) or `expired` (the `mark_estimates_expired` sweep) drives
 the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
+
+`submitted → draft` is the **re-quote** transition: when a customer requests
+changes via the portal (`estimates-and-prices.md` §15.1), the estimate
+auto-revises and the Job drops back to `draft` so a draft job + draft
+estimate keep it in the quoting pipeline. Such a job carries a derived
+**"Revision"** badge on the board card (`BoardService.is_revision` — the live
+estimate is a `draft` at `version > 1`), and the Job detail page banners the
+customer's latest change-request comment (`JobSerializer.latest_change_request`).
+Reverting to `draft` fires no job-status side effects.
 
 `work_complete → in_progress` and `cancelled → in_progress` are
 *reactivation* transitions — for moving a Job back into work after it was

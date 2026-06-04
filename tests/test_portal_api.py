@@ -31,7 +31,7 @@ class PortalApiTest(TestCase):
         r = self.http.get(f'/api/portal/estimates/{self.token}/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()['status'], 'open')
-        self.assertEqual(r.json()['actions'], ['accept', 'reject'])
+        self.assertEqual(r.json()['actions'], ['accept', 'request_changes', 'reject'])
 
     def test_get_unknown_token_not_available(self):
         r = self.http.get('/api/portal/estimates/nope-not-a-token/')

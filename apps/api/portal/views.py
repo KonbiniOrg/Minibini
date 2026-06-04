@@ -43,7 +43,7 @@ def _current_token(estimate):
 def build_estimate_payload(estimate):
     """Customer-safe dict for an estimate. Exposes only what a customer
     needs to decide — never the internal serializer's fields."""
-    actions = (['accept', 'reject']
+    actions = (['accept', 'request_changes', 'reject']
                if estimate.status == Estimate.STATUS_OPEN else [])
 
     line_items = []
@@ -144,3 +144,30 @@ def portal_estimate_accept(request, token):
 def portal_estimate_reject(request, token):
     reason = (request.data.get('reason') or '').strip()
     return _decide(token, Estimate.STATUS_REJECTED, 'declined', reason=reason)
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def portal_estimate_request_changes(request, token):
+    """Customer asks for changes: auto-revise the estimate and send the job back
+    to draft. Only acts from 'open' — a click racing the shop is a no-op."""
+    reason = (request.data.get('reason') or '').strip()
+    with transaction.atomic():
+        estimate = (Estimate.objects
+                    .select_for_update()
+                    .filter(public_token=token)
+                    .first())
+        if estimate is None or estimate.status == Estimate.STATUS_DRAFT:
+            return _not_available()
+        if estimate.status == Estimate.STATUS_OPEN:
+            EstimateService.request_changes(
+                estimate.pk, _actor_for(estimate, reason))
+            acted = True
+        else:
+            acted = False
+        estimate.refresh_from_db()
+    if acted:
+        EstimateEmailService.notify_shop_of_decision(
+            estimate, 'requested changes', reason=reason or '')
+    return Response(build_estimate_payload(estimate))

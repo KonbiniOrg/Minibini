@@ -9,4 +9,7 @@ urlpatterns = [
          name='portal-estimate-accept'),
     path('estimates/<str:token>/reject/', views.portal_estimate_reject,
          name='portal-estimate-reject'),
+    path('estimates/<str:token>/request-changes/',
+         views.portal_estimate_request_changes,
+         name='portal-estimate-request-changes'),
 ]

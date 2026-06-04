@@ -505,6 +505,14 @@
 
 <JobHeader {job} {contact} {onStatusChange} />
 
+{#if job.status === 'draft' && job.latest_change_request}
+  <div class="change-request-banner">
+    <strong>Customer requested changes:</strong>
+    <span class="cr-text">{job.latest_change_request.text || '(no comment provided)'}</span>
+    <span class="cr-hint">Edit the revised estimate below, then re-send it.</span>
+  </div>
+{/if}
+
 <!-- DESCRIPTION + DELIVERABLES + HISTORY (fixed height) -->
 <div class="midband">
   <div class="panel description-panel">
@@ -1257,6 +1265,20 @@
     flex-direction: column;
     overflow: hidden;
   }
+
+  .change-request-banner {
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+    padding: 8px 12px;
+    font-size: 13px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .change-request-banner .cr-text { font-style: italic; }
+  .change-request-banner .cr-hint { color: #c2410c; margin-left: auto; font-size: 12px; }
 
   /* HEADER */
   .job-header {

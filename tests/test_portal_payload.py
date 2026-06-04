@@ -29,7 +29,7 @@ class PortalPayloadTest(TestCase):
         self.est.refresh_from_db()
         data = build_estimate_payload(self.est)
         self.assertEqual(data['status'], 'open')
-        self.assertEqual(data['actions'], ['accept', 'reject'])
+        self.assertEqual(data['actions'], ['accept', 'request_changes', 'reject'])
         self.assertEqual(len(data['line_items']), 1)
         self.assertEqual(data['line_items'][0]['amount'], '100.00')
         self.assertEqual(data['grand_total'], '100.00')
