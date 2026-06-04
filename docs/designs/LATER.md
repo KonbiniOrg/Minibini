@@ -372,14 +372,10 @@ proper issue.
   whether on the detail page or in the wizard.
 
 - **Revising an estimate doesn't move the Job out of `submitted` — workflow needs thought.** — _added 2026-06-03_
-  When a job is in `submitted` and the shop revises the estimate, the job stays `submitted` even
-  though a fresh draft now exists. Should it revert to `draft` automatically? The hard case: the
-  customer then approves the *first* (now-superseded) estimate — the app has no signal that the
-  customer asked for a revision, so it can't safely infer intent. The shop isn't *supposed* to
-  revise without a customer request, but nothing models that. Needs a deliberate decision about
-  the revise-while-submitted workflow (and possibly an explicit "customer requested changes"
-  action) before changing behavior. _Done when:_ the revise-vs-job-status interaction is
-  specified and implemented (or explicitly decided to leave as-is, with reasoning recorded).
+  Graduated to a spec: `docs/plans/2026-06-03-portal-request-changes.md`. A customer portal
+  "Request changes" action auto-revises the estimate and reverts the job to `draft` (no new
+  states; one new `submitted → draft` transition; a derived "Revision" board badge).
+  _Done when:_ that spec is implemented.
 
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
