@@ -21,6 +21,17 @@ proper issue.
 
 ## Open
 
+- **`ReceiveItemsForm` "remaining" ignores `qty_cancelled`.** — _added 2026-06-04_
+  The receivable *filter* accounts for cancellation (`qty_received + qty_cancelled < qty`),
+  but the prefilled "Receiving Now" value and the displayed "Remaining" column compute
+  `qty - qty_received` — excluding `qty_cancelled`. A line with qty 10 / received 3 /
+  cancelled 2 shows & pre-fills 7 remaining when only 5 are actually outstanding. May be
+  intentional (a code comment notes overage is allowed and the user can edit), but the
+  default over-states the outstanding quantity by the cancelled amount. Surfaced while
+  writing the component test (the test pins the current `7`).
+  _Done when:_ the remaining/prefill calc subtracts `qty_cancelled`, or we've confirmed
+  the overage default is intended and noted why.
+
 - **Audit `$state` seeded from a prop — stale on prop change.** — _added 2026-06-04_
   The Svelte compiler warns `state_referenced_locally` in `Accordion.svelte`
   (`let isOpen = $state(open)`) and `TagEditor.svelte` (`let tags = $state([...initialTags])`):
