@@ -19,6 +19,45 @@ proper issue.
 
 ---
 
+## Oversized route pages to componentize
+
+The `src/routes/**` page components were intentionally left out of the front-end
+test sweep — routes are integration glue (params → API load → pass to child
+components → navigate), and that glue belongs to a future E2E track, not unit
+tests (see `docs/designs/frontend-testing.md`). Most route pages are thin glue
+and fine as-is. But several have grown large by mixing that glue with significant
+**inline logic and sub-views** that were never extracted into components.
+
+When the UI-organization / clarity pass reaches each of these, break the inline
+logic and sub-views out into components (and lib helpers) — the same pattern that
+made the rest of the SPA testable — then unit-test the extracted pieces. Don't
+wrap a 1000-line page in heavy mocks; extract first.
+
+**Primary (≥ 400 lines, as of 2026-06-04):**
+
+- `change-orders/ChangeOrderDetailPage.svelte` — **1038** (by far the largest; top priority)
+- `jobs/TaskDetailPage.svelte` — 527
+- `Search.svelte` — 499
+- `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
+- `jobs/JobTaskListPage.svelte` — 427
+- `jobs/JobShipmentsPage.svelte` — 418
+- `worksheets/WorksheetDetailPage.svelte` — 407
+
+**Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
+`estimates/EstimateDetailPage.svelte` (344), `users/UserDetailPage.svelte` (306),
+`contacts/ContactListPage.svelte` (301).
+
+_Done when:_ each oversized route has had its UI pass with inline logic/sub-views
+extracted into (tested) components, or a deliberate note recorded for why a given
+page stays whole.
+
+> Related: `components/jobs/JobDetail.svelte` is a similarly oversized
+> **component** (not a route). It has a mount-only test today; its deep
+> derivations (version timeline, CO delta layering) warrant the same
+> extract-and-unit-test treatment. Noted in `docs/designs/frontend-testing.md`.
+
+---
+
 ## Open
 
 - **`ReceiveItemsForm` "remaining" ignores `qty_cancelled`.** — _added 2026-06-04_
