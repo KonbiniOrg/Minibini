@@ -58,6 +58,22 @@ The tiebreaker for the boundary cases: **is there a branch or an async call that
 
 The full per-file classification of the whole SPA lives in the (disposable) sweep plan: `docs/plans/2026-06-04-frontend-test-coverage-sweep-plan.md`.
 
+## Adding tests as you work
+
+Front-end testing is meant to grow with the code, the same way the Django suite
+does — not in big retroactive sweeps.
+
+- **When you add or change a behavior component, store, or lib module, add or
+  update its test in the same change.** Run `npm run test:run` and leave the
+  suite green.
+- **Classify new files with the triage rubric above** (behavior / display /
+  skip), not a checklist. If there's a branch or an async call that could
+  silently break, it's behavior — test it. If it's pure presentation, skip it.
+- **Pick the matching pattern** from the table below and copy the cited example —
+  the existing tests are the template.
+- The set of "what's tested" is recorded by the test files themselves; there's no
+  separate coverage list to maintain.
+
 ## Conventions (apply to every test)
 
 1. **Assert structure and outcomes, not copy.** Query by role/placeholder/relevant text; never assert decorative wording; **never use snapshot tests.** Rewording a label must not break a test.
