@@ -360,28 +360,33 @@ class EstWorksheet(AbstractWorkContainer):
 
         # Copy all plan tasks to the new worksheet
         from apps.jobs.models import copy_active_modifiers
+        task_map = {}  # old PlanTask pk -> new PlanTask
         for plan_task in self.plan_tasks.all():
             new_plan_task = PlanTask.objects.create(
                 est_worksheet=new_worksheet,
                 name=plan_task.name,
                 description=plan_task.description,
+                sort_order=plan_task.sort_order,
+                est_worker_time=plan_task.est_worker_time,
                 rate_scheme=plan_task.rate_scheme,
                 active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
                 est_qty=plan_task.est_qty,
             )
+            task_map[plan_task.pk] = new_plan_task
 
-            # Copy plan materials to the new plan task
-            for plan_material in plan_task.plan_materials.all():
-                PlanMaterial.objects.create(
-                    plan_task=new_plan_task,
-                    est_worksheet=new_worksheet,
-                    price_list_item=plan_material.price_list_item,
-                    accounting_category=plan_material.accounting_category,
-                    description=plan_material.description,
-                    quantity=plan_material.quantity,
-                    unit_cost=plan_material.unit_cost,
-                    sell_price=plan_material.sell_price,
-                )
+        # Copy all plan materials on the worksheet, including task-less ones.
+        for plan_material in self.plan_materials.all():
+            PlanMaterial.objects.create(
+                plan_task=task_map.get(plan_material.plan_task_id),
+                est_worksheet=new_worksheet,
+                price_list_item=plan_material.price_list_item,
+                accounting_category=plan_material.accounting_category,
+                description=plan_material.description,
+                quantity=plan_material.quantity,
+                units=plan_material.units,
+                unit_cost=plan_material.unit_cost,
+                sell_price=plan_material.sell_price,
+            )
 
         return new_worksheet
 

@@ -659,8 +659,10 @@ is set automatically:
 1. Marks `self` as superseded.
 2. Creates a new EstWorksheet with `parent=self`, `version=self.version+1`,
    `estimate=None`, status `draft`.
-3. Copies all `PlanTask` rows (and their `PlanMaterial` rows) into the
-   new worksheet.
+3. Copies all `PlanTask` rows (preserving `sort_order` and
+   `est_worker_time`) and all `PlanMaterial` rows on the worksheet —
+   including task-less ones — into the new worksheet, re-pointing each
+   material at its cloned PlanTask.
 
 Old versions stay in the database for reference. The new worksheet
 starts fresh and may eventually carry its own Estimate.

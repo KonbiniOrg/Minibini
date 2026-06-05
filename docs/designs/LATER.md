@@ -21,16 +21,6 @@ proper issue.
 
 ## Open
 
-- **`EstWorksheet.create_new_version` loses fields when cloning PlanTasks/PlanMaterials.** — _added 2026-06-01_
-  Noticed while building job-duplication's worksheet copy (`JobService._copy_work_to_worksheet`,
-  which copies these correctly). When revising a worksheet, `create_new_version`
-  (`apps/estimates/models.py`) copies PlanTasks **without** `sort_order` or `est_worker_time`,
-  and PlanMaterials **without** `units`. It also only walks each PlanTask's `plan_materials`,
-  so any **task-less** PlanMaterial on the worksheet is silently dropped from the new version.
-  Result: a revised worksheet can lose task ordering, scheduling durations, material units, and
-  loose materials. _Done when:_ `create_new_version` carries `sort_order` + `est_worker_time`
-  on PlanTasks, `units` on PlanMaterials, and includes task-less PlanMaterials.
-
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —
   deliverables, tasks, materials only. `DeliverableService.is_editable` keys on estimate /

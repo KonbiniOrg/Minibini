@@ -2,6 +2,8 @@
 Tests for EstWorksheet model and its status transitions.
 """
 
+from datetime import timedelta
+
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from decimal import Decimal
@@ -9,6 +11,7 @@ from decimal import Decimal
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem, WorkTemplate, TaskTemplate
+from apps.inventory.models import PlanMaterial
 from apps.core.models import User, AccountingCategory
 
 
@@ -252,6 +255,62 @@ class EstWorksheetVersioningTest(TestCase):
         self.assertEqual(v2_tasks[0].name, "Task 1")
         self.assertEqual(v2_tasks[1].name, "Task 2")
         
+    def test_create_new_version_preserves_all_fields(self):
+        """create_new_version must carry sort_order + est_worker_time on PlanTasks,
+        units on PlanMaterials, and include task-less PlanMaterials."""
+        scheme = _make_scheme('preserve')
+        ac = AccountingCategory.objects.create(code='ESTWS-MAT', name='estws-mat')
+        worksheet_v1 = EstWorksheet.objects.create(
+            job=self.job, status=Job.STATUS_DRAFT, version=1,
+        )
+
+        task = PlanTask.objects.create(
+            est_worksheet=worksheet_v1,
+            name="Task A",
+            rate_scheme=scheme,
+            est_qty=Decimal('2'),
+            sort_order=7,
+            est_worker_time=timedelta(hours=3),
+        )
+
+        # Material attached to a task, with non-default units.
+        PlanMaterial.objects.create(
+            est_worksheet=worksheet_v1,
+            plan_task=task,
+            description="Bolts",
+            quantity=Decimal('10'),
+            units='box',
+            accounting_category=ac,
+        )
+        # Task-less material on the worksheet.
+        PlanMaterial.objects.create(
+            est_worksheet=worksheet_v1,
+            plan_task=None,
+            description="Loose washers",
+            quantity=Decimal('5'),
+            units='kg',
+            accounting_category=ac,
+        )
+
+        worksheet_v2 = worksheet_v1.create_new_version()
+
+        # PlanTask fields carried over.
+        v2_task = PlanTask.objects.get(est_worksheet=worksheet_v2)
+        self.assertEqual(v2_task.sort_order, 7)
+        self.assertEqual(v2_task.est_worker_time, timedelta(hours=3))
+
+        # All materials carried over, including the task-less one.
+        v2_materials = PlanMaterial.objects.filter(est_worksheet=worksheet_v2)
+        self.assertEqual(v2_materials.count(), 2)
+
+        bolts = v2_materials.get(description="Bolts")
+        self.assertEqual(bolts.units, 'box')
+        self.assertEqual(bolts.plan_task, v2_task)
+
+        washers = v2_materials.get(description="Loose washers")
+        self.assertEqual(washers.units, 'kg')
+        self.assertIsNone(washers.plan_task)
+
     def test_version_chain(self):
         """Test creating multiple versions maintains proper chain."""
         worksheet_v1 = EstWorksheet.objects.create(
