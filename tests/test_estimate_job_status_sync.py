@@ -190,63 +190,6 @@ class EstimateJobStatusSyncTest(TestCase):
         # New estimate should be in draft
         self.assertEqual(estimate2.status, Estimate.STATUS_DRAFT)
 
-    def test_worksheet_status_sync_remains_unchanged(self):
-        """Test that EstWorksheet status synchronization with Estimate still works."""
-        # Create estimate with worksheet
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number='EST-2024-0001',
-            status=Job.STATUS_DRAFT
-        )
-
-        worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            estimate=estimate,
-            status=Estimate.STATUS_DRAFT
-        )
-
-        # When estimate goes to open, worksheet should go to final
-        self._add_line_item(estimate)
-        estimate.status = Estimate.STATUS_OPEN
-        estimate.save()
-
-        worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
-
-        # When estimate is accepted, worksheet should remain final
-        estimate.status = Estimate.STATUS_ACCEPTED
-        estimate.save()
-
-        worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, EstWorksheet.STATUS_FINAL)
-
-    def test_worksheet_status_sync_remains_unchanged_superseded(self):
-        """Test that EstWorksheet status synchronization with Estimate still works."""
-        # Create estimate with worksheet
-        estimate = Estimate.objects.create(
-            job=self.job,
-            estimate_number='EST-2024-0001',
-            status=Job.STATUS_DRAFT
-        )
-
-        worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            estimate=estimate,
-            status=Estimate.STATUS_DRAFT
-        )
-
-        # Must go through 'open' first to reach superseded
-        self._add_line_item(estimate)
-        estimate.status = Estimate.STATUS_OPEN
-        estimate.save()
-
-        # When estimate is superseded, worksheet should be superseded
-        estimate.status = Estimate.STATUS_SUPERSEDED
-        estimate.save()
-
-        worksheet.refresh_from_db()
-        self.assertEqual(worksheet.status, EstWorksheet.STATUS_SUPERSEDED)
-
     def test_job_status_changes_dont_affect_estimate(self):
         """Test that manual job status changes don't affect estimate status."""
         estimate = Estimate.objects.create(

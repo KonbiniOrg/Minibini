@@ -94,10 +94,13 @@
             <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
           {/if}
         </div>
-        {#if (!showProgress && (job.sub_status || job.status)) || deadlineText()}
+        {#if (!showProgress && (job.sub_status || job.status)) || job.is_revision || deadlineText()}
           <div class="card-status-row">
             {#if !showProgress && (job.sub_status || job.status)}
               <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
+            {/if}
+            {#if job.is_revision}
+              <span class="card-revision" title="A revised estimate is being prepared">Revision</span>
             {/if}
             {#if deadlineText()}
               <div class="card-deadline {deadlineClass()}">{deadlineText()}</div>
@@ -171,6 +174,7 @@
   .card-customer:hover { text-decoration: underline; }
   .card-status-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .card-substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; }
+  .card-revision { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; background: #ffedd5; color: #c2410c; }
   .card-deadline { font-size: 11px; color: #888; margin-left: auto; }
   .card-deadline.overdue { color: #dc2626; font-weight: 600; }
   .card-deadline.soon { color: #d97706; }

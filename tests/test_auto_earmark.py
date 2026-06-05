@@ -188,9 +188,7 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-AEM-005', version=1,
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, estimate=self.estimate, version=1,
-        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.eanc_scheme = _make_scheme('eanc')
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,

@@ -2,7 +2,7 @@
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
-  import EstimateLineItemModal from '../../components/EstimateLineItemModal.svelte';
+  import LineItemModal from '../../components/LineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
@@ -261,7 +261,7 @@
     <p>
       <button type="button" onclick={openAddItem}>Add Line Item</button>
       {#if estimate.worksheet}
-        <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Open atoms wizard</a>
+        <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Worksheet</a>
       {/if}
     </p>
   {/if}
@@ -284,10 +284,10 @@
     <DeliverablesSection jobId={estimate.job} allowEdit={true} />
   {/if}
 
-  <EstimateLineItemModal
+  <LineItemModal
     open={modalOpen}
     mode={modalMode}
-    estimateId={estimate.estimate_id}
+    apiBase={`/api/estimates/${estimate.estimate_id}`}
     item={modalItem}
     {categories}
     onSaved={handleSaved}

@@ -40,7 +40,7 @@ class ReorderServiceTest(BundlingTestBase):
 
     def setUp(self):
         super().setUp()
-        self.ws = EstWorksheet.objects.create(job=self.job, status=Job.STATUS_DRAFT)
+        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
 
     def test_unbundled_only_swap(self):
@@ -108,10 +108,14 @@ class WorksheetServiceReorderTest(BundlingTestBase):
         self.assertEqual(self.t1.sort_order, 2)
         self.assertEqual(self.t2.sort_order, 1)
 
-    def test_reorder_non_draft_raises(self):
-        """Cannot reorder on non-draft worksheet."""
-        self.ws.status = EstWorksheet.STATUS_FINAL
-        self.ws.save()
+    def test_reorder_refused_when_estimate_sent(self):
+        """Cannot reorder once the job's estimate is sent (worksheet frozen)."""
+        from apps.estimates.models import Estimate
+        est = Estimate.objects.create(
+            job=self.ws.job, estimate_number='EST-REORD-1',
+            status=Estimate.STATUS_DRAFT,
+        )
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             WorksheetService.reorder_items(
                 self.ws.pk, 'task', self.t1.pk, 'down',

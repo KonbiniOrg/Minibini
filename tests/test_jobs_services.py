@@ -316,8 +316,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, estimate=self.estimate)
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
 
     def test_copies_tasks(self):

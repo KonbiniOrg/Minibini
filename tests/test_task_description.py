@@ -36,9 +36,7 @@ class TaskDescriptionModelTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-DESC-001', contact=self.contact, status=Job.STATUS_APPROVED
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status=Job.STATUS_DRAFT, version=1
-        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.tdm_ac = AccountingCategory.objects.create(name='tdm-ac', code='TDM-AC')
         self.scheme = _make_scheme('tdm', self.tdm_ac)
 
@@ -77,9 +75,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-DESC-002', contact=self.contact, status=Job.STATUS_APPROVED
         )
-        self.worksheet = EstWorksheet.objects.create(
-            job=self.job, status=Job.STATUS_DRAFT, version=1
-        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = _make_scheme('dft', self.accounting_category)
         self.task_template = TaskTemplate.objects.create(
             template_name='Painting',

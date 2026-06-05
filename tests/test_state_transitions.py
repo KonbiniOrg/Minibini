@@ -218,16 +218,18 @@ class JobStateTransitionTest(TestCase):
         with self.assertRaises(ValidationError):
             job.save()
 
-    def test_submitted_to_draft_invalid(self):
-        """Test that Submitted cannot go back to Draft."""
+    def test_submitted_to_draft_valid(self):
+        """Submitted can go back to Draft — re-quoting (e.g. a customer change
+        request) sends the job back into the quoting pipeline."""
         job = Job.objects.create(
             job_number="JOB020",
             contact=self.contact,
             status=Job.STATUS_SUBMITTED
         )
         job.status = Job.STATUS_DRAFT
-        with self.assertRaises(ValidationError):
-            job.save()
+        job.save()  # should not raise
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
 
     def test_full_valid_path_to_completed(self):
         """Test full path: Draft > Submitted > Approved > In Progress > Work Complete > Completed."""

@@ -62,7 +62,9 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 
 ### "One draft per job" — design vs. reality
 
-Enforced by a partial unique constraint on `Invoice` (`unique_draft_invoice_per_job`, partial on `status='draft'`). `InvoiceWizardService.open_for_job` also enforces this at the application level by returning the existing draft if one is found.
+Guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job`, which returns the existing draft when one is found. A `unique_draft_invoice_per_job` partial unique constraint (on `status='draft'`) is declared on `Invoice`, but it is **not** created on MySQL — which doesn't support conditional unique constraints (Django emits `models.W036`) — so the invariant rests on the service, not the DB.
+
+`InvoiceViewSet.perform_create` routes every direct `POST /api/invoices/` through `InvoiceWizardService.open_for_job` — the same service entry point used by the atom-pull wizard. This means direct invoice creation is also subject to the get-or-create semantics (returns the existing draft if one exists) and the billable-job-status guard (returns HTTP 400 if the job's status is not in `BILLABLE_JOB_STATUSES`). There is no separate creation path that bypasses the service.
 
 ### Document numbering
 
@@ -196,7 +198,11 @@ All wizard endpoints require `IsAuthenticated` + `CanManageFinancials` (`Invoice
 
 Footer actions use `frontend/src/components/wizards/WizardActions.svelte` — also shared.
 
-`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard non-wizard view of a finalized invoice.
+`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard detail view of an invoice. It shares the same **JobHeader** band as the atom-pull wizard page. On `draft` invoices, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte` (the shared modal also used on the estimate detail page). Adding a line item offers a toggle between **manual entry** and **"From Price List"** (catalog mode, which POSTs `{price_list_item, qty}` and copies description/units/selling_price/accounting_category from the PLI). Editing an existing line item edits its fields only, with no catalog toggle.
+
+A **"Show Billables"** link is shown on the detail page only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`). If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the link is absent.
+
+On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeholder button appears in the toolbar — invoice revision is not yet implemented.
 
 ### Discard
 
@@ -534,11 +540,21 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 | Invoice detail | `frontend/src/routes/invoices/InvoiceDetailPage.svelte` |
 | Invoice wizard | `frontend/src/routes/invoices/InvoiceWizardPage.svelte` (route `#/invoices/:id/wizard`) |
 | Source pool | `frontend/src/components/invoices/WizardSourcePool.svelte` |
+| Line item modal (shared with estimates) | `frontend/src/components/LineItemModal.svelte` |
 | Line item card (shared with estimates) | `frontend/src/components/wizards/WizardLineItemCard.svelte` |
 | Footer actions (shared with estimates) | `frontend/src/components/wizards/WizardActions.svelte` |
 | Send-to-QBO dialog | `frontend/src/components/invoices/SendToQBODialog.svelte` |
 
 `InvoiceWizardPage` tracks `selectedAtoms` with `$state`; "Add to line item" and "Create new line item" both POST and reload. 409 from the API surfaces as an alert prompting the user to reopen the wizard for a fresh source pool.
+
+### Job overview — Create/View model
+
+The Job overview page (invoice pillar) follows a Create/View model:
+
+- **"Create Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and navigates to the new invoice detail page. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only).
+- **"View Invoice"** — shown whenever any invoice exists for the job, regardless of its status.
+
+Both can appear together: for example, a job may have a sent (`open`) invoice and no draft, in which case "View Invoice" and "Create Invoice" are both shown (the "Create" would open a second draft for the new billing event). One draft per job is guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job` — a second "Create" while a draft already exists returns the existing draft rather than creating a new one. (The `unique_draft_invoice_per_job` partial unique constraint is declared on the model but is **not** created on MySQL, which doesn't support conditional unique constraints — Django emits `models.W036` — so the invariant rests on the service, not the DB.)
 
 There is currently no separate `InvoiceListPage.svelte` route in `frontend/src/routes/invoices/` — invoice listing happens via the job board's "unpaid" view (`/api/jobs/board/unpaid/`) and per-job filters. A standalone invoice list is "Unfinished work."
 
@@ -577,7 +593,7 @@ The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenu
 - **`superseded` and `defaulted` statuses.** Both are defined in the status machine's choices but have no transition path that sets them. (Payment polling now drives `partly-paid` / `paid` — see "Payment polling" above — so those two are no longer dead.)
 - **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
 - **Standalone invoice list page in the SPA.** No `#/invoices/` route today — discovery is via the job board.
-- **Direct invoice editor** (non-wizard tweaks to existing invoices). The override mechanism on bundled line items is already designed to coexist with this.
+- **Invoice revision** — the "Revise" button on `open`/`partly-paid` invoices is a disabled placeholder. The mechanism for creating a revised draft from a sent invoice (parallel to `EstimateService.revise_estimate`) is not yet implemented.
 - **Flat-rate task billing without bleps or materials.** Current workaround: model the charge as a Material row.
 - **Direct invoice email from Minibini.** Today the customer-facing send always goes through QBO. If Minibini ever emails invoices directly, follow the PO email pattern (status change captured by `@history`; manual `action` HistoryEntry for the send event with the recipient list). See `apps/purchasing/services.py` `PurchaseOrderEmailService.send_po`.
 - **Receipt photo upload** on `Expense` (`FileField` + storage backend). Listed in the 2026-04-11 design as future.

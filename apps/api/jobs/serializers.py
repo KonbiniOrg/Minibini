@@ -24,6 +24,7 @@ class JobSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
+    latest_change_request = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
@@ -31,12 +32,34 @@ class JobSerializer(serializers.ModelSerializer):
             'job_id', 'job_number', 'name', 'status',
             'contact', 'contact_name', 'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
-            'tasks', 'materials',
+            'tasks', 'materials', 'latest_change_request',
         ]
         read_only_fields = ['job_id', 'job_number', 'created_date', 'completed_date']
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
+
+    def get_latest_change_request(self, obj):
+        """Most recent customer 'Request changes' comment across the job's
+        estimates, so the SPA can banner it over the auto-staged revision draft.
+        Returns ``None`` when none exists. Skipped in list context — it's a
+        detail-only banner, and computing it per row would be an N+1."""
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            return None
+        from apps.core.models import HistoryEntry
+        est_ids = list(obj.estimate_set.values_list('estimate_id', flat=True))
+        if not est_ids:
+            return None
+        entry = (HistoryEntry.objects
+                 .filter(entry_type='action', object_type='estimate',
+                         object_id__in=est_ids,
+                         changes___action='Changes requested via customer link')
+                 .order_by('-timestamp', '-pk')
+                 .first())
+        if entry is None:
+            return None
+        return {'text': entry.text, 'timestamp': entry.timestamp.isoformat()}
 
     def get_tasks(self, obj):
         from apps.api.tasks.serializers import TaskSerializer

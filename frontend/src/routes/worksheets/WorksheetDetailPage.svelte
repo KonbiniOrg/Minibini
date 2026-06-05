@@ -33,8 +33,9 @@
   const canManageJobs = $derived(
     $userStore?.permissions?.includes('can_manage_jobs') ?? false
   );
-  const isDraft = $derived(worksheet?.status === 'draft');
-  const canEdit = $derived(canManageJobs && isDraft);
+  // Editability is derived from the job's live estimate (server-computed):
+  // editable while the estimate is draft/absent, frozen once it's sent.
+  const canEdit = $derived(canManageJobs && (worksheet?.editable ?? false));
 
   async function loadWorksheet() {
     loading = true;
@@ -240,7 +241,12 @@
     }
   }
 
-  const canDelete = $derived(canManageJobs && isDraft && !worksheet?.estimate);
+  // Delete is offered only when the server would actually allow it: the user can
+  // manage jobs, the worksheet is editable, and no atom is claimed by an estimate
+  // line item (`deletable` mirrors the backend delete check).
+  const canDelete = $derived(
+    canManageJobs && (worksheet?.editable ?? false) && (worksheet?.deletable ?? false)
+  );
 
   async function handleDeleteWorksheet() {
     if (!confirm('Delete this worksheet? Its plan tasks and materials will be removed.')) return;
@@ -264,8 +270,8 @@
 
   <div class="toolbar">
     <a href={`/jobs/${worksheet.job}`} use:link class="back-link">&laquo; back to overview</a>
-    <span class="ws-title">Worksheet v{worksheet.version}</span>
-    <span class="status-badge status-{worksheet.status}">{worksheet.status}</span>
+    <span class="ws-title">Worksheet</span>
+    {#if !canEdit}<span class="status-badge status-frozen">frozen</span>{/if}
     {#if canEdit}
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
       <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
@@ -377,9 +383,7 @@
   }
   .delete-row { padding: 16px 24px; }
   .delete-btn { color: #a8071a; }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-final { background: #e0e7ff; color: #4338ca; }
-  .status-superseded { background: #fef3c7; color: #92400e; }
+  .status-frozen { background: #fef3c7; color: #92400e; }
   .meta { color: #888; font-size: 13px; margin-left: auto; }
   .toolbar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;

@@ -17,7 +17,6 @@
     const docs = [];
     if (job.worksheets) {
       for (const ws of job.worksheets) {
-        if (ws.status === 'superseded' || ws.status === 'final') continue;
         docs.push({
           type: 'Worksheet',
           status: 'draft',

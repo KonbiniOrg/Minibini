@@ -1,12 +1,12 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework import status, viewsets
+from rest_framework import serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.invoicing.models import Invoice
-from apps.invoicing.services import InvoiceService
+from apps.invoicing.services import InvoiceService, InvoiceWizardService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
-from apps.api.permissions import CanManageFinancials
+from apps.api.permissions import CanManageFinancials, CanManageJobs
 from .serializers import InvoiceSerializer, InvoiceLineItemSerializer
 
 
@@ -20,6 +20,8 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
             return [IsAuthenticated()]
+        if self.action == 'create':
+            return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
         return [IsAuthenticated(), CanManageFinancials()]
 
     # Line item mixin config
@@ -42,7 +44,13 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         return qs
 
     def perform_create(self, serializer):
-        serializer.save()
+        job = serializer.validated_data.get('job')
+        try:
+            invoice = InvoiceWizardService.open_for_job(job)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            raise drf_serializers.ValidationError({'detail': msg})
+        serializer.instance = invoice
 
     def destroy(self, request, *args, **kwargs):
         invoice = self.get_object()

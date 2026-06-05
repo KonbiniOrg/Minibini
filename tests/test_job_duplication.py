@@ -197,14 +197,14 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertIsNone(new_job.start_date)
         self.assertEqual(new_job.contact_id, self.other_contact.pk)
 
-    def test_creates_fresh_draft_worksheet(self):
+    def test_creates_fresh_editable_worksheet(self):
+        from apps.estimates.services import WorksheetService
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')
         ws = EstWorksheet.objects.get(job=new_job)
-        self.assertEqual(ws.status, EstWorksheet.STATUS_DRAFT)
-        self.assertEqual(ws.version, 1)
-        self.assertIsNone(ws.parent_id)
-        self.assertIsNone(ws.estimate_id)
+        # Decoupled model: the worksheet has no status/version/parent/estimate.
+        # A fresh worksheet on an estimate-less job is editable.
+        self.assertTrue(WorksheetService.is_editable(ws))
 
     def test_maps_tasks_to_plan_tasks(self):
         new_job = JobService.duplicate_job(

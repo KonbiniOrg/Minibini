@@ -18,7 +18,6 @@
     purchaseOrders = null,
     emails = null,
     onStatusChange = null,
-    onStartWizard = null,
   } = $props();
 
   // Permission check
@@ -212,7 +211,7 @@
 
   // Worksheet versions, sorted newest first
   let worksheetList = $derived(
-    [...(worksheets?.results || [])].sort((a, b) => b.version - a.version)
+    [...(worksheets?.results || [])].sort((a, b) => b.est_worksheet_id - a.est_worksheet_id)
   );
   // Latest worksheet (highest version)
   let currentWorksheet = $derived(worksheetList[0] || null);
@@ -294,6 +293,26 @@
       changeOrders = r?.results || r || [];
     } catch {
       changeOrders = [];
+    }
+  }
+
+  let creatingEstimate = $state(false);
+
+  let canCreateEstimate = $derived(
+    canManageJobs &&
+    (job.status === 'draft' || job.status === 'submitted') &&
+    !currentEstimate
+  );
+
+  async function createEstimate() {
+    creatingEstimate = true;
+    try {
+      const est = await api.post('/api/estimates/', { job: job.job_id });
+      window.location.hash = `/estimates/${est.estimate_id}`;
+    } catch (e) {
+      alert(e.data?.detail || e.message || 'Failed to create estimate.');
+    } finally {
+      creatingEstimate = false;
     }
   }
 
@@ -397,10 +416,27 @@
     poList.filter(p => p.status !== 'cancelled')
           .reduce((s, p) => s + poTotal(p), 0)
   );
-  let canBuildInvoice = $derived(
+  const BILLABLE_JOB_STATUSES = [
+    'approved', 'in_progress', 'work_complete', 'completed', 'cancelled',
+  ];
+  let creatingInvoice = $state(false);
+  let canCreateInvoice = $derived(
     (canManageJobs || canManageFinancials) &&
-    (job.status === 'approved' || job.status === 'work_complete' || job.status === 'completed')
+    BILLABLE_JOB_STATUSES.includes(job.status) &&
+    !draftInvoice
   );
+
+  async function createInvoiceManual() {
+    creatingInvoice = true;
+    try {
+      const inv = await api.post('/api/invoices/', { job: job.job_id });
+      window.location.hash = `/invoices/${inv.invoice_id}`;
+    } catch (e) {
+      alert(e.data?.detail || e.message || 'Failed to create invoice.');
+    } finally {
+      creatingInvoice = false;
+    }
+  }
 
   let populating = $state(false);
   let populateError = $state('');
@@ -469,6 +505,14 @@
 
 <JobHeader {job} {contact} {onStatusChange} />
 
+{#if job.status === 'draft' && job.latest_change_request}
+  <div class="change-request-banner">
+    <strong>Customer requested changes:</strong>
+    <span class="cr-text">{job.latest_change_request.text || '(no comment provided)'}</span>
+    <span class="cr-hint">Edit the revised estimate below, then re-send it.</span>
+  </div>
+{/if}
+
 <!-- DESCRIPTION + DELIVERABLES + HISTORY (fixed height) -->
 <div class="midband">
   <div class="panel description-panel">
@@ -501,8 +545,7 @@
       <div class="top-bar top-bar-ws">
         <span class="top-bar-title">
           WORKSHEET
-          {#if displayedWorksheet} · v{displayedWorksheet.version} · {displayedWorksheet.status}{:else} · None{/if}
-          {#if worksheetList.length > 1} · {worksheetList.length} versions{/if}
+          {#if !displayedWorksheet} · None{/if}
         </span>
         <span class="top-bar-actions">
           {#if displayedWorksheet}
@@ -513,20 +556,6 @@
           {/if}
         </span>
       </div>
-      {#if worksheetList.length > 1}
-        <div class="ws-tabs">
-          {#each worksheetList as ws}
-            <button
-              type="button"
-              class="ws-tab"
-              class:active={ws.est_worksheet_id === (displayedWorksheet?.est_worksheet_id)}
-              onclick={() => { selectedWorksheetId = ws.est_worksheet_id; }}
-            >
-              v{ws.version} <span class="ws-tab-status">({ws.status})</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
       <div class="body">
         {#if displayedWorksheet}
           {@const wsTasks = (displayedWorksheet.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))}
@@ -635,12 +664,11 @@
             <a href="#/change-orders/{displayedVersion.co.change_order_id}">View Change Order</a>
           {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">View Full Estimate</a>
-            {#if canManageJobs && (displayedEstimate.status === 'open' || displayedEstimate.status === 'accepted')}
-              <a href="#/estimates/{displayedEstimate.estimate_id}/revise">Revise Estimate</a>
-            {/if}
           {/if}
-          {#if canManageJobs && !currentEstimate}
-            <a href="#/jobs/{job.job_id}/create-estimate">Create Estimate</a>
+          {#if canCreateEstimate}
+            <button type="button" onclick={createEstimate} disabled={creatingEstimate}>
+              {creatingEstimate ? 'Creating…' : 'Create Estimate'}
+            </button>
           {/if}
           {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
             <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
@@ -992,14 +1020,11 @@
         </span>
         <span class="top-bar-actions">
           {#if displayedInvoice}
-            <a href="#/invoices/{displayedInvoice.invoice_id}">View Full Invoice</a>
+            <a href="#/invoices/{displayedInvoice.invoice_id}">View Invoice</a>
           {/if}
-          {#if canManageJobs && displayedInvoice && (displayedInvoice.status === 'open' || displayedInvoice.status === 'partly-paid')}
-            <a href="#/invoices/{displayedInvoice.invoice_id}/revise">Revise Invoice</a>
-          {/if}
-          {#if canBuildInvoice}
-            <button onclick={() => onStartWizard?.()}>
-              {draftInvoice ? `Continue draft (${draftInvoice.invoice_number})` : 'Build invoice'}
+          {#if canCreateInvoice}
+            <button type="button" onclick={createInvoiceManual} disabled={creatingInvoice}>
+              {creatingInvoice ? 'Creating…' : 'Create Invoice'}
             </button>
           {/if}
         </span>
@@ -1240,6 +1265,20 @@
     flex-direction: column;
     overflow: hidden;
   }
+
+  .change-request-banner {
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+    padding: 8px 12px;
+    font-size: 13px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .change-request-banner .cr-text { font-style: italic; }
+  .change-request-banner .cr-hint { color: #c2410c; margin-left: auto; font-size: 12px; }
 
   /* HEADER */
   .job-header {

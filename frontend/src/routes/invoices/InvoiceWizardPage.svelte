@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
+  import { link } from 'svelte-spa-router';
+  import JobHeader from '../../components/jobs/JobHeader.svelte';
   import WizardSourcePool from '../../components/invoices/WizardSourcePool.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
   import WizardActions from '../../components/wizards/WizardActions.svelte';
@@ -8,6 +10,8 @@
   const { params = {} } = $props();
 
   let invoice = $state(null);
+  let job = $state(null);
+  let contact = $state(null);
   let lineItems = $state([]);
   let sourcePool = $state(null);
   let selectedAtoms = $state([]);
@@ -70,6 +74,15 @@
         api.get(`/api/invoices/${params.id}/source-pool/`),
       ]);
       invoice = inv;
+      if (inv?.job) {
+        try {
+          job = await api.get(`/api/jobs/${inv.job}/`);
+          if (job?.contact) {
+            try { contact = await api.get(`/api/contacts/${job.contact}/`); }
+            catch (_) { contact = null; }
+          }
+        } catch (_) { job = null; contact = null; }
+      }
       lineItems = items;
       sourcePool = pool;
       reconcileAtomStates();
@@ -137,14 +150,13 @@
 {:else if error}
   <p><strong>Error:</strong> {error}</p>
 {:else if invoice}
-  <h2>Build Invoice — {invoice.job_number}</h2>
-  <p>
-    <a href={`#/jobs/${invoice.job}`}>&laquo; Back to Job {invoice.job_number}{invoice.job_name ? ` - ${invoice.job_name}` : ''}</a>
-  </p>
-  {#if invoice.job_description}
-    <p>{invoice.job_description}</p>
+  {#if job}
+    <JobHeader {job} {contact} />
   {/if}
-  <p>Draft {invoice.invoice_number} · {lineItems.length} line items</p>
+  <div class="toolbar">
+    <a href={`/invoices/${invoice.invoice_id}`} use:link class="back-link">&laquo; back to invoice</a>
+    <span class="page-title">Billables: {invoice.invoice_number}</span>
+  </div>
 
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
     <div>
@@ -181,3 +193,9 @@
     discardConfirm="Delete this draft invoice and release all atoms?"
   />
 {/if}
+
+<style>
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 24px; }
+  .back-link { font-size: 13px; }
+  .page-title { font-size: 18px; font-weight: 600; }
+</style>

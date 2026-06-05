@@ -380,10 +380,10 @@ class SearchService:
     @staticmethod
     def search_est_worksheets(query):
         """Search for est worksheets matching the query"""
+        # Worksheets relate only to a job now; match on the job number.
         return EstWorksheet.objects.filter(
-            Q(job__job_number__icontains=query) |
-            Q(estimate__estimate_number__icontains=query)
-        ).select_related('job', 'estimate')
+            Q(job__job_number__icontains=query)
+        ).select_related('job')
 
     @classmethod
     def search_all_entities(cls, query):

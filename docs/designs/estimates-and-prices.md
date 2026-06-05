@@ -10,8 +10,7 @@ pass-through. Read alongside:
   (`ServiceError` / `NotFoundError` / `SchemeSupersededError`).
 - `docs/designs/jobs-tasks-and-worksheets.md` — `Task`, `PlanTask`,
   `Job`/`EstWorksheet` containers, populate paths, signal receivers
-  (`estimate_accepted`, `estimate_status_changed_for_job`,
-  `estimate_status_changed_for_worksheet`).
+  (`estimate_accepted`, `estimate_status_changed_for_job`).
 - `docs/designs/materials-inventory-and-purchasing.md` — `Material`
   and `PlanMaterial` (the other atom family), `PriceListItem`.
 - `docs/designs/invoicing-and-expenses.md` — the parallel invoice
@@ -457,10 +456,13 @@ in `architecture-and-conventions.md` §9; it runs daily.
 
 1. Validates parent is **not** in `draft` (drafts edit in place).
 2. Creates a new `Estimate` with `parent=self`,
-   `version=self.version+1`, status `draft`, same `estimate_number`.
-3. Copies line items field-by-field. Source rows are **not** carried
-   forward — the new revision starts with no atom claims, so a fresh
-   worksheet revision (or manual adds) can wire it up.
+   `version=self.version+1`, status `draft`, and `estimate_number`
+   `{job_number}-{new_version}` (see §5.4).
+3. Copies line items field-by-field and **moves** each line's
+   `EstimateLineItemSource` rows onto the revision (reassigns the FK, not a
+   copy — the source `unique_together` forbids two claims on one atom). So a
+   revision stays worksheet-backed and the atom remains claimed exactly once;
+   a source is lost only when the user deletes that line.
 4. Marks the parent `superseded`.
 
 The `unique_together = ['estimate_number', 'version']` constraint
@@ -468,10 +470,14 @@ keeps revisions distinct.
 
 ### 5.4 Document numbering
 
-Pointer: `CLAUDE.md` "Document Numbering". `EstimateService.create_for_job`
-calls `NumberGenerationService.generate_next_number('estimate')`,
-which uses Configuration keys `estimate_number_sequence` and
-`estimate_counter`.
+One estimate tree per job, so the estimate's identity *is* the job's: the
+`estimate_number` is the **job number plus the revision** —
+`{job_number}-{version}`, including revision 1 (e.g. `JOB-2026-0001-1`,
+`-2`, …). It is set by `EstimateService.create_for_job` /
+`create_direct` / `EstimateWizardService.open_for_worksheet` at creation
+and by `revise_estimate` on each revision. The customer tracks one number
+across the conversation. (The old `estimate_number_sequence` /
+`estimate_counter` Configuration keys are no longer used for estimates.)
 
 ---
 
@@ -662,7 +668,7 @@ Permissions: read is `IsAuthenticated`; write actions require
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
 | `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Return to estimate detail) |
 | `CatalogPicker.svelte` | `frontend/src/components/` | Unified search over `TaskTemplate` + `PriceListItem` + Manual; shared by worksheet/job atom-add and direct-estimate line-item add |
-| `EstimateLineItemModal.svelte` | `frontend/src/components/` | Modal for direct (no-atom) line item create/edit on the Estimate detail page |
+| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit; used by both the Estimate and Invoice detail pages. Manual/catalog toggle on add; field-edit only on edit (see §11.3) |
 
 The invoice-side wizard is structurally parallel — same source pool,
 add-atoms, remove-atoms, in-sync rule. Components are partially
@@ -800,33 +806,79 @@ Route: `#/estimates/:id` → `EstimateDetailPage.svelte`
 
 Top-down:
 
-1. **JobHeader** — same component used on the Job detail page.
+1. **JobHeader** — same component used on the Job detail page, and
+   shared with the atom-pull (wizard) page.
 2. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
    buttons.
-3. **Field table** — estimate number, job link, worksheet link
-   (if any), version, status, dates.
-4. **Line items table** (`LineItemTable.svelte`) — line items with
+3. **Field table** — estimate number, job link, worksheet link (a link
+   to the worksheet detail page at `#/worksheets/{id}`, or "None" if no
+   worksheet is attached), version, status, dates.
+4. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
+   an actions row containing an "Add Line Item" button and, if a worksheet
+   is attached, a **"Show Worksheet"** link that navigates to the atom-pull
+   (wizard) page at `#/estimates/{id}/wizard`.
+5. **Line items table** (`LineItemTable.svelte`) — line items with
    per-row Edit / move-up / move-down / Delete affordances when the
    estimate is editable (`isDraft` and `can_manage_jobs`).
-5. **EstimateLineItemModal** — direct (no-atom) line item create/edit.
+6. **LineItemModal** — shared modal for direct (no-atom) line item
+   create/edit (see §11.3).
 
 ### 11.2 Action buttons
 
 | Status | Button | Handler |
 |---|---|---|
-| `draft` | "Send Estimate" | disabled stub (PDF + email not implemented) |
-| `draft` | "Mark as Sent" | `POST /api/estimates/{id}/mark-open/` |
-| `draft` | "Add Line Item" | opens `EstimateLineItemModal` |
-| `draft` (with worksheet) | "Open atoms wizard" | navigates to `#/estimates/{id}/wizard` |
+| `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
+| `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
+| `draft` | "Add Line Item" | opens `LineItemModal` |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
 Editing rules: `canEdit = canManageJobs && status === 'draft'`.
 
+### 11.3 Line item add/edit — manual and catalog
+
+`LineItemModal.svelte` (`frontend/src/components/`) is a shared modal
+used by both the estimate and invoice detail pages.
+
+**When adding** a line item on a draft estimate, the modal offers a
+toggle between **manual entry** and **"From Price List"** (catalog
+mode). In catalog mode, the user picks a `PriceListItem`; the form
+POSTs `{price_list_item, qty}` to the line-items endpoint and the
+server copies `description`, `units`, `selling_price`, and
+`accounting_category` from the PLI into the new `EstimateLineItem`.
+The catalog row stores `price_list_item` on the line item for carry-over
+(see §9.1 Phase B).
+
+**When editing** an existing line item, the toggle is absent — the
+modal edits the line's own fields only (description, qty, units,
+price, accounting_category).
+
+TaskTemplate-based catalog adds are not wired on the estimate detail
+page (PLI only). Template-driven atoms are added through the
+worksheet/wizard path.
+
 The legacy HTML view at `/estimates/` still exists in
 `apps/estimates/views.py` but is deprecated.
+
+### 11.4 Job overview — Create/View model
+
+The Job overview page (job detail, estimate pillar) follows a
+Create/View model:
+
+- **"Create Estimate"** — shown only when the job's status is `draft`
+  or `submitted` **and** no non-superseded estimate exists yet. POSTs
+  `{job}` to `/api/estimates/` (→ `EstimateService.create_for_job`,
+  always a new draft) and navigates to the new estimate detail page.
+  The UI enforces one active estimate tree per job; the backend permits
+  multiple estimates, but the button disappears once any live estimate
+  exists.
+- **"View Full Estimate"** (or equivalent) — shown whenever a
+  non-superseded estimate exists, regardless of job status. Can appear
+  alongside "Create Estimate" if the button hasn't been suppressed by
+  the rules above, but in practice only one state is active at a time:
+  once an estimate exists, the Create button no longer renders.
 
 ---
 
@@ -1189,12 +1241,57 @@ previous stub internal URL. This is the value that lands in
 |---|---|---|
 | `GET` | `/api/portal/estimates/<token>/` | Customer-safe payload: deliverables, line items, total, status |
 | `POST` | `/api/portal/estimates/<token>/accept/` | Accept the estimate |
+| `POST` | `/api/portal/estimates/<token>/request-changes/` | Ask for changes (optional `reason`); auto-revises, keeps the job alive |
 | `POST` | `/api/portal/estimates/<token>/reject/` | Reject with optional `reason` |
 
 The payload (`build_estimate_payload`) returns deliverables, line
-items, and status; no internal IDs or operator data.
+items, and status; no internal IDs or operator data. The `actions`
+list is `['accept', 'request_changes', 'reject']` while `open`, else `[]`.
 
-An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; the page derives available actions from status (`accept`/`reject` shown only when `open`), and terminal, superseded, or expired states render a read-only status message with no action buttons.
+**Customer-requested revision (`request-changes`).** Distinct from reject:
+the customer wants the job but needs changes. Reject declines the *job*
+(terminal); request-changes keeps it alive. The endpoint only acts from
+`open` (a click racing the shop is a no-op), and calls
+`EstimateService.request_changes(pk, actor)`, which:
+
+1. Writes the customer's comment as an `action` HistoryEntry on the estimate
+   (`_action='Changes requested via customer link'`, `user=None`, `text=`
+   the comment) — the same plumbing as accept/reject.
+2. Calls `revise_estimate` (§5.3): a fresh `draft` revision, sources moved,
+   parent `superseded`.
+3. Reverts the Job `submitted → draft` (a transition added for this; see
+   `jobs-tasks-and-worksheets.md`), so a draft job + draft estimate keep it
+   in the pipeline. Reverting to `draft` fires no job-status side effects.
+4. Emails the shop via `notify_shop_of_decision(estimate, 'requested changes',
+   reason=...)`.
+
+The shop sees the auto-staged revision two ways: a derived **"Revision"**
+badge on the board card (`BoardService.is_revision` — the live estimate is a
+`draft` with `version > 1`), and a banner on the Job detail page echoing the
+latest comment (`JobSerializer.latest_change_request`, detail-only). The shop
+edits the draft and re-sends; the customer can't request again until then
+(the draft isn't portal-visible).
+
+An **unknown/unmatched token** or a **draft estimate** both return the generic `Not available.` 404 — an unsent token leaks nothing, the same as an unknown token. A valid token for a **non-draft** estimate returns the full payload regardless of status; terminal, superseded, or expired states render a read-only status message with no action buttons.
+
+**Actionability respects job status (`_is_actionable`).** The estimate is
+customer-actionable only when **`estimate.status == open` AND
+`job.status == submitted`**. The shop can move the job independently — cancel,
+reject, manually approve, or reopen it — without touching the estimate (an open
+estimate on a moved job is a legitimate real-world state). The portal **never
+mutates the estimate from the job side**; it just respects job status. When an
+estimate is `open` but its job is no longer `submitted`, the payload carries
+`actionable=false`, an empty `actions` list, and `closed_message` = *"This
+estimate is not open for response.  Please contact us for further
+information."*, and the page renders that read-only message instead of buttons.
+The three POST handlers (`accept`/`reject`/`request-changes`) apply the same
+`_is_actionable` guard, so a stale browser tab can't act once the job has moved.
+
+**Superseded → current revision link.** For a `superseded` estimate the payload
+includes `current_token` — the token of the **latest non-draft version** for
+the job (`_current_token`). Drafts are excluded (they aren't portal-viewable),
+so a customer is never linked to an unsent revision; if the only newer version
+is an unsent draft, `current_token` is `null` and no forward link is shown.
 
 **Customer attribution.** Operator-side
 `EstimateService.update_status(pk, new_status, actor=customer_dict)`
@@ -1214,10 +1311,15 @@ completes.
 by the same `npm run build`, served at `/portal/`). It is login-not-required,
 has no operator nav, and reads the token from the query string. It
 shows deliverables (top), line items + total, and a status banner.
-`open` estimates show Accept and Reject buttons, both requiring a
-confirmation dialog with plain-language consequences. A `superseded`
-estimate links to the current revision's portal URL. All other
-terminal statuses show a read-only status message.
+**Actionable** estimates (open + submitted job) show Accept, Request changes,
+and Decline buttons, each opening a confirmation panel with plain-language
+consequences (Request changes and Decline take an optional comment). After a
+successful Request changes the page shows a "we'll send a revised estimate"
+message rather than the generic superseded notice. An `open` estimate whose
+job has moved on renders `closed_message` read-only (no buttons). A
+`superseded` estimate links to the latest non-draft revision's portal URL (or
+no link if the only newer version is an unsent draft). All other terminal
+statuses show a read-only status message.
 
 **Not yet built:** Change-order customer approval. COs have no
 send-to-customer flow today (no PDF, no email service, no CO entry in

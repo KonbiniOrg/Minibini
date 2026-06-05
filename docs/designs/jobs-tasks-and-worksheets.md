@@ -95,7 +95,7 @@ Valid transitions (`Job.clean()` at `apps/jobs/models.py`):
 
 ```
 draft         → submitted, rejected
-submitted     → approved, rejected
+submitted     → approved, rejected, draft
 approved      → in_progress, on_hold, cancelled
 in_progress   → work_complete, on_hold, cancelled
 on_hold       → approved, in_progress, cancelled
@@ -113,6 +113,15 @@ Estimate-driven transitions: sending an estimate fires `submitted`, and
 accepting one fires `approved`. An **open** estimate going to `rejected`
 (customer decline) or `expired` (the `mark_estimates_expired` sweep) drives
 the Job to `rejected` — see `estimates-and-prices.md` §9.3 and §13 below.
+
+`submitted → draft` is the **re-quote** transition: when a customer requests
+changes via the portal (`estimates-and-prices.md` §15.1), the estimate
+auto-revises and the Job drops back to `draft` so a draft job + draft
+estimate keep it in the quoting pipeline. Such a job carries a derived
+**"Revision"** badge on the board card (`BoardService.is_revision` — the live
+estimate is a `draft` at `version > 1`), and the Job detail page banners the
+customer's latest change-request comment (`JobSerializer.latest_change_request`).
+Reverting to `draft` fires no job-status side effects.
 
 `work_complete → in_progress` and `cancelled → in_progress` are
 *reactivation* transitions — for moving a Job back into work after it was
@@ -629,52 +638,50 @@ and `can_manage_time` rules.
 ## 6. EstWorksheet
 
 `EstWorksheet` (`apps/estimates/models.py`, decorated with
-`@history`) is the planning-side container. It belongs to a Job (FK
-declared directly on EstWorksheet) and may produce an Estimate.
+`@history`) is the planning-side container. **One mutable worksheet per
+job.** It belongs to a Job (FK) and has **no other lifecycle** — no
+`status`, `version`, or `parent`, and **no FK to the estimate**. Worksheet
+and estimate find each other only through the shared `job` (one estimate
+tree per job). The worksheet's fields are just `est_worksheet_id`, `job`,
+and `created_date`; it holds `PlanTask`s and `PlanMaterial`s.
 
-### 6.1 Status machine
+### 6.1 Editability (derived)
 
-| Status | Meaning |
-|---|---|
-| `draft` | Editable; tasks/materials can be added/removed |
-| `final` | Locked; an Estimate has been sent (auto-set when the linked Estimate transitions to open/accepted/rejected) |
-| `superseded` | Replaced by a new revision (terminal) |
+A worksheet has no stored status; its editability is **derived from the
+job's live estimate** via `WorksheetService.is_editable(worksheet)`:
+editable while the job's latest non-superseded estimate is a **draft** (or
+the job has no estimate yet), and **frozen once an estimate is sent**
+(open) and through accept. Revising a sent estimate produces a new draft,
+which makes the worksheet editable again — so freezing is never a dead end.
+The worksheet write paths (`add_task_*`, `reorder_items`,
+`open_for_worksheet`) and the API (`EstWorksheet`/`PlanTask` serializers
+expose a computed `editable` flag) all key off this. There is no
+worksheet-status signal — `estimate_status_changed_for_worksheet` and the
+status machine were removed.
 
-Status transitions are driven externally — not by the worksheet itself
-but by signals from the linked Estimate (see §11). A worksheet's status
-is set automatically:
+### 6.2 No worksheet versioning
 
-- On creation, mirrors the linked Estimate's status (draft → draft;
-  open/accepted/rejected → final; superseded → superseded).
-- On Estimate status change, the
-  `estimate_status_changed_for_worksheet` receiver bulk-updates all
-  worksheets pointing at that Estimate.
-- `EstimateService.mark_open` also explicitly finalizes a draft worksheet.
+There is no worksheet version chain. A job has a single worksheet that is
+edited in place; point-in-time history lives in the `HistoryEntry` audit
+trail. (`create_new_version` / `revise_worksheet` / `finalize` were
+removed.) The estimate keeps its own version chain (it's the customer-facing
+document); see `estimates-and-prices.md` §5.3.
 
-### 6.2 Versioning (revision)
+### 6.3 Generating an estimate (one tree)
 
-`EstWorksheet.create_new_version()` (or
-`WorksheetService.revise_worksheet(pk)`):
+`EstimateWizardService.open_for_worksheet(worksheet)` returns the job's
+draft estimate, **adopting an existing draft** (e.g. one created directly)
+rather than minting a second, and creating one only when the job has none.
+It refuses if the worksheet is frozen.
 
-1. Marks `self` as superseded.
-2. Creates a new EstWorksheet with `parent=self`, `version=self.version+1`,
-   `estimate=None`, status `draft`.
-3. Copies all `PlanTask` rows (preserving `sort_order` and
-   `est_worker_time`) and all `PlanMaterial` rows on the worksheet —
-   including task-less ones — into the new worksheet, re-pointing each
-   material at its cloned PlanTask.
+### 6.4 Deletion guard
 
-Old versions stay in the database for reference. The new worksheet
-starts fresh and may eventually carry its own Estimate.
+`WorksheetService.delete_worksheet` refuses only when one of the
+worksheet's PlanTasks/PlanMaterials is **claimed by an estimate line item**
+(an `EstimateLineItemSource`) — those line items must be removed first so
+the source rows don't outlive the atoms they reference.
 
-### 6.3 Deletion guard
-
-`WorksheetService.delete_worksheet` refuses to delete a worksheet that
-has a linked Estimate — the Estimate must be deleted first so its line
-items and source rows don't outlive the PlanTasks/PlanMaterials they
-reference.
-
-### 6.4 PlanTask vs Task
+### 6.5 PlanTask vs Task
 
 PlanTask (`apps/jobs/models.py`) is **planning** data: name,
 description, billing fields (`rate_scheme`, `active_modifiers`,
@@ -700,7 +707,7 @@ Carry-over from worksheet to job is via `JobService.copy_from_worksheet`
 `parent_task=None` — hierarchy emerges later. `Task.source_plan_task` is
 a `OneToOneField` so the same PlanTask cannot be carried over twice.
 
-### 6.5 Estimate generation
+### 6.6 Estimate generation
 
 The estimate wizard reads PlanTasks and PlanMaterials as "atoms" and
 groups them into EstimateLineItems via `EstimateLineItemSource` rows.
@@ -956,8 +963,10 @@ Route: `#/worksheets/:id` → `WorksheetDetailPage.svelte`.
 | `PlanMaterialModal.svelte` | Modal for creating / editing PlanMaterials; auto-fills and disables price fields when a PriceListItem is picked |
 | `PriceListItemPicker.svelte` | Reusable searchable dropdown for picking a `PriceListItem`. Filters the dropdown client-side on each keystroke; reused on the Materials side. (A code comment notes server-side `?search=` filtering is a future option once the catalog grows.) |
 
-Editing is gated to `draft` worksheets and `can_manage_jobs`. Reordering
-is via up/down arrows (no drag-and-drop).
+Editing is gated to `can_manage_jobs` and **editable** worksheets — the
+detail page reads the serializer's computed `editable` flag (the worksheet
+is editable while the job's estimate is draft/absent, frozen once it's sent;
+see §6.1). Reordering is via up/down arrows (no drag-and-drop).
 
 ### 11.2 PlanTask detail page
 
@@ -1217,12 +1226,13 @@ deliverable-side mechanics are owned by this doc:
 changes flow through services. This is the same inconsistency the
 architecture doc flags — see `architecture-and-conventions.md` §2.3.
 
-`apps/estimates/signals.py` (123 lines) defines three custom signals
-and three receivers:
+`apps/estimates/signals.py` defines two custom signals and their
+receivers (the former `estimate_status_changed_for_worksheet` was removed
+when worksheets were decoupled from estimates — worksheet editability is now
+derived, not signal-driven; see §6.1):
 
 | Signal | Sender | Receiver | Effect |
 |---|---|---|---|
-| `estimate_status_changed_for_worksheet` | `Estimate.save()` | `update_estworksheet_status` | Bulk-updates all `EstWorksheet` rows linked to the Estimate to the mapped worksheet status (draft → draft; open/accepted/rejected → final; superseded → superseded) |
 | `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved on send/accept; **open → rejected** drives the Job to `rejected`); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
 | `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | `trigger_atom_carry_over` | Calls `AtomCarryOverService.carry_over_for_estimate(estimate)` to copy plan-side atoms to the Job |
 

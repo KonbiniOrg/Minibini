@@ -25,32 +25,31 @@ class OpenForWorksheetTest(TestCase):
         est = EstimateWizardService.open_for_worksheet(self.ws)
         self.assertEqual(est.status, Estimate.STATUS_DRAFT)
         self.assertEqual(est.job, self.job)
-        self.ws.refresh_from_db()
-        self.assertEqual(self.ws.estimate, est)
 
     def test_returns_existing_draft(self):
         first = EstimateWizardService.open_for_worksheet(self.ws)
         second = EstimateWizardService.open_for_worksheet(self.ws)
         self.assertEqual(first.pk, second.pk)
 
-    def test_refuses_finalized_worksheet(self):
-        self.ws.status = EstWorksheet.STATUS_FINAL
-        self.ws.save()
+    def test_adopts_jobs_existing_draft_estimate(self):
+        """One tree per job: if the job already has a draft estimate (e.g.
+        created directly via the Create Estimate button), generating from the
+        worksheet adopts that estimate rather than minting a second one."""
+        from apps.estimates.services import EstimateService
+        existing = EstimateService.create_for_job(self.job.pk)
+        result = EstimateWizardService.open_for_worksheet(self.ws)
+        self.assertEqual(result.pk, existing.pk)
+        self.assertEqual(Estimate.objects.filter(job=self.job).count(), 1)
+
+    def test_refuses_when_estimate_sent(self):
+        """The worksheet freezes once the job's estimate is sent; generating
+        an estimate from it then refuses (the model is decoupled — editability
+        derives from the job's live estimate)."""
+        est = EstimateWizardService.open_for_worksheet(self.ws)
+        # Force the estimate to a sent state, bypassing transition validation.
+        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             EstimateWizardService.open_for_worksheet(self.ws)
-
-    def test_refuses_when_linked_estimate_is_non_draft(self):
-        """A draft worksheet linked to a non-draft estimate is an
-        inconsistent state — the worksheet should already be FINAL.
-        Refuse rather than silently creating a new estimate (which
-        would orphan the existing one)."""
-        est = EstimateWizardService.open_for_worksheet(self.ws)
-        # Force estimate to non-draft via update() to bypass transition validation
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        self.ws.refresh_from_db()
-        with self.assertRaises(ValidationError) as cm:
-            EstimateWizardService.open_for_worksheet(self.ws)
-        self.assertIn('inconsistent', str(cm.exception).lower())
 
 
 class ClaimConflictExceptionTest(TestCase):
