@@ -26,30 +26,35 @@ class EstimateService:
     def create_direct(job, **kwargs):
         """
         Create Estimate directly. Starts in 'draft' status.
-        Estimate number is auto-generated.
+        Estimate number is the job number plus the revision (one estimate tree
+        per job): ``{job_number}-{version}``.
         """
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
-
+        version = kwargs.pop('version', 1)
+        estimate_number = kwargs.pop('estimate_number', f'{job.job_number}-{version}')
         return Estimate.objects.create(
             job=job,
             estimate_number=estimate_number,
+            version=version,
             status=Estimate.STATUS_DRAFT,
             **kwargs
         )
 
     @staticmethod
     def create_for_job(job_pk):
-        """Create a new draft Estimate for a job by PK."""
+        """Create a new draft Estimate for a job by PK.
+
+        The estimate number derives from the job number plus the revision:
+        ``{job_number}-1`` for the first version.
+        """
         from apps.jobs.models import Job
         try:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
 
-        estimate_number = NumberGenerationService.generate_next_number('estimate')
         estimate = Estimate.objects.create(
             job=job,
-            estimate_number=estimate_number,
+            estimate_number=f'{job.job_number}-1',
             version=1,
             status=Estimate.STATUS_DRAFT,
         )
@@ -110,12 +115,8 @@ class EstimateService:
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-
-        # Finalize associated worksheet if draft
-        worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
-        if worksheet and worksheet.status == EstWorksheet.STATUS_DRAFT:
-            worksheet.status = EstWorksheet.STATUS_FINAL
-            worksheet.save()
+        # The job's worksheet (if any) freezes automatically: editability is
+        # derived from the now-sent estimate (WorksheetService.is_editable).
 
         return estimate
 
@@ -130,31 +131,77 @@ class EstimateService:
         if parent.status == Estimate.STATUS_DRAFT:
             raise ValidationError('Cannot revise a draft estimate. Edit it directly.')
 
+        new_version = parent.version + 1
         new_estimate = Estimate.objects.create(
             job=parent.job,
-            estimate_number=parent.estimate_number,
-            version=parent.version + 1,
+            estimate_number=f'{parent.job.job_number}-{new_version}',
+            version=new_version,
             status=Estimate.STATUS_DRAFT,
             parent=parent,
         )
 
-        # Copy line items (source rows are NOT carried forward; the new revision
-        # gets fresh atoms via worksheet revision or manual adds)
+        # Copy line items, MOVING each line's source rows (atom claims) onto the
+        # revision so it stays worksheet-backed and the atom remains claimed
+        # exactly once. (Copying the rows would violate EstimateLineItemSource's
+        # unique_together on the atom.) source_template is copied too so a
+        # catalog-backed line keeps its origin for carry-over.
         for li in EstimateLineItem.objects.filter(estimate=parent):
-            EstimateLineItem.objects.create(
+            new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
                 price_list_item=li.price_list_item,
+                source_template=li.source_template,
                 qty=li.qty,
                 units=li.units,
                 description=li.description,
                 price=li.price,
                 accounting_category=li.accounting_category,
             )
+            for src in li.sources.all():
+                src.estimate_line_item = new_li
+                src.save()
 
         # Supersede parent
         parent.status = Estimate.STATUS_SUPERSEDED
         parent.save()
 
+        return new_estimate
+
+    @staticmethod
+    def request_changes(pk, actor):
+        """Customer-initiated revision from the portal.
+
+        Records the customer's comment, revises the estimate (new draft, parent
+        superseded), and reverts the job ``submitted -> draft`` so a draft job +
+        draft estimate keep it in the quoting pipeline. ``actor`` is the portal
+        actor dict ``{'contact_id', 'email', 'reason'}``. Returns the new draft.
+        """
+        from apps.core.models import HistoryEntry
+        from apps.jobs.models import Job
+        from apps.jobs.services import JobService
+        try:
+            parent = Estimate.objects.get(pk=pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {pk} not found')
+        with transaction.atomic():
+            # Record the change request against the estimate the customer saw,
+            # reusing the customer-action HistoryEntry shape (see update_status).
+            HistoryEntry.objects.create(
+                entry_type='action',
+                object_type='estimate',
+                object_id=parent.pk,
+                user=None,
+                changes={
+                    '_action': 'Changes requested via customer link',
+                    'contact_id': actor.get('contact_id'),
+                    'customer_email': actor.get('email'),
+                },
+                text=actor.get('reason') or '',
+            )
+            new_estimate = EstimateService.revise_estimate(parent.pk)
+            # Revising supersedes the parent but doesn't touch job status.
+            job = parent.job
+            if job.status == Job.STATUS_SUBMITTED:
+                JobService.update_status(job.pk, Job.STATUS_DRAFT)
         return new_estimate
 
     @staticmethod
@@ -541,36 +588,64 @@ class WorksheetService:
     """Service for EstWorksheet operations."""
 
     @staticmethod
+    def is_editable(worksheet):
+        """A worksheet is editable while the job is still quoting — its live
+        (non-superseded) estimate is a draft, or the job has no estimate yet.
+        It freezes once an estimate is sent (and stays frozen through accept);
+        revising a sent estimate yields a new draft, which unlocks it again.
+        """
+        live = (
+            Estimate.objects
+            .filter(job_id=worksheet.job_id)
+            .exclude(status=Estimate.STATUS_SUPERSEDED)
+            .order_by('-version', '-pk')
+            .first()
+        )
+        return live is None or live.status == Estimate.STATUS_DRAFT
+
+    @staticmethod
     def create_worksheet(job_pk, **kwargs):
-        """Create a new draft EstWorksheet for a job."""
+        """Create a new EstWorksheet for a job (one per job)."""
         from apps.jobs.models import Job
         try:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
-        ws = EstWorksheet(job=job, status=EstWorksheet.STATUS_DRAFT, **kwargs)
+        ws = EstWorksheet(job=job, **kwargs)
         ws.save()
         return ws
 
     @staticmethod
-    def revise_worksheet(pk):
-        """Create a new revision of a worksheet using the model's create_new_version."""
-        try:
-            ws = EstWorksheet.objects.get(pk=pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {pk} not found')
-        return ws.create_new_version()
+    def has_claimed_atoms(worksheet):
+        """True if any of the worksheet's plan tasks/materials are claimed by an
+        estimate line item source. Such a worksheet can't be deleted until those
+        line items are removed (the frontend uses this to suppress the Delete
+        button so the user never hits the 400)."""
+        from django.db.models import Q
+        from apps.jobs.models import PlanTask
+        from apps.inventory.models import PlanMaterial
+        from apps.estimates.models import EstimateLineItemSource
+        pt_ids = list(
+            PlanTask.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
+        )
+        pm_ids = list(
+            PlanMaterial.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
+        )
+        return EstimateLineItemSource.objects.filter(
+            Q(source_type=EstimateLineItemSource.SOURCE_PLAN_TASK, source_pk__in=pt_ids)
+            | Q(source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL, source_pk__in=pm_ids)
+        ).exists()
 
     @staticmethod
     def delete_worksheet(worksheet):
-        """Delete a worksheet. Refuses if an estimate is linked — the
-        estimate must be deleted first so its line items and source rows
-        don't outlive the plan_tasks/plan_materials they reference.
+        """Delete a worksheet. Refuses if any of its plan tasks/materials are
+        claimed by an estimate line item — those line items must be removed
+        first so their source rows don't outlive the atoms they reference.
         """
-        if worksheet.estimate_id is not None:
+        if WorksheetService.has_claimed_atoms(worksheet):
             raise ValidationError(
-                'Cannot delete a worksheet with an associated estimate. '
-                'Delete the estimate first.'
+                'Cannot delete a worksheet whose tasks or materials are used by '
+                'an estimate. Remove those estimate line items first.'
             )
         worksheet.delete()
 
@@ -595,9 +670,9 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
+        if not WorksheetService.is_editable(ws):
             raise ValidationError(
-                f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
+                'Cannot add tasks to a worksheet whose estimate has been sent.'
             )
         try:
             tt = TaskTemplate.objects.get(pk=template_pk)
@@ -633,9 +708,9 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
+        if not WorksheetService.is_editable(ws):
             raise ValidationError(
-                f'Cannot add tasks to a {ws.get_status_display().lower()} worksheet.'
+                'Cannot add tasks to a worksheet whose estimate has been sent.'
             )
         if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
             raise ValidationError(
@@ -655,28 +730,13 @@ class WorksheetService:
             ws = EstWorksheet.objects.get(pk=worksheet_pk)
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError('Cannot reorder on a non-draft worksheet.')
+        if not WorksheetService.is_editable(ws):
+            raise ValidationError('Cannot reorder a worksheet whose estimate has been sent.')
 
         items_qs = PlanTask.objects.filter(est_worksheet=ws)
         BundlingService.reorder_container_items(
             items_qs, item_type, item_id, direction,
         )
-
-    @staticmethod
-    def finalize(worksheet_pk):
-        """Mark a draft worksheet as final."""
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if ws.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError(
-                f'Cannot finalize a {ws.get_status_display().lower()} worksheet.'
-            )
-        ws.status = EstWorksheet.STATUS_FINAL
-        ws.save()
-        return ws
 
 
 class EstimateClaimConflict(Exception):
@@ -700,44 +760,36 @@ class EstimateWizardService(BaseWizardService):
     claim_conflict_exc = EstimateClaimConflict
 
     @staticmethod
-    def _validate_draft_worksheet(worksheet):
-        from apps.estimates.models import EstWorksheet
-        if worksheet.status != EstWorksheet.STATUS_DRAFT:
-            raise ValidationError(
-                f'Cannot run wizard on worksheet in status "{worksheet.status}". '
-                f'Worksheet must be in draft.'
-            )
-
-    @staticmethod
     def open_for_worksheet(worksheet):
-        """Return the worksheet's draft Estimate, creating one if none exists.
+        """Return the job's draft Estimate, creating one if none exists.
 
-        Raises ValidationError if the worksheet is not in draft, or if the
-        worksheet is linked to a non-draft estimate (which should not be
-        possible — the worksheet should have been promoted to FINAL when its
-        estimate moved out of draft).
+        Worksheet and estimate are related only through the job (one estimate
+        tree per job). Adopts the job's existing draft estimate rather than
+        minting a second. Refuses if the worksheet is frozen (its job already
+        has a sent/accepted estimate).
         """
         from apps.estimates.models import Estimate
-        EstimateWizardService._validate_draft_worksheet(worksheet)
-
-        if worksheet.estimate is not None:
-            if worksheet.estimate.status == Estimate.STATUS_DRAFT:
-                return worksheet.estimate
+        if not WorksheetService.is_editable(worksheet):
             raise ValidationError(
-                'Worksheet is in an inconsistent state — please reload the '
-                'worksheet and try again.'
+                'Cannot generate an estimate from a worksheet whose estimate '
+                'has already been sent.'
             )
 
-        with transaction.atomic():
-            estimate_number = NumberGenerationService.generate_next_number('estimate')
-            estimate = Estimate.objects.create(
-                job=worksheet.job,
-                estimate_number=estimate_number,
-                status=Estimate.STATUS_DRAFT,
-            )
-            worksheet.estimate = estimate
-            worksheet.save()
-        return estimate
+        existing = (
+            Estimate.objects
+            .filter(job=worksheet.job, status=Estimate.STATUS_DRAFT)
+            .order_by('pk')
+            .first()
+        )
+        if existing is not None:
+            return existing
+
+        return Estimate.objects.create(
+            job=worksheet.job,
+            estimate_number=f'{worksheet.job.job_number}-1',
+            version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
     @staticmethod
     def _resolve_atom(atom_ref):
@@ -811,7 +863,15 @@ class EstimateWizardService(BaseWizardService):
             .filter(estimate_line_item__estimate__job=worksheet.job)
             .select_related('estimate_line_item', 'estimate_line_item__estimate')
         )
-        current_estimate_pk = worksheet.estimate_id
+        # "Current" = the job's draft estimate (the one being built). Worksheet
+        # and estimate relate only through the job now.
+        current_estimate = (
+            Estimate.objects
+            .filter(job=worksheet.job, status=Estimate.STATUS_DRAFT)
+            .order_by('pk')
+            .first()
+        )
+        current_estimate_pk = current_estimate.pk if current_estimate else None
         claims = {}
         for src in claimed_sources:
             li = src.estimate_line_item

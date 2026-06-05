@@ -61,7 +61,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
         self.assertEqual(m.units, 'none')
 
     def test_plan_material_pulls_units_from_pli(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial(
             est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
         )
@@ -134,7 +134,7 @@ class MaterialStrTests(TestCase):
         self.assertEqual(str(m), 'Misc (qty: 1.00)')
 
     def test_plan_material_str_includes_units_when_not_none(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, description='Plan Steel',
             quantity=Decimal('3'), units='ea',
@@ -143,7 +143,7 @@ class MaterialStrTests(TestCase):
         self.assertEqual(str(pm), 'Plan Steel (qty: 3.00 ea)')
 
     def test_plan_material_str_omits_units_when_none(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, description='Plan Misc',
             quantity=Decimal('2'),

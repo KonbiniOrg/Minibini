@@ -258,7 +258,7 @@ def estworksheet_list(request):
 def estworksheet_detail(request, worksheet_id):
     """Show details of a specific EstWorksheet with its tasks."""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-    can_edit = worksheet.status == EstWorksheet.STATUS_DRAFT
+    can_edit = WorksheetService.is_editable(worksheet)
 
     # Build context
     container_items = _build_container_items_from_tasks(worksheet)
@@ -289,21 +289,6 @@ def estimate_mark_open(request, estimate_id):
             messages.warning(request, 'Only Draft estimates can be marked as Open')
 
     return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
-
-
-def estworksheet_revise(request, worksheet_id):
-    """Create a new revision of a worksheet"""
-    parent_worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
-
-    if request.method == 'POST':
-        if parent_worksheet.status != EstWorksheet.STATUS_DRAFT:
-            new_worksheet = WorksheetService.revise_worksheet(parent_worksheet.pk)
-            messages.success(request, f'New worksheet revision created (v{new_worksheet.version})')
-            return redirect('estimates:estworksheet_detail', worksheet_id=new_worksheet.est_worksheet_id)
-        else:
-            messages.warning(request, 'Cannot revise a Draft worksheet')
-
-    return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
 
 def task_template_list(request):
@@ -400,9 +385,9 @@ def task_add_from_template(request, worksheet_id):
     """Add Task to EstWorksheet from TaskTemplate"""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
-    # Prevent adding tasks to non-draft worksheets
-    if worksheet.status != EstWorksheet.STATUS_DRAFT:
-        messages.error(request, f'Cannot add tasks to a {worksheet.get_status_display().lower()} worksheet.')
+    # Prevent adding tasks once the job's estimate has been sent (frozen).
+    if not WorksheetService.is_editable(worksheet):
+        messages.error(request, 'Cannot add tasks to a worksheet whose estimate has been sent.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':
@@ -431,9 +416,9 @@ def task_add_manual(request, worksheet_id):
     """Add Task to EstWorksheet manually"""
     worksheet = get_object_or_404(EstWorksheet, est_worksheet_id=worksheet_id)
 
-    # Prevent adding tasks to non-draft worksheets
-    if worksheet.status != EstWorksheet.STATUS_DRAFT:
-        messages.error(request, f'Cannot add tasks to a {worksheet.get_status_display().lower()} worksheet.')
+    # Prevent adding tasks once the job's estimate has been sent (frozen).
+    if not WorksheetService.is_editable(worksheet):
+        messages.error(request, 'Cannot add tasks to a worksheet whose estimate has been sent.')
         return redirect('estimates:estworksheet_detail', worksheet_id=worksheet_id)
 
     if request.method == 'POST':

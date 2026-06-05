@@ -154,35 +154,11 @@ class Estimate(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
-        # Check if status changed and handle updates
+        # Check if status changed and handle updates. (Worksheets no longer
+        # mirror estimate status — their editability is derived from the live
+        # estimate at read time; see WorksheetService.is_editable.)
         if old_status and old_status != self.status:
-            self._maybe_update_worksheet_statuses(old_status)
             self._maybe_update_job_status(old_status)
-
-    def _maybe_update_worksheet_statuses(self, old_status):
-        """Send signal to update worksheet statuses if the change is relevant."""
-        # Map statuses to worksheet statuses (pure Python, no DB hit)
-        old_ws_status = self._get_worksheet_status(old_status)
-        new_ws_status = self._get_worksheet_status(self.status)
-
-        # Only send signal if worksheet status should change
-        if old_ws_status != new_ws_status and new_ws_status is not None:
-            from apps.estimates.signals import estimate_status_changed_for_worksheet
-            estimate_status_changed_for_worksheet.send(
-                sender=self.__class__,
-                estimate=self,
-                new_worksheet_status=new_ws_status
-            )
-
-    def _get_worksheet_status(self, estimate_status):
-        """Map estimate status to worksheet status."""
-        if estimate_status == Estimate.STATUS_DRAFT:
-            return EstWorksheet.STATUS_DRAFT
-        elif estimate_status in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED]:
-            return EstWorksheet.STATUS_FINAL
-        elif estimate_status == Estimate.STATUS_SUPERSEDED:
-            return EstWorksheet.STATUS_SUPERSEDED
-        return None
 
     def _maybe_update_job_status(self, old_status):
         """Send signal to update job status if the change is relevant."""
@@ -310,86 +286,19 @@ class ChangeOrder(models.Model):
 
 @history(exclude=['est_worksheet_id'])
 class EstWorksheet(AbstractWorkContainer):
-    STATUS_DRAFT = 'draft'
-    STATUS_FINAL = 'final'
-    STATUS_SUPERSEDED = 'superseded'
-
-    EST_WORKSHEET_STATUS_CHOICES = [
-        (STATUS_DRAFT, 'Draft'),
-        (STATUS_FINAL, 'Final'),
-        (STATUS_SUPERSEDED, 'Superseded'),
-    ]
-
+    # One mutable worksheet per job. The worksheet has no lifecycle of its own:
+    # it relates to a job only (no estimate FK), carries no status/version, and
+    # its editability is derived from the job's live estimate (see
+    # WorksheetService.is_editable). It is found via the job, not a direct link.
     est_worksheet_id = models.AutoField(primary_key=True)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
-    estimate = models.ForeignKey(Estimate, on_delete=models.SET_NULL, null=True, blank=True, related_name='worksheets')
-    status = models.CharField(max_length=20, choices=EST_WORKSHEET_STATUS_CHOICES, default=STATUS_DRAFT)
-    version = models.IntegerField(default=1)
-    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
     created_date = models.DateTimeField(default=timezone.now)
-
-    def save(self, *args, **kwargs):
-        """Override save to set initial status based on Estimate if creating new worksheet."""
-        # Only set status from estimate on creation, not updates
-        if not self.pk and self.estimate:
-            if self.estimate.status == Estimate.STATUS_DRAFT:
-                self.status = EstWorksheet.STATUS_DRAFT
-            elif self.estimate.status in [Estimate.STATUS_OPEN, Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED]:
-                self.status = EstWorksheet.STATUS_FINAL
-            elif self.estimate.status == Estimate.STATUS_SUPERSEDED:
-                self.status = EstWorksheet.STATUS_SUPERSEDED
-        super().save(*args, **kwargs)
-
-    def create_new_version(self):
-        """Create a new version of this worksheet, marking this one as superseded."""
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-
-        # Mark current worksheet as superseded
-        self.status = EstWorksheet.STATUS_SUPERSEDED
-        self.save()
-
-        # Create new worksheet with this one as parent
-        new_worksheet = EstWorksheet.objects.create(
-            job=self.job,
-            status=EstWorksheet.STATUS_DRAFT,
-            version=self.version + 1,
-            parent=self,  # New worksheet points to this one as parent
-            estimate=None  # New version starts without an estimate
-        )
-
-        # Copy all plan tasks to the new worksheet
-        from apps.jobs.models import copy_active_modifiers
-        for plan_task in self.plan_tasks.all():
-            new_plan_task = PlanTask.objects.create(
-                est_worksheet=new_worksheet,
-                name=plan_task.name,
-                description=plan_task.description,
-                rate_scheme=plan_task.rate_scheme,
-                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
-                est_qty=plan_task.est_qty,
-            )
-
-            # Copy plan materials to the new plan task
-            for plan_material in plan_task.plan_materials.all():
-                PlanMaterial.objects.create(
-                    plan_task=new_plan_task,
-                    est_worksheet=new_worksheet,
-                    price_list_item=plan_material.price_list_item,
-                    accounting_category=plan_material.accounting_category,
-                    description=plan_material.description,
-                    quantity=plan_material.quantity,
-                    unit_cost=plan_material.unit_cost,
-                    sell_price=plan_material.sell_price,
-                )
-
-        return new_worksheet
 
     class Meta:
         db_table = 'worksheets'
 
     def __str__(self):
-        return f"EstWorksheet {self.pk} v{self.version}"
+        return f"EstWorksheet {self.pk}"
 
 
 class WorkTemplate(models.Model):

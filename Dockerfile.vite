@@ -12,6 +12,7 @@ RUN mkdir /app/static
 
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install gunicorn | tee pip-install.out
+RUN cp /app/frontend/vite.config.js.prod /app/frontend/vite.config.js
 
 WORKDIR /app/frontend
 # Suggestion for the Docker maintainer: the line below installs ALL dependencies,

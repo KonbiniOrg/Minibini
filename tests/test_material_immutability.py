@@ -117,7 +117,7 @@ class MaterialImmutabilityTests(_Setup):
 
 class PlanMaterialImmutabilityTests(_Setup):
     def test_patch_pli_linked_plan_material_description_rejected(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
         )
@@ -129,7 +129,7 @@ class PlanMaterialImmutabilityTests(_Setup):
         self.assertEqual(resp.status_code, 400)
 
     def test_patch_pli_linked_plan_material_unit_cost_allowed(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
         )
@@ -144,7 +144,7 @@ class PlanMaterialImmutabilityTests(_Setup):
         """PlanMaterial has no Restock/Draw-more state machine; quantity is
         PATCH-editable on freeform rows. (Material's quantity goes through
         Restock/Draw-more state-machine ops; not the case for PlanMaterial.)"""
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, price_list_item=None,
             description='loose', quantity=Decimal('1'),
@@ -162,7 +162,7 @@ class PlanMaterialImmutabilityTests(_Setup):
     def test_patch_pli_linked_plan_material_quantity_rejected(self):
         """PLI-linked PlanMaterial still has the 'pricing-only' immutability
         rule — quantity is not in the carve-out."""
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
         )
@@ -210,7 +210,7 @@ class PropagateFlagOnFreeformAndPostPathsTests(_Setup):
         self.assertNotEqual(resp.status_code, 500, resp.content)
 
     def test_post_plan_material_on_worksheet_with_propagate_flag_succeeds(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         resp = self.client.post(
             f'/api/est-worksheets/{ws.pk}/plan-materials/',
             {
@@ -225,7 +225,7 @@ class PropagateFlagOnFreeformAndPostPathsTests(_Setup):
         self.assertNotEqual(resp.status_code, 500, resp.content)
 
     def test_post_plan_material_on_plan_task_with_propagate_flag_succeeds(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         scheme_ac = AccountingCategory.objects.create(code='RS-AC', name='RS AC')
         scheme = RateScheme.objects.create(
             name='RS', algorithm=RateScheme.FLAT_FEE,

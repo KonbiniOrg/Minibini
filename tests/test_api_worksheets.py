@@ -37,12 +37,6 @@ class WorksheetAPITest(BaseTestCase):
             response = self.client.get(f'/api/est-worksheets/{ws.pk}/tasks/')
             self.assertEqual(response.status_code, 200)
 
-    def test_revise_worksheet(self):
-        ws = EstWorksheet.objects.filter(status=EstWorksheet.STATUS_FINAL).first()
-        if ws:
-            response = self.client.post(f'/api/est-worksheets/{ws.pk}/revise/')
-            self.assertEqual(response.status_code, 200)
-
     def test_delete_worksheet_without_estimate(self):
         job = Job.objects.first()
         ws = EstWorksheet.objects.create(job=job)
@@ -78,14 +72,41 @@ class WorksheetAPITest(BaseTestCase):
         descriptions = [m['description'] for m in body['taskless_materials']]
         self.assertEqual(descriptions, ['Shop supplies'])
 
-    def test_delete_worksheet_refused_when_estimate_linked(self):
+    def test_delete_worksheet_refused_when_atom_claimed(self):
+        from decimal import Decimal
+        from apps.contacts.models import Contact
         from apps.estimates.services import EstimateWizardService
-        job = Job.objects.first()
+        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
+        contact = Contact.objects.create(first_name='W', last_name='S', email='ws@x.com')
+        job = Job.objects.create(contact=contact, job_number='JOB-WSDEL-1')
         ws = EstWorksheet.objects.create(job=job)
-        EstimateWizardService.open_for_worksheet(ws)
-        ws.refresh_from_db()
-        self.assertIsNotNone(ws.estimate_id)
+        ac = AccountingCategory.objects.create(code='WSDEL', name='wsdel')
+        scheme = RateScheme.objects.create(
+            name='S-wsdel', algorithm=RateScheme.FLAT_FEE, rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        pt = PlanTask.objects.create(
+            est_worksheet=ws, name='T', rate_scheme=scheme, est_qty=Decimal('1'),
+        )
+        est = EstimateWizardService.open_for_worksheet(ws)
+        li = EstimateLineItem.objects.create(estimate=est, description='T', price=Decimal('10'))
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=li,
+            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_pk=pt.pk,
+        )
+        # The payload also reports the worksheet as non-deletable so the UI can
+        # suppress the button (rather than letting the user hit a 400).
+        payload = self.client.get(f'/api/est-worksheets/{ws.pk}/').json()
+        self.assertFalse(payload['deletable'])
+
         response = self.client.delete(f'/api/est-worksheets/{ws.pk}/')
         self.assertEqual(response.status_code, 400)
         self.assertIn('detail', response.json())
         self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())
+
+    def test_deletable_flag_true_when_no_atoms_claimed(self):
+        job = Job.objects.first()
+        ws = EstWorksheet.objects.create(job=job)
+        payload = self.client.get(f'/api/est-worksheets/{ws.pk}/').json()
+        self.assertTrue(payload['deletable'])

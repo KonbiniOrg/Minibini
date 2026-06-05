@@ -67,5 +67,11 @@ class EstimateSerializer(serializers.ModelSerializer):
         return obj.job.name if obj.job_id else ''
 
     def get_worksheet(self, obj):
-        ws = obj.worksheets.first()
+        # Worksheet and estimate relate only through the job (one per job).
+        from apps.estimates.models import EstWorksheet
+        ws = (
+            EstWorksheet.objects.filter(job_id=obj.job_id)
+            .order_by('-est_worksheet_id')
+            .first()
+        )
         return ws.pk if ws else None

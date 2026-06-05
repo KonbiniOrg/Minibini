@@ -27,7 +27,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
         )
 
     def test_atom_units_returns_plan_material_field_freeform(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
@@ -39,7 +39,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
     def test_atom_units_returns_plan_material_field_pli_linked(self):
         # PlanMaterial linked to a PLI with units='sheets' inherits that on save
         # via _populate_from_pli, then _atom_units reads the field.
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
             quantity=Decimal('1'), price_list_item=self.pli,
@@ -50,7 +50,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
     def test_send_all_atoms_to_estimate_carries_pm_units(self):
         # End-to-end: a freeform PlanMaterial on a worksheet → bulk-converted
         # to an EstimateLineItem; the line item's units mirrors the PM's.
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
@@ -85,7 +85,7 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
         )
 
     def test_freeform_plan_material_carries_qty_and_sell_price(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
@@ -99,7 +99,7 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
         self.assertEqual(li.price, Decimal('2.00'))
 
     def test_pli_linked_plan_material_carries_qty_and_sell_price(self):
-        ws = EstWorksheet.objects.create(job=self.job, status=EstWorksheet.STATUS_DRAFT)
+        ws = EstWorksheet.objects.create(job=self.job)
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
             quantity=Decimal('3'), price_list_item=self.pli,

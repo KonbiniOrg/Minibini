@@ -31,9 +31,8 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
     # PlanTaskMixin config
     plan_task_serializer_class = PlanTaskSerializer
 
-    status_actions = {
-        'revise': {'service': WorksheetService.revise_worksheet},
-    }
+    # One mutable worksheet per job — no revise/version actions.
+    status_actions = {}
 
     def get_queryset(self):
         from django.db.models import Prefetch

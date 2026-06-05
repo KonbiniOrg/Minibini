@@ -94,16 +94,6 @@ class FlatFeePricingTest(TestCase):
         self.assertEqual(task.active_modifiers, {'flat_fee_price': '3.00'})
         self.assertEqual(task.compute_amount(), Decimal('21.00'))
 
-    def test_worksheet_revision_preserves_flat_fee_price(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Tap', rate_scheme=self.flat,
-            active_modifiers={'flat_fee_price': '4.00'}, est_qty=Decimal('2'),
-        )
-        new_ws = ws.create_new_version()
-        new_pt = new_ws.plan_tasks.get()
-        self.assertEqual(new_pt.active_modifiers, {'flat_fee_price': '4.00'})
-
     # --- TaskTemplate validation ---
 
     def test_clean_rejects_flat_fee_template_without_price(self):

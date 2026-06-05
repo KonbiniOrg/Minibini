@@ -31,7 +31,7 @@ class PortalApiTest(TestCase):
         r = self.http.get(f'/api/portal/estimates/{self.token}/')
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()['status'], 'open')
-        self.assertEqual(r.json()['actions'], ['accept', 'reject'])
+        self.assertEqual(r.json()['actions'], ['accept', 'request_changes', 'reject'])
 
     def test_get_unknown_token_not_available(self):
         r = self.http.get('/api/portal/estimates/nope-not-a-token/')
@@ -69,7 +69,8 @@ class PortalApiTest(TestCase):
         self.assertEqual(r.json()['status'], 'accepted')
 
     def test_get_draft_token_not_available(self):
-        draft = EstimateService.create_for_job(self.job.pk)
+        # Revising the open estimate yields a fresh draft (one tree per job).
+        draft = EstimateService.revise_estimate(self.est.pk)
         draft.refresh_from_db()
         r = self.http.get(f'/api/portal/estimates/{draft.public_token}/')
         self.assertEqual(r.status_code, 404)
