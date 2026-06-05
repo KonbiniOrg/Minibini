@@ -26,16 +26,19 @@ class AtomCarryOverService:
         tasks_created = 0
         materials_created = 0
 
-        # Phase A: walk worksheet atoms (if the job has a worksheet)
+        # Phase A: materialize the job's worksheet atoms (if any) via the shared
+        # core, which also handles provenance, idempotency, and earmarks.
         from apps.estimates.models import EstWorksheet
+        from apps.jobs.services import JobService
         worksheet = (
             EstWorksheet.objects.filter(job_id=job.pk)
             .order_by('-est_worksheet_id')
             .first()
         )
         if worksheet:
-            tasks_created += AtomCarryOverService._carry_over_plan_tasks(worksheet, job)
-            materials_created += AtomCarryOverService._carry_over_plan_materials(worksheet, job)
+            counts = JobService.materialize_worksheet_onto_job(job, worksheet)
+            tasks_created += counts['tasks_created']
+            materials_created += counts['materials_created']
 
         # Phase B: walk direct-estimate line items with template refs
         for li in estimate.estimatelineitem_set.all():
@@ -47,56 +50,6 @@ class AtomCarryOverService:
                     materials_created += 1
 
         return {'tasks_created': tasks_created, 'materials_created': materials_created}
-
-    @staticmethod
-    def _carry_over_plan_tasks(worksheet, job):
-        from apps.jobs.models import PlanTask, Task, copy_active_modifiers
-        count = 0
-        for pt in PlanTask.objects.filter(
-            est_worksheet=worksheet,
-        ).select_related('rate_scheme'):
-            if Task.objects.filter(job=job, source_plan_task=pt).exists():
-                continue
-            Task.objects.create(
-                job=job,
-                name=pt.name,
-                description=pt.description,
-                source_plan_task=pt,
-                rate_scheme=pt.rate_scheme,
-                active_modifiers=copy_active_modifiers(pt.active_modifiers),
-                est_qty=pt.est_qty,
-                est_worker_time=pt.est_worker_time,
-                actual_qty=None,
-            )
-            count += 1
-        return count
-
-    @staticmethod
-    def _carry_over_plan_materials(worksheet, job):
-        from apps.inventory.models import Material, PlanMaterial
-        from apps.jobs.models import Task
-        count = 0
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet):
-            # Idempotency: skip if a Material already exists that came from this PlanMaterial
-            if Material.objects.filter(job=job, source_plan_material=pm).exists():
-                continue
-            # If the PlanMaterial was attached to a PlanTask, find the corresponding Task on the job
-            task = None
-            if pm.plan_task_id:
-                task = Task.objects.filter(job=job, source_plan_task=pm.plan_task).first()
-            Material.objects.create(
-                job=job,
-                task=task,
-                description=pm.description,
-                quantity=pm.quantity,
-                unit_cost=pm.unit_cost,
-                sell_price=pm.sell_price,
-                price_list_item=pm.price_list_item,
-                accounting_category=pm.accounting_category,
-                source_plan_material=pm,
-            )
-            count += 1
-        return count
 
     @staticmethod
     def _create_task_from_line_item(line_item, job):

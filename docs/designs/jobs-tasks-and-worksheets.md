@@ -227,7 +227,7 @@ A new Job has no Tasks. There are four ways to populate it:
 | Path | Trigger | Service | Notes |
 |---|---|---|---|
 | From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
-| From a worksheet | `POST /api/jobs/{id}/copy-from-worksheet` | `JobService.copy_from_worksheet` | Copies `PlanTask` rows to `Task` rows, including their `PlanMaterial` rows; creates earmarks |
+| From a worksheet | `POST /api/jobs/{id}/copy-from-worksheet` | `JobService.copy_from_worksheet` → `materialize_worksheet_onto_job` | Copies `PlanTask`→`Task` (+ their `PlanMaterial`→`Material`) via the shared core; sets provenance, idempotent, creates earmarks. Same core as estimate-acceptance carry-over |
 | Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `TaskTemplate.generate_task` | One task from a `TaskTemplate`; available to any authenticated user (workers can self-serve) |
 | Direct task creation | `POST /api/jobs/{id}/tasks` | `TaskService.create_direct` | One task at a time; freeform |
 
@@ -702,10 +702,17 @@ hierarchy can only emerge during work. PlanTask is **estimable** (it
 goes through the estimate wizard) but not billable on its own — billing
 flows through actual Tasks.
 
-Carry-over from worksheet to job is via `JobService.copy_from_worksheet`
-(see §3.4). The carry-over preserves billing fields but always sets
-`parent_task=None` — hierarchy emerges later. `Task.source_plan_task` is
-a `OneToOneField` so the same PlanTask cannot be carried over twice.
+Worksheet→job materialization has one shared core,
+`JobService.materialize_worksheet_onto_job(job, worksheet)`, reached two
+ways: automatically on estimate acceptance (`AtomCarryOverService`, Phase
+A) and manually via `JobService.copy_from_worksheet` (see §3.4). The core
+copies the full `TaskBase`/`MaterialBase` field set through
+`copy_fields()`, preserves `sort_order` and `units`, always sets
+`parent_task=None` (hierarchy emerges later), records provenance
+(`source_plan_task` / `source_plan_material`), and creates earmarks.
+`Task.source_plan_task` is a `OneToOneField`, so the same PlanTask cannot
+be carried over twice — which also means the manual copy followed by
+acceptance does not duplicate.
 
 ### 6.6 Estimate generation
 

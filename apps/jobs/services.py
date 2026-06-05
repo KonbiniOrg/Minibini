@@ -586,10 +586,62 @@ class JobService:
         return job
 
     @staticmethod
+    def materialize_worksheet_onto_job(job, worksheet):
+        """Create execution Tasks/Materials on ``job`` from ``worksheet``'s
+        PlanTasks/PlanMaterials. The single shared core behind both the
+        estimate-acceptance carry-over (#2) and the manual copy-from-worksheet
+        button (#3).
+
+        Idempotent on provenance (``source_plan_task`` / ``source_plan_material``):
+        re-running skips atoms already carried, so it is safe to call twice and
+        safe when both entry points run for the same worksheet (manual copy then
+        acceptance won't duplicate). Tasks clone faithfully even when their rate
+        scheme has since been superseded. Ends with the aggregate earmark sweep.
+
+        Returns ``{'tasks_created': int, 'materials_created': int}``.
+        """
+        from apps.jobs.models import PlanTask, Task
+        from apps.inventory.models import PlanMaterial, Material
+        from apps.inventory.services import InventoryService, MaterialService
+
+        tasks_created = 0
+        materials_created = 0
+
+        for pt in PlanTask.objects.filter(
+            est_worksheet=worksheet
+        ).order_by('sort_order', 'pk'):
+            if Task.objects.filter(job=job, source_plan_task=pt).exists():
+                continue
+            TaskService.create_direct(
+                job=job, source_plan_task=pt, actual_qty=None,
+                allow_superseded_scheme=True, **pt.copy_fields(),
+            )
+            tasks_created += 1
+
+        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet):
+            if Material.objects.filter(job=job, source_plan_material=pm).exists():
+                continue
+            task = None
+            if pm.plan_task_id:
+                task = Task.objects.filter(
+                    job=job, source_plan_task=pm.plan_task).first()
+            MaterialService.create_on_job(
+                job=job, task=task, source_plan_material=pm, **pm.copy_fields(),
+            )
+            materials_created += 1
+
+        InventoryService.create_earmarks_for_job(job)
+        return {'tasks_created': tasks_created, 'materials_created': materials_created}
+
+    @staticmethod
     def copy_from_worksheet(job_pk, worksheet_pk):
-        """Copy a worksheet's PlanTasks (with their PlanMaterials) to a job."""
+        """Manually copy a worksheet's PlanTasks/PlanMaterials onto a job.
+
+        The pre-acceptance counterpart to estimate carry-over; both delegate to
+        the shared ``materialize_worksheet_onto_job`` core, so the field set,
+        provenance, idempotency, and earmarking stay identical between them.
+        """
         from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import PlanTask
 
         try:
             job = Job.objects.get(pk=job_pk)
@@ -600,46 +652,7 @@ class JobService:
         except EstWorksheet.DoesNotExist:
             raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
 
-        from apps.inventory.services import InventoryService, MaterialService
-
-        for plan_task in PlanTask.objects.filter(
-            est_worksheet=ws
-        ).prefetch_related('plan_materials'):
-            new_task = Task.objects.create(
-                job=job,
-                name=plan_task.name,
-                description=plan_task.description,
-                sort_order=plan_task.sort_order,
-                rate_scheme=plan_task.rate_scheme,
-                active_modifiers=copy_active_modifiers(plan_task.active_modifiers),
-                est_qty=plan_task.est_qty,
-                est_worker_time=plan_task.est_worker_time,
-            )
-            for pm in plan_task.plan_materials.all():
-                MaterialService.create_on_job(
-                    job=job, task=new_task,
-                    description=pm.description,
-                    quantity=pm.quantity,
-                    units=pm.units,
-                    unit_cost=pm.unit_cost,
-                    sell_price=pm.sell_price,
-                    price_list_item=pm.price_list_item,
-                    accounting_category=pm.accounting_category,
-                )
-
-        for pm in ws.plan_materials.filter(plan_task__isnull=True):
-            MaterialService.create_on_job(
-                job=job, task=None,
-                description=pm.description,
-                quantity=pm.quantity,
-                units=pm.units,
-                unit_cost=pm.unit_cost,
-                sell_price=pm.sell_price,
-                price_list_item=pm.price_list_item,
-                accounting_category=pm.accounting_category,
-            )
-
-        InventoryService.create_earmarks_for_job(job)
+        JobService.materialize_worksheet_onto_job(job, ws)
 
     @staticmethod
     def duplicate_job(source_job, *, contact, path):
@@ -682,7 +695,7 @@ class JobService:
     @staticmethod
     def _copy_work_to_job(source_job, new_job):
         """Outcome A: copy execution Tasks (reset, hierarchy preserved) + Materials."""
-        from apps.jobs.models import Task, copy_active_modifiers
+        from apps.jobs.models import Task
         from apps.inventory.models import Material
         from apps.inventory.services import MaterialService
 
@@ -692,14 +705,8 @@ class JobService:
         for task in source_tasks:
             new_task = Task.objects.create(
                 job=new_job,
-                name=task.name,
-                description=task.description,
-                sort_order=task.sort_order,
-                est_worker_time=task.est_worker_time,
-                est_qty=task.est_qty,
-                rate_scheme=task.rate_scheme,
-                active_modifiers=copy_active_modifiers(task.active_modifiers),
                 status=Task.STATUS_PENDING,
+                **task.copy_fields(),
             )
             task_map[task.pk] = new_task
         # Second pass: wire parent_task hierarchy onto the new tasks.
@@ -713,13 +720,7 @@ class JobService:
             MaterialService.create_on_job(
                 job=new_job,
                 task=task_map.get(material.task_id),
-                description=material.description,
-                quantity=material.quantity,
-                units=material.units,
-                unit_cost=material.unit_cost,
-                sell_price=material.sell_price,
-                price_list_item=material.price_list_item,
-                accounting_category=material.accounting_category,
+                **material.copy_fields(),
             )
 
     @staticmethod
@@ -755,7 +756,7 @@ class JobService:
         no hierarchy, so subtask nesting is flattened; sort_order is preserved.)"""
         from decimal import Decimal
         from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import Task, PlanTask, copy_active_modifiers
+        from apps.jobs.models import Task, PlanTask
         from apps.inventory.models import Material, PlanMaterial
 
         ws = EstWorksheet.objects.create(job=new_job)
@@ -769,26 +770,14 @@ class JobService:
                 est_qty = Decimal('0.00')
             plan_task = PlanTask.objects.create(
                 est_worksheet=ws,
-                name=task.name,
-                description=task.description,
-                sort_order=task.sort_order,
-                est_worker_time=task.est_worker_time,
-                est_qty=est_qty,
-                rate_scheme=task.rate_scheme,
-                active_modifiers=copy_active_modifiers(task.active_modifiers),
+                **{**task.copy_fields(), 'est_qty': est_qty},
             )
             task_map[task.pk] = plan_task
         for material in Material.objects.filter(job=source_job).order_by('pk'):
             PlanMaterial.objects.create(
                 est_worksheet=ws,
                 plan_task=task_map.get(material.task_id),
-                description=material.description,
-                quantity=material.quantity,
-                units=material.units,
-                unit_cost=material.unit_cost,
-                sell_price=material.sell_price,
-                price_list_item=material.price_list_item,
-                accounting_category=material.accounting_category,
+                **material.copy_fields(),
             )
         return ws
 
@@ -828,13 +817,19 @@ class TaskService:
     @staticmethod
     def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
-                      **task_fields):
-        """Create Task directly. Requires rate_scheme_id."""
+                      allow_superseded_scheme=False, **task_fields):
+        """Create Task directly. Requires rate_scheme_id.
+
+        ``allow_superseded_scheme`` bypasses the superseded-scheme rejection.
+        The only intended caller is the worksheet→job copy/carry-over core,
+        which must clone a worksheet faithfully even when its rate scheme has
+        since been superseded.
+        """
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
         scheme = RateScheme.objects.get(pk=rate_scheme_id)
-        if scheme.replaced_by_id is not None:
+        if scheme.replaced_by_id is not None and not allow_superseded_scheme:
             raise ValidationError(
                 {'rate_scheme': 'Selected RateScheme is superseded.'}
             )

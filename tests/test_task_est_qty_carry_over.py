@@ -2,8 +2,8 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.jobs.models import Task, PlanTask, RateScheme, Job
+from apps.jobs.services import JobService
 from apps.estimates.models import EstWorksheet, TaskTemplate
-from apps.estimates.carry_over import AtomCarryOverService
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
@@ -36,7 +36,7 @@ class TaskEstQtyCarryOverTest(TestCase):
             accounting_category=self.ac,
         )
         pt = self._create_pt(scheme, Decimal('5'))
-        AtomCarryOverService._carry_over_plan_tasks(self.ws, self.job)
+        JobService.materialize_worksheet_onto_job(self.job, self.ws)
         task = Task.objects.get(source_plan_task=pt)
         self.assertEqual(task.est_qty, Decimal('5'))
         self.assertIsNone(task.actual_qty)  # estimate, not actual
@@ -48,7 +48,7 @@ class TaskEstQtyCarryOverTest(TestCase):
             accounting_category=self.ac,
         )
         pt = self._create_pt(scheme, Decimal('12'))
-        AtomCarryOverService._carry_over_plan_tasks(self.ws, self.job)
+        JobService.materialize_worksheet_onto_job(self.job, self.ws)
         task = Task.objects.get(source_plan_task=pt)
         self.assertEqual(task.est_qty, Decimal('12'))
         # actual_qty is null at carry-over — worker enters it later

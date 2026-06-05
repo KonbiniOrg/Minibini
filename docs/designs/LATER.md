@@ -21,6 +21,42 @@ proper issue.
 
 ## Open
 
+- **Verify the portal hides Accept/Reject when an estimate isn't actionable.** — _added 2026-06-05_
+  Backend already gates this: `_is_actionable` (`apps/api/portal/views.py`) requires the
+  job to be `SUBMITTED`, so an on-hold (or otherwise moved-on) job returns `actions: []`
+  and `_decide` is a no-op. Confirm the portal **UI** (`frontend/portal/`) actually
+  suppresses the Accept/Reject buttons when `actionable` is false / `actions` is empty,
+  rather than showing dead buttons that POST to a no-op. _Done when:_ the portal page
+  renders no Accept/Reject controls for a non-actionable estimate (verified for the
+  on-hold-job case specifically).
+
+- **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
+  `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
+  calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
+  call `InventoryService.create_earmarks_for_job`, which aggregates all the job's
+  inventoried Materials by PLI and **overwrites** each Earmark to the absolute total.
+  In a copy/population path the per-material increments already produce the correct
+  total, so the final aggregate sweep looks redundant. Work out the intended division
+  of labor (steady-state incremental edits vs one-shot bulk-population sweep), whether
+  any path materializes Materials *without* `create_on_job` (which is what would make
+  the sweep load-bearing), and whether one layer can be dropped without breaking
+  idempotency. _Done when:_ we've documented why both exist (in
+  `materials-inventory-and-purchasing.md`) or removed the redundant layer.
+  _History (for context):_ earmarking was originally an `auto_earmark_inventory`
+  signal on `estimate_accepted`, which only fired on the acceptance path (template and
+  worksheet-copy paths got zero earmarks). Commit `9848a4c` (2026-04-05) deleted that
+  signal and made earmarking a step inside *each* materialization path, establishing the
+  invariant "every path that materializes work earmarks." Two weeks later `AtomCarryOverService`
+  (`fdc3650`/`09031e3`, 2026-04-20) re-attached materialization to `estimate_accepted`
+  but **without** the earmark step — silently breaking that invariant. A stale test
+  (`test_accepting_estimate_does_not_create_earmarks`, also from `9848a4c`) kept passing
+  because it guarded "the signal is gone," not "materialization earmarks," so it masked
+  the regression. Fixed 2026-06-05 by routing carry-over through the shared
+  `materialize_worksheet_onto_job` core, which earmarks; the test was inverted to
+  `test_accepting_estimate_creates_earmarks`. So both earmark layers now run on that path:
+  `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
+  redundancy this item is about.
+
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —
   deliverables, tasks, materials only. `DeliverableService.is_editable` keys on estimate /
