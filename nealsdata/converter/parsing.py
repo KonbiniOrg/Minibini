@@ -81,6 +81,23 @@ def base_reference(reference):
     return m.group(1) if m else text
 
 
+def resolve_li_units_and_qty(item_type, qty):
+    """Map a FreeAgent estimate/invoice line's Item Type to canonical
+    (units, qty) per apps.core.units.DEFAULT_UNITS.
+
+    The canon list has 'hours' but no 'days', so 'Days' lines are converted
+    to 'hours' with qty *= 8 (one workday). 'Hours' passes through as-is.
+    Everything else lands on 'none' (the BaseLineItem default) — FreeAgent
+    line items carry no other unit signal we can trust.
+    """
+    it = (item_type or '').strip().lower()
+    if it == 'days':
+        return ('hours', qty * 8)
+    if it == 'hours':
+        return ('hours', qty)
+    return ('none', qty)
+
+
 def hours_to_duration(value):
     """'1.5' hours -> Django DurationField string '01:30:00'. '' -> None."""
     if value in (None, ''):

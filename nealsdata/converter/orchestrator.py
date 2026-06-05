@@ -38,9 +38,11 @@ class NealsDataConverter:
         self.estimates = {}
         self.flat_fee_scheme_pk = None  # shared flat-fee scheme (build_seed)
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
+        self.cut_plan_task = {}     # base_ref -> plan_task_pk (plan-side analogue)
         self.time_match_misses = 0  # count of CSV worker-time values with no matching task
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
         self.fake_deliverable_count = 0  # jobs that got a synthetic 'Fake Deliverable'
+        self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'skip'
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):
@@ -92,6 +94,7 @@ class NealsDataConverter:
         build.build_estimates(self)
         build.derive_atoms(self)
         build.build_invoices(self)
+        build.build_invoice_line_item_sources(self)
         reconcile.reconcile(self)
         build.build_shipments(self)   # after reconcile: needs final job dates
         self._write_json()

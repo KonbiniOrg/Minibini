@@ -108,7 +108,11 @@ class ExcelDataLoader:
 
 
 class KanbanCsvLoader:
-    """Loads the tab-delimited Kanban board export into a list of dicts."""
+    """Loads the Kanban board export (tab- or comma-delimited) into a list of dicts.
+
+    The export format has flipped between tab- and comma-delimited across
+    re-exports, so the delimiter is sniffed from the header line.
+    """
 
     def __init__(self, csv_path):
         self.csv_path = csv_path
@@ -116,7 +120,16 @@ class KanbanCsvLoader:
     def load(self):
         with open(self.csv_path, newline='', encoding='utf-8-sig') as f:
             first = f.readline()
-            if not first.lower().startswith('sep='):
-                f.seek(0)  # no sep= directive; rewind
-            reader = csv.DictReader(f, delimiter='\t')
+            if first.lower().startswith('sep='):
+                # explicit sep= directive — honour it and consume the line
+                delimiter = first.strip()[len('sep='):] or '\t'
+                header_line = f.readline()
+            else:
+                # No sep= directive — pick whichever of tab/comma the header
+                # line has more of (header has 14+ fields; the loser will
+                # typically have 0).
+                delimiter = '\t' if first.count('\t') > first.count(',') else ','
+                header_line = first
+            reader = csv.DictReader(
+                [header_line] + f.readlines(), delimiter=delimiter)
             return [dict(row) for row in reader]

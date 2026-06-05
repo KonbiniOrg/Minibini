@@ -64,6 +64,7 @@ def reconcile(c):
     _pass_estimate_expiry(c, index)
     _pass_estimate_dates(c, index)
     _pass_job_status_and_dates(c, index)
+    _pass_downgrade_completed_with_unpaid_invoices(c, index)
     _pass_task_status_from_job(c)
     _pass_document_counters(c, index)
 
@@ -243,6 +244,29 @@ def _pass_job_status_and_dates(c, index):
             fields['completed_date'] = None
 
 
+def _pass_downgrade_completed_with_unpaid_invoices(c, index):
+    """Pass 6: enforce §2.5 — a 'completed' Job must have every Invoice in
+    {paid, cancelled}. FreeAgent invoice data is authoritative on payment
+    status; if any Invoice is still open/draft/etc., the card was archived
+    prematurely. Downgrade the Job to 'work_complete' and clear its
+    completed_date so the Shipment-synthesis pass (build_shipments) won't
+    fake-ship a job whose real-world state isn't actually completed.
+    """
+    resolved = ('paid', 'cancelled')
+    invs_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'invoicing.invoice':
+            invs_by_job.setdefault(
+                f['fields']['job'], []).append(f['fields']['status'])
+    for f in c.fixture_data:
+        if f['model'] != 'jobs.job' or f['fields']['status'] != 'completed':
+            continue
+        statuses = invs_by_job.get(f['pk'], [])
+        if any(s not in resolved for s in statuses):
+            f['fields']['status'] = 'work_complete'
+            f['fields']['completed_date'] = None
+
+
 def _pass_task_status_from_job(c):
     """Pass 5: cancel tasks on cancelled/rejected jobs.
 
@@ -262,10 +286,15 @@ def _pass_task_status_from_job(c):
 
 
 def _pass_document_counters(c, index):
-    """Pass 7: set document-numbering counters to emitted record counts."""
+    """Pass 7: set document-numbering counters to emitted record counts.
+
+    estimate_counter is intentionally excluded — estimate numbers now derive
+    from job_number ({job_number}-{version}), not from a counter, so
+    back-filling estimate_counter would be misleading. The key stays at
+    its initial value (0).
+    """
     counts = {
         'job_counter':      'jobs.job',
-        'estimate_counter': 'estimates.estimate',
         'invoice_counter':  'invoicing.invoice',
         'po_counter':       'purchasing.purchaseorder',
     }

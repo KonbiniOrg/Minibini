@@ -17,7 +17,7 @@ them and errors out if there is more than one of either):
 | File | Source | Role |
 |---|---|---|
 | `*.xlsx` | FreeAgent "Company Export" | Contacts, Projects, Invoices, Estimates, Bills, Price List Items |
-| `*.csv`  | Kanban board export (tab-delimited despite `.csv`) | The **spine** — defines which Jobs we build |
+| `*.csv`  | Kanban board export (tab- or comma-delimited; `KanbanCsvLoader` sniffs) | The **spine** — defines which Jobs we build |
 
 **FreeAgent has no column configuration**, so the Excel export shape is what
 it is. The converter consumes only these sheets and ignores the rest:
@@ -39,10 +39,14 @@ Checklist           Block reason
 
 Notes on individual columns:
 
-- **External ID** is the FreeAgent estimate number (e.g. `E2026-0123`). It is
-  the join key against the Excel `Estimates` sheet's `Reference` column.
-  Revision suffixes (`-v2`, `V3`) are stripped to a base reference for
-  matching; the version chain is reconstructed from the Estimates sheet.
+- **External ID** is the FreeAgent estimate number — a digit run like
+  `07754`, optionally with a letter revision suffix (`03024b` = v2 of
+  `03024`) or a tag (`03077-SOLID`). It is the join key against the Excel
+  `Estimates` sheet's `Reference` column. `parsing.base_reference` strips
+  to the leading digit run for grouping; the version chain is
+  reconstructed by Date order within the group. **It is also used
+  verbatim as the Job's `job_number`** — no synthesised `J{year}-counter`
+  numbering anymore.
 - **Name** is `Business` or `Business (Contact)` — parsed in
   `parse_kanban_name`. It is the join key against the FreeAgent Contacts
   sheet's `Organization`.
@@ -109,24 +113,72 @@ to a database. Tests load it into the auto-created test DB via
    only the businesses/contacts actually referenced by a spine card.
    Anonymizes emails + phones (see §6).
 7. **`build_jobs`**: one Job per spine entry, named from the card
-   Description, status from Stage + Swimlane.
+   Description, status from Stage + Swimlane. Job number is the FreeAgent
+   estimate base reference (the digit run, e.g. `03024`) — the same
+   identifier used to join Kanban cards to Estimates rows. Accent color is
+   round-robined through `JOB_ACCENT_COLOR_PALETTE` (mirrored from
+   `apps.jobs.models`) so loaddata-emitted jobs render with the colored
+   bars the SPA board expects.
 8. **`build_estimates`**: emits the Estimate + its line items for every
-   revision in the chain. Estimate line items are **kept**; downstream
-   atoms (Task, Material, Deliverable) are *copies*, not moves.
-9. **`derive_atoms`**: for each Job, builds Tasks, Materials, and
-   Deliverables from the Kanban Checklist and/or the estimate line items.
-   This is where most of the interesting logic lives — see §4.
+   revision in the chain. Estimate number is `{job_number}-{version}` — the
+   canon form `EstimateService.create_estimate` would have produced. Each
+   estimate also gets a fresh `public_token` via `secrets.token_urlsafe(32)`
+   so the customer-portal URL (`/portal/?token=…`) works for seeded data.
+   Estimate line items are **kept**; downstream atoms (Task, Material,
+   Deliverable) are *copies*, not moves.
+9. **`derive_atoms`**: for each Job, builds Tasks/PlanTasks,
+   Materials/PlanMaterials, and Deliverables from the Kanban Checklist
+   and/or the estimate line items. Branches on the Job's as-built status:
+   `draft`/`submitted` route to the plan side (one EstWorksheet per Job,
+   PlanTasks + PlanMaterials on it, and an EstimateLineItemSource per
+   LI-derived atom); everything else routes to the real side. Deliverables
+   stay on the Job either way. This is where most of the interesting logic
+   lives — see §4.
 10. **`build_invoices`**: emits Invoices + line items via the
-    Project-name link.
-11. **`reconcile`**: cross-model fixups in a fixed order — see §5.
-12. **`build_shipments`**: runs *after* reconcile so it can see final Job
-    dates. Builds a Shipment + ShipmentItems for any card whose checklist
-    has a checked `Picked up/Delivered` line.
+    Project-name link. Stashes each emitted line's classification (`task`,
+    `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
+    next phase.
+11. **`build_invoice_line_item_sources`**: heuristic source-link wiring
+    — for each Invoice, claim Tasks/Materials on the Job in deterministic
+    order against the invoice's line items so the SPA shows them as
+    "billed" rather than orphaned. Honours the model's global
+    `unique_together(source_type, source_pk)`. Leftover lines stay
+    freeform.
+12. **`reconcile`**: cross-model fixups in a fixed order — see §5.
+13. **`build_shipments`**: runs *after* reconcile so it can see final Job
+    status / dates. Builds a Shipment + ShipmentItems for any card whose
+    checklist has a checked `Picked up/Delivered` line OR for any Job that
+    landed in `completed` status without a marker (synthesised — see §4).
 
 ## 4. Building Tasks, Materials, and Deliverables
 
 This is the most-rewritten part of the script and the part most likely to
 need tweaking again.
+
+### Plan side vs real side
+
+`derive_atoms` branches on the Job's as-built status (set by `build_jobs`,
+read from `c.jobs[base_ref]['status']`).
+
+- **`draft` and `submitted` → plan side.** No estimate has been accepted
+  yet (per §2.3 the accept event is what copies plan atoms onto the Job),
+  so the atoms live on an `estimates.estworksheet`. Tasks become
+  `jobs.plantask` (flat — no hierarchy; PlanTask's `clean()` requires
+  non-null `est_qty`, so checklist-derived plan tasks get `Decimal('1')`),
+  Materials become `inventory.planmaterial`. Each LI-derived plan atom
+  also gets an `estimates.estimatelineitemsource` row linking back to its
+  source line item so the worksheet/estimate relationship is traceable.
+- **Every other status → real side** (existing behaviour): Tasks on Job
+  with full lifecycle, Materials on Job. Checklist subtask hierarchy and
+  `[X]`/`[ ]` status preserved.
+
+Deliverables go on the Job in both modes (deliverables are job-scoped, not
+plan-scoped).
+
+A Job that was draft/submitted at derive time but later expired and was
+rejected by the reconcile pass keeps its plan-side state — the worksheet
+and plan atoms become the historical record of "we estimated this; the
+customer never accepted."
 
 ### Tasks
 
@@ -206,10 +258,35 @@ these — the `--verbose` summary reports the number for human review).
 
 ### Shipments
 
-`build_shipments` emits a Shipment + ShipmentItems for every job whose
-checklist has a checked `Picked up/Delivered` line. The shipment's date is
-the card's `Archived at` if present, otherwise the job's `completed_date`,
-otherwise the card's `Created at`. Pickup-marker lines never become Tasks.
+`build_shipments` emits exactly one Shipment + ShipmentItems per Job under
+two trigger paths:
+
+1. **Pickup-marker present.** The Kanban checklist has a checked
+   `Picked up/Delivered` line. Notes left blank.
+2. **`completed` Job, no pickup marker.** §2.5 requires a `completed` Job
+   to have every Deliverable fully shipped, so the converter synthesises a
+   Shipment covering all of them. The Shipment's `notes` carry the string
+   `"(Fake shipment)"` if it references at least one real (non-Fake)
+   Deliverable; if every covered Deliverable is itself a synthetic
+   `Fake Deliverable`, the Deliverable already telegraphs the fakeness so
+   notes stay blank.
+
+The shipment's `picked_up_date` comes from the Job's `completed_date`,
+falling back to the latest invoice date, then the Job's `created_date`.
+Pickup-marker checklist lines never become Tasks.
+
+### Units mapping
+
+`build_configuration` writes `units_list` mirroring
+`apps.core.units.DEFAULT_UNITS` so every emitted line-item, Material and
+Deliverable row validates against the running app's canonical list.
+`parsing.resolve_li_units_and_qty` converts FreeAgent `Item Type` values:
+
+- `Hours` → `units='hours'`, qty unchanged
+- `Days`  → `units='hours'`, qty multiplied by 8 (one workday)
+- anything else → `units='none'`, qty unchanged
+
+Deliverables default to `units='ea'` (canon form of `each`).
 
 ## 5. Reconciliation passes
 
@@ -232,11 +309,21 @@ otherwise the card's `Created at`. Pickup-marker lines never become Tasks.
 5. **Job status & dates** — `start_date` for started jobs, `completed_date`
    for terminal jobs (preferring `Archived at`, falling back to the
    estimate's `closed_date`, finally the job's `created_date`).
-6. **Task status from job** — cancel tasks on cancelled/rejected jobs.
+6. **Downgrade `completed` Jobs with unpaid invoices** — §2.5 says every
+   Invoice on a `completed` Job must be `paid`/`cancelled`. FreeAgent
+   invoice data is authoritative on payment status; any `completed` Job
+   carrying a still-`open`/`draft` Invoice was archived prematurely on
+   the Kanban board, so the reconcile pass downgrades it to
+   `work_complete` and clears `completed_date`. Must run before
+   `build_shipments` so the synthesis branch doesn't fake-ship the
+   downgraded job.
+7. **Task status from job** — cancel tasks on cancelled/rejected jobs.
    Otherwise the per-checklist `[X]`/`[ ]` state is preserved.
-7. **Document counters** — Configuration counters set to the number of
-   emitted Jobs/Estimates/Invoices/POs so the next number generated
-   by the running app doesn't collide.
+8. **Document counters** — Configuration counters for jobs/invoices/POs
+   are set to the number of emitted records so the next number generated
+   by the running app doesn't collide. `estimate_counter` is intentionally
+   excluded — estimate numbers now derive from `{job_number}-{version}`,
+   not from a counter.
 
 When the source data disagrees (Kanban Stage vs. Estimate Status), the
 "farther along the transition chain" wins — that's what passes 2 and 3
@@ -269,15 +356,19 @@ nealsdata/
     parsing.py            pure helpers: dates, decimals, names, references,
                           checklist parser, classification of line items
     build.py              all builders; the bulk of the code
-    reconcile.py          cross-model fixups (the 7 passes above)
+    reconcile.py          cross-model fixups (the 8 passes above)
     orchestrator.py       NealsDataConverter — phase wiring + state container
 ```
 
 The state container (`NealsDataConverter` instance, conventionally `c`)
 carries everything between phases: `c.fixture_data` (the output list),
-`c.org_map`, `c.job_map`, `c.jobs`, `c.estimates`, `c.line_items`,
-`c.cut_task`, `c.scheme_by_name`, the pk counters, and a few diagnostics
-(`c.discarded_cards`, `c.time_match_misses`, `c.fake_deliverable_count`).
+`c.org_map`, `c.job_map`, `c.jobs` (with `'status'` for plan/real
+branching in `derive_atoms`), `c.estimates`, `c.line_items`, `c.cut_task`
+and `c.cut_plan_task` (the real/plan-side first-cut-task index for
+material attach), `c.scheme_by_name`, `c.invoice_line_kinds` (per-line
+classifications used by `build_invoice_line_item_sources`), the pk
+counters, and a few diagnostics (`c.discarded_cards`,
+`c.time_match_misses`, `c.fake_deliverable_count`).
 
 ## 8. Common updates you'll likely need
 
@@ -317,11 +408,10 @@ The script invents data where the sources don't say:
   these; review them periodically.
 - **Job names** come from the Kanban Description (FreeAgent has no job
   names). They're truncated to 50 characters.
-- **Year-based job numbers** (`J{year}-{counter:04d}`) use the
-  estimate's Date for the year; missing dates fall back to
-  `_FALLBACK_YEAR = 2025` and a `0001-01-01` `created_date`. If you see
-  jobs from year 2025 stacked at the bottom that look wrong, that
-  fallback is probably firing.
+- **Job numbers** are the FreeAgent base reference verbatim (e.g.
+  `03024`). When `Date` is missing on the primary estimate row, the Job's
+  `created_date` falls back to `_FALLBACK_YEAR-01-01T00:00:00+00:00`
+  (currently 2025); the job_number itself is unaffected by this.
 - **PII** is replaced, never preserved. The dataset is intended to look
   realistic but contain nothing real.
 
@@ -333,6 +423,13 @@ The pipeline is covered by:
 - `tests/test_neals_loaders.py` — the Excel + CSV loaders.
 - `tests/test_neals_builders.py` — every builder and the reconcile passes,
   exercised against the real `datasets/` files (skipped if not present).
+  The fixture file is auto-discovered via `discover_datasets` so any
+  matching pair of `.xlsx`/`.csv` works without editing the test.
+  Several behavioural changes (Shipment synthesis, Invoice source-link
+  wiring, completed-job downgrade) are covered by dedicated
+  `*SynthesisTest` / `*WiringTest` / `Downgrade*Test` classes that build
+  minimal synthetic state and assert the new behaviour directly — they
+  don't depend on the real data exercising the case.
 - `tests/test_neals_fixture.py` — loads the generated `converted.json`
   into the test database and runs `validate_data` over it. This is the
   end-to-end safety net.

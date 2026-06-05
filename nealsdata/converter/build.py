@@ -5,6 +5,7 @@ argument and appends fixture records to c.fixture_data via c.add_fixture().
 """
 import json
 import re
+import secrets
 from datetime import datetime
 from decimal import Decimal
 
@@ -12,6 +13,14 @@ from nealsdata.converter import parsing as P
 
 # Fallback year when no date can be parsed from the source data.
 _FALLBACK_YEAR = 2025
+
+# Palette for Job.accent_color round-robin. Mirrors
+# apps.jobs.models.JOB_ACCENT_COLOR_PALETTE; kept in sync manually so the
+# converter doesn't need a configured Django settings module at import time.
+_ACCENT_COLOR_PALETTE = (
+    '#f97066', '#f59e0b', '#14b8a6', '#8b5cf6',
+    '#38bdf8', '#fb7185', '#84cc16', '#f97316',
+)
 
 # Maps Kanban 'Stage' values to Minibini job status constants.
 # 'estimate' is handled separately in build_jobs (it depends on Swimlane).
@@ -111,7 +120,11 @@ def build_configuration(c):
         ('po_counter',               '0'),
         ('est_expire_days',          '30'),
         ('email_retention_days',     '30'),
-        ('units_list',               json.dumps(['none', 'hours', 'days', 'each', 'ea', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
+        # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
+        # material / deliverable row validates against the running app's
+        # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
+        # see parsing.resolve_li_units_and_qty.)
+        ('units_list',               json.dumps(['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
     ]
     for key, value in entries:
         c.add_fixture('core.configuration', key, {'value': value})
@@ -301,17 +314,17 @@ def build_jobs(c):
     - Primary estimate: highest-revision container row from estimate_rows.
     - Name: the Kanban card Description (FreeAgent has no job names).
     - Status: mapped from the Kanban card 'Stage' column.
-    - Job number: J{year}-{counter:04d}, counter resets per year.
+    - Job number: the FreeAgent estimate base reference (the leading digit
+      run of the estimate's Reference column, e.g. "07754"). The base ref is
+      also the join key with the Kanban card's External ID, so this gives
+      the Job the same identifier the source data ties everything to.
 
     Sets:
     - c.job_map  : base_ref -> job_pk
     - c.jobs     : base_ref -> {'job_pk', 'card', 'estimate_rows', 'primary_ref'}
     - c.discarded_cards : list of notes about skipped spine entries
     """
-    # Per-year job counters (keys are int years)
-    year_counters = {}
-
-    for entry in c.spine:
+    for idx, entry in enumerate(c.spine):
         card = entry['card']
         base_ref = entry['base_ref']
         estimate_rows = entry['estimate_rows']
@@ -341,13 +354,9 @@ def build_jobs(c):
 
         primary_ref = (primary_row.get('Reference') or '').strip()
 
-        # --- 3. Derive year and job_number --------------------------------
+        # --- 3. Job number is the base ref itself -------------------------
         raw_date = primary_row.get('Date')
-        dt = P.to_datetime(raw_date)
-        year = dt.year if dt else _FALLBACK_YEAR
-
-        year_counters[year] = year_counters.get(year, 0) + 1
-        job_number = f'J{year}-{year_counters[year]:04d}'
+        job_number = base_ref
 
         # --- 4. Map Kanban Stage (+ Swimlane) → job status ----------------
         stage = (card.get('Stage') or '').strip().lower()
@@ -371,6 +380,7 @@ def build_jobs(c):
 
         # --- 6. Emit fixture ----------------------------------------------
         job_pk = c.next_pk('jobs.job')
+        accent_color = _ACCENT_COLOR_PALETTE[idx % len(_ACCENT_COLOR_PALETTE)]
         c.add_fixture('jobs.job', job_pk, {
             'job_number':         job_number,
             'name':               job_name,
@@ -382,6 +392,7 @@ def build_jobs(c):
             'completed_date':     None,
             'customer_po_number': '',
             'description':        description,
+            'accent_color':       accent_color,
         })
 
         # --- 7. Record maps -----------------------------------------------
@@ -391,6 +402,7 @@ def build_jobs(c):
             'card':          card,
             'estimate_rows': estimate_rows,
             'primary_ref':   primary_ref,
+            'status':        job_status,
         }
 
 
@@ -554,7 +566,7 @@ def build_estimates(c):
             est_pk = c.next_pk('estimates.estimate')
             c.add_fixture('estimates.estimate', est_pk, {
                 'job':             job_pk,
-                'estimate_number': base,
+                'estimate_number': f'{base}-{version}',
                 'version':         version,
                 'parent':          None,
                 'status':          est_status,
@@ -562,6 +574,7 @@ def build_estimates(c):
                 'sent_date':       None,
                 'expiration_date': None,
                 'closed_date':     None,
+                'public_token':    secrets.token_urlsafe(32),
             })
 
             base_estimates.append({
@@ -591,14 +604,9 @@ def build_estimates(c):
                 qty = P.parse_decimal(li_row.get('Quantity'))
                 price = P.parse_decimal(li_row.get('Price'))
 
-                # Determine units value
-                it_lower = item_type.lower()
-                if it_lower == 'hours':
-                    units = 'hours'
-                elif it_lower == 'days':
-                    units = 'days'
-                else:
-                    units = 'none'
+                # Map Item Type → canonical (units, qty). 'Days' lines convert
+                # to 'hours' by multiplying qty by 8 (one workday).
+                units, qty = P.resolve_li_units_and_qty(item_type, qty)
 
                 li_pk = c.next_pk('estimates.estimatelineitem')
                 c.add_fixture('estimates.estimatelineitem', li_pk, {
@@ -816,21 +824,32 @@ _DEFAULT_WORKER_TIME = '01:00:00'
 # Task-name keywords matched to the Kanban card's est ASS time column.
 _ASSEMBLY_KEYWORDS = ('assemb', 'build', 'make')
 
+# Job statuses for which atoms live on the plan side (EstWorksheet +
+# PlanTask + PlanMaterial) rather than the real side (Task + Material).
+# These are statuses where no estimate has been accepted yet: an accepted
+# estimate is the trigger that copies plan atoms onto the Job per §2.3.
+_PLAN_STATUSES = ('draft', 'submitted')
 
-def _apply_worker_times(c, job_pk, card):
+
+def _apply_worker_times(c, job_pk, card, *, task_model='jobs.task',
+                        container_field='job', container_pk=None):
     """Apply the Kanban card's est cut/assembly times to matching tasks.
 
-    The Kanban card carries two job-level time columns (est *cut* time, est
-    ASS time); each lands on at most one task — the first whose name names
-    a cut ('cut') or an assembly (_ASSEMBLY_KEYWORDS). The two never share a
+    Works on both jobs.task (real side, scoped by ``job`` FK) and
+    jobs.plantask (plan side, scoped by ``est_worksheet`` FK). The Kanban
+    card carries two job-level time columns (est *cut* time, est ASS time);
+    each lands on at most one task — the first whose name names a cut
+    ('cut') or an assembly (_ASSEMBLY_KEYWORDS). The two never share a
     task. The checklists hold no per-task time data, so every other task is
     given a flat 1-hour estimate.
     """
+    container_pk = container_pk if container_pk is not None else job_pk
+
     def _find_task_fixture(predicate, exclude=None):
         for f in c.fixture_data:
             if f is exclude:
                 continue
-            if f['model'] == 'jobs.task' and f['fields']['job'] == job_pk:
+            if f['model'] == task_model and f['fields'][container_field] == container_pk:
                 if predicate(f['fields']['name']):
                     return f
         return None
@@ -862,9 +881,118 @@ def _apply_worker_times(c, job_pk, card):
 
     # Every task left without a card-derived time gets the default estimate.
     for f in c.fixture_data:
-        if (f['model'] == 'jobs.task' and f['fields']['job'] == job_pk
+        if (f['model'] == task_model
+                and f['fields'][container_field] == container_pk
                 and f['fields'].get('est_worker_time') is None):
             f['fields']['est_worker_time'] = _DEFAULT_WORKER_TIME
+
+
+def _build_estworksheet(c, job_pk, created_date):
+    """Emit one estimates.estworksheet per Job. Returns the new pk."""
+    ws_pk = c.next_pk('estimates.estworksheet')
+    c.add_fixture('estimates.estworksheet', ws_pk, {
+        'job':          job_pk,
+        'created_date': created_date,
+    })
+    return ws_pk
+
+
+def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):
+    """Emit an estimates.estimatelineitemsource row claiming a plan atom.
+
+    Each plan atom can be claimed by at most one line item (model enforces
+    unique_together on (source_type, source_pk)); the converter emits at
+    most one source row per plan atom by construction (each plan atom is
+    derived from exactly one LI).
+    """
+    src_pk = c.next_pk('estimates.estimatelineitemsource')
+    c.add_fixture('estimates.estimatelineitemsource', src_pk, {
+        'estimate_line_item': li_pk,
+        'source_type':        source_type,
+        'source_pk':          source_pk,
+    })
+
+
+def _build_plan_checklist_tasks(c, base_ref, ws_pk, items, start_sort=0):
+    """Emit jobs.plantask fixtures from parsed Kanban checklist items.
+
+    PlanTask is flat — the checklist's subtask hierarchy is lost. Pickup
+    markers (Shipments) and board status-markers (_is_dropped_checklist_line)
+    do not become PlanTasks. Returns the final per-worksheet sort_order.
+    Checklist-derived plan tasks have no source LI, so no
+    EstimateLineItemSource row is emitted.
+
+    est_qty is set to Decimal('1') — PlanTask.clean() requires non-null
+    est_qty, and the checklist carries no quantity signal.
+    """
+    sort_order = start_sort
+    for item in items:
+        if _is_pickup_marker(item['text']):
+            continue
+        if _is_dropped_checklist_line(item['text']):
+            continue
+        sort_order += 1
+        name = (item['text'] or 'Task')[:255] or 'Task'
+        scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
+        pt_pk = c.next_pk('jobs.plantask')
+        c.add_fixture('jobs.plantask', pt_pk, {
+            'est_worksheet':    ws_pk,
+            'rate_scheme':      scheme_pk,
+            'name':             name,
+            'description':      item['text'] or '',
+            'est_qty':          '1.00',
+            'est_worker_time':  None,
+            'active_modifiers': [],
+            'sort_order':       sort_order,
+        })
+        if base_ref not in c.cut_plan_task and 'cut' in name.lower():
+            c.cut_plan_task[base_ref] = pt_pk
+    return sort_order
+
+
+def _build_plan_line_item_tasks(c, base_ref, ws_pk, task_lines, start_sort=0):
+    """Emit jobs.plantask fixtures from estimate line items, plus the
+    EstimateLineItemSource row linking each to its source LI."""
+    sort_order = start_sort
+    for li in task_lines:
+        sort_order += 1
+        name = (li['description'] or 'Task')[:255] or 'Task'
+        scheme_pk, active_modifiers = _fallback_scheme(c, li)
+        pt_pk = c.next_pk('jobs.plantask')
+        c.add_fixture('jobs.plantask', pt_pk, {
+            'est_worksheet':    ws_pk,
+            'rate_scheme':      scheme_pk,
+            'name':             name,
+            'description':      li['description'] or '',
+            'est_qty':          f"{li['qty']:.2f}",
+            'est_worker_time':  None,
+            'active_modifiers': active_modifiers,
+            'sort_order':       sort_order,
+        })
+        _emit_estimate_line_item_source(
+            c, li['line_item_pk'], 'plan_task', pt_pk)
+        if base_ref not in c.cut_plan_task and 'cut' in name.lower():
+            c.cut_plan_task[base_ref] = pt_pk
+    return sort_order
+
+
+def _build_plan_raw_materials(c, base_ref, ws_pk, raw_lines):
+    """Emit inventory.planmaterial fixtures + EstimateLineItemSource rows."""
+    for li in raw_lines:
+        pm_pk = c.next_pk('inventory.planmaterial')
+        c.add_fixture('inventory.planmaterial', pm_pk, {
+            'est_worksheet':       ws_pk,
+            'plan_task':           c.cut_plan_task.get(base_ref),
+            'description':         (li['description'] or '')[:255],
+            'quantity':            f"{li['qty']:.2f}",
+            'units':               li['units'] or 'none',
+            'unit_cost':           '0.00',
+            'sell_price':          f"{li['price']:.2f}",
+            'accounting_category': c.ac_mat_pk,
+            'price_list_item':     None,
+        })
+        _emit_estimate_line_item_source(
+            c, li['line_item_pk'], 'plan_material', pm_pk)
 
 
 def _build_deliverables(c, job_pk, deliverable_lines):
@@ -892,7 +1020,7 @@ def _build_deliverables(c, job_pk, deliverable_lines):
                 'job':         job_pk,
                 'description': (li['description'] or '')[:255],
                 'qty_ordered': f"{li['qty']:.2f}",
-                'units':       li['units'] or 'each',
+                'units':       li['units'] or 'ea',
                 'sort_order':  d_sort,
                 'created_at':  deliv_ts,
                 'updated_at':  deliv_ts,
@@ -903,7 +1031,7 @@ def _build_deliverables(c, job_pk, deliverable_lines):
             'job':         job_pk,
             'description': 'Fake Deliverable',
             'qty_ordered': '1.00',
-            'units':       'each',
+            'units':       'ea',
             'sort_order':  10,
             'created_at':  deliv_ts,
             'updated_at':  deliv_ts,
@@ -912,23 +1040,41 @@ def _build_deliverables(c, job_pk, deliverable_lines):
 
 
 def derive_atoms(c):
-    """Derive Task, Material and Deliverable fixtures for each job.
+    """Derive Task / PlanTask, Material / PlanMaterial, and Deliverable
+    fixtures for each job.
+
+    Branches on the Job's as-built status:
+
+    - **Plan-side** (draft, submitted) — no accepted estimate yet, so the
+      atoms live on the plan side. Emit one EstWorksheet per Job, then
+      PlanTasks and PlanMaterials on that worksheet. PlanTask is flat (no
+      hierarchy) and est_qty is required (Decimal('1') for checklist-derived,
+      qty from LI otherwise). LI-derived plan atoms also get an
+      EstimateLineItemSource row linking back to the LI.
+    - **Real-side** (everything else) — Tasks on Job, Materials on Job.
+      Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
+
+    In both modes, Deliverables go on the Job (deliverables are job-scoped,
+    not plan-scoped).
 
     Tasks come from the Kanban card's Checklist when it has any items
     (each line -> a Task; indented lines -> subtasks; [X] -> complete);
     otherwise task-classified estimate line items become Tasks.
 
     Material-classified estimate line items are split (see
-    _material_line_kind): raw stock -> Material, labour/prep lines -> Task,
-    finished goods -> Deliverable. Each line becomes exactly one of those.
-    A job with no deliverable line gets a synthetic 'Fake Deliverable'.
+    _material_line_kind): raw stock -> Material/PlanMaterial, labour/prep
+    lines -> Task/PlanTask, finished goods -> Deliverable. Each line
+    becomes exactly one of those. A job with no deliverable line gets a
+    synthetic 'Fake Deliverable'.
 
-    Mutates c.fixture_data, c.cut_task, c.time_match_misses,
-    c.fake_deliverable_count.
+    Mutates c.fixture_data, c.cut_task, c.cut_plan_task,
+    c.time_match_misses, c.fake_deliverable_count.
     """
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
         card = job_info['card']
+        job_status = job_info.get('status')
+        plan_mode = job_status in _PLAN_STATUSES
 
         # Use only the latest estimate version for materials / fallback tasks.
         est_list = c.estimates.get(base_ref, [])
@@ -950,8 +1096,47 @@ def derive_atoms(c):
             else:
                 deliverable_lines.append(li)
 
-        # --- 1. Tasks: checklist (or fallback line items), plus labour lines.
         checklist_items = P.parse_checklist(card.get('Checklist'))
+
+        if plan_mode:
+            # --- Plan side: EstWorksheet + PlanTask + PlanMaterial -------
+            job_fixture = next(
+                (f for f in c.fixture_data
+                 if f['model'] == 'jobs.job' and f['pk'] == job_pk),
+                None,
+            )
+            created = (job_fixture['fields']['created_date'] if job_fixture
+                       else f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00')
+            ws_pk = _build_estworksheet(c, job_pk, created)
+
+            # --- 1. PlanTasks (checklist or LI fallback) + labour lines ---
+            if checklist_items:
+                sort_order = _build_plan_checklist_tasks(
+                    c, base_ref, ws_pk, checklist_items)
+            else:
+                sort_order = _build_plan_line_item_tasks(
+                    c, base_ref, ws_pk, task_lines)
+            _build_plan_line_item_tasks(
+                c, base_ref, ws_pk, labor_lines, sort_order)
+
+            # --- 2. PlanMaterials: raw stock (after plan tasks so cut is set)
+            _build_plan_raw_materials(c, base_ref, ws_pk, raw_lines)
+
+            # --- 3. Worker times on PlanTask fixtures ----------------------
+            _apply_worker_times(
+                c, job_pk, card,
+                task_model='jobs.plantask',
+                container_field='est_worksheet',
+                container_pk=ws_pk,
+            )
+
+            # --- 4. Deliverables: on the Job regardless of plan mode -------
+            _build_deliverables(c, job_pk, deliverable_lines)
+            continue
+
+        # --- Real side (existing behaviour) ------------------------------
+
+        # --- 1. Tasks: checklist (or fallback line items), plus labour lines.
         if checklist_items:
             sort_order = _build_checklist_tasks(
                 c, base_ref, job_pk, checklist_items)
@@ -1138,10 +1323,102 @@ def build_invoices(c):
                 'taxable_override':    None,
                 'tax_rate_override':   None,
             })
+            # Stash classification for the source-link builder; the LI model
+            # itself has no item_type field, so this is the only place to
+            # hold the FreeAgent Item Type information.
+            c.invoice_line_kinds[li_pk] = classification
 
             job_li_total += qty * price
 
         c.invoice_totals[base_ref] = job_li_total
+
+
+def build_invoice_line_item_sources(c):
+    """Emit invoicing.invoicelineitemsource rows linking InvoiceLineItems to
+    Tasks / Materials on the Job.
+
+    Schema permits freeform invoice lines (no source); the wiring is purely
+    cosmetic — it makes Tasks/Materials show as 'billed' on a paid Job in
+    the UI instead of orphaned. Heuristic, deterministic claim:
+
+      - For each Invoice on each Job (invoice pk asc → invoice line_number asc)
+      - Classify the line via P.classify_line_item.
+      - If classification is 'task': claim the next unclaimed Task on the Job;
+        fall through to materials if exhausted.
+      - If classification is 'material': claim the next unclaimed Material;
+        fall through to tasks if exhausted.
+      - 'lineitem' / 'skip' classifications never claim (discounts / comments
+        are inherently freeform).
+      - Leftover lines stay freeform.
+
+    The model's global ``unique_together(source_type, source_pk)`` prevents
+    double-claim, so once an atom is claimed by one Invoice it stays claimed
+    across the whole fixture.
+    """
+    invoices_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'invoicing.invoice':
+            invoices_by_job.setdefault(
+                f['fields']['job'], []).append(f)
+    lines_by_invoice = {}
+    for f in c.fixture_data:
+        if f['model'] == 'invoicing.invoicelineitem':
+            lines_by_invoice.setdefault(
+                f['fields']['invoice'], []).append(f)
+    tasks_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'jobs.task':
+            tasks_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
+    materials_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'inventory.material':
+            materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
+
+    claimed_tasks = set()
+    claimed_materials = set()
+
+    def _claim(pool, claimed):
+        for pk in pool:
+            if pk not in claimed:
+                claimed.add(pk)
+                return pk
+        return None
+
+    # Deterministic iteration: jobs by pk, invoices by pk, lines by line_number.
+    for job_pk in sorted(invoices_by_job):
+        task_pool = sorted(tasks_by_job.get(job_pk, []))
+        material_pool = sorted(materials_by_job.get(job_pk, []))
+        invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
+        for inv in invs:
+            lines = sorted(
+                lines_by_invoice.get(inv['pk'], []),
+                key=lambda f: f['fields'].get('line_number') or 0,
+            )
+            for li in lines:
+                kind = c.invoice_line_kinds.get(li['pk'])
+                if kind == 'task':
+                    src_pk = _claim(task_pool, claimed_tasks)
+                    src_type = 'task'
+                    if src_pk is None:
+                        src_pk = _claim(material_pool, claimed_materials)
+                        src_type = 'material'
+                elif kind == 'material':
+                    src_pk = _claim(material_pool, claimed_materials)
+                    src_type = 'material'
+                    if src_pk is None:
+                        src_pk = _claim(task_pool, claimed_tasks)
+                        src_type = 'task'
+                else:
+                    src_pk = None
+                if src_pk is None:
+                    continue
+                row_pk = c.next_pk('invoicing.invoicelineitemsource')
+                c.add_fixture(
+                    'invoicing.invoicelineitemsource', row_pk, {
+                        'invoice_line_item': li['pk'],
+                        'source_type':       src_type,
+                        'source_pk':         src_pk,
+                    })
 
 
 def _is_pickup_marker(text):
@@ -1162,12 +1439,23 @@ def _has_pickup_done(card):
 def build_shipments(c):
     """Emit deliverables.shipment + deliverables.shipmentitem fixtures.
 
-    Any Job whose Kanban checklist has a checked 'Picked up/Delivered' item
-    gets one picked-up Shipment containing every Deliverable on the Job.
+    Two trigger paths, both producing one picked-up Shipment covering every
+    Deliverable on the Job:
+
+    1. The Kanban checklist has a checked 'Picked up/Delivered' item — the
+       canonical source signal. Notes left blank.
+    2. The Job is in 'completed' status (per §2.5 the Job is impossible
+       without all-shipped) but no pickup marker is present. Synthesise a
+       Shipment anyway so the all-shipped gate validates. Notes set to
+       '(Fake shipment)' when at least one of the Deliverables is real
+       (i.e. not a synthesised 'Fake Deliverable'); otherwise the Fake
+       Deliverable's own name already signals the fakeness and notes stay
+       blank.
 
     The shipment's picked-up date is taken near the end of the Job's
     lifetime (completed_date, else the latest invoice date, else the Job's
-    created_date). Runs AFTER reconcile so job completed_date is final.
+    created_date). Runs AFTER reconcile so job status / completed_date are
+    final.
     """
     job_fixtures = {f['pk']: f['fields']
                     for f in c.fixture_data if f['model'] == 'jobs.job'}
@@ -1193,8 +1481,11 @@ def build_shipments(c):
         if job_fields is None:
             continue
 
-        # Any Job with a checked 'Picked up/Delivered' item gets a Shipment.
-        if not _has_pickup_done(card):
+        marker_present = _has_pickup_done(card)
+        is_completed = job_fields.get('status') == 'completed'
+        # Two trigger paths: checked pickup marker, or completed status
+        # without one (synthetic). Anything else: no Shipment.
+        if not (marker_present or is_completed):
             continue
 
         delivs = deliverables_by_job.get(job_pk, [])
@@ -1206,6 +1497,14 @@ def build_shipments(c):
                      or job_fields.get('created_date')
                      or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00')
 
+        # Note flag: only on synthetic Shipments that cover at least one
+        # real (non-Fake) Deliverable. A purely-Fake-Deliverable shipment
+        # already telegraphs its fakeness via the Deliverable name.
+        notes = ''
+        if not marker_present and any(
+                d['fields']['description'] != 'Fake Deliverable' for d in delivs):
+            notes = '(Fake shipment)'
+
         ship_pk = c.next_pk('deliverables.shipment')
         c.add_fixture('deliverables.shipment', ship_pk, {
             'job':            job_pk,
@@ -1213,7 +1512,7 @@ def build_shipments(c):
             'status':         'picked_up',
             'prepared_date':  picked_ts,
             'picked_up_date': picked_ts,
-            'notes':          '',
+            'notes':          notes,
             'created_at':     picked_ts,
             'updated_at':     picked_ts,
         })

@@ -6,7 +6,10 @@ from nealsdata.converter.loaders import (
     ExcelDataLoader, KanbanCsvLoader, discover_datasets,
 )
 
-XLSX = 'nealsdata/datasets/company-export-220382-2026-05-18-02-19.xlsx'
+try:
+    XLSX, _CSV = discover_datasets('nealsdata/datasets')
+except (ValueError, FileNotFoundError):
+    XLSX = 'nealsdata/datasets/__missing__.xlsx'
 
 
 class ExcelDataLoaderTest(unittest.TestCase):
@@ -41,6 +44,20 @@ class KanbanCsvLoaderTest(unittest.TestCase):
         self.assertEqual(len(cards), 1)
         self.assertEqual(cards[0]['External ID'], '07754')
         self.assertEqual(cards[0]['est *cut* time'], '4')
+        self.assertEqual(cards[0]['Name'], 'Acme (Jo Roe)')
+
+    def test_parses_comma_delimited_export(self):
+        path = self._write(
+            'Swimlane,Stage,Name,Description,Due date,External ID,Notes,'
+            'est *cut* time,est ASS time,est $,Created at,Archived at,'
+            'Checklist,Block reason\n'
+            "Neal's do,estimate,Acme (Jo Roe),"
+            '"desc, with commas",,07754,note,4,2,$10,2026-02-03 04:56,,,\n'
+        )
+        cards = KanbanCsvLoader(path).load()
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]['External ID'], '07754')
+        self.assertEqual(cards[0]['Description'], 'desc, with commas')
         self.assertEqual(cards[0]['Name'], 'Acme (Jo Roe)')
 
     @unittest.skipUnless(os.path.exists('nealsdata/datasets/neals kanban.csv'), 'kanban csv not present')

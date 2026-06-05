@@ -32,6 +32,18 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(P.split_name(''), ('(unknown)', '(unknown)'))
         self.assertEqual(P.split_name('Cher'), ('Cher', '(unknown)'))
 
+    def test_resolve_li_units_and_qty(self):
+        # 'Days' → 'hours' with qty × 8 (one workday). 'Hours' stays. Anything
+        # else lands on the canon default 'none' without touching qty.
+        self.assertEqual(P.resolve_li_units_and_qty('Days', Decimal('1.5')),
+                         ('hours', Decimal('12')))
+        self.assertEqual(P.resolve_li_units_and_qty('Hours', Decimal('2')),
+                         ('hours', Decimal('2')))
+        self.assertEqual(P.resolve_li_units_and_qty('Each', Decimal('5')),
+                         ('none', Decimal('5')))
+        self.assertEqual(P.resolve_li_units_and_qty('', Decimal('3')),
+                         ('none', Decimal('3')))
+
     def test_revision_base_and_suffix(self):
         self.assertEqual(P.revision_parts('03024'), ('03024', 0))
         self.assertEqual(P.revision_parts('03024b'), ('03024', 1))
