@@ -26,6 +26,9 @@ frontend/
 └── vitest.config.js          # test-only config
 ```
 
+**Setup:** the test tooling is declared in `package.json` as `devDependencies`,
+so a plain `npm install` in `frontend/` pulls it in — no separate install step.
+
 ```bash
 cd frontend
 npm test          # watch mode — for development
