@@ -1,7 +1,7 @@
 services:
   # minibini_django:
   minibini_vite:
-    container_name: minibini_vite
+    container_name: minibini-vite
     image: ashannonlee/minibini
     environment:
       - MYSQL_ROOT_PASSWORD=Ru5UPhae
@@ -22,7 +22,7 @@ services:
         condition: service_healthy
         restart: true
   minibini_django:
-    container_name: minibini_django
+    container_name: minibini-django
     image: ashannonlee/minibini
     environment:
       - MYSQL_ROOT_PASSWORD=Ru5UPhae
@@ -42,6 +42,8 @@ services:
       mysql:
         condition: service_healthy
         restart: true
+    working_dir: /app
+    command: ["python manage.py runserver 0.0.0.0:9000"]
 #  cron:
 #    container_name: minibini-cron
 #    image: ashannonlee/minibini

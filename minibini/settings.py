@@ -37,6 +37,8 @@ ALLOWED_HOSTS = [
     '45.33.56.130',
     'moose',
     'moose.local',
+    'minibini-django',
+    'minibini-vite',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -46,6 +48,8 @@ CSRF_TRUSTED_ORIGINS = [
     'http://10.1.10.84:9000',
     'http://moose:9000',
     'http://moose.local:9000',
+    'http://minibini-vite:9000',
+    'http://minibini-django:9000',
 ]
 
 # Application definition
