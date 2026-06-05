@@ -7,7 +7,7 @@ export default defineConfig({
     port: 9000,
     allowedHosts: ['moose', 'moose.local', 'minibini.me'],
     proxy: {
-      '/api': 'http://minibini_django:8000',
+      '/api': 'http://minibini_django:9000',
     },
   },
 });
