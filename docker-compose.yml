@@ -1,6 +1,6 @@
 services:
   # minibini_django:
-  minibini:
+  minibini_vite:
     container_name: minibini
     image: ashannonlee/minibini
     environment:
@@ -16,6 +16,27 @@ services:
     #  - '/home/slee/git/konbini/Minibini:/minibini'
     ports:
       - '9000:9000'
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+        restart: true
+  minibini_django
+    container_name: minibini
+    image: ashannonlee/minibini
+    environment:
+      - MYSQL_ROOT_PASSWORD=Ru5UPhae
+      - DATABASE_NAME=minibini_db
+      - DATABASE_USER=minidb_user
+      - DATABASE_PASSWORD=Ru5UPhae
+      - DATABASE_HOST=mysql
+    build:
+      context: .
+      dockerfile: Dockerfile.django
+    #volumes:
+    #  - '/home/slee/git/konbini/Minibini:/minibini'
+    ports:
+      - '8000:8000'
     restart: always
     depends_on:
       mysql:
