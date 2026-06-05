@@ -36,14 +36,14 @@ services:
     #volumes:
     #  - '/home/slee/git/konbini/Minibini:/minibini'
     ports:
-      - '8000:8000'
+      - '9000:9000'
     restart: always
     depends_on:
       mysql:
         condition: service_healthy
         restart: true
     working_dir: /app
-    command: ["python manage.py runserver 0.0.0.0:9000"]
+    command: python manage.py runserver 0.0.0.0:9000
 #  cron:
 #    container_name: minibini-cron
 #    image: ashannonlee/minibini
