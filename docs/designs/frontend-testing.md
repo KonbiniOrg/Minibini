@@ -69,6 +69,7 @@ The full per-file classification of the whole SPA lives in the (disposable) swee
 7. **Drag-and-drop:** jsdom has no real DnD. Dispatch `dragstart`/`dragover`/`drop` events with a stub `dataTransfer`, and assert the store action / callback fired with the right args — not pixel movement.
 8. **Module-level mutable state:** for modules/stores holding state between calls (e.g. `stores/schedule.js`'s offset, `lib/paymentAccounts.js`'s cache), reset between tests — `vi.resetModules()` + dynamic `import`, or a purpose-built invalidate export.
 9. **No silent skips.** A Display/Skip file is *intentionally* uncovered — don't add a smoke test "for completeness."
+10. **jsdom enforces `required` on submit.** Clicking a submit button with empty `required` fields silently blocks the submit (the handler never runs). Fill *every* required field before asserting a form submission, or the test sees zero calls.
 
 ## The four patterns (canonical examples)
 
