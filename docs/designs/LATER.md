@@ -31,6 +31,15 @@ proper issue.
   _Done when:_ the `$state`-seeded-from-prop sites have been grepped, and each is either
   confirmed mount-only or converted (e.g. `$derived`, or a reset via `$effect`).
 
+- **`CollapsedTab` default `theme='gray'` isn't in `THEMES` — renders crash with no theme.** — _added 2026-06-04_
+  `CollapsedTab.svelte`'s `theme` prop defaults to `'gray'`, but `THEMES` has no `gray`
+  key, so `colors = THEMES[theme] || THEMES.gray` resolves to `undefined` and the
+  template's `colors.bg` throws. Harmless today because the board always passes a real
+  theme, but the default value is unusable (CLAUDE.md pitfall #3, "defaults not in
+  choices"). Surfaced while writing the component test (tested with real themes).
+  _Done when:_ the default `theme` is a valid `THEMES` key (or `THEMES` gains a `gray`
+  fallback entry).
+
 - **`EstWorksheet.create_new_version` loses fields when cloning PlanTasks/PlanMaterials.** — _added 2026-06-01_
   Noticed while building job-duplication's worksheet copy (`JobService._copy_work_to_worksheet`,
   which copies these correctly). When revising a worksheet, `create_new_version`
