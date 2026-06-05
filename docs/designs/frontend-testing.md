@@ -84,6 +84,7 @@ Every test follows one of these; copy the matching committed example.
 
 ## Coverage status
 
-- **Done:** all of `src/lib/**` and `src/stores/**` worth testing (linkify, format, pagination, taskActivity, modalKeys, email, paymentAccounts; viewMode, auth, schedule), plus example components Accordion, ContactPicker, LinkifiedText.
-- **In progress:** `src/components/**` behavior components, batched by domain in the sweep plan.
-- **Out of scope (for now):** `src/routes/**`.
+- **Done:** all of `src/lib/**` and `src/stores/**` worth testing, and every **behavior** component in `src/components/**` (pickers, modals, forms, board/schedule interaction, jobs/tasks/time stateful, home lists). Suite is ~90 files / ~300 tests.
+- **Intentionally uncovered:** display-only components and trivial wrappers (see the triage rubric).
+- **Lighter coverage by design:** `JobDetail` is an orchestrator (flagged oversized in `LATER.md`) — only a mount/wiring test; its deep derivations (version timeline, CO delta layering) are best unit-tested once it's split out.
+- **Out of scope (for now):** `src/routes/**` — a separate future sweep.
