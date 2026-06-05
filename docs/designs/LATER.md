@@ -19,17 +19,112 @@ proper issue.
 
 ---
 
+## Oversized route pages to componentize
+
+The `src/routes/**` page components were intentionally left out of the front-end
+test sweep — routes are integration glue (params → API load → pass to child
+components → navigate), and that glue belongs to a future E2E track, not unit
+tests (see `docs/designs/frontend-testing.md`). Most route pages are thin glue
+and fine as-is. But several have grown large by mixing that glue with significant
+**inline logic and sub-views** that were never extracted into components.
+
+When the UI-organization / clarity pass reaches each of these, break the inline
+logic and sub-views out into components (and lib helpers) — the same pattern that
+made the rest of the SPA testable — then unit-test the extracted pieces. Don't
+wrap a 1000-line page in heavy mocks; extract first.
+
+**Primary (≥ 400 lines, as of 2026-06-04):**
+
+- `change-orders/ChangeOrderDetailPage.svelte` — **1038** (by far the largest; top priority)
+- `jobs/TaskDetailPage.svelte` — 527
+- `Search.svelte` — 499
+- `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
+- `jobs/JobTaskListPage.svelte` — 427
+- `jobs/JobShipmentsPage.svelte` — 418
+- `worksheets/WorksheetDetailPage.svelte` — 407
+
+**Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
+`estimates/EstimateDetailPage.svelte` (344), `users/UserDetailPage.svelte` (306),
+`contacts/ContactListPage.svelte` (301).
+
+_Done when:_ each oversized route has had its UI pass with inline logic/sub-views
+extracted into (tested) components, or a deliberate note recorded for why a given
+page stays whole.
+
+> Related: `components/jobs/JobDetail.svelte` is a similarly oversized
+> **component** (not a route). It has a mount-only test today; its deep
+> derivations (version timeline, CO delta layering) warrant the same
+> extract-and-unit-test treatment. Noted in `docs/designs/frontend-testing.md`.
+
+---
+
 ## Open
 
-- **`EstWorksheet.create_new_version` loses fields when cloning PlanTasks/PlanMaterials.** — _added 2026-06-01_
-  Noticed while building job-duplication's worksheet copy (`JobService._copy_work_to_worksheet`,
-  which copies these correctly). When revising a worksheet, `create_new_version`
-  (`apps/estimates/models.py`) copies PlanTasks **without** `sort_order` or `est_worker_time`,
-  and PlanMaterials **without** `units`. It also only walks each PlanTask's `plan_materials`,
-  so any **task-less** PlanMaterial on the worksheet is silently dropped from the new version.
-  Result: a revised worksheet can lose task ordering, scheduling durations, material units, and
-  loose materials. _Done when:_ `create_new_version` carries `sort_order` + `est_worker_time`
-  on PlanTasks, `units` on PlanMaterials, and includes task-less PlanMaterials.
+- **Verify the portal hides Accept/Reject when an estimate isn't actionable.** — _added 2026-06-05_
+  Backend already gates this: `_is_actionable` (`apps/api/portal/views.py`) requires the
+  job to be `SUBMITTED`, so an on-hold (or otherwise moved-on) job returns `actions: []`
+  and `_decide` is a no-op. Confirm the portal **UI** (`frontend/portal/`) actually
+  suppresses the Accept/Reject buttons when `actionable` is false / `actions` is empty,
+  rather than showing dead buttons that POST to a no-op. _Done when:_ the portal page
+  renders no Accept/Reject controls for a non-actionable estimate (verified for the
+  on-hold-job case specifically).
+
+- **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
+  `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
+  calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
+  call `InventoryService.create_earmarks_for_job`, which aggregates all the job's
+  inventoried Materials by PLI and **overwrites** each Earmark to the absolute total.
+  In a copy/population path the per-material increments already produce the correct
+  total, so the final aggregate sweep looks redundant. Work out the intended division
+  of labor (steady-state incremental edits vs one-shot bulk-population sweep), whether
+  any path materializes Materials *without* `create_on_job` (which is what would make
+  the sweep load-bearing), and whether one layer can be dropped without breaking
+  idempotency. _Done when:_ we've documented why both exist (in
+  `materials-inventory-and-purchasing.md`) or removed the redundant layer.
+  _History (for context):_ earmarking was originally an `auto_earmark_inventory`
+  signal on `estimate_accepted`, which only fired on the acceptance path (template and
+  worksheet-copy paths got zero earmarks). Commit `9848a4c` (2026-04-05) deleted that
+  signal and made earmarking a step inside *each* materialization path, establishing the
+  invariant "every path that materializes work earmarks." Two weeks later `AtomCarryOverService`
+  (`fdc3650`/`09031e3`, 2026-04-20) re-attached materialization to `estimate_accepted`
+  but **without** the earmark step — silently breaking that invariant. A stale test
+  (`test_accepting_estimate_does_not_create_earmarks`, also from `9848a4c`) kept passing
+  because it guarded "the signal is gone," not "materialization earmarks," so it masked
+  the regression. Fixed 2026-06-05 by routing carry-over through the shared
+  `materialize_worksheet_onto_job` core, which earmarks; the test was inverted to
+  `test_accepting_estimate_creates_earmarks`. So both earmark layers now run on that path:
+  `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
+  redundancy this item is about.
+
+- **`ReceiveItemsForm` "remaining" ignores `qty_cancelled`.** — _added 2026-06-04_
+  The receivable *filter* accounts for cancellation (`qty_received + qty_cancelled < qty`),
+  but the prefilled "Receiving Now" value and the displayed "Remaining" column compute
+  `qty - qty_received` — excluding `qty_cancelled`. A line with qty 10 / received 3 /
+  cancelled 2 shows & pre-fills 7 remaining when only 5 are actually outstanding. May be
+  intentional (a code comment notes overage is allowed and the user can edit), but the
+  default over-states the outstanding quantity by the cancelled amount. Surfaced while
+  writing the component test (the test pins the current `7`).
+  _Done when:_ the remaining/prefill calc subtracts `qty_cancelled`, or we've confirmed
+  the overage default is intended and noted why.
+
+- **Audit `$state` seeded from a prop — stale on prop change.** — _added 2026-06-04_
+  The Svelte compiler warns `state_referenced_locally` in `Accordion.svelte`
+  (`let isOpen = $state(open)`) and `TagEditor.svelte` (`let tags = $state([...initialTags])`):
+  local `$state` initialized from a prop captures only the prop's *initial* value, so if the
+  parent later changes that prop the component won't react. Harmless where the prop is
+  effectively mount-only (current usage), a latent bug if it ever updates. Surfaced while
+  writing component tests (the tests don't exercise the prop-change path).
+  _Done when:_ the `$state`-seeded-from-prop sites have been grepped, and each is either
+  confirmed mount-only or converted (e.g. `$derived`, or a reset via `$effect`).
+
+- **`CollapsedTab` default `theme='gray'` isn't in `THEMES` — renders crash with no theme.** — _added 2026-06-04_
+  `CollapsedTab.svelte`'s `theme` prop defaults to `'gray'`, but `THEMES` has no `gray`
+  key, so `colors = THEMES[theme] || THEMES.gray` resolves to `undefined` and the
+  template's `colors.bg` throws. Harmless today because the board always passes a real
+  theme, but the default value is unusable (CLAUDE.md pitfall #3, "defaults not in
+  choices"). Surfaced while writing the component test (tested with real themes).
+  _Done when:_ the default `theme` is a valid `THEMES` key (or `THEMES` gains a `gray`
+  fallback entry).
 
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —

@@ -1,0 +1,7 @@
+# Suggestion for the Docker maintainer (currently inactive — all lines commented).
+#
+# Front-end test infrastructure is only needed to run `npm test` on a developer
+# machine, never to build or run the app. To keep it out of the build context /
+# image, uncomment the line below:
+#
+# frontend/tests/

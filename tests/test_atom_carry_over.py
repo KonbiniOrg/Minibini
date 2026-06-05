@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from django.test import TestCase
 
@@ -6,7 +7,7 @@ from apps.core.models import AccountingCategory, Configuration
 from apps.estimates.carry_over import AtomCarryOverService
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Earmark, Material, PlanMaterial, PriceListItem
 from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
 
@@ -80,6 +81,35 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 1)
         self.assertEqual(Material.objects.filter(job=self.job).count(), 1)
+
+    def test_carry_over_preserves_sort_order_and_worker_time(self):
+        self.pt.sort_order = 9
+        self.pt.est_worker_time = timedelta(hours=4)
+        self.pt.save()
+        AtomCarryOverService.carry_over_for_estimate(self.estimate)
+        t = Task.objects.get(job=self.job)
+        self.assertEqual(t.sort_order, 9)
+        self.assertEqual(t.est_worker_time, timedelta(hours=4))
+
+    def test_carry_over_preserves_material_units(self):
+        self.pm.units = 'kg'
+        self.pm.save()
+        AtomCarryOverService.carry_over_for_estimate(self.estimate)
+        m = Material.objects.get(job=self.job)
+        self.assertEqual(m.units, 'kg')
+
+    def test_carry_over_creates_earmarks_for_inventoried_materials(self):
+        pli = PriceListItem.objects.create(
+            code='CO-EARM', accounting_category=self.cat, is_inventoried=True,
+            qty_on_hand=Decimal('50'),
+        )
+        PlanMaterial.objects.create(
+            est_worksheet=self.ws, description='bar', quantity=Decimal('7'),
+            units='ea', accounting_category=self.cat, price_list_item=pli,
+        )
+        AtomCarryOverService.carry_over_for_estimate(self.estimate)
+        earmark = Earmark.objects.get(job=self.job, price_list_item=pli)
+        self.assertEqual(earmark.quantity, Decimal('7'))
 
 
 class CarryOverFromDirectLineItemsTest(TestCase):

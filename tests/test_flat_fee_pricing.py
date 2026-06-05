@@ -11,7 +11,6 @@ from django.core.exceptions import ValidationError
 
 from apps.jobs.models import Task, PlanTask, RateScheme, Job
 from apps.estimates.models import EstWorksheet, TaskTemplate
-from apps.estimates.carry_over import AtomCarryOverService
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
@@ -89,7 +88,8 @@ class FlatFeePricingTest(TestCase):
             est_worksheet=ws, name='Tap', rate_scheme=self.flat,
             active_modifiers={'flat_fee_price': '3.00'}, est_qty=Decimal('7'),
         )
-        AtomCarryOverService._carry_over_plan_tasks(ws, self.job)
+        from apps.jobs.services import JobService
+        JobService.materialize_worksheet_onto_job(self.job, ws)
         task = Task.objects.get(source_plan_task=pt)
         self.assertEqual(task.active_modifiers, {'flat_fee_price': '3.00'})
         self.assertEqual(task.compute_amount(), Decimal('21.00'))

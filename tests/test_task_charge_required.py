@@ -56,6 +56,25 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         with self.assertRaises(SchemeSupersededError):
             TaskService.create_from_template(self.template, self.job)
 
+    def test_create_direct_with_superseded_scheme_raises_by_default(self):
+        from apps.jobs.services import TaskService
+        self.scheme.supersede(name='S-tcr v2')
+        self.scheme.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            TaskService.create_direct(
+                self.job, name='x', rate_scheme_id=self.scheme.pk,
+            )
+
+    def test_create_direct_allow_superseded_scheme_bypasses_check(self):
+        from apps.jobs.services import TaskService
+        self.scheme.supersede(name='S-tcr v2')
+        self.scheme.refresh_from_db()
+        task = TaskService.create_direct(
+            self.job, name='clone', rate_scheme_id=self.scheme.pk,
+            allow_superseded_scheme=True,
+        )
+        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+
 
 class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
     """B4 removed the hasattr(self, 'charge') guard from Task.clean().

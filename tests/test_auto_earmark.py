@@ -166,8 +166,11 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
 
-class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
-    """Verify that the old estimate_accepted signal no longer creates earmarks."""
+class EstimateAcceptanceCreatesEarmarksTest(TestCase):
+    """Accepting an estimate carries the worksheet onto the job (via the shared
+    materialize_worksheet_onto_job core), which earmarks inventoried materials.
+    (Earmarking used to live only in the separate WO-creation path; now that
+    carry-over IS the materialization path, it earmarks there too.)"""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -202,7 +205,7 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
             sell_price=Decimal('90.00'),
         )
 
-    def test_accepting_estimate_does_not_create_earmarks(self):
+    def test_accepting_estimate_creates_earmarks(self):
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Test item',
             price=Decimal('100.00'),
@@ -212,4 +215,5 @@ class EstimateAcceptanceNoLongerCreatesEarmarksTest(TestCase):
         self.estimate.status = Estimate.STATUS_ACCEPTED
         self.estimate.save()
 
-        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
+        earmark = Earmark.objects.get(job=self.job, price_list_item=self.plywood)
+        self.assertEqual(earmark.quantity, Decimal('5.00'))

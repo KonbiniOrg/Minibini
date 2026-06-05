@@ -436,3 +436,29 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(task_mat.units, 'lbs')
         loose_mat = Material.objects.get(job=new_job, task__isnull=True)
         self.assertEqual(loose_mat.units, 'ea')
+
+    def test_sets_provenance_on_copied_atoms(self):
+        pt = PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
+        PlanMaterial.objects.create(
+            est_worksheet=self.worksheet, plan_task=pt, description='Steel',
+            quantity=Decimal('2'), units='ea', accounting_category=self.lit)
+
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
+
+        task = Task.objects.get(job=self.job)
+        self.assertEqual(task.source_plan_task, pt)
+        material = Material.objects.get(job=self.job)
+        self.assertEqual(material.source_plan_material.plan_task, pt)
+
+    def test_manual_copy_then_acceptance_does_not_duplicate(self):
+        from apps.estimates.carry_over import AtomCarryOverService
+        PlanTask.objects.create(
+            est_worksheet=self.worksheet, name='Cut', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'))
+
+        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
+        AtomCarryOverService.carry_over_for_estimate(self.estimate)
+
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 1)

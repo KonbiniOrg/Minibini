@@ -6,6 +6,8 @@ no status/version/parent, and its editability is derived from the job's live
 estimate (see WorksheetService.is_editable, covered in test_estimates_services).
 """
 
+from datetime import timedelta
+
 from django.test import TestCase
 from decimal import Decimal
 

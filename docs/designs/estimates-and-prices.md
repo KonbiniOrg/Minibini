@@ -692,19 +692,30 @@ calls `AtomCarryOverService.carry_over_for_estimate(estimate)`.
 `AtomCarryOverService` (`apps/estimates/carry_over.py`) does its work
 in one `transaction.atomic()` block:
 
-**Phase A — worksheet atoms** (only if a worksheet exists on the
-estimate):
+**Phase A — worksheet atoms** (only if the job has a worksheet):
+delegates to the shared `JobService.materialize_worksheet_onto_job(job,
+worksheet)` core (the same core behind the manual
+`copy_from_worksheet`, so the two paths can't drift). It:
 
-- Each `PlanTask` becomes a `Task` on the Job, with:
-  - `name`, `description` copied
-  - `source_plan_task = pt` (the carry-over idempotency hook)
-  - `rate_scheme`, `active_modifiers`, `est_qty`, `est_worker_time` copied
-  - `actual_qty = None`
-  - `parent_task = None` (always; hierarchy emerges later in execution)
-- Each `PlanMaterial` becomes a `Material` on the Job, paired to a
-  `Task` if the PlanMaterial was attached to a `PlanTask` on the
-  worksheet (via `Material.source_plan_material` and a lookup through
-  `Task.source_plan_task`).
+- Turns each `PlanTask` into a `Task` via
+  `TaskService.create_direct(**pt.copy_fields(), source_plan_task=pt,
+  actual_qty=None, allow_superseded_scheme=True)`. `copy_fields()`
+  carries `name`, `description`, `sort_order`, `est_worker_time`,
+  `est_qty`, `rate_scheme`, `active_modifiers`; `source_plan_task` is
+  the idempotency hook; `parent_task` stays None (hierarchy emerges in
+  execution). The superseded-scheme bypass lets a worksheet built on a
+  since-superseded scheme still carry over.
+- Turns each `PlanMaterial` (task-attached and task-less) into a
+  `Material` via `MaterialService.create_on_job(**pm.copy_fields(),
+  source_plan_material=pm, task=…)`, pairing to the `Task` carried from
+  its `PlanTask` (looked up through `Task.source_plan_task`).
+  `copy_fields()` carries `units` along with the other material fields.
+- Ends with `InventoryService.create_earmarks_for_job(job)`, so accepting
+  an estimate earmarks its inventoried materials.
+
+Because the core sets provenance on every atom, using the manual
+`copy_from_worksheet` button first and *then* accepting the estimate does
+**not** double up — the second pass skips atoms already carried.
 
 **Phase B — direct-estimate line items** (carry-over for line items
 without worksheet sources):
@@ -729,9 +740,10 @@ Each kind of carry-over has a different idempotency key:
 | Line-item with source_template → Task | `Task.source_template` already exists on the Job |
 | Line-item with PLI → Material | `Material.price_list_item` already exists on the Job |
 
-Re-firing the signal (e.g. by saving the estimate again) is safe —
-each `_carry_over_*` and `_create_*_from_line_item` checks the
-appropriate filter and skips.
+Re-firing the signal (e.g. by saving the estimate again) is safe — the
+shared core (Phase A) and each `_create_*_from_line_item` (Phase B)
+check the appropriate filter and skip. The earmark step is an absolute
+aggregate sweep, so it is idempotent on re-run too.
 
 ### 9.3 Job status side effects
 

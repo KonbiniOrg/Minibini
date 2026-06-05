@@ -375,7 +375,8 @@ class MaterialService:
     @staticmethod
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
-                      price_list_item=None, accounting_category=None, units='none'):
+                      price_list_item=None, accounting_category=None, units='none',
+                      source_plan_material=None):
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
@@ -387,6 +388,7 @@ class MaterialService:
                 price_list_item=price_list_item,
                 accounting_category=accounting_category,
                 units=units,
+                source_plan_material=source_plan_material,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
             InventoryService._mutate_earmark(price_list_item, job, quantity)

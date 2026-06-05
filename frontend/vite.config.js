@@ -14,7 +14,7 @@ export default defineConfig({
   },
   server: {
     port: 9000,
-    allowedHosts: ['moose', 'moose.local'],
+    allowedHosts: ['moose', 'moose.local', 'minibini.me'],
     proxy: {
       '/api': 'http://localhost:8000',
     },

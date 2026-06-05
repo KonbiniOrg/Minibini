@@ -116,6 +116,23 @@ class MaterialBase(models.Model):
     class Meta:
         abstract = True
 
+    def copy_fields(self):
+        """Canonical MaterialBase field set for cloning to another container.
+
+        Returns the FKs (price_list_item, accounting_category) as *objects* so
+        the dict splats straight into ``MaterialService.create_on_job`` (whose
+        params are the objects); raw ``.objects.create()`` accepts objects too.
+        """
+        return dict(
+            description=self.description,
+            quantity=self.quantity,
+            units=self.units,
+            unit_cost=self.unit_cost,
+            sell_price=self.sell_price,
+            price_list_item=self.price_list_item,
+            accounting_category=self.accounting_category,
+        )
+
     @property
     def total_cost(self):
         return self.quantity * self.unit_cost

@@ -217,6 +217,27 @@ class TaskBase(models.Model):
     def __str__(self):
         return self.name
 
+    def copy_fields(self):
+        """Canonical TaskBase field set for cloning to another container.
+
+        Excludes identity, status, provenance, hierarchy, and assignee — callers
+        add those. Returns the rate scheme as ``rate_scheme_id`` (not the object)
+        so the dict splats straight into ``TaskService.create_direct`` (which
+        takes ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
+        ``_id`` form too, so the raw-create clone paths work as well.
+        ``active_modifiers`` is deep-copied here to keep raw-create callers safe
+        from shared-reference bugs.
+        """
+        return dict(
+            name=self.name,
+            description=self.description,
+            sort_order=self.sort_order,
+            est_worker_time=self.est_worker_time,
+            est_qty=self.est_qty,
+            rate_scheme_id=self.rate_scheme_id,
+            active_modifiers=copy_active_modifiers(self.active_modifiers),
+        )
+
 
 class PlanTask(TaskBase):
     """Planning task on an EstWorksheet. No lifecycle, no hierarchy, no bleps."""

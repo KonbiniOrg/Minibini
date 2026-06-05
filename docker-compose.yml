@@ -1,7 +1,7 @@
 services:
   # minibini_django:
-  minibini:
-    container_name: minibini
+  minibini_vite:
+    container_name: minibini-vite
     image: ashannonlee/minibini
     environment:
       - MYSQL_ROOT_PASSWORD=Ru5UPhae
@@ -21,22 +21,45 @@ services:
       mysql:
         condition: service_healthy
         restart: true
-  cron:
-    container_name: minibini-cron
+  minibini_django:
+    container_name: minibini-django
     image: ashannonlee/minibini
-    build: .
     environment:
       - MYSQL_ROOT_PASSWORD=Ru5UPhae
       - DATABASE_NAME=minibini_db
       - DATABASE_USER=minidb_user
       - DATABASE_PASSWORD=Ru5UPhae
       - DATABASE_HOST=mysql
-    command: ["/app/deploy/cron/entrypoint.sh"]
+    build:
+      context: .
+      dockerfile: Dockerfile.django
+    #volumes:
+    #  - '/home/slee/git/konbini/Minibini:/minibini'
+    ports:
+      - '9000:9000'
     restart: always
     depends_on:
       mysql:
         condition: service_healthy
         restart: true
+    working_dir: /app
+    command: python manage.py runserver 0.0.0.0:9000
+#  cron:
+#    container_name: minibini-cron
+#    image: ashannonlee/minibini
+#    build: .
+#    environment:
+#      - MYSQL_ROOT_PASSWORD=Ru5UPhae
+#      - DATABASE_NAME=minibini_db
+#      - DATABASE_USER=minidb_user
+#      - DATABASE_PASSWORD=Ru5UPhae
+#      - DATABASE_HOST=mysql
+#    command: ["/app/deploy/cron/entrypoint.sh"]
+#    restart: always
+#    depends_on:
+#      mysql:
+#        condition: service_healthy
+#        restart: true
   mysql:
     container_name: mysql
     image: mariadb:latest
@@ -66,6 +89,8 @@ services:
       - ./certbot/www:/var/www/certbot
     depends_on:
       - certbot
+      - minibini_django
+      - minibini_vite
 
   certbot:
     image: certbot/certbot
