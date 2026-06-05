@@ -345,6 +345,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
 - **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
+- **Front-end (Svelte SPA):** component/unit tests use Vitest, in `frontend/tests/`; run `npm run test:run` from `frontend/`. Extend TDD to the SPA — add/update a component's test in the same change. Patterns, conventions, and the behavior-vs-display triage live in `docs/designs/frontend-testing.md`.
 
 ## Development Features
 

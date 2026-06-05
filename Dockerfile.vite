@@ -15,6 +15,11 @@ RUN pip install gunicorn | tee pip-install.out
 RUN cp /app/frontend/vite.config.js.prod /app/frontend/vite.config.js
 
 WORKDIR /app/frontend
+# Suggestion for the Docker maintainer: the line below installs ALL dependencies,
+# including front-end test tooling (vitest, @testing-library/*, jsdom) that the
+# production image never needs. To exclude them, replace `npm install` with:
+#   RUN npm install --omit=dev
+# (Test devDependencies are only used by `npm test`, not by `npm run build`.)
 RUN npm install
 RUN npm run build
 
