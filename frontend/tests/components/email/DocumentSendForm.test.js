@@ -16,6 +16,22 @@ describe('DocumentSendForm', () => {
     confirmSpy.mockRestore();
   });
 
+  it('accepts a comma-separated list of recipients in To', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onSubmit = vi.fn();
+    const { getByLabelText, getByRole } = render(DocumentSendForm, {
+      props: { sendDefaults: { subject: 'S', body: 'B' }, onSubmit },
+    });
+    await fireEvent.input(getByLabelText('To *'), {
+      target: { value: 'a@b.com, c@d.com' },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Send Email' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      to: 'a@b.com, c@d.com',
+    }));
+    confirmSpy.mockRestore();
+  });
+
   it('disables submit when To is empty', () => {
     const { getByRole } = render(DocumentSendForm, { props: { sendDefaults: {}, onSubmit: vi.fn() } });
     expect(getByRole('button', { name: 'Send Email' })).toBeDisabled();

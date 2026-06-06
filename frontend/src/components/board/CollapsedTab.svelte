@@ -6,6 +6,7 @@
     approved: { bg: '#e5f8ec', border: '#4ade80', text: '#16a34a' },
     unpaid:   { bg: '#fef4e5', border: '#f59e0b', text: '#d97706' },
     closed:   { bg: '#f0f0f1', border: '#9ca3af', text: '#6b7280' },
+    gray:     { bg: '#f0f0f1', border: '#9ca3af', text: '#6b7280' },
   };
 
   let colors = $derived(THEMES[theme] || THEMES.gray);

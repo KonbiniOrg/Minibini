@@ -73,7 +73,7 @@
 
   <p>
     <label for="to"><strong>To *</strong></label><br>
-    <input type="email" id="to" class="form-input" bind:value={to} required>
+    <input type="text" id="to" class="form-input" bind:value={to} placeholder="Comma-separated emails" required>
   </p>
   <p>
     <label for="cc"><strong>CC</strong></label><br>

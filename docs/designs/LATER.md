@@ -96,17 +96,6 @@ page stays whole.
   `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
   redundancy this item is about.
 
-- **`ReceiveItemsForm` "remaining" ignores `qty_cancelled`.** — _added 2026-06-04_
-  The receivable *filter* accounts for cancellation (`qty_received + qty_cancelled < qty`),
-  but the prefilled "Receiving Now" value and the displayed "Remaining" column compute
-  `qty - qty_received` — excluding `qty_cancelled`. A line with qty 10 / received 3 /
-  cancelled 2 shows & pre-fills 7 remaining when only 5 are actually outstanding. May be
-  intentional (a code comment notes overage is allowed and the user can edit), but the
-  default over-states the outstanding quantity by the cancelled amount. Surfaced while
-  writing the component test (the test pins the current `7`).
-  _Done when:_ the remaining/prefill calc subtracts `qty_cancelled`, or we've confirmed
-  the overage default is intended and noted why.
-
 - **Audit `$state` seeded from a prop — stale on prop change.** — _added 2026-06-04_
   The Svelte compiler warns `state_referenced_locally` in `Accordion.svelte`
   (`let isOpen = $state(open)`) and `TagEditor.svelte` (`let tags = $state([...initialTags])`):
@@ -291,19 +280,6 @@ page stays whole.
   _Done when:_ either the header accommodates the reason capture cleanly (a proper
   modal/popover, or a header that can grow), or we've decided the overflow-popover is
   fine and noted why.
-
-- **Revisit the Change Orders board-pillar color.** — _added 2026-05-26_
-  Phase G picked dark red (`#b91c1c`) for the CO pillar; it sits visually between the
-  `rejected` red and task orange and may read ambiguously against the accent palette.
-  _Done when:_ the CO pillar color is confirmed or changed to read clearly alongside the
-  existing pillars/board palette.
-
-- **CO detail "target line" should show the estimate line's description, not "Line #id".** — _added 2026-05-26_
-  The CO detail page reads the referenced estimate line for remove/replace rows; if the
-  `ChangeOrderLineItem` serializer doesn't surface the target `EstimateLineItem`'s
-  description/number, the UI falls back to an opaque "Line #id".
-  _Done when:_ the CO line-item serializer exposes the target line's description (+ line
-  number) and the CO detail renders it.
 
 - **Decide a consistent primary-key naming convention for line items (and documents).** — _added 2026-05-26_
   The codebase uses explicit PK names (`line_item_id`, `estimate_id`, `change_order_id`)
