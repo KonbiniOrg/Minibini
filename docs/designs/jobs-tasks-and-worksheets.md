@@ -1015,6 +1015,15 @@ see §12.2 and §12.9).
   qty previously picked up in other shipments, and qty remaining after
   this shipment.
 
+**Permissions — deliberate asymmetry.** Editing the **Deliverables** list
+requires `can_manage_jobs` (it defines the agreed scope), but **Shipments**
+are `IsAuthenticated` for all operations (`ShipmentViewSet` has no per-action
+atom). This is intentional, not an oversight: fulfillment is shop-floor work —
+any authenticated user must be able to create a shipment, add items, and mark
+it picked up — so shipment management is purposely *not* parallel to deliverable
+management. (The frontend's Shipments page is correspondingly ungated; flagged
+and confirmed-intentional in `docs/plans/2026-06-06-gating-parity-audit.md`.)
+
 ### 12.2 Editability of the Deliverables list
 
 Deliverables editability is computed from the Job's estimate / change-

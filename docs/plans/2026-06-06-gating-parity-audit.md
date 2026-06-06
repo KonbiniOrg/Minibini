@@ -109,10 +109,14 @@ detail pages, all of which 403.
 with no permission gate, and that happens to match the backend, because
 `ShipmentViewSet.permission_classes = [IsAuthenticated]` for every action
 (`deliverables/views.py:126`) — unlike the sibling `DeliverableViewSet`, which requires
-`CanManageJobs` for mutations (`deliverables/views.py:34`). So there's no 403 mismatch
-today, but the asymmetry is suspicious: shipments are arguably as much a "manage jobs"
-operation as deliverables. Worth a deliberate decision (likely: shipment mutations should
-also require `can_manage_jobs`), at which point the frontend page would need a gate too.
+`CanManageJobs` for mutations (`deliverables/views.py:34`).
+
+**RESOLVED 2026-06-06 — intentional, no change.** The asymmetry is by design:
+fulfillment is shop-floor work, so any authenticated user must be able to create a
+shipment, add items, and mark it picked up. Shipment management is purposely *not*
+parallel to deliverable management (which gates the agreed *scope* on `can_manage_jobs`).
+The ungated frontend page is therefore correct. Recorded durably in
+`docs/designs/jobs-tasks-and-worksheets.md` §12.1.
 
 ## Would a shared per-atom derived helper prevent recurrence?
 
