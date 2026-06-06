@@ -97,15 +97,6 @@ page stays whole.
   _Done when:_ the `$state`-seeded-from-prop sites have been grepped, and each is either
   confirmed mount-only or converted (e.g. `$derived`, or a reset via `$effect`).
 
-- **`CollapsedTab` default `theme='gray'` isn't in `THEMES` — renders crash with no theme.** — _added 2026-06-04_
-  `CollapsedTab.svelte`'s `theme` prop defaults to `'gray'`, but `THEMES` has no `gray`
-  key, so `colors = THEMES[theme] || THEMES.gray` resolves to `undefined` and the
-  template's `colors.bg` throws. Harmless today because the board always passes a real
-  theme, but the default value is unusable (CLAUDE.md pitfall #3, "defaults not in
-  choices"). Surfaced while writing the component test (tested with real themes).
-  _Done when:_ the default `theme` is a valid `THEMES` key (or `THEMES` gains a `gray`
-  fallback entry).
-
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —
   deliverables, tasks, materials only. `DeliverableService.is_editable` keys on estimate /
@@ -125,12 +116,6 @@ page stays whole.
   (e.g. counters that increment on their own) from needing an editor.
   _Done when:_ every user-settable Configuration key has a settings-UI editor, and the
   audit has confirmed nothing is silently un-editable.
-
-- **Send-email form: accept comma-separated recipients in To and Bcc, not just Cc.** — _added 2026-05-31_
-  The document-send form (`DocumentSendForm.svelte`) accepts a comma-separated list in
-  the Cc box but the To field doesn't take one; Bcc unverified. All three (To / Cc /
-  Bcc) should accept a comma-separated list of addresses consistently.
-  _Done when:_ To, Cc, and Bcc each accept and correctly send to a comma-separated list.
 
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
