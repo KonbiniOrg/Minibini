@@ -60,15 +60,6 @@ page stays whole.
 
 ## Open
 
-- **Verify the portal hides Accept/Reject when an estimate isn't actionable.** — _added 2026-06-05_
-  Backend already gates this: `_is_actionable` (`apps/api/portal/views.py`) requires the
-  job to be `SUBMITTED`, so an on-hold (or otherwise moved-on) job returns `actions: []`
-  and `_decide` is a no-op. Confirm the portal **UI** (`frontend/portal/`) actually
-  suppresses the Accept/Reject buttons when `actionable` is false / `actions` is empty,
-  rather than showing dead buttons that POST to a no-op. _Done when:_ the portal page
-  renders no Accept/Reject controls for a non-actionable estimate (verified for the
-  on-hold-job case specifically).
-
 - **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
   `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
   calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
