@@ -14,9 +14,10 @@ import { user } from './auth.js';
 //
 // Superuser note: the backend already folds superuser into the `permissions`
 // list (`get_all_permissions()` returns every permission for a superuser, so
-// `/api/auth/me/` includes all atoms). The explicit `is_superuser` check below
-// is a belt-and-suspenders safety net so these stores stay correct even if that
-// backend behavior ever changes.
+// `/api/auth/me/` includes all atoms). `/api/auth/me/` also exposes the
+// `is_superuser` flag (see UserSerializer), so the explicit check below is a
+// real, functioning belt-and-suspenders safety net: these stores stay correct
+// even if that permission-folding behavior ever changes.
 function hasAtom(u, atom) {
   if (!u) return false;
   if (u.is_superuser) return true;

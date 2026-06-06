@@ -17,6 +17,7 @@ class UserSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
+    is_superuser = serializers.BooleanField(read_only=True)
     permissions = serializers.SerializerMethodField()
 
     def get_permissions(self, obj):
