@@ -12,15 +12,11 @@ import { user } from './auth.js';
 // (`docs/designs/users-and-permissions.md` §3): a gate here should match the
 // atom the action's endpoint enforces in its DRF viewset.
 //
-// Superuser note: the backend already folds superuser into the `permissions`
-// list (`get_all_permissions()` returns every permission for a superuser, so
-// `/api/auth/me/` includes all atoms). `/api/auth/me/` also exposes the
-// `is_superuser` flag (see UserSerializer), so the explicit check below is a
-// real, functioning belt-and-suspenders safety net: these stores stay correct
-// even if that permission-folding behavior ever changes.
+// Authorization is atoms-only: there is no superuser special-case. A Django
+// superuser still passes every gate because `get_all_permissions()` folds all
+// permissions into the `permissions` list `/api/auth/me/` returns.
 function hasAtom(u, atom) {
   if (!u) return false;
-  if (u.is_superuser) return true;
   return (u.permissions || []).includes(atom);
 }
 

@@ -1,6 +1,7 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { user, logout } from '../stores/auth.js';
+  import { canManageFinancials, canManageConfig } from '../stores/permissions.js';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
   let { open = $bindable(false) } = $props();
@@ -22,12 +23,8 @@
     await logout();
   }
 
-  function hasPerm(perm) {
-    return $user?.permissions?.includes(perm) ?? false;
-  }
-
-  let showFinancials = $derived(hasPerm('can_manage_financials'));
-  let showAdminLabel = $derived(showFinancials || hasPerm('can_manage_config'));
+  let showFinancials = $derived($canManageFinancials);
+  let showAdminLabel = $derived($canManageFinancials || $canManageConfig);
 
   let searchQuery = $state('');
   let searchFocused = $state(false);
@@ -72,10 +69,10 @@
     {#if showFinancials}
       <a href="/expenses" use:link>Expenses</a>
     {/if}
-    {#if hasPerm('can_manage_config')}
+    {#if $canManageConfig}
       <a href="/users" use:link>Users</a>
     {/if}
-    {#if hasPerm('can_manage_config')}
+    {#if $canManageConfig}
       <a href="/settings" use:link>Settings</a>
     {/if}
     <form class="sidebar-search" onsubmit={handleSearch}>

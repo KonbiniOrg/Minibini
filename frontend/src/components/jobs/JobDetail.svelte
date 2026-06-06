@@ -6,7 +6,7 @@
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
-  import { user } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore, canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
   const {
@@ -21,12 +21,8 @@
   } = $props();
 
   // Permission check
-  let canManageJobs = $derived(
-    $user?.permissions?.includes('can_manage_jobs') ?? false
-  );
-  let canManageFinancials = $derived(
-    $user?.permissions?.includes('can_manage_financials') ?? false
-  );
+  let canManageJobs = $derived($canManageJobsStore);
+  let canManageFinancials = $derived($canManageFinancialsStore);
 
   // Estimate versions, sorted oldest first for left-to-right tabs
   let estimateList = $derived(

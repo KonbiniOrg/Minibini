@@ -1,7 +1,7 @@
 <script>
   import { untrack } from 'svelte';
   import { api } from '../../lib/api.js';
-  import { user } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
   import CollapsedTab from '../../components/board/CollapsedTab.svelte';
   import PipelineColumn from '../../components/board/PipelineColumn.svelte';
@@ -57,9 +57,7 @@
     loadColumn(col);
   }
 
-  function canManageJobs() {
-    return $user?.permissions?.includes('can_manage_jobs');
-  }
+  const canManageJobs = $derived($canManageJobsStore);
 
   $effect(() => {
     loadColumn(activeCol);
@@ -95,7 +93,7 @@
         {#if approvedLoading}
           <p class="loading">Loading...</p>
         {:else if approvedData}
-          <ApprovedArea data={approvedData} canManage={canManageJobs()} onUpdate={() => loadColumn('approved')} />
+          <ApprovedArea data={approvedData} canManage={canManageJobs} onUpdate={() => loadColumn('approved')} />
         {/if}
       </div>
     {:else}

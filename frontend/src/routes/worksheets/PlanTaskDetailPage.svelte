@@ -1,7 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
@@ -28,9 +28,7 @@
   let templates = $state([]);
   let editModalOpen = $state(false);
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  const canManageJobs = $derived($canManageJobsStore);
   const canEdit = $derived(canManageJobs && (worksheet?.editable ?? false));
 
   async function loadTask() {

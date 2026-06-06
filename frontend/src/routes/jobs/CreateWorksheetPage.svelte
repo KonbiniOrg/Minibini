@@ -1,7 +1,7 @@
 <script>
   import { push, link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   const { params = {} } = $props();
@@ -14,9 +14,7 @@
   let saving = $state(false);
   let templateId = $state('');
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  const canManageJobs = $derived($canManageJobsStore);
 
   async function load() {
     loading = true;

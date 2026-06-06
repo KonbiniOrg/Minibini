@@ -42,14 +42,6 @@ describe('permissions store', () => {
     expect(get(canManageConfig)).toBe(false);
   });
 
-  it('a superuser has every atom regardless of the permissions list', () => {
-    user.set({ id: 1, is_superuser: true, permissions: [] });
-    expect(get(canManageJobs)).toBe(true);
-    expect(get(canManageFinancials)).toBe(true);
-    expect(get(canManageTime)).toBe(true);
-    expect(get(canManageConfig)).toBe(true);
-  });
-
   it('reacts when the user store changes', () => {
     expect(get(canManageJobs)).toBe(false);
     user.set({ id: 1, permissions: ['can_manage_jobs'] });

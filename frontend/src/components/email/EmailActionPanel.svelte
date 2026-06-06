@@ -1,15 +1,11 @@
 <script>
-  import { user } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore, canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { emailApi } from '../../lib/email.js';
 
   let { emailRecord, onChange = null, onReply = null } = $props();
 
-  let canManageJobs = $derived(
-    $user?.permissions?.includes('can_manage_jobs') ?? false
-  );
-  let canManageFinancials = $derived(
-    $user?.permissions?.includes('can_manage_financials') ?? false
-  );
+  let canManageJobs = $derived($canManageJobsStore);
+  let canManageFinancials = $derived($canManageFinancialsStore);
 
   let actionError = $state(null);
 

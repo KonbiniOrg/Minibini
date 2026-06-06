@@ -1,5 +1,5 @@
 <script>
-  import { user } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
   const {
@@ -8,9 +8,7 @@
     onStatusChange = null,
   } = $props();
 
-  let canManageJobs = $derived(
-    $user?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  let canManageJobs = $derived($canManageJobsStore);
 
   // The transitions the status pill offers — a subset of the Job model's
   // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's

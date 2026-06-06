@@ -20,7 +20,7 @@ def _resolve_target(request):
     """Clock self by default; managers may target ?user / body 'user'."""
     uid = request.data.get('user') or request.query_params.get('user')
     if uid and str(uid) != str(request.user.id):
-        if not (request.user.is_superuser or request.user.has_perm('core.can_manage_time')):
+        if not (request.user.has_perm('core.can_manage_time')):
             return None, Response({'detail': 'Not permitted to clock another user.'},
                                   status=status.HTTP_403_FORBIDDEN)
         try:
@@ -99,7 +99,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         shift = self.get_object()
-        if not (request.user.is_superuser or request.user.has_perm('core.can_manage_time')):
+        if not (request.user.has_perm('core.can_manage_time')):
             return Response({'detail': 'Not permitted.'}, status=status.HTTP_403_FORBIDDEN)
         shift.delete()
         return Response({'message': 'Shift deleted.'})
@@ -121,8 +121,7 @@ class _ChangeRequestViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status=status_p)
         if mine == 'true':
             qs = qs.filter(requester=self.request.user)
-        elif not (self.request.user.is_superuser
-                  or self.request.user.has_perm('core.can_manage_time')):
+        elif not (self.request.user.has_perm('core.can_manage_time')):
             qs = qs.filter(requester=self.request.user)
         return qs
 
@@ -131,8 +130,7 @@ class _ChangeRequestViewSet(viewsets.ModelViewSet):
         ser.is_valid(raise_exception=True)
         target = ser.validated_data.get('shift') or ser.validated_data.get('blep')
         if target is not None and target.user_id != request.user.id \
-                and not (request.user.is_superuser
-                         or request.user.has_perm('core.can_manage_time')):
+                and not (request.user.has_perm('core.can_manage_time')):
             return Response(
                 {'detail': 'You can only request changes to your own time records.'},
                 status=status.HTTP_403_FORBIDDEN)

@@ -1,7 +1,7 @@
 <script>
   import { push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
 
   const { params = {} } = $props();
 
@@ -15,9 +15,7 @@
   let dueDate = $state('');
   let customerPoNumber = $state('');
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  const canManageJobs = $derived($canManageJobsStore);
 
   async function load() {
     loading = true;

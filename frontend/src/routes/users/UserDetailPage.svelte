@@ -180,9 +180,6 @@
     {:else}
       <em>Deactivated</em>
     {/if}
-    {#if user.is_superuser}
-      <em>(superuser — managed via command line)</em>
-    {/if}
   </p>
 
   <h3>Profile</h3>

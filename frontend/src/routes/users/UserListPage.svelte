@@ -1,13 +1,12 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageTime, canManageFinancials } from '../../stores/permissions.js';
   import ShiftRequestQueue from '../../components/users/ShiftRequestQueue.svelte';
   import PayrollReport from '../../components/users/PayrollReport.svelte';
 
   let tab = $state('users');
-  const perms = $derived($userStore?.permissions || []);
-  const canSeeShifts = $derived(perms.includes('can_manage_time') || perms.includes('can_manage_financials') || $userStore?.is_superuser);
+  const canSeeShifts = $derived($canManageTime || $canManageFinancials);
 
   // Short labels for the permission column — keep the table narrow.
   const ATOM_SHORT_LABELS = {
@@ -83,7 +82,6 @@
           <td>{user.username}</td>
           <td>
             {user.first_name} {user.last_name}
-            {#if user.is_superuser} <em>(superuser)</em>{/if}
           </td>
           <td>{user.email}</td>
           <td>{formatPermissions(user.permissions)}</td>

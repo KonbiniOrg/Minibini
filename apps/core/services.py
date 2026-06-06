@@ -1441,7 +1441,7 @@ class ShiftService:
 
     @staticmethod
     def _has_manage_time(user):
-        return user.is_superuser or user.has_perm('core.can_manage_time')
+        return user.has_perm('core.can_manage_time')
 
     @staticmethod
     def _within_window(start_time):

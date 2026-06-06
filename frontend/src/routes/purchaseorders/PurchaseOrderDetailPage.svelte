@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { user } from '../../stores/auth.js';
+  import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
@@ -43,9 +43,7 @@
       }));
   }
 
-  let canManageFinancials = $derived(
-    $user?.permissions?.includes('can_manage_financials') ?? false
-  );
+  let canManageFinancials = $derived($canManageFinancialsStore);
 
   async function loadPO() {
     loading = true;

@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
+  import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
   import TimeEditModal from '../time/TimeEditModal.svelte';
   import BlepLogTable from '../time/BlepLogTable.svelte';
@@ -11,8 +12,7 @@
   let modalOpen = $state(false);
   let modalAction = $state('edit');
 
-  const userPermissions = $derived($userStore?.permissions || []);
-  const canManageTime = $derived(userPermissions.includes('can_manage_time'));
+  const canManageTime = $derived($canManageTimeStore);
 
   function within30h(iso) {
     if (!iso) return false;
@@ -78,7 +78,6 @@
   action={modalAction}
   record={editingBlep}
   currentUser={$userStore}
-  userPermissions={userPermissions}
   onSaved={handleSaved}
   onClose={closeModal}
 />

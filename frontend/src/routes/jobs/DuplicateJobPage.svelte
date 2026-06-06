@@ -1,14 +1,12 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import ContactPicker from '../../components/ContactPicker.svelte';
 
   const { params = {} } = $props();
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  const canManageJobs = $derived($canManageJobsStore);
 
   let sourceJob = $state(null);
   let selectedContactId = $state(null);

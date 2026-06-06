@@ -16,15 +16,6 @@ class MeUpdateAPITest(BaseTestCase):
         self.user.set_password('testpass123')
         self.user.save()
 
-    def test_me_response_includes_is_superuser(self):
-        """The SPA's permission stores fall back to is_superuser, and
-        UserListPage gates on it — so /api/auth/me/ must expose the flag."""
-        self.client.force_authenticate(user=self.user)
-        response = self.client.get('/api/auth/me/')
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('is_superuser', response.data)
-        self.assertFalse(response.data['is_superuser'])
-
     def test_patch_me_unauthenticated_returns_403(self):
         response = self.client.patch(
             '/api/auth/me/',

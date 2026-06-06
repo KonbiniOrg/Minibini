@@ -3,6 +3,7 @@
   import { modalKeys } from '../../lib/modalKeys.js';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import { notifyShiftChanged } from '../../stores/shift.js';
+  import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
 
   let {
     open = false,
@@ -11,12 +12,11 @@
     record = null,                // existing record when editing/requesting-amend
     taskId = null,                // blep create/request needs a task
     currentUser,
-    userPermissions = [],
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
-  const canManageTime = $derived(userPermissions.includes('can_manage_time'));
+  const canManageTime = $derived($canManageTimeStore);
 
   let startTime = $state('');
   let endTime = $state('');
