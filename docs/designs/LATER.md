@@ -108,15 +108,11 @@ page stays whole.
   _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
   freeze and either added one or recorded why anchoring alone is sufficient.
 
-- **Audit Configuration keys for settings-UI coverage.** — _added 2026-05-31_
-  Some Configuration keys have no user-facing editor — `our_public_url` had none until
-  the Business tab was added, and others likely lack UI too. Review every key the
-  backend reads/writes (document-number sequences/counters, units, QBO accounts, email
-  templates, retention/expiry days, `our_domain`, schedule keys, etc.) and make sure
-  each user-settable one is editable somewhere in Settings. Exclude auto-managed keys
-  (e.g. counters that increment on their own) from needing an editor.
-  _Done when:_ every user-settable Configuration key has a settings-UI editor, and the
-  audit has confirmed nothing is silently un-editable.
+- **Settings-UI coverage + `appstate` split.** — _added 2026-05-31; audit done 2026-06-06_
+  Audit complete; implementation planned in
+  `docs/plans/2026-06-06-appstate-and-settings-ui-plan.md` (new `appstate` table for
+  machine-managed keys, remove dead `estimate_number_sequence`, add editors for the
+  UI-less user-settable keys). _Done when:_ that plan is executed.
 
 - **Customer-facing public URLs for documents (`{object_url}` real resolution) — ESTIMATES DONE.** — _added 2026-05-29; estimates resolved 2026-05-31_
   Estimates are now fully shipped: `Estimate.public_token` is minted at creation;
@@ -282,21 +278,22 @@ page stays whole.
   _Done when:_ the detail page can switch between the line-item view and the atom-pull view
   without a route change, and the standalone wizard routes are retired.
 
-- **Audit frontend ↔ backend permission gating for parity.** — _added 2026-06-02_
-  The SPA frequently shows an action whose gate doesn't match the backend permission its
-  endpoint requires, so the user sees a button that then 403s (or, less often, a button is
-  hidden from someone the backend would allow). Known example: `InvoiceDetailPage.svelte`'s
-  "Send/Resend Invoice" link is gated on `canEditInvoice` (`can_manage_jobs` **or**
-  `can_manage_financials`), but the invoice `send` action requires `can_manage_financials`
-  only — a jobs-only user sees a Send button that 403s. (The "Continue in wizard" link had the
-  same mismatch and was removed.) This is a broad, recurring pattern, not a one-off — do a
-  systematic pass: for each gated action in the SPA, confirm the frontend visibility condition
-  matches the atom enforced by the corresponding viewset/`get_permissions` (atoms:
-  `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_manage_config`; see
-  `docs/designs/users-and-permissions.md` §3 for the endpoint-to-atom table). Prefer a small
-  shared permission helper/derived per atom so gates are consistent rather than ad-hoc per page.
-  _Done when:_ no SPA action is shown to a user the backend would reject (and none is hidden
-  from a user the backend would allow), verified against the endpoint-to-atom mapping.
+- **Permission-store migration — residual cleanup.** — _added 2026-06-06_
+  The gating-parity mismatches are fixed and gates now route through
+  `frontend/src/stores/permissions.js`. Remaining: (a) **contact/business** gating
+  (`ContactDetail`/`BusinessDetail`) was done but each hand-rolls an identical read-only
+  tag list — converge on a `readonly` prop for `TagEditor` (or a shared `TagList`);
+  (b) the `userPermissions` **prop chain** (TaskDetailPage → TaskActions → BlepEditModal →
+  TimeEditModal/BlepList) is now dead after the store migration but can't be removed without
+  touching `TaskDetailPage` (deliberately left alone this pass). _Done when:_ the tag display
+  is de-duplicated and the dead `userPermissions` prop is removed end-to-end.
+
+- **Superuser still referenced in test fixtures + fixture JSON.** — _added 2026-06-06_
+  App code is now superuser-free (authorization is atoms-only), but several test files create
+  `is_superuser=True` users as a privileged-actor shortcut (they still pass because Django
+  grants superusers every perm) and `fixtures/unit_test_data.json` seeds a superuser. Migrate
+  these to grant the four atoms explicitly so nothing references superuser. _Done when:_ no
+  test fixture or fixture JSON relies on `is_superuser` for authorization.
 
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
