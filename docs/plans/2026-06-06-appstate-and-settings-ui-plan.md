@@ -11,7 +11,9 @@ for review.** No migrations have been run._
    never touch counters/cursors that the app writes itself.
 2. Remove `estimate_number_sequence` entirely — it's dead (estimates derive
    their number as `{job}-{ver}`, not via `NumberGenerationService`).
-3. Give every remaining **UI-less but user-settable** Configuration key an editor,
+3. Remove `default_tax_rate` and `org_tax_multiplier` entirely — **QBO handles
+   taxation**, so the app no longer computes tax amounts itself.
+4. Give every remaining **UI-less but user-settable** Configuration key an editor,
    on the **Email**, **Business**, or **Setup** tab (Setup may get long — fine).
 
 ## Part A — the `appstate` table
@@ -39,13 +41,36 @@ audit — self-incrementing counters + the IMAP fetch cursor):
 | `po_counter` | same | |
 | `latest_email_date` | `EmailService` (`apps/core/services.py:448-456,530`) | IMAP fetch cursor |
 
-**Keys to DELETE outright** (dead — estimates no longer number via the service):
+**Keys to DELETE outright:**
+
+_Dead numbering (estimates no longer number via the service):_
 - `estimate_number_sequence`
 - `estimate_counter`
 - …and the `'estimate'` entries in `NumberGenerationService.SEQUENCE_KEYS` /
   `COUNTER_KEYS` (`apps/core/services.py:81,88`) plus the `'estimate'` row in its
   `MODEL_FIELD_MAP` (`:99`). _Verify_ `generate_next_number('estimate')` has no
   callers before deleting (audit says estimates derive `{job}-{ver}`; grep to confirm).
+
+_Tax config (QBO handles taxation — the app no longer computes tax amounts):_
+- `default_tax_rate`
+- `org_tax_multiplier`
+- Remove the app-side **rate-application** machinery that read them:
+  `TaxCalculationService.get_effective_tax_rate`, `.calculate_line_item_tax`,
+  `.calculate_document_tax` (`apps/core/services.py:1129-1205`);
+  `ConfigurationService.update_tax_config` (`:1212`); the legacy Django tax form +
+  view (`apps/core/forms.py` tax fields, the `tax_config` view in `apps/core/views.py`,
+  `templates/core/tax_config_form.html`, the tax rows in `templates/settings.html`);
+  and the tax-amount block in the deprecated `estimate_detail` HTML view
+  (`apps/estimates/views.py:116-122`). Drop the now-dead
+  `from ... import TaxCalculationService` in `apps/jobs/views.py:14`.
+- **KEEP** `TaxCalculationService.get_effective_taxability` and the line-item
+  `taxable_override` field + `AccountingCategory.taxable` — the invoicing→QBO export
+  still needs the per-line **taxable flag** to group lines for QBO
+  (`apps/invoicing/services.py:298`). QBO computes the amount from that flag.
+- _Open question (defer, separate migration):_ with rate application gone, the
+  per-line `tax_rate_override` field and `Business.tax_multiplier` are now vestigial
+  (nothing reads them). Decide whether to drop those model fields + their serializer
+  fields in a follow-up; not required to remove the two Configuration keys.
 
 **Code changes:**
 - `NumberGenerationService` reads/writes the three live counters from `AppState`
@@ -57,8 +82,9 @@ audit — self-incrementing counters + the IMAP fetch cursor):
 
 **Data migration** (the user runs it — agent never runs `migrate`): a Django data
 migration that, for each moved key, creates the `AppState` row from the existing
-`Configuration` row then deletes the `Configuration` row; and deletes the two dead
-`estimate_*` Configuration rows. Make it idempotent / guard missing rows.
+`Configuration` row then deletes the `Configuration` row; and deletes the dead
+`estimate_*` and tax (`default_tax_rate`, `org_tax_multiplier`) Configuration rows.
+Make it idempotent / guard missing rows.
 
 **Fixtures + tests:** update `fixtures/*` and any test `setUp` that seed these keys
 into `Configuration` to seed `AppState` instead (the counters especially). Grep
@@ -71,7 +97,8 @@ Update `docs/designs/data-constraints.md` §1.1 (the Configuration-keys referenc
   settings (has or should have a Settings editor); `appstate` = machine-written
   state (counters, cursors), never edited by hand.
 - Move the counter/cursor rows into an `appstate` subsection; drop the `estimate_*`
-  numbering rows.
+  numbering rows and the `default_tax_rate` / `org_tax_multiplier` tax rows (note that
+  taxation is handled by QBO).
 
 ## Part C — settings-UI editors for the UI-less user-settable keys
 
@@ -90,9 +117,9 @@ Notes:
 - The document-number **patterns** stay user-settable in `Configuration`; only the
   **counters** move to `appstate`. The numbering fieldset edits patterns only — do
   NOT expose counters in the UI.
-- `default_tax_rate` / `org_tax_multiplier` are still on the legacy Django tax form
-  (audit) — out of scope here, but worth a follow-up to port to the Svelte
-  Accounting tab.
+- No tax editor is needed: `default_tax_rate` / `org_tax_multiplier` are being
+  removed (Part A — QBO handles taxation), and the legacy Django tax form goes with
+  them.
 - Follow the existing settings-tab conventions (the `/api/settings/` PATCH endpoint
   already writes arbitrary keys; each new field just needs a labelled input + save).
 - Add/extend the settings component tests for each new editor.
@@ -102,9 +129,12 @@ Notes:
 1. `AppState` model + accessor + data migration + service rewrites (Part A) — behind
    no UI; verify counters/email-cursor still work via tests.
 2. Delete the dead `estimate_*` keys + service entries.
-3. Durable-doc update (Part B).
-4. Settings-UI editors (Part C), one tab at a time, with tests.
+3. Delete the tax keys + rate-application machinery + legacy tax form (keep
+   `get_effective_taxability` for QBO grouping).
+4. Durable-doc update (Part B).
+5. Settings-UI editors (Part C), one tab at a time, with tests.
 
-_Done when:_ machine state lives in `appstate`, `estimate_number_sequence`/`_counter`
-are gone, every user-settable Configuration key has a Settings editor, and
-`data-constraints.md` §1.1 reflects the split.
+_Done when:_ machine state lives in `appstate`; `estimate_number_sequence`/`_counter`,
+`default_tax_rate`, and `org_tax_multiplier` are gone (app-side tax-amount computation
+removed, QBO owns tax); every user-settable Configuration key has a Settings editor;
+and `data-constraints.md` §1.1 reflects the split.
