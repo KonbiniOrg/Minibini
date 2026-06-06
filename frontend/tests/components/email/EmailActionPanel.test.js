@@ -29,9 +29,9 @@ describe('EmailActionPanel', () => {
     expect(queryByRole('heading', { name: 'Job' })).toBeNull();
   });
 
-  it('disassociates a linked job after confirmation', async () => {
+  it('disassociates a linked job without prompting (re-link is one action away)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, 'confirm');
     const onChange = vi.fn();
     const { getByRole } = render(EmailActionPanel, {
       props: { emailRecord: { email_record_id: 1, job: 5, job_number: 'JOB-5' }, onChange },
@@ -39,6 +39,7 @@ describe('EmailActionPanel', () => {
     await fireEvent.click(getByRole('button', { name: 'Disassociate' }));
     expect(emailApi.unlinkFromJob).toHaveBeenCalledWith(1);
     expect(onChange).toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
 });

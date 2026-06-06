@@ -99,7 +99,7 @@
   let releasingToFloor = $state(false);
 
   async function releaseToFloor() {
-    if (!confirm('Release this job to the floor? Workers will see it as In Progress.')) return;
+    // No confirm: reversible via the on-hold transition.
     releasingToFloor = true;
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });

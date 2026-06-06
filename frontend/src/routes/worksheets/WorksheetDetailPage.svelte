@@ -213,7 +213,7 @@
   let sendingAll = $state(false);
 
   async function sendAllAtoms() {
-    if (!confirm('Send all unclaimed atoms to the estimate as 1:1 line items?')) return;
+    // No confirm: creates draft estimate lines, each deletable afterward.
     sendingAll = true;
     try {
       const result = await api.post(

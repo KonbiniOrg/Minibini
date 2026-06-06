@@ -2,6 +2,14 @@
 
 _added 2026-06-05 — addresses the LATER item "Audit confirmations site-wide — confirm only the irreversible."_
 
+> **STATUS: executed 2026-06-06.** All 5 clean-win removals, all 4 judgment calls
+> (resolved as remove), **plus** the wizard discard (user reclassified KEEP → REMOVE
+> because the draft is easily remade on the page the user returns to) were applied —
+> 10 `confirm()`s removed, 26 remain. Component-level removals (JobHeader, EmailActionPanel,
+> WizardActions) got "fires without a prompt" tests; route-page removals were edited
+> without new unit tests, per the route-pages-excluded-from-the-sweep convention. LATER
+> entry deleted. Kept for the decision record.
+
 ## The rule (from CLAUDE.md → UI Decisions)
 
 > Only prompt (`confirm()` / a modal) when an action is **irreversible or extremely

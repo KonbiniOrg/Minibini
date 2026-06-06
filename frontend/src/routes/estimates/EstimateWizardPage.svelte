@@ -189,7 +189,6 @@
   <WizardActions
     apiBase={`/api/estimates/${estimate.estimate_id}`}
     detailRoute={`/estimates/${estimate.estimate_id}`}
-    discardConfirm="Delete this draft estimate and release all atoms?"
   />
 {/if}
 

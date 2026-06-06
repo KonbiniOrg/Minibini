@@ -492,7 +492,7 @@
   }
 
   async function seedNew() {
-    if (!confirm('Start a new change order for this job? A new draft will be created.')) return;
+    // No confirm: the new draft CO is trivially discardable.
     actionBusy = true;
     try {
       const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);

@@ -14,12 +14,7 @@
   let actionError = $state(null);
 
   async function disassociate(target) {
-    const labels = {
-      job: 'job',
-      purchase_order: 'purchase order',
-      bill: 'bill',
-    };
-    if (!confirm(`Disassociate this email from the ${labels[target]}?`)) return;
+    // No confirm: re-linking is one action away in the same panel.
     actionError = null;
     try {
       const id = emailRecord.email_record_id;

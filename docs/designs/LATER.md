@@ -296,14 +296,6 @@ page stays whole.
   `ChangeOrder.estimate` FK.
   _Done when:_ we've decided and either changed the model or written down why `accepted` stays.
 
-- **Audit confirmations site-wide — confirm only the irreversible.** — _added 2026-05-27_
-  We removed `confirm()` dialogs from the change-order line/deliverable edits (Change /
-  Delete-of-a-draft-delta / Undo / New) — all exactly undoable by another local action.
-  Sweep the SPA for `confirm(...)` and remove any guarding a reversible action; keep them
-  only where the action is irreversible or extremely arduous to undo (deleting a persisted
-  record, sending to a customer). Convention recorded in CLAUDE.md "UI Decisions".
-  _Done when:_ confirmations across the SPA match the rule.
-
 - **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
   We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads
   with two or more COs on a job: how the 1st CO's lines/deliverables show once a 2nd

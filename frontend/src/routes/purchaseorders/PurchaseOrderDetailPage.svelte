@@ -206,7 +206,7 @@
   }
 
   async function handleDeleteLineItem(lineItem) {
-    if (!confirm(`Delete line item #${lineItem.line_number}?`)) return;
+    // No confirm: draft-only line edit, re-addable by hand.
     error = null;
     try {
       await api.delete(
@@ -232,7 +232,7 @@
   }
 
   async function handleReceiveAll() {
-    if (!confirm('Receive all remaining items?')) return;
+    // No confirm: reversible via the Reverse Receipt action.
     busy = true;
     error = null;
     success = null;

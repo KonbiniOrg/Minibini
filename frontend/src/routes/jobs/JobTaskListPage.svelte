@@ -208,7 +208,7 @@
   }
 
   async function handleConsumeMaterial(material, _task) {
-    if (!confirm('Consume this material?')) return;
+    // No confirm: reversible via the sibling Restock action.
     try {
       await api.post(`/api/materials/${material.material_id}/consume/`, {});
       await reload();

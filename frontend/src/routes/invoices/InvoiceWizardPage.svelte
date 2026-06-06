@@ -190,7 +190,6 @@
   <WizardActions
     apiBase={`/api/invoices/${invoice.invoice_id}`}
     detailRoute={`/invoices/${invoice.invoice_id}`}
-    discardConfirm="Delete this draft invoice and release all atoms?"
   />
 {/if}
 

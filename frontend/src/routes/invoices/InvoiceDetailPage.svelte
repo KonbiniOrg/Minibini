@@ -52,7 +52,7 @@
   function handleSaved() { modalOpen = false; modalItem = null; loadInvoice(); }
 
   async function handleDeleteItem(li) {
-    if (!confirm(`Delete line item "${li.description || 'No description'}"?`)) return;
+    // No confirm: draft-only line edit, re-addable by hand.
     try {
       await api.delete(`/api/invoices/${invoice.invoice_id}/line-items/${li.line_item_id}/`);
       await loadInvoice();

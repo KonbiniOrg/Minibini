@@ -136,7 +136,7 @@
   }
 
   async function handleDeleteItem(li) {
-    if (!confirm(`Delete line item "${li.description || 'No description'}"?`)) return;
+    // No confirm: draft-only line edit, re-addable by hand.
     try {
       await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
       await loadEstimate();
