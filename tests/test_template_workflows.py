@@ -11,7 +11,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration, AccountingCategory
+from apps.core.models import Configuration, AccountingCategory, AppState
 from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, TaskTemplate
 from apps.jobs.services import TaskService
@@ -21,13 +21,13 @@ from apps.core.models import User
 
 def _seed_numbering():
     Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-    Configuration.objects.create(key='job_counter', value='0')
+    AppState.objects.create(key='job_counter', value='0')
     Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
     Configuration.objects.create(key='estimate_counter', value='0')
     Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-    Configuration.objects.create(key='invoice_counter', value='0')
+    AppState.objects.create(key='invoice_counter', value='0')
     Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-    Configuration.objects.create(key='po_counter', value='0')
+    AppState.objects.create(key='po_counter', value='0')
 
 
 class EstimateCreationWorkflowTest(TestCase):

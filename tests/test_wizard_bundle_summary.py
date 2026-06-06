@@ -10,7 +10,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Material, PlanMaterial, PriceListItem
@@ -22,7 +22,7 @@ from apps.jobs.models import Blep, Job, PlanTask, RateScheme, Task
 class InvoiceWizardBundleSummaryTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         self.cat = AccountingCategory.objects.create(code='LBR', name='Labor')
         self.cat_mat = AccountingCategory.objects.create(code='MAT', name='Materials')
         self.contact = Contact.objects.create(

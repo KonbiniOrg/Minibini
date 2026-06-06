@@ -67,47 +67,6 @@ class AccountingCategoryConfigTest(TestCase):
             ConfigurationService.update_accounting_category(99999, name='Nope')
 
 
-class ConfigurationServiceTest(TestCase):
-    """Tests for ConfigurationService."""
-
-    def test_update_tax_config_creates_new(self):
-        """Should create config entries when they don't exist."""
-        ConfigurationService.update_tax_config(
-            default_tax_rate='0.0825',
-            org_tax_multiplier='1.0'
-        )
-        self.assertEqual(
-            Configuration.objects.get(key='default_tax_rate').value,
-            '0.0825'
-        )
-        self.assertEqual(
-            Configuration.objects.get(key='org_tax_multiplier').value,
-            '1.0'
-        )
-
-    def test_update_tax_config_updates_existing(self):
-        """Should update existing config entries."""
-        Configuration.objects.create(key='default_tax_rate', value='0.05')
-        ConfigurationService.update_tax_config(default_tax_rate='0.0825')
-        self.assertEqual(
-            Configuration.objects.get(key='default_tax_rate').value,
-            '0.0825'
-        )
-
-    def test_update_tax_config_skips_none(self):
-        """Should not create entries for None values."""
-        ConfigurationService.update_tax_config(
-            default_tax_rate='0.05',
-            org_tax_multiplier=None
-        )
-        self.assertTrue(
-            Configuration.objects.filter(key='default_tax_rate').exists()
-        )
-        self.assertFalse(
-            Configuration.objects.filter(key='org_tax_multiplier').exists()
-        )
-
-
 class EmailAssociationServiceTest(TestCase):
     """Tests for EmailService associate/disassociate methods."""
 

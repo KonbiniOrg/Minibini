@@ -33,9 +33,9 @@ class PurchaseOrderFormTest(TestCase):
     """Test PurchaseOrderForm behavior."""
 
     def setUp(self):
-        from apps.core.models import Configuration
+        from apps.core.models import Configuration, AppState
         Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        Configuration.objects.create(key='po_counter', value='0')
+        AppState.objects.create(key='po_counter', value='0')
 
         self.default_contact = Contact.objects.create(
             first_name='Default Contact', last_name='', email='default.contact@test.com'

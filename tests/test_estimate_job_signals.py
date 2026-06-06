@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.core.models import Configuration, User
+from apps.core.models import Configuration, User, AppState
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
@@ -12,7 +12,7 @@ class EstimateSentJobSubmittedTest(TestCase):
 
     def setUp(self):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='est_expire_days', value='30')
@@ -75,9 +75,9 @@ class LastInvoicePaidJobCompletedTest(TestCase):
 
     def setUp(self):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
 
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',

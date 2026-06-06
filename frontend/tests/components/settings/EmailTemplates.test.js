@@ -36,4 +36,11 @@ describe('EmailTemplates', () => {
     await fireEvent.click(btn);
     expect(api.patch).toHaveBeenCalledWith('/api/settings/', { email_retention_days: '90' });
   });
+
+  it('saves the inbox display limit', async () => {
+    const { findByRole } = render(EmailTemplates);
+    const btn = await findByRole('button', { name: 'Save display limit' });
+    await fireEvent.click(btn);
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', { email_display_limit: '30' });
+  });
 });

@@ -7,16 +7,16 @@ from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSourc
 from apps.invoicing.services import InvoiceService, InvoiceWizardService, ClaimConflict
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration, AccountingCategory
+from apps.core.models import Configuration, AccountingCategory, AppState
 from apps.inventory.models import Material, PriceListItem
 
 
 class OpenForJobTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
@@ -98,9 +98,9 @@ class OpenForJobTest(TestCase):
 class GetSourcePoolTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -276,9 +276,9 @@ class GetSourcePoolTest(TestCase):
 class AddAtomsToNewLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.cat_labor = AccountingCategory.objects.create(code='LBR', name='Labor', is_active=True)
         self.cat_materials = AccountingCategory.objects.create(code='MAT', name='Materials', is_active=True)
@@ -481,9 +481,9 @@ class AddAtomsToNewLineItemTest(TestCase):
 class AddAtomsToExistingLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -597,9 +597,9 @@ class AddAtomsToExistingLineItemTest(TestCase):
 class RemoveAtomsFromLineItemTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -796,9 +796,9 @@ class RemoveAtomsFromLineItemTest(TestCase):
 class DiscardDraftTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -875,9 +875,9 @@ class DiscardDraftTest(TestCase):
 class SourcePoolLooseMaterialsTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',
@@ -955,9 +955,9 @@ class TaskAttachedPartialRestockTest(TestCase):
     def setUp(self):
         from apps.core.models import Configuration
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.cat = AccountingCategory.objects.create(name='tapr', code='TAPR1')
         self.contact = Contact.objects.create(
             first_name='TP', last_name='R',
@@ -1010,9 +1010,9 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         from django.utils import timezone
 
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.cat = AccountingCategory.objects.create(code='ID', name='ID')
         self.scheme = RateScheme.objects.create(

@@ -1,4 +1,3 @@
-from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.urls import reverse
@@ -12,7 +11,7 @@ from .models import (
 )
 from django.core.exceptions import ValidationError
 from apps.jobs.models import Job, PlanTask
-from apps.core.services import TaxCalculationService, NotFoundError
+from apps.core.services import NotFoundError
 from .services import (
     EstimateService, WorkTemplateService, WorksheetService,
 )
@@ -105,21 +104,10 @@ def estimate_detail(request, estimate_id):
             messages.error(request, f'Cannot update status from {estimate.get_status_display()} (terminal state).')
             return redirect('estimates:estimate_detail', estimate_id=estimate.estimate_id)
 
-    # Get line items and calculate subtotal
+    # Get line items and calculate subtotal. Tax is handled by QBO, not the app —
+    # this page shows pre-tax amounts only.
     line_items = EstimateLineItem.objects.filter(estimate=estimate).order_by('line_item_id')
     subtotal = sum(item.total_amount for item in line_items)
-
-    # Get customer business for tax calculation
-    customer = None
-    if hasattr(estimate.job.contact, 'business') and estimate.job.contact.business:
-        customer = estimate.job.contact.business
-
-    # Calculate tax
-    tax_amount = TaxCalculationService.calculate_document_tax(estimate, customer=customer)
-    total_with_tax = subtotal + tax_amount
-
-    # Check if customer is tax exempt
-    is_tax_exempt = customer and customer.tax_multiplier == Decimal('0.00')
 
     # Check for associated worksheet
     worksheet = EstWorksheet.objects.filter(estimate=estimate).first()
@@ -133,9 +121,6 @@ def estimate_detail(request, estimate_id):
         'estimate': estimate,
         'line_items': line_items,
         'subtotal': subtotal,
-        'tax_amount': tax_amount,
-        'total_with_tax': total_with_tax,
-        'is_tax_exempt': is_tax_exempt,
         'worksheet': worksheet,
         'status_form': status_form,
         'show_reorder': estimate.status == Estimate.STATUS_DRAFT,

@@ -7,15 +7,15 @@ from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSourc
 from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material, PriceListItem
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration, AccountingCategory
+from apps.core.models import Configuration, AccountingCategory, AppState
 
 
 class InvoiceLineItemSourceTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -128,9 +128,9 @@ class InvoiceLineItemSourceTest(TestCase):
 class UniqueDraftInvoicePerJobTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
             email='jane@example.com', mobile_number='555-0000',

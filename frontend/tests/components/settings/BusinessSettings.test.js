@@ -20,11 +20,17 @@ describe('BusinessSettings', () => {
     expect(await findByDisplayValue('office@shop.com')).toBeInTheDocument();
   });
 
+  it('pre-fills and saves the email domain', async () => {
+    api.get.mockResolvedValue({ our_domain: 'nealscnc.com' });
+    const { findByDisplayValue } = render(BusinessSettings);
+    expect(await findByDisplayValue('nealscnc.com')).toBeInTheDocument();
+  });
+
   it('saves and confirms', async () => {
     const { getByRole, findByText } = render(BusinessSettings);
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
-      business_email: '', our_public_url: '',
+      business_email: '', our_public_url: '', our_domain: '',
     }));
     expect(await findByText('Business settings saved.')).toBeInTheDocument();
   });

@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import timedelta
 from imap_tools import MailBox, AND
-from .models import Configuration, EmailRecord, TempEmail, AccountingCategory
+from .models import Configuration, AppState, EmailRecord, TempEmail, AccountingCategory
 
 
 def _attachments_metadata(msg):
@@ -75,17 +75,18 @@ class NumberGenerationService:
     - po_counter: Current counter for POs
     """
 
-    # Map document types to their configuration key names
+    # Map document types to their key names. The *pattern* (sequence) is a
+    # user-settable Configuration key; the *counter* is machine state in AppState.
+    # (No 'estimate' entry: estimates derive their number as {job}-{ver}, not via
+    # this service.)
     SEQUENCE_KEYS = {
         'job': 'job_number_sequence',
-        'estimate': 'estimate_number_sequence',
         'invoice': 'invoice_number_sequence',
         'po': 'po_number_sequence',
     }
 
     COUNTER_KEYS = {
         'job': 'job_counter',
-        'estimate': 'estimate_counter',
         'invoice': 'invoice_counter',
         'po': 'po_counter',
     }
@@ -96,7 +97,6 @@ class NumberGenerationService:
     # counter still produce unique numbers.
     NUMBER_OWNERS = {
         'job': ('apps.jobs.models', 'Job', 'job_number'),
-        'estimate': ('apps.estimates.models', 'Estimate', 'estimate_number'),
         'invoice': ('apps.invoicing.models', 'Invoice', 'invoice_number'),
         'po': ('apps.purchasing.models', 'PurchaseOrder', 'po_number'),
     }
@@ -150,14 +150,14 @@ class NumberGenerationService:
                     f"Please set value for key '{sequence_key}'."
                 )
 
-            # Lock and increment the counter
+            # Lock and increment the counter (machine state — lives in AppState)
             try:
-                counter_config = Configuration.objects.select_for_update().get(key=counter_key)
-                current_counter = int(counter_config.value or '0')
-            except Configuration.DoesNotExist:
+                counter_state = AppState.objects.select_for_update().get(key=counter_key)
+                current_counter = int(counter_state.value or '0')
+            except AppState.DoesNotExist:
                 raise ValidationError(
-                    f"Configuration key '{counter_key}' not found. "
-                    "Please create it in the admin interface."
+                    f"AppState key '{counter_key}' not found. "
+                    "It is seeded by migration/fixtures."
                 )
 
             # Walk forward until we find a counter value that doesn't collide
@@ -176,8 +176,8 @@ class NumberGenerationService:
                     f"{cls.MAX_COLLISION_ATTEMPTS} attempts."
                 )
 
-            counter_config.value = str(next_counter)
-            counter_config.save()
+            counter_state.value = str(next_counter)
+            counter_state.save()
 
             return candidate
 
@@ -443,14 +443,14 @@ class EmailService:
         stats = {'new': 0, 'existing': 0, 'errors': [], 'latest_date': None}
 
         try:
-            # Get or create latest_email_date configuration
+            # Get or create the latest_email_date fetch cursor (machine state)
             try:
-                latest_date_config = Configuration.objects.get(key='latest_email_date')
-                date_threshold = datetime.fromisoformat(latest_date_config.value)
-            except Configuration.DoesNotExist:
-                # Create default configuration
+                latest_date_state = AppState.objects.get(key='latest_email_date')
+                date_threshold = datetime.fromisoformat(latest_date_state.value)
+            except AppState.DoesNotExist:
+                # Create default cursor
                 date_threshold = timezone.now() - timedelta(days=days_back)
-                Configuration.objects.create(
+                AppState.objects.create(
                     key='latest_email_date',
                     value=date_threshold.isoformat()
                 )
@@ -527,9 +527,9 @@ class EmailService:
 
             # Update latest_email_date to most recent email found
             if most_recent_email_date > date_threshold:
-                latest_date_config = Configuration.objects.get(key='latest_email_date')
-                latest_date_config.value = most_recent_email_date.isoformat()
-                latest_date_config.save()
+                latest_date_state = AppState.objects.get(key='latest_email_date')
+                latest_date_state.value = most_recent_email_date.isoformat()
+                latest_date_state.save()
                 stats['latest_date'] = most_recent_email_date
 
         except Exception as e:
@@ -1126,101 +1126,13 @@ class TaxCalculationService:
             return line_item.accounting_category.taxable
         return False  # Default to non-taxable if no type
 
-    @staticmethod
-    def get_effective_tax_rate(line_item):
-        """
-        Get the tax rate for a line item.
-
-        Uses tax_rate_override if set, otherwise falls back to
-        the app's default_tax_rate configuration.
-
-        Args:
-            line_item: A BaseLineItem subclass instance
-
-        Returns:
-            Decimal: The tax rate (e.g., 0.08 for 8%)
-        """
-        if line_item.tax_rate_override is not None:
-            return line_item.tax_rate_override
-
-        try:
-            config = Configuration.objects.get(key='default_tax_rate')
-            return Decimal(config.value)
-        except Configuration.DoesNotExist:
-            return Decimal('0')
-
-    @staticmethod
-    def calculate_line_item_tax(line_item, customer=None):
-        """
-        Calculate tax amount for a single line item.
-
-        Args:
-            line_item: The line item to calculate tax for
-            customer: Business object (for customer multiplier) or None for purchases
-
-        Returns:
-            Decimal: Tax amount rounded to 2 decimal places
-        """
-        # Non-taxable items have zero tax
-        if not TaxCalculationService.get_effective_taxability(line_item):
-            return Decimal('0')
-
-        rate = TaxCalculationService.get_effective_tax_rate(line_item)
-
-        # Apply customer/org multiplier
-        if customer is not None and customer.tax_multiplier is not None:
-            rate = rate * customer.tax_multiplier
-        elif customer is None:
-            # Purchasing - use org multiplier
-            try:
-                org_config = Configuration.objects.get(key='org_tax_multiplier')
-                org_multiplier = Decimal(org_config.value)
-                rate = rate * org_multiplier
-            except Configuration.DoesNotExist:
-                pass  # No org multiplier = full rate
-
-        return (line_item.total_amount * rate).quantize(Decimal('0.01'))
-
-    @staticmethod
-    def calculate_document_tax(document, customer=None):
-        """
-        Calculate total tax for an estimate, invoice, PO, or bill.
-
-        Args:
-            document: The document (Estimate, Invoice, PurchaseOrder, Bill)
-            customer: Business object (for customer multiplier) or None for purchases
-
-        Returns:
-            Decimal: Total tax amount
-        """
-        total_tax = Decimal('0')
-
-        # Get line items using the document's relationship
-        # Documents have different related names, but we can get them generically
-        line_items = document.estimatelineitem_set.all() if hasattr(document, 'estimatelineitem_set') else []
-
-        for line_item in line_items:
-            total_tax += TaxCalculationService.calculate_line_item_tax(line_item, customer)
-
-        return total_tax
+    # NOTE: tax *amounts* are computed by QuickBooks, not the app. We only
+    # surface per-line taxability (above) so the invoice→QBO export can group
+    # taxable vs non-taxable lines; QBO applies the rate.
 
 
 class ConfigurationService:
     """Service for managing configuration: key-value settings and line item types."""
-
-    @staticmethod
-    def update_tax_config(*, default_tax_rate=None, org_tax_multiplier=None):
-        """Update tax configuration values. Skips None values."""
-        if default_tax_rate is not None:
-            Configuration.objects.update_or_create(
-                key='default_tax_rate',
-                defaults={'value': str(default_tax_rate)}
-            )
-        if org_tax_multiplier is not None:
-            Configuration.objects.update_or_create(
-                key='org_tax_multiplier',
-                defaults={'value': str(org_tax_multiplier)}
-            )
 
     @staticmethod
     def create_accounting_category(**kwargs):
