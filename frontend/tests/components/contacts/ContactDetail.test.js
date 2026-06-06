@@ -5,6 +5,7 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
 import { viewMode } from '@/stores/viewMode.js';
+import { user } from '@/stores/auth.js';
 import ContactDetail from '@/components/contacts/ContactDetail.svelte';
 
 function contact() {
@@ -21,6 +22,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.get.mockResolvedValue({ results: [] }); // TagEditor's tag fetch
   viewMode.set('lite');
+  user.set({ id: 1, permissions: ['can_manage_jobs'] });
 });
 
 describe('ContactDetail', () => {
@@ -51,7 +53,7 @@ describe('ContactDetail', () => {
     expect(onPOPageChange).toHaveBeenCalledWith(2);
   });
 
-  it('fires edit and delete callbacks', async () => {
+  it('fires edit and delete callbacks (manager)', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();
     const { getByRole } = render(ContactDetail, { props: { contact: contact(), onEdit, onDelete } });
@@ -59,5 +61,17 @@ describe('ContactDetail', () => {
     await fireEvent.click(getByRole('button', { name: 'Delete' }));
     expect(onEdit).toHaveBeenCalled();
     expect(onDelete).toHaveBeenCalled();
+  });
+
+  it('hides edit/delete and the tag editor from a non-manager (shows tags read-only)', () => {
+    user.set({ id: 2, permissions: [] });
+    const c = { ...contact(), tags: [{ tag_id: 1, name: 'VIP' }] };
+    const { queryByRole, getByText } = render(ContactDetail, {
+      props: { contact: c, onEdit: vi.fn(), onDelete: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(queryByRole('textbox')).toBeNull(); // no tag-add input
+    expect(getByText('VIP')).toBeInTheDocument(); // tags still visible, read-only
   });
 });

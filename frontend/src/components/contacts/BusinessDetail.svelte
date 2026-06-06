@@ -2,6 +2,7 @@
   import FullOnly from '../FullOnly.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
   import TagEditor from '../TagEditor.svelte';
+  import { canManageJobs } from '../../stores/permissions.js';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
@@ -77,7 +78,11 @@
 </dl>
 
 <h3>Tags</h3>
-<TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []} />
+{#if $canManageJobs}
+  <TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []} />
+{:else}
+  <p>{(business.tags || []).map(t => t.name).join(', ') || 'No tags.'}</p>
+{/if}
 
 <FullOnly>
   <h3>Contacts</h3>
@@ -189,10 +194,10 @@
 <HistoryPanel {history} {onAddNote} />
 
 <p>
-  {#if onEdit}
+  {#if onEdit && $canManageJobs}
     <button onclick={onEdit}>Edit</button>
   {/if}
-  {#if onDelete}
+  {#if onDelete && $canManageJobs}
     <button onclick={onDelete}>Delete</button>
   {/if}
 </p>

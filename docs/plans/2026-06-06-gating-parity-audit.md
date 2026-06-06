@@ -2,6 +2,18 @@
 
 _2026-06-06. Addresses the LATER item "Audit frontend ↔ backend permission gating for parity."_
 
+> **STATUS: executed 2026-06-06.** Added `frontend/src/stores/permissions.js` (per-atom
+> derived stores `canManageJobs/Financials/Time/Config`, honoring `is_superuser`) and
+> routed the mismatched gates through it. All 7 over-permissive findings fixed
+> (invoice Send → `canManageFinancials`; task add-manual/edit/delete/reorder/assign →
+> `canManageJobs`; contact/business edit/delete/tags + form pages → `canManageJobs`, with
+> a read-only tag list for non-managers). **The cancel-task finding (#8) was resolved the
+> OPPOSITE way from this audit's tentative suggestion** — see its updated entry. Shipments
+> left intentional (above). Component-level fixes got tests; route-page fixes follow the
+> route-pages-excluded convention. Touched files also had their hand-rolled atom
+> derivations swapped to the store. Full migration of the remaining *already-correct*
+> inline derivations is a follow-up.
+
 This audit walks every permission-gated mutating action in the Svelte SPA and compares
 the frontend visibility condition against the permission atom the action's endpoint
 **actually** enforces in the DRF viewset (`get_permissions()` / `permission_classes` /
@@ -101,7 +113,20 @@ detail pages, all of which 403.
 
 ### Over-restrictive (frontend hides it → backend would allow)
 
-8. **Cancel task — TaskActions.** The Cancel button is shown only when `isManager` (`can_manage_jobs`) (`components/tasks/TaskActions.svelte:54,57,142`), but `POST /api/tasks/{id}/cancel/` is `IsAuthenticated` (`tasks/views.py:27` — the flat `TaskViewSet` has no per-action override). So a non-manager worker is denied a button the backend would honor. This is likely a deliberate UX choice (workers shouldn't cancel tasks), in which case the **backend** is the side that's wrong — `cancel` should require `can_manage_jobs` like the other lifecycle-vs-management split implies. _Fix (pick one):_ either drop the `isManager` condition on the button, or (preferred, matches intent) add a `cancel`-specific `get_permissions` branch requiring `CanManageJobs` on the flat task viewset.
+8. **Cancel task — TaskActions.** The Cancel button is shown only when `isManager` (`can_manage_jobs`) (`components/tasks/TaskActions.svelte:54,57,142`), but `POST /api/tasks/{id}/cancel/` is `IsAuthenticated` (`tasks/views.py:27` — the flat `TaskViewSet` has no per-action override). So a non-manager worker is denied a button the backend would honor.
+
+   **RESOLVED 2026-06-06 — loosened the frontend (NOT the backend), reversing this audit's
+   tentative "tighten the backend" suggestion.** On closer reading, the task viewset
+   docstring is explicit and deliberate: *"Any authenticated user can drive task lifecycle
+   (start, complete, block, unblock, **cancel**)... These are worker operations, not
+   manager-only"* (`apps/api/tasks/views.py:21-24`). So `IsAuthenticated` on cancel is the
+   intended design, and the frontend was the side out of step. Fix applied: `TaskActions`
+   now shows Cancel to any authenticated user (`base.cancel = true`, `isManager` removed),
+   matching `TaskTree`'s long-standing behavior (its cancel was always worker-visible —
+   during this pass it was briefly gated on `canManageJobs` and then reverted to keep cancel
+   a worker op). Backend unchanged. _If the shop actually wants cancel to be manager-only,
+   that's a one-line backend change (`cancel`-specific `CanManageJobs` branch) plus
+   re-gating both frontend surfaces — flagged for the user._
 
 ## Note on the Shipments page
 

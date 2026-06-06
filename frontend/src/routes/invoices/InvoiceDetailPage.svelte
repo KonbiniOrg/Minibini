@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user } from '../../stores/auth.js';
+  import { canManageFinancials } from '../../stores/permissions.js';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import LineItemModal from '../../components/LineItemModal.svelte';
@@ -18,15 +18,7 @@
   let error = $state(null);
   let success = $state(null);
 
-  let canEditInvoice = $derived(
-    ($user?.permissions?.includes('can_manage_jobs') ?? false) ||
-    ($user?.permissions?.includes('can_manage_financials') ?? false)
-  );
-
-  const canManageFinancials = $derived(
-    $user?.permissions?.includes('can_manage_financials') ?? false
-  );
-  let canEditLineItems = $derived(canManageFinancials && invoice?.status === 'draft');
+  let canEditLineItems = $derived($canManageFinancials && invoice?.status === 'draft');
   // "Show Billables" when the job has anything billable to pull from — tasks
   // OR materials. (A job can carry materials with no tasks; Material.job is a
   // direct FK and JobSerializer exposes both `tasks` and `materials`.) The pool
@@ -36,7 +28,7 @@
   );
   // Revise placeholder: visible on sent invoices, not yet functional.
   let canSeeRevise = $derived(
-    canManageFinancials && (invoice?.status === 'open' || invoice?.status === 'partly-paid')
+    $canManageFinancials && (invoice?.status === 'open' || invoice?.status === 'partly-paid')
   );
 
   let modalOpen = $state(false);
@@ -139,7 +131,7 @@
     <a href={`/jobs/${invoice.job}`} use:link class="back-link">&laquo; back to overview</a>
     <span class="page-title">Invoice: {invoice.invoice_number}</span>
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
-    {#if canEditInvoice}
+    {#if $canManageFinancials}
       <a class="action-link" href="#/invoices/{invoice.invoice_id}/send">
         {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
       </a>

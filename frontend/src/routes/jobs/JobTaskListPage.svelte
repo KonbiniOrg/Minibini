@@ -1,7 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs } from '../../stores/permissions.js';
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
@@ -41,9 +41,6 @@
   // Status action state
   let statusBusy = $state(false);
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
   const jobLocked = $derived(
     job && ['completed', 'cancelled', 'rejected'].includes(job.status)
   );
@@ -319,10 +316,12 @@
     <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
-      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
+      {#if $canManageJobs}
+        <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
+      {/if}
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
     {/if}
-    {#if canManageJobs}
+    {#if $canManageJobs}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     {/if}
   </div>
