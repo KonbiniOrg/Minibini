@@ -187,7 +187,7 @@
     position: absolute;
     top: 100%;
     left: 0;
-    z-index: 100;
+    z-index: var(--z-dropdown);
     margin: 2px 0 0;
     padding: 0;
     list-style: none;

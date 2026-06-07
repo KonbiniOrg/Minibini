@@ -88,7 +88,7 @@
   .blep-band {
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: var(--z-sticky);
     background: #fffbe6;
     border-bottom: 2px solid #d4b106;
     padding: 8px 12px;

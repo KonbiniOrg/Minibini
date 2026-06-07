@@ -145,7 +145,7 @@
   .chip-popup {
     position: fixed;
     width: 280px;
-    z-index: 1000;
+    z-index: var(--z-popover);
     filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15));
   }
   .popup-link { display: block; text-decoration: none; color: inherit; }

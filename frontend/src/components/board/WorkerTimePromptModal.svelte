@@ -60,7 +60,7 @@
 <style>
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: 300;
+    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
   }
   .modal { background: white; padding: 16px; max-width: 400px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }

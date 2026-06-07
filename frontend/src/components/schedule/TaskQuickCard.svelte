@@ -219,7 +219,7 @@
 
 <style>
   .overlay {
-    position: fixed; inset: 0; z-index: 1000;
+    position: fixed; inset: 0; z-index: var(--z-popover);
     background: rgba(0,0,0,0.35);
     display: flex; align-items: center; justify-content: center;
   }

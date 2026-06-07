@@ -109,7 +109,7 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 1000;
+    z-index: var(--z-sidebar);
     width: 44px;
     height: 44px;
     background: #1a3344;
@@ -140,7 +140,7 @@
     color: #eee;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
-    z-index: 999;
+    z-index: var(--z-sidebar);
     display: flex;
     flex-direction: column;
     padding-top: 54px;

@@ -180,7 +180,7 @@
   .task-popup {
     position: fixed;
     width: 260px;
-    z-index: 1000;
+    z-index: var(--z-popover);
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.15);

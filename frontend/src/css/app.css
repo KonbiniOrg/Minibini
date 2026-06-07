@@ -1,5 +1,27 @@
 /* Global styles */
 
+/*
+ * z-index scale. One source of truth for cross-component stacking order.
+ * Reference as var(--z-modal) etc. in component <style> blocks — Svelte scopes
+ * selectors but NOT custom properties, so these :root vars are visible
+ * everywhere. Ordering (low → high): sticky < dropdown < popover < sidebar <
+ * modal < modal-nested < toast. Feedback (toast) must beat everything because
+ * an error can fire from inside an open modal.
+ *
+ * Deliberately NOT on this scale (self-contained local stacking contexts):
+ *   - the schedule internal stack (0/1/2/3 in SchedulePage/NowLine/WorkerLane)
+ *   - the JobHeader z:30 context and its .hold-reason-form z:1 child
+ */
+:root {
+  --z-sticky: 100;
+  --z-dropdown: 200;
+  --z-popover: 400;
+  --z-sidebar: 600;
+  --z-modal: 800;
+  --z-modal-nested: 900;
+  --z-toast: 1000;
+}
+
 body {
   margin: 0;
   font-family: Verdana, Geneva, sans-serif;
@@ -71,6 +93,7 @@ dd {
   width: 100%;
   height: 100%;
   background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-toast);
 }
 
 .error-overlay-content,

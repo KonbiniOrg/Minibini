@@ -58,7 +58,7 @@
 <style>
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: 1100;
+    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal-nested);
   }
   .modal {
     background: white; padding: 16px; max-width: 440px;

@@ -446,7 +446,7 @@
   .error-overlay {
     position: fixed; top: 0; left: 0; right: 0;
     background: #fee2e2; border-bottom: 2px solid #dc2626;
-    padding: 12px 16px; z-index: 500;
+    padding: 12px 16px; z-index: var(--z-toast);
   }
   .error-overlay-content {
     max-width: 800px; margin: 0 auto; position: relative;

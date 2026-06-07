@@ -143,7 +143,7 @@
   .dropdown {
     position: absolute; top: 100%; left: 0; right: 0;
     background: white; border: 1px solid #ccc; max-height: 200px;
-    overflow-y: auto; z-index: 300;
+    overflow-y: auto; z-index: var(--z-dropdown);
   }
   .dropdown-item {
     padding: 6px 8px; cursor: pointer; font-size: 13px;
