@@ -4,6 +4,7 @@ from django.test import TestCase
 from apps.api.portal.views import build_estimate_payload
 from apps.contacts.models import Contact
 from apps.deliverables.models import Deliverable
+from apps.deliverables.services import DeliverableService
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.services import JobService
@@ -60,3 +61,44 @@ class PortalPayloadTest(TestCase):
         data = build_estimate_payload(self.est)
         self.assertEqual(data['status'], 'superseded')
         self.assertIsNone(data['current_token'])
+
+    def test_superseded_payload_uses_frozen_snapshot_not_live(self):
+        # Send, then supersede — which snapshots the parent's deliverables.
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
+        EstimateService.revise_estimate(self.est.pk)
+        # The revision edits the now-editable live list.
+        d = Deliverable.objects.get(job=self.job)
+        d.qty_ordered = Decimal('99')
+        d.description = 'Completely different widget'
+        d.save()
+
+        self.est.refresh_from_db()
+        data = build_estimate_payload(self.est)
+        # The superseded estimate must show what the customer saw, not the
+        # drifted live list.
+        self.assertEqual(len(data['deliverables']), 1)
+        self.assertEqual(
+            data['deliverables'][0]['description'], 'One finished widget')
+        self.assertEqual(data['deliverables'][0]['qty_ordered'], '2.00')
+
+    def test_accepted_with_snapshot_uses_snapshot_not_live(self):
+        # An accepted estimate that has been frozen (e.g. by a later change
+        # order) shows the agreed scope, not the CO-amended live list.
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_ACCEPTED)
+        DeliverableService.snapshot_document(estimate=self.est)
+        d = Deliverable.objects.get(job=self.job)
+        d.qty_ordered = Decimal('99')
+        d.save()
+
+        self.est.refresh_from_db()
+        data = build_estimate_payload(self.est)
+        self.assertEqual(data['deliverables'][0]['qty_ordered'], '2.00')
+
+    def test_current_open_estimate_uses_live_list(self):
+        # No snapshot yet -> live list is the source of truth.
+        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
+        self.est.refresh_from_db()
+        data = build_estimate_payload(self.est)
+        self.assertEqual(len(data['deliverables']), 1)
+        self.assertEqual(data['deliverables'][0]['qty_ordered'], '2.00')

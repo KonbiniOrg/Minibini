@@ -83,14 +83,29 @@ def build_estimate_payload(estimate):
             'amount': _money(amount),
         })
 
-    deliverables = [
-        {
-            'description': d.description,
-            'qty_ordered': str(d.qty_ordered),
-            'units': d.units,
-        }
-        for d in estimate.job.deliverables.all()  # Meta ordering = sort_order
-    ] if estimate.job_id else []
+    # An out-of-date estimate (superseded, or accepted-then-amended by a change
+    # order) carries a frozen DeliverableSnapshot set recording the scope the
+    # customer saw. Render that. A current estimate (draft/open) has no snapshot,
+    # so it falls back to the job's live deliverables.
+    snapshots = list(estimate.deliverable_snapshots.all())  # Meta ordering = sort_order
+    if snapshots:
+        deliverables = [
+            {
+                'description': s.description,
+                'qty_ordered': str(s.qty_ordered),
+                'units': s.units,
+            }
+            for s in snapshots
+        ]
+    else:
+        deliverables = [
+            {
+                'description': d.description,
+                'qty_ordered': str(d.qty_ordered),
+                'units': d.units,
+            }
+            for d in estimate.job.deliverables.all()  # Meta ordering = sort_order
+        ] if estimate.job_id else []
 
     payload = {
         'estimate_number': estimate.estimate_number,

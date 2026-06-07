@@ -1210,15 +1210,30 @@ deliverable-side mechanics are owned by this doc:
   copies the live Deliverable's `description` / `qty_ordered` / `units`
   / `sort_order` plus a `source_deliverable` FK (SET_NULL) for
   traceability. A document has at most one snapshot set.
-- **Two write triggers** (`DeliverableService.snapshot_document`):
-  1. **On CO creation** (`ChangeOrderService.create`) — snapshot the
+- **Three write triggers** (`DeliverableService.snapshot_document`):
+  1. **On estimate supersession** (`EstimateService.revise_estimate`) —
+     snapshot the live list onto the estimate being superseded, freezing
+     the scope the customer saw while it was the live proposal. The list
+     was read-only while the estimate was `open`
+     (`DeliverableService.is_editable`), so the live list at supersession
+     time is exactly what was shown. This is the pre-acceptance / estimate-
+     revision counterpart to the CO triggers below.
+  2. **On CO creation** (`ChangeOrderService.create`) — snapshot the
      prior agreement onto the document being amended (the accepted
      Estimate, or the latest accepted CO on the same estimate). That
      snapshot is both the amended document's permanent agreed record
      **and** the rollback target if this CO dies.
-  2. **On CO `→ rejected` / `→ expired`** — snapshot the live list
+  3. **On CO `→ rejected` / `→ expired`** — snapshot the live list
      (this CO's final proposal) onto the rejected CO, preserving the
      proposal.
+- **Portal read rule.** The customer portal
+  (`apps/api/portal/views.py::build_estimate_payload`) renders an
+  estimate's `deliverable_snapshots` when present, falling back to the
+  job's live deliverables otherwise. A current `draft`/`open` estimate
+  has no snapshot → live list; a superseded estimate (trigger 1) or an
+  accepted estimate later amended by a CO (trigger 2) renders its frozen
+  snapshot, so an out-of-date estimate never shows scope that has since
+  drifted.
 - **Anchoring (Option A):** an unshipped row is freely editable in the
   live list; once any `ShipmentItem` references it, the row is frozen
   at `qty_ordered` — never editable or removable. Fulfillment never

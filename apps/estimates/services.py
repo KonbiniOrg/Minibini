@@ -164,6 +164,14 @@ class EstimateService:
         parent.status = Estimate.STATUS_SUPERSEDED
         parent.save()
 
+        # Freeze the deliverables the customer saw while this estimate was the
+        # live proposal. The list was read-only while the estimate was `open`
+        # (DeliverableService.is_editable), so the live list at this point is
+        # exactly what was shown. The portal renders this snapshot for the now-
+        # out-of-date estimate; the new draft keeps using the live list.
+        from apps.deliverables.services import DeliverableService
+        DeliverableService.snapshot_document(estimate=parent)
+
         return new_estimate
 
     @staticmethod

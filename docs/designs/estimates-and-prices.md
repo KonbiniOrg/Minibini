@@ -464,6 +464,11 @@ in `architecture-and-conventions.md` §9; it runs daily.
    revision stays worksheet-backed and the atom remains claimed exactly once;
    a source is lost only when the user deletes that line.
 4. Marks the parent `superseded`.
+5. Snapshots the live deliverables onto the now-superseded parent
+   (`DeliverableService.snapshot_document(estimate=parent)`), freezing the
+   scope the customer saw. The customer portal renders that snapshot for
+   the out-of-date estimate; the new draft keeps using the live list. See
+   `jobs-tasks-and-worksheets.md` §12.9 (trigger 1 + portal read rule).
 
 The `unique_together = ['estimate_number', 'version']` constraint
 keeps revisions distinct.
