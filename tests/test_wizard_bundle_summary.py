@@ -21,6 +21,8 @@ from apps.jobs.models import Blep, Job, PlanTask, RateScheme, Task
 
 class InvoiceWizardBundleSummaryTest(TestCase):
     def setUp(self):
+        from apps.core.models import User
+        self.user = User.objects.create_user(username='wizard_bundle_user')
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
         self.cat = AccountingCategory.objects.create(code='LBR', name='Labor')
@@ -88,8 +90,8 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         a = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
         b = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
         start = timezone.now()
-        Blep.objects.create(task=a, start_time=start, end_time=start + timedelta(hours=2))
-        Blep.objects.create(task=b, start_time=start, end_time=start + timedelta(hours=3))
+        Blep.objects.create(task=a, user=self.user, start_time=start, end_time=start + timedelta(hours=2))
+        Blep.objects.create(task=b, user=self.user, start_time=start, end_time=start + timedelta(hours=3))
         li = self._bundle(a, b)
         self.assertEqual(li.units, 'hours')
         self.assertEqual(li.qty, Decimal('5.00'))  # 2h + 3h from Bleps, not 1

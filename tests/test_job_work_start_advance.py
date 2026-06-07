@@ -77,7 +77,7 @@ class WorkStartAdvancesJobTest(BaseTestCase):
         t1 = Task.objects.create(name='T1', job=job, rate_scheme_id=1)
         Task.objects.create(name='T2', job=job, rate_scheme_id=1)
         now = timezone.now()
-        BlepService._create(t1, None, start_time=now - timedelta(hours=1), end_time=now)
+        BlepService._create(t1, self.user, start_time=now - timedelta(hours=1), end_time=now)
         TaskLifecycleService.complete_task(t1.pk)
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)

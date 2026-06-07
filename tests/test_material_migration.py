@@ -243,6 +243,7 @@ class BackfillPlaceholderTaskCleanupTest(TestCase):
         )
         Blep.objects.create(
             task=placeholder,
+            user=self.user,
             start_time=timezone.now() - timezone.timedelta(hours=1),
             end_time=timezone.now(),
         )

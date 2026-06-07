@@ -54,6 +54,8 @@ class TaskComputeAmountTest(TestCase):
     """Task.compute_amount() covers all three RateScheme algorithms."""
 
     def setUp(self):
+        from apps.core.models import User
+        self.user = User.objects.create_user(username='compute_amount_user')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
         AppState.objects.create(key='job_counter', value='0')
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
@@ -77,7 +79,7 @@ class TaskComputeAmountTest(TestCase):
     def test_task_elapsed_time(self):
         task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme_time)
         now = timezone.now()
-        Blep.objects.create(task=task, start_time=now - timedelta(hours=2), end_time=now)
+        Blep.objects.create(task=task, user=self.user, start_time=now - timedelta(hours=2), end_time=now)
         # 2 hours × $100 = $200
         self.assertEqual(task.compute_amount(), Decimal('200.00'))
 

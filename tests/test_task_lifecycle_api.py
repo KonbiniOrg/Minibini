@@ -29,7 +29,7 @@ class TaskLifecycleAPITest(BaseTestCase):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         now = timezone.now()
         Blep.objects.create(
-            task=self.task, start_time=now - timedelta(hours=1), end_time=now,
+            task=self.task, user=self.user, start_time=now - timedelta(hours=1), end_time=now,
         )
         url = f'/api/tasks/{self.task.pk}/complete/'
         resp = self.client.post(url)
