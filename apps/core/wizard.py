@@ -112,7 +112,7 @@ class BaseWizardService:
         units = cls._atom_units(atom_instance)
         if isinstance(atom_instance, cls._task_model()):
             qty = cls._task_actual_qty(atom_instance)
-            rate = atom_instance.effective_rate().quantize(Decimal('0.01'))
+            rate = atom_instance.effective_rate()  # already quantized to cents
         else:
             qty = atom_instance.quantity
             rate = atom_instance.sell_price.quantize(Decimal('0.01'))
@@ -166,7 +166,7 @@ class BaseWizardService:
         if any(q is None for q in actual_qtys):
             return None
         qty = sum(actual_qtys, Decimal('0'))
-        price = scheme.effective_rate(modifiers).quantize(Decimal('0.01'))
+        price = scheme.effective_rate(modifiers)  # already quantized to cents
         return scheme.unit_label, qty, price
 
     @classmethod

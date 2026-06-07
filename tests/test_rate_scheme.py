@@ -125,6 +125,23 @@ class RateSchemeComputeTest(BaseTestCase):
         result = self.scheme.compute_charge(Decimal('30'), active_modifiers=['messy', 'doublestick'])
         self.assertEqual(result, Decimal('138.00'))
 
+    def test_effective_rate_quantizes_to_cents(self):
+        # A percentage modifier on a rate carrying cents yields a non-terminating
+        # / >2-place product (99.99 × 1.05 = 104.9895). effective_rate is a
+        # per-unit money value that becomes a line item price (max 2 decimals),
+        # so it must trim to cents at the source — not just at scattered callers.
+        scheme = RateScheme.objects.create(
+            name='Cents Rate',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('99.99'),
+            unit_label='sq ft',
+            modifiers=[{'key': 'surcharge', 'label': 'Surcharge', 'percent': 5}],
+            accounting_category=self.ac,
+        )
+        result = scheme.effective_rate(active_modifiers=['surcharge'])
+        self.assertEqual(result, Decimal('104.99'))
+        self.assertEqual(result.as_tuple().exponent, -2)
+
     def test_flat_fee_effective_rate(self):
         result = self.flat_scheme.effective_rate()
         self.assertEqual(result, Decimal('50.00'))

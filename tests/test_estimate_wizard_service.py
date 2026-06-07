@@ -540,6 +540,27 @@ class SendAllAtomsTest(TestCase):
         self.assertEqual(result['estimate'].job, self.job)
         self.assertEqual(result['estimate'].status, Estimate.STATUS_DRAFT)
 
+    def test_worker_time_task_with_modifier_does_not_raise(self):
+        """A worker-entered-time task whose rate+modifier yields >2 decimals
+        (99.99 × 1.05 = 104.9895) must carry to an EstimateLineItem without
+        tripping the price DecimalField's 2-place validation."""
+        scheme = RateScheme.objects.create(
+            name='Worker Time', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('99.99'), unit_label='hour',
+            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 5}],
+            accounting_category=self.cat,
+        )
+        pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Rushed work',
+            rate_scheme=scheme, est_qty=Decimal('2'),
+            active_modifiers=['rush'],
+        )
+        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        from apps.estimates.models import EstimateLineItem
+        li = EstimateLineItem.objects.get(
+            estimate=result['estimate'], description='Rushed work')
+        self.assertEqual(li.price, Decimal('104.99'))
+
 
 class AddAtomsToNewLineItemDescriptionTest(TestCase):
     """Description is pre-filled from the source atom when exactly one atom is added."""

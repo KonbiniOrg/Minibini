@@ -550,7 +550,13 @@ class RateScheme(models.Model):
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
-        return self.rate * (1 + Decimal(modifier_percent) / 100)
+        # Quantize to cents: a percentage modifier divides by 100, so the
+        # product can carry >2 places (99.99 × 1.05 = 104.9895). This is a
+        # per-unit money rate that becomes a line item price (2-decimal field)
+        # — trim at the source so every caller is safe, not just the ones that
+        # remembered to .quantize().
+        rate = self.rate * (1 + Decimal(modifier_percent) / 100)
+        return rate.quantize(Decimal('0.01'))
 
     def compute_charge(self, qty, active_modifiers=None):
         """Compute total charge for the given quantity."""
