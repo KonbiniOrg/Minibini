@@ -108,12 +108,6 @@ page stays whole.
   _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
   freeze and either added one or recorded why anchoring alone is sufficient.
 
-- **Settings-UI coverage + `appstate` split.** — _added 2026-05-31; audit done 2026-06-06_
-  Audit complete; implementation planned in
-  `docs/plans/2026-06-06-appstate-and-settings-ui-plan.md` (new `appstate` table for
-  machine-managed keys, remove dead `estimate_number_sequence`, add editors for the
-  UI-less user-settable keys). _Done when:_ that plan is executed.
-
 - **Customer-facing public URLs for documents (`{object_url}` real resolution) — ESTIMATES DONE.** — _added 2026-05-29; estimates resolved 2026-05-31_
   Estimates are now fully shipped: `Estimate.public_token` is minted at creation;
   `build_object_url('estimate', id)` resolves to `/portal/?token=<token>`; the
@@ -136,18 +130,6 @@ page stays whole.
   backend uses consistently, and the SPA's error display has been normalized to match
   (probably: lean on `lib/api.js` overlays for unexpected errors, inline rows for
   field-validation responses).
-
-- **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
-  We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on
-  `.hold-reason-form`) in commit `270c79d` to lift the on-hold reason popover above the
-  page body. The SPA has no documented z-index scale, so stacking values are chosen
-  one-off across headers, the `lib/api.js` error/success overlays, modals
-  (`WorkerTimePromptModal`, `StartWorkConflictModal`), sticky bands (`CurrentBlepBand`),
-  and dropdowns. Risk: silent collisions and "why is this behind that?" surprises.
-  _Done when:_ we've grepped `frontend/src` for `z-index`, catalogued the values and the
-  layers they represent, and either confirmed they're conflict-free or defined a small
-  documented scale (e.g. content < sticky < dropdown < popover < modal < toast) and
-  migrated the existing values onto it.
 
 - **Job header is cramped for the on-hold reason capture; revisit the fixed 110px height.** — _added 2026-05-26_
   The on-hold reason form now pops over the page (commit `270c79d`), but the job header
