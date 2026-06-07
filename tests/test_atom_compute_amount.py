@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material, PlanMaterial
 from apps.jobs.models import Job, RateScheme
@@ -12,7 +12,7 @@ from tests.base import FixtureTestCase
 class MaterialComputeAmountTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.cat = AccountingCategory.objects.create(name='Materials', is_active=True)
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
@@ -55,7 +55,7 @@ class TaskComputeAmountTest(TestCase):
 
     def setUp(self):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',

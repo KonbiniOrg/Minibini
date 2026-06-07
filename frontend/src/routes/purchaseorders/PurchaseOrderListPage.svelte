@@ -2,7 +2,7 @@
   import { api } from '../../lib/api.js';
   import PurchaseOrderList from '../../components/purchaseorders/PurchaseOrderList.svelte';
   import { push } from 'svelte-spa-router';
-  import { user } from '../../stores/auth.js';
+  import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { pageRange, pageFromUrl } from '../../lib/pagination.js';
 
   let purchaseOrders = $state(null);
@@ -11,9 +11,7 @@
   let error = $state(null);
   let statusFilter = $state('');
 
-  let canManageFinancials = $derived(
-    $user?.permissions?.includes('can_manage_financials') ?? false
-  );
+  let canManageFinancials = $derived($canManageFinancialsStore);
 
   async function loadPOs() {
     loading = true;

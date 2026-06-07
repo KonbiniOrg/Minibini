@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.core.models import User, Configuration, AccountingCategory
+from apps.core.models import User, Configuration, AccountingCategory, AppState
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate
@@ -15,9 +15,9 @@ class CatalogLineItemAddTest(TestCase):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.category = AccountingCategory.objects.create(code='MAT', name='Materials', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',

@@ -132,6 +132,14 @@ Key rules:
 - Global styles live in `frontend/src/css/app.css`, imported via `main.js`.
 - No CSS frameworks. Semantic HTML with minimal global styles.
 - Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
+- **z-index scale:** cross-component stacking uses named tokens defined on
+  `:root` in `app.css` — `--z-sticky` (100) < `--z-dropdown` (200) <
+  `--z-popover` (400) < `--z-sidebar` (600) < `--z-modal` (800) <
+  `--z-modal-nested` (900, a modal opened from within a popover/modal) <
+  `--z-toast` (1000, the global feedback overlay, always on top). Use
+  `z-index: var(--z-modal)` etc. rather than bare numbers. Self-contained local
+  stacks (the schedule lane stack; the JobHeader / hold-reason popover) keep
+  their own small values and are intentionally off this global ladder.
 - **Tables:** don't use the `border="1"` attribute (the light grey cell border
   comes from the global `table, th, td` rule). For a table full of data, opt into
   the house style with `class="data-table"` — full-width, padded cells, a teal

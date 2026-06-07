@@ -7,7 +7,7 @@ from .services import EmailService, ConfigurationService, OutboundEmailService, 
 from .email_utils import parse_email_address, extract_company_from_signature, extract_email_body
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
-from .forms import AccountingCategoryForm, TaxConfigurationForm
+from .forms import AccountingCategoryForm
 
 
 @login_required
@@ -310,59 +310,6 @@ def accounting_category_edit(request, pk):
 @login_required
 @permission_required('core.can_manage_config', raise_exception=True)
 def settings_view(request):
-    """Display the settings page with tax configuration."""
-    # Get tax configuration values
-    try:
-        default_tax_rate = Configuration.objects.get(key='default_tax_rate')
-    except Configuration.DoesNotExist:
-        default_tax_rate = None
-
-    try:
-        org_tax_multiplier = Configuration.objects.get(key='org_tax_multiplier')
-    except Configuration.DoesNotExist:
-        org_tax_multiplier = None
-
-    return render(request, 'settings.html', {
-        'default_tax_rate': default_tax_rate,
-        'org_tax_multiplier': org_tax_multiplier,
-    })
-
-
-@login_required
-@permission_required('core.can_manage_config', raise_exception=True)
-def tax_config_edit(request):
-    """Edit tax configuration settings."""
-    # Get current values
-    try:
-        tax_rate_config = Configuration.objects.get(key='default_tax_rate')
-        tax_rate_value = tax_rate_config.value
-    except Configuration.DoesNotExist:
-        tax_rate_value = ''
-
-    try:
-        multiplier_config = Configuration.objects.get(key='org_tax_multiplier')
-        multiplier_value = multiplier_config.value
-    except Configuration.DoesNotExist:
-        multiplier_value = ''
-
-    if request.method == 'POST':
-        form = TaxConfigurationForm(request.POST)
-        if form.is_valid():
-            ConfigurationService.update_tax_config(
-                default_tax_rate=form.cleaned_data.get('default_tax_rate'),
-                org_tax_multiplier=form.cleaned_data.get('org_tax_multiplier'),
-            )
-
-            messages.success(request, 'Tax configuration updated successfully.')
-            return redirect('settings')
-    else:
-        initial_data = {}
-        if tax_rate_value:
-            initial_data['default_tax_rate'] = tax_rate_value
-        if multiplier_value:
-            initial_data['org_tax_multiplier'] = multiplier_value
-        form = TaxConfigurationForm(initial=initial_data)
-
-    return render(request, 'core/tax_config_form.html', {
-        'form': form,
-    })
+    """Display the (legacy) settings page. Taxation is handled by QBO; there is
+    no app-side tax configuration."""
+    return render(request, 'settings.html', {})

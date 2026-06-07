@@ -1,4 +1,5 @@
 from decimal import Decimal
+from apps.core.models import AppState
 from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
@@ -92,7 +93,7 @@ class WizardReadsTaskDirectlyTest(TestCase):
         from apps.contacts.models import Contact, Business
 
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
 
         ac = AccountingCategory.objects.create(name='Labor')
         contact = Contact.objects.create(first_name='A', last_name='B')

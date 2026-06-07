@@ -18,8 +18,6 @@
   let qtyModal = $state(null);   // {unitLabel} while the entered-qty prompt is open
   let blepModal = $state(false); // true while the historical-time prompt is open
 
-  const isManager = $derived(userPermissions.includes('can_manage_jobs'));
-
   // While the user's own active session on this task is under the configured
   // minimum, Stop becomes Cancel (delete + undo). Tick once a second so the
   // label flips live as the timer crosses the threshold.
@@ -51,10 +49,10 @@
       base.stopWork = isActiveHere;
       base.complete = true;
       base.block = true;
-      base.cancel = isManager;
+      base.cancel = true;
     } else if (status === 'blocked') {
       base.unblock = true;
-      base.cancel = isManager;
+      base.cancel = true;
     }
     return base;
   });

@@ -1,7 +1,7 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
@@ -30,9 +30,7 @@
   let materials = $state([]);
   let selectedTaskId = $state(null);
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  const canManageJobs = $derived($canManageJobsStore);
   // Editability is derived from the job's live estimate (server-computed):
   // editable while the estimate is draft/absent, frozen once it's sent.
   const canEdit = $derived(canManageJobs && (worksheet?.editable ?? false));
@@ -213,7 +211,7 @@
   let sendingAll = $state(false);
 
   async function sendAllAtoms() {
-    if (!confirm('Send all unclaimed atoms to the estimate as 1:1 line items?')) return;
+    // No confirm: creates draft estimate lines, each deletable afterward.
     sendingAll = true;
     try {
       const result = await api.post(

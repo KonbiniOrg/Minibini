@@ -1,9 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import BlepList from '@/components/tasks/BlepList.svelte';
+import { user } from '@/stores/auth.js';
 
 const recent = new Date(Date.now() - 1000).toISOString();
 const old = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+beforeEach(() => {
+  user.set({ id: 5, permissions: [] }); // worker by default
+});
 
 describe('BlepList', () => {
   it('shows the empty state and an Add Entry action', async () => {
@@ -15,12 +20,12 @@ describe('BlepList', () => {
   });
 
   it('lets a time manager edit anyone\'s old blep', async () => {
+    user.set({ id: 5, permissions: ['can_manage_time'] });
     const onEdit = vi.fn();
     const { getByRole } = render(BlepList, {
       props: {
         bleps: [{ blep_id: 1, user: 99, user_name: 'Bob', start_time: old }],
         currentUser: { id: 5 },
-        userPermissions: ['can_manage_time'],
         onEdit,
       },
     });
@@ -33,7 +38,6 @@ describe('BlepList', () => {
       props: {
         bleps: [{ blep_id: 2, user: 5, user_name: 'Me', start_time: recent }],
         currentUser: { id: 5 },
-        userPermissions: [],
       },
     });
     expect(getByRole('button', { name: 'Edit' })).toBeInTheDocument();
@@ -44,7 +48,6 @@ describe('BlepList', () => {
       props: {
         bleps: [{ blep_id: 3, user: 9, user_name: 'Other', start_time: recent }],
         currentUser: { id: 5 },
-        userPermissions: [],
       },
     });
     expect(queryByRole('button', { name: 'Edit' })).toBeNull();

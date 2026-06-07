@@ -69,6 +69,8 @@
 
   const RETENTION_KEY = 'email_retention_days';
   const RETENTION_DEFAULT = '90';
+  const DISPLAY_LIMIT_KEY = 'email_display_limit';
+  const DISPLAY_LIMIT_DEFAULT = '30';
 
   let values = $state({});      // {key: stored value}
   let saving = $state({});      // {key: bool}
@@ -89,6 +91,7 @@
         next[t.body.key] = all[t.body.key] ?? t.body.default;
       }
       next[RETENTION_KEY] = all[RETENTION_KEY] ?? RETENTION_DEFAULT;
+      next[DISPLAY_LIMIT_KEY] = all[DISPLAY_LIMIT_KEY] ?? DISPLAY_LIMIT_DEFAULT;
       values = next;
     } catch (e) {
       loadError = e.message;
@@ -149,6 +152,26 @@
           {saving[RETENTION_KEY] ? 'Saving…' : 'Save retention'}
         </button>
         {#if flashVisible(RETENTION_KEY)}<em class="ok">saved</em>{/if}
+      </p>
+
+      <p>
+        <label for={DISPLAY_LIMIT_KEY}><strong>Show at most</strong></label>
+        <input
+          type="number"
+          id={DISPLAY_LIMIT_KEY}
+          min="1"
+          class="retention-input"
+          bind:value={values[DISPLAY_LIMIT_KEY]}
+        >
+        emails in the inbox
+      </p>
+      <p>
+        <button type="button"
+                onclick={() => save(DISPLAY_LIMIT_KEY)}
+                disabled={saving[DISPLAY_LIMIT_KEY]}>
+          {saving[DISPLAY_LIMIT_KEY] ? 'Saving…' : 'Save display limit'}
+        </button>
+        {#if flashVisible(DISPLAY_LIMIT_KEY)}<em class="ok">saved</em>{/if}
       </p>
     </fieldset>
   {/if}

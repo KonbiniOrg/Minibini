@@ -127,7 +127,7 @@
   .dropdown {
     position: absolute; top: 100%; left: 0; right: 0;
     background: white; border: 1px solid #ccc; max-height: 320px; overflow-y: auto;
-    z-index: 50;
+    z-index: var(--z-dropdown);
   }
   .result {
     display: block; width: 100%; text-align: left;

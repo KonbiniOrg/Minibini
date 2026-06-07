@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { user } from '../../stores/auth.js';
+  import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
@@ -43,9 +43,7 @@
       }));
   }
 
-  let canManageFinancials = $derived(
-    $user?.permissions?.includes('can_manage_financials') ?? false
-  );
+  let canManageFinancials = $derived($canManageFinancialsStore);
 
   async function loadPO() {
     loading = true;
@@ -206,7 +204,7 @@
   }
 
   async function handleDeleteLineItem(lineItem) {
-    if (!confirm(`Delete line item #${lineItem.line_number}?`)) return;
+    // No confirm: draft-only line edit, re-addable by hand.
     error = null;
     try {
       await api.delete(
@@ -232,7 +230,7 @@
   }
 
   async function handleReceiveAll() {
-    if (!confirm('Receive all remaining items?')) return;
+    // No confirm: reversible via the Reverse Receipt action.
     busy = true;
     error = null;
     success = null;
@@ -448,7 +446,7 @@
   .error-overlay {
     position: fixed; top: 0; left: 0; right: 0;
     background: #fee2e2; border-bottom: 2px solid #dc2626;
-    padding: 12px 16px; z-index: 500;
+    padding: 12px 16px; z-index: var(--z-toast);
   }
   .error-overlay-content {
     max-width: 800px; margin: 0 auto; position: relative;

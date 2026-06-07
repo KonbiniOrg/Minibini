@@ -1,7 +1,7 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import UnitsSelect from '../../components/UnitsSelect.svelte';
@@ -47,9 +47,7 @@
   // Save button transient state
   let saveLabel = $state('Save');
 
-  const canManageJobs = $derived(
-    $userStore?.permissions?.includes('can_manage_jobs') ?? false
-  );
+  const canManageJobs = $derived($canManageJobsStore);
 
   let isDraft = $derived(co?.status === 'draft');
   let isOpen = $derived(co?.status === 'open');
@@ -492,7 +490,7 @@
   }
 
   async function seedNew() {
-    if (!confirm('Start a new change order for this job? A new draft will be created.')) return;
+    // No confirm: the new draft CO is trivially discardable.
     actionBusy = true;
     try {
       const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);

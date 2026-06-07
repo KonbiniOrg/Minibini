@@ -3,6 +3,7 @@
   import { modalKeys } from '../../lib/modalKeys.js';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import { notifyShiftChanged } from '../../stores/shift.js';
+  import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
 
   let {
     open = false,
@@ -11,12 +12,11 @@
     record = null,                // existing record when editing/requesting-amend
     taskId = null,                // blep create/request needs a task
     currentUser,
-    userPermissions = [],
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
-  const canManageTime = $derived(userPermissions.includes('can_manage_time'));
+  const canManageTime = $derived($canManageTimeStore);
 
   let startTime = $state('');
   let endTime = $state('');
@@ -185,7 +185,7 @@
 
 <style>
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex;
-             align-items: center; justify-content: center; z-index: 200; }
+             align-items: center; justify-content: center; z-index: var(--z-modal); }
   .modal { background: white; padding: 1.5em; border: 2px solid #333; max-width: 420px; width: 90%; }
   .buttons { display: flex; gap: 0.5em; margin-top: 1em; }
   .error { color: #b91c1c; }

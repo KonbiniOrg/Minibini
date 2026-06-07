@@ -173,7 +173,7 @@
   .add-worker-btn:hover { border-color: #4ade80; color: #4ade80; }
 
   .add-worker-dropdown {
-    position: absolute; top: 40px; left: 6px; z-index: 10;
+    position: absolute; top: 40px; left: 6px; z-index: var(--z-dropdown);
     background: #fff; border: 1px solid #ddd; border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.12); min-width: 160px;
     display: flex; flex-direction: column;

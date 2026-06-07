@@ -7,22 +7,8 @@
         }
     },
     {
-        "model": "core.configuration",
+        "model": "core.appstate",
         "pk": "job_counter",
-        "fields": {
-            "value": "0"
-        }
-    },
-    {
-        "model": "core.configuration",
-        "pk": "estimate_number_sequence",
-        "fields": {
-            "value": "EST-{year}-{counter:04d}"
-        }
-    },
-    {
-        "model": "core.configuration",
-        "pk": "estimate_counter",
         "fields": {
             "value": "0"
         }
@@ -35,7 +21,7 @@
         }
     },
     {
-        "model": "core.configuration",
+        "model": "core.appstate",
         "pk": "invoice_counter",
         "fields": {
             "value": "0"
@@ -49,7 +35,7 @@
         }
     },
     {
-        "model": "core.configuration",
+        "model": "core.appstate",
         "pk": "po_counter",
         "fields": {
             "value": "0"

@@ -1,5 +1,6 @@
 <script>
   import { formatQtyUnits } from '../lib/format.js';
+  import { canManageJobs } from '../stores/permissions.js';
   import TaskActivityIndicator from './tasks/TaskActivityIndicator.svelte';
 
   let {
@@ -164,7 +165,7 @@
         <td>
           <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
         </td>
-        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task)}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && $canManageJobs}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
         {#if showStatus}<td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}</td>{/if}
         <td class="text-right">{task.scheme_unit_label || '-'}</td>
@@ -176,16 +177,20 @@
         {#if !readonly && !jobLocked}
           <td class="actions-cell">
             {#if !isTerminal(task)}
-              <button type="button" onclick={() => onEditTask(task)}>edit</button>
-              {#if canDelete(task)}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+              {#if $canManageJobs}
+                <button type="button" onclick={() => onEditTask(task)}>edit</button>
+                {#if canDelete(task)}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+              {/if}
               {#if canCancel(task)}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
               <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
               <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
-            {:else if canDelete(task)}
+            {:else if canDelete(task) && $canManageJobs}
               <button type="button" onclick={() => onDeleteTask(task)}>del</button>
             {/if}
-            <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
-            <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
+            {#if $canManageJobs}
+              <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
+              <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
+            {/if}
           </td>
         {:else if !readonly}
           <td class="actions-cell"></td>
@@ -234,7 +239,7 @@
           <td class="indent">
             <button type="button" class="link-btn" onclick={() => onTaskClick(sub)}>{sub.name}</button>
           </td>
-          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub)}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
+          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub) && $canManageJobs}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
           {#if showStatus}<td><TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}</td>{/if}
           <td class="text-right">{sub.scheme_unit_label || '-'}</td>
@@ -246,11 +251,13 @@
           {#if !readonly && !jobLocked}
             <td class="actions-cell">
               {#if !isTerminal(sub)}
-                <button type="button" onclick={() => onEditTask(sub)}>edit</button>
-                {#if canDelete(sub)}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
+                {#if $canManageJobs}
+                  <button type="button" onclick={() => onEditTask(sub)}>edit</button>
+                  {#if canDelete(sub)}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
+                {/if}
                 {#if canCancel(sub)}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
                 <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
-              {:else if canDelete(sub)}
+              {:else if canDelete(sub) && $canManageJobs}
                 <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
               {/if}
             </td>

@@ -130,8 +130,9 @@
   <CurrentBlepBand />
   <Sidebar />
   <!--
-    Overlay behavior: the sidebar is position:fixed / z-index:999, so it
-    slides in on top of the page without shifting content.
+    Overlay behavior: the sidebar is position:fixed at the --z-sidebar tier
+    (see the z-index scale in css/app.css), so it slides in on top of the page
+    without shifting content.
   -->
   <div class="page-content">
     <Router {routes} />

@@ -93,6 +93,41 @@ class Configuration(models.Model):
         verbose_name_plural = "Configurations"
 
 
+class AppState(models.Model):
+    """Machine-managed key-value state — written by the app, never by a human.
+
+    Distinct from `Configuration` (which backs the Settings UI). Kept in its own
+    table so the settings editor — which writes arbitrary `Configuration` keys —
+    can never touch machine state like document-number counters or the IMAP fetch
+    cursor. Examples:
+        - key="job_counter", value="42"
+        - key="latest_email_date", value="2026-06-06T12:00:00+00:00"
+    """
+    key = models.CharField(max_length=100, primary_key=True)
+    value = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.key}: {self.value}"
+
+    class Meta:
+        db_table = 'appstate'
+        verbose_name = "App State"
+        verbose_name_plural = "App State"
+
+    @classmethod
+    def get_value(cls, key, default=None):
+        """Read a state value, or `default` if the key is unset."""
+        try:
+            return cls.objects.get(key=key).value
+        except cls.DoesNotExist:
+            return default
+
+    @classmethod
+    def set_value(cls, key, value):
+        """Create or update a state value."""
+        cls.objects.update_or_create(key=key, defaults={'value': str(value)})
+
+
 class EmailRecord(models.Model):
     """
     Permanent record of an email's association with a job.

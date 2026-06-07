@@ -6,13 +6,13 @@ from apps.jobs.models import Job
 from apps.inventory.models import Earmark, Material, PriceListItem
 from apps.inventory.services import MaterialService
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, AppState
 
 
 class MaterialSeverTest(TestCase):
     def setUp(self):
         Configuration.objects.get_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
-        Configuration.objects.get_or_create(key='po_counter', defaults={'value': '0'})
+        AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
         c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()

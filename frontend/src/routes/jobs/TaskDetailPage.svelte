@@ -2,6 +2,7 @@
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs } from '../../stores/permissions.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
   import TaskActivityIndicator from '../../components/tasks/TaskActivityIndicator.svelte';
@@ -310,7 +311,7 @@
     <div class="toolbar">
       <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
       <a href={`/jobs/${task.job.id}/tasklist`} use:link class="back-link">task list</a>
-      {#if !taskIsTerminal}
+      {#if !taskIsTerminal && $canManageJobs}
         <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
       {/if}
       <h2 class="task-title">Task: {task.name}</h2>
@@ -337,7 +338,7 @@
     <tbody>
       <tr><td>Status</td><td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
       <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
-      <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} <button type="button" onclick={() => { assignModalOpen = true; }}>assign</button></td></tr>
+      <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} {#if $canManageJobs}<button type="button" onclick={() => { assignModalOpen = true; }}>assign</button>{/if}</td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
       <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
       <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>

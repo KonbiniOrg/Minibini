@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.invoicing.pdf import generate_job_statement_pdf
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 
@@ -12,9 +12,9 @@ class JobStatementPDFTest(TestCase):
 
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.cat_cnc = AccountingCategory.objects.create(
             code='CNC', name='CNC Machining', taxable=True,

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import Estimate, EstimateLineItem, TaskTemplate
 from apps.jobs.models import Job, RateScheme
 
@@ -11,7 +11,7 @@ class EstimateLineItemSourceTemplateTest(TestCase):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',

@@ -22,8 +22,8 @@ describe('WizardActions', () => {
     expect(push).toHaveBeenCalledWith('/invoices/123');
   });
 
-  it('discards after confirmation, then returns home', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('discards and returns home without prompting (draft is easily remade)', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm');
     api.delete.mockResolvedValue({});
     const { getByRole } = render(WizardActions, { props: PROPS });
 
@@ -31,16 +31,7 @@ describe('WizardActions', () => {
 
     expect(api.delete).toHaveBeenCalledWith('/api/invoices/123/?confirm=true');
     expect(push).toHaveBeenCalledWith('/');
-    confirmSpy.mockRestore();
-  });
-
-  it('does not discard if the confirm is cancelled', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const { getByRole } = render(WizardActions, { props: PROPS });
-
-    await fireEvent.click(getByRole('button', { name: 'Discard draft' }));
-
-    expect(api.delete).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
 });

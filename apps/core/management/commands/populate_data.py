@@ -43,17 +43,37 @@ class Command(BaseCommand):
             return self.fixture_dir.replace('_', ' ').title()
         return "Data"
 
+    # The four authorization atoms — granting all of them gives the dev user
+    # full SPA access without relying on superuser (authorization is atoms-only).
+    DEV_USER_ATOMS = [
+        'can_manage_jobs',
+        'can_manage_financials',
+        'can_manage_time',
+        'can_manage_config',
+    ]
+
     def create_default_user(self):
-        """Create the default development user. Can be overridden by subclasses."""
-        return User.objects.create_user(
+        """Create the default development user. Can be overridden by subclasses.
+
+        The user gets all four permission atoms (not superuser) — authorization
+        is atoms-only. `is_staff` is kept for Django /admin/ login; create a
+        superuser separately with `createsuperuser` if you need admin model
+        access.
+        """
+        from django.contrib.auth.models import Permission
+        user = User.objects.create_user(
             username='dev_user',
             email='dev@example.com',
             password='dev_password',
             first_name='Dev',
             last_name='User',
             is_staff=True,
-            is_superuser=True
         )
+        user.user_permissions.add(*Permission.objects.filter(
+            codename__in=self.DEV_USER_ATOMS,
+            content_type__app_label='core',
+        ))
+        return user
 
     def handle(self, *args, **options):
         db_name = settings.DATABASES['default']['NAME']

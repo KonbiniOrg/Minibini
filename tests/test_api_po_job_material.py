@@ -6,14 +6,14 @@ from apps.jobs.models import Job
 from apps.inventory.models import Material, PriceListItem
 from apps.purchasing.models import PurchaseOrder
 from apps.purchasing.services import PurchaseOrderService
-from apps.core.models import AccountingCategory, Configuration, User
+from apps.core.models import AccountingCategory, Configuration, User, AppState
 from django.contrib.auth.models import Permission
 
 
 class APIPOJobMaterialTest(TestCase):
     def setUp(self):
         Configuration.objects.get_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
-        Configuration.objects.get_or_create(key='po_counter', defaults={'value': '0'})
+        AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
         self.user = User.objects.create_user(username='u', password='p')
         perm = Permission.objects.get(codename='can_manage_financials')
         self.user.user_permissions.add(perm)

@@ -38,4 +38,15 @@ describe('TaskActions', () => {
     await fireEvent.click(getByRole('button', { name: 'Unblock' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/unblock/', {});
   });
+
+  it('lets any authenticated worker cancel a task (cancel is a worker lifecycle op)', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    // worker with no can_manage_jobs — backend cancel is IsAuthenticated by design
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 }, userPermissions: [] },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel/', {});
+    confirmSpy.mockRestore();
+  });
 });

@@ -5,11 +5,11 @@
   let {
     apiBase,         // e.g. '/api/invoices/123' or '/api/estimates/123'
     detailRoute,     // e.g. '/invoices/123' or '/estimates/123'
-    discardConfirm = 'Delete this draft and release all claimed atoms?',
   } = $props();
 
+  // No confirm: the draft is easily remade from its source on the page the
+  // user returns to, so discarding is effectively reversible.
   async function discard() {
-    if (!confirm(discardConfirm)) return;
     try {
       await api.delete(`${apiBase}/?confirm=true`);
       push('/');

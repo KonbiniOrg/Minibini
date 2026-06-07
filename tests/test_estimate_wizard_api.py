@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, Configuration, User
+from apps.core.models import AccountingCategory, Configuration, User, AppState
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import PlanMaterial
@@ -16,7 +16,7 @@ class EstimateWizardAPITest(TestCase):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
@@ -123,7 +123,7 @@ class SendAllAtomsAPITest(TestCase):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',

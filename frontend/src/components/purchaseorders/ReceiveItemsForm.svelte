@@ -14,13 +14,14 @@
 
   $effect(() => {
     entries = receivableItems.map(li => {
-      const remaining = Number(li.qty) - Number(li.qty_received);
+      const remaining = Number(li.qty) - Number(li.qty_received) - Number(li.qty_cancelled);
       return {
         line_item_id: li.line_item_id,
         line_number: li.line_number,
         description: li.description,
         qty_ordered: Number(li.qty),
         qty_already_received: Number(li.qty_received),
+        qty_remaining: remaining,
         // Pre-fill with remaining qty; user can edit (overage allowed).
         qty_receiving: remaining > 0 ? String(remaining) : '',
         note: '',
@@ -68,7 +69,7 @@
               <td>{entry.description}</td>
               <td class="text-right">{entry.qty_ordered}</td>
               <td class="text-right">{entry.qty_already_received}</td>
-              <td class="text-right">{entry.qty_ordered - entry.qty_already_received}</td>
+              <td class="text-right">{entry.qty_remaining}</td>
               <td>
                 <input
                   type="number"

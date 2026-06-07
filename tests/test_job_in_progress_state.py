@@ -2,14 +2,14 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration
+from apps.core.models import Configuration, AppState
 from apps.jobs.models import Job
 
 
 class JobInProgressStateTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
         self.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )

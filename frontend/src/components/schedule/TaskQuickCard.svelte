@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
+  import { canManageJobs as canManageJobsStore, canManageTime as canManageTimeStore } from '../../stores/permissions.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import TaskActions from '../tasks/TaskActions.svelte';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
@@ -27,9 +28,10 @@
   let onBehalfBusy = $state(false);
   let onBehalfError = $state('');
 
+  // userPermissions is still relayed to <TaskActions> below (which takes it as a prop).
   const userPermissions = $derived($userStore?.permissions || []);
-  const canManageJobs = $derived(userPermissions.includes('can_manage_jobs'));
-  const canManageTime = $derived(userPermissions.includes('can_manage_time'));
+  const canManageJobs = $derived($canManageJobsStore);
+  const canManageTime = $derived($canManageTimeStore);
 
   // On-behalf actions target the lane worker — shown only to managers, and
   // never for the viewer's own lane (they use the self actions above).
@@ -217,7 +219,7 @@
 
 <style>
   .overlay {
-    position: fixed; inset: 0; z-index: 1000;
+    position: fixed; inset: 0; z-index: var(--z-popover);
     background: rgba(0,0,0,0.35);
     display: flex; align-items: center; justify-content: center;
   }

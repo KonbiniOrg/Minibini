@@ -27,4 +27,11 @@ describe('CollapsedTab', () => {
     });
     expect(getByText('0')).toBeInTheDocument();
   });
+
+  it('renders with the default theme (no theme prop) without crashing', () => {
+    const { getByText } = render(CollapsedTab, {
+      props: { label: 'Fallback' },
+    });
+    expect(getByText('Fallback')).toBeInTheDocument();
+  });
 });

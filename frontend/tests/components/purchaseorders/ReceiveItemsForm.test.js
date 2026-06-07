@@ -31,6 +31,23 @@ describe('ReceiveItemsForm', () => {
     ]);
   });
 
+  it('pre-fills remaining net of cancelled quantity', async () => {
+    const onSubmit = vi.fn();
+    const { getByRole, container } = render(ReceiveItemsForm, {
+      props: { lineItems: [line({ qty_cancelled: 2 })], onSubmit, onCancel: vi.fn() },
+    });
+    // remaining = qty(10) - qty_received(3) - qty_cancelled(2) = 5
+    expect(getByRole('spinbutton').value).toBe('5');
+    // Remaining column (5th cell) shows the cancelled-adjusted value too
+    const cells = container.querySelectorAll('tbody td');
+    expect(cells[4].textContent.trim()).toBe('5');
+
+    await fireEvent.click(getByRole('button', { name: 'Record Receipt' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { line_item_id: 1, qty_received: 5, note: undefined },
+    ]);
+  });
+
   it('excludes a line zeroed out by the user', async () => {
     const onSubmit = vi.fn();
     const { getByRole } = render(ReceiveItemsForm, {

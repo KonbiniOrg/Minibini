@@ -60,15 +60,6 @@ page stays whole.
 
 ## Open
 
-- **Verify the portal hides Accept/Reject when an estimate isn't actionable.** — _added 2026-06-05_
-  Backend already gates this: `_is_actionable` (`apps/api/portal/views.py`) requires the
-  job to be `SUBMITTED`, so an on-hold (or otherwise moved-on) job returns `actions: []`
-  and `_decide` is a no-op. Confirm the portal **UI** (`frontend/portal/`) actually
-  suppresses the Accept/Reject buttons when `actionable` is false / `actions` is empty,
-  rather than showing dead buttons that POST to a no-op. _Done when:_ the portal page
-  renders no Accept/Reject controls for a non-actionable estimate (verified for the
-  on-hold-job case specifically).
-
 - **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
   `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
   calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
@@ -96,17 +87,6 @@ page stays whole.
   `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
   redundancy this item is about.
 
-- **`ReceiveItemsForm` "remaining" ignores `qty_cancelled`.** — _added 2026-06-04_
-  The receivable *filter* accounts for cancellation (`qty_received + qty_cancelled < qty`),
-  but the prefilled "Receiving Now" value and the displayed "Remaining" column compute
-  `qty - qty_received` — excluding `qty_cancelled`. A line with qty 10 / received 3 /
-  cancelled 2 shows & pre-fills 7 remaining when only 5 are actually outstanding. May be
-  intentional (a code comment notes overage is allowed and the user can edit), but the
-  default over-states the outstanding quantity by the cancelled amount. Surfaced while
-  writing the component test (the test pins the current `7`).
-  _Done when:_ the remaining/prefill calc subtracts `qty_cancelled`, or we've confirmed
-  the overage default is intended and noted why.
-
 - **Audit `$state` seeded from a prop — stale on prop change.** — _added 2026-06-04_
   The Svelte compiler warns `state_referenced_locally` in `Accordion.svelte`
   (`let isOpen = $state(open)`) and `TagEditor.svelte` (`let tags = $state([...initialTags])`):
@@ -116,15 +96,6 @@ page stays whole.
   writing component tests (the tests don't exercise the prop-change path).
   _Done when:_ the `$state`-seeded-from-prop sites have been grepped, and each is either
   confirmed mount-only or converted (e.g. `$derived`, or a reset via `$effect`).
-
-- **`CollapsedTab` default `theme='gray'` isn't in `THEMES` — renders crash with no theme.** — _added 2026-06-04_
-  `CollapsedTab.svelte`'s `theme` prop defaults to `'gray'`, but `THEMES` has no `gray`
-  key, so `colors = THEMES[theme] || THEMES.gray` resolves to `undefined` and the
-  template's `colors.bg` throws. Harmless today because the board always passes a real
-  theme, but the default value is unusable (CLAUDE.md pitfall #3, "defaults not in
-  choices"). Surfaced while writing the component test (tested with real themes).
-  _Done when:_ the default `theme` is a valid `THEMES` key (or `THEMES` gains a `gray`
-  fallback entry).
 
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —
@@ -136,87 +107,12 @@ page stays whole.
   if loose-forever deliverables on a duplicated approved job cause trouble in practice.
   _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
   freeze and either added one or recorded why anchoring alone is sufficient.
-- **Audit Configuration keys for settings-UI coverage.** — _added 2026-05-31_
-  Some Configuration keys have no user-facing editor — `our_public_url` had none until
-  the Business tab was added, and others likely lack UI too. Review every key the
-  backend reads/writes (document-number sequences/counters, units, QBO accounts, email
-  templates, retention/expiry days, `our_domain`, schedule keys, etc.) and make sure
-  each user-settable one is editable somewhere in Settings. Exclude auto-managed keys
-  (e.g. counters that increment on their own) from needing an editor.
-  _Done when:_ every user-settable Configuration key has a settings-UI editor, and the
-  audit has confirmed nothing is silently un-editable.
 
-- **Send-email form: accept comma-separated recipients in To and Bcc, not just Cc.** — _added 2026-05-31_
-  The document-send form (`DocumentSendForm.svelte`) accepts a comma-separated list in
-  the Cc box but the To field doesn't take one; Bcc unverified. All three (To / Cc /
-  Bcc) should accept a comma-separated list of addresses consistently.
-  _Done when:_ To, Cc, and Bcc each accept and correctly send to a comma-separated list.
-
-- **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
-  Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
-  intentionally have no draft state. SMTP failure with a page reload loses whatever the
-  user typed. Acceptable until real complaints surface — at which point the natural shape
-  is a `direction='outbound', sent_at=null, last_send_error=''` EmailRecord (the "in
-  flight" state currently never persists) plus a SPA list of "Drafts" on the inbox page.
-  Reply drafts probably want the most attention since freeform replies can be long.
-  _Done when:_ user can leave a send page mid-compose, come back later, and the form
-  pre-fills with what was there.
-
-- **Send outbound documents as a reply to the customer's most recent inbound thread.** — _added 2026-05-30_
-  When sending an Estimate / PO / Invoice, look up the latest `direction='inbound'`
-  EmailRecord linked to the document's Job (or PO / Bill), and set the outbound's
-  `In-Reply-To` + `References` headers so the customer sees the doc in the same Gmail
-  thread as their inquiry. Today we always send a fresh standalone email — works fine
-  but means customers see two separate threads. Probably a per-document Configuration
-  toggle ("thread document emails into recent customer threads by default") when this
-  lands. _Done when:_ outbound document emails optionally thread into the parent
-  conversation and customer mail clients see proper threading.
-
-- **Sent-folder upload via IMAP APPEND.** — _added 2026-05-30_
-  Outbound emails sent by Minibini don't appear in the user's Gmail web "Sent" folder
-  — they go out through SMTP and we keep our own EmailRecord, but the user's mail
-  client doesn't know about them. Append each successful outbound to the configured
-  Sent folder via IMAP so the user sees a consistent picture across our app and Gmail.
-  Off the critical path; nice-to-have. _Done when:_ sent emails from Minibini appear
-  in the user's Gmail Sent folder alongside emails they sent through Gmail directly.
-
-- **Forward action in the reply composer.** — _added 2026-05-30_
-  Standard mail-client Forward — different prefill from Reply (no recipient, `Fwd:`
-  subject, body becomes the quoted original, original attachments included). Not in
-  the inline composer today. _Done when:_ the action panel has a Forward button
-  alongside Reply / Reply All and the composer handles the Forward prefill shape.
-
-- **Subject-line parsing fallback for forwarded-rather-than-replied correlation.** — _added 2026-05-30_
-  Reply correlation uses In-Reply-To / References, which most replies preserve.
-  Forwards typically drop the threading headers, so a forwarded reply lands
-  unassociated. Could grep the subject for our outbound document numbers
-  (`EST-2026-0001`, `PO-…`, `INV-…`) as a fallback. Only worth doing if forwards
-  turn out to be a noticeable miss rate. _Done when:_ a measurable rate of
-  forwarded-replies-to-documents auto-associate to the right object.
-
-- **Multiple "our own" addresses for Reply-All filtering.** — _added 2026-05-30_
-  The Reply-All CC computation strips only the single `EMAIL_HOST_USER` address from
-  the list of original recipients. If the shop ever polls multiple accounts or
-  accepts mail at aliases, the user could see their own alias end up in CC. _Done
-  when:_ Reply-All strips any of the configured "our own" addresses (probably a
-  small list pulled from a new Configuration key).
-
-- **Thread view in the SPA.** — _added 2026-05-30_
-  Show all emails in a thread together (with their shared and individual
-  associations) instead of inbox rows that hide the structure. The
-  thread-association propagation feature ensures the data is now correctly
-  per-thread, so a thread view would just render what's already coherent. Real UX
-  improvement; out of scope when the propagation feature shipped. _Done when:_ the
-  email inbox has a thread-grouped view; clicking a thread shows the conversation
-  with the shared FK associations at the top and per-email details below.
-
-- **Bulk operations across a thread.** — _added 2026-05-30_
-  "Mark whole thread as read," "delete whole thread," "disassociate the whole
-  thread from Job X." Different from per-email actions (already present) — these
-  would operate over the thread membership set computed by
-  `collect_thread_member_ids`. Pair with the thread-view follow-up since the UI
-  surface for invoking these is the natural place. _Done when:_ the SPA has at
-  least one thread-level bulk action wired up.
+- **Settings-UI coverage + `appstate` split.** — _added 2026-05-31; audit done 2026-06-06_
+  Audit complete; implementation planned in
+  `docs/plans/2026-06-06-appstate-and-settings-ui-plan.md` (new `appstate` table for
+  machine-managed keys, remove dead `estimate_number_sequence`, add editors for the
+  UI-less user-settable keys). _Done when:_ that plan is executed.
 
 - **Customer-facing public URLs for documents (`{object_url}` real resolution) — ESTIMATES DONE.** — _added 2026-05-29; estimates resolved 2026-05-31_
   Estimates are now fully shipped: `Estimate.public_token` is minted at creation;
@@ -241,36 +137,6 @@ page stays whole.
   (probably: lean on `lib/api.js` overlays for unexpected errors, inline rows for
   field-validation responses).
 
-- **Email attachments aren't downloadable.** — _added 2026-05-28_
-  `EmailContent.svelte` and the deprecated `email_detail.html` template both render
-  attachments as `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
-  download link. The IMAP service used to ship the raw `payload` bytes inside the JSON
-  response, which 500'd for any non-UTF-8 attachment (commit `<this-one>` strips
-  `payload` from the service contract); the SPA never used the bytes anyway. _Done
-  when:_ a streaming endpoint exists (e.g. `GET /api/emails/{id}/attachments/{index}/`)
-  that re-fetches by UID, returns the bytes with correct `Content-Type` and
-  `Content-Disposition: attachment; filename=…`, and the email detail page wraps the
-  filename in an `<a href>` to it. Decide at that time whether to cache attachment
-  bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
-
-- **Email-association pickers cap the dropdown at 100 entries and sort poorly.** — _added 2026-05-28_
-  `EmailAssociatePage.svelte` (jobs) and, once they land, the equivalent PO and Bill
-  pickers all request `?page_size=500` to populate a `<select>`, but
-  `StandardPagination.max_page_size = 100` silently caps it. Fine while each table is
-  under 100 rows; once any of them crosses that, only the most recently-created entries
-  are reachable. The pickers also lean on each list endpoint's default ordering, which
-  isn't always what a human would call "most recent" — `Job` sorts by `-created_date`
-  (fine), but PO/Bill defaults need a deliberate decision (a job's `start_date` or last
-  status change is arguably more relevant than its creation; a PO's issue/sent date
-  beats its created_at; a Bill's bill_date or due_date may matter more than its
-  created_at). _Done when:_ each picker either paginates / searches server-side
-  (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
-  human-meaningful lifecycle date per entity (decide which per entity at that time),
-  whichever is cheaper than scrolling a long `<select>`.
-  - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
-    `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
-    with prefill-by-id — the shape these capped pickers should move to.
-
 - **Review site-wide `z-index` usage; decide whether to impose a scale.** — _added 2026-05-26_
   We added an ad-hoc `z-index: 30` to `.job-header` (plus `z-index: 1` on
   `.hold-reason-form`) in commit `270c79d` to lift the on-hold reason popover above the
@@ -291,19 +157,6 @@ page stays whole.
   _Done when:_ either the header accommodates the reason capture cleanly (a proper
   modal/popover, or a header that can grow), or we've decided the overflow-popover is
   fine and noted why.
-
-- **Revisit the Change Orders board-pillar color.** — _added 2026-05-26_
-  Phase G picked dark red (`#b91c1c`) for the CO pillar; it sits visually between the
-  `rejected` red and task orange and may read ambiguously against the accent palette.
-  _Done when:_ the CO pillar color is confirmed or changed to read clearly alongside the
-  existing pillars/board palette.
-
-- **CO detail "target line" should show the estimate line's description, not "Line #id".** — _added 2026-05-26_
-  The CO detail page reads the referenced estimate line for remove/replace rows; if the
-  `ChangeOrderLineItem` serializer doesn't surface the target `EstimateLineItem`'s
-  description/number, the UI falls back to an opaque "Line #id".
-  _Done when:_ the CO line-item serializer exposes the target line's description (+ line
-  number) and the CO detail renders it.
 
 - **Decide a consistent primary-key naming convention for line items (and documents).** — _added 2026-05-26_
   The codebase uses explicit PK names (`line_item_id`, `estimate_id`, `change_order_id`)
@@ -328,14 +181,6 @@ page stays whole.
   relabel (current). Interacts with the "one accepted estimate per job" rule and the
   `ChangeOrder.estimate` FK.
   _Done when:_ we've decided and either changed the model or written down why `accepted` stays.
-
-- **Audit confirmations site-wide — confirm only the irreversible.** — _added 2026-05-27_
-  We removed `confirm()` dialogs from the change-order line/deliverable edits (Change /
-  Delete-of-a-draft-delta / Undo / New) — all exactly undoable by another local action.
-  Sweep the SPA for `confirm(...)` and remove any guarding a reversible action; keep them
-  only where the action is irreversible or extremely arduous to undo (deleting a persisted
-  record, sending to a customer). Convention recorded in CLAUDE.md "UI Decisions".
-  _Done when:_ confirmations across the SPA match the rule.
 
 - **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
   We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads
@@ -433,21 +278,22 @@ page stays whole.
   _Done when:_ the detail page can switch between the line-item view and the atom-pull view
   without a route change, and the standalone wizard routes are retired.
 
-- **Audit frontend ↔ backend permission gating for parity.** — _added 2026-06-02_
-  The SPA frequently shows an action whose gate doesn't match the backend permission its
-  endpoint requires, so the user sees a button that then 403s (or, less often, a button is
-  hidden from someone the backend would allow). Known example: `InvoiceDetailPage.svelte`'s
-  "Send/Resend Invoice" link is gated on `canEditInvoice` (`can_manage_jobs` **or**
-  `can_manage_financials`), but the invoice `send` action requires `can_manage_financials`
-  only — a jobs-only user sees a Send button that 403s. (The "Continue in wizard" link had the
-  same mismatch and was removed.) This is a broad, recurring pattern, not a one-off — do a
-  systematic pass: for each gated action in the SPA, confirm the frontend visibility condition
-  matches the atom enforced by the corresponding viewset/`get_permissions` (atoms:
-  `can_manage_jobs`, `can_manage_financials`, `can_manage_time`, `can_manage_config`; see
-  `docs/designs/users-and-permissions.md` §3 for the endpoint-to-atom table). Prefer a small
-  shared permission helper/derived per atom so gates are consistent rather than ad-hoc per page.
-  _Done when:_ no SPA action is shown to a user the backend would reject (and none is hidden
-  from a user the backend would allow), verified against the endpoint-to-atom mapping.
+- **Permission-store migration — residual cleanup.** — _added 2026-06-06_
+  The gating-parity mismatches are fixed and gates now route through
+  `frontend/src/stores/permissions.js`. Remaining: (a) **contact/business** gating
+  (`ContactDetail`/`BusinessDetail`) was done but each hand-rolls an identical read-only
+  tag list — converge on a `readonly` prop for `TagEditor` (or a shared `TagList`);
+  (b) the `userPermissions` **prop chain** (TaskDetailPage → TaskActions → BlepEditModal →
+  TimeEditModal/BlepList) is now dead after the store migration but can't be removed without
+  touching `TaskDetailPage` (deliberately left alone this pass). _Done when:_ the tag display
+  is de-duplicated and the dead `userPermissions` prop is removed end-to-end.
+
+- **Superuser still referenced in test fixtures + fixture JSON.** — _added 2026-06-06_
+  App code is now superuser-free (authorization is atoms-only), but several test files create
+  `is_superuser=True` users as a privileged-actor shortcut (they still pass because Django
+  grants superusers every perm) and `fixtures/unit_test_data.json` seeds a superuser. Migrate
+  these to grant the four atoms explicitly so nothing references superuser. _Done when:_ no
+  test fixture or fixture JSON relies on `is_superuser` for authorization.
 
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
@@ -479,3 +325,107 @@ page stays whole.
   the tab itself jump straight to the current live estimate instead of showing the superseded
   one? Unsure which is less confusing. _Done when:_ the superseded-tab click behavior is decided
   and consistent.
+
+---
+
+## Email
+
+Outbound sending, inbound correlation, the reply/forward composer, threading, and the
+email-association pickers. Grouped here because they share the EmailRecord / TempEmail /
+IMAP-SMTP machinery and tend to be worked together.
+
+- **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
+  Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
+  intentionally have no draft state. SMTP failure with a page reload loses whatever the
+  user typed. Acceptable until real complaints surface — at which point the natural shape
+  is a `direction='outbound', sent_at=null, last_send_error=''` EmailRecord (the "in
+  flight" state currently never persists) plus a SPA list of "Drafts" on the inbox page.
+  Reply drafts probably want the most attention since freeform replies can be long.
+  _Done when:_ user can leave a send page mid-compose, come back later, and the form
+  pre-fills with what was there.
+
+- **Send outbound documents as a reply to the customer's most recent inbound thread.** — _added 2026-05-30_
+  When sending an Estimate / PO / Invoice, look up the latest `direction='inbound'`
+  EmailRecord linked to the document's Job (or PO / Bill), and set the outbound's
+  `In-Reply-To` + `References` headers so the customer sees the doc in the same Gmail
+  thread as their inquiry. Today we always send a fresh standalone email — works fine
+  but means customers see two separate threads. Probably a per-document Configuration
+  toggle ("thread document emails into recent customer threads by default") when this
+  lands. _Done when:_ outbound document emails optionally thread into the parent
+  conversation and customer mail clients see proper threading.
+
+- **Sent-folder upload via IMAP APPEND.** — _added 2026-05-30_
+  Outbound emails sent by Minibini don't appear in the user's Gmail web "Sent" folder
+  — they go out through SMTP and we keep our own EmailRecord, but the user's mail
+  client doesn't know about them. Append each successful outbound to the configured
+  Sent folder via IMAP so the user sees a consistent picture across our app and Gmail.
+  Off the critical path; nice-to-have. _Done when:_ sent emails from Minibini appear
+  in the user's Gmail Sent folder alongside emails they sent through Gmail directly.
+
+- **Forward action in the reply composer.** — _added 2026-05-30_
+  Standard mail-client Forward — different prefill from Reply (no recipient, `Fwd:`
+  subject, body becomes the quoted original, original attachments included). Not in
+  the inline composer today. _Done when:_ the action panel has a Forward button
+  alongside Reply / Reply All and the composer handles the Forward prefill shape.
+
+- **Subject-line parsing fallback for forwarded-rather-than-replied correlation.** — _added 2026-05-30_
+  Reply correlation uses In-Reply-To / References, which most replies preserve.
+  Forwards typically drop the threading headers, so a forwarded reply lands
+  unassociated. Could grep the subject for our outbound document numbers
+  (`EST-2026-0001`, `PO-…`, `INV-…`) as a fallback. Only worth doing if forwards
+  turn out to be a noticeable miss rate. _Done when:_ a measurable rate of
+  forwarded-replies-to-documents auto-associate to the right object.
+
+- **Multiple "our own" addresses for Reply-All filtering.** — _added 2026-05-30_
+  The Reply-All CC computation strips only the single `EMAIL_HOST_USER` address from
+  the list of original recipients. If the shop ever polls multiple accounts or
+  accepts mail at aliases, the user could see their own alias end up in CC. _Done
+  when:_ Reply-All strips any of the configured "our own" addresses (probably a
+  small list pulled from a new Configuration key).
+
+- **Thread view in the SPA.** — _added 2026-05-30_
+  Show all emails in a thread together (with their shared and individual
+  associations) instead of inbox rows that hide the structure. The
+  thread-association propagation feature ensures the data is now correctly
+  per-thread, so a thread view would just render what's already coherent. Real UX
+  improvement; out of scope when the propagation feature shipped. _Done when:_ the
+  email inbox has a thread-grouped view; clicking a thread shows the conversation
+  with the shared FK associations at the top and per-email details below.
+
+- **Bulk operations across a thread.** — _added 2026-05-30_
+  "Mark whole thread as read," "delete whole thread," "disassociate the whole
+  thread from Job X." Different from per-email actions (already present) — these
+  would operate over the thread membership set computed by
+  `collect_thread_member_ids`. Pair with the thread-view follow-up since the UI
+  surface for invoking these is the natural place. _Done when:_ the SPA has at
+  least one thread-level bulk action wired up.
+
+- **Email attachments aren't downloadable.** — _added 2026-05-28_
+  `EmailContent.svelte` and the deprecated `email_detail.html` template both render
+  attachments as `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
+  download link. The IMAP service used to ship the raw `payload` bytes inside the JSON
+  response, which 500'd for any non-UTF-8 attachment (commit `<this-one>` strips
+  `payload` from the service contract); the SPA never used the bytes anyway. _Done
+  when:_ a streaming endpoint exists (e.g. `GET /api/emails/{id}/attachments/{index}/`)
+  that re-fetches by UID, returns the bytes with correct `Content-Type` and
+  `Content-Disposition: attachment; filename=…`, and the email detail page wraps the
+  filename in an `<a href>` to it. Decide at that time whether to cache attachment
+  bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
+
+- **Email-association pickers cap the dropdown at 100 entries and sort poorly.** — _added 2026-05-28_
+  `EmailAssociatePage.svelte` (jobs) and, once they land, the equivalent PO and Bill
+  pickers all request `?page_size=500` to populate a `<select>`, but
+  `StandardPagination.max_page_size = 100` silently caps it. Fine while each table is
+  under 100 rows; once any of them crosses that, only the most recently-created entries
+  are reachable. The pickers also lean on each list endpoint's default ordering, which
+  isn't always what a human would call "most recent" — `Job` sorts by `-created_date`
+  (fine), but PO/Bill defaults need a deliberate decision (a job's `start_date` or last
+  status change is arguably more relevant than its creation; a PO's issue/sent date
+  beats its created_at; a Bill's bill_date or due_date may matter more than its
+  created_at). _Done when:_ each picker either paginates / searches server-side
+  (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
+  human-meaningful lifecycle date per entity (decide which per entity at that time),
+  whichever is cheaper than scrolling a long `<select>`.
+  - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
+    `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
+    with prefill-by-id — the shape these capped pickers should move to.

@@ -56,8 +56,8 @@ class ConfigurationModelFixtureTest(FixtureTestCase):
         job_seq = Configuration.objects.get(key="job_number_sequence")
         self.assertEqual(job_seq.value, "JOB-{year}-{counter:04d}")
 
-        estimate_seq = Configuration.objects.get(key="estimate_number_sequence")
-        self.assertEqual(estimate_seq.value, "EST-{year}-{counter:04d}")
+        # Estimates are not numbered via the service (they derive {job}-{ver}),
+        # so there is no estimate_number_sequence key.
 
         invoice_seq = Configuration.objects.get(key="invoice_number_sequence")
         self.assertEqual(invoice_seq.value, "INV-{year}-{counter:04d}")

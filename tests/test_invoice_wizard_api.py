@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.core.models import User, Configuration, AccountingCategory
+from apps.core.models import User, Configuration, AccountingCategory, AppState
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.inventory.models import Material, PriceListItem
@@ -14,9 +14,9 @@ from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSourc
 class InvoiceLineItemSerializerSourcesTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -95,9 +95,9 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
 class SourcePoolEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -157,9 +157,9 @@ class SourcePoolEndpointTest(TestCase):
 class LineItemsFromAtomsEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -241,9 +241,9 @@ class LineItemsFromAtomsEndpointTest(TestCase):
 class AddAtomsEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -322,9 +322,9 @@ class AddAtomsEndpointTest(TestCase):
 class RemoveAtomsEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
@@ -401,9 +401,9 @@ class RemoveAtomsEndpointTest(TestCase):
 class StartInvoiceWizardEndpointTest(TestCase):
     def setUp(self):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
-        Configuration.objects.create(key='invoice_counter', value='0')
+        AppState.objects.create(key='invoice_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        Configuration.objects.create(key='job_counter', value='0')
+        AppState.objects.create(key='job_counter', value='0')
 
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',

@@ -26,29 +26,41 @@ data, work top to bottom — everything a model needs is defined above it.
 
 ---
 
-### 1.1 Configuration
+### 1.1 Configuration and AppState
 
-Key-value store. No FK dependencies.
+Two key-value stores, deliberately split by who writes them. No FK dependencies.
+Both have **key** as primary key (unique, max 100 chars) and a string **value**.
 
-- **key** is the primary key (unique, max 100 chars)
-- **value** is a text field, always stored as a string even for numeric values
+- **`Configuration`** (`config` table) — **user-settable settings**. Backs the
+  Settings UI; the `/api/settings/` PATCH endpoint writes arbitrary keys here.
+- **`AppState`** (`appstate` table) — **machine-managed state**, written by the
+  app and never by a human. Kept separate so the settings editor can't touch it.
 
-Required keys for document numbering (each entity type needs both):
-- `job_number_sequence` / `job_counter`
-- `invoice_number_sequence` / `invoice_counter`
-- `po_number_sequence` / `po_counter`
-- `estimate_number_sequence` / `estimate_counter` — **no longer used for
-  estimate numbering** (estimate numbers now derive from the job number:
-  `{job_number}-{version}`). The keys remain only for the generic
-  `NumberGenerationService` and may be retired.
+**Document numbering** splits across both: the *pattern* is a user-settable
+`Configuration` key; the *counter* is `AppState`:
+
+| Configuration (pattern) | AppState (counter) |
+|---|---|
+| `job_number_sequence` | `job_counter` |
+| `invoice_number_sequence` | `invoice_counter` |
+| `po_number_sequence` | `po_counter` |
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
+Estimates are **not** numbered via `NumberGenerationService` — they derive
+`{job_number}-{version}` — so there is no estimate sequence/counter key (the dead
+`estimate_number_sequence` / `estimate_counter` were removed).
 
-Additional keys: `email_retention_days`, `latest_email_date`,
-`email_display_limit`, `est_expire_days`, `business_email` (shop
-notification address for customer accept/reject events; if unset,
-notifications are silently skipped).
+**AppState (machine state):** the three counters above, plus `latest_email_date`
+(IMAP fetch cursor).
+
+**Configuration (other user-settable keys):** `email_retention_days`,
+`email_display_limit`, `est_expire_days`, `board_closed_retention_days`,
+`our_domain`, `our_public_url`, `business_email` (shop notification address for
+customer accept/reject events; if unset, notifications are silently skipped),
+`units_list`, `qbo_payment_accounts`. **Taxation is handled by QuickBooks** —
+there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
+removed).
 
 Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
 (`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).

@@ -3,6 +3,7 @@
 
   let business_email = $state('');
   let our_public_url = $state('');
+  let our_domain = $state('');
   let saveMessage = $state('');
   let errors = $state({});
 
@@ -11,6 +12,7 @@
       const data = await api.get('/api/settings/');
       business_email = data.business_email ?? '';
       our_public_url = data.our_public_url ?? '';
+      our_domain = data.our_domain ?? '';
     } catch (_) {}
   }
 
@@ -18,7 +20,7 @@
     saveMessage = '';
     errors = {};
     try {
-      await api.patch('/api/settings/', { business_email, our_public_url });
+      await api.patch('/api/settings/', { business_email, our_public_url, our_domain });
       saveMessage = 'Business settings saved.';
     } catch (err) {
       errors = (err.data && typeof err.data === 'object')
@@ -48,6 +50,15 @@
 <p><small>Base address customers reach — used to build the estimate portal
   link in outgoing emails. In development, set this to your dev portal
   (e.g. <code>http://localhost:9000</code>).</small></p>
+<p>
+  <label><strong>Email domain</strong><br>
+    <input type="text" bind:value={our_domain}
+           placeholder="yourshop.com">
+  </label>
+  {#if errors.our_domain}<em class="err">{errors.our_domain}</em>{/if}
+</p>
+<p><small>Domain used to build the Message-ID on outgoing emails. If unset it
+  falls back to <code>example.com</code>, which can hurt deliverability.</small></p>
 <p>
   <button type="button" onclick={save}>Save</button>
   {#if saveMessage}<em>{saveMessage}</em>{/if}

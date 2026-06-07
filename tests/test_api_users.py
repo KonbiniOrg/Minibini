@@ -140,7 +140,7 @@ class UserListRetrieveTest(BaseTestCase):
         row = next(u for u in response.data if u['username'] == 'johnq')
         expected_keys = {
             'id', 'username', 'first_name', 'last_name', 'email',
-            'is_active', 'is_superuser', 'permissions',
+            'is_active', 'permissions',
         }
         self.assertEqual(set(row.keys()), expected_keys)
 
@@ -156,7 +156,7 @@ class UserListRetrieveTest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         expected_keys = {
             'id', 'username', 'first_name', 'last_name', 'email',
-            'is_active', 'is_superuser', 'permissions', 'date_joined',
+            'is_active', 'permissions', 'date_joined',
         }
         self.assertEqual(set(response.data.keys()), expected_keys)
 

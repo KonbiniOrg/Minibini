@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
+  import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
   import { shiftActivityVersion } from '../../stores/shift.js';
   import ShiftLogTable from '../time/ShiftLogTable.svelte';
   import TimeEditModal from '../time/TimeEditModal.svelte';
@@ -11,8 +12,7 @@
   let editing = $state(null);
   let modalAction = $state('edit');
 
-  const perms = $derived($userStore?.permissions || []);
-  const canManageTime = $derived(perms.includes('can_manage_time'));
+  const canManageTime = $derived($canManageTimeStore);
 
   function within30h(iso) { return Date.now() - new Date(iso).getTime() < 30 * 3600 * 1000; }
   function isEditable(s) { return canManageTime || within30h(s.start_time); }
@@ -52,4 +52,4 @@
 </section>
 
 <TimeEditModal open={modalOpen} recordType="shift" action={modalAction} record={editing}
-  currentUser={$userStore} userPermissions={perms} onSaved={onSaved} onClose={() => { modalOpen = false; editing = null; }} />
+  currentUser={$userStore} onSaved={onSaved} onClose={() => { modalOpen = false; editing = null; }} />

@@ -3,7 +3,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from datetime import timedelta, datetime
 from unittest.mock import Mock, patch, MagicMock
-from apps.core.models import EmailRecord, TempEmail, Configuration
+from apps.core.models import EmailRecord, TempEmail, Configuration, AppState
 from apps.jobs.models import Job
 from apps.contacts.models import Contact, Business
 from apps.core.services import EmailService
@@ -1046,18 +1046,19 @@ class EmailServiceTest(TestCase):
         mock_mailbox.__enter__.return_value = mock_mailbox
         mock_mailbox_class.return_value.login.return_value = mock_mailbox
 
-        # Ensure no configuration exists
-        Configuration.objects.filter(key='latest_email_date').delete()
+        # Ensure no existing state
+        AppState.objects.filter(key='latest_email_date').delete()
         Configuration.objects.filter(key='email_retention_days').delete()
         Configuration.objects.filter(key='email_display_limit').delete()
 
         service = EmailService()
         stats = service.fetch_emails_by_date_range(days_back=30)
 
-        # Should create configuration entries
-        latest_date_config = Configuration.objects.get(key='latest_email_date')
-        self.assertIsNotNone(latest_date_config)
-        self.assertIsNotNone(latest_date_config.value)
+        # latest_email_date is machine state (AppState); the email config keys
+        # remain in Configuration.
+        latest_date_state = AppState.objects.get(key='latest_email_date')
+        self.assertIsNotNone(latest_date_state)
+        self.assertIsNotNone(latest_date_state.value)
 
         retention_config = Configuration.objects.get(key='email_retention_days')
         self.assertEqual(retention_config.value, '90')
@@ -1073,9 +1074,9 @@ class EmailServiceTest(TestCase):
     @patch('apps.core.services.MailBox')
     def test_fetch_emails_by_date_range_updates_latest_date(self, mock_mailbox_class):
         """Test that latest_email_date is updated after fetching."""
-        # Create configuration with old date
+        # Seed the cursor (AppState) with an old date
         old_date = timezone.now() - timedelta(days=10)
-        Configuration.objects.create(
+        AppState.objects.create(
             key='latest_email_date',
             value=old_date.isoformat()
         )
@@ -1104,9 +1105,9 @@ class EmailServiceTest(TestCase):
         service = EmailService()
         stats = service.fetch_emails_by_date_range(days_back=30)
 
-        # Configuration should be updated with newer date
-        updated_config = Configuration.objects.get(key='latest_email_date')
-        updated_date = datetime.fromisoformat(updated_config.value)
+        # The cursor (AppState) should be updated with the newer date
+        updated_state = AppState.objects.get(key='latest_email_date')
+        updated_date = datetime.fromisoformat(updated_state.value)
         self.assertGreater(updated_date, old_date)
         self.assertEqual(stats['new'], 1)
         self.assertIsNotNone(stats['latest_date'])
@@ -1119,9 +1120,9 @@ class EmailServiceTest(TestCase):
     @patch('apps.core.services.MailBox')
     def test_fetch_emails_by_date_range_uses_latest_email_date(self, mock_mailbox_class):
         """Test that fetch uses latest_email_date as threshold."""
-        # Create configuration with specific date
+        # Seed the cursor (AppState) with a specific date
         fetch_since_date = timezone.now() - timedelta(days=5)
-        Configuration.objects.create(
+        AppState.objects.create(
             key='latest_email_date',
             value=fetch_since_date.isoformat()
         )

@@ -5,6 +5,7 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
 import { viewMode } from '@/stores/viewMode.js';
+import { user } from '@/stores/auth.js';
 import BusinessDetail from '@/components/contacts/BusinessDetail.svelte';
 
 function business() {
@@ -23,6 +24,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.get.mockResolvedValue({ results: [] });
   viewMode.set('lite');
+  user.set({ id: 1, permissions: ['can_manage_jobs'] });
 });
 
 describe('BusinessDetail', () => {
@@ -53,7 +55,7 @@ describe('BusinessDetail', () => {
     expect(onBillPageChange).toHaveBeenCalledWith(3);
   });
 
-  it('fires edit and delete callbacks', async () => {
+  it('fires edit and delete callbacks (manager)', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();
     const { getByRole } = render(BusinessDetail, { props: { business: business(), onEdit, onDelete } });
@@ -61,5 +63,17 @@ describe('BusinessDetail', () => {
     await fireEvent.click(getByRole('button', { name: 'Delete' }));
     expect(onEdit).toHaveBeenCalled();
     expect(onDelete).toHaveBeenCalled();
+  });
+
+  it('hides edit/delete and the tag editor from a non-manager (shows tags read-only)', () => {
+    user.set({ id: 2, permissions: [] });
+    const b = { ...business(), tags: [{ tag_id: 1, name: 'Wholesale' }] };
+    const { queryByRole, getByText } = render(BusinessDetail, {
+      props: { business: b, onEdit: vi.fn(), onDelete: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(queryByRole('textbox')).toBeNull();
+    expect(getByText('Wholesale')).toBeInTheDocument();
   });
 });

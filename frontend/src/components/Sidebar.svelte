@@ -1,6 +1,7 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { user, logout } from '../stores/auth.js';
+  import { canManageFinancials, canManageConfig } from '../stores/permissions.js';
   import { viewMode, toggleViewMode } from '../stores/viewMode.js';
 
   let { open = $bindable(false) } = $props();
@@ -22,12 +23,8 @@
     await logout();
   }
 
-  function hasPerm(perm) {
-    return $user?.permissions?.includes(perm) ?? false;
-  }
-
-  let showFinancials = $derived(hasPerm('can_manage_financials'));
-  let showAdminLabel = $derived(showFinancials || hasPerm('can_manage_config'));
+  let showFinancials = $derived($canManageFinancials);
+  let showAdminLabel = $derived($canManageFinancials || $canManageConfig);
 
   let searchQuery = $state('');
   let searchFocused = $state(false);
@@ -72,10 +69,10 @@
     {#if showFinancials}
       <a href="/expenses" use:link>Expenses</a>
     {/if}
-    {#if hasPerm('can_manage_config')}
+    {#if $canManageConfig}
       <a href="/users" use:link>Users</a>
     {/if}
-    {#if hasPerm('can_manage_config')}
+    {#if $canManageConfig}
       <a href="/settings" use:link>Settings</a>
     {/if}
     <form class="sidebar-search" onsubmit={handleSearch}>
@@ -112,7 +109,7 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 1000;
+    z-index: var(--z-sidebar);
     width: 44px;
     height: 44px;
     background: #1a3344;
@@ -143,7 +140,7 @@
     color: #eee;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
-    z-index: 999;
+    z-index: var(--z-sidebar);
     display: flex;
     flex-direction: column;
     padding-top: 54px;

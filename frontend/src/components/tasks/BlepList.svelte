@@ -1,14 +1,15 @@
 <script>
+  import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
+
   let {
     bleps = [],
     currentUser,
-    userPermissions = [],
     onEdit = () => {},
     onDelete = () => {},
     onAdd = () => {},
   } = $props();
 
-  const canManageTime = $derived(userPermissions.includes('can_manage_time'));
+  const canManageTime = $derived($canManageTimeStore);
 
   function within24h(iso) {
     if (!iso) return false;

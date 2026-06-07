@@ -366,7 +366,7 @@
   .line-status.cancelled { background: #fee2e2; color: #991b1b; }
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: 1000;
+    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
   }
   .dialog {
     background: white; padding: 20px; max-width: 600px; border-radius: 6px;

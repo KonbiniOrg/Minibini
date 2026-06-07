@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import BusinessForm from '../../components/contacts/BusinessForm.svelte';
+  import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
@@ -65,6 +66,8 @@
 
 {#if loading}
   <p>Loading...</p>
+{:else if !$canManageJobs}
+  <p>You do not have permission to manage businesses.</p>
 {:else}
   <BusinessForm
     {business}

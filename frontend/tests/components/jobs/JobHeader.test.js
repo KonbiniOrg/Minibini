@@ -33,6 +33,17 @@ describe('JobHeader', () => {
     expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'on_hold', hold_reason: 'broken jig' });
   });
 
+  it('releases an approved job to the floor without prompting (reversible via on-hold)', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    const onStatusChange = vi.fn();
+    const approvedJob = { ...job, status: 'approved' };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob, onStatusChange } });
+    await fireEvent.click(getByRole('button', { name: 'Release to floor' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
   it('shows a read-only badge without the jobs permission', () => {
     user.set({ permissions: [] });
     const { getByText, queryByRole } = render(JobHeader, { props: { job } });

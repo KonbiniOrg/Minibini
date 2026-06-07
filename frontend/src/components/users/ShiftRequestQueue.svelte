@@ -13,8 +13,6 @@
   let modalType = $state('shift');   // 'shift' | 'blep'
   let modalRecord = $state(null);
 
-  const perms = $derived($userStore?.permissions || []);
-
   async function load() {
     loading = true; error = '';
     try {
@@ -120,7 +118,6 @@
   action="edit"
   record={modalRecord}
   currentUser={$userStore}
-  userPermissions={perms}
   onSaved={onModalSaved}
   onClose={() => { modalOpen = false; modalRecord = null; }}
 />

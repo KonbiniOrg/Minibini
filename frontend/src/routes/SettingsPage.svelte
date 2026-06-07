@@ -7,6 +7,7 @@
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
+  import GeneralSettings from '../components/settings/GeneralSettings.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -103,9 +104,11 @@
   {/if}
 
   <h3>Tax settings</h3>
-  <p><em>Not yet implemented in Svelte. <a href="/settings/tax/">Edit tax settings (legacy)</a></em></p>
+  <p><em>Taxation is handled by QuickBooks — there are no app-side tax settings.</em></p>
 
 {:else if tab === 'setup'}
+  <GeneralSettings />
+
   <UnitsManager />
 
   <RateSchemeManager />
