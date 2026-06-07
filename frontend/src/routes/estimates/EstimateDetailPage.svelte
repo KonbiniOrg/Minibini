@@ -237,7 +237,11 @@
           {/if}
         </td>
       </tr>
-      <tr><td>Version</td><td>{estimate.version}</td></tr>
+      <tr><td>Version</td><td>{estimate.version}
+        {#if estimate.parent}
+          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
+        {/if}
+      </td></tr>
       <tr><td>Status</td><td>{estimate.status}</td></tr>
       <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
       <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
@@ -245,10 +249,6 @@
       <tr><td>Closed Date</td><td>{estimate.closed_date ? fmtDate(estimate.closed_date) : 'Not closed yet'}</td></tr>
     </tbody>
   </table>
-
-  {#if estimate.parent}
-    <p><strong>Parent Estimate:</strong> <a href={`/estimates/${estimate.parent}`} use:link>#{estimate.parent}</a></p>
-  {/if}
 
   {#if isSuperseded}
     <p><em>This estimate has been superseded and cannot be modified.</em></p>
