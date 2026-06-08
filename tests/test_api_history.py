@@ -145,3 +145,74 @@ class HistoryEntrySourceLabelTest(BaseTestCase):
         data = HistoryEntrySerializer(entry).data
         self.assertIsNone(data['source_label'])
         self.assertIsNone(data['source_link'])
+
+
+class JobHistoryCollationTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+
+    def test_collates_new_object_types_and_labels(self):
+        from apps.jobs.models import Job, Task
+        job = Job.objects.first()
+        task = Task.objects.create(job=job, name='History test task', rate_scheme_id=1)
+        HistoryEntry.objects.create(
+            entry_type='audit', object_type='task', object_id=task.pk,
+            changes={'status': {'old': 'pending', 'new': 'complete'}},
+        )
+        resp = self.client.get(f'/api/jobs/{job.pk}/history/')
+        self.assertEqual(resp.status_code, 200)
+        labels = {(e['object_type'], e['source_label']) for e in resp.data['results']}
+        self.assertIn(('task', f'Task: {task.name}'), labels)
+
+    def test_collates_change_orders(self):
+        from decimal import Decimal
+        from apps.jobs.models import Job
+        from apps.estimates.models import ChangeOrder, Estimate
+        from apps.deliverables.models import Deliverable
+        from apps.estimates.change_order_service import ChangeOrderService
+
+        job = Job.objects.first()
+        # Clear any pre-existing estimates on the job to avoid "already accepted"
+        # conflicts, then build the minimum setup ChangeOrderService.create needs:
+        # an accepted estimate + job on on_hold.
+        Estimate.objects.filter(job=job).delete()
+        est = Estimate.objects.create(
+            job=job, estimate_number='EST-HIST-CO-1', version=1,
+            status=Estimate.STATUS_ACCEPTED,
+        )
+        Deliverable.objects.create(
+            job=job, description='Widget', qty_ordered=Decimal('1'),
+            units='ea', sort_order=1,
+        )
+        job.status = Job.STATUS_SUBMITTED; job.save()
+        job.status = Job.STATUS_APPROVED; job.save()
+        job.status = Job.STATUS_ON_HOLD; job.save()
+        job.refresh_from_db()
+
+        co = ChangeOrderService.create(job_id=job.pk)
+
+        HistoryEntry.objects.create(
+            entry_type='action', object_type='changeorder', object_id=co.pk,
+            changes={'_action': 'Auto-expired'},
+        )
+        resp = self.client.get(f'/api/jobs/{job.pk}/history/')
+        labels = {(e['object_type'], e['source_label']) for e in resp.data['results']}
+        self.assertIn(('changeorder', f'Change Order {co.change_order_number}'), labels)
+
+    def test_excludes_estworksheet(self):
+        from apps.jobs.models import Job
+        from apps.estimates.models import EstWorksheet
+
+        job = Job.objects.first()
+        # Construct a minimal EstWorksheet — only job= is required.
+        ws = EstWorksheet.objects.create(job=job)
+        HistoryEntry.objects.create(
+            entry_type='audit', object_type='estworksheet', object_id=ws.pk,
+            changes={'status': {'old': 'a', 'new': 'b'}},
+        )
+        resp = self.client.get(f'/api/jobs/{job.pk}/history/')
+        types = [e['object_type'] for e in resp.data['results']]
+        self.assertNotIn('estworksheet', types)

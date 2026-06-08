@@ -114,27 +114,15 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
 
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
+        from apps.api.jobs.history import build_job_history
         job = self.get_object()
-        from apps.invoicing.models import Invoice
-
-        estimate_ids = list(Estimate.objects.filter(job=job).values_list('pk', flat=True))
-        worksheet_ids = list(EstWorksheet.objects.filter(job=job).values_list('pk', flat=True))
-        invoice_ids = list(Invoice.objects.filter(job=job).values_list('pk', flat=True))
-
-        q = Q(object_type='job', object_id=job.pk)
-        if estimate_ids:
-            q |= Q(object_type='estimate', object_id__in=estimate_ids)
-        if worksheet_ids:
-            q |= Q(object_type='estworksheet', object_id__in=worksheet_ids)
-        if invoice_ids:
-            q |= Q(object_type='invoice', object_id__in=invoice_ids)
-
-        entries = HistoryEntry.objects.filter(q).select_related('user')
+        entries, labels, links = build_job_history(job)
+        ctx = {'source_labels': labels, 'source_links': links}
         page = self.paginate_queryset(entries)
         if page is not None:
-            serializer = HistoryEntrySerializer(page, many=True)
+            serializer = HistoryEntrySerializer(page, many=True, context=ctx)
             return self.get_paginated_response(serializer.data)
-        serializer = HistoryEntrySerializer(entries, many=True)
+        serializer = HistoryEntrySerializer(entries, many=True, context=ctx)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='notes', url_name='notes')
