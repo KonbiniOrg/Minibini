@@ -563,7 +563,9 @@ Depends on: Task, User.
   promotes before creating and `create_historical` is only sensibly
   used after work has already happened. The validator can check this
   on fixtures.
-- **user** (optional FK → User, PROTECT)
+- **user** (required FK → User, PROTECT) — a Blep always belongs to a worker;
+  the column is `NOT NULL`. Every write path supplies one (`create_historical`
+  defaults `target_user` to the actor; `start_work` uses `on_behalf_of or user`).
 - **start_time**: datetime, nullable
 - **end_time**: datetime, nullable. If set, must be ≥ start_time and not
   in the future — a non-null `end_time` more than 30s ahead of `now`

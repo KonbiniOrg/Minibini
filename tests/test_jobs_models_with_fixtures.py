@@ -144,6 +144,7 @@ class BlepModelFixtureTest(FixtureTestCase):
 
     def test_blep_str_method_with_fixture_task(self):
         task = Task.objects.get(name="Kitchen demolition")
-        blep = Blep.objects.create(task=task)
+        user = User.objects.get(username="manager1")
+        blep = Blep.objects.create(task=task, user=user)
         expected_str = f"Blep {blep.pk} for Task {task.pk}"
         self.assertEqual(str(blep), expected_str)

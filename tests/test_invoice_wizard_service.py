@@ -7,7 +7,7 @@ from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSourc
 from apps.invoicing.services import InvoiceService, InvoiceWizardService, ClaimConflict
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration, AccountingCategory, AppState
+from apps.core.models import Configuration, AccountingCategory, AppState, User
 from apps.inventory.models import Material, PriceListItem
 
 
@@ -102,6 +102,7 @@ class GetSourcePoolTest(TestCase):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
         AppState.objects.create(key='job_counter', value='0')
 
+        self.user = User.objects.create_user(username='gsp_user', password='pw')
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
@@ -132,12 +133,14 @@ class GetSourcePoolTest(TestCase):
         # Complete blep (informational only post-A16; the task atom is the billable unit)
         self.blep_complete = Blep.objects.create(
             task=self.task_billable,
+            user=self.user,
             start_time=timezone.now() - timezone.timedelta(hours=2),
             end_time=timezone.now(),
         )
         # Incomplete blep (filtered out of the read-only blep detail array)
         self.blep_incomplete = Blep.objects.create(
             task=self.task_billable,
+            user=self.user,
             start_time=timezone.now(),
             end_time=None,
         )
@@ -280,6 +283,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
         AppState.objects.create(key='job_counter', value='0')
 
+        self.user = User.objects.create_user(username='aatn_user', password='pw')
         self.cat_labor = AccountingCategory.objects.create(code='LBR', name='Labor', is_active=True)
         self.cat_materials = AccountingCategory.objects.create(code='MAT', name='Materials', is_active=True)
         self.contact = Contact.objects.create(
@@ -298,10 +302,11 @@ class AddAtomsToNewLineItemTest(TestCase):
         start = timezone.now() - timezone.timedelta(hours=2)
         # Two bleps on self.task — task atom rolls up to 3h * $25 = $75
         self.blep1 = Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.blep2 = Blep.objects.create(
             task=self.task,
+            user=self.user,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
@@ -311,6 +316,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         )
         Blep.objects.create(
             task=self.task2,
+            user=self.user,
             start_time=start + timezone.timedelta(hours=5),
             end_time=start + timezone.timedelta(hours=6),
         )
@@ -491,6 +497,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.user = User.objects.create_user(username='aate_user', password='pw')
         self.scheme = RateScheme.objects.create(
             name='Hourly-aate', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
@@ -502,7 +509,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom rolls up to $25
         self.task2 = Task.objects.create(
@@ -510,6 +517,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         Blep.objects.create(
             task=self.task2,
+            user=self.user,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
@@ -607,6 +615,7 @@ class RemoveAtomsFromLineItemTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.user = User.objects.create_user(username='rafl_user', password='pw')
         self.scheme = RateScheme.objects.create(
             name='Hourly-rafl', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
@@ -616,17 +625,19 @@ class RemoveAtomsFromLineItemTest(TestCase):
         start = timezone.now() - timezone.timedelta(hours=6)
         self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
         Blep.objects.create(
-            task=self.task1, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task1, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task2,
+            user=self.user,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
         self.task3 = Task.objects.create(job=self.job, name='Labor 3', rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task3,
+            user=self.user,
             start_time=start + timezone.timedelta(hours=4, minutes=30),
             end_time=start + timezone.timedelta(hours=6),
         )
@@ -762,11 +773,12 @@ class RemoveAtomsFromLineItemTest(TestCase):
         start = timezone.now() - timezone.timedelta(hours=12)
         task4 = Task.objects.create(job=self.job, name='Labor 4', rate_scheme=self.scheme)
         Blep.objects.create(
-            task=task4, start_time=start, end_time=start + timezone.timedelta(hours=1),
+            task=task4, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=1),
         )
         task5 = Task.objects.create(job=self.job, name='Labor 5', rate_scheme=self.scheme)
         Blep.objects.create(
             task=task5,
+            user=self.user,
             start_time=start + timezone.timedelta(hours=2),
             end_time=start + timezone.timedelta(hours=3),
         )
@@ -806,6 +818,7 @@ class DiscardDraftTest(TestCase):
             email='jane@example.com', mobile_number='555-0000',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
+        self.user = User.objects.create_user(username='dd_user', password='pw')
         self.scheme = RateScheme.objects.create(
             name='Hourly-dd', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
@@ -816,7 +829,7 @@ class DiscardDraftTest(TestCase):
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         # Claim the per-task atom directly (atom helper migration is A17)
@@ -1014,6 +1027,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
         AppState.objects.create(key='job_counter', value='0')
 
+        self.user = User.objects.create_user(username='id_user', password='pw')
         self.cat = AccountingCategory.objects.create(code='ID', name='ID')
         self.scheme = RateScheme.objects.create(
             name='Hourly-id', algorithm='elapsed_time', rate=Decimal('60'),
@@ -1031,6 +1045,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         now = timezone.now()
         self.blep = Blep.objects.create(
             task=self.task,
+            user=self.user,
             start_time=now - timezone.timedelta(hours=1),
             end_time=now,
         )

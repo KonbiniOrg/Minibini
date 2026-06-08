@@ -41,7 +41,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         self.line_item = InvoiceLineItem.objects.create(
@@ -122,7 +122,7 @@ class SourcePoolEndpointTest(TestCase):
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
@@ -184,7 +184,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
@@ -269,14 +269,14 @@ class AddAtomsEndpointTest(TestCase):
         )
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
-            task=self.task, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom = $25
         self.task2 = Task.objects.create(
             job=self.job, name='Cleanup', rate_scheme=self.scheme,
         )
         Blep.objects.create(
-            task=self.task2,
+            task=self.task2, user=self.user,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
@@ -348,12 +348,12 @@ class RemoveAtomsEndpointTest(TestCase):
         self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
-            task=self.task1, start_time=start, end_time=start + timezone.timedelta(hours=2),
+            task=self.task1, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom = $25
         self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
         Blep.objects.create(
-            task=self.task2,
+            task=self.task2, user=self.user,
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )

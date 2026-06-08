@@ -190,14 +190,6 @@ page stays whole.
   _Done when:_ no mutating API view writes via the DRF serializer directly; all go through a
   Service.
 
-- **`Blep.user` is nullable — it shouldn't be.** — _added 2026-05-30_
-  `Blep.user = ForeignKey('core.User', ..., null=True, blank=True)`. A logged time
-  entry with no worker attached is meaningless, and it complicates the work-shifts
-  enclosure invariant (a null-`user` blep can't belong to anyone's shift — see the
-  backfill addendum in `docs/plans/2026-05-30-work-shifts-design.md` §14). Make `user`
-  required once any existing null-`user` bleps are cleaned up.
-  _Done when:_ `Blep.user` is non-nullable and the data has no orphaned (null-`user`) bleps.
-
 - **Notify the requester when an approval request is approved/denied.** — _added 2026-05-31_
   Workers get no feedback when a manager acts on their request — they only find out by
   re-checking the list. Applies to **time-change requests** (shift + blep, the

@@ -11,11 +11,12 @@ class WizardPerTaskAtomsTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from apps.core.models import AccountingCategory
+        from apps.core.models import AccountingCategory, User
         from apps.jobs.models import RateScheme, Job, Task, Blep
         from apps.invoicing.models import Invoice
         from apps.contacts.models import Business, Contact
 
+        self.user = User.objects.create_user(username='pta_user', password='pw')
         self.ac = AccountingCategory.objects.create(code='X-pta', name='X-pta')
         self.scheme = RateScheme.objects.create(
             name='Hourly-pta', algorithm='elapsed_time', rate=Decimal('60'),
@@ -35,6 +36,7 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         now = timezone.now()
         Blep.objects.create(
             task=self.task,
+            user=self.user,
             start_time=now - timedelta(minutes=30),
             end_time=now,
         )

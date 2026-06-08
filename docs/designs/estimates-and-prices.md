@@ -356,6 +356,16 @@ to resolve qty:
 `effective_rate()` on both returns
 `rate_scheme.effective_rate(self.active_modifiers)`.
 
+`RateScheme.effective_rate()` itself quantizes to 2 decimal places (cents):
+a percentage modifier divides by 100, so `rate × (1 + percent/100)` can carry
+more than 2 places (e.g. `99.99 × 1.05 = 104.9895`). The per-unit rate is a
+money value that is copied straight onto a line item's `price` field (a
+2-decimal `DecimalField`) when an atom carries over, so it must be trimmed at
+the source — every caller that uses it as a price (the estimate wizard's
+single-atom and "send all atoms" paths, the bundle summary, the source-pool
+detail) is then safe without having to remember its own `.quantize()`. This is
+the rate-side analog of the `elapsed_time` qty quantization in §3.
+
 ### 4.2 actual_qty semantics
 
 | Algorithm | `Task.actual_qty` meaning |

@@ -18,11 +18,13 @@ def _approve_job(job):
             job.save()
 
 
-def _log_time(task):
+def _log_time(task, user=None):
     """Give a task a closed Blep so an elapsed-time task has recorded time."""
     now = timezone.now()
+    if user is None:
+        user = User.objects.first()
     Blep.objects.create(
-        task=task, start_time=now - timedelta(hours=1), end_time=now,
+        task=task, user=user, start_time=now - timedelta(hours=1), end_time=now,
     )
 
 

@@ -547,7 +547,7 @@ class BlepModelTest(TestCase):
         self.assertEqual(blep.end_time, end_time)
 
     def test_blep_str_method(self):
-        blep = Blep.objects.create(task=self.task)
+        blep = Blep.objects.create(task=self.task, user=self.user)
         self.assertEqual(str(blep), f"Blep {blep.pk} for Task {self.task.pk}")
 
 
