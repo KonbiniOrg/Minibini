@@ -10,7 +10,7 @@ from apps.deliverables.models import Deliverable, Shipment
 
 class AllTrackedModelsTest(TestCase):
     TRACKED_MODELS = [
-        Job, Task, Estimate, EstWorksheet,
+        Job, Task, Estimate,
         Invoice, PurchaseOrder, Bill, Contact, Business,
         Material, Deliverable, Shipment,
     ]
@@ -42,3 +42,9 @@ class AllTrackedModelsTest(TestCase):
         for model, pk in expected.items():
             with self.subTest(model=model.__name__):
                 self.assertIn(pk, model._history_exclude)
+
+    def test_estworksheet_not_tracked(self):
+        self.assertFalse(
+            getattr(EstWorksheet, '_history_tracked', False),
+            'EstWorksheet should no longer be tracked',
+        )

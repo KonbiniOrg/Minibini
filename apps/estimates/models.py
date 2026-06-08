@@ -295,7 +295,6 @@ class ChangeOrder(models.Model):
         return self.change_order_number or f'ChangeOrder {self.pk}'
 
 
-@history(exclude=['est_worksheet_id'])
 class EstWorksheet(AbstractWorkContainer):
     # One mutable worksheet per job. The worksheet has no lifecycle of its own:
     # it relates to a job only (no estimate FK), carries no status/version, and
