@@ -14,7 +14,6 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.deliverables.models import DeliverableSnapshot
 from apps.estimates.agreement import compose_change_order_diff
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder
@@ -57,51 +56,6 @@ def _current_token(co):
     return head.public_token if head and head.pk != co.pk else None
 
 
-def _deliverable_diff(co):
-    """Merged baseline-vs-live deliverable diff, mirroring the shop page's
-    delivMergedRows. Baseline = DeliverableSnapshot rows of the document this CO
-    amends (latest accepted CO before it, else the estimate); live = the job's
-    current deliverables. Rows: {kind, description, qty, units}."""
-    baseline_doc = ChangeOrderService.baseline_document(co=co)
-    if isinstance(baseline_doc, ChangeOrder):
-        base = list(DeliverableSnapshot.objects.filter(
-            change_order=baseline_doc).order_by('sort_order'))
-    else:
-        base = list(DeliverableSnapshot.objects.filter(
-            estimate=baseline_doc).order_by('sort_order'))
-    live = list(co.job.deliverables.all()) if co.job_id else []  # Meta order = sort_order
-
-    live_by_id = {d.pk: d for d in live}
-    baselined_live_ids = {s.source_deliverable_id for s in base
-                          if s.source_deliverable_id}
-
-    rows = []
-    for snap in base:
-        live_row = (live_by_id.get(snap.source_deliverable_id)
-                    if snap.source_deliverable_id else None)
-        if live_row is None:
-            rows.append({'kind': 'removed', 'description': snap.description,
-                         'qty': str(snap.qty_ordered), 'units': snap.units})
-            continue
-        changed = (live_row.description != snap.description
-                   or live_row.qty_ordered != snap.qty_ordered
-                   or live_row.units != snap.units)
-        if changed:
-            rows.append({'kind': 'changed', 'description': live_row.description,
-                         'qty': str(live_row.qty_ordered), 'units': live_row.units})
-            rows.append({'kind': 'changed-orig', 'description': snap.description,
-                         'qty': str(snap.qty_ordered), 'units': snap.units})
-        else:
-            rows.append({'kind': 'unchanged', 'description': live_row.description,
-                         'qty': str(live_row.qty_ordered), 'units': live_row.units})
-
-    for d in live:
-        if d.pk not in baselined_live_ids:
-            rows.append({'kind': 'added', 'description': d.description,
-                         'qty': str(d.qty_ordered), 'units': d.units})
-    return rows
-
-
 def build_change_order_payload(co):
     """Customer-safe dict for a change order. Exposes only what a customer needs
     to decide — a before/after diff of line items and deliverables."""
@@ -132,7 +86,7 @@ def build_change_order_payload(co):
         'sent_date': co.sent_date,
         'expiration_date': co.expiration_date,
         'closed_date': co.closed_date,
-        'deliverables': _deliverable_diff(co),
+        'deliverables': ChangeOrderService.compose_deliverable_diff(co),
         'line_rows': line_rows,
         'prior_total': _money(diff['prior_total']),
         'proposed_total': _money(diff['proposed_total']),

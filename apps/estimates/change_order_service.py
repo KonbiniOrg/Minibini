@@ -83,6 +83,59 @@ class ChangeOrderService:
         return est
 
     @staticmethod
+    def compose_deliverable_diff(co):
+        """Baseline-vs-live deliverable diff for a change order, shared by the
+        customer portal payload and the CO PDF.
+
+        Baseline = the DeliverableSnapshot rows of the document this CO amends
+        (``baseline_document``: the latest accepted CO before it, else the
+        estimate); live = the job's current deliverables. Returns a list of
+        ``{kind, description, qty, units}`` rows where ``kind`` is one of
+        ``unchanged / changed / changed-orig / removed / added`` (a ``changed``
+        row — the live value — is followed by its struck ``changed-orig``). qty
+        is stringified for JSON/template use."""
+        from apps.deliverables.models import DeliverableSnapshot
+
+        baseline_doc = ChangeOrderService.baseline_document(co=co)
+        if isinstance(baseline_doc, ChangeOrder):
+            base = list(DeliverableSnapshot.objects.filter(
+                change_order=baseline_doc).order_by('sort_order'))
+        else:
+            base = list(DeliverableSnapshot.objects.filter(
+                estimate=baseline_doc).order_by('sort_order'))
+        live = list(co.job.deliverables.all()) if co.job_id else []  # Meta order = sort_order
+
+        live_by_id = {d.pk: d for d in live}
+        baselined_live_ids = {s.source_deliverable_id for s in base
+                              if s.source_deliverable_id}
+
+        rows = []
+        for snap in base:
+            live_row = (live_by_id.get(snap.source_deliverable_id)
+                        if snap.source_deliverable_id else None)
+            if live_row is None:
+                rows.append({'kind': 'removed', 'description': snap.description,
+                             'qty': str(snap.qty_ordered), 'units': snap.units})
+                continue
+            changed = (live_row.description != snap.description
+                       or live_row.qty_ordered != snap.qty_ordered
+                       or live_row.units != snap.units)
+            if changed:
+                rows.append({'kind': 'changed', 'description': live_row.description,
+                             'qty': str(live_row.qty_ordered), 'units': live_row.units})
+                rows.append({'kind': 'changed-orig', 'description': snap.description,
+                             'qty': str(snap.qty_ordered), 'units': snap.units})
+            else:
+                rows.append({'kind': 'unchanged', 'description': live_row.description,
+                             'qty': str(live_row.qty_ordered), 'units': live_row.units})
+
+        for d in live:
+            if d.pk not in baselined_live_ids:
+                rows.append({'kind': 'added', 'description': d.description,
+                             'qty': str(d.qty_ordered), 'units': d.units})
+        return rows
+
+    @staticmethod
     @transaction.atomic
     def update_status(pk, new_status):
         """Update a ChangeOrder's status with lifecycle side-effects.

@@ -1278,6 +1278,18 @@ login.
   before this one, else the estimate). Single-CO is the validated path;
   with multiple accepted COs the line baseline can understate the true
   current agreement (see `LATER.md`).
+- **Diff composers (shared, not portal-only):** line-item diff is
+  `compose_change_order_diff(co)` in `agreement.py`; the deliverable diff
+  is `ChangeOrderService.compose_deliverable_diff(co)` (rows
+  `{kind, description, qty, units}`, same kind vocabulary). Both feed the
+  portal payload **and** the CO PDF, so the emailed document and the
+  online view show the same line-item and deliverable changes.
+- **PDF.** `generate_change_order_pdf(co)` (`apps/estimates/pdf.py` +
+  `templates/estimates/change_order_pdf.html`, WeasyPrint, styled like the
+  estimate PDF) renders both diffs — a "What you'll receive" deliverables
+  section and the line-item table with prior/new/change totals — using
+  print-safe change labels (Added/Removed/Changed/was). It is attached to
+  the CO send email.
 
 ---
 

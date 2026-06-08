@@ -38,8 +38,10 @@ def generate_change_order_pdf(co):
     removes, or revises against the accepted estimate, plus the prior/new
     totals."""
     from apps.estimates.agreement import compose_change_order_diff
+    from apps.estimates.change_order_service import ChangeOrderService
 
     diff = compose_change_order_diff(co)
+    deliverable_rows = ChangeOrderService.compose_deliverable_diff(co)
 
     job = co.job
     contact = job.contact if job else None
@@ -56,6 +58,7 @@ def generate_change_order_pdf(co):
         'business_name': business_name,
         'contact_name': contact_name,
         'estimate_number': co.estimate.estimate_number if co.estimate_id else '',
+        'deliverable_rows': deliverable_rows,
         'line_rows': diff['line_rows'],
         'prior_total': diff['prior_total'],
         'proposed_total': diff['proposed_total'],

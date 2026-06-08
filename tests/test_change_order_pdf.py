@@ -61,6 +61,19 @@ class ChangeOrderPdfTests(FixtureTestCase):
         self.assertTrue(pdf.startswith(b'%PDF'))
         self.assertGreater(len(pdf), 500)
 
+    def test_generate_renders_all_deliverable_diff_kinds(self):
+        """Change / add / remove a deliverable so the template exercises every
+        deliverable-diff branch without error."""
+        # baseline (snapshot at create) = the single 'Widget' deliverable.
+        widget = self.job.deliverables.get(description='Widget')
+        widget.qty_ordered = Decimal('4')   # -> changed + changed-orig
+        widget.save()
+        Deliverable.objects.create(          # -> added
+            job=self.job, description='New panel', qty_ordered=Decimal('2'),
+            units='ea', sort_order=20)
+        pdf = generate_change_order_pdf(self.co)
+        self.assertTrue(pdf.startswith(b'%PDF'))
+
     def test_send_attaches_a_pdf(self):
         mail.outbox = []
         ChangeOrderEmailService.send_change_order(
