@@ -189,6 +189,17 @@ page stays whole.
   while testing — decide if it's worth the extra signal.
   _Done when:_ decided (implemented or dropped).
 
+- **Should an on-hold job keep its place in the In Progress board area instead of dropping back to Pipeline?** — _added 2026-06-07_
+  Currently putting a job on_hold moves it back to the Pipeline panel. But a job that was
+  already being worked (approved / in_progress) and is paused for a change order is
+  conceptually still "in the shop" — bouncing it to Pipeline loses its position and visual
+  context, and it has to be re-found when work resumes. Consider keeping such a job in the
+  In Progress area with an on-hold treatment (greyed/badged) so its place is preserved,
+  while jobs that were never started stay in Pipeline. Interacts with the on-hold
+  sub-status display above and the schedule's exclusion of on_hold jobs.
+  _Done when:_ decided — either keep on_hold jobs in In Progress (implemented) or record why
+  Pipeline is the right home.
+
 - **Sweep `apps/api/` for `serializer.save()` bypasses — every mutation must go through a Service.** — _added 2026-05-27_
   We just found four API paths that called DRF `serializer.save()` (or `.update()`) directly
   instead of routing through the service-layer method that holds the guards: the task PATCH,
