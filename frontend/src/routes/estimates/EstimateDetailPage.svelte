@@ -193,12 +193,10 @@
         </select>
       </span>
     {:else}
-      <!-- TODO: show "altered" instead of "accepted" when the job has any change orders,
-           matching the JobDetail pillar label. Requires fetching COs via
-           api.get(`/api/change-orders/?job=${estimate.job}`) and applying the same
-           estimateDisplayStatus() helper used in JobDetail.svelte. Deferred until
-           the load flow here can accommodate the extra fetch without complexity. -->
-      <span class="status-badge status-{estimate.status}">{estimate.status}</span>
+      <!-- Accepted estimate amended by an accepted change order reads "amended"
+           (derived server-side as estimate.is_amended); the stored status stays
+           "accepted", so the CSS class keys off the real status. -->
+      <span class="status-badge status-{estimate.status}">{estimate.is_amended ? 'amended' : estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
       <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Send Email</a>

@@ -1202,8 +1202,23 @@ CO edit view. It renders a merged baseline-vs-proposal diff using the
 CO's line items and the `deliverables-baseline` endpoint;
 `COLineItemModal.svelte` is the line-item editor. The Estimate detail
 page shows accepted COs as pills/badges in the deliverables and
-line-items sections (status indicator: an Estimate displays as
-"altered" once any later CO has been accepted against it).
+line-items sections.
+
+**The "amended" status label.** An accepted estimate that an accepted
+change order amends keeps its stored `status = accepted` — it is still
+the base of the agreement-of-record — but the UI relabels it **amended**
+so the human sees that the agreement has moved. This is derived, never
+stored: `EstimateSerializer.is_amended` (and the board pipeline payload's
+per-estimate `is_amended`) returns true when the estimate is `accepted`
+and at least one **accepted** CO references it. The frontend renders
+`is_amended ? 'amended' : status` (`JobDetail`, `EstimateDetailPage`, the
+board `PipelineColumn`); there is no client-side re-derivation. Only
+accepted COs flip it — a draft/open CO does not, matching
+`compose_agreement`, which only applies accepted COs. (The CO detail/job
+views use the same word, "amended", for an accepted CO that a later
+accepted CO has itself amended — a separate client-side computation
+ordered by `change_order_id`.) See `LATER.md` for the decision record on
+keeping `status = accepted` rather than introducing a stored state.
 
 The draft toolbar's **Send to customer** link routes to
 `ChangeOrderSendPage.svelte` (`/change-orders/:id/send`), which reuses

@@ -578,7 +578,7 @@
 
   // --------------------------------------------------------------------------
 
-  // Display status for change orders: show "altered" instead of "accepted" when
+  // Display status for change orders: show "amended" instead of "accepted" when
   // a later accepted CO exists on the same job (ordered by change_order_id).
   // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
   function changeOrderDisplayStatus(co, allCosForJob) {
@@ -586,7 +586,7 @@
       other => other.change_order_id > co.change_order_id
                && other.status === 'accepted'
     )) {
-      return 'altered';
+      return 'amended';
     }
     return co?.status;
   }

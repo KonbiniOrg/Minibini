@@ -162,14 +162,19 @@ page stays whole.
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
 
-- **Should an Estimate with a change order on it stay `accepted`, or become `superseded`?** — _added 2026-05-26_
-  The CO display paradigm treats estimate ⊕ CO as the current agreement and pushes the
-  prior estimate into a superseded-like history slot — but the backend keeps the estimate
-  `accepted`. Decide whether the *model* should actually supersede the estimate when a CO
-  is accepted (cleaner model↔display match) or keep it `accepted` and let the display
-  relabel (current). Interacts with the "one accepted estimate per job" rule and the
-  `ChangeOrder.estimate` FK.
-  _Done when:_ we've decided and either changed the model or written down why `accepted` stays.
+- **Should an Estimate with a change order on it stay `accepted`, or become `superseded`?** — _added 2026-05-26; RESOLVED 2026-06-07_
+  **Decision: keep it `accepted`** and let the display relabel to "amended". Reasoning: the
+  estimate is still the base of the agreement-of-record (a CO is a delta, usually on only
+  part of it), `compose_agreement` keys off `status = accepted`, and the "one accepted
+  estimate per job" rule + `ChangeOrder.estimate` FK both depend on it. `superseded` was
+  rejected because it already means "replaced by a newer *revision*" (the `revise_estimate`
+  path) and would overstate a partial change; a new stored `altered`/`amended` state was
+  rejected because the fact is fully derivable and a stored copy can drift. Instead "amended"
+  is a **derived** read: `EstimateSerializer.is_amended` (+ board pipeline payload), true when
+  the estimate is accepted and ≥1 *accepted* CO references it; the UI renders the word
+  "amended" off that flag (see `estimates-and-prices.md` §14.9). If "amended" ever needs to
+  *drive behavior* (transitions, board columns, reporting) rather than just label, revisit
+  promoting it to a real state.
 
 - **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
   We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads

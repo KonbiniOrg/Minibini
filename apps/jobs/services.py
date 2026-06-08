@@ -1533,15 +1533,25 @@ class BoardService:
             })
         data['worksheets'] = worksheets
 
+        from apps.estimates.models import ChangeOrder
         estimates = []
         for est in job.estimate_set.order_by('-pk'):
             total = EstimateLineItem.objects.filter(estimate=est).aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))
             )['total'] or Decimal('0.00')
+            # Derived "amended" flag: accepted estimate with ≥1 accepted CO.
+            # The stored status stays accepted; the UI renders "amended".
+            is_amended = (
+                est.status == Estimate.STATUS_ACCEPTED
+                and ChangeOrder.objects.filter(
+                    estimate=est, status=ChangeOrder.STATUS_ACCEPTED,
+                ).exists()
+            )
             estimates.append({
                 'estimate_id': est.estimate_id,
                 'estimate_number': est.estimate_number,
                 'status': est.status,
+                'is_amended': is_amended,
                 'created_date': est.created_date.isoformat() if est.created_date else None,
                 'total': total,
             })
