@@ -19,6 +19,21 @@ describe('EmailTemplates', () => {
     expect(await findByDisplayValue('Estimate {document_number}')).toBeInTheDocument();
   });
 
+  it('includes a Change Order template block pre-filled with its default', async () => {
+    const { findByDisplayValue } = render(EmailTemplates);
+    expect(await findByDisplayValue('Change order {document_number}')).toBeInTheDocument();
+  });
+
+  it('saves the change order body key', async () => {
+    const { findAllByRole } = render(EmailTemplates);
+    const saveBodyButtons = await findAllByRole('button', { name: 'Save body' });
+    // Order matches TEMPLATES: Estimate, PO, Invoice, Change Order → index 3.
+    await fireEvent.click(saveBodyButtons[3]);
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
+      change_order_email_body_template: expect.stringContaining('{object_url}'),
+    }));
+  });
+
   it('saves a single template key and flashes saved', async () => {
     const { findAllByRole, findByText } = render(EmailTemplates);
     const saveSubjectButtons = await findAllByRole('button', { name: 'Save subject' });

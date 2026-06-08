@@ -1,10 +1,12 @@
 <script>
   import { api } from '../../lib/api.js';
 
-  // The 6 boilerplate Configuration keys. The backend service for each
-  // document type falls back to a built-in default when the Configuration
-  // row is absent. We pre-fill the field with that default text so the
-  // user can edit in place.
+  // The 8 boilerplate Configuration keys (4 document types × subject + body).
+  // The backend service for each document type falls back to a built-in
+  // default when the Configuration row is absent. We pre-fill the field with
+  // that default text so the user can edit in place. (These defaults must
+  // stay in sync with the *_BODY / *_SUBJECT constants in the matching backend
+  // services.)
 
   const TEMPLATES = [
     {
@@ -48,6 +50,23 @@
           'Hi {contact_fname},\n\n' +
           'Please find attached your invoice {document_number} for {job_name}. ' +
           'The invoice includes a Pay Now link.\n\n' +
+          'Thanks,\n{my_user_name}',
+      },
+    },
+    {
+      label: 'Change Order',
+      subject: {
+        key: 'change_order_email_subject_template',
+        default: 'Change order {document_number}',
+      },
+      body: {
+        key: 'change_order_email_body_template',
+        default:
+          'Hi {contact_fname},\n\n' +
+          'We have a change to estimate {estimate_number} for {job_name}. ' +
+          'You can review and approve the change online here:\n' +
+          '{object_url}\n\n' +
+          'Let us know if you have any questions.\n\n' +
           'Thanks,\n{my_user_name}',
       },
     },
@@ -178,8 +197,8 @@
 
   <h3>Email Templates</h3>
   <p>
-    Boilerplate subject and body used when sending an Estimate, Purchase Order, or
-    Invoice via email.
+    Boilerplate subject and body used when sending an Estimate, Purchase Order,
+    Invoice, or Change Order via email.
   </p>
 
   <fieldset class="template-block">
@@ -195,8 +214,11 @@
       <small>
         Per-document aliases also work: <code>{'{estimate_number}'}</code> on the
         Estimate template, <code>{'{po_number}'}</code> /
-        <code>{'{vendor_name}'}</code> on the Purchase Order template, and
-        <code>{'{invoice_number}'}</code> on the Invoice template. Unknown
+        <code>{'{vendor_name}'}</code> on the Purchase Order template,
+        <code>{'{invoice_number}'}</code> on the Invoice template, and
+        <code>{'{change_order_number}'}</code> / <code>{'{estimate_number}'}</code> /
+        <code>{'{object_url}'}</code> (the customer portal link) on the Change
+        Order template. Unknown
         placeholders render literally (no crashes), so it is safe to try one
         and check the result on a Send page.
       </small>
