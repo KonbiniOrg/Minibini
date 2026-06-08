@@ -121,9 +121,11 @@ page stays whole.
   shop notification), and the `ChangeOrderPortal` customer view (dispatched by
   the `doc` query param off the same `/portal/` entry). See
   `estimates-and-prices.md` §14.10.
+  CO PDF generation is now done too (`generate_change_order_pdf` renders the
+  diff via `change_order_pdf.html`; the CO send email attaches it alongside the
+  portal link).
   **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal
-  view). **CO PDF generation is still deferred** — the CO customer email carries
-  the portal link only, no attachment.
+  view).
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global

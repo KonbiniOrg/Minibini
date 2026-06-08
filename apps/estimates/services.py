@@ -549,9 +549,13 @@ class ChangeOrderEmailService:
         body = render_email_template(body_template, **values)
 
         to = contact.email if (contact and contact.email) else ''
+        pdf_filename = f'ChangeOrder-{co.change_order_number}.pdf'
+        attachments_preview = [
+            {'filename': pdf_filename, 'content_type': 'application/pdf', 'size': 0},
+        ]
         return {
             'to': to, 'subject': subject, 'body': body,
-            'attachments_preview': [],
+            'attachments_preview': attachments_preview,
         }
 
     @staticmethod
@@ -595,6 +599,7 @@ class ChangeOrderEmailService:
         after the EmailRecord is persisted (with last_send_error set).
         """
         from apps.core.services import OutboundEmailService
+        from apps.estimates.pdf import generate_change_order_pdf
 
         if not to:
             raise ValidationError('Recipient email address is required.')
@@ -604,7 +609,11 @@ class ChangeOrderEmailService:
                 'Cannot send a change order with no line items.'
             )
 
-        attachments = list(extra_attachments) if extra_attachments else []
+        pdf_bytes = generate_change_order_pdf(co)
+        pdf_filename = f'ChangeOrder-{co.change_order_number}.pdf'
+        attachments = [(pdf_filename, pdf_bytes, 'application/pdf')]
+        if extra_attachments:
+            attachments.extend(extra_attachments)
 
         record = OutboundEmailService.send_tracked(
             to=to, subject=subject, body=body,

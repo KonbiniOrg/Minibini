@@ -1185,9 +1185,10 @@ all open COs are resolved).
   mechanics)
 - `GET /api/change-orders/{id}/send-defaults/` — pre-populated
   send-to-customer form fields (to / subject / body with the portal
-  link; `attachments_preview` is always empty — no CO PDF)
+  link; `attachments_preview` lists the auto-attached CO PDF)
 - `POST /api/change-orders/{id}/send/` — email the customer the portal
-  link and transition `draft → open` (`ChangeOrderEmailService.send_change_order`)
+  link plus the change-order PDF, and transition `draft → open`
+  (`ChangeOrderEmailService.send_change_order`)
 - `GET /api/jobs/{id}/agreement/` — the `compose_agreement` result for
   a job
 
@@ -1427,9 +1428,10 @@ job has moved on renders `closed_message` read-only (no buttons). A
 no link if the only newer version is an unsent draft). All other terminal
 statuses show a read-only status message.
 
-**Not yet built:** Change-order customer approval. COs have no
-send-to-customer flow today (no PDF, no email service, no CO entry in
-`build_object_url`), so CO approval waits for that infrastructure.
+Change-order customer approval mirrors this flow — see §14.10. A CO send
+emails the portal link plus an auto-generated change-order PDF
+(`generate_change_order_pdf`, which renders the before/after diff) and
+transitions the CO `draft → open`.
 
 ---
 

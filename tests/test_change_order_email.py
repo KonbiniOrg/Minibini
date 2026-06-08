@@ -105,11 +105,13 @@ class ChangeOrderSendTests(FixtureTestCase):
             description='Extra', qty=Decimal('1'), price=Decimal('200'),
             line_number=1)
 
-    def test_get_email_defaults_has_to_and_link_no_attachment(self):
+    def test_get_email_defaults_has_to_link_and_pdf_preview(self):
         defaults = ChangeOrderEmailService.get_email_defaults(self.co)
         self.assertEqual(defaults['to'], 'pat@acme.com')
         self.assertIn(self.co.public_token, defaults['body'])
-        self.assertEqual(defaults['attachments_preview'], [])
+        self.assertEqual(len(defaults['attachments_preview']), 1)
+        self.assertEqual(
+            defaults['attachments_preview'][0]['content_type'], 'application/pdf')
 
     def test_send_transitions_draft_to_open(self):
         mail.outbox = []
