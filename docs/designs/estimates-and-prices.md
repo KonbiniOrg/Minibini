@@ -1183,11 +1183,18 @@ all open COs are resolved).
   of deliverables-at-CO-creation used to render the CO-edit view's
   baseline (see `jobs-tasks-and-worksheets.md` §12 for snapshot
   mechanics)
+- `GET /api/change-orders/{id}/send-defaults/` — pre-populated
+  send-to-customer form fields (to / subject / body with the portal
+  link; `attachments_preview` lists the auto-attached CO PDF)
+- `POST /api/change-orders/{id}/send/` — email the customer the portal
+  link plus the change-order PDF, and transition `draft → open`
+  (`ChangeOrderEmailService.send_change_order`)
 - `GET /api/jobs/{id}/agreement/` — the `compose_agreement` result for
   a job
 
-All write endpoints require `can_manage_jobs`. The endpoint→atom table
-in `users-and-permissions.md` is authoritative.
+All write endpoints (including `send`/`send-defaults`) require
+`can_manage_jobs`. The endpoint→atom table in `users-and-permissions.md`
+is authoritative.
 
 ### 14.9 SPA
 
@@ -1196,8 +1203,96 @@ CO edit view. It renders a merged baseline-vs-proposal diff using the
 CO's line items and the `deliverables-baseline` endpoint;
 `COLineItemModal.svelte` is the line-item editor. The Estimate detail
 page shows accepted COs as pills/badges in the deliverables and
-line-items sections (status indicator: an Estimate displays as
-"altered" once any later CO has been accepted against it).
+line-items sections.
+
+**The "amended" status label.** An accepted estimate that an accepted
+change order amends keeps its stored `status = accepted` — it is still
+the base of the agreement-of-record — but the UI relabels it **amended**
+so the human sees that the agreement has moved. This is derived, never
+stored: `EstimateSerializer.is_amended` (and the board pipeline payload's
+per-estimate `is_amended`) returns true when the estimate is `accepted`
+and at least one **accepted** CO references it. The frontend renders
+`is_amended ? 'amended' : status` (`JobDetail`, `EstimateDetailPage`, the
+board `PipelineColumn`); there is no client-side re-derivation. Only
+accepted COs flip it — a draft/open CO does not, matching
+`compose_agreement`, which only applies accepted COs. (The CO detail/job
+views use the same word, "amended", for an accepted CO that a later
+accepted CO has itself amended — a separate client-side computation
+ordered by `change_order_id`.) See `LATER.md` for the decision record on
+keeping `status = accepted` rather than introducing a stored state.
+
+The draft toolbar's **Send to customer** link routes to
+`ChangeOrderSendPage.svelte` (`/change-orders/:id/send`), which reuses
+`DocumentSendForm` to email the portal link + PDF and flip the CO to
+`open` (the bare `mark-open` endpoint remains for back-compat). On an
+`open` CO the toolbar shows **Resend to customer** (same send page —
+`send_change_order` only transitions on the first send, so a resend just
+re-emails), alongside the shop's internal **Record Accepted / Record
+Rejected** buttons for decisions relayed out-of-band. This mirrors the
+estimate detail page's Send / Resend Email affordance.
+
+### 14.10 Customer portal
+
+The CO customer portal mirrors the Estimate portal (§15.1) so a customer
+can review and respond to a change order through a token link, without a
+login.
+
+- **Token.** `ChangeOrder.public_token` (`CharField(64, unique)`) is
+  minted once in `ChangeOrder.save()` at creation, per row — a
+  `seed_new` revision gets its own. Identical to `Estimate.public_token`.
+- **Link.** `build_object_url('change_order', id)` →
+  `<base>/portal/?token=<token>&doc=change_order`. The single `/portal/`
+  static entry dispatches on the `doc` query param
+  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`). `doc` is
+  **required and explicit** for both document types — estimate links are
+  `&doc=estimate` (see `build_object_url('estimate', …)` and the in-app
+  superseded forward links); a portal URL with a missing or unknown `doc`
+  renders a "could not be found" message and makes no API call, rather than
+  silently assuming a document type.
+- **API** (`apps/api/portal/change_order_views.py`, all `AllowAny`,
+  `authentication_classes([])`):
+  - `GET /api/portal/change-orders/<token>/` →
+    `build_change_order_payload` (a before/after diff: `line_rows` with
+    `kind ∈ {unchanged, changed, changed-orig, removed, added}` from
+    `compose_change_order_diff`, a `deliverables` diff, `prior_total` /
+    `proposed_total` / `diff_total`, `actions`, `actionable`,
+    `closed_message`, and `current_token` when superseded). A `draft`
+    CO or unknown token 404s.
+  - `POST …/accept/` → `update_status(ACCEPTED)` (job `on_hold →
+    approved`).
+  - `POST …/reject/` (body `{reason}`) → `update_status(REJECTED)` (job
+    stays `on_hold`).
+  - `POST …/request-changes/` (body `{reason}`) →
+    `ChangeOrderService.request_changes`: supersede the open CO and
+    `seed_new` a fresh draft, job stays `on_hold`.
+- **Actionability.** A CO is actionable only when `status == open` and
+  its job is `on_hold` (the CO analog of an estimate being `open` with
+  its job `submitted`). A click that races a shop action is a silent
+  no-op. Each decision runs under `select_for_update`.
+- **History + notification.** The portal records a *customer*-attributed
+  `HistoryEntry` for every decision (the service's `update_status` writes
+  only a system entry for accept and none for reject), and fires
+  best-effort `ChangeOrderEmailService.notify_shop_of_decision` after
+  commit for accept / decline / request-changes.
+- **Baseline asymmetry (faithful to the shop edit page):** the line-item
+  diff baselines off the flat accepted estimate (`co.estimate`), while
+  the deliverables diff baselines off
+  `ChangeOrderService.baseline_document(co=co)` (the latest accepted CO
+  before this one, else the estimate). Single-CO is the validated path;
+  with multiple accepted COs the line baseline can understate the true
+  current agreement (see `LATER.md`).
+- **Diff composers (shared, not portal-only):** line-item diff is
+  `compose_change_order_diff(co)` in `agreement.py`; the deliverable diff
+  is `ChangeOrderService.compose_deliverable_diff(co)` (rows
+  `{kind, description, qty, units}`, same kind vocabulary). Both feed the
+  portal payload **and** the CO PDF, so the emailed document and the
+  online view show the same line-item and deliverable changes.
+- **PDF.** `generate_change_order_pdf(co)` (`apps/estimates/pdf.py` +
+  `templates/estimates/change_order_pdf.html`, WeasyPrint, styled like the
+  estimate PDF) renders both diffs — a "What you'll receive" deliverables
+  section and the line-item table with prior/new/change totals — using
+  print-safe change labels (Added/Removed/Changed/was). It is attached to
+  the CO send email.
 
 ---
 
@@ -1348,9 +1443,10 @@ job has moved on renders `closed_message` read-only (no buttons). A
 no link if the only newer version is an unsent draft). All other terminal
 statuses show a read-only status message.
 
-**Not yet built:** Change-order customer approval. COs have no
-send-to-customer flow today (no PDF, no email service, no CO entry in
-`build_object_url`), so CO approval waits for that infrastructure.
+Change-order customer approval mirrors this flow — see §14.10. A CO send
+emails the portal link plus an auto-generated change-order PDF
+(`generate_change_order_pdf`, which renders the before/after diff) and
+transitions the CO `draft → open`.
 
 ---
 

@@ -32,7 +32,9 @@
         docs.push({
           type: 'Estimate',
           status: est.status,
-          statusLabel: ESTIMATE_LABELS[est.status] || est.status,
+          statusLabel: est.is_amended
+            ? 'Amended'
+            : (ESTIMATE_LABELS[est.status] || est.status),
           created_date: est.created_date,
           total: est.total,
         });

@@ -30,7 +30,7 @@
         {% if job %}
         <p><strong>Job:</strong> {{ job.job_number }}{% if job.name %} — {{ job.name }}{% endif %}</p>
         {% endif %}
-        <p><strong>Date:</strong> {{ estimate.sent_date|date:"N j, Y"|default:estimate.created_date|date:"N j, Y" }}</p>
+        <p><strong>Date:</strong> {{ estimate.sent_date|default:estimate.created_date|date:"N j, Y" }}</p>
         {% if estimate.expiration_date %}
         <p><strong>Valid Until:</strong> {{ estimate.expiration_date|date:"N j, Y" }}</p>
         {% endif %}

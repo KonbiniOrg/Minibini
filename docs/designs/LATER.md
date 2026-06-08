@@ -114,9 +114,18 @@ page stays whole.
   `/api/portal/estimates/<token>/` read/accept/reject endpoints are live (AllowAny,
   token-authorized); the customer page is at `frontend/portal/` (second Vite entry).
   See `estimates-and-prices.md` §15.1 for the full spec.
-  **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal view);
-  Change Order customer approval (blocked on CO send-to-customer flow — no CO PDF,
-  no CO email service, no CO entry in `build_object_url`).
+  Change Orders are now shipped too (_2026-06-07_): `ChangeOrder.public_token`,
+  `build_object_url('change_order', id)` → `/portal/?token=<token>&doc=change_order`,
+  the `/api/portal/change-orders/<token>/` read/accept/reject/request-changes
+  endpoints (AllowAny), `ChangeOrderEmailService` (send-to-customer link +
+  shop notification), and the `ChangeOrderPortal` customer view (dispatched by
+  the `doc` query param off the same `/portal/` entry). See
+  `estimates-and-prices.md` §14.10.
+  CO PDF generation is now done too (`generate_change_order_pdf` renders the
+  diff via `change_order_pdf.html`; the CO send email attaches it alongside the
+  portal link).
+  **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal
+  view).
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global
@@ -155,14 +164,19 @@ page stays whole.
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
 
-- **Should an Estimate with a change order on it stay `accepted`, or become `superseded`?** — _added 2026-05-26_
-  The CO display paradigm treats estimate ⊕ CO as the current agreement and pushes the
-  prior estimate into a superseded-like history slot — but the backend keeps the estimate
-  `accepted`. Decide whether the *model* should actually supersede the estimate when a CO
-  is accepted (cleaner model↔display match) or keep it `accepted` and let the display
-  relabel (current). Interacts with the "one accepted estimate per job" rule and the
-  `ChangeOrder.estimate` FK.
-  _Done when:_ we've decided and either changed the model or written down why `accepted` stays.
+- **Should an Estimate with a change order on it stay `accepted`, or become `superseded`?** — _added 2026-05-26; RESOLVED 2026-06-07_
+  **Decision: keep it `accepted`** and let the display relabel to "amended". Reasoning: the
+  estimate is still the base of the agreement-of-record (a CO is a delta, usually on only
+  part of it), `compose_agreement` keys off `status = accepted`, and the "one accepted
+  estimate per job" rule + `ChangeOrder.estimate` FK both depend on it. `superseded` was
+  rejected because it already means "replaced by a newer *revision*" (the `revise_estimate`
+  path) and would overstate a partial change; a new stored `altered`/`amended` state was
+  rejected because the fact is fully derivable and a stored copy can drift. Instead "amended"
+  is a **derived** read: `EstimateSerializer.is_amended` (+ board pipeline payload), true when
+  the estimate is accepted and ≥1 *accepted* CO references it; the UI renders the word
+  "amended" off that flag (see `estimates-and-prices.md` §14.9). If "amended" ever needs to
+  *drive behavior* (transitions, board columns, reporting) rather than just label, revisit
+  promoting it to a real state.
 
 - **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
   We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads
@@ -170,12 +184,55 @@ page stays whole.
   exists, and how the 2nd (and further) indicate they're later versions layered on the
   prior agreement. Look at this before closing the branch.
   _Done when:_ the CO view is legible with ≥2 COs (version layering + ch-N tags read clearly).
+  Related: the **customer portal** CO line-item diff baselines off the flat
+  accepted estimate (`compose_change_order_diff` uses `co.estimate`), not
+  `compose_agreement`, mirroring the shop edit page. With multiple accepted COs
+  this can understate the true current agreement the customer sees. Resolve as
+  part of the multi-CO validation above.
+
+- **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08_
+  Building COs "as parallel to estimates as reasonably can be" deliberately
+  produced sibling duplicates that now drift independently: `ChangeOrderEmailService`
+  vs `EstimateEmailService` (get_email_defaults / notify_shop_of_decision / send_*
+  are near-identical); `apps/api/portal/change_order_views.py` vs `views.py`
+  (`_money`, `_not_available`, `_actor_for`, `_is_actionable`, the `_decide`
+  skeleton); `ChangeOrderPortal.svelte` vs `EstimatePortal.svelte` (~120 shared
+  lines of the confirm/submit state machine + fieldsets); and `change_order_pdf.html`
+  vs `estimate_pdf.html` (shared CSS + header-info block + party-context resolution
+  in pdf.py). Candidates: a `DocumentEmailService` base with class-level subject/body
+  + config keys + a pdf-generator hook; a `portal/common.py`; a `<PortalDocument>`
+  wrapper with a slot for the body table; a shared PDF header `{% include %}` +
+  `_pdf_party_context(job)` helper. (A diff-logic note: `compose_change_order_diff`
+  is also a Python re-implementation of the frontend `mergedRows`; keep them in
+  lockstep until/unless the shop view reads the server composer too.)
+  _Done when:_ the shared paths live in one place (or we record why the duplication
+  is acceptable).
+
+- **`is_amended` is an N+1 / duplicated derivation.** — _added 2026-06-08_
+  `EstimateSerializer.get_is_amended` runs `ChangeOrder.objects.filter(estimate=...,
+  status=accepted).exists()` per serialized estimate (bounded to accepted estimates
+  by a short-circuit), and `BoardService._serialize_pipeline_job` repeats the same
+  rule inline. Fine at current scale (mirrors the existing per-row `get_worksheet`
+  query) but worth folding into one place — e.g. an `Exists()` annotation on the
+  estimate queryset, or an `Estimate.is_amended()` method both call sites share.
+  _Done when:_ the rule lives once and list endpoints don't pay a per-row query.
 
 - **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
   An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a
   CO and the CO's state (none / draft / open / accepted-awaiting-release). May only matter
   while testing — decide if it's worth the extra signal.
   _Done when:_ decided (implemented or dropped).
+
+- **Should an on-hold job keep its place in the In Progress board area instead of dropping back to Pipeline?** — _added 2026-06-07_
+  Currently putting a job on_hold moves it back to the Pipeline panel. But a job that was
+  already being worked (approved / in_progress) and is paused for a change order is
+  conceptually still "in the shop" — bouncing it to Pipeline loses its position and visual
+  context, and it has to be re-found when work resumes. Consider keeping such a job in the
+  In Progress area with an on-hold treatment (greyed/badged) so its place is preserved,
+  while jobs that were never started stay in Pipeline. Interacts with the on-hold
+  sub-status display above and the schedule's exclusion of on_hold jobs.
+  _Done when:_ decided — either keep on_hold jobs in In Progress (implemented) or record why
+  Pipeline is the right home.
 
 - **Sweep `apps/api/` for `serializer.save()` bypasses — every mutation must go through a Service.** — _added 2026-05-27_
   We just found four API paths that called DRF `serializer.save()` (or `.update()`) directly

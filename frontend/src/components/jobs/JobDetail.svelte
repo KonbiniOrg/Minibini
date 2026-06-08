@@ -332,16 +332,14 @@
     }
   });
 
-  // Display status for estimates: show "altered" instead of "accepted" when
-  // at least one change order (any state) exists on that estimate.
-  function estimateDisplayStatus(est, cosForJob) {
-    if (est?.status === 'accepted' && cosForJob?.some(co => co.estimate === est.estimate_id)) {
-      return 'altered';
-    }
-    return est?.status;
+  // Display status for estimates: show "amended" instead of "accepted" when the
+  // estimate has been amended by an accepted change order. Derived server-side
+  // (EstimateSerializer.is_amended); the stored status stays "accepted".
+  function estimateDisplayStatus(est) {
+    return est?.is_amended ? 'amended' : est?.status;
   }
 
-  // Display status for change orders: show "altered" instead of "accepted" when
+  // Display status for change orders: show "amended" instead of "accepted" when
   // a later accepted CO exists on the same job (ordered by change_order_id).
   // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
   function changeOrderDisplayStatus(co, allCosForJob) {
@@ -349,7 +347,7 @@
       other => other.change_order_id > co.change_order_id
                && other.status === 'accepted'
     )) {
-      return 'altered';
+      return 'amended';
     }
     return co?.status;
   }
@@ -650,7 +648,7 @@
           {#if displayedVersion?.kind === 'co'}
             CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {changeOrderDisplayStatus(displayedVersion.co, changeOrders)}
           {:else if displayedEstimate}
-            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate, changeOrders)}
+            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate)}
           {:else}
             ESTIMATE · None
           {/if}
@@ -683,7 +681,7 @@
                 class:active={ver.key === (displayedVersion?.key)}
                 onclick={() => { selectedVersionKey = ver.key; }}
               >
-                {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({estimateDisplayStatus(ver.est, changeOrders)})</span>
+                {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({estimateDisplayStatus(ver.est)})</span>
               </button>
             {:else}
               <a

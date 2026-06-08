@@ -154,16 +154,24 @@ endpoint table and the special cases above.
 `/api/portal/` sits **outside the four-atom permission model entirely**.
 
 - `AllowAny` permission class, `authentication_classes=[]` — no session required.
-- Authorized by the `Estimate.public_token` column (an opaque per-row
-  secret). The token is the bearer credential.
+- Authorized by an opaque per-row `public_token` secret — `Estimate.public_token`
+  for `/api/portal/estimates/<token>/…` and `ChangeOrder.public_token` for
+  `/api/portal/change-orders/<token>/…` (GET + `accept` / `reject` /
+  `request-changes`). The token is the bearer credential.
 - The customer is **not a User**. There is no login, no session, and no
   `request.user`. Attribution for accept/reject actions is via an explicit
-  `HistoryEntry` with `user=None` (entry_type `'action'`), written by
-  `EstimateService.update_status(actor=customer_dict)`.
+  `HistoryEntry` with `user=None` (entry_type `'action'`) — written by
+  `EstimateService.update_status(actor=customer_dict)` for estimates, and by
+  the CO portal view itself (`_record_customer_action`) for change orders.
 - `is_superuser` bypass does not apply — there is no auth subject to bypass with.
 
-See `estimates-and-prices.md` §15.1 for the full endpoint table and
-`architecture-and-conventions.md` §3.2 for the auth note.
+The shop-side **send** endpoints that deliver these portal links are inside the
+atom model: `GET/POST /api/estimates/{id}/send-defaults|send/` and
+`GET/POST /api/change-orders/{id}/send-defaults|send/` require their owning atom
+(`can_manage_jobs` for change orders).
+
+See `estimates-and-prices.md` §14.10 (change orders) and §15.1 (estimates) for
+the full endpoint tables and `architecture-and-conventions.md` §3.2 for the auth note.
 
 ## Authentication
 

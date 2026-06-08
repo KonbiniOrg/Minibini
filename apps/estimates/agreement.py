@@ -101,3 +101,95 @@ def compose_agreement(job):
     grand_total = sum((line['amount'] for line in lines), Decimal('0'))
 
     return {'lines': lines, 'grand_total': grand_total}
+
+
+def _amount(qty, price):
+    return (qty or Decimal('0')) * (price or Decimal('0'))
+
+
+def _diff_row(kind, line_number, src):
+    """Build a merged-diff display row from an Estimate/CO line item."""
+    return {
+        'kind': kind,
+        'line_number': line_number,
+        'description': src.description,
+        'qty': src.qty,
+        'units': src.units,
+        'price': src.price,
+        'amount': _amount(src.qty, src.price),
+    }
+
+
+def compose_change_order_diff(co):
+    """Customer/portal-facing line-item diff of a ChangeOrder.
+
+    Diffs the CO's add/remove/replace deltas against the line items of the
+    estimate the CO amends (``co.estimate`` — always the accepted estimate, set
+    by ChangeOrderService.create). Mirrors the shop CO-detail page's merged-rows
+    logic so shop and customer see the same diff.
+
+    Returns ``{'line_rows': [...], 'prior_total', 'proposed_total',
+    'diff_total'}`` where each row is
+    ``{kind, line_number, description, qty, units, price, amount}`` and
+    ``kind ∈ {unchanged, changed, changed-orig, removed, added}``:
+
+    - ``changed``      — the CO 'replace' value (new), shown above…
+    - ``changed-orig`` — …the struck original estimate line
+    - ``removed``      — an estimate line struck by a CO 'remove'
+    - ``added``        — a CO 'add' line, appended after all estimate lines
+    - ``unchanged``    — an estimate line no CO line touches
+
+    ``prior_total`` sums the estimate baseline; ``proposed_total`` sums the
+    surviving + changed + added rows; ``diff_total`` = proposed − prior.
+
+    Note (faithful to the shop page): the line-item baseline is the flat
+    accepted estimate, NOT compose_agreement. With multiple accepted COs this
+    can understate the true current agreement — single-CO is the validated path.
+    """
+    est_lines = list(
+        co.estimate.estimatelineitem_set.order_by('line_number'))
+    co_lines = list(co.changeorderlineitem_set.order_by('line_number'))
+
+    replace_by_target = {}
+    remove_by_target = {}
+    add_lines = []
+    for cli in co_lines:
+        if cli.action == ChangeOrderLineItem.ACTION_REPLACE and cli.target_line_item_id:
+            replace_by_target[cli.target_line_item_id] = cli
+        elif cli.action == ChangeOrderLineItem.ACTION_REMOVE and cli.target_line_item_id:
+            remove_by_target[cli.target_line_item_id] = cli
+        elif cli.action == ChangeOrderLineItem.ACTION_ADD:
+            add_lines.append(cli)
+
+    rows = []
+    prior_total = Decimal('0')
+    proposed_total = Decimal('0')
+
+    for eli in est_lines:
+        prior_total += _amount(eli.qty, eli.price)
+        replace_cli = replace_by_target.get(eli.line_item_id)
+        remove_cli = remove_by_target.get(eli.line_item_id)
+        if replace_cli is not None:
+            changed = _diff_row('changed', eli.line_number, replace_cli)
+            rows.append(changed)
+            rows.append(_diff_row('changed-orig', eli.line_number, eli))
+            proposed_total += changed['amount']
+        elif remove_cli is not None:
+            rows.append(_diff_row('removed', eli.line_number, eli))
+            # removed: contributes nothing to proposed
+        else:
+            unchanged = _diff_row('unchanged', eli.line_number, eli)
+            rows.append(unchanged)
+            proposed_total += unchanged['amount']
+
+    for cli in sorted(add_lines, key=lambda c: (c.line_number or 0)):
+        added = _diff_row('added', cli.line_number, cli)
+        rows.append(added)
+        proposed_total += added['amount']
+
+    return {
+        'line_rows': rows,
+        'prior_total': prior_total,
+        'proposed_total': proposed_total,
+        'diff_total': proposed_total - prior_total,
+    }

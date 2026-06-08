@@ -449,19 +449,6 @@
   // --------------------------------------------------------------------------
 
   // Status actions
-  async function markOpen() {
-    if (!confirm('Mark this change order as sent? This will lock line items.')) return;
-    actionBusy = true;
-    try {
-      await api.post(`/api/change-orders/${co.change_order_id}/mark-open/`);
-      await loadCO();
-    } catch (e) {
-      alert(e.message || 'Could not mark as sent.');
-    } finally {
-      actionBusy = false;
-    }
-  }
-
   async function handleStatusChange(newStatus) {
     const labels = { accepted: 'Accept', rejected: 'Reject' };
     const label = labels[newStatus] || newStatus;
@@ -591,7 +578,7 @@
 
   // --------------------------------------------------------------------------
 
-  // Display status for change orders: show "altered" instead of "accepted" when
+  // Display status for change orders: show "amended" instead of "accepted" when
   // a later accepted CO exists on the same job (ordered by change_order_id).
   // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
   function changeOrderDisplayStatus(co, allCosForJob) {
@@ -599,7 +586,7 @@
       other => other.change_order_id > co.change_order_id
                && other.status === 'accepted'
     )) {
-      return 'altered';
+      return 'amended';
     }
     return co?.status;
   }
@@ -631,14 +618,17 @@
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
           {saveLabel}
         </button>
-        <button type="button" onclick={markOpen} disabled={actionBusy}>
-          {actionBusy ? 'Saving…' : 'Mark as Sent'}
-        </button>
+        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+          Send to customer
+        </a>
         <span class="toolbar-spacer"></span>
         <button type="button" class="btn-danger" onclick={discard} disabled={actionBusy}>
           Discard
         </button>
       {:else if isOpen}
+        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+          Resend to customer
+        </a>
         <button type="button" class="btn-accept" onclick={() => handleStatusChange('accepted')} disabled={actionBusy}>
           {actionBusy ? 'Saving…' : 'Record Accepted'}
         </button>
