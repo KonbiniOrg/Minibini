@@ -41,7 +41,7 @@
         {% if estimate_number %}
         <p><strong>Amends estimate:</strong> {{ estimate_number }}</p>
         {% endif %}
-        <p><strong>Date:</strong> {{ co.sent_date|date:"N j, Y"|default:co.created_date|date:"N j, Y" }}</p>
+        <p><strong>Date:</strong> {{ co.sent_date|default:co.created_date|date:"N j, Y" }}</p>
         {% if co.expiration_date %}
         <p><strong>Valid Until:</strong> {{ co.expiration_date|date:"N j, Y" }}</p>
         {% endif %}

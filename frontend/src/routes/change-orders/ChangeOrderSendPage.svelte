@@ -78,8 +78,8 @@
   <section class="doc-ref">
     <h3>Change order {co.change_order_number}</h3>
     <p><strong>Status:</strong> {co.status}</p>
-    <p>The customer receives a link to review and approve the change online.
-      No PDF is attached.</p>
+    <p>The customer receives a link to review and approve the change online,
+      plus a PDF of the change order.</p>
   </section>
 {/if}
 

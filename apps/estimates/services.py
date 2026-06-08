@@ -489,9 +489,9 @@ class EstimateEmailService:
 class ChangeOrderEmailService:
     """Customer send + shop-notification email for ChangeOrders.
 
-    Mirrors EstimateEmailService, but the customer email carries the portal
-    link only — no PDF attachment (CO PDF generation is deferred). Transitions
-    the CO draft -> open on send success (no job-status side effect, unlike an
+    Mirrors EstimateEmailService: the customer email carries the portal link
+    plus a generated change-order PDF (the diff). Transitions the CO
+    draft -> open on send success (no job-status side effect, unlike an
     estimate send).
     """
 
@@ -508,7 +508,7 @@ class ChangeOrderEmailService:
     @staticmethod
     def get_email_defaults(co):
         """Pre-populated send-form fields for a ChangeOrder: to, subject,
-        body, attachments_preview (always empty — link only, no PDF)."""
+        body, attachments_preview (the auto-attached change-order PDF)."""
         from apps.core.models import Configuration
         from apps.core.email_templates import (
             build_object_url, render_email_template,
@@ -591,9 +591,9 @@ class ChangeOrderEmailService:
     @staticmethod
     def send_change_order(co, *, to, subject, body, cc=None, bcc=None,
                           extra_attachments=None, user=None):
-        """Send a ChangeOrder to the customer (portal link, no PDF). Persists an
-        outbound EmailRecord via send_tracked and transitions draft -> open on
-        success.
+        """Send a ChangeOrder to the customer (portal link + generated CO PDF).
+        Persists an outbound EmailRecord via send_tracked and transitions
+        draft -> open on success.
 
         Raises ValidationError when ``to`` is empty. Re-raises SMTP errors
         after the EmailRecord is persisted (with last_send_error set).

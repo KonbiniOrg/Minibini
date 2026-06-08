@@ -190,6 +190,33 @@ page stays whole.
   this can understate the true current agreement the customer sees. Resolve as
   part of the multi-CO validation above.
 
+- **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08_
+  Building COs "as parallel to estimates as reasonably can be" deliberately
+  produced sibling duplicates that now drift independently: `ChangeOrderEmailService`
+  vs `EstimateEmailService` (get_email_defaults / notify_shop_of_decision / send_*
+  are near-identical); `apps/api/portal/change_order_views.py` vs `views.py`
+  (`_money`, `_not_available`, `_actor_for`, `_is_actionable`, the `_decide`
+  skeleton); `ChangeOrderPortal.svelte` vs `EstimatePortal.svelte` (~120 shared
+  lines of the confirm/submit state machine + fieldsets); and `change_order_pdf.html`
+  vs `estimate_pdf.html` (shared CSS + header-info block + party-context resolution
+  in pdf.py). Candidates: a `DocumentEmailService` base with class-level subject/body
+  + config keys + a pdf-generator hook; a `portal/common.py`; a `<PortalDocument>`
+  wrapper with a slot for the body table; a shared PDF header `{% include %}` +
+  `_pdf_party_context(job)` helper. (A diff-logic note: `compose_change_order_diff`
+  is also a Python re-implementation of the frontend `mergedRows`; keep them in
+  lockstep until/unless the shop view reads the server composer too.)
+  _Done when:_ the shared paths live in one place (or we record why the duplication
+  is acceptable).
+
+- **`is_amended` is an N+1 / duplicated derivation.** — _added 2026-06-08_
+  `EstimateSerializer.get_is_amended` runs `ChangeOrder.objects.filter(estimate=...,
+  status=accepted).exists()` per serialized estimate (bounded to accepted estimates
+  by a short-circuit), and `BoardService._serialize_pipeline_job` repeats the same
+  rule inline. Fine at current scale (mirrors the existing per-row `get_worksheet`
+  query) but worth folding into one place — e.g. an `Exists()` annotation on the
+  estimate queryset, or an `Estimate.is_amended()` method both call sites share.
+  _Done when:_ the rule lives once and list endpoints don't pay a per-row query.
+
 - **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
   An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a
   CO and the CO's state (none / draft / open / accepted-awaiting-release). May only matter
