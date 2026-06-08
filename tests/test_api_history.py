@@ -1,6 +1,7 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import HistoryEntry, User
+from apps.api.history.serializers import HistoryEntrySerializer
 
 
 class JobHistoryAPITest(BaseTestCase):
@@ -118,3 +119,29 @@ class BusinessHistoryAPITest(BaseTestCase):
         response = self.client.get(f'/api/businesses/{business.pk}/history/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 2)
+
+
+class HistoryEntrySourceLabelTest(BaseTestCase):
+    def test_source_label_from_context(self):
+        from apps.jobs.models import Job
+        job = Job.objects.first()
+        entry = HistoryEntry.objects.create(
+            entry_type='note', object_type='job', object_id=job.pk, text='hi',
+        )
+        ctx = {
+            'source_labels': {('job', job.pk): 'Job XYZ'},
+            'source_links': {('job', job.pk): '#/jobs/1'},
+        }
+        data = HistoryEntrySerializer(entry, context=ctx).data
+        self.assertEqual(data['source_label'], 'Job XYZ')
+        self.assertEqual(data['source_link'], '#/jobs/1')
+
+    def test_source_label_defaults_null_without_context(self):
+        from apps.jobs.models import Job
+        job = Job.objects.first()
+        entry = HistoryEntry.objects.create(
+            entry_type='note', object_type='job', object_id=job.pk, text='hi',
+        )
+        data = HistoryEntrySerializer(entry).data
+        self.assertIsNone(data['source_label'])
+        self.assertIsNone(data['source_link'])
