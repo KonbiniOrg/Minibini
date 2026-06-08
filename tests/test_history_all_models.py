@@ -5,14 +5,14 @@ from apps.invoicing.models import Invoice
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.contacts.models import Contact, Business
 from apps.inventory.models import Material
-from apps.deliverables.models import Deliverable
+from apps.deliverables.models import Deliverable, Shipment
 
 
 class AllTrackedModelsTest(TestCase):
     TRACKED_MODELS = [
         Job, Task, Estimate, EstWorksheet,
         Invoice, PurchaseOrder, Bill, Contact, Business,
-        Material, Deliverable,
+        Material, Deliverable, Shipment,
     ]
 
     def test_all_models_are_tracked(self):
@@ -37,6 +37,7 @@ class AllTrackedModelsTest(TestCase):
             Task: 'task_id',
             Material: 'material_id',
             Deliverable: 'id',
+            Shipment: 'id',
         }
         for model, pk in expected.items():
             with self.subTest(model=model.__name__):
