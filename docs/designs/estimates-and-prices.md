@@ -1223,10 +1223,13 @@ keeping `status = accepted` rather than introducing a stored state.
 
 The draft toolbar's **Send to customer** link routes to
 `ChangeOrderSendPage.svelte` (`/change-orders/:id/send`), which reuses
-`DocumentSendForm` to email the portal link and flip the CO to `open`
-(the bare `mark-open` endpoint remains for back-compat). The shop's
-internal **Record Accepted / Record Rejected** buttons stay available
-for decisions relayed out-of-band.
+`DocumentSendForm` to email the portal link + PDF and flip the CO to
+`open` (the bare `mark-open` endpoint remains for back-compat). On an
+`open` CO the toolbar shows **Resend to customer** (same send page —
+`send_change_order` only transitions on the first send, so a resend just
+re-emails), alongside the shop's internal **Record Accepted / Record
+Rejected** buttons for decisions relayed out-of-band. This mirrors the
+estimate detail page's Send / Resend Email affordance.
 
 ### 14.10 Customer portal
 

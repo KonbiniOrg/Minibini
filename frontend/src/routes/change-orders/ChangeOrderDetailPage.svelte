@@ -626,6 +626,9 @@
           Discard
         </button>
       {:else if isOpen}
+        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+          Resend to customer
+        </a>
         <button type="button" class="btn-accept" onclick={() => handleStatusChange('accepted')} disabled={actionBusy}>
           {actionBusy ? 'Saving…' : 'Record Accepted'}
         </button>

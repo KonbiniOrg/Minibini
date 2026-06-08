@@ -122,6 +122,21 @@ class ChangeOrderSendTests(FixtureTestCase):
         self.assertEqual(self.co.status, ChangeOrder.STATUS_OPEN)
         self.assertEqual(len(mail.outbox), 1)
 
+    def test_resend_on_open_co_sends_without_status_change(self):
+        """The 'Resend to customer' link re-sends an already-open CO: another
+        email goes out, status stays open (the draft->open transition only fires
+        on the first send)."""
+        ChangeOrderEmailService.send_change_order(
+            self.co, to='pat@acme.com', subject='s', body='b')
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_OPEN)
+        mail.outbox = []
+        ChangeOrderEmailService.send_change_order(
+            self.co, to='pat@acme.com', subject='resend', body='link again')
+        self.co.refresh_from_db()
+        self.assertEqual(self.co.status, ChangeOrder.STATUS_OPEN)
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_send_leaves_job_on_hold(self):
         ChangeOrderEmailService.send_change_order(
             self.co, to='pat@acme.com', subject='s', body='b')
