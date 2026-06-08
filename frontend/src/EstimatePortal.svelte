@@ -69,7 +69,7 @@
     {:else if data.status === 'superseded'}
       <p>A newer version of this estimate has been issued.
         {#if data.current_token}
-          <a href={`/portal/?token=${data.current_token}`}>View the current estimate</a>.
+          <a href={`/portal/?token=${data.current_token}&doc=estimate`}>View the current estimate</a>.
         {/if}
       </p>
     {:else if data.status === 'expired'}

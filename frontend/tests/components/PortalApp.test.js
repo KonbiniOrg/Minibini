@@ -22,7 +22,7 @@ function estimate(actions) {
 describe('PortalApp', () => {
   beforeEach(() => {
     api.get.mockReset();
-    window.history.replaceState(null, '', '/?token=tok123');
+    window.history.replaceState(null, '', '/?token=tok123&doc=estimate');
   });
 
   it('hides the action buttons when the estimate is not actionable (actions empty)', async () => {
@@ -40,6 +40,20 @@ describe('PortalApp', () => {
     expect(await findByRole('button', { name: 'Accept estimate' })).toBeInTheDocument();
     expect(await findByRole('button', { name: 'Request changes' })).toBeInTheDocument();
     expect(await findByRole('button', { name: 'Decline estimate' })).toBeInTheDocument();
+  });
+
+  it('shows a not-found message when the doc param is missing', async () => {
+    window.history.replaceState(null, '', '/?token=tok123');
+    const { findByText } = render(PortalApp);
+    await findByText(/could not be found/i);
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it('shows a not-found message for an unknown doc value', async () => {
+    window.history.replaceState(null, '', '/?token=tok123&doc=bogus');
+    const { findByText } = render(PortalApp);
+    await findByText(/could not be found/i);
+    expect(api.get).not.toHaveBeenCalled();
   });
 
   it('routes a change-order link (doc=change_order) to the change order view', async () => {

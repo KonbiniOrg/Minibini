@@ -1224,8 +1224,12 @@ login.
 - **Link.** `build_object_url('change_order', id)` →
   `<base>/portal/?token=<token>&doc=change_order`. The single `/portal/`
   static entry dispatches on the `doc` query param
-  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`);
-  estimate links with no `doc` are unchanged.
+  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`). `doc` is
+  **required and explicit** for both document types — estimate links are
+  `&doc=estimate` (see `build_object_url('estimate', …)` and the in-app
+  superseded forward links); a portal URL with a missing or unknown `doc`
+  renders a "could not be found" message and makes no API call, rather than
+  silently assuming a document type.
 - **API** (`apps/api/portal/change_order_views.py`, all `AllowAny`,
   `authentication_classes([])`):
   - `GET /api/portal/change-orders/<token>/` →

@@ -215,6 +215,7 @@ class EstimateSendTest(BaseTestCase):
         self.estimate.refresh_from_db()
         expected_url = (
             f'https://customer.nealscnc.com/portal/?token={self.estimate.public_token}'
+            '&doc=estimate'
         )
         self.assertIn(expected_url, response.data['body'])
 

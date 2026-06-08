@@ -21,7 +21,9 @@ class BuildObjectUrlEstimateTest(TestCase):
     def test_estimate_url_uses_portal_token(self):
         url = build_object_url('estimate', self.est.estimate_id)
         self.assertEqual(
-            url, f'https://shop.example.com/portal/?token={self.est.public_token}')
+            url,
+            f'https://shop.example.com/portal/?token={self.est.public_token}'
+            '&doc=estimate')
 
     def test_other_kinds_keep_stub(self):
         url = build_object_url('invoice', 42)

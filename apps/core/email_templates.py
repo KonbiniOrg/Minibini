@@ -47,9 +47,12 @@ _OBJECT_URL_PATHS = {
 def build_object_url(kind, obj_id):
     """Resolve the ``{object_url}`` template placeholder for a given doc.
 
-    For ``estimate`` this resolves to the customer portal token URL
-    (``<base>/portal/?token=<token>``). Other kinds keep the legacy stub
-    ``<base>/<entity-path>/<id>`` until their own portal surfaces exist.
+    For ``estimate`` / ``change_order`` this resolves to the customer portal
+    token URL (``<base>/portal/?token=<token>&doc=<kind>``); the ``doc`` param
+    is what the single ``/portal/`` page dispatches on, and it is always
+    explicit (a link with no ``doc`` is treated as not-found). Other kinds keep
+    the legacy stub ``<base>/<entity-path>/<id>`` until their own portal
+    surfaces exist.
     """
     from apps.core.models import Configuration
     try:
@@ -65,7 +68,7 @@ def build_object_url(kind, obj_id):
         except Estimate.DoesNotExist:
             token = None
         if token:
-            return f'{base}/portal/?token={token}'
+            return f'{base}/portal/?token={token}&doc=estimate'
 
     if kind == 'change_order':
         from apps.estimates.models import ChangeOrder
