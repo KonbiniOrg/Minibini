@@ -55,10 +55,14 @@ Estimates are **not** numbered via `NumberGenerationService` — they derive
 (IMAP fetch cursor).
 
 **Configuration (other user-settable keys):** `email_retention_days`,
-`email_display_limit`, `est_expire_days`, `board_closed_retention_days`,
-`our_domain`, `our_public_url`, `business_email` (shop notification address for
-customer accept/reject events; if unset, notifications are silently skipped),
-`units_list`, `qbo_payment_accounts`. **Taxation is handled by QuickBooks** —
+`email_display_limit`, `est_expire_days` (also governs ChangeOrder expiry),
+`board_closed_retention_days`, `our_domain`, `our_public_url`, `business_email`
+(shop notification address for customer accept/reject/request-changes events on
+both estimates and change orders; if unset, notifications are silently skipped),
+`units_list`, `qbo_payment_accounts`. Optional outbound-document templates
+(each falls back to a hard-coded default if unset): `estimate_email_subject_template`
+/ `estimate_email_body_template`, `change_order_email_subject_template` /
+`change_order_email_body_template`. **Taxation is handled by QuickBooks** —
 there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
 removed).
 

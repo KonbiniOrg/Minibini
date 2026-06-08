@@ -118,6 +118,53 @@ class ChangeOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelVie
         serializer = self.get_serializer(new_co)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get'], url_path='send-defaults')
+    def send_defaults(self, request, pk=None):
+        """Pre-populated values for the Send-to-customer form (link, no PDF)."""
+        from apps.estimates.services import ChangeOrderEmailService
+        co = self.get_object()
+        return Response(ChangeOrderEmailService.get_email_defaults(co))
+
+    @action(detail=True, methods=['post'], url_path='send')
+    def send(self, request, pk=None):
+        """Send the change order to the customer (portal link, no attachment).
+        Transitions draft -> open on success. Body: to, subject, body, cc, bcc
+        (cc/bcc comma-separated). Multipart attachments via request.FILES."""
+        from apps.estimates.services import ChangeOrderEmailService
+        co = self.get_object()
+        to = request.data.get('to', '').strip()
+        if not to:
+            return Response(
+                {'to': ['Recipient email address is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        subject = request.data.get('subject', '')
+        body = request.data.get('body', '')
+        cc = [c.strip() for c in request.data.get('cc', '').split(',') if c.strip()]
+        bcc = [b.strip() for b in request.data.get('bcc', '').split(',') if b.strip()]
+        extra_attachments = []
+        for uploaded in request.FILES.getlist('attachments'):
+            extra_attachments.append((
+                uploaded.name, uploaded.read(),
+                uploaded.content_type or 'application/octet-stream',
+            ))
+        try:
+            record = ChangeOrderEmailService.send_change_order(
+                co, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
+                extra_attachments=extra_attachments, user=request.user,
+            )
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({
+            'email_record_id': record.email_record_id,
+            'change_order_status': co.status,
+        })
+
     @action(
         detail=True,
         methods=['get'],

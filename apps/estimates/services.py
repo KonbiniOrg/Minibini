@@ -11,6 +11,7 @@ from django.db import transaction
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    ChangeOrder,
 )
 from apps.core.services import NumberGenerationService, NotFoundError
 from apps.core.wizard import BaseWizardService
@@ -481,6 +482,140 @@ class EstimateEmailService:
         if estimate.status == Estimate.STATUS_DRAFT:
             estimate.status = Estimate.STATUS_OPEN
             estimate.save()
+
+        return record
+
+
+class ChangeOrderEmailService:
+    """Customer send + shop-notification email for ChangeOrders.
+
+    Mirrors EstimateEmailService, but the customer email carries the portal
+    link only — no PDF attachment (CO PDF generation is deferred). Transitions
+    the CO draft -> open on send success (no job-status side effect, unlike an
+    estimate send).
+    """
+
+    DEFAULT_SUBJECT = 'Change order {document_number}'
+    DEFAULT_BODY = (
+        'Hi {contact_fname},\n\n'
+        'We have a change to estimate {estimate_number} for {job_name}. '
+        'You can review and approve the change online here:\n'
+        '{object_url}\n\n'
+        'Let us know if you have any questions.\n\n'
+        'Thanks,\n{my_user_name}'
+    )
+
+    @staticmethod
+    def get_email_defaults(co):
+        """Pre-populated send-form fields for a ChangeOrder: to, subject,
+        body, attachments_preview (always empty — link only, no PDF)."""
+        from apps.core.models import Configuration
+        from apps.core.email_templates import (
+            build_object_url, render_email_template,
+        )
+
+        subject_template = ChangeOrderEmailService.DEFAULT_SUBJECT
+        body_template = ChangeOrderEmailService.DEFAULT_BODY
+        try:
+            subject_template = Configuration.objects.get(
+                key='change_order_email_subject_template').value
+        except Configuration.DoesNotExist:
+            pass
+        try:
+            body_template = Configuration.objects.get(
+                key='change_order_email_body_template').value
+        except Configuration.DoesNotExist:
+            pass
+
+        job = co.job
+        contact = job.contact if job else None
+        contact_business = ''
+        if contact and contact.business:
+            contact_business = contact.business.business_name
+
+        values = {
+            'contact_fname': contact.first_name if contact else '',
+            'contact_lname': contact.last_name if contact else '',
+            'contact_business': contact_business,
+            'my_user_name': '',
+            'job_number': job.job_number if job else '',
+            'job_name': job.name if job else '',
+            'document_number': co.change_order_number,
+            'change_order_number': co.change_order_number,
+            'estimate_number': co.estimate.estimate_number if co.estimate_id else '',
+            'object_url': build_object_url('change_order', co.change_order_id),
+        }
+        subject = render_email_template(subject_template, **values)
+        body = render_email_template(body_template, **values)
+
+        to = contact.email if (contact and contact.email) else ''
+        return {
+            'to': to, 'subject': subject, 'body': body,
+            'attachments_preview': [],
+        }
+
+    @staticmethod
+    def notify_shop_of_decision(co, decision, reason=''):
+        """Best-effort email to the shop's business_email when a customer
+        accepts/rejects/requests changes via the portal. Never raises — the
+        customer's action has already committed and must not be rolled back by
+        a send failure.
+        """
+        from django.conf import settings
+        from django.core.mail import send_mail
+        from apps.core.models import Configuration
+
+        try:
+            addr = Configuration.objects.get(key='business_email').value.strip()
+        except Configuration.DoesNotExist:
+            addr = ''
+        if not addr:
+            return
+
+        job_name = co.job.name if co.job_id else ''
+        subject = f'Change order {co.change_order_number} {decision} by customer'
+        body = (f'Change order {co.change_order_number} for job "{job_name}" '
+                f'was {decision} by the customer.')
+        if reason:
+            body += f'\n\nReason given:\n{reason}'
+        try:
+            send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [addr])
+        except Exception:
+            logger.exception(
+                'Shop notification failed for change order %s', co.pk)
+
+    @staticmethod
+    def send_change_order(co, *, to, subject, body, cc=None, bcc=None,
+                          extra_attachments=None, user=None):
+        """Send a ChangeOrder to the customer (portal link, no PDF). Persists an
+        outbound EmailRecord via send_tracked and transitions draft -> open on
+        success.
+
+        Raises ValidationError when ``to`` is empty. Re-raises SMTP errors
+        after the EmailRecord is persisted (with last_send_error set).
+        """
+        from apps.core.services import OutboundEmailService
+
+        if not to:
+            raise ValidationError('Recipient email address is required.')
+
+        if not co.changeorderlineitem_set.exists():
+            raise ValidationError(
+                'Cannot send a change order with no line items.'
+            )
+
+        attachments = list(extra_attachments) if extra_attachments else []
+
+        record = OutboundEmailService.send_tracked(
+            to=to, subject=subject, body=body,
+            cc=cc, bcc=bcc, attachments=attachments,
+            associate_with={'job': co.job},
+        )
+
+        # Send succeeded — transition draft -> open (no job-status side effect).
+        if co.status == ChangeOrder.STATUS_DRAFT:
+            co.status = ChangeOrder.STATUS_OPEN
+            co.save()
 
         return record
 

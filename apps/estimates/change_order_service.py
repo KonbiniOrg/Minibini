@@ -148,6 +148,49 @@ class ChangeOrderService:
 
     @staticmethod
     @transaction.atomic
+    def request_changes(pk, actor):
+        """Customer-initiated revision from the portal — the CO parallel of
+        EstimateService.request_changes.
+
+        Records the customer's comment, snapshots the proposal they saw,
+        supersedes the open CO, and seeds a fresh draft CO carrying the same
+        deltas for the shop to revise. The job stays on_hold (the CO editing
+        room); the on_hold exit guard keeps it parked until the new draft is
+        resolved — the structural parallel to the estimate flow bouncing the
+        job back to draft. ``actor`` is the portal actor dict
+        ``{'contact_id', 'email', 'reason'}``. Returns the new draft CO.
+        """
+        from apps.core.models import HistoryEntry
+        from apps.deliverables.services import DeliverableService
+
+        try:
+            co = ChangeOrder.objects.select_for_update().get(pk=pk)
+        except ChangeOrder.DoesNotExist:
+            raise NotFoundError(f'ChangeOrder {pk} not found')
+
+        # 1. Record the customer's comment against the CO they saw (same shape
+        #    as the estimate flow's customer-action HistoryEntry).
+        HistoryEntry.objects.create(
+            entry_type='action',
+            object_type='change_order',
+            object_id=co.pk,
+            user=None,
+            changes={
+                '_action': 'Changes requested via customer link',
+                'contact_id': actor.get('contact_id'),
+                'customer_email': actor.get('email'),
+            },
+            text=actor.get('reason') or '',
+        )
+        # 2. Preserve the proposal the customer saw, then supersede.
+        DeliverableService.snapshot_document(change_order=co)
+        co.status = ChangeOrder.STATUS_SUPERSEDED
+        co.save()  # sets closed_date
+        # 3. Seed a fresh draft CO carrying the same deltas for the shop.
+        return ChangeOrderService.seed_new(co.pk)
+
+    @staticmethod
+    @transaction.atomic
     def seed_new(pk):
         """Create a new draft CO by copying all line items from an existing (terminal) CO.
 

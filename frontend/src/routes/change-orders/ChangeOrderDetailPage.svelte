@@ -449,19 +449,6 @@
   // --------------------------------------------------------------------------
 
   // Status actions
-  async function markOpen() {
-    if (!confirm('Mark this change order as sent? This will lock line items.')) return;
-    actionBusy = true;
-    try {
-      await api.post(`/api/change-orders/${co.change_order_id}/mark-open/`);
-      await loadCO();
-    } catch (e) {
-      alert(e.message || 'Could not mark as sent.');
-    } finally {
-      actionBusy = false;
-    }
-  }
-
   async function handleStatusChange(newStatus) {
     const labels = { accepted: 'Accept', rejected: 'Reject' };
     const label = labels[newStatus] || newStatus;
@@ -631,9 +618,9 @@
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
           {saveLabel}
         </button>
-        <button type="button" onclick={markOpen} disabled={actionBusy}>
-          {actionBusy ? 'Saving…' : 'Mark as Sent'}
-        </button>
+        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+          Send to customer
+        </a>
         <span class="toolbar-spacer"></span>
         <button type="button" class="btn-danger" onclick={discard} disabled={actionBusy}>
           Discard

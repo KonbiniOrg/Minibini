@@ -41,4 +41,21 @@ describe('PortalApp', () => {
     expect(await findByRole('button', { name: 'Request changes' })).toBeInTheDocument();
     expect(await findByRole('button', { name: 'Decline estimate' })).toBeInTheDocument();
   });
+
+  it('routes a change-order link (doc=change_order) to the change order view', async () => {
+    window.history.replaceState(null, '', '/?token=tok123&doc=change_order');
+    api.get.mockResolvedValue({
+      change_order_number: 'EST-1-CO1',
+      status: 'open',
+      actions: [],
+      deliverables: [],
+      line_rows: [],
+      prior_total: '0.00', proposed_total: '0.00', diff_total: '0.00',
+    });
+    const { findByText } = render(PortalApp);
+    await findByText('Change order EST-1-CO1');
+    // It hit the CO portal endpoint, not the estimate one.
+    expect(api.get).toHaveBeenCalledWith(
+      expect.stringContaining('/api/portal/change-orders/'));
+  });
 });

@@ -37,6 +37,7 @@ DEFAULT_OUR_PUBLIC_URL = 'https://example.com'
 
 _OBJECT_URL_PATHS = {
     'estimate': 'estimates',
+    'change_order': 'change-orders',
     'purchase_order': 'purchase-orders',
     'invoice': 'invoices',
     'bill': 'bills',
@@ -65,6 +66,15 @@ def build_object_url(kind, obj_id):
             token = None
         if token:
             return f'{base}/portal/?token={token}'
+
+    if kind == 'change_order':
+        from apps.estimates.models import ChangeOrder
+        try:
+            token = ChangeOrder.objects.get(pk=obj_id).public_token
+        except ChangeOrder.DoesNotExist:
+            token = None
+        if token:
+            return f'{base}/portal/?token={token}&doc=change_order'
 
     path = _OBJECT_URL_PATHS.get(kind, kind)
     return f'{base}/{path}/{obj_id}'

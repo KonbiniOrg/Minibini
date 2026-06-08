@@ -53,6 +53,7 @@
   import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
+  import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
 
   const routes = {
     '/': Home,
@@ -105,6 +106,7 @@
     '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
+    '/change-orders/:id/send': ChangeOrderSendPage,
     '/change-orders/:id': ChangeOrderDetailPage,
   };
 

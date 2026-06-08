@@ -1183,11 +1183,17 @@ all open COs are resolved).
   of deliverables-at-CO-creation used to render the CO-edit view's
   baseline (see `jobs-tasks-and-worksheets.md` §12 for snapshot
   mechanics)
+- `GET /api/change-orders/{id}/send-defaults/` — pre-populated
+  send-to-customer form fields (to / subject / body with the portal
+  link; `attachments_preview` is always empty — no CO PDF)
+- `POST /api/change-orders/{id}/send/` — email the customer the portal
+  link and transition `draft → open` (`ChangeOrderEmailService.send_change_order`)
 - `GET /api/jobs/{id}/agreement/` — the `compose_agreement` result for
   a job
 
-All write endpoints require `can_manage_jobs`. The endpoint→atom table
-in `users-and-permissions.md` is authoritative.
+All write endpoints (including `send`/`send-defaults`) require
+`can_manage_jobs`. The endpoint→atom table in `users-and-permissions.md`
+is authoritative.
 
 ### 14.9 SPA
 
@@ -1198,6 +1204,60 @@ CO's line items and the `deliverables-baseline` endpoint;
 page shows accepted COs as pills/badges in the deliverables and
 line-items sections (status indicator: an Estimate displays as
 "altered" once any later CO has been accepted against it).
+
+The draft toolbar's **Send to customer** link routes to
+`ChangeOrderSendPage.svelte` (`/change-orders/:id/send`), which reuses
+`DocumentSendForm` to email the portal link and flip the CO to `open`
+(the bare `mark-open` endpoint remains for back-compat). The shop's
+internal **Record Accepted / Record Rejected** buttons stay available
+for decisions relayed out-of-band.
+
+### 14.10 Customer portal
+
+The CO customer portal mirrors the Estimate portal (§15.1) so a customer
+can review and respond to a change order through a token link, without a
+login.
+
+- **Token.** `ChangeOrder.public_token` (`CharField(64, unique)`) is
+  minted once in `ChangeOrder.save()` at creation, per row — a
+  `seed_new` revision gets its own. Identical to `Estimate.public_token`.
+- **Link.** `build_object_url('change_order', id)` →
+  `<base>/portal/?token=<token>&doc=change_order`. The single `/portal/`
+  static entry dispatches on the `doc` query param
+  (`PortalApp.svelte` → `EstimatePortal` or `ChangeOrderPortal`);
+  estimate links with no `doc` are unchanged.
+- **API** (`apps/api/portal/change_order_views.py`, all `AllowAny`,
+  `authentication_classes([])`):
+  - `GET /api/portal/change-orders/<token>/` →
+    `build_change_order_payload` (a before/after diff: `line_rows` with
+    `kind ∈ {unchanged, changed, changed-orig, removed, added}` from
+    `compose_change_order_diff`, a `deliverables` diff, `prior_total` /
+    `proposed_total` / `diff_total`, `actions`, `actionable`,
+    `closed_message`, and `current_token` when superseded). A `draft`
+    CO or unknown token 404s.
+  - `POST …/accept/` → `update_status(ACCEPTED)` (job `on_hold →
+    approved`).
+  - `POST …/reject/` (body `{reason}`) → `update_status(REJECTED)` (job
+    stays `on_hold`).
+  - `POST …/request-changes/` (body `{reason}`) →
+    `ChangeOrderService.request_changes`: supersede the open CO and
+    `seed_new` a fresh draft, job stays `on_hold`.
+- **Actionability.** A CO is actionable only when `status == open` and
+  its job is `on_hold` (the CO analog of an estimate being `open` with
+  its job `submitted`). A click that races a shop action is a silent
+  no-op. Each decision runs under `select_for_update`.
+- **History + notification.** The portal records a *customer*-attributed
+  `HistoryEntry` for every decision (the service's `update_status` writes
+  only a system entry for accept and none for reject), and fires
+  best-effort `ChangeOrderEmailService.notify_shop_of_decision` after
+  commit for accept / decline / request-changes.
+- **Baseline asymmetry (faithful to the shop edit page):** the line-item
+  diff baselines off the flat accepted estimate (`co.estimate`), while
+  the deliverables diff baselines off
+  `ChangeOrderService.baseline_document(co=co)` (the latest accepted CO
+  before this one, else the estimate). Single-CO is the validated path;
+  with multiple accepted COs the line baseline can understate the true
+  current agreement (see `LATER.md`).
 
 ---
 

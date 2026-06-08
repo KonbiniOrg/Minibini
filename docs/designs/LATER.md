@@ -114,9 +114,16 @@ page stays whole.
   `/api/portal/estimates/<token>/` read/accept/reject endpoints are live (AllowAny,
   token-authorized); the customer page is at `frontend/portal/` (second Vite entry).
   See `estimates-and-prices.md` §15.1 for the full spec.
-  **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal view);
-  Change Order customer approval (blocked on CO send-to-customer flow — no CO PDF,
-  no CO email service, no CO entry in `build_object_url`).
+  Change Orders are now shipped too (_2026-06-07_): `ChangeOrder.public_token`,
+  `build_object_url('change_order', id)` → `/portal/?token=<token>&doc=change_order`,
+  the `/api/portal/change-orders/<token>/` read/accept/reject/request-changes
+  endpoints (AllowAny), `ChangeOrderEmailService` (send-to-customer link +
+  shop notification), and the `ChangeOrderPortal` customer view (dispatched by
+  the `doc` query param off the same `/portal/` entry). See
+  `estimates-and-prices.md` §14.10.
+  **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal
+  view). **CO PDF generation is still deferred** — the CO customer email carries
+  the portal link only, no attachment.
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global
@@ -170,6 +177,11 @@ page stays whole.
   exists, and how the 2nd (and further) indicate they're later versions layered on the
   prior agreement. Look at this before closing the branch.
   _Done when:_ the CO view is legible with ≥2 COs (version layering + ch-N tags read clearly).
+  Related: the **customer portal** CO line-item diff baselines off the flat
+  accepted estimate (`compose_change_order_diff` uses `co.estimate`), not
+  `compose_agreement`, mirroring the shop edit page. With multiple accepted COs
+  this can understate the true current agreement the customer sees. Resolve as
+  part of the multi-CO validation above.
 
 - **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
   An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a

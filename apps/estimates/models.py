@@ -230,6 +230,12 @@ class ChangeOrder(models.Model):
     closed_date = models.DateTimeField(null=True, blank=True)
     expiration_date = models.DateTimeField(null=True, blank=True)
 
+    # Unguessable token backing the customer-facing portal link. Minted at
+    # creation (see save()); per-row, so each seed_new revision gets its own.
+    public_token = models.CharField(
+        max_length=64, null=True, blank=True, unique=True,
+    )
+
     VALID_TRANSITIONS = {
         STATUS_DRAFT: [STATUS_OPEN, STATUS_REJECTED],
         STATUS_OPEN: [STATUS_ACCEPTED, STATUS_REJECTED, STATUS_SUPERSEDED, STATUS_EXPIRED],
@@ -259,6 +265,11 @@ class ChangeOrder(models.Model):
     def save(self, *args, **kwargs):
         from apps.core.models import Configuration
         from datetime import timedelta
+
+        # Mint the customer-portal token once, at creation.
+        if not self.pk and not self.public_token:
+            self.public_token = secrets.token_urlsafe(32)
+
         old_status = None
         if self.pk:
             old_status = ChangeOrder.objects.get(pk=self.pk).status
