@@ -706,10 +706,12 @@ system-generated description in `text`.
 Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 
 - `Contact`, `Business` — `apps/contacts/models.py`
-- `Job`, `BlepChangeRequest` — `apps/jobs/models.py`
-- `Estimate`, `EstWorksheet` — `apps/estimates/models.py`
+- `Job`, `Task`, `BlepChangeRequest` — `apps/jobs/models.py`
+- `Estimate`, `ChangeOrder` — `apps/estimates/models.py`
 - `Invoice` — `apps/invoicing/models.py`
 - `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
+- `Material` — `apps/inventory/models.py`
+- `Deliverable`, `Shipment` — `apps/deliverables/models.py`
 - `Shift`, `ShiftChangeRequest` — `apps/core/models.py`
 
 Excluded fields don't appear in `changes`; if they were the only fields
@@ -746,8 +748,12 @@ tracked models — it bypasses signals. Always load and `.save()`.
 
 History feeds (paginated, newest first):
 
-- `GET /api/jobs/{id}/history/` — aggregates the job plus any related
-  estimates, worksheets, and invoices (`apps/api/jobs/views.py`).
+- `GET /api/jobs/{id}/history/` — aggregates the job plus its estimates,
+  change orders, invoices, tasks, deliverables, shipments, and materials
+  (built by `apps/api/jobs/history.py` → `build_job_history`). Each
+  entry carries `source_label` (e.g. `"Task: Fabrication"`) and
+  `source_link` (populated for job and task entries; `null` for others in
+  this version). EstWorksheet is no longer collated.
 - `GET /api/contacts/{id}/history/` — single object.
 - `GET /api/businesses/{id}/history/` — business plus its contacts.
 
@@ -765,10 +771,16 @@ one if needed.
 `frontend/src/components/HistoryPanel.svelte` renders a history-only
 timeline of `HistoryEntry` rows for an object. In lite mode it filters
 to entries with free-text content (`entry.data.text`); full mode shows
-everything. The component is currently unmounted from the Job overview
-pending a redesign — `EmailPanel.svelte` occupies that slot today (see
-§7.6) — but the component itself is still wired and works for any
-caller that passes it `{ history, onAddNote }`.
+everything. The panel is used on Contact, Business, and PO detail pages
+(`{ history, onAddNote }`). It is not used on the Job overview — that
+slot is occupied by `EmailPanel.svelte` (see §7.6).
+
+A dedicated Job History page lives at `#/jobs/:id/history`
+(`frontend/src/routes/jobs/JobHistoryPage.svelte`). It renders the full
+collated feed returned by `GET /api/jobs/{id}/history/` — job events
+alongside those from its tasks, estimates, change orders, invoices,
+deliverables, shipments, and materials, each labelled with
+`source_label`.
 
 ### 7.6 Email panel on the Job overview
 
