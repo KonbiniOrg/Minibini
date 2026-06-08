@@ -299,6 +299,7 @@ class PlanTask(TaskBase):
         return self.rate_scheme.accounting_category
 
 
+@history(exclude=['task_id'])
 class Task(TaskBase):
     """Work task on a Job. Has lifecycle, hierarchy, bleps."""
     STATUS_PENDING = 'pending'

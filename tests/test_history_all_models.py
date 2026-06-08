@@ -1,5 +1,5 @@
 from django.test import TestCase
-from apps.jobs.models import Job
+from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstWorksheet
 from apps.invoicing.models import Invoice
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -8,7 +8,7 @@ from apps.contacts.models import Contact, Business
 
 class AllTrackedModelsTest(TestCase):
     TRACKED_MODELS = [
-        Job, Estimate, EstWorksheet,
+        Job, Task, Estimate, EstWorksheet,
         Invoice, PurchaseOrder, Bill, Contact, Business,
     ]
 
@@ -28,3 +28,11 @@ class AllTrackedModelsTest(TestCase):
                     set,
                     f'{model.__name__} missing _history_exclude'
                 )
+
+    def test_pk_fields_excluded(self):
+        expected = {
+            Task: 'task_id',
+        }
+        for model, pk in expected.items():
+            with self.subTest(model=model.__name__):
+                self.assertIn(pk, model._history_exclude)
