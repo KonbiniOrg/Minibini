@@ -95,11 +95,11 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
     def test_past_due_co_writes_system_history_entry(self):
         co = _make_open_co_past_due(self.job, self.est)
         before = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=co.pk,
+            object_type='changeorder', object_id=co.pk,
         ).count()
         self._run_command()
         after = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=co.pk,
+            object_type='changeorder', object_id=co.pk,
         ).count()
         self.assertGreater(after, before)
 
@@ -107,7 +107,7 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
         co = _make_open_co_past_due(self.job, self.est)
         self._run_command()
         entry = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=co.pk,
+            object_type='changeorder', object_id=co.pk,
         ).order_by('-id').first()
         self.assertIsNotNone(entry)
         self.assertEqual(entry.changes['status']['old'], ChangeOrder.STATUS_OPEN)
@@ -118,7 +118,7 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
         co = _make_open_co_past_due(self.job, self.est, days_overdue=1)
         self._run_command()
         entry = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=co.pk,
+            object_type='changeorder', object_id=co.pk,
         ).order_by('-id').first()
         self.assertIn('Auto-expired', entry.changes['_action'])
 
@@ -126,7 +126,7 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
         co = _make_open_co_past_due(self.job, self.est)
         self._run_command()
         entry = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=co.pk,
+            object_type='changeorder', object_id=co.pk,
         ).order_by('-id').first()
         self.assertEqual(entry.user.username, 'system')
 

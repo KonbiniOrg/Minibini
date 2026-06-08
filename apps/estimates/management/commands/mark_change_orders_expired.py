@@ -38,7 +38,7 @@ class Command(ScheduledProcessCommand):
                     days = self._validity_days(co)
                     ChangeOrderService.update_status(pk, ChangeOrder.STATUS_EXPIRED)
                     HistoryEntry.objects.create(
-                        entry_type='action', object_type='change_order', object_id=pk,
+                        entry_type='action', object_type='changeorder', object_id=pk,
                         user=system_user,
                         changes={
                             'status': {'old': ChangeOrder.STATUS_OPEN, 'new': ChangeOrder.STATUS_EXPIRED},

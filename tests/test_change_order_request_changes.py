@@ -78,7 +78,7 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
         ChangeOrderService.request_changes(
             self.co.pk, self._actor(reason='cut the price'))
         entry = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=self.co.pk,
+            object_type='changeorder', object_id=self.co.pk,
             entry_type='action', user__isnull=True,
         ).order_by('-pk').first()
         self.assertIsNotNone(entry)
@@ -97,3 +97,10 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
         ChangeOrderService.request_changes(self.co.pk, self._actor())
         with self.assertRaises(ValidationError):
             JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+
+    def test_request_changes_history_uses_changeorder_object_type(self):
+        ChangeOrderService.request_changes(self.co.pk, self._actor())
+        entries = HistoryEntry.objects.filter(object_id=self.co.pk, entry_type='action')
+        self.assertTrue(entries.exists())
+        self.assertFalse(entries.filter(object_type='change_order').exists())
+        self.assertTrue(entries.filter(object_type='changeorder').exists())

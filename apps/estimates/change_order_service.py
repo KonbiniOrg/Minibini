@@ -182,7 +182,7 @@ class ChangeOrderService:
             JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
             HistoryEntry.objects.create(
                 entry_type='action',
-                object_type='change_order',
+                object_type='changeorder',
                 object_id=co.pk,
                 user=system_user,
                 changes={
@@ -225,7 +225,7 @@ class ChangeOrderService:
         #    as the estimate flow's customer-action HistoryEntry).
         HistoryEntry.objects.create(
             entry_type='action',
-            object_type='change_order',
+            object_type='changeorder',
             object_id=co.pk,
             user=None,
             changes={

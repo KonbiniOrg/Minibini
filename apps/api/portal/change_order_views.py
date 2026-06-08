@@ -122,7 +122,7 @@ def _record_customer_action(co, action_label, actor):
     from apps.core.models import HistoryEntry
     HistoryEntry.objects.create(
         entry_type='action',
-        object_type='change_order',
+        object_type='changeorder',
         object_id=co.pk,
         user=None,
         changes={

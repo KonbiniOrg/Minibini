@@ -140,10 +140,10 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         _add_co_line(co)
         ChangeOrderService.mark_open(co.pk)
 
-        history_before = HistoryEntry.objects.filter(object_type='change_order').count()
+        history_before = HistoryEntry.objects.filter(object_type='changeorder').count()
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
-        history_after = HistoryEntry.objects.filter(object_type='change_order').count()
+        history_after = HistoryEntry.objects.filter(object_type='changeorder').count()
         self.assertGreater(history_after, history_before)
 
     def test_accept_does_not_create_tasks_or_materials(self):
