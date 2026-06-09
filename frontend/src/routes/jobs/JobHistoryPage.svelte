@@ -61,6 +61,71 @@
 
   let entries = $derived((history?.results || []).map(h => ({ ...h, when: new Date(h.timestamp) })));
 
+  let activeTab = $state('timeline'); // 'timeline' | 'summary'
+
+  // --- Summary tab: roll the same events up per object ---
+  function dateStr(d) {
+    return d ? d.toLocaleDateString() : '';
+  }
+  // "created DATE, <verb> DATE, ..." for the milestones present on an object.
+  function milestones(created, statusDates, specs) {
+    const parts = [];
+    if (created) parts.push(`created ${dateStr(created)}`);
+    for (const [status, verb] of specs) {
+      if (statusDates[status]) parts.push(`${verb} ${dateStr(statusDates[status])}`);
+    }
+    return parts.join(', ');
+  }
+  // ", assigned to X, N est, M h spent" from the task's live detail.
+  function taskExtra(d) {
+    if (!d) return '';
+    const parts = [];
+    if (d.assignee_name) parts.push(`assigned to ${d.assignee_name}`);
+    if (d.est_worker_time != null) parts.push(`${d.est_worker_time} est`);
+    if (d.actual_hours != null) parts.push(`${d.actual_hours}h spent`);
+    return parts.length ? ', ' + parts.join(', ') : '';
+  }
+
+  let summary = $derived.by(() => {
+    const objs = new Map();
+    for (const e of entries) {
+      const key = `${e.object_type}:${e.object_id}`;
+      let o = objs.get(key);
+      if (!o) {
+        o = { type: e.object_type, id: e.object_id, label: e.source_label || e.object_type,
+              link: e.source_link, created: null, edits: 0, statusDates: {} };
+        objs.set(key, o);
+      }
+      const c = e.changes || {};
+      const stat = c.status?.new ?? c.consumption_state?.new;
+      if (c._created) o.created = e.when;
+      else if (stat) o.statusDates[stat] = e.when;        // status move (action or audit)
+      else if (Object.keys(c).some(k => !k.startsWith('_'))) o.edits += 1;  // field edit
+    }
+    const all = [...objs.values()];
+    const byType = (t) => all.filter(o => o.type === t);
+    const byCreated = (a, b) => (a.created?.getTime() || 0) - (b.created?.getTime() || 0);
+    const taskDetail = new Map((job?.tasks || []).map(t => [t.task_id, t]));
+
+    const estimates = byType('estimate').sort(byCreated);
+    const current = estimates.find(o => o.statusDates.accepted) || estimates[estimates.length - 1] || null;
+    const materials = byType('material');
+    const deliverables = byType('deliverable');
+
+    return {
+      job: byType('job')[0] || null,
+      deliverableCount: deliverables.length,
+      deliverableEdits: deliverables.reduce((n, o) => n + o.edits, 0),
+      currentEstimate: current,
+      priorEstimateCount: estimates.length - (current ? 1 : 0),
+      tasks: byType('task').sort(byCreated).map(o => ({ ...o, detail: taskDetail.get(o.id) || null })),
+      materialCount: materials.length,
+      materialsConsumed: materials.filter(o => o.statusDates.consumed).length,
+      invoices: byType('invoice').sort(byCreated),
+      shipments: byType('shipment').sort(byCreated),
+    };
+  });
+
   // Color group per object type; change orders share the estimate tint.
   function typeClass(objectType) {
     return 'ot-' + (objectType === 'changeorder' ? 'estimate' : objectType);
@@ -182,6 +247,12 @@
     </header>
 
     <div class="body">
+      <div class="tabs" role="tablist">
+        <button class:active={activeTab === 'timeline'} onclick={() => (activeTab = 'timeline')}>Timeline</button>
+        <button class:active={activeTab === 'summary'} onclick={() => (activeTab = 'summary')}>Summary</button>
+      </div>
+
+      {#if activeTab === 'timeline'}
       <div class="add-note">
         <textarea bind:value={noteText} rows="2" placeholder="Add a note…"></textarea>
         <button onclick={addNote} disabled={saving || !noteText.trim()}>Add Note</button>
@@ -255,6 +326,70 @@
       {:else}
         <p>No history yet.</p>
       {/if}
+      {/if}
+
+      {#if activeTab === 'summary'}
+      <div class="summary">
+        {#if summary.job}
+          <section class="sum-sec">
+            <h3>Job</h3>
+            <p>{summary.job.label} {milestones(summary.job.created, summary.job.statusDates, [['approved', 'approved'], ['work_complete', 'work complete'], ['completed', 'completed'], ['rejected', 'rejected'], ['cancelled', 'cancelled']])}</p>
+            {#if summary.job.edits > 0}
+              <p class="muted">Edited {summary.job.edits} time{summary.job.edits === 1 ? '' : 's'} (name / description)</p>
+            {/if}
+            {#if summary.deliverableCount > 0}
+              <p class="muted">{summary.deliverableCount} deliverable{summary.deliverableCount === 1 ? '' : 's'}{#if summary.deliverableEdits > 0}, edited {summary.deliverableEdits} time{summary.deliverableEdits === 1 ? '' : 's'}{/if}</p>
+            {/if}
+          </section>
+        {/if}
+
+        <section class="sum-sec">
+          <h3>Estimates</h3>
+          {#if summary.currentEstimate}
+            <p>Current estimate {summary.currentEstimate.label} {milestones(summary.currentEstimate.created, summary.currentEstimate.statusDates, [['open', 'sent'], ['accepted', 'accepted'], ['rejected', 'rejected'], ['expired', 'expired'], ['superseded', 'superseded']])}</p>
+            {#if summary.priorEstimateCount > 0}
+              <p class="muted">{summary.priorEstimateCount} prior estimate{summary.priorEstimateCount === 1 ? '' : 's'}</p>
+            {/if}
+          {:else}
+            <p class="muted">No estimates.</p>
+          {/if}
+        </section>
+
+        {#if summary.tasks.length > 0}
+          <section class="sum-sec">
+            <h3>Tasks</h3>
+            {#each summary.tasks as t (t.id)}
+              <p>{t.detail?.name || t.label} — {milestones(t.created, t.statusDates, [['complete', 'completed']])}{taskExtra(t.detail)}</p>
+            {/each}
+          </section>
+        {/if}
+
+        {#if summary.materialCount > 0}
+          <section class="sum-sec">
+            <h3>Materials</h3>
+            <p class="muted">{summary.materialCount} material{summary.materialCount === 1 ? '' : 's'}{#if summary.materialsConsumed > 0}, {summary.materialsConsumed} consumed{/if}</p>
+          </section>
+        {/if}
+
+        {#if summary.invoices.length > 0}
+          <section class="sum-sec">
+            <h3>Invoices</h3>
+            {#each summary.invoices as inv (inv.id)}
+              <p>{inv.label} {milestones(inv.created, inv.statusDates, [['open', 'sent'], ['paid', 'paid']])}</p>
+            {/each}
+          </section>
+        {/if}
+
+        {#if summary.shipments.length > 0}
+          <section class="sum-sec">
+            <h3>Shipments</h3>
+            {#each summary.shipments as s (s.id)}
+              <p>{s.label} {milestones(s.created, s.statusDates, [['picked_up', 'picked up']])}</p>
+            {/each}
+          </section>
+        {/if}
+      </div>
+      {/if}
     </div>
   {:else}
     <p class="err">Failed to load job.</p>
@@ -266,6 +401,22 @@
   .page-header { padding: 0 24px; }
   .page-header h2 { margin-top: 16px; margin-bottom: 4px; }
   .body { max-width: 820px; padding: 0 24px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid #d1d5db; margin: 12px 0 16px; }
+  .tabs button {
+    border: 1px solid transparent; border-bottom: none; background: none;
+    padding: 6px 14px; cursor: pointer; font-size: 14px; color: #555;
+    border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  }
+  .tabs button.active {
+    color: #1f2937; font-weight: 600;
+    border-color: #d1d5db; background: #fff; border-bottom: 1px solid #fff;
+  }
+
+  .summary .sum-sec { margin: 0 0 18px; }
+  .summary h3 { font-size: 14px; margin: 0 0 4px; color: #1f2937; }
+  .summary p { margin: 2px 0; }
+  .summary .muted { color: #6b7280; font-size: 13px; }
+
   .add-note { margin: 12px 0 20px; }
   .add-note textarea { width: 100%; box-sizing: border-box; }
   .timeline { list-style: none; padding: 0; margin: 0; }

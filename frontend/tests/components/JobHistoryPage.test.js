@@ -174,6 +174,41 @@ describe('JobHistoryPage', () => {
     expect(api.get).toHaveBeenCalledWith('/api/jobs/5/history/?page=2&page_size=100');
   });
 
+  it('rolls events up per object on the Summary tab', async () => {
+    const JOB2 = { ...JOB, tasks: [{ task_id: 7, name: 'Cutting', assignee_name: 'Rae', actual_hours: 3 }] };
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB2);
+      if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
+        { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'a',
+          timestamp: '2026-01-01T00:00:00Z', changes: { _created: true },
+          source_label: 'Job J', source_link: null },
+        { id: 2, entry_type: 'action', object_type: 'job', object_id: 5, username: 'a',
+          timestamp: '2026-01-05T00:00:00Z',
+          changes: { status: { old: 'submitted', new: 'approved' }, _action: 'Approved' },
+          source_label: 'Job J', source_link: null },
+        { id: 3, entry_type: 'audit', object_type: 'estimate', object_id: 9, username: 'a',
+          timestamp: '2026-01-02T00:00:00Z', changes: { _created: true },
+          source_label: 'Estimate E1', source_link: null },
+        { id: 4, entry_type: 'action', object_type: 'estimate', object_id: 9, username: 'a',
+          timestamp: '2026-01-04T00:00:00Z',
+          changes: { status: { old: 'open', new: 'accepted' }, _action: 'Accepted' },
+          source_label: 'Estimate E1', source_link: null },
+        { id: 5, entry_type: 'audit', object_type: 'task', object_id: 7, username: 'a',
+          timestamp: '2026-01-06T00:00:00Z', changes: { _created: true },
+          source_label: 'Task: Cutting', source_link: null },
+      ] });
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, getByRole, getByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Summary' }));
+    expect(getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
+    expect(getByText(/Current estimate Estimate E1/)).toBeInTheDocument();
+    expect(getByText(/approved/)).toBeInTheDocument();
+    expect(getByText(/Cutting/)).toBeInTheDocument();
+    expect(getByText(/assigned to Rae/)).toBeInTheDocument();
+  });
+
   it('posts a note then reloads', async () => {
     api.get.mockImplementation((url) => {
       if (url === '/api/jobs/5/') return Promise.resolve(JOB);
