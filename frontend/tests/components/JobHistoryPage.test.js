@@ -36,6 +36,31 @@ describe('JobHistoryPage', () => {
     expect(getByText('Customer called')).toBeInTheDocument();
   });
 
+  it('color-codes by object type, sharing one class for estimates and change orders', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
+      if (url === '/api/jobs/5/history/') return Promise.resolve({ results: [
+        { id: 1, entry_type: 'audit', object_type: 'estimate', object_id: 9,
+          username: 'a', timestamp: '2026-01-02T10:00:00Z', changes: { _created: true },
+          source_label: 'Estimate E1', source_link: null },
+        { id: 2, entry_type: 'audit', object_type: 'changeorder', object_id: 3,
+          username: 'a', timestamp: '2026-01-03T10:00:00Z', changes: { _created: true },
+          source_label: 'Change Order CO1', source_link: null },
+        { id: 3, entry_type: 'audit', object_type: 'task', object_id: 7,
+          username: 'a', timestamp: '2026-01-04T10:00:00Z', changes: { _created: true },
+          source_label: 'Task: X', source_link: null },
+      ] });
+      return Promise.resolve({ results: [] });
+    });
+    const { container, findByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    // estimate + changeorder both carry ot-estimate
+    expect(container.querySelectorAll('li.ot-estimate').length).toBe(2);
+    // task is its own group
+    expect(container.querySelector('li.ot-task')).toBeTruthy();
+    expect(container.querySelector('li.ot-changeorder')).toBeNull();
+  });
+
   it('posts a note then reloads', async () => {
     api.get.mockImplementation((url) => {
       if (url === '/api/jobs/5/') return Promise.resolve(JOB);

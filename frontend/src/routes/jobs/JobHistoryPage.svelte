@@ -54,6 +54,11 @@
       .join(', ');
   }
 
+  // Color group per object type; change orders share the estimate tint.
+  function typeClass(objectType) {
+    return 'ot-' + (objectType === 'changeorder' ? 'estimate' : objectType);
+  }
+
   function describe(entry) {
     const c = entry.changes || {};
     if (entry.entry_type === 'note') return entry.text;
@@ -100,7 +105,7 @@
       {#if entries.length > 0}
         <ul class="timeline">
           {#each entries as entry (entry.id)}
-            <li class="entry entry-{entry.entry_type}">
+            <li class="entry entry-{entry.entry_type} {typeClass(entry.object_type)}">
               <div class="entry-meta">
                 {#if entry.source_link}
                   <a class="source" href={entry.source_link}>{entry.source_label || entry.object_type}</a>
@@ -131,7 +136,16 @@
   .add-note { margin: 12px 0 20px; }
   .add-note textarea { width: 100%; box-sizing: border-box; }
   .timeline { list-style: none; padding: 0; margin: 0; }
-  .entry { padding: 8px 0; border-bottom: 1px solid #eee; }
+  .entry { padding: 8px 10px; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+
+  /* Background tint by object type. Estimates + change orders share a tint. */
+  .ot-job { background: #eceff4; }
+  .ot-estimate { background: #fff4cc; }
+  .ot-invoice { background: #e3f4e1; }
+  .ot-task { background: #e2effb; }
+  .ot-deliverable { background: #efe6fa; }
+  .ot-shipment { background: #def0f1; }
+  .ot-material { background: #fbe6da; }
   .entry-meta { display: flex; gap: 10px; font-size: 13px; color: #555; align-items: baseline; }
   .entry-meta .source { font-weight: 600; color: #1f2937; }
   .entry-meta .when { margin-left: auto; }
