@@ -67,6 +67,48 @@
     return fieldChanges(c) || '(no detail)';
   }
 
+  // --- Field-diff rendering (From/To + long-value popover) ---
+  const LONG_LEN = 100;
+  let openPopover = $state(null); // `${entryId}:${field}` of the open popover
+
+  function popKey(entryId, field) {
+    return `${entryId}:${field}`;
+  }
+  function togglePopover(entryId, field) {
+    const k = popKey(entryId, field);
+    openPopover = openPopover === k ? null : k;
+  }
+
+  function fmtVal(v) {
+    return v == null ? '(empty)' : String(v);
+  }
+  function isLong(v) {
+    const s = v == null ? '' : String(v);
+    return s.length > LONG_LEN || s.includes('\n');
+  }
+  function previewVal(v, n = 120) {
+    const s = (v == null ? '' : String(v)).replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  function isFieldDiff(entry) {
+    const c = entry.changes || {};
+    if (entry.entry_type === 'note') return false;
+    if (c._action || c._created) return false;
+    return Object.keys(c).some((k) => !k.startsWith('_'));
+  }
+  function diffFields(entry) {
+    const c = entry.changes || {};
+    return Object.entries(c)
+      .filter(([k]) => !k.startsWith('_'))
+      .map(([field, v]) => ({
+        field,
+        old: v?.old ?? null,
+        new: v?.new ?? null,
+        long: isLong(v?.old) || isLong(v?.new),
+      }));
+  }
+
   async function addNote() {
     const text = noteText.trim();
     if (!text) return;
@@ -117,7 +159,46 @@
                   <span class="who">{entry.username || 'System'}</span>
                 </span>
               </div>
-              <div class="entry-body preserve-breaks">{describe(entry)}</div>
+              <div class="entry-body">
+                {#if isFieldDiff(entry)}
+                  {#each diffFields(entry) as f (f.field)}
+                    {#if f.long}
+                      <div class="diff diff-long">
+                        <div class="diff-field">{f.field} changed</div>
+                        <div class="ft-row"><span class="ft-label">From</span><span class="ft-prev">{previewVal(f.old)}</span></div>
+                        <div class="ft-row"><span class="ft-label">To</span><span class="ft-prev">{previewVal(f.new)}</span></div>
+                        <div class="pop-wrap">
+                          <button class="pop-trigger" type="button" onclick={() => togglePopover(entry.id, f.field)}>
+                            {openPopover === popKey(entry.id, f.field) ? 'Hide full' : 'Show full'}
+                          </button>
+                          {#if openPopover === popKey(entry.id, f.field)}
+                            <button class="pop-backdrop" type="button" aria-label="Close" onclick={() => (openPopover = null)}></button>
+                            <div class="popover" role="dialog" aria-label="{f.field} full text">
+                              <div class="pop-section">
+                                <div class="pop-label">From</div>
+                                <div class="pop-val preserve-breaks">{fmtVal(f.old)}</div>
+                              </div>
+                              <div class="pop-section">
+                                <div class="pop-label">To</div>
+                                <div class="pop-val preserve-breaks">{fmtVal(f.new)}</div>
+                              </div>
+                            </div>
+                          {/if}
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="diff diff-short">
+                        <span class="diff-field">{f.field}</span>:
+                        <span class="val">{fmtVal(f.old)}</span>
+                        <span class="arrow">→</span>
+                        <span class="val">{fmtVal(f.new)}</span>
+                      </div>
+                    {/if}
+                  {/each}
+                {:else}
+                  <span class="preserve-breaks">{describe(entry)}</span>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>
@@ -157,4 +238,37 @@
   .entry-note .entry-body { font-style: italic; }
   .preserve-breaks { white-space: pre-wrap; }
   .err { color: #c00; padding: 0 24px; }
+
+  /* Field diffs */
+  .diff { margin: 1px 0; }
+  .diff-field { font-weight: 600; color: #374151; }
+  .diff-short .val { color: #111; }
+  .diff-short .arrow { color: #9ca3af; }
+  .diff-long { margin: 3px 0; }
+  .ft-row { display: flex; gap: 8px; align-items: baseline; }
+  .ft-label {
+    flex: 0 0 2.5em; color: #6b7280; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .ft-prev { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #374151; }
+
+  /* Long-value popover */
+  .pop-wrap { position: relative; display: inline-block; margin-top: 3px; }
+  .pop-trigger { font-size: 12px; padding: 1px 8px; cursor: pointer; }
+  .pop-backdrop {
+    position: fixed; inset: 0; z-index: 40;
+    background: transparent; border: 0; padding: 0; cursor: default;
+  }
+  .popover {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+    width: min(480px, 80vw); max-height: 50vh; overflow: auto;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); padding: 10px 12px;
+  }
+  .pop-section + .pop-section { margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px; }
+  .pop-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+    color: #6b7280; margin-bottom: 2px;
+  }
+  .pop-val { font-size: 13px; color: #111; }
 </style>

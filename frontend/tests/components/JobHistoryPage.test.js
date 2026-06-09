@@ -61,6 +61,46 @@ describe('JobHistoryPage', () => {
     expect(container.querySelector('li.ot-changeorder')).toBeNull();
   });
 
+  it('suppresses a long field diff behind a Show full popover', async () => {
+    const longOld = 'A'.repeat(150);
+    const longNew = 'B'.repeat(150);
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
+      if (url === '/api/jobs/5/history/') return Promise.resolve({ results: [
+        { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5,
+          username: 'a', timestamp: '2026-01-02T10:00:00Z',
+          changes: { description: { old: longOld, new: longNew } },
+          source_label: 'Job J', source_link: null },
+      ] });
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, getByRole, queryByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    // full content suppressed until expanded
+    expect(queryByText(longOld)).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'Show full' }));
+    expect(queryByText(longOld)).not.toBeNull();
+    expect(queryByText(longNew)).not.toBeNull();
+  });
+
+  it('renders a short field diff inline without a popover', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
+      if (url === '/api/jobs/5/history/') return Promise.resolve({ results: [
+        { id: 2, entry_type: 'audit', object_type: 'task', object_id: 7,
+          username: 'a', timestamp: '2026-01-03T10:00:00Z',
+          changes: { status: { old: 'pending', new: 'complete' } },
+          source_label: 'Task: X', source_link: null },
+      ] });
+      return Promise.resolve({ results: [] });
+    });
+    const { findByRole, getByText, queryByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    expect(getByText('pending')).toBeInTheDocument();
+    expect(getByText('complete')).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Show full' })).toBeNull();
+  });
+
   it('posts a note then reloads', async () => {
     api.get.mockImplementation((url) => {
       if (url === '/api/jobs/5/') return Promise.resolve(JOB);
