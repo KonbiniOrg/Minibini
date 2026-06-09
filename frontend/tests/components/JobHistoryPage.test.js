@@ -25,8 +25,12 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByText, getByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
-    await findByText('History — Job JOB-2025-0005');
+    const { findByRole, getByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    // JobHeader is mounted, showing the job title band
+    expect(getByText(/JOB #2025-0005/)).toBeInTheDocument();
+    // Back-to-overview link like the sibling job pages
+    expect(getByText('← Back to overview')).toBeInTheDocument();
     expect(getByText('Estimate EST-2025-0001')).toBeInTheDocument();
     expect(getByText('Sent to customer')).toBeInTheDocument();
     expect(getByText('Customer called')).toBeInTheDocument();
@@ -38,9 +42,9 @@ describe('JobHistoryPage', () => {
       return Promise.resolve({ results: [] });
     });
     api.post.mockResolvedValue({});
-    const { findByText, getByPlaceholderText, getByRole } =
+    const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistoryPage, { props: { params: { id: '5' } } });
-    await findByText('History — Job JOB-2025-0005');
+    await findByRole('heading', { name: 'History' });
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/notes/', { text: 'Hello' });
