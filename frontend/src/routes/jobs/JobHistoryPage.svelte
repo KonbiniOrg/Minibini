@@ -51,6 +51,14 @@
     return 'ot-' + (objectType === 'changeorder' ? 'estimate' : objectType);
   }
 
+  // Minute-level timestamp (seconds are noise here).
+  function fmtWhen(d) {
+    return d.toLocaleString(undefined, {
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    });
+  }
+
   // --- Grouping: bundle consecutive same-object entries within a minute ---
   const BUNDLE_MS = 60000;
 
@@ -63,7 +71,8 @@
     for (const e of entries) {
       const grp = out[out.length - 1];
       const prev = grp && grp[grp.length - 1];
-      if (prev && sameObject(prev, e) && Math.abs(prev.when - e.when) <= BUNDLE_MS) {
+      if (prev && sameObject(prev, e) && prev.username === e.username
+          && Math.abs(prev.when - e.when) <= BUNDLE_MS) {
         grp.push(e);
       } else {
         out.push([e]);
@@ -175,7 +184,7 @@
                   <span class="source">{head.source_label || head.object_type}</span>
                 {/if}
                 <span class="stamp">
-                  <span class="when">{head.when.toLocaleString()}</span>
+                  <span class="when">{fmtWhen(head.when)}</span>
                   <span class="who">{head.username || 'System'}</span>
                 </span>
               </div>

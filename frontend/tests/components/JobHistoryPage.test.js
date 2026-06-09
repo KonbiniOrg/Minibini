@@ -144,6 +144,24 @@ describe('JobHistoryPage', () => {
     expect(container.querySelectorAll('li.entry').length).toBe(2);
   });
 
+  it('does not bundle same-object changes by different users', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
+      if (url === '/api/jobs/5/history/') return Promise.resolve({ results: [
+        { id: 2, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'alice',
+          timestamp: '2026-01-02T10:00:30Z',
+          changes: { name: { old: 'a', new: 'b' } }, source_label: 'Job J', source_link: null },
+        { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'bob',
+          timestamp: '2026-01-02T10:00:00Z',
+          changes: { name: { old: 'c', new: 'd' } }, source_label: 'Job J', source_link: null },
+      ] });
+      return Promise.resolve({ results: [] });
+    });
+    const { container, findByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    expect(container.querySelectorAll('li.entry').length).toBe(2);
+  });
+
   it('posts a note then reloads', async () => {
     api.get.mockImplementation((url) => {
       if (url === '/api/jobs/5/') return Promise.resolve(JOB);
