@@ -164,27 +164,29 @@
                   {#each diffFields(entry) as f (f.field)}
                     {#if f.long}
                       <div class="diff diff-long">
-                        <div class="diff-field">{f.field} changed</div>
+                        <div class="diff-head">
+                          <span class="diff-field">{f.field} changed</span>
+                          <div class="pop-wrap">
+                            <button class="pop-trigger" type="button" onclick={() => togglePopover(entry.id, f.field)}>
+                              {openPopover === popKey(entry.id, f.field) ? 'Hide full' : 'Show full'}
+                            </button>
+                            {#if openPopover === popKey(entry.id, f.field)}
+                              <button class="pop-backdrop" type="button" aria-label="Close" onclick={() => (openPopover = null)}></button>
+                              <div class="popover" role="dialog" aria-label="{f.field} full text">
+                                <div class="pop-section">
+                                  <div class="pop-label">From</div>
+                                  <div class="pop-val preserve-breaks">{fmtVal(f.old)}</div>
+                                </div>
+                                <div class="pop-section">
+                                  <div class="pop-label">To</div>
+                                  <div class="pop-val preserve-breaks">{fmtVal(f.new)}</div>
+                                </div>
+                              </div>
+                            {/if}
+                          </div>
+                        </div>
                         <div class="ft-row"><span class="ft-label">From</span><span class="ft-prev">{previewVal(f.old)}</span></div>
                         <div class="ft-row"><span class="ft-label">To</span><span class="ft-prev">{previewVal(f.new)}</span></div>
-                        <div class="pop-wrap">
-                          <button class="pop-trigger" type="button" onclick={() => togglePopover(entry.id, f.field)}>
-                            {openPopover === popKey(entry.id, f.field) ? 'Hide full' : 'Show full'}
-                          </button>
-                          {#if openPopover === popKey(entry.id, f.field)}
-                            <button class="pop-backdrop" type="button" aria-label="Close" onclick={() => (openPopover = null)}></button>
-                            <div class="popover" role="dialog" aria-label="{f.field} full text">
-                              <div class="pop-section">
-                                <div class="pop-label">From</div>
-                                <div class="pop-val preserve-breaks">{fmtVal(f.old)}</div>
-                              </div>
-                              <div class="pop-section">
-                                <div class="pop-label">To</div>
-                                <div class="pop-val preserve-breaks">{fmtVal(f.new)}</div>
-                              </div>
-                            </div>
-                          {/if}
-                        </div>
                       </div>
                     {:else}
                       <div class="diff diff-short">
@@ -245,6 +247,7 @@
   .diff-short .val { color: #111; }
   .diff-short .arrow { color: #9ca3af; }
   .diff-long { margin: 3px 0; }
+  .diff-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .ft-row { display: flex; gap: 8px; align-items: baseline; }
   .ft-label {
     flex: 0 0 2.5em; color: #6b7280; font-size: 11px;
@@ -253,14 +256,14 @@
   .ft-prev { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #374151; }
 
   /* Long-value popover */
-  .pop-wrap { position: relative; display: inline-block; margin-top: 3px; }
+  .pop-wrap { position: relative; flex: 0 0 auto; }
   .pop-trigger { font-size: 12px; padding: 1px 8px; cursor: pointer; }
   .pop-backdrop {
     position: fixed; inset: 0; z-index: 40;
     background: transparent; border: 0; padding: 0; cursor: default;
   }
   .popover {
-    position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 50;
     width: min(480px, 80vw); max-height: 50vh; overflow: auto;
     background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); padding: 10px 12px;
