@@ -393,6 +393,7 @@ def build_jobs(c):
             'customer_po_number': '',
             'description':        description,
             'accent_color':       accent_color,
+            'hold_reason':        '',
         })
 
         # --- 7. Record maps -----------------------------------------------
