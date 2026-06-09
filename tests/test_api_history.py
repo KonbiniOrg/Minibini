@@ -216,3 +216,22 @@ class JobHistoryCollationTest(BaseTestCase):
         resp = self.client.get(f'/api/jobs/{job.pk}/history/')
         types = [e['object_type'] for e in resp.data['results']]
         self.assertNotIn('estworksheet', types)
+
+    def test_source_links_for_estimate_invoice_shipment(self):
+        from apps.jobs.models import Job
+        from apps.estimates.models import Estimate
+        from apps.invoicing.models import Invoice
+        from apps.deliverables.models import Shipment
+        from apps.api.jobs.history import build_job_history
+
+        job = Job.objects.first()
+        est = Estimate.objects.create(
+            job=job, estimate_number='LINK-EST', version=1, status='draft',
+        )
+        inv = Invoice.objects.create(job=job, status=Invoice.STATUS_OPEN)
+        ship = Shipment.objects.create(job=job, sequence=999)
+
+        _qs, _labels, links = build_job_history(job)
+        self.assertEqual(links[('estimate', est.pk)], f'#/estimates/{est.pk}')
+        self.assertEqual(links[('invoice', inv.pk)], f'#/invoices/{inv.pk}')
+        self.assertEqual(links[('shipment', ship.pk)], f'#/jobs/{job.pk}/shipments')

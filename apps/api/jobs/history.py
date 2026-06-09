@@ -49,17 +49,18 @@ def build_job_history(job):
 
     reg('job', job.pk, f'Job {job.job_number}', f'#/jobs/{job.pk}')
     for e in estimates:
-        reg('estimate', e.pk, f'Estimate {e.estimate_number}')
+        reg('estimate', e.pk, f'Estimate {e.estimate_number}', f'#/estimates/{e.pk}')
     for c in change_orders:
         reg('changeorder', c.pk, f'Change Order {c.change_order_number}')
     for inv in invoices:
-        reg('invoice', inv.pk, f'Invoice {inv.invoice_number}')
+        reg('invoice', inv.pk, f'Invoice {inv.invoice_number}', f'#/invoices/{inv.pk}')
     for t in tasks:
         reg('task', t.pk, f'Task: {t.name}', f'#/jobs/{job.pk}/tasks/{t.pk}')
     for d in deliverables:
         reg('deliverable', d.pk, f'Deliverable: {d.description[:40]}')
     for s in shipments:
-        reg('shipment', s.pk, f'Shipment #{s.sequence}')
+        # No per-shipment page; point at the job's shipments matrix.
+        reg('shipment', s.pk, f'Shipment #{s.sequence}', f'#/jobs/{job.pk}/shipments')
     for m in materials:
         reg('material', m.pk, f'Material: {m.description[:40]}')
 
