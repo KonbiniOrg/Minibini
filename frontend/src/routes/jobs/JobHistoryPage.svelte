@@ -46,25 +46,51 @@
 
   let entries = $derived((history?.results || []).map(h => ({ ...h, when: new Date(h.timestamp) })));
 
-  function fieldChanges(changes) {
-    if (!changes) return '';
-    return Object.entries(changes)
-      .filter(([k]) => !k.startsWith('_'))
-      .map(([k, v]) => `${k}: ${v?.old ?? '–'} → ${v?.new ?? '–'}`)
-      .join(', ');
-  }
-
   // Color group per object type; change orders share the estimate tint.
   function typeClass(objectType) {
     return 'ot-' + (objectType === 'changeorder' ? 'estimate' : objectType);
   }
 
-  function describe(entry) {
-    const c = entry.changes || {};
-    if (entry.entry_type === 'note') return entry.text;
-    if (c._action) return c._action;
-    if (c._created) return 'created';
-    return fieldChanges(c) || '(no detail)';
+  // --- Grouping: bundle consecutive same-object entries within a minute ---
+  const BUNDLE_MS = 60000;
+
+  function sameObject(a, b) {
+    return a.object_type === b.object_type && a.object_id === b.object_id;
+  }
+
+  let groups = $derived.by(() => {
+    const out = [];
+    for (const e of entries) {
+      const grp = out[out.length - 1];
+      const prev = grp && grp[grp.length - 1];
+      if (prev && sameObject(prev, e) && Math.abs(prev.when - e.when) <= BUNDLE_MS) {
+        grp.push(e);
+      } else {
+        out.push([e]);
+      }
+    }
+    return out;
+  });
+
+  // Flatten a group into individual changes ("subheadings"). One audit entry
+  // that changed several fields contributes one item per field.
+  function groupItems(group) {
+    const items = [];
+    for (const entry of group) {
+      const c = entry.changes || {};
+      if (entry.entry_type === 'note') {
+        items.push({ key: `${entry.id}-note`, kind: 'note', text: entry.text });
+      } else if (c._action) {
+        items.push({ key: `${entry.id}-action`, kind: 'action', text: c._action });
+      } else if (c._created) {
+        items.push({ key: `${entry.id}-created`, kind: 'created' });
+      } else {
+        for (const f of diffFields(entry)) {
+          items.push({ key: `${entry.id}-${f.field}`, kind: 'diff', entryId: entry.id, ...f });
+        }
+      }
+    }
+    return items;
   }
 
   // --- Field-diff rendering (From/To + long-value popover) ---
@@ -89,13 +115,6 @@
   function previewVal(v, n = 120) {
     const s = (v == null ? '' : String(v)).replace(/\s+/g, ' ').trim();
     return s.length > n ? s.slice(0, n) + '…' : s;
-  }
-
-  function isFieldDiff(entry) {
-    const c = entry.changes || {};
-    if (entry.entry_type === 'note') return false;
-    if (c._action || c._created) return false;
-    return Object.keys(c).some((k) => !k.startsWith('_'));
   }
   function diffFields(entry) {
     const c = entry.changes || {};
@@ -144,62 +163,67 @@
         <button onclick={addNote} disabled={saving || !noteText.trim()}>Add Note</button>
       </div>
 
-      {#if entries.length > 0}
+      {#if groups.length > 0}
         <ul class="timeline">
-          {#each entries as entry (entry.id)}
-            <li class="entry entry-{entry.entry_type} {typeClass(entry.object_type)}">
+          {#each groups as group (group[0].id)}
+            {@const head = group[0]}
+            <li class="entry {typeClass(head.object_type)}">
               <div class="entry-meta">
-                {#if entry.source_link}
-                  <a class="source" href={entry.source_link}>{entry.source_label || entry.object_type}</a>
+                {#if head.source_link}
+                  <a class="source" href={head.source_link}>{head.source_label || head.object_type}</a>
                 {:else}
-                  <span class="source">{entry.source_label || entry.object_type}</span>
+                  <span class="source">{head.source_label || head.object_type}</span>
                 {/if}
                 <span class="stamp">
-                  <span class="when">{entry.when.toLocaleString()}</span>
-                  <span class="who">{entry.username || 'System'}</span>
+                  <span class="when">{head.when.toLocaleString()}</span>
+                  <span class="who">{head.username || 'System'}</span>
                 </span>
               </div>
               <div class="entry-body">
-                {#if isFieldDiff(entry)}
-                  {#each diffFields(entry) as f (f.field)}
-                    {#if f.long}
+                {#each groupItems(group) as item (item.key)}
+                  {#if item.kind === 'diff'}
+                    {#if item.long}
                       <div class="diff diff-long">
                         <div class="diff-head">
-                          <span class="diff-field">{f.field} changed</span>
+                          <span class="diff-field">{item.field} changed</span>
                           <div class="pop-wrap">
-                            <button class="pop-trigger" type="button" onclick={() => togglePopover(entry.id, f.field)}>
-                              {openPopover === popKey(entry.id, f.field) ? 'Hide full' : 'Show full'}
+                            <button class="pop-trigger" type="button" onclick={() => togglePopover(item.entryId, item.field)}>
+                              {openPopover === popKey(item.entryId, item.field) ? 'Hide full' : 'Show full'}
                             </button>
-                            {#if openPopover === popKey(entry.id, f.field)}
+                            {#if openPopover === popKey(item.entryId, item.field)}
                               <button class="pop-backdrop" type="button" aria-label="Close" onclick={() => (openPopover = null)}></button>
-                              <div class="popover" role="dialog" aria-label="{f.field} full text">
+                              <div class="popover" role="dialog" aria-label="{item.field} full text">
                                 <div class="pop-section">
                                   <div class="pop-label">From</div>
-                                  <div class="pop-val preserve-breaks">{fmtVal(f.old)}</div>
+                                  <div class="pop-val preserve-breaks">{fmtVal(item.old)}</div>
                                 </div>
                                 <div class="pop-section">
                                   <div class="pop-label">To</div>
-                                  <div class="pop-val preserve-breaks">{fmtVal(f.new)}</div>
+                                  <div class="pop-val preserve-breaks">{fmtVal(item.new)}</div>
                                 </div>
                               </div>
                             {/if}
                           </div>
                         </div>
-                        <div class="ft-row"><span class="ft-label">From</span><span class="ft-prev">{previewVal(f.old)}</span></div>
-                        <div class="ft-row"><span class="ft-label">To</span><span class="ft-prev">{previewVal(f.new)}</span></div>
+                        <div class="ft-row"><span class="ft-label">From</span><span class="ft-prev">{previewVal(item.old)}</span></div>
+                        <div class="ft-row"><span class="ft-label">To</span><span class="ft-prev">{previewVal(item.new)}</span></div>
                       </div>
                     {:else}
                       <div class="diff diff-short">
-                        <span class="diff-field">{f.field}</span>:
-                        <span class="val">{fmtVal(f.old)}</span>
+                        <span class="diff-field">{item.field}</span>:
+                        <span class="val">{fmtVal(item.old)}</span>
                         <span class="arrow">→</span>
-                        <span class="val">{fmtVal(f.new)}</span>
+                        <span class="val">{fmtVal(item.new)}</span>
                       </div>
                     {/if}
-                  {/each}
-                {:else}
-                  <span class="preserve-breaks">{describe(entry)}</span>
-                {/if}
+                  {:else if item.kind === 'note'}
+                    <div class="item-note preserve-breaks">{item.text}</div>
+                  {:else if item.kind === 'action'}
+                    <div class="item-line preserve-breaks">{item.text}</div>
+                  {:else}
+                    <div class="item-line">created</div>
+                  {/if}
+                {/each}
               </div>
             </li>
           {/each}
@@ -237,7 +261,9 @@
   .entry-meta .stamp { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; }
   .entry-meta .who { color: #777; }
   .entry-body { margin-top: 2px; }
-  .entry-note .entry-body { font-style: italic; }
+  .entry-body > * + * { margin-top: 5px; }
+  .item-note { font-style: italic; }
+  .item-line { margin: 1px 0; }
   .preserve-breaks { white-space: pre-wrap; }
   .err { color: #c00; padding: 0 24px; }
 
