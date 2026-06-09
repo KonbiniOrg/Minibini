@@ -1542,60 +1542,20 @@ _HISTORY_TRACKED_MODELS = {
     'deliverables.shipment': 'shipment',
 }
 
-# Used only for records that carry no creation date of their own and aren't
-# attached to a Job (Contact, Business).
+# Fallback for objects with no Job and no creation date (Contact, Business).
 _HISTORY_FALLBACK_DATE = '2024-01-01T00:00:00+00:00'
 
-# Status progressions. The converter stores only the FINAL status, so we
-# synthesise the steps from the start up to it — one transition entry each.
-# Each path maps a final status to the ordered list of statuses passed through.
-_JOB_PATHS = {
-    'submitted':     ['submitted'],
-    'approved':      ['submitted', 'approved'],
-    'in_progress':   ['submitted', 'approved', 'in_progress'],
-    'on_hold':       ['submitted', 'approved', 'on_hold'],
-    'work_complete': ['submitted', 'approved', 'in_progress', 'work_complete'],
-    'completed':     ['submitted', 'approved', 'in_progress', 'work_complete', 'completed'],
-    'rejected':      ['submitted', 'rejected'],
-    'cancelled':     ['submitted', 'approved', 'cancelled'],
-}
-_JOB_ACTION = {
-    'submitted': 'Submitted for approval',
-    'approved': 'Approved — released to the floor',
-    'in_progress': 'Work started on the floor',
-    'on_hold': 'Put on hold',
-    'work_complete': 'Work completed',
-    'completed': 'Job closed out',
-    'rejected': 'Rejected',
-    'cancelled': 'Cancelled',
-}
-# Estimates and invoices both go draft -> open(sent) -> a terminal status.
-_DOC_PATHS = {
-    'open':        ['open'],
-    'accepted':    ['open', 'accepted'],
-    'rejected':    ['open', 'rejected'],
-    'expired':     ['open', 'expired'],
-    'superseded':  ['open', 'superseded'],
-    'paid':        ['open', 'paid'],
-    'partly-paid': ['open', 'partly-paid'],
-    'defaulted':   ['open', 'defaulted'],
-    'cancelled':   ['open', 'cancelled'],
-}
-_DOC_ACTION = {
-    'open': 'Sent to the customer',
+# Estimate statuses meaning "was sent" (reached open) and the terminal labels.
+_EST_OPENED = {'open', 'accepted', 'rejected', 'expired', 'superseded'}
+_EST_TERMINAL = {'accepted', 'rejected', 'expired', 'superseded'}
+_EST_ACTION = {
     'accepted': 'Accepted by the customer',
     'rejected': 'Rejected by the customer',
     'expired': 'Expired',
     'superseded': 'Superseded by a revision',
-    'paid': 'Paid in full',
-    'partly-paid': 'Partly paid',
-    'defaulted': 'Defaulted',
-    'cancelled': 'Cancelled',
 }
-_TASK_PATHS = {'in_progress': ['in_progress'], 'complete': ['in_progress', 'complete']}
-_MATERIAL_PATHS = {'consumed': ['consumed']}
-_SHIP_PATHS = {'picked_up': ['picked_up']}
-_SHIP_ACTION = {'picked_up': 'Picked up'}
+# Invoice statuses meaning "was sent" (reached open).
+_INV_SENT = {'open', 'paid', 'partly-paid', 'defaulted'}
 
 
 def _parse_dt(s):
@@ -1607,62 +1567,142 @@ def _parse_dt(s):
         return None
 
 
-def _status_steps(final, initial, paths, action_labels, field, entry_type):
-    """Build (entry_type, changes) tuples for a status walk start -> final.
+def _job_timeline(job_pk, job_fields, related):
+    """Return [(ordinal, object_type, object_id, entry_type, changes)] for one
+    Job and its tracked children, in causal order.
 
-    For audit-style fields (action_labels is None) the change is a bare field
-    diff; for action-style transitions a human ``_action`` label is added.
+    The ordinal encodes the lifecycle phase (see the sequence below); the actual
+    timestamps are derived from it so the order is what matters, not the clock.
     """
-    if not final or final == initial or final not in paths:
-        return []
-    steps = []
-    prev = initial
-    for new in paths[final]:
-        changes = {field: {'old': prev, 'new': new}}
-        if action_labels is not None:
-            changes['_action'] = action_labels.get(new, f'Changed to {new}')
-        steps.append((entry_type, changes))
-        prev = new
-    return steps
+    ev = []
 
+    def add(ordinal, otype, oid, etype, changes):
+        ev.append((ordinal, otype, oid, etype, changes))
 
-def _transitions(model, fields):
-    """Synthesised status-transition entries for one record (after creation)."""
-    if model == 'jobs.job':
-        return _status_steps(fields.get('status'), 'draft', _JOB_PATHS, _JOB_ACTION, 'status', 'action')
-    if model in ('estimates.estimate', 'invoicing.invoice'):
-        return _status_steps(fields.get('status'), 'draft', _DOC_PATHS, _DOC_ACTION, 'status', 'action')
-    if model == 'jobs.task':
-        return _status_steps(fields.get('status'), 'pending', _TASK_PATHS, None, 'status', 'audit')
-    if model == 'inventory.material':
-        return _status_steps(fields.get('consumption_state'), 'pending', _MATERIAL_PATHS, None, 'consumption_state', 'audit')
-    if model == 'deliverables.shipment':
-        return _status_steps(fields.get('status'), 'prepared', _SHIP_PATHS, _SHIP_ACTION, 'status', 'action')
-    return []
+    st = job_fields.get('status')
+    estimates = related.get('estimates.estimate', [])
+    deliverables = related.get('deliverables.deliverable', [])
+    tasks = related.get('jobs.task', [])
+    materials = related.get('inventory.material', [])
+    shipments = related.get('deliverables.shipment', [])
+    invoices = related.get('invoicing.invoice', [])
+
+    reached_submitted = st in ('submitted', 'in_progress', 'work_complete', 'completed', 'rejected')
+    reached_approved = st in ('in_progress', 'work_complete', 'completed')
+    reached_work_complete = st in ('work_complete', 'completed')
+
+    # 0  Job created
+    add(0, 'job', job_pk, 'audit', {'_created': True})
+    # 1  Estimates created
+    for e in estimates:
+        add(1, 'estimate', e['pk'], 'audit', {'_created': True})
+    # 2  Deliverables created (incl. any fake)
+    for d in deliverables:
+        add(2, 'deliverable', d['pk'], 'audit', {'_created': True})
+    # 3  PlanTasks / PlanMaterials created — not history-tracked, no entries
+
+    # 4  Estimate marked Open (sent) + Job submitted
+    for e in estimates:
+        if e['fields'].get('status') in _EST_OPENED:
+            add(4, 'estimate', e['pk'], 'action',
+                {'status': {'old': 'draft', 'new': 'open'}, '_action': 'Sent to the customer'})
+    if reached_submitted:
+        add(4, 'job', job_pk, 'action',
+            {'status': {'old': 'draft', 'new': 'submitted'}, '_action': 'Submitted for approval'})
+
+    # 5  Estimate terminal (accepted/superseded/expired/rejected) + Job approved
+    for e in estimates:
+        es = e['fields'].get('status')
+        if es in _EST_TERMINAL:
+            add(5, 'estimate', e['pk'], 'action',
+                {'status': {'old': 'open', 'new': es}, '_action': _EST_ACTION[es]})
+    if reached_approved:
+        add(5, 'job', job_pk, 'action',
+            {'status': {'old': 'submitted', 'new': 'approved'}, '_action': 'Approved — released to the floor'})
+
+    # 5.5  Job rejected — after the estimate lapsed, when no tasks exist
+    if st == 'rejected':
+        add(5.5, 'job', job_pk, 'action',
+            {'status': {'old': 'submitted', 'new': 'rejected'}, '_action': 'Rejected'})
+
+    # 6  Tasks and Materials created
+    for t in tasks:
+        add(6, 'task', t['pk'], 'audit', {'_created': True})
+    for m in materials:
+        add(6, 'material', m['pk'], 'audit', {'_created': True})
+
+    # 6.5  Job cancelled — after tasks exist (dormant on current data)
+    if st == 'cancelled':
+        add(6.5, 'job', job_pk, 'action',
+            {'status': {'old': 'in_progress', 'new': 'cancelled'}, '_action': 'Cancelled'})
+
+    # 7  Job in progress
+    if reached_approved:
+        add(7, 'job', job_pk, 'action',
+            {'status': {'old': 'approved', 'new': 'in_progress'}, '_action': 'Work started on the floor'})
+
+    # 8  Shipments and Invoices created
+    for s in shipments:
+        add(8, 'shipment', s['pk'], 'audit', {'_created': True})
+    for inv in invoices:
+        add(8, 'invoice', inv['pk'], 'audit', {'_created': True})
+
+    # 9  Tasks completed / Materials consumed (work happening)
+    for t in tasks:
+        if t['fields'].get('status') == 'complete':
+            add(9, 'task', t['pk'], 'audit', {'status': {'old': 'pending', 'new': 'complete'}})
+    for m in materials:
+        if m['fields'].get('consumption_state') == 'consumed':
+            add(9, 'material', m['pk'], 'audit', {'consumption_state': {'old': 'pending', 'new': 'consumed'}})
+
+    # 10  Job work complete + Shipments picked up
+    if reached_work_complete:
+        add(10, 'job', job_pk, 'action',
+            {'status': {'old': 'in_progress', 'new': 'work_complete'}, '_action': 'Work completed'})
+    for s in shipments:
+        if s['fields'].get('status') == 'picked_up':
+            add(10, 'shipment', s['pk'], 'action',
+                {'status': {'old': 'prepared', 'new': 'picked_up'}, '_action': 'Picked up'})
+
+    # 11  Invoices marked Sent
+    for inv in invoices:
+        if inv['fields'].get('status') in _INV_SENT:
+            add(11, 'invoice', inv['pk'], 'action',
+                {'status': {'old': 'draft', 'new': 'open'}, '_action': 'Sent to the customer'})
+    # 12  Invoices marked Paid
+    for inv in invoices:
+        if inv['fields'].get('status') == 'paid':
+            add(12, 'invoice', inv['pk'], 'action',
+                {'status': {'old': 'open', 'new': 'paid'}, '_action': 'Paid in full'})
+
+    # 13  Job completed
+    if st == 'completed':
+        add(13, 'job', job_pk, 'action',
+            {'status': {'old': 'work_complete', 'new': 'completed'}, '_action': 'Job closed out'})
+
+    return ev
 
 
 def build_history(c):
-    """Emit HistoryEntry rows for every history-tracked object.
+    """Emit HistoryEntry rows for every history-tracked object, ordered to match
+    the real job lifecycle.
 
-    Mirrors what apps/core/history.py captures: a ``_created`` audit entry the
-    first time a tracked model is saved, plus the status transitions implied by
-    its final status (e.g. a 'completed' Job walked draft -> submitted -> ... ->
-    completed, an 'accepted' Estimate was sent then accepted). Status moves on
-    documents/jobs are ``action`` entries with an ``_action`` label; Task and
-    Material status moves are bare ``audit`` field diffs — exactly as the app
-    records them.
+    Mirrors apps/core/history.py: a ``_created`` audit entry when an object is
+    first saved, plus the status transitions implied by its final status —
+    ``action`` entries with an ``_action`` label for Job/Estimate/Invoice/
+    Shipment moves, bare ``audit`` field diffs for Task/Material.
 
-    The creation entry is anchored to the record's real creation date (Task and
-    Material fall back to their Job's ``created_date``, Contact/Business to a
-    constant); each synthesised transition is dated a day later than the prior,
-    since the converter does not carry per-transition dates.
+    Per Job, entries are laid out in causal order (job created -> estimate
+    created -> deliverables -> estimate sent -> accepted/approved -> tasks &
+    materials -> in progress -> shipments/invoices -> work complete -> invoice
+    sent/paid -> completed; rejection lands after the estimate lapses, after any
+    tasks). Timestamps are derived from the Job's ``created_date`` plus the phase
+    ordinal — the order is what matters; the converter carries no per-transition
+    dates. Objects with no Job (Contact, Business) get a single creation entry.
 
     Runs last, after every object has been built, so it can see them all.
     """
-    job_created = {
-        f['pk']: f['fields'].get('created_date')
-        for f in c.fixture_data if f['model'] == 'jobs.job'
-    }
+    from collections import defaultdict
 
     def emit(object_type, object_id, timestamp, entry_type, changes):
         c.add_fixture('core.historyentry', c.next_pk('core.historyentry'), {
@@ -1675,22 +1715,39 @@ def build_history(c):
             'text': '',
         })
 
-    # Snapshot the tracked rows first — we append HistoryEntry rows as we go.
-    tracked = [f for f in c.fixture_data if f['model'] in _HISTORY_TRACKED_MODELS]
-    for f in tracked:
-        fields = f['fields']
-        object_type = _HISTORY_TRACKED_MODELS[f['model']]
+    # Group tracked objects by Job; Contact/Business have no Job.
+    jobs = {}
+    by_job = defaultdict(lambda: defaultdict(list))
+    no_job = []
+    for f in c.fixture_data:
+        model = f['model']
+        if model not in _HISTORY_TRACKED_MODELS:
+            continue
+        if model == 'jobs.job':
+            jobs[f['pk']] = f
+        elif f['fields'].get('job') is not None:
+            by_job[f['fields']['job']][model].append(f)
+        else:
+            no_job.append(f)
 
-        base = (fields.get('created_date') or fields.get('created_at')
-                or fields.get('start_date'))
-        if base is None and fields.get('job') is not None:
-            base = job_created.get(fields['job'])
-        if base is None:
-            base = _HISTORY_FALLBACK_DATE
+    # Job-less objects: a single creation entry.
+    for f in no_job:
+        emit(_HISTORY_TRACKED_MODELS[f['model']], f['pk'], _HISTORY_FALLBACK_DATE,
+             'audit', {'_created': True})
 
-        emit(object_type, f['pk'], base, 'audit', {'_created': True})
-
-        base_dt = _parse_dt(base)
-        for i, (entry_type, changes) in enumerate(_transitions(f['model'], fields), start=1):
-            ts = (base_dt + timedelta(days=i)).isoformat() if base_dt else base
-            emit(object_type, f['pk'], ts, entry_type, changes)
+    # Per-job causal timeline.
+    for job_pk, job_f in jobs.items():
+        base_str = job_f['fields'].get('created_date') or _HISTORY_FALLBACK_DATE
+        base_dt = _parse_dt(base_str)
+        events = sorted(_job_timeline(job_pk, job_f['fields'], by_job.get(job_pk, {})),
+                        key=lambda e: e[0])
+        prev_ord, intra = None, 0
+        for ordinal, otype, oid, etype, changes in events:
+            if ordinal != prev_ord:
+                prev_ord, intra = ordinal, 0
+            if base_dt is not None:
+                ts = (base_dt + timedelta(days=ordinal, minutes=intra)).isoformat()
+            else:
+                ts = base_str
+            emit(otype, oid, ts, etype, changes)
+            intra += 1
