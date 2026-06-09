@@ -139,14 +139,14 @@
   .entry { padding: 8px 10px; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
 
   /* Background tint by object type. Estimates + change orders share a tint.
-     Warm-biased: job/task/shipment pulled apart off the blue end. */
-  .ot-job { background: #ebe8e4; }        /* neutral warm gray */
-  .ot-estimate { background: #fdf0c9; }   /* amber */
-  .ot-invoice { background: #e4f3e0; }    /* green */
-  .ot-task { background: #f6d2d5; }        /* rose / red */
-  .ot-deliverable { background: #eaddf6; } /* violet */
-  .ot-shipment { background: #f5e3cd; }    /* warm sand */
-  .ot-material { background: #f9dcc6; }    /* peach */
+     A balanced spread across the spectrum — one hue family each. */
+  .ot-task { background: #f7d3d6; }        /* red / rose */
+  .ot-material { background: #fbe0c6; }    /* orange */
+  .ot-estimate { background: #fcf1c6; }    /* yellow / amber */
+  .ot-invoice { background: #dcf1d8; }     /* green */
+  .ot-shipment { background: #d4eef0; }    /* teal */
+  .ot-job { background: #dde7f5; }         /* blue */
+  .ot-deliverable { background: #e7dcf6; } /* purple */
   .entry-meta { display: flex; gap: 10px; font-size: 13px; color: #555; align-items: baseline; }
   .entry-meta .source { font-weight: 600; color: #1f2937; }
   .entry-meta .when { margin-left: auto; }
