@@ -1523,3 +1523,62 @@ def build_shipments(c):
                 'deliverable': d['pk'],
                 'qty':         d['fields']['qty_ordered'],
             })
+
+
+# Models the @history decorator tracks AND that this converter emits. The value
+# is the object_type stored on a HistoryEntry — the model class name lowercased
+# (see apps/core/history.py _get_object_type). EstWorksheet is intentionally
+# absent: it is no longer history-tracked.
+_HISTORY_TRACKED_MODELS = {
+    'contacts.contact': 'contact',
+    'contacts.business': 'business',
+    'jobs.job': 'job',
+    'jobs.task': 'task',
+    'estimates.estimate': 'estimate',
+    'inventory.material': 'material',
+    'invoicing.invoice': 'invoice',
+    'deliverables.deliverable': 'deliverable',
+    'deliverables.shipment': 'shipment',
+}
+
+# Used only for records that carry no creation date of their own and aren't
+# attached to a Job (Contact, Business).
+_HISTORY_FALLBACK_DATE = '2024-01-01T00:00:00+00:00'
+
+
+def build_history(c):
+    """Emit a `_created` audit HistoryEntry for every history-tracked object.
+
+    Mirrors what apps/core/history.py captures the first time a tracked model is
+    saved: an ``audit`` entry with ``changes={'_created': True}``. The timestamp
+    is anchored to each record's real creation date where it has one; records
+    with no stored date of their own (Task, Material) fall back to their Job's
+    ``created_date``, and the rest (Contact, Business) to a constant.
+
+    Runs last, after every object has been built, so it can see them all.
+    """
+    job_created = {
+        f['pk']: f['fields'].get('created_date')
+        for f in c.fixture_data if f['model'] == 'jobs.job'
+    }
+
+    # Snapshot the tracked rows first — we append HistoryEntry rows as we go.
+    tracked = [f for f in c.fixture_data if f['model'] in _HISTORY_TRACKED_MODELS]
+    for f in tracked:
+        fields = f['fields']
+        when = (fields.get('created_date') or fields.get('created_at')
+                or fields.get('start_date'))
+        if when is None and fields.get('job') is not None:
+            when = job_created.get(fields['job'])
+        if when is None:
+            when = _HISTORY_FALLBACK_DATE
+        he_pk = c.next_pk('core.historyentry')
+        c.add_fixture('core.historyentry', he_pk, {
+            'entry_type': 'audit',
+            'object_type': _HISTORY_TRACKED_MODELS[f['model']],
+            'object_id': f['pk'],
+            'user': None,
+            'timestamp': when,
+            'changes': {'_created': True},
+            'text': '',
+        })

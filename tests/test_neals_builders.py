@@ -954,5 +954,65 @@ class ConvertEndToEndTest(unittest.TestCase):
         models = {row['model'] for row in data}
         self.assertIn('jobs.job', models)
         self.assertIn('estimates.estimate', models)
+        self.assertIn('core.historyentry', models)
         self.assertNotIn('jobs.workorder', models)
         self.assertNotIn('jobs.blep', models)
+
+
+class BuildHistoryUnitTest(unittest.TestCase):
+    """Dataset-independent: drives build_history off a hand-built fixture list."""
+
+    def _converter(self):
+        # Loader __init__ is lazy (stores the path), so dummy paths are fine —
+        # we never call load(); we only use fixture_data / next_pk / add_fixture.
+        return NealsDataConverter('x.xlsx', 'x.csv', output_path='/tmp/x.json')
+
+    def _history(self, c):
+        return [f for f in c.fixture_data if f['model'] == 'core.historyentry']
+
+    def test_created_entry_for_tracked_objects_only(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00'})
+        c.add_fixture('jobs.task', 2, {'job': 1})
+        c.add_fixture('estimates.estimate', 3, {'job': 1, 'created_date': '2025-03-02T00:00:00+00:00'})
+        c.add_fixture('inventory.material', 4, {'job': 1})
+        c.add_fixture('deliverables.deliverable', 5, {'job': 1, 'created_at': '2025-03-03T00:00:00+00:00'})
+        c.add_fixture('deliverables.shipment', 6, {'job': 1, 'created_at': '2025-03-04T00:00:00+00:00'})
+        c.add_fixture('invoicing.invoice', 7, {'job': 1, 'created_date': '2025-03-05T00:00:00+00:00'})
+        c.add_fixture('contacts.contact', 8, {})
+        c.add_fixture('contacts.business', 9, {})
+        # untracked — must NOT get history
+        c.add_fixture('estimates.estworksheet', 10, {'job': 1})
+        c.add_fixture('jobs.plantask', 11, {})
+        c.add_fixture('inventory.pricelistitem', 12, {})
+
+        build.build_history(c)
+
+        got = {(r['fields']['object_type'], r['fields']['object_id']) for r in self._history(c)}
+        self.assertEqual(got, {
+            ('job', 1), ('task', 2), ('estimate', 3), ('material', 4),
+            ('deliverable', 5), ('shipment', 6), ('invoice', 7),
+            ('contact', 8), ('business', 9),
+        })
+        for r in self._history(c):
+            self.assertEqual(r['fields']['entry_type'], 'audit')
+            self.assertEqual(r['fields']['changes'], {'_created': True})
+            self.assertIsNone(r['fields']['user'])
+
+    def test_timestamp_anchors_to_creation_dates(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00'})
+        c.add_fixture('jobs.task', 2, {'job': 1})                  # -> job's date
+        c.add_fixture('inventory.material', 3, {'job': 1})         # -> job's date
+        c.add_fixture('deliverables.deliverable', 4, {'job': 1, 'created_at': '2025-03-09T00:00:00+00:00'})
+        c.add_fixture('contacts.contact', 5, {})                   # -> fallback constant
+
+        build.build_history(c)
+
+        ts = {(r['fields']['object_type'], r['fields']['object_id']): r['fields']['timestamp']
+              for r in self._history(c)}
+        self.assertEqual(ts[('job', 1)], '2025-03-01T00:00:00+00:00')
+        self.assertEqual(ts[('task', 2)], '2025-03-01T00:00:00+00:00')
+        self.assertEqual(ts[('material', 3)], '2025-03-01T00:00:00+00:00')
+        self.assertEqual(ts[('deliverable', 4)], '2025-03-09T00:00:00+00:00')
+        self.assertEqual(ts[('contact', 5)], '2024-01-01T00:00:00+00:00')

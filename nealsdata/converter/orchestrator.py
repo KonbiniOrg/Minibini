@@ -97,6 +97,7 @@ class NealsDataConverter:
         build.build_invoice_line_item_sources(self)
         reconcile.reconcile(self)
         build.build_shipments(self)   # after reconcile: needs final job dates
+        build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:
             self._print_summary()
