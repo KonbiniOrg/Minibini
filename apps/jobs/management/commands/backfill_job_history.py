@@ -99,15 +99,30 @@ class Command(BaseCommand):
             'shipment': self._shipment_events,
             'material': self._material_events,
         }
-        created = 0
+        # Gather every event across all records, then order them globally.
+        events = []  # (when, object_type, obj_id, entry_type, changes)
         for object_type, objs in self._related(job):
             builder = builders[object_type]
             for obj in objs:
                 for when, entry_type, changes in builder(obj, job):
-                    created += self._entry(
-                        object_type, obj.pk, user, when, entry_type=entry_type,
-                        changes={**changes, '_backfill': True},
-                    )
+                    events.append((when, object_type, obj.pk, entry_type, changes))
+
+        # Chronological order; ties break by the _related() group order (job
+        # before its estimates before tasks ...), which is a plausible sequence.
+        events.sort(key=lambda e: e[0])
+
+        # Force at least a minute between consecutive entries so nothing lands on
+        # an identical timestamp (which sorts unpredictably and reads as noise).
+        created = 0
+        prev = None
+        for when, object_type, obj_id, entry_type, changes in events:
+            if prev is not None and when < prev + timedelta(minutes=1):
+                when = prev + timedelta(minutes=1)
+            prev = when
+            created += self._entry(
+                object_type, obj_id, user, when, entry_type=entry_type,
+                changes={**changes, '_backfill': True},
+            )
         return created
 
     # ------------------------------------------------------------------

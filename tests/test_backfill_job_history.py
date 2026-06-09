@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.management import call_command
@@ -70,6 +71,22 @@ class BackfillJobHistoryTest(BaseTestCase):
         self.assertTrue(
             actions.filter(changes___action__icontains='sent to the customer').exists()
         )
+
+    def test_entries_are_at_least_a_minute_apart(self):
+        """No two backfilled entries collide on the same timestamp."""
+        from apps.jobs.models import Job, Task
+        job = Job.objects.first()
+        # several tasks share one anchor date -> would collide without spacing
+        for i in range(4):
+            Task.objects.create(job=job, name=f'BF spacing {i}', rate_scheme_id=1)
+        call_command('backfill_job_history', f'--job={job.pk}')
+        times = list(
+            HistoryEntry.objects.filter(changes___backfill=True)
+            .order_by('timestamp').values_list('timestamp', flat=True)
+        )
+        self.assertGreater(len(times), 4)
+        for earlier, later in zip(times, times[1:]):
+            self.assertGreaterEqual(later - earlier, timedelta(minutes=1))
 
     def test_emits_field_diff_audit(self):
         """At least one backfilled audit entry is a real field diff (old -> new)."""
