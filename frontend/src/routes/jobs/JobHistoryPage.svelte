@@ -149,7 +149,7 @@
   .ot-deliverable { background: #e7dcf6; } /* purple */
   .entry-meta { display: flex; gap: 10px; font-size: 13px; color: #555; align-items: baseline; }
   .entry-meta .source { font-weight: 600; color: #1f2937; }
-  .entry-meta .when { margin-left: auto; }
+  .entry-meta .who { margin-left: auto; }
   .entry-body { margin-top: 2px; }
   .entry-note .entry-body { font-style: italic; }
   .preserve-breaks { white-space: pre-wrap; }
