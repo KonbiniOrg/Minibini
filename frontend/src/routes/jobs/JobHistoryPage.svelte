@@ -14,13 +14,28 @@
   let noteText = $state('');
   let saving = $state(false);
 
+  // The history feed is paginated; this is a deep-dive page, so pull every
+  // page (page_size=100, then follow the count) rather than just the first.
+  async function fetchAllHistory(id) {
+    const pageSize = 100;
+    const first = await api.get(`/api/jobs/${id}/history/?page_size=${pageSize}`);
+    const results = [...(first.results || [])];
+    const count = first.count ?? results.length;
+    const pages = Math.ceil(count / pageSize);
+    for (let p = 2; p <= pages; p++) {
+      const data = await api.get(`/api/jobs/${id}/history/?page=${p}&page_size=${pageSize}`);
+      results.push(...(data.results || []));
+    }
+    return { results, count };
+  }
+
   async function load() {
     loading = true;
     loadError = null;
     try {
       const [jobData, histData] = await Promise.all([
         api.get(`/api/jobs/${jobId}/`),
-        api.get(`/api/jobs/${jobId}/history/`),
+        fetchAllHistory(jobId),
       ]);
       job = jobData;
       history = histData;
