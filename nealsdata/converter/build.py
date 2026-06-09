@@ -6,7 +6,7 @@ argument and appends fixture records to c.fixture_data via c.add_fixture().
 import json
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from nealsdata.converter import parsing as P
@@ -1545,15 +1545,116 @@ _HISTORY_TRACKED_MODELS = {
 # attached to a Job (Contact, Business).
 _HISTORY_FALLBACK_DATE = '2024-01-01T00:00:00+00:00'
 
+# Status progressions. The converter stores only the FINAL status, so we
+# synthesise the steps from the start up to it — one transition entry each.
+# Each path maps a final status to the ordered list of statuses passed through.
+_JOB_PATHS = {
+    'submitted':     ['submitted'],
+    'approved':      ['submitted', 'approved'],
+    'in_progress':   ['submitted', 'approved', 'in_progress'],
+    'on_hold':       ['submitted', 'approved', 'on_hold'],
+    'work_complete': ['submitted', 'approved', 'in_progress', 'work_complete'],
+    'completed':     ['submitted', 'approved', 'in_progress', 'work_complete', 'completed'],
+    'rejected':      ['submitted', 'rejected'],
+    'cancelled':     ['submitted', 'approved', 'cancelled'],
+}
+_JOB_ACTION = {
+    'submitted': 'Submitted for approval',
+    'approved': 'Approved — released to the floor',
+    'in_progress': 'Work started on the floor',
+    'on_hold': 'Put on hold',
+    'work_complete': 'Work completed',
+    'completed': 'Job closed out',
+    'rejected': 'Rejected',
+    'cancelled': 'Cancelled',
+}
+# Estimates and invoices both go draft -> open(sent) -> a terminal status.
+_DOC_PATHS = {
+    'open':        ['open'],
+    'accepted':    ['open', 'accepted'],
+    'rejected':    ['open', 'rejected'],
+    'expired':     ['open', 'expired'],
+    'superseded':  ['open', 'superseded'],
+    'paid':        ['open', 'paid'],
+    'partly-paid': ['open', 'partly-paid'],
+    'defaulted':   ['open', 'defaulted'],
+    'cancelled':   ['open', 'cancelled'],
+}
+_DOC_ACTION = {
+    'open': 'Sent to the customer',
+    'accepted': 'Accepted by the customer',
+    'rejected': 'Rejected by the customer',
+    'expired': 'Expired',
+    'superseded': 'Superseded by a revision',
+    'paid': 'Paid in full',
+    'partly-paid': 'Partly paid',
+    'defaulted': 'Defaulted',
+    'cancelled': 'Cancelled',
+}
+_TASK_PATHS = {'in_progress': ['in_progress'], 'complete': ['in_progress', 'complete']}
+_MATERIAL_PATHS = {'consumed': ['consumed']}
+_SHIP_PATHS = {'picked_up': ['picked_up']}
+_SHIP_ACTION = {'picked_up': 'Picked up'}
+
+
+def _parse_dt(s):
+    if not isinstance(s, str):
+        return None
+    try:
+        return datetime.fromisoformat(s.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+
+
+def _status_steps(final, initial, paths, action_labels, field, entry_type):
+    """Build (entry_type, changes) tuples for a status walk start -> final.
+
+    For audit-style fields (action_labels is None) the change is a bare field
+    diff; for action-style transitions a human ``_action`` label is added.
+    """
+    if not final or final == initial or final not in paths:
+        return []
+    steps = []
+    prev = initial
+    for new in paths[final]:
+        changes = {field: {'old': prev, 'new': new}}
+        if action_labels is not None:
+            changes['_action'] = action_labels.get(new, f'Changed to {new}')
+        steps.append((entry_type, changes))
+        prev = new
+    return steps
+
+
+def _transitions(model, fields):
+    """Synthesised status-transition entries for one record (after creation)."""
+    if model == 'jobs.job':
+        return _status_steps(fields.get('status'), 'draft', _JOB_PATHS, _JOB_ACTION, 'status', 'action')
+    if model in ('estimates.estimate', 'invoicing.invoice'):
+        return _status_steps(fields.get('status'), 'draft', _DOC_PATHS, _DOC_ACTION, 'status', 'action')
+    if model == 'jobs.task':
+        return _status_steps(fields.get('status'), 'pending', _TASK_PATHS, None, 'status', 'audit')
+    if model == 'inventory.material':
+        return _status_steps(fields.get('consumption_state'), 'pending', _MATERIAL_PATHS, None, 'consumption_state', 'audit')
+    if model == 'deliverables.shipment':
+        return _status_steps(fields.get('status'), 'prepared', _SHIP_PATHS, _SHIP_ACTION, 'status', 'action')
+    return []
+
 
 def build_history(c):
-    """Emit a `_created` audit HistoryEntry for every history-tracked object.
+    """Emit HistoryEntry rows for every history-tracked object.
 
-    Mirrors what apps/core/history.py captures the first time a tracked model is
-    saved: an ``audit`` entry with ``changes={'_created': True}``. The timestamp
-    is anchored to each record's real creation date where it has one; records
-    with no stored date of their own (Task, Material) fall back to their Job's
-    ``created_date``, and the rest (Contact, Business) to a constant.
+    Mirrors what apps/core/history.py captures: a ``_created`` audit entry the
+    first time a tracked model is saved, plus the status transitions implied by
+    its final status (e.g. a 'completed' Job walked draft -> submitted -> ... ->
+    completed, an 'accepted' Estimate was sent then accepted). Status moves on
+    documents/jobs are ``action`` entries with an ``_action`` label; Task and
+    Material status moves are bare ``audit`` field diffs — exactly as the app
+    records them.
+
+    The creation entry is anchored to the record's real creation date (Task and
+    Material fall back to their Job's ``created_date``, Contact/Business to a
+    constant); each synthesised transition is dated a day later than the prior,
+    since the converter does not carry per-transition dates.
 
     Runs last, after every object has been built, so it can see them all.
     """
@@ -1562,23 +1663,33 @@ def build_history(c):
         for f in c.fixture_data if f['model'] == 'jobs.job'
     }
 
+    def emit(object_type, object_id, timestamp, entry_type, changes):
+        c.add_fixture('core.historyentry', c.next_pk('core.historyentry'), {
+            'entry_type': entry_type,
+            'object_type': object_type,
+            'object_id': object_id,
+            'user': None,
+            'timestamp': timestamp,
+            'changes': changes,
+            'text': '',
+        })
+
     # Snapshot the tracked rows first — we append HistoryEntry rows as we go.
     tracked = [f for f in c.fixture_data if f['model'] in _HISTORY_TRACKED_MODELS]
     for f in tracked:
         fields = f['fields']
-        when = (fields.get('created_date') or fields.get('created_at')
+        object_type = _HISTORY_TRACKED_MODELS[f['model']]
+
+        base = (fields.get('created_date') or fields.get('created_at')
                 or fields.get('start_date'))
-        if when is None and fields.get('job') is not None:
-            when = job_created.get(fields['job'])
-        if when is None:
-            when = _HISTORY_FALLBACK_DATE
-        he_pk = c.next_pk('core.historyentry')
-        c.add_fixture('core.historyentry', he_pk, {
-            'entry_type': 'audit',
-            'object_type': _HISTORY_TRACKED_MODELS[f['model']],
-            'object_id': f['pk'],
-            'user': None,
-            'timestamp': when,
-            'changes': {'_created': True},
-            'text': '',
-        })
+        if base is None and fields.get('job') is not None:
+            base = job_created.get(fields['job'])
+        if base is None:
+            base = _HISTORY_FALLBACK_DATE
+
+        emit(object_type, f['pk'], base, 'audit', {'_created': True})
+
+        base_dt = _parse_dt(base)
+        for i, (entry_type, changes) in enumerate(_transitions(f['model'], fields), start=1):
+            ts = (base_dt + timedelta(days=i)).isoformat() if base_dt else base
+            emit(object_type, f['pk'], ts, entry_type, changes)

@@ -1016,3 +1016,51 @@ class BuildHistoryUnitTest(unittest.TestCase):
         self.assertEqual(ts[('material', 3)], '2025-03-01T00:00:00+00:00')
         self.assertEqual(ts[('deliverable', 4)], '2025-03-09T00:00:00+00:00')
         self.assertEqual(ts[('contact', 5)], '2024-01-01T00:00:00+00:00')
+
+    def _for(self, c, otype, oid):
+        return [r['fields'] for r in self._history(c)
+                if r['fields']['object_type'] == otype and r['fields']['object_id'] == oid]
+
+    def test_status_transitions_synthesised_from_final_status(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'completed'})
+        c.add_fixture('jobs.task', 2, {'job': 1, 'status': 'complete'})
+        c.add_fixture('inventory.material', 3, {'job': 1, 'consumption_state': 'consumed'})
+        c.add_fixture('deliverables.shipment', 4, {'job': 1, 'created_at': '2025-03-02T00:00:00+00:00', 'status': 'picked_up'})
+        c.add_fixture('estimates.estimate', 5, {'job': 1, 'created_date': '2025-03-01T00:00:00+00:00', 'status': 'accepted'})
+
+        build.build_history(c)
+
+        # Job: created + the full draft->...->completed path as action entries
+        job = self._for(c, 'job', 1)
+        self.assertEqual(len([e for e in job if e['changes'].get('_created')]), 1)
+        actions = [e for e in job if e['entry_type'] == 'action']
+        self.assertEqual([e['changes']['status']['new'] for e in actions],
+                         ['submitted', 'approved', 'in_progress', 'work_complete', 'completed'])
+        self.assertTrue(all('_action' in e['changes'] for e in actions))
+        created_ts = next(e['timestamp'] for e in job if e['changes'].get('_created'))
+        self.assertTrue(all(e['timestamp'] > created_ts for e in actions))
+
+        # Task / Material: bare audit field diffs (no _action)
+        task_audits = [e for e in self._for(c, 'task', 2) if 'status' in e['changes']]
+        self.assertEqual(task_audits[-1]['changes']['status']['new'], 'complete')
+        self.assertNotIn('_action', task_audits[-1]['changes'])
+        mat = self._for(c, 'material', 3)
+        self.assertTrue(any(e['changes'].get('consumption_state', {}).get('new') == 'consumed' for e in mat))
+
+        # Shipment: picked_up action; Estimate: sent(open) + accepted
+        ship = self._for(c, 'shipment', 4)
+        self.assertTrue(any(e['entry_type'] == 'action'
+                            and e['changes'].get('status', {}).get('new') == 'picked_up' for e in ship))
+        est_new = [e['changes']['status']['new'] for e in self._for(c, 'estimate', 5)
+                   if e['entry_type'] == 'action']
+        self.assertEqual(est_new, ['open', 'accepted'])
+
+    def test_initial_status_emits_no_transition(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'draft'})
+        c.add_fixture('jobs.task', 2, {'job': 1, 'status': 'pending'})
+        build.build_history(c)
+        # only the _created entry for each — no status diffs
+        self.assertEqual(len(self._for(c, 'job', 1)), 1)
+        self.assertEqual(len(self._for(c, 'task', 2)), 1)
