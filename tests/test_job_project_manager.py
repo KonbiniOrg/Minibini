@@ -1,4 +1,3 @@
-from django.test import TestCase
 from tests.base import BaseTestCase
 from apps.core.models import User
 from apps.contacts.models import Contact
@@ -17,7 +16,7 @@ class JobProjectManagerModelTest(BaseTestCase):
         return Job.objects.create(
             job_number=kwargs.pop('job_number', 'JOB-PM-0001'),
             name=kwargs.pop('name', 'PM Job'),
-            status='draft',
+            status=Job.STATUS_DRAFT,
             contact=self.contact,
             **kwargs,
         )
