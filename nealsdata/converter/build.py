@@ -6,7 +6,7 @@ argument and appends fixture records to c.fixture_data via c.add_fixture().
 import json
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from nealsdata.converter import parsing as P
@@ -105,19 +105,17 @@ def build_seed(c):
 
 
 def build_configuration(c):
-    """Emit core.configuration fixtures for document numbering and app settings.
+    """Emit document-numbering + app-settings state.
 
-    Configuration uses the key field as primary key, so pk is the key string.
+    Both Configuration and AppState use the key field as primary key, so pk is
+    the key string. Document-number *patterns* are user-settable Configuration;
+    the *counters* are machine state in AppState (core migration 0018). Estimate
+    numbering no longer uses this service, so it gets no sequence/counter keys.
     """
-    entries = [
+    config = [
         ('job_number_sequence',      'J{year}-{counter:04d}'),
-        ('job_counter',              '0'),
-        ('estimate_number_sequence', 'E{year}-{counter:04d}'),
-        ('estimate_counter',         '0'),
         ('invoice_number_sequence',  'INV-{year}-{counter:04d}'),
-        ('invoice_counter',          '0'),
         ('po_number_sequence',       'PO-{year}-{counter:04d}'),
-        ('po_counter',               '0'),
         ('est_expire_days',          '30'),
         ('email_retention_days',     '30'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
@@ -126,8 +124,14 @@ def build_configuration(c):
         # see parsing.resolve_li_units_and_qty.)
         ('units_list',               json.dumps(['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
     ]
-    for key, value in entries:
+    for key, value in config:
         c.add_fixture('core.configuration', key, {'value': value})
+
+    # Machine-managed counters live in AppState (a separate table the Settings
+    # editor can't touch). Without these, document creation (e.g. a new PO)
+    # raises "AppState key '..._counter' not found".
+    for key in ('job_counter', 'invoice_counter', 'po_counter'):
+        c.add_fixture('core.appstate', key, {'value': '0'})
 
 
 def _anonymize_email(value):
@@ -393,6 +397,7 @@ def build_jobs(c):
             'customer_po_number': '',
             'description':        description,
             'accent_color':       accent_color,
+            'hold_reason':        '',
         })
 
         # --- 7. Record maps -----------------------------------------------
@@ -432,7 +437,10 @@ def build_price_list_items(c):
 
         description = str(row.get('Description') or '').strip()
         price_raw = row.get('Price') or row.get('Sales Price') or 0
-        selling_price = f'{P.parse_decimal(price_raw):.2f}'
+        sell = P.parse_decimal(price_raw).quantize(Decimal('0.01'))
+        selling_price = f'{sell:.2f}'
+        # Purchase price modelled as 83.33% of the listed sell price.
+        purchase_price = f'{sell * Decimal("0.8333"):.2f}'
 
         pk = c.next_pk('inventory.pricelistitem')
         c.add_fixture('inventory.pricelistitem', pk, {
@@ -440,7 +448,7 @@ def build_price_list_items(c):
             'description': description,
             'units': 'none',
             'selling_price': selling_price,
-            'purchase_price': '0.00',
+            'purchase_price': purchase_price,
             'qty_on_hand': '0.00',
             'qty_sold': '0.00',
             'qty_wasted': '0.00',
@@ -1523,3 +1531,242 @@ def build_shipments(c):
                 'deliverable': d['pk'],
                 'qty':         d['fields']['qty_ordered'],
             })
+
+
+# Models the @history decorator tracks AND that this converter emits. The value
+# is the object_type stored on a HistoryEntry — the model class name lowercased
+# (see apps/core/history.py _get_object_type). EstWorksheet is intentionally
+# absent: it is no longer history-tracked.
+_HISTORY_TRACKED_MODELS = {
+    'contacts.contact': 'contact',
+    'contacts.business': 'business',
+    'jobs.job': 'job',
+    'jobs.task': 'task',
+    'estimates.estimate': 'estimate',
+    'inventory.material': 'material',
+    'invoicing.invoice': 'invoice',
+    'deliverables.deliverable': 'deliverable',
+    'deliverables.shipment': 'shipment',
+}
+
+# History is partitioned by domain (see apps/core/history.record_history): the
+# object_type picks the table. The converter only emits job-domain and CRM rows.
+_HISTORY_TABLE = {
+    'job': 'core.jobhistory', 'task': 'core.jobhistory', 'estimate': 'core.jobhistory',
+    'changeorder': 'core.jobhistory', 'invoice': 'core.jobhistory',
+    'material': 'core.jobhistory', 'deliverable': 'core.jobhistory',
+    'shipment': 'core.jobhistory',
+    'contact': 'core.crmhistory', 'business': 'core.crmhistory',
+    'purchaseorder': 'core.purchasinghistory', 'bill': 'core.purchasinghistory',
+}
+
+# Fallback for objects with no Job and no creation date (Contact, Business).
+_HISTORY_FALLBACK_DATE = '2024-01-01T00:00:00+00:00'
+
+# Estimate statuses meaning "was sent" (reached open) and the terminal labels.
+_EST_OPENED = {'open', 'accepted', 'rejected', 'expired', 'superseded'}
+_EST_TERMINAL = {'accepted', 'rejected', 'expired', 'superseded'}
+_EST_ACTION = {
+    'accepted': 'Accepted by the customer',
+    'rejected': 'Rejected by the customer',
+    'expired': 'Expired',
+    'superseded': 'Superseded by a revision',
+}
+# Invoice statuses meaning "was sent" (reached open).
+_INV_SENT = {'open', 'paid', 'partly-paid', 'defaulted'}
+
+
+def _parse_dt(s):
+    if not isinstance(s, str):
+        return None
+    try:
+        return datetime.fromisoformat(s.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+
+
+def _job_timeline(job_pk, job_fields, related):
+    """Return [(ordinal, object_type, object_id, entry_type, changes)] for one
+    Job and its tracked children, in causal order.
+
+    The ordinal encodes the lifecycle phase (see the sequence below); the actual
+    timestamps are derived from it so the order is what matters, not the clock.
+    """
+    ev = []
+
+    def add(ordinal, otype, oid, etype, changes):
+        ev.append((ordinal, otype, oid, etype, changes))
+
+    st = job_fields.get('status')
+    estimates = related.get('estimates.estimate', [])
+    deliverables = related.get('deliverables.deliverable', [])
+    tasks = related.get('jobs.task', [])
+    materials = related.get('inventory.material', [])
+    shipments = related.get('deliverables.shipment', [])
+    invoices = related.get('invoicing.invoice', [])
+
+    reached_submitted = st in ('submitted', 'in_progress', 'work_complete', 'completed', 'rejected')
+    reached_approved = st in ('in_progress', 'work_complete', 'completed')
+    reached_work_complete = st in ('work_complete', 'completed')
+
+    # 0  Job created
+    add(0, 'job', job_pk, 'audit', {'_created': True})
+    # 1  Estimates created
+    for e in estimates:
+        add(1, 'estimate', e['pk'], 'audit', {'_created': True})
+    # 2  Deliverables created (incl. any fake)
+    for d in deliverables:
+        add(2, 'deliverable', d['pk'], 'audit', {'_created': True})
+    # 3  PlanTasks / PlanMaterials created — not history-tracked, no entries
+
+    # 4  Estimate marked Open (sent) + Job submitted
+    for e in estimates:
+        if e['fields'].get('status') in _EST_OPENED:
+            add(4, 'estimate', e['pk'], 'action',
+                {'status': {'old': 'draft', 'new': 'open'}, '_action': 'Sent to the customer'})
+    if reached_submitted:
+        add(4, 'job', job_pk, 'action',
+            {'status': {'old': 'draft', 'new': 'submitted'}, '_action': 'Submitted for approval'})
+
+    # 5  Estimate terminal (accepted/superseded/expired/rejected) + Job approved
+    for e in estimates:
+        es = e['fields'].get('status')
+        if es in _EST_TERMINAL:
+            add(5, 'estimate', e['pk'], 'action',
+                {'status': {'old': 'open', 'new': es}, '_action': _EST_ACTION[es]})
+    if reached_approved:
+        add(5, 'job', job_pk, 'action',
+            {'status': {'old': 'submitted', 'new': 'approved'}, '_action': 'Approved — released to the floor'})
+
+    # 5.5  Job rejected — after the estimate lapsed, when no tasks exist
+    if st == 'rejected':
+        add(5.5, 'job', job_pk, 'action',
+            {'status': {'old': 'submitted', 'new': 'rejected'}, '_action': 'Rejected'})
+
+    # 6  Tasks and Materials created
+    for t in tasks:
+        add(6, 'task', t['pk'], 'audit', {'_created': True})
+    for m in materials:
+        add(6, 'material', m['pk'], 'audit', {'_created': True})
+
+    # 6.5  Job cancelled — after tasks exist (dormant on current data)
+    if st == 'cancelled':
+        add(6.5, 'job', job_pk, 'action',
+            {'status': {'old': 'in_progress', 'new': 'cancelled'}, '_action': 'Cancelled'})
+
+    # 7  Job in progress
+    if reached_approved:
+        add(7, 'job', job_pk, 'action',
+            {'status': {'old': 'approved', 'new': 'in_progress'}, '_action': 'Work started on the floor'})
+
+    # 8  Shipments and Invoices created
+    for s in shipments:
+        add(8, 'shipment', s['pk'], 'audit', {'_created': True})
+    for inv in invoices:
+        add(8, 'invoice', inv['pk'], 'audit', {'_created': True})
+
+    # 9  Tasks completed / Materials consumed (work happening)
+    for t in tasks:
+        if t['fields'].get('status') == 'complete':
+            add(9, 'task', t['pk'], 'audit', {'status': {'old': 'pending', 'new': 'complete'}})
+    for m in materials:
+        if m['fields'].get('consumption_state') == 'consumed':
+            add(9, 'material', m['pk'], 'audit', {'consumption_state': {'old': 'pending', 'new': 'consumed'}})
+
+    # 10  Job work complete + Shipments picked up
+    if reached_work_complete:
+        add(10, 'job', job_pk, 'action',
+            {'status': {'old': 'in_progress', 'new': 'work_complete'}, '_action': 'Work completed'})
+    for s in shipments:
+        if s['fields'].get('status') == 'picked_up':
+            add(10, 'shipment', s['pk'], 'action',
+                {'status': {'old': 'prepared', 'new': 'picked_up'}, '_action': 'Picked up'})
+
+    # 11  Invoices marked Sent
+    for inv in invoices:
+        if inv['fields'].get('status') in _INV_SENT:
+            add(11, 'invoice', inv['pk'], 'action',
+                {'status': {'old': 'draft', 'new': 'open'}, '_action': 'Sent to the customer'})
+    # 12  Invoices marked Paid
+    for inv in invoices:
+        if inv['fields'].get('status') == 'paid':
+            add(12, 'invoice', inv['pk'], 'action',
+                {'status': {'old': 'open', 'new': 'paid'}, '_action': 'Paid in full'})
+
+    # 13  Job completed
+    if st == 'completed':
+        add(13, 'job', job_pk, 'action',
+            {'status': {'old': 'work_complete', 'new': 'completed'}, '_action': 'Job closed out'})
+
+    return ev
+
+
+def build_history(c):
+    """Emit HistoryEntry rows for every history-tracked object, ordered to match
+    the real job lifecycle.
+
+    Mirrors apps/core/history.py: a ``_created`` audit entry when an object is
+    first saved, plus the status transitions implied by its final status —
+    ``action`` entries with an ``_action`` label for Job/Estimate/Invoice/
+    Shipment moves, bare ``audit`` field diffs for Task/Material.
+
+    Per Job, entries are laid out in causal order (job created -> estimate
+    created -> deliverables -> estimate sent -> accepted/approved -> tasks &
+    materials -> in progress -> shipments/invoices -> work complete -> invoice
+    sent/paid -> completed; rejection lands after the estimate lapses, after any
+    tasks). Timestamps are derived from the Job's ``created_date`` plus the phase
+    ordinal — the order is what matters; the converter carries no per-transition
+    dates. Objects with no Job (Contact, Business) get a single creation entry.
+
+    Runs last, after every object has been built, so it can see them all.
+    """
+    from collections import defaultdict
+
+    def emit(object_type, object_id, timestamp, entry_type, changes):
+        model = _HISTORY_TABLE[object_type]
+        c.add_fixture(model, c.next_pk(model), {
+            'entry_type': entry_type,
+            'object_type': object_type,
+            'object_id': object_id,
+            'user': None,
+            'timestamp': timestamp,
+            'changes': changes,
+            'text': '',
+        })
+
+    # Group tracked objects by Job; Contact/Business have no Job.
+    jobs = {}
+    by_job = defaultdict(lambda: defaultdict(list))
+    no_job = []
+    for f in c.fixture_data:
+        model = f['model']
+        if model not in _HISTORY_TRACKED_MODELS:
+            continue
+        if model == 'jobs.job':
+            jobs[f['pk']] = f
+        elif f['fields'].get('job') is not None:
+            by_job[f['fields']['job']][model].append(f)
+        else:
+            no_job.append(f)
+
+    # Job-less objects: a single creation entry.
+    for f in no_job:
+        emit(_HISTORY_TRACKED_MODELS[f['model']], f['pk'], _HISTORY_FALLBACK_DATE,
+             'audit', {'_created': True})
+
+    # Per-job causal timeline.
+    for job_pk, job_f in jobs.items():
+        base_str = job_f['fields'].get('created_date') or _HISTORY_FALLBACK_DATE
+        base_dt = _parse_dt(base_str)
+        events = sorted(_job_timeline(job_pk, job_f['fields'], by_job.get(job_pk, {})),
+                        key=lambda e: e[0])
+        prev_ord, intra = None, 0
+        for ordinal, otype, oid, etype, changes in events:
+            if ordinal != prev_ord:
+                prev_ord, intra = ordinal, 0
+            if base_dt is not None:
+                ts = (base_dt + timedelta(days=ordinal, minutes=intra)).isoformat()
+            else:
+                ts = base_str
+            emit(otype, oid, ts, etype, changes)
+            intra += 1

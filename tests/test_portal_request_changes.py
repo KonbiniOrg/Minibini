@@ -3,12 +3,13 @@
 Spec: docs/plans/2026-06-03-portal-request-changes.md
 """
 from decimal import Decimal
+from apps.core.models import JobHistory
 
 from django.core.exceptions import ValidationError
 from django.test import Client, TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration, HistoryEntry
+from apps.core.models import Configuration
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job
@@ -81,7 +82,7 @@ class RequestChangesServiceTest(TestCase):
     def test_records_comment_as_customer_action_history(self):
         EstimateService.request_changes(
             self.est.pk, self._actor(reason='need it 2 weeks sooner'))
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='estimate', object_id=self.est.pk,
             entry_type='action', user__isnull=True,
         ).order_by('-pk').first()
@@ -134,7 +135,7 @@ class PortalRequestChangesTest(TestCase):
         self.http.post(
             f'/api/portal/estimates/{self.token}/request-changes/',
             data={'reason': 'cut line 1'}, content_type='application/json')
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='estimate', object_id=self.est.pk,
             entry_type='action').order_by('-pk').first()
         self.assertIsNotNone(entry)

@@ -1,8 +1,9 @@
 from django.db import transaction
+from apps.core.history import record_history
 from django.utils import timezone
 
 from apps.core.management.base import ScheduledProcessCommand
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder
 
@@ -37,8 +38,8 @@ class Command(ScheduledProcessCommand):
                         continue
                     days = self._validity_days(co)
                     ChangeOrderService.update_status(pk, ChangeOrder.STATUS_EXPIRED)
-                    HistoryEntry.objects.create(
-                        entry_type='action', object_type='change_order', object_id=pk,
+                    record_history(
+                        entry_type='action', object_type='changeorder', object_id=pk,
                         user=system_user,
                         changes={
                             'status': {'old': ChangeOrder.STATUS_OPEN, 'new': ChangeOrder.STATUS_EXPIRED},

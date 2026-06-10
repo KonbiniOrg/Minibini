@@ -1,7 +1,8 @@
 from unittest.mock import patch, MagicMock
+from apps.core.models import PurchasingHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User, HistoryEntry, EmailRecord
+from apps.core.models import User, EmailRecord
 from apps.purchasing.models import PurchaseOrder, Bill
 
 
@@ -101,7 +102,7 @@ class PurchaseOrderAPITest(BaseTestCase):
             self.client.post(f'/api/purchase-orders/{po.pk}/cancel/', {
                 'reason': 'No longer needed',
             }, format='json')
-            entry = HistoryEntry.objects.filter(
+            entry = PurchasingHistory.objects.filter(
                 entry_type='audit', object_type='purchaseorder', object_id=po.pk,
             ).first()
             self.assertIsNotNone(entry)
@@ -259,7 +260,7 @@ class PurchaseOrderAPITest(BaseTestCase):
         }, format='json')
         po.refresh_from_db()
         self.assertEqual(po.status, PurchaseOrder.STATUS_ISSUED)
-        entry = HistoryEntry.objects.filter(
+        entry = PurchasingHistory.objects.filter(
             object_type='purchaseorder', object_id=po.pk,
         ).order_by('-timestamp').first()
         self.assertIsNotNone(entry)
@@ -378,7 +379,7 @@ class BillAPITest(BaseTestCase):
             self.client.post(f'/api/bills/{bill.pk}/cancel/', {
                 'reason': 'Duplicate entry',
             }, format='json')
-            entry = HistoryEntry.objects.filter(
+            entry = PurchasingHistory.objects.filter(
                 entry_type='audit', object_type='bill', object_id=bill.pk,
             ).first()
             self.assertIsNotNone(entry)

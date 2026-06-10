@@ -116,6 +116,7 @@
       JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'}
       {#if canManageJobs}<a href="#/jobs/{job.job_id}/edit" class="edit-link">edit</a>{/if}
       {#if canManageJobs}<a href="#/jobs/{job.job_id}/duplicate" class="edit-link">duplicate…</a>{/if}
+      <a href="#/jobs/{job.job_id}/history" class="edit-link">history</a>
     </h1>
     <p class="customer-line">
       {#if contact}

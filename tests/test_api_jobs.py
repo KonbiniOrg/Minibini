@@ -1,10 +1,11 @@
 from decimal import Decimal
+from apps.core.models import JobHistory
 from rest_framework.test import APIClient
 from rest_framework import status
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from tests.base import BaseTestCase
-from apps.core.models import User, HistoryEntry, AccountingCategory
+from apps.core.models import User, AccountingCategory
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
@@ -129,7 +130,7 @@ class JobAPITest(BaseTestCase):
         self.client.post(f'/api/jobs/{job.pk}/cancel/', {
             'reason': 'Customer withdrew',
         }, format='json')
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             entry_type='audit', object_type='job', object_id=job.pk,
         ).first()
         self.assertIsNotNone(entry)

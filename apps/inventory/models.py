@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import models
+from apps.core.history import history
 
 
 class Earmark(models.Model):
@@ -248,6 +249,7 @@ class TemplateMaterialAssociation(models.Model):
             )
 
 
+@history(exclude=['material_id'])
 class Material(MaterialBase):
     """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows."""
     CONSUMPTION_STATE_PENDING = 'pending'

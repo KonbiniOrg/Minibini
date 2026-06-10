@@ -3,13 +3,13 @@ Tests for ChangeOrderService lifecycle: create, update_status (accept/reject),
 seed_new, discard_draft, and related side effects.
 """
 from decimal import Decimal
+from apps.core.models import JobHistory
 from django.core.exceptions import ValidationError
 from tests.base import FixtureTestCase
 from apps.estimates.models import Estimate, EstimateLineItem, ChangeOrder, ChangeOrderLineItem
 from apps.deliverables.models import Deliverable, DeliverableSnapshot
 from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
-from apps.core.models import HistoryEntry
 
 
 def _advance_job_to_on_hold(job):
@@ -140,10 +140,10 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         _add_co_line(co)
         ChangeOrderService.mark_open(co.pk)
 
-        history_before = HistoryEntry.objects.filter(object_type='change_order').count()
+        history_before = JobHistory.objects.filter(object_type='changeorder').count()
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
-        history_after = HistoryEntry.objects.filter(object_type='change_order').count()
+        history_after = JobHistory.objects.filter(object_type='changeorder').count()
         self.assertGreater(history_after, history_before)
 
     def test_accept_does_not_create_tasks_or_materials(self):

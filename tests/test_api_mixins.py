@@ -1,4 +1,5 @@
 from rest_framework.test import APIRequestFactory, force_authenticate
+from apps.core.models import JobHistory
 from rest_framework import serializers, viewsets, status
 from apps.core.models import User
 from apps.core.services import ServiceError
@@ -74,9 +75,8 @@ class StatusTransitionMixinTest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_reason_persisted_to_history(self):
-        """When requires_reason=True, the reason should be saved as a HistoryEntry."""
+        """When requires_reason=True, the reason should be saved as a ."""
         from apps.jobs.models import Job
-        from apps.core.models import HistoryEntry
 
         class JobSerializer(serializers.ModelSerializer):
             class Meta:
@@ -106,7 +106,7 @@ class StatusTransitionMixinTest(BaseTestCase):
         response = view(request, pk=job.pk)
         self.assertEqual(response.status_code, 200)
 
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             entry_type='audit',
             object_type='job',
             object_id=job.pk,
@@ -115,7 +115,7 @@ class StatusTransitionMixinTest(BaseTestCase):
         self.assertIsNotNone(entry)
         self.assertEqual(entry.user, self.user)
         # Verify no separate action entry was created
-        action_count = HistoryEntry.objects.filter(
+        action_count = JobHistory.objects.filter(
             entry_type='action', object_type='job', object_id=job.pk,
         ).count()
         self.assertEqual(action_count, 0)

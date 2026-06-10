@@ -1,5 +1,6 @@
 from tests.base import BaseTestCase
-from apps.core.models import HistoryEntry, User
+from apps.core.models import JobHistory
+from apps.core.models import User
 from apps.estimates.models import Estimate
 from apps.estimates.signals import estimate_status_changed_for_job
 from apps.jobs.models import Job
@@ -17,7 +18,7 @@ class SignalHistoryTest(BaseTestCase):
         job.save()
 
         # Clear any history from setup saves
-        HistoryEntry.objects.all().delete()
+        JobHistory.objects.all().delete()
 
         # Trigger the signal
         estimate_status_changed_for_job.send(
@@ -26,7 +27,7 @@ class SignalHistoryTest(BaseTestCase):
             new_job_status=Job.STATUS_APPROVED,
         )
 
-        entries = HistoryEntry.objects.filter(
+        entries = JobHistory.objects.filter(
             object_type='job',
             object_id=job.pk,
             entry_type='action',
@@ -55,7 +56,7 @@ class SignalHistoryTest(BaseTestCase):
         job.status = Job.STATUS_COMPLETED
         job.save()
 
-        HistoryEntry.objects.all().delete()
+        JobHistory.objects.all().delete()
 
         estimate_status_changed_for_job.send(
             sender=Estimate,
@@ -63,7 +64,7 @@ class SignalHistoryTest(BaseTestCase):
             new_job_status=Job.STATUS_APPROVED,
         )
 
-        entries = HistoryEntry.objects.filter(
+        entries = JobHistory.objects.filter(
             object_type='job',
             object_id=job.pk,
             entry_type='action',

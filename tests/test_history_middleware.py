@@ -1,7 +1,8 @@
 from django.test import TestCase
+from apps.core.models import CrmHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from apps.contacts.models import Contact
 
 
@@ -24,7 +25,7 @@ class HistoryMiddlewareAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 200)
-        entries = HistoryEntry.objects.filter(
+        entries = CrmHistory.objects.filter(
             object_type='contact', object_id=contact.pk, entry_type='audit',
         )
         self.assertEqual(entries.count(), 1)
@@ -43,7 +44,7 @@ class HistoryMiddlewareAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 200)
-        entries = HistoryEntry.objects.filter(
+        entries = CrmHistory.objects.filter(
             object_type='contact', object_id=contact.pk,
         )
         self.assertEqual(entries.count(), 0)
@@ -57,7 +58,7 @@ class HistoryMiddlewareAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 200)
-        entries = HistoryEntry.objects.filter(
+        entries = CrmHistory.objects.filter(
             object_type='contact', object_id=contact.pk,
         )
         self.assertEqual(entries.count(), 1)
@@ -75,7 +76,7 @@ class HistoryMiddlewareAPITest(BaseTestCase):
         )
         self.assertEqual(response.status_code, 201)
         new_id = response.data['contact_id']
-        entries = HistoryEntry.objects.filter(
+        entries = CrmHistory.objects.filter(
             object_type='contact', object_id=new_id,
         )
         self.assertEqual(entries.count(), 1)
@@ -92,7 +93,7 @@ class HistoryMiddlewareAPITest(BaseTestCase):
             {'first_name': 'TestUser'},
             format='json',
         )
-        entry = HistoryEntry.objects.filter(
+        entry = CrmHistory.objects.filter(
             object_type='contact', object_id=contact.pk,
         ).first()
         self.assertEqual(entry.user, self.user)
@@ -107,7 +108,7 @@ class HistoryDirectSaveTest(BaseTestCase):
         old_name = contact.first_name
         contact.first_name = 'DirectChange'
         contact.save()
-        entries = HistoryEntry.objects.filter(
+        entries = CrmHistory.objects.filter(
             object_type='contact', object_id=contact.pk,
         )
         self.assertEqual(entries.count(), 1)

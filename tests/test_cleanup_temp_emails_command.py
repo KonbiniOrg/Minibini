@@ -1,9 +1,11 @@
 from datetime import timedelta
+from apps.core.history import record_history
+from apps.core.models import JobHistory
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from apps.core.models import (
-    Configuration, EmailRecord, TempEmail, ScheduledProcessRun, HistoryEntry,
+    Configuration, EmailRecord, TempEmail, ScheduledProcessRun
 )
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
@@ -28,15 +30,15 @@ class CleanupTempEmailsCommandTest(TestCase):
         return rec, temp
 
     def _record_status_change(self, object_type, object_id, new_status, days_ago):
-        """Create a HistoryEntry recording a transition into new_status at
+        """Create a  recording a transition into new_status at
         a backdated timestamp. timestamp is auto_now_add so we rewrite it."""
-        h = HistoryEntry.objects.create(
+        h = record_history(
             entry_type='audit',
             object_type=object_type,
             object_id=object_id,
             changes={'status': {'old': 'in_progress', 'new': new_status}},
         )
-        HistoryEntry.objects.filter(pk=h.pk).update(
+        type(h).objects.filter(pk=h.pk).update(
             timestamp=timezone.now() - timedelta(days=days_ago)
         )
         return h
@@ -304,11 +306,11 @@ class CleanupTempEmailsCommandTest(TestCase):
 
         self.assertFalse(TempEmail.objects.filter(email_record=rec).exists())
 
-    # --- finality fallback when no HistoryEntry ------------------------------
+    # --- finality fallback when no  ------------------------------
 
     def test_final_object_with_no_history_falls_back_to_email_date(self):
         # Pre-history-tracking object or one created in a final state directly.
-        # Without a status-change HistoryEntry, fall back to TempEmail.created_at.
+        # Without a status-change , fall back to TempEmail.created_at.
         contact = self._make_contact()
         job = Job.objects.create(
             job_number='JOB-NH', name='no history', status=Job.STATUS_COMPLETED,
@@ -316,7 +318,7 @@ class CleanupTempEmailsCommandTest(TestCase):
         )
         # Wipe any auto-history that the @history decorator may have recorded
         # so the test truly has none for this object.
-        HistoryEntry.objects.filter(object_type='job', object_id=job.pk).delete()
+        JobHistory.objects.filter(object_type='job', object_id=job.pk).delete()
 
         old_rec, _ = self._make_temp('nohist-old', 200, job=job)
         new_rec, _ = self._make_temp('nohist-new', 10, job=job)

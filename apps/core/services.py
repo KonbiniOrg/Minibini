@@ -559,7 +559,7 @@ class EmailService:
         EmailRecord rows are preserved permanently regardless.
         """
         from django.db.models import Max
-        from apps.core.models import HistoryEntry
+        from apps.core.history import history_model_for
         from apps.jobs.models import Job
         from apps.purchasing.models import PurchaseOrder, Bill
 
@@ -601,7 +601,7 @@ class EmailService:
             finality_map = dict.fromkeys(final_ids, None)
             if final_ids:
                 rows = (
-                    HistoryEntry.objects
+                    history_model_for(object_type).objects
                     .filter(
                         object_type=object_type,
                         object_id__in=final_ids,

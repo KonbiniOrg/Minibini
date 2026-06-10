@@ -1,8 +1,8 @@
 from decimal import Decimal
+from apps.core.models import JobHistory
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import HistoryEntry
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.services import JobService
@@ -25,7 +25,7 @@ class UpdateStatusActorTest(TestCase):
         EstimateService.update_status(
             self.est.pk, Estimate.STATUS_ACCEPTED,
             actor={'contact_id': self.contact.pk, 'email': 'pat@acme.com'})
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='estimate', object_id=self.est.pk, entry_type='action',
         ).order_by('-timestamp').first()
         self.assertIsNotNone(entry)
@@ -39,18 +39,18 @@ class UpdateStatusActorTest(TestCase):
             self.est.pk, Estimate.STATUS_REJECTED,
             actor={'contact_id': self.contact.pk, 'email': 'pat@acme.com',
                    'reason': 'Too expensive'})
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='estimate', object_id=self.est.pk, entry_type='action',
         ).order_by('-timestamp').first()
         self.assertEqual(entry.changes['_action'], 'Declined via customer link')
         self.assertEqual(entry.text, 'Too expensive')
 
     def test_no_actor_writes_no_action_entry(self):
-        before = HistoryEntry.objects.filter(
+        before = JobHistory.objects.filter(
             object_type='estimate', object_id=self.est.pk,
             entry_type='action').count()
         EstimateService.update_status(self.est.pk, Estimate.STATUS_ACCEPTED)
-        after = HistoryEntry.objects.filter(
+        after = JobHistory.objects.filter(
             object_type='estimate', object_id=self.est.pk,
             entry_type='action').count()
         self.assertEqual(before, after)

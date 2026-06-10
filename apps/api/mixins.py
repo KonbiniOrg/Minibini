@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from apps.core.history import record_history
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -129,8 +130,7 @@ class StatusTransitionMixin:
                                 attached = True
                                 break
                     if not attached:
-                        from apps.core.models import HistoryEntry
-                        HistoryEntry.objects.create(
+                        record_history(
                             entry_type='audit',
                             object_type=obj_type,
                             object_id=instance.pk,

@@ -1,5 +1,7 @@
 from django.test import TestCase
-from apps.core.models import HistoryEntry, User
+from apps.core.models import JobHistory
+from apps.core.history import record_history
+from apps.core.models import User
 from tests.base import BaseTestCase
 
 
@@ -8,7 +10,7 @@ class HistoryEntryModelTest(TestCase):
         self.user = User.objects.create_user(username='testuser', password='testpass')
 
     def test_create_audit_entry(self):
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='audit',
             object_type='estimate',
             object_id=1,
@@ -24,7 +26,7 @@ class HistoryEntryModelTest(TestCase):
         self.assertEqual(entry.text, '')
 
     def test_create_action_entry(self):
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='action',
             object_type='job',
             object_id=1,
@@ -40,7 +42,7 @@ class HistoryEntryModelTest(TestCase):
         self.assertIsNone(entry.user)
 
     def test_create_note_entry(self):
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note',
             object_type='job',
             object_id=1,
@@ -52,22 +54,22 @@ class HistoryEntryModelTest(TestCase):
         self.assertEqual(entry.text, 'Customer called to confirm delivery date.')
 
     def test_ordering_newest_first(self):
-        e1 = HistoryEntry.objects.create(
+        e1 = record_history(
             entry_type='audit', object_type='job', object_id=1,
             changes={'name': {'old': 'A', 'new': 'B'}},
         )
-        e2 = HistoryEntry.objects.create(
+        e2 = record_history(
             entry_type='note', object_type='job', object_id=1,
             text='A note',
         )
-        entries = list(HistoryEntry.objects.all())
+        entries = list(JobHistory.objects.all())
         self.assertEqual(entries[0].pk, e2.pk)
         self.assertEqual(entries[1].pk, e1.pk)
 
     def test_entry_type_choices(self):
         valid_types = ['audit', 'action', 'note']
         for t in valid_types:
-            entry = HistoryEntry(entry_type=t, object_type='job', object_id=1)
+            entry = JobHistory(entry_type=t, object_type='job', object_id=1)
             entry.full_clean()  # should not raise
 
 

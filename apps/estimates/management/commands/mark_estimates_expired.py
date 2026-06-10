@@ -1,8 +1,9 @@
 from django.db import transaction
+from apps.core.history import record_history
 from django.utils import timezone
 
 from apps.core.management.base import ScheduledProcessCommand
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateService
 
@@ -37,7 +38,7 @@ class Command(ScheduledProcessCommand):
                         continue
                     days = self._validity_days(est)
                     EstimateService.update_status(pk, Estimate.STATUS_EXPIRED)
-                    HistoryEntry.objects.create(
+                    record_history(
                         entry_type='action', object_type='estimate', object_id=pk,
                         user=system_user,
                         changes={

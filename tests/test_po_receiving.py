@@ -1,8 +1,9 @@
 from decimal import Decimal
+from apps.core.models import PurchasingHistory
 from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import AccountingCategory, User, HistoryEntry
+from apps.core.models import AccountingCategory, User
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business, Contact
 from apps.inventory.models import PriceListItem, InventoryAdjustment
@@ -66,7 +67,7 @@ class ReceiveAllTest(POReceivingTestBase):
     def test_receive_all_creates_history(self):
         po = self._make_issued_po()
         self.client.post(f'/api/purchase-orders/{po.po_id}/receive-all/')
-        entry = HistoryEntry.objects.filter(
+        entry = PurchasingHistory.objects.filter(
             object_type='purchaseorder', object_id=po.pk,
             entry_type='action',
         ).first()
@@ -123,7 +124,7 @@ class ReceiveItemsTest(POReceivingTestBase):
         )
         li.refresh_from_db()
         self.assertEqual(li.receipt_note, 'Box damaged')
-        entry = HistoryEntry.objects.filter(
+        entry = PurchasingHistory.objects.filter(
             object_type='purchaseorder', object_id=po.pk,
             entry_type='action',
         ).first()
@@ -259,7 +260,7 @@ class CancelLineItemTest(POReceivingTestBase):
             {'line_item_id': li.pk, 'note': 'Vendor out of stock'},
             format='json',
         )
-        entry = HistoryEntry.objects.filter(
+        entry = PurchasingHistory.objects.filter(
             object_type='purchaseorder', object_id=po.pk,
             entry_type='action',
         ).first()
@@ -413,7 +414,7 @@ class ReverseReceiptTest(POReceivingTestBase):
             {'line_item_id': li.pk, 'note': 'Wrong item scanned'},
             format='json',
         )
-        entries = HistoryEntry.objects.filter(
+        entries = PurchasingHistory.objects.filter(
             object_type='purchaseorder', object_id=po.pk,
             entry_type='action',
         ).order_by('-pk')

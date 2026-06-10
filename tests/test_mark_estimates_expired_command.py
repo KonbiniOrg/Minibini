@@ -1,9 +1,10 @@
 from datetime import timedelta
+from apps.core.models import JobHistory
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from apps.contacts.models import Contact, Business
-from apps.core.models import HistoryEntry, ScheduledProcessRun
+from apps.core.models import ScheduledProcessRun
 from apps.estimates.models import Estimate
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
@@ -39,7 +40,7 @@ class MarkEstimatesExpiredCommandTest(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(est.status, Estimate.STATUS_EXPIRED)
         self.assertEqual(self.job.status, Job.STATUS_REJECTED)
-        self.assertTrue(HistoryEntry.objects.filter(
+        self.assertTrue(JobHistory.objects.filter(
             object_type='estimate', object_id=est.pk,
             changes__status__new=Estimate.STATUS_EXPIRED,
         ).exists())

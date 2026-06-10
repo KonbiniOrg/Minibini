@@ -3,6 +3,7 @@ Service classes for handling complex creation workflows between Jobs and Tasks.
 """
 
 from datetime import timedelta
+from apps.core.history import record_history
 from decimal import Decimal
 from collections import defaultdict
 from typing import List, Dict, Optional, Tuple
@@ -501,7 +502,7 @@ class JobService:
           - Releases loose (task-less, pending) materials, records a system
             HistoryEntry for the release, then walks the job to ``completed``.
         """
-        from apps.core.models import HistoryEntry, User
+        from apps.core.models import User
         from apps.deliverables.services import DeliverableService
         from apps.invoicing.models import Invoice
 
@@ -530,7 +531,7 @@ class JobService:
         # materials rather than letting the work_complete gate strand the job.
         released = JobService.release_loose_materials(job)
         if released:
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='job',
                 object_id=job.pk,
@@ -553,7 +554,7 @@ class JobService:
             job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
         job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
 
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='action',
             object_type='job',
             object_id=job.pk,
@@ -727,21 +728,21 @@ class JobService:
     def _advance_to_approved(new_job, source_job):
         """Walk draft -> submitted -> approved through the service, recording a
         HistoryEntry per hop. Mirrors apps/estimates/signals.py:96-116."""
-        from apps.core.models import HistoryEntry, User
+        from apps.core.models import User
         system_user, _ = User.objects.get_or_create(
             username='system',
             defaults={'first_name': 'System', 'is_active': False},
         )
         action_desc = f"Duplicated from {source_job.job_number}"
         JobService.update_status(new_job.pk, Job.STATUS_SUBMITTED)
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='action', object_type='job', object_id=new_job.pk,
             user=system_user,
             changes={'status': {'old': Job.STATUS_DRAFT, 'new': Job.STATUS_SUBMITTED},
                      '_action': action_desc},
         )
         JobService.update_status(new_job.pk, Job.STATUS_APPROVED)
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='action', object_type='job', object_id=new_job.pk,
             user=system_user,
             changes={'status': {'old': Job.STATUS_SUBMITTED, 'new': Job.STATUS_APPROVED},

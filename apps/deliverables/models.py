@@ -1,8 +1,10 @@
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from apps.core.history import history
 
 
+@history(exclude=['id', 'created_at', 'updated_at'])
 class Deliverable(models.Model):
     """A finished item the customer is buying on a Job. No price; quantity + units only."""
 
@@ -32,6 +34,7 @@ class Deliverable(models.Model):
         return f'{self.description} (qty {self.qty_ordered} {self.units})'
 
 
+@history(exclude=['id', 'created_at', 'updated_at'])
 class Shipment(models.Model):
     """A single fulfillment event for a Job. Multiple Shipments per Job for phased delivery."""
 

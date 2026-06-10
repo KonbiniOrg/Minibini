@@ -685,15 +685,23 @@ it to a user profile page — that move hasn't happened.
 
 ### 7.1 Model
 
-`apps/core/models.py` — `HistoryEntry` with three entry types:
+History is **partitioned by domain into three tables** (`apps/core/models.py`),
+all sharing the abstract `HistoryEntryBase`:
 
-- `audit` — automatic field-change tracking (decorated models)
-- `action` — system-generated state changes from signals/services
-- `note` — user-written free text
+- `JobHistory` (`job_history`) — Job + everything that hangs off it (task,
+  estimate, change order, invoice, material, deliverable, shipment).
+- `CrmHistory` (`crm_history`) — contacts and businesses.
+- `PurchasingHistory` (`purchasing_history`) — purchase orders and bills.
 
-`object_type` (lowercased class name) + `object_id` link entries to any
-model — no `GenericForeignKey`. `db_table = 'history'`. Ordered newest
-first.
+Three entry types (on the base): `audit` (automatic field-change tracking on
+decorated models), `action` (system-generated state changes from
+signals/services), `note` (user-written free text).
+
+`object_type` (lowercased class name) + `object_id` link an entry to any model —
+no `GenericForeignKey`. The **target table is chosen from `object_type`** by
+`apps.core.history.record_history` (the single write entry point) and
+`history_model_for`; every read site queries the table for its domain. Ordered
+newest first.
 
 `changes` is a JSON field with field diffs (`{"status": {"old": "draft",
 "new": "open"}}`) plus underscore-prefixed metadata keys: `_created`
@@ -706,11 +714,16 @@ system-generated description in `text`.
 Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 
 - `Contact`, `Business` — `apps/contacts/models.py`
-- `Job`, `BlepChangeRequest` — `apps/jobs/models.py`
-- `Estimate`, `EstWorksheet` — `apps/estimates/models.py`
+- `Job`, `Task` — `apps/jobs/models.py`
+- `Estimate`, `ChangeOrder` — `apps/estimates/models.py`
 - `Invoice` — `apps/invoicing/models.py`
 - `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
-- `Shift`, `ShiftChangeRequest` — `apps/core/models.py`
+- `Material` — `apps/inventory/models.py`
+- `Deliverable`, `Shipment` — `apps/deliverables/models.py`
+
+Time/workforce models (`Shift`, `ShiftChangeRequest`, `BlepChangeRequest`)
+are **not** tracked: their lifecycle is already first-class data
+(`status`, `reviewer`, `reviewed_at`, …) and nothing read their history.
 
 Excluded fields don't appear in `changes`; if they were the only fields
 that changed, no entry is created.
@@ -723,8 +736,8 @@ that changed, no entry is created.
   values to `instance._history_original` when it loads from the DB.
 - `pre_save` (`_on_pre_save`) — diffs current values against the
   snapshot and either appends to the request-scoped pending list (if
-  inside a request) or writes a `HistoryEntry` immediately (outside a
-  request).
+  inside a request) or writes a history row immediately via
+  `record_history` (outside a request).
 - `post_save` (`_on_post_save`) — for new objects saved outside a
   request, writes the deferred history entry now that `pk` exists; also
   re-snapshots so subsequent edits diff correctly.
@@ -746,8 +759,12 @@ tracked models — it bypasses signals. Always load and `.save()`.
 
 History feeds (paginated, newest first):
 
-- `GET /api/jobs/{id}/history/` — aggregates the job plus any related
-  estimates, worksheets, and invoices (`apps/api/jobs/views.py`).
+- `GET /api/jobs/{id}/history/` — aggregates the job plus its estimates,
+  change orders, invoices, tasks, deliverables, shipments, and materials
+  (built by `apps/api/jobs/history.py` → `build_job_history`). Each
+  entry carries `source_label` (e.g. `"Task: Fabrication"`) and
+  `source_link` (populated for job and task entries; `null` for others in
+  this version). EstWorksheet is no longer collated.
 - `GET /api/contacts/{id}/history/` — single object.
 - `GET /api/businesses/{id}/history/` — business plus its contacts.
 
@@ -765,10 +782,16 @@ one if needed.
 `frontend/src/components/HistoryPanel.svelte` renders a history-only
 timeline of `HistoryEntry` rows for an object. In lite mode it filters
 to entries with free-text content (`entry.data.text`); full mode shows
-everything. The component is currently unmounted from the Job overview
-pending a redesign — `EmailPanel.svelte` occupies that slot today (see
-§7.6) — but the component itself is still wired and works for any
-caller that passes it `{ history, onAddNote }`.
+everything. The panel is used on Contact, Business, and PO detail pages
+(`{ history, onAddNote }`). It is not used on the Job overview — that
+slot is occupied by `EmailPanel.svelte` (see §7.6).
+
+A dedicated Job History page lives at `#/jobs/:id/history`
+(`frontend/src/routes/jobs/JobHistoryPage.svelte`). It renders the full
+collated feed returned by `GET /api/jobs/{id}/history/` — job events
+alongside those from its tasks, estimates, change orders, invoices,
+deliverables, shipments, and materials, each labelled with
+`source_label`.
 
 ### 7.6 Email panel on the Job overview
 

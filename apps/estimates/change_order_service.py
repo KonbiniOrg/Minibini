@@ -8,6 +8,7 @@ Rules:
 """
 
 from django.core.exceptions import ValidationError
+from apps.core.history import record_history
 from django.db import transaction
 
 from apps.core.services import NotFoundError
@@ -166,7 +167,7 @@ class ChangeOrderService:
     @staticmethod
     def _handle_accepted(co):
         """Advance the job on_hold -> approved and write a system-attributed HistoryEntry."""
-        from apps.core.models import HistoryEntry, User
+        from apps.core.models import User
         from apps.jobs.services import JobService
 
         job = co.job
@@ -180,9 +181,9 @@ class ChangeOrderService:
         if job.status == Job.STATUS_ON_HOLD:
             old_status = job.status
             JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
-                object_type='change_order',
+                object_type='changeorder',
                 object_id=co.pk,
                 user=system_user,
                 changes={
@@ -213,7 +214,6 @@ class ChangeOrderService:
         job back to draft. ``actor`` is the portal actor dict
         ``{'contact_id', 'email', 'reason'}``. Returns the new draft CO.
         """
-        from apps.core.models import HistoryEntry
         from apps.deliverables.services import DeliverableService
 
         try:
@@ -223,9 +223,9 @@ class ChangeOrderService:
 
         # 1. Record the customer's comment against the CO they saw (same shape
         #    as the estimate flow's customer-action HistoryEntry).
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='action',
-            object_type='change_order',
+            object_type='changeorder',
             object_id=co.pk,
             user=None,
             changes={

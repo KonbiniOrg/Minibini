@@ -55,12 +55,20 @@ class BaseBuildersTest(unittest.TestCase):
         self.assertEqual(self.c.ac_by_code.get('SVC'), self.c.ac_svc_pk)
         self.assertIn('Shop labor', self.c.scheme_by_name)
 
-    def test_build_configuration_has_numbering_keys(self):
+    def test_build_configuration_numbering_keys(self):
         build.build_configuration(self.c)
-        keys = {f['pk'] for f in self._models('core.configuration')}
-        for k in ('job_counter', 'estimate_counter', 'invoice_counter',
-                  'po_counter'):
-            self.assertIn(k, keys)
+        config = {f['pk'] for f in self._models('core.configuration')}
+        appstate = {f['pk'] for f in self._models('core.appstate')}
+        # Patterns are user-settable Configuration ...
+        for k in ('job_number_sequence', 'invoice_number_sequence', 'po_number_sequence'):
+            self.assertIn(k, config)
+        # ... counters are machine state in AppState (migration 0018).
+        for k in ('job_counter', 'invoice_counter', 'po_counter'):
+            self.assertIn(k, appstate)
+            self.assertNotIn(k, config)
+        # Dead keys deleted by 0018 are not emitted.
+        self.assertNotIn('estimate_counter', config)
+        self.assertNotIn('estimate_number_sequence', config)
 
     def test_units_list_matches_canon(self):
         # The converter installs Configuration['units_list']; it must match
@@ -77,7 +85,13 @@ class BaseBuildersTest(unittest.TestCase):
     def test_build_price_list_items(self):
         build.build_seed(self.c)
         build.build_price_list_items(self.c)
-        self.assertGreater(len(self._models('inventory.pricelistitem')), 100)
+        items = self._models('inventory.pricelistitem')
+        self.assertGreater(len(items), 100)
+        # purchase_price is 83.33% of selling_price.
+        for f in items:
+            sell = Decimal(f['fields']['selling_price'])
+            expected = (sell * Decimal('0.8333')).quantize(Decimal('0.01'))
+            self.assertEqual(Decimal(f['fields']['purchase_price']), expected)
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -954,5 +968,154 @@ class ConvertEndToEndTest(unittest.TestCase):
         models = {row['model'] for row in data}
         self.assertIn('jobs.job', models)
         self.assertIn('estimates.estimate', models)
+        self.assertIn('core.jobhistory', models)
         self.assertNotIn('jobs.workorder', models)
         self.assertNotIn('jobs.blep', models)
+
+
+class BuildHistoryUnitTest(unittest.TestCase):
+    """Dataset-independent: drives build_history off a hand-built fixture list."""
+
+    def _converter(self):
+        # Loader __init__ is lazy (stores the path), so dummy paths are fine —
+        # we never call load(); we only use fixture_data / next_pk / add_fixture.
+        return NealsDataConverter('x.xlsx', 'x.csv', output_path='/tmp/x.json')
+
+    def _history(self, c):
+        models = ('core.jobhistory', 'core.crmhistory', 'core.purchasinghistory')
+        return [f for f in c.fixture_data if f['model'] in models]
+
+    def test_created_entry_for_tracked_objects_only(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00'})
+        c.add_fixture('jobs.task', 2, {'job': 1})
+        c.add_fixture('estimates.estimate', 3, {'job': 1, 'created_date': '2025-03-02T00:00:00+00:00'})
+        c.add_fixture('inventory.material', 4, {'job': 1})
+        c.add_fixture('deliverables.deliverable', 5, {'job': 1, 'created_at': '2025-03-03T00:00:00+00:00'})
+        c.add_fixture('deliverables.shipment', 6, {'job': 1, 'created_at': '2025-03-04T00:00:00+00:00'})
+        c.add_fixture('invoicing.invoice', 7, {'job': 1, 'created_date': '2025-03-05T00:00:00+00:00'})
+        c.add_fixture('contacts.contact', 8, {})
+        c.add_fixture('contacts.business', 9, {})
+        # untracked — must NOT get history
+        c.add_fixture('estimates.estworksheet', 10, {'job': 1})
+        c.add_fixture('jobs.plantask', 11, {})
+        c.add_fixture('inventory.pricelistitem', 12, {})
+
+        build.build_history(c)
+
+        got = {(r['fields']['object_type'], r['fields']['object_id']) for r in self._history(c)}
+        self.assertEqual(got, {
+            ('job', 1), ('task', 2), ('estimate', 3), ('material', 4),
+            ('deliverable', 5), ('shipment', 6), ('invoice', 7),
+            ('contact', 8), ('business', 9),
+        })
+        for r in self._history(c):
+            self.assertEqual(r['fields']['entry_type'], 'audit')
+            self.assertEqual(r['fields']['changes'], {'_created': True})
+            self.assertIsNone(r['fields']['user'])
+
+    def test_job_created_anchored_children_ordered_after(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'completed'})
+        c.add_fixture('estimates.estimate', 2, {'job': 1, 'status': 'accepted'})
+        c.add_fixture('jobs.task', 3, {'job': 1, 'status': 'complete'})
+        c.add_fixture('contacts.contact', 4, {})  # no Job -> fallback constant
+
+        build.build_history(c)
+
+        created = {}
+        for r in self._history(c):
+            f = r['fields']
+            if f['changes'].get('_created'):
+                created[(f['object_type'], f['object_id'])] = f['timestamp']
+        # Job creation keeps the real job created_date; children sort after it.
+        self.assertEqual(created[('job', 1)], '2025-03-01T00:00:00+00:00')
+        self.assertGreater(created[('estimate', 2)], created[('job', 1)])
+        self.assertGreater(created[('task', 3)], created[('estimate', 2)])
+        # Job-less object falls back to the constant.
+        self.assertEqual(created[('contact', 4)], '2024-01-01T00:00:00+00:00')
+
+    def _for(self, c, otype, oid):
+        return [r['fields'] for r in self._history(c)
+                if r['fields']['object_type'] == otype and r['fields']['object_id'] == oid]
+
+    @staticmethod
+    def _sorted_fields(history_rows):
+        return [r['fields'] for r in sorted(history_rows, key=lambda r: r['fields']['timestamp'])]
+
+    def test_full_lifecycle_causal_order(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'completed'})
+        c.add_fixture('estimates.estimate', 10, {'job': 1, 'status': 'accepted'})
+        c.add_fixture('deliverables.deliverable', 20, {'job': 1})
+        c.add_fixture('jobs.task', 30, {'job': 1, 'status': 'complete'})
+        c.add_fixture('inventory.material', 40, {'job': 1, 'consumption_state': 'consumed'})
+        c.add_fixture('deliverables.shipment', 50, {'job': 1, 'status': 'picked_up'})
+        c.add_fixture('invoicing.invoice', 60, {'job': 1, 'status': 'paid'})
+
+        build.build_history(c)
+        fields = self._sorted_fields(self._history(c))
+
+        def idx(otype, pred):
+            return next(i for i, f in enumerate(fields)
+                        if f['object_type'] == otype and pred(f['changes']))
+
+        seq = [
+            idx('job', lambda ch: ch.get('_created')),
+            idx('estimate', lambda ch: ch.get('_created')),
+            idx('deliverable', lambda ch: ch.get('_created')),
+            idx('estimate', lambda ch: ch.get('_action') == 'Sent to the customer'),
+            idx('estimate', lambda ch: ch.get('_action') == 'Accepted by the customer'),
+            idx('job', lambda ch: str(ch.get('_action', '')).startswith('Approved')),
+            idx('task', lambda ch: ch.get('_created')),
+            idx('job', lambda ch: ch.get('_action') == 'Work started on the floor'),
+            idx('invoice', lambda ch: ch.get('_created')),
+            idx('task', lambda ch: ch.get('status', {}).get('new') == 'complete'),
+            idx('job', lambda ch: ch.get('_action') == 'Work completed'),
+            idx('invoice', lambda ch: ch.get('_action') == 'Sent to the customer'),
+            idx('invoice', lambda ch: ch.get('_action') == 'Paid in full'),
+            idx('job', lambda ch: ch.get('_action') == 'Job closed out'),
+        ]
+        self.assertEqual(seq, sorted(seq), 'lifecycle entries are not in causal order')
+
+        # Task completion is a bare audit diff (no _action label).
+        task_done = fields[idx('task', lambda ch: ch.get('status', {}).get('new') == 'complete')]
+        self.assertNotIn('_action', task_done['changes'])
+        # Estimate accepted and job approved fall in the same phase (same day).
+        acc = fields[idx('estimate', lambda ch: ch.get('_action') == 'Accepted by the customer')]['timestamp']
+        app = fields[idx('job', lambda ch: str(ch.get('_action', '')).startswith('Approved'))]['timestamp']
+        self.assertEqual(acc[:10], app[:10])
+
+    def test_rejected_job_lands_after_estimate_lapses(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'rejected'})
+        c.add_fixture('estimates.estimate', 10, {'job': 1, 'status': 'expired'})
+
+        build.build_history(c)
+        fields = self._sorted_fields(self._history(c))
+
+        def idx(otype, pred):
+            return next(i for i, f in enumerate(fields)
+                        if f['object_type'] == otype and pred(f['changes']))
+
+        seq = [
+            idx('job', lambda ch: ch.get('_created')),
+            idx('estimate', lambda ch: ch.get('_created')),
+            idx('estimate', lambda ch: ch.get('_action') == 'Sent to the customer'),
+            idx('estimate', lambda ch: ch.get('_action') == 'Expired'),
+            idx('job', lambda ch: ch.get('_action') == 'Rejected'),
+        ]
+        self.assertEqual(seq, sorted(seq))
+        # The job rejection is the final entry, and the job was never approved.
+        self.assertEqual(fields[-1]['object_type'], 'job')
+        self.assertEqual(fields[-1]['changes']['_action'], 'Rejected')
+        self.assertFalse(any('Approved' in str(f['changes'].get('_action', '')) for f in fields))
+
+    def test_initial_status_emits_no_transition(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'draft'})
+        c.add_fixture('jobs.task', 2, {'job': 1, 'status': 'pending'})
+        build.build_history(c)
+        # only the _created entry for each — no status diffs
+        self.assertEqual(len(self._for(c, 'job', 1)), 1)
+        self.assertEqual(len(self._for(c, 'task', 2)), 1)

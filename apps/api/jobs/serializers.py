@@ -47,11 +47,11 @@ class JobSerializer(serializers.ModelSerializer):
         view = self.context.get('view')
         if view is not None and getattr(view, 'action', None) == 'list':
             return None
-        from apps.core.models import HistoryEntry
+        from apps.core.models import JobHistory
         est_ids = list(obj.estimate_set.values_list('estimate_id', flat=True))
         if not est_ids:
             return None
-        entry = (HistoryEntry.objects
+        entry = (JobHistory.objects
                  .filter(entry_type='action', object_type='estimate',
                          object_id__in=est_ids,
                          changes___action='Changes requested via customer link')

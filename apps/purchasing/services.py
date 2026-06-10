@@ -1,4 +1,5 @@
 from decimal import Decimal
+from apps.core.history import record_history
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -338,7 +339,6 @@ class PurchaseOrderReceivingService:
         """Record receipt of items on a PO.
         Material.quantity is unchanged — planned consumption is set at line-add time.
         QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
-        from apps.core.models import HistoryEntry
         from apps.inventory.models import InventoryAdjustment
         from django.utils import timezone
 
@@ -393,7 +393,7 @@ class PurchaseOrderReceivingService:
                 action_text = f'Items received by {user.get_full_name() or user.username}'
                 if inventory_updates:
                     action_text += f'. Inventory updated: {", ".join(inventory_updates)}'
-                HistoryEntry.objects.create(
+                record_history(
                     entry_type='action',
                     object_type='purchaseorder',
                     object_id=po.pk,
@@ -430,7 +430,6 @@ class PurchaseOrderReceivingService:
         If the line has a pending linked Material, `sever_decision`
         ('keep'|'delete') is required.
         """
-        from apps.core.models import HistoryEntry
 
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
@@ -455,7 +454,7 @@ class PurchaseOrderReceivingService:
             li.qty_cancelled = li.qty - li.qty_received
             li.save(update_fields=['qty_cancelled'])
 
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='purchaseorder',
                 object_id=po.pk,
@@ -477,7 +476,6 @@ class PurchaseOrderReceivingService:
         they were planned. If the linked Material has already been consumed,
         the reversal is rejected (the caller must restock the Material first).
         """
-        from apps.core.models import HistoryEntry
         from apps.inventory.models import InventoryAdjustment, Material
 
         if po.status not in (
@@ -527,7 +525,7 @@ class PurchaseOrderReceivingService:
                 'received_by', 'received_date', 'receipt_note',
             ])
 
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='purchaseorder',
                 object_id=po.pk,
@@ -665,7 +663,6 @@ class PurchaseOrderEmailService:
         invalid status. SMTP failures re-raise after the outbound
         EmailRecord has captured last_send_error.
         """
-        from apps.core.models import HistoryEntry
         from apps.core.services import OutboundEmailService
         from apps.purchasing.pdf import generate_purchase_order_pdf
 
@@ -705,7 +702,7 @@ class PurchaseOrderEmailService:
             associate_with={'purchase_order': po},
         )
 
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='action',
             object_type='purchaseorder',
             object_id=po.pk,

@@ -5,11 +5,11 @@ Supersedes the open CO, seeds a fresh draft carrying the deltas, leaves the job
 on_hold, records the customer comment, and snapshots the superseded proposal.
 """
 from decimal import Decimal
+from apps.core.models import JobHistory
 
 from django.core.exceptions import ValidationError
 
 from tests.base import FixtureTestCase
-from apps.core.models import HistoryEntry
 from apps.deliverables.models import Deliverable, DeliverableSnapshot
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import (
@@ -77,8 +77,8 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
     def test_records_customer_action_history(self):
         ChangeOrderService.request_changes(
             self.co.pk, self._actor(reason='cut the price'))
-        entry = HistoryEntry.objects.filter(
-            object_type='change_order', object_id=self.co.pk,
+        entry = JobHistory.objects.filter(
+            object_type='changeorder', object_id=self.co.pk,
             entry_type='action', user__isnull=True,
         ).order_by('-pk').first()
         self.assertIsNotNone(entry)
@@ -97,3 +97,10 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
         ChangeOrderService.request_changes(self.co.pk, self._actor())
         with self.assertRaises(ValidationError):
             JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+
+    def test_request_changes_history_uses_changeorder_object_type(self):
+        ChangeOrderService.request_changes(self.co.pk, self._actor())
+        entries = JobHistory.objects.filter(object_id=self.co.pk, entry_type='action')
+        self.assertTrue(entries.exists())
+        self.assertFalse(entries.filter(object_type='change_order').exists())
+        self.assertTrue(entries.filter(object_type='changeorder').exists())

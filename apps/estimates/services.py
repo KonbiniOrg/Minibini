@@ -3,6 +3,7 @@ Service classes for Estimate generation and management.
 """
 
 import logging
+from apps.core.history import record_history
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -79,12 +80,11 @@ class EstimateService:
         estimate.save()  # Model.save() calls full_clean() and handles dates
 
         if actor:
-            from apps.core.models import HistoryEntry
             label = {
                 Estimate.STATUS_ACCEPTED: 'Accepted via customer link',
                 Estimate.STATUS_REJECTED: 'Declined via customer link',
             }.get(new_status, f'{new_status} via customer link')
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='estimate',
                 object_id=estimate.pk,
@@ -184,7 +184,6 @@ class EstimateService:
         draft estimate keep it in the quoting pipeline. ``actor`` is the portal
         actor dict ``{'contact_id', 'email', 'reason'}``. Returns the new draft.
         """
-        from apps.core.models import HistoryEntry
         from apps.jobs.models import Job
         from apps.jobs.services import JobService
         try:
@@ -194,7 +193,7 @@ class EstimateService:
         with transaction.atomic():
             # Record the change request against the estimate the customer saw,
             # reusing the customer-action HistoryEntry shape (see update_status).
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='estimate',
                 object_id=parent.pk,

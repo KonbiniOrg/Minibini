@@ -1,13 +1,14 @@
 """Bug 6: estimate- and invoice-driven Job status changes route through
 JobService.update_job. The invoice-paid completion path releases any loose
-pending materials (restocked) before completing, and records a HistoryEntry."""
+pending materials (restocked) before completing, and records a ."""
 
 from decimal import Decimal
+from apps.core.models import JobHistory
 
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import AccountingCategory, HistoryEntry
+from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, PriceListItem
 from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice
@@ -100,7 +101,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_COMPLETED)
         self.assertEqual(JobService._loose_pending_materials(job).count(), 0)
-        entries = HistoryEntry.objects.filter(
+        entries = JobHistory.objects.filter(
             object_type='job', object_id=job.pk,
         )
         self.assertTrue(

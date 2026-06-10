@@ -1,9 +1,10 @@
 from decimal import Decimal
+from apps.core.models import JobHistory
 from datetime import timedelta
 from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import Configuration, AccountingCategory, HistoryEntry, User
+from apps.core.models import Configuration, AccountingCategory, User
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
@@ -164,7 +165,7 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         # (the user-facing "Duplicated from ..." narrative), not the audit noise.
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='approved')
-        actions = list(HistoryEntry.objects.filter(
+        actions = list(JobHistory.objects.filter(
             object_type='job', object_id=new_job.pk, entry_type='action'))
         hops = [a.changes.get('status', {}).get('new') for a in actions]
         self.assertEqual(hops.count(Job.STATUS_SUBMITTED), 1)
