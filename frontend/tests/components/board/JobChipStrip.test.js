@@ -44,7 +44,7 @@ describe('JobChipStrip PM initials', () => {
   it('uses one letter for a single-word name', () => {
     const jobs = [{ job_id: 10, job_number: 'JOB-10', name: 'Delta', accent_color: '#fff', project_manager_name: 'Cher' }];
     const { getByText } = render(JobChipStrip, { props: { jobs } });
-    expect(getByText('C')).toBeInTheDocument();
+    expect(getByText('C')).toHaveClass('chip-pm');
   });
 
   it('renders no initials element when there is no PM', () => {
