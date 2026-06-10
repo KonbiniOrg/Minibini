@@ -1283,13 +1283,13 @@ class BoardService:
         #           + on_hold (reverted-to-planning / paused)
         pipeline_jobs = Job.objects.filter(
             status__in=['draft', 'submitted', 'approved', 'on_hold']
-        ).select_related('contact').order_by('due_date')
+        ).select_related('contact', 'project_manager').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
         # In Progress (board column key kept as 'approved' for URL stability)
         approved_jobs = Job.objects.filter(
             status='in_progress'
-        ).select_related('contact').order_by('due_date')
+        ).select_related('contact', 'project_manager').order_by('due_date')
         approved_list = []
         for i, job in enumerate(approved_jobs):
             job_data = BoardService._serialize_job(job)
@@ -1333,7 +1333,7 @@ class BoardService:
         closed_jobs = Job.objects.filter(
             status__in=['completed', 'rejected', 'cancelled'],
             completed_date__gte=cutoff,
-        ).select_related('contact').order_by('-completed_date')
+        ).select_related('contact', 'project_manager').order_by('-completed_date')
         closed = [BoardService._serialize_closed_job(job) for job in closed_jobs]
 
         # Available workers: active users not already shown in worker columns
@@ -1360,7 +1360,7 @@ class BoardService:
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
             status__in=['draft', 'submitted', 'approved', 'on_hold']
-        ).select_related('contact').order_by('due_date')
+        ).select_related('contact', 'project_manager').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
         }
@@ -1379,7 +1379,7 @@ class BoardService:
 
         approved_jobs = Job.objects.filter(
             status='in_progress'
-        ).select_related('contact').order_by('due_date')
+        ).select_related('contact', 'project_manager').order_by('due_date')
 
         approved_list = []
         for i, job in enumerate(approved_jobs):
@@ -1470,7 +1470,7 @@ class BoardService:
         unpaid_jobs = Job.objects.filter(
             Q(status=Job.STATUS_WORK_COMPLETE) |
             Q(invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted'])
-        ).distinct().select_related('contact').order_by('due_date')
+        ).distinct().select_related('contact', 'project_manager').order_by('due_date')
 
         unpaid_list = [
             BoardService._serialize_unpaid_job(job) for job in unpaid_jobs
@@ -1494,7 +1494,7 @@ class BoardService:
         closed_jobs = Job.objects.filter(
             status__in=['completed', 'rejected', 'cancelled'],
             completed_date__gte=cutoff,
-        ).select_related('contact').order_by('-completed_date')
+        ).select_related('contact', 'project_manager').order_by('-completed_date')
         return {'jobs': [BoardService._serialize_closed_job(job) for job in closed_jobs]}
 
     @staticmethod
@@ -1507,6 +1507,10 @@ class BoardService:
             'sub_status': BoardService.compute_sub_status(job),
             'contact_id': job.contact_id,
             'contact_name': str(job.contact) if job.contact else None,
+            'project_manager_name': (
+                (job.project_manager.get_full_name() or job.project_manager.username)
+                if job.project_manager_id else None
+            ),
             'due_date': job.due_date.isoformat() if job.due_date else None,
             'completed_date': job.completed_date.isoformat() if job.completed_date else None,
         }
