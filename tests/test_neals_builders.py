@@ -55,12 +55,20 @@ class BaseBuildersTest(unittest.TestCase):
         self.assertEqual(self.c.ac_by_code.get('SVC'), self.c.ac_svc_pk)
         self.assertIn('Shop labor', self.c.scheme_by_name)
 
-    def test_build_configuration_has_numbering_keys(self):
+    def test_build_configuration_numbering_keys(self):
         build.build_configuration(self.c)
-        keys = {f['pk'] for f in self._models('core.configuration')}
-        for k in ('job_counter', 'estimate_counter', 'invoice_counter',
-                  'po_counter'):
-            self.assertIn(k, keys)
+        config = {f['pk'] for f in self._models('core.configuration')}
+        appstate = {f['pk'] for f in self._models('core.appstate')}
+        # Patterns are user-settable Configuration ...
+        for k in ('job_number_sequence', 'invoice_number_sequence', 'po_number_sequence'):
+            self.assertIn(k, config)
+        # ... counters are machine state in AppState (migration 0018).
+        for k in ('job_counter', 'invoice_counter', 'po_counter'):
+            self.assertIn(k, appstate)
+            self.assertNotIn(k, config)
+        # Dead keys deleted by 0018 are not emitted.
+        self.assertNotIn('estimate_counter', config)
+        self.assertNotIn('estimate_number_sequence', config)
 
     def test_units_list_matches_canon(self):
         # The converter installs Configuration['units_list']; it must match

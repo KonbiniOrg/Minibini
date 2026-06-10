@@ -105,19 +105,17 @@ def build_seed(c):
 
 
 def build_configuration(c):
-    """Emit core.configuration fixtures for document numbering and app settings.
+    """Emit document-numbering + app-settings state.
 
-    Configuration uses the key field as primary key, so pk is the key string.
+    Both Configuration and AppState use the key field as primary key, so pk is
+    the key string. Document-number *patterns* are user-settable Configuration;
+    the *counters* are machine state in AppState (core migration 0018). Estimate
+    numbering no longer uses this service, so it gets no sequence/counter keys.
     """
-    entries = [
+    config = [
         ('job_number_sequence',      'J{year}-{counter:04d}'),
-        ('job_counter',              '0'),
-        ('estimate_number_sequence', 'E{year}-{counter:04d}'),
-        ('estimate_counter',         '0'),
         ('invoice_number_sequence',  'INV-{year}-{counter:04d}'),
-        ('invoice_counter',          '0'),
         ('po_number_sequence',       'PO-{year}-{counter:04d}'),
-        ('po_counter',               '0'),
         ('est_expire_days',          '30'),
         ('email_retention_days',     '30'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
@@ -126,8 +124,14 @@ def build_configuration(c):
         # see parsing.resolve_li_units_and_qty.)
         ('units_list',               json.dumps(['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
     ]
-    for key, value in entries:
+    for key, value in config:
         c.add_fixture('core.configuration', key, {'value': value})
+
+    # Machine-managed counters live in AppState (a separate table the Settings
+    # editor can't touch). Without these, document creation (e.g. a new PO)
+    # raises "AppState key '..._counter' not found".
+    for key in ('job_counter', 'invoice_counter', 'po_counter'):
+        c.add_fixture('core.appstate', key, {'value': '0'})
 
 
 def _anonymize_email(value):
