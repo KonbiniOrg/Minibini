@@ -81,6 +81,13 @@ class Job(AbstractWorkContainer):
     status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default=STATUS_DRAFT)
     hold_reason = models.TextField(blank=True, default='')
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT)
+    project_manager = models.ForeignKey(
+        'core.User',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='managed_jobs',
+        help_text='Informational owner of the job; no business-logic side effects.',
+    )
     customer_po_number = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
     accent_color = models.CharField(
