@@ -81,3 +81,33 @@ class JobProjectManagerSerializerTest(BaseTestCase):
         self.job.save()
         resp = self.client.get(f'/api/jobs/{self.job.pk}/')
         self.assertEqual(resp.data['project_manager_name'], 'justuser')
+
+
+class JobProjectManagerFilterTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.admin)
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_carol', first_name='Carol', last_name='Cole', password='x')
+        self.mine = Job.objects.create(
+            job_number='JOB-PMF-0001', name='Mine', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        self.other = Job.objects.create(
+            job_number='JOB-PMF-0002', name='Other', status=Job.STATUS_DRAFT, contact=self.contact,
+        )
+
+    def test_filter_returns_only_pm_jobs(self):
+        resp = self.client.get(f'/api/jobs/?project_manager={self.pm.pk}')
+        self.assertEqual(resp.status_code, 200)
+        numbers = [j['job_number'] for j in resp.data['results']]
+        self.assertIn('JOB-PMF-0001', numbers)
+        self.assertNotIn('JOB-PMF-0002', numbers)
+
+    def test_no_filter_returns_both(self):
+        resp = self.client.get('/api/jobs/')
+        numbers = [j['job_number'] for j in resp.data['results']]
+        self.assertIn('JOB-PMF-0001', numbers)
+        self.assertIn('JOB-PMF-0002', numbers)

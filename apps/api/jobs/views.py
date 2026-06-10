@@ -62,6 +62,9 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
+        project_manager = self.request.query_params.get('project_manager')
+        if project_manager:
+            qs = qs.filter(project_manager_id=project_manager)
         search = self.request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(
