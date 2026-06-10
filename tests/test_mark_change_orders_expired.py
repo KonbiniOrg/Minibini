@@ -4,6 +4,7 @@ Tests for the mark_change_orders_expired management command.
 Mirrors tests/test_mark_estimates_expired.py patterns.
 """
 from datetime import timedelta
+from apps.core.models import JobHistory
 
 from django.utils import timezone
 
@@ -94,11 +95,11 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
 
     def test_past_due_co_writes_system_history_entry(self):
         co = _make_open_co_past_due(self.job, self.est)
-        before = HistoryEntry.objects.filter(
+        before = JobHistory.objects.filter(
             object_type='changeorder', object_id=co.pk,
         ).count()
         self._run_command()
-        after = HistoryEntry.objects.filter(
+        after = JobHistory.objects.filter(
             object_type='changeorder', object_id=co.pk,
         ).count()
         self.assertGreater(after, before)
@@ -106,7 +107,7 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
     def test_history_entry_has_correct_status_transition(self):
         co = _make_open_co_past_due(self.job, self.est)
         self._run_command()
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=co.pk,
         ).order_by('-id').first()
         self.assertIsNotNone(entry)
@@ -117,7 +118,7 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
         """_action should say 'Auto-expired (valid N days)' when sent_date is set."""
         co = _make_open_co_past_due(self.job, self.est, days_overdue=1)
         self._run_command()
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=co.pk,
         ).order_by('-id').first()
         self.assertIn('Auto-expired', entry.changes['_action'])
@@ -125,7 +126,7 @@ class MarkChangeOrdersExpiredCommandTests(FixtureTestCase):
     def test_history_entry_user_is_system(self):
         co = _make_open_co_past_due(self.job, self.est)
         self._run_command()
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=co.pk,
         ).order_by('-id').first()
         self.assertEqual(entry.user.username, 'system')

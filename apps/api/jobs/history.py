@@ -1,6 +1,6 @@
 from django.db.models import Q
 
-from apps.core.models import HistoryEntry
+from apps.core.models import JobHistory
 
 
 def build_job_history(job):
@@ -64,5 +64,5 @@ def build_job_history(job):
     for m in materials:
         reg('material', m.pk, f'Material: {m.description[:40]}')
 
-    qs = HistoryEntry.objects.filter(q).select_related('user')
+    qs = JobHistory.objects.filter(q).select_related('user')
     return qs, labels, links

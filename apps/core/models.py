@@ -437,8 +437,10 @@ class BaseLineItem(models.Model):
         return "No source"
 
 
-class HistoryEntry(models.Model):
-    """Tracks changes, actions, and notes on objects.
+class HistoryEntryBase(models.Model):
+    """Abstract audit/action/note record. Concrete subclasses partition history
+    by domain into separate tables (Job / CRM / Purchasing); the target table is
+    chosen from ``object_type`` by ``apps.core.history.record_history``.
 
     Entry types:
         audit  — automatic field change tracking (via @history decorator)
@@ -454,6 +456,59 @@ class HistoryEntry(models.Model):
         text    — Reserved for human-entered text only (notes, reasons for status
                   changes). NEVER use for system-generated descriptions; put those
                   in changes['_action'] instead.
+    """
+    ENTRY_TYPES = [
+        ('audit', 'Audit'),
+        ('action', 'Action'),
+        ('note', 'Note'),
+    ]
+
+    entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
+    object_type = models.CharField(max_length=50)
+    object_id = models.IntegerField()
+    user = models.ForeignKey(
+        'core.User', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='+',
+    )
+    timestamp = models.DateTimeField(auto_now_add=True)
+    changes = models.JSONField(null=True, blank=True)
+    text = models.TextField(blank=True, default='')
+
+    class Meta:
+        abstract = True
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.entry_type}: {self.object_type} #{self.object_id}"
+
+
+class JobHistory(HistoryEntryBase):
+    """History for a Job and everything that hangs off it (task, estimate,
+    change order, invoice, material, deliverable, shipment)."""
+    class Meta:
+        db_table = 'job_history'
+        ordering = ['-timestamp']
+
+
+class CrmHistory(HistoryEntryBase):
+    """History for contacts and businesses."""
+    class Meta:
+        db_table = 'crm_history'
+        ordering = ['-timestamp']
+
+
+class PurchasingHistory(HistoryEntryBase):
+    """History for purchase orders and bills."""
+    class Meta:
+        db_table = 'purchasing_history'
+        ordering = ['-timestamp']
+
+
+class HistoryEntry(models.Model):
+    """DEPRECATED — superseded by the per-domain tables above (JobHistory /
+    CrmHistory / PurchasingHistory). No longer written or read by the app; kept
+    only so existing `history` rows can be copied into the new tables via SQL.
+    Drop after that one-time data move.
     """
     ENTRY_TYPES = [
         ('audit', 'Audit'),

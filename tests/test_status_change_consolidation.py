@@ -3,6 +3,7 @@ JobService.update_job. The invoice-paid completion path releases any loose
 pending materials (restocked) before completing, and records a HistoryEntry."""
 
 from decimal import Decimal
+from apps.core.models import JobHistory
 
 from django.test import TestCase
 
@@ -100,7 +101,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_COMPLETED)
         self.assertEqual(JobService._loose_pending_materials(job).count(), 0)
-        entries = HistoryEntry.objects.filter(
+        entries = JobHistory.objects.filter(
             object_type='job', object_id=job.pk,
         )
         self.assertTrue(

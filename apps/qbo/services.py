@@ -1,4 +1,5 @@
 import datetime
+from apps.core.history import record_history
 import json
 from decimal import Decimal
 from django.conf import settings
@@ -908,7 +909,7 @@ class QBOPaymentPollingService:
     def poll_all():
         from django.db import transaction
         from apps.invoicing.models import Invoice
-        from apps.core.models import HistoryEntry, User
+        from apps.core.models import User
 
         stats = {'checked': 0, 'transitioned': 0, 'cache_updated': 0, 'errors': []}
 
@@ -958,7 +959,7 @@ class QBOPaymentPollingService:
                         invoice.status = target_status
                     invoice.save()  # full save → fires _maybe_complete_job + closed_date
                     if status_changed:
-                        HistoryEntry.objects.create(
+                        record_history(
                             entry_type='action', object_type='invoice', object_id=invoice.pk,
                             user=system_user,
                             changes={

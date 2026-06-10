@@ -22,6 +22,52 @@ def set_history_context(ctx):
     _history_context.set(ctx)
 
 
+# --- Domain routing: history is partitioned into per-domain tables ---------
+# object_type -> concrete history model. The single write entry point
+# (record_history) and every read site use this to hit the right table.
+_DOMAIN_MODELS = None
+
+
+def _domain_models():
+    global _DOMAIN_MODELS
+    if _DOMAIN_MODELS is None:
+        from apps.core.models import JobHistory, CrmHistory, PurchasingHistory
+        job, crm, pur = JobHistory, CrmHistory, PurchasingHistory
+        _DOMAIN_MODELS = {
+            'job': job, 'task': job, 'estimate': job, 'changeorder': job,
+            'invoice': job, 'material': job, 'deliverable': job, 'shipment': job,
+            'contact': crm, 'business': crm,
+            'purchaseorder': pur, 'bill': pur,
+        }
+    return _DOMAIN_MODELS
+
+
+def history_model_for(object_type):
+    """Concrete history model that owns this object_type, or None if untracked."""
+    return _domain_models().get(object_type)
+
+
+def record_history(object_type, entry_type='audit', object_id=None,
+                   user=None, changes=None, text='', timestamp=None):
+    """Create a history row in the table that owns ``object_type``.
+
+    The single write entry point for all history (decorator + services + notes).
+    ``timestamp`` is normally auto-set; pass it only to backdate (it's applied
+    via update() since the column is auto_now_add).
+    """
+    model = history_model_for(object_type)
+    if model is None:
+        raise ValueError(f'No history table is configured for object_type {object_type!r}')
+    obj = model.objects.create(
+        entry_type=entry_type, object_type=object_type, object_id=object_id,
+        user=user, changes=changes, text=text,
+    )
+    if timestamp is not None:
+        model.objects.filter(pk=obj.pk).update(timestamp=timestamp)
+        obj.timestamp = timestamp
+    return obj
+
+
 def _snapshot_fields(instance):
     """Capture current field values for later diffing."""
     if not instance.pk:
@@ -110,10 +156,9 @@ def _on_pre_save(sender, instance, **kwargs):
     else:
         # Outside a request — if updating, create immediately
         if instance.pk:
-            from apps.core.models import HistoryEntry
-            HistoryEntry.objects.create(
-                entry_type='audit',
+            record_history(
                 object_type=entry_data['object_type'],
+                entry_type='audit',
                 object_id=instance.pk,
                 changes=changes,
                 text=entry_data.get('text', ''),
@@ -131,10 +176,9 @@ def _on_post_save(sender, instance, created, **kwargs):
 
     pending = getattr(instance, '_history_pending_create', None)
     if pending and created:
-        from apps.core.models import HistoryEntry
-        HistoryEntry.objects.create(
-            entry_type='audit',
+        record_history(
             object_type=pending['object_type'],
+            entry_type='audit',
             object_id=instance.pk,
             changes=pending['changes'],
             text=pending.get('text', ''),

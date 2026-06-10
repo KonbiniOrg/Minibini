@@ -5,6 +5,7 @@ by the change order's opaque ``public_token``; a CO is presented as a
 before/after diff (it amends an accepted agreement) rather than a flat document.
 """
 from decimal import Decimal
+from apps.core.history import record_history
 
 from django.db import transaction
 from rest_framework import status
@@ -119,8 +120,7 @@ def _record_customer_action(co, action_label, actor):
     service's update_status only writes a system entry for accept and none for
     reject, so the portal records the customer's action itself — parity with the
     estimate portal's update_status(actor=…))."""
-    from apps.core.models import HistoryEntry
-    HistoryEntry.objects.create(
+    record_history(
         entry_type='action',
         object_type='changeorder',
         object_id=co.pk,

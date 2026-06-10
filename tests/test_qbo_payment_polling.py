@@ -1,4 +1,5 @@
 from decimal import Decimal
+from apps.core.models import JobHistory
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from apps.invoicing.models import Invoice
@@ -52,7 +53,7 @@ class PaymentPollingTest(TestCase):
         self.assertEqual(inv.qbo_amount_paid, Decimal('500.00'))
         self.assertIsNotNone(inv.closed_date)
         self.assertEqual(stats['transitioned'], 1)
-        self.assertTrue(HistoryEntry.objects.filter(
+        self.assertTrue(JobHistory.objects.filter(
             object_type='invoice', object_id=inv.pk,
             changes__status__new=Invoice.STATUS_PAID,
         ).exists())

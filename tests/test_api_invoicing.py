@@ -1,4 +1,5 @@
 from unittest.mock import patch, MagicMock
+from apps.core.models import JobHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry, EmailRecord
@@ -51,7 +52,7 @@ class InvoiceAPITest(BaseTestCase):
             self.client.post(f'/api/invoices/{invoice.pk}/cancel/', {
                 'reason': 'Billed in error',
             }, format='json')
-            entry = HistoryEntry.objects.filter(
+            entry = JobHistory.objects.filter(
                 entry_type='audit', object_type='invoice', object_id=invoice.pk,
             ).first()
             self.assertIsNotNone(entry)

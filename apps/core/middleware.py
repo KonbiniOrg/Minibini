@@ -24,7 +24,7 @@ class HistoryMiddleware:
             set_history_context(None)
 
     def _flush_pending(self, ctx):
-        from apps.core.models import HistoryEntry
+        from apps.core.history import record_history
 
         # Resolve user at flush time (after DRF auth has run)
         user = None
@@ -44,9 +44,9 @@ class HistoryMiddleware:
             if not object_id:
                 continue
 
-            HistoryEntry.objects.create(
-                entry_type=entry_data['entry_type'],
+            record_history(
                 object_type=entry_data['object_type'],
+                entry_type=entry_data['entry_type'],
                 object_id=object_id,
                 changes=entry_data['changes'],
                 text=entry_data.get('text', ''),

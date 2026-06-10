@@ -9,7 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.contacts.models import Contact, Business, PaymentTerms, Tag
 from apps.contacts.services import ContactService
-from apps.core.models import HistoryEntry
+from apps.core.models import CrmHistory
+from apps.core.history import record_history
 from apps.core.services import ServiceError, NotFoundError
 from apps.api.mixins import ConfirmDeleteMixin
 from apps.api.permissions import CanManageJobs
@@ -119,7 +120,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
         contact = self.get_object()
-        entries = HistoryEntry.objects.filter(
+        entries = CrmHistory.objects.filter(
             object_type='contact', object_id=contact.pk
         ).select_related('user')
         page = self.paginate_queryset(entries)
@@ -138,7 +139,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note',
             object_type='contact',
             object_id=obj.pk,
@@ -270,7 +271,7 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         q = Q(object_type='business', object_id=business.pk)
         if contact_ids:
             q |= Q(object_type='contact', object_id__in=contact_ids)
-        entries = HistoryEntry.objects.filter(q).select_related('user')
+        entries = CrmHistory.objects.filter(q).select_related('user')
         page = self.paginate_queryset(entries)
         if page is not None:
             serializer = HistoryEntrySerializer(page, many=True)
@@ -287,7 +288,7 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note',
             object_type='business',
             object_id=obj.pk,

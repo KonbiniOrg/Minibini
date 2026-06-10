@@ -1,4 +1,6 @@
 from datetime import timedelta
+from apps.core.models import JobHistory
+from apps.core.history import record_history
 from decimal import Decimal
 
 from django.core.management import call_command
@@ -11,11 +13,11 @@ class BackfillJobHistoryTest(BaseTestCase):
     def test_backfill_creates_marked_entries_for_job(self):
         from apps.jobs.models import Job
         job = Job.objects.first()
-        before = HistoryEntry.objects.filter(object_type='job', object_id=job.pk).count()
+        before = JobHistory.objects.filter(object_type='job', object_id=job.pk).count()
         call_command('backfill_job_history', f'--job={job.pk}')
-        after = HistoryEntry.objects.filter(object_type='job', object_id=job.pk).count()
+        after = JobHistory.objects.filter(object_type='job', object_id=job.pk).count()
         self.assertGreater(after, before)
-        marked = HistoryEntry.objects.filter(
+        marked = JobHistory.objects.filter(
             object_type='job', object_id=job.pk, changes___backfill=True,
         )
         self.assertTrue(marked.exists())
@@ -23,14 +25,14 @@ class BackfillJobHistoryTest(BaseTestCase):
     def test_clear_removes_only_backfilled_entries(self):
         from apps.jobs.models import Job
         job = Job.objects.first()
-        keep = HistoryEntry.objects.create(
+        keep = record_history(
             entry_type='note', object_type='job', object_id=job.pk, text='real note',
         )
         call_command('backfill_job_history', f'--job={job.pk}')
         call_command('backfill_job_history', f'--job={job.pk}', '--clear')
-        self.assertTrue(HistoryEntry.objects.filter(pk=keep.pk).exists())
+        self.assertTrue(JobHistory.objects.filter(pk=keep.pk).exists())
         self.assertFalse(
-            HistoryEntry.objects.filter(object_id=job.pk, changes___backfill=True).exists()
+            JobHistory.objects.filter(object_id=job.pk, changes___backfill=True).exists()
         )
 
     def test_task_creation_not_before_job_creation(self):
@@ -41,11 +43,11 @@ class BackfillJobHistoryTest(BaseTestCase):
         if task is None:
             task = Task.objects.create(job=job, name='BF chronology task', rate_scheme_id=1)
         call_command('backfill_job_history', f'--job={job.pk}')
-        job_created = HistoryEntry.objects.filter(
+        job_created = JobHistory.objects.filter(
             object_type='job', object_id=job.pk,
             changes___created=True, changes___backfill=True,
         ).order_by('timestamp').first()
-        task_created = HistoryEntry.objects.filter(
+        task_created = JobHistory.objects.filter(
             object_type='task', object_id=task.pk,
             changes___created=True, changes___backfill=True,
         ).order_by('timestamp').first()
@@ -63,7 +65,7 @@ class BackfillJobHistoryTest(BaseTestCase):
             status='open', sent_date=timezone.now(),
         )
         call_command('backfill_job_history', f'--job={job.pk}')
-        actions = HistoryEntry.objects.filter(entry_type='action', changes___backfill=True)
+        actions = JobHistory.objects.filter(entry_type='action', changes___backfill=True)
         self.assertTrue(actions.exists())
         for a in actions:
             self.assertNotIn('Backfilled activity', a.changes.get('_action', ''))
@@ -81,7 +83,7 @@ class BackfillJobHistoryTest(BaseTestCase):
             Task.objects.create(job=job, name=f'BF spacing {i}', rate_scheme_id=1)
         call_command('backfill_job_history', f'--job={job.pk}')
         times = list(
-            HistoryEntry.objects.filter(changes___backfill=True)
+            JobHistory.objects.filter(changes___backfill=True)
             .order_by('timestamp').values_list('timestamp', flat=True)
         )
         self.assertGreater(len(times), 4)
@@ -97,7 +99,7 @@ class BackfillJobHistoryTest(BaseTestCase):
             job=job, description='BF widget', qty_ordered=Decimal('3'), units='ea',
         )
         call_command('backfill_job_history', f'--job={job.pk}')
-        audits = HistoryEntry.objects.filter(entry_type='audit', changes___backfill=True)
+        audits = JobHistory.objects.filter(entry_type='audit', changes___backfill=True)
         has_diff = any(
             [k for k in (a.changes or {}) if not k.startswith('_')]
             for a in audits

@@ -4,6 +4,7 @@ Mirrors tests/test_portal_api.py + test_portal_job_status_gate.py +
 test_portal_request_changes.py, for the CO surface.
 """
 from decimal import Decimal
+from apps.core.models import JobHistory
 
 from django.core import mail
 from django.test import Client, TestCase, override_settings
@@ -99,7 +100,7 @@ class PortalChangeOrderTest(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.co.status, ChangeOrder.STATUS_ACCEPTED)
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=self.co.pk,
             entry_type='action', user__isnull=True,
         ).order_by('-pk').first()
@@ -128,7 +129,7 @@ class PortalChangeOrderTest(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.co.status, ChangeOrder.STATUS_REJECTED)
         self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=self.co.pk,
             entry_type='action', user__isnull=True,
         ).order_by('-pk').first()
@@ -156,7 +157,7 @@ class PortalChangeOrderTest(TestCase):
         self.http.post(
             f'/api/portal/change-orders/{self.token}/request-changes/',
             data={'reason': 'cheaper please'}, content_type='application/json')
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=self.co.pk,
             entry_type='action').order_by('-pk').first()
         self.assertEqual(entry.text, 'cheaper please')

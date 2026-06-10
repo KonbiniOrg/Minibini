@@ -9,7 +9,8 @@ from apps.purchasing.services import (
     PurchaseOrderReceivingService, BillService,
 )
 from apps.core.services import ServiceError, NotFoundError
-from apps.core.models import HistoryEntry
+from apps.core.models import PurchasingHistory
+from apps.core.history import record_history
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin, JSONDestroyMixin
 from apps.api.permissions import CanManageFinancials
 from apps.api.history.serializers import HistoryEntrySerializer
@@ -195,7 +196,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                     attached = True
                     break
         if not attached:
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='audit',
                 object_type=obj_type,
                 object_id=po.pk,
@@ -209,7 +210,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
     def history(self, request, pk=None):
         po = self.get_object()
-        entries = HistoryEntry.objects.filter(
+        entries = PurchasingHistory.objects.filter(
             object_type='purchaseorder', object_id=po.pk
         ).select_related('user')
         page = self.paginate_queryset(entries)
@@ -286,7 +287,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note',
             object_type='purchaseorder',
             object_id=obj.pk,

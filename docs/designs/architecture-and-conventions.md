@@ -685,15 +685,28 @@ it to a user profile page — that move hasn't happened.
 
 ### 7.1 Model
 
-`apps/core/models.py` — `HistoryEntry` with three entry types:
+History is **partitioned by domain into three tables** (`apps/core/models.py`),
+all sharing the abstract `HistoryEntryBase`:
 
-- `audit` — automatic field-change tracking (decorated models)
-- `action` — system-generated state changes from signals/services
-- `note` — user-written free text
+- `JobHistory` (`job_history`) — Job + everything that hangs off it (task,
+  estimate, change order, invoice, material, deliverable, shipment).
+- `CrmHistory` (`crm_history`) — contacts and businesses.
+- `PurchasingHistory` (`purchasing_history`) — purchase orders and bills.
 
-`object_type` (lowercased class name) + `object_id` link entries to any
-model — no `GenericForeignKey`. `db_table = 'history'`. Ordered newest
-first.
+Three entry types (on the base): `audit` (automatic field-change tracking on
+decorated models), `action` (system-generated state changes from
+signals/services), `note` (user-written free text).
+
+`object_type` (lowercased class name) + `object_id` link an entry to any model —
+no `GenericForeignKey`. The **target table is chosen from `object_type`** by
+`apps.core.history.record_history` (the single write entry point) and
+`history_model_for`; every read site queries the table for its domain. Ordered
+newest first.
+
+> The old single `HistoryEntry` / `history` table is deprecated and unused by
+> the app — retained only so existing rows can be copied into the three tables
+> via `scripts/migrate_history_to_partitioned_tables.sql`; dropped in a
+> follow-up once that move is verified.
 
 `changes` is a JSON field with field diffs (`{"status": {"old": "draft",
 "new": "open"}}`) plus underscore-prefixed metadata keys: `_created`
@@ -728,8 +741,8 @@ that changed, no entry is created.
   values to `instance._history_original` when it loads from the DB.
 - `pre_save` (`_on_pre_save`) — diffs current values against the
   snapshot and either appends to the request-scoped pending list (if
-  inside a request) or writes a `HistoryEntry` immediately (outside a
-  request).
+  inside a request) or writes a history row immediately via
+  `record_history` (outside a request).
 - `post_save` (`_on_post_save`) — for new objects saved outside a
   request, writes the deferred history entry now that `pk` exists; also
   re-snapshots so subsequent edits diff correctly.

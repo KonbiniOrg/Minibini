@@ -1,4 +1,5 @@
 from django.test import TestCase
+from apps.core.models import JobHistory
 from django.utils import timezone
 from apps.contacts.models import Contact, Business
 from apps.core.models import HistoryEntry
@@ -33,7 +34,7 @@ class EstimateDeathRejectsJobTest(TestCase):
         EstimateService.update_status(est.pk, Estimate.STATUS_REJECTED)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_REJECTED)
-        self.assertTrue(HistoryEntry.objects.filter(
+        self.assertTrue(JobHistory.objects.filter(
             object_type='job', object_id=self.job.pk,
             changes__status__new=Job.STATUS_REJECTED,
         ).exists())

@@ -1,4 +1,5 @@
 from unittest.mock import patch, MagicMock
+from apps.core.models import PurchasingHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, HistoryEntry, Configuration
@@ -159,7 +160,7 @@ class POSendEndpointTest(POSendTestBase):
             format='json',
         )
 
-        entry = HistoryEntry.objects.filter(
+        entry = PurchasingHistory.objects.filter(
             object_type='purchaseorder',
             object_id=po.pk,
             entry_type='action',

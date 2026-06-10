@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+from apps.core.history import record_history
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -9,7 +10,6 @@ from django.db.models import Prefetch
 from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
-from apps.core.models import HistoryEntry
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin
@@ -134,7 +134,7 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
                 {'text': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note',
             object_type='job',
             object_id=obj.pk,

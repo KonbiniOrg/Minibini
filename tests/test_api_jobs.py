@@ -1,4 +1,5 @@
 from decimal import Decimal
+from apps.core.models import JobHistory
 from rest_framework.test import APIClient
 from rest_framework import status
 from django.contrib.auth.models import Permission
@@ -129,7 +130,7 @@ class JobAPITest(BaseTestCase):
         self.client.post(f'/api/jobs/{job.pk}/cancel/', {
             'reason': 'Customer withdrew',
         }, format='json')
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             entry_type='audit', object_type='job', object_id=job.pk,
         ).first()
         self.assertIsNotNone(entry)

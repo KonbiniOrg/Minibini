@@ -1,4 +1,5 @@
 import django.dispatch
+from apps.core.history import record_history
 from django.dispatch import receiver
 
 
@@ -19,7 +20,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
     - Respects state transition rules: must go through intermediate states
     - Creates an action-type HistoryEntry for each status change
     """
-    from apps.core.models import HistoryEntry, User
+    from apps.core.models import User
     from apps.jobs.models import Job
     from apps.jobs.services import JobService
 
@@ -73,7 +74,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
         if new_job_status == Job.STATUS_APPROVED and job.status == Job.STATUS_DRAFT:
             old_status = job.status
             JobService.update_job(job.pk, status=Job.STATUS_SUBMITTED)
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='job',
                 object_id=job.pk,
@@ -82,7 +83,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
             )
             # Now transition to approved
             JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='job',
                 object_id=job.pk,
@@ -93,7 +94,7 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
         else:
             old_status = job.status
             JobService.update_job(job.pk, status=new_job_status)
-            HistoryEntry.objects.create(
+            record_history(
                 entry_type='action',
                 object_type='job',
                 object_id=job.pk,

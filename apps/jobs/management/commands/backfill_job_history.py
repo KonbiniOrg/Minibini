@@ -3,7 +3,8 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.core.models import HistoryEntry, User
+from apps.core.models import JobHistory, User
+from apps.core.history import record_history
 from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, ChangeOrder
 from apps.invoicing.models import Invoice
@@ -81,7 +82,7 @@ class Command(BaseCommand):
             ids = [o.pk for o in objs]
             if not ids:
                 continue
-            qs = HistoryEntry.objects.filter(
+            qs = JobHistory.objects.filter(
                 object_type=object_type, object_id__in=ids, changes___backfill=True,
             )
             total += qs.count()
@@ -249,11 +250,10 @@ class Command(BaseCommand):
         return out
 
     def _entry(self, object_type, obj_id, user, when, entry_type='audit', changes=None):
-        entry = HistoryEntry.objects.create(
-            entry_type=entry_type, object_type=object_type, object_id=obj_id,
-            user=user, changes=changes or {},
+        # record_history routes to the right table and backdates the
+        # (auto_now_add) timestamp via the `timestamp` arg.
+        record_history(
+            object_type=object_type, entry_type=entry_type, object_id=obj_id,
+            user=user, changes=changes or {}, timestamp=when,
         )
-        # timestamp is auto_now_add — backdate via update() (HistoryEntry is not
-        # @history-tracked and has no custom save, so update() is safe here).
-        HistoryEntry.objects.filter(pk=entry.pk).update(timestamp=when)
         return 1

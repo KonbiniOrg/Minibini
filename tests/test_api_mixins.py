@@ -1,4 +1,5 @@
 from rest_framework.test import APIRequestFactory, force_authenticate
+from apps.core.models import JobHistory
 from rest_framework import serializers, viewsets, status
 from apps.core.models import User
 from apps.core.services import ServiceError
@@ -106,7 +107,7 @@ class StatusTransitionMixinTest(BaseTestCase):
         response = view(request, pk=job.pk)
         self.assertEqual(response.status_code, 200)
 
-        entry = HistoryEntry.objects.filter(
+        entry = JobHistory.objects.filter(
             entry_type='audit',
             object_type='job',
             object_id=job.pk,
@@ -115,7 +116,7 @@ class StatusTransitionMixinTest(BaseTestCase):
         self.assertIsNotNone(entry)
         self.assertEqual(entry.user, self.user)
         # Verify no separate action entry was created
-        action_count = HistoryEntry.objects.filter(
+        action_count = JobHistory.objects.filter(
             entry_type='action', object_type='job', object_id=job.pk,
         ).count()
         self.assertEqual(action_count, 0)

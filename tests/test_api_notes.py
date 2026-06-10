@@ -1,6 +1,6 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import HistoryEntry, User
+from apps.core.models import JobHistory, CrmHistory, User
 
 
 class JobNotesAPITest(BaseTestCase):
@@ -19,7 +19,7 @@ class JobNotesAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
-        entry = HistoryEntry.objects.get(pk=response.data['id'])
+        entry = JobHistory.objects.get(pk=response.data['id'])
         self.assertEqual(entry.entry_type, 'note')
         self.assertEqual(entry.object_type, 'job')
         self.assertEqual(entry.object_id, job.pk)
@@ -66,7 +66,7 @@ class ContactNotesAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
-        entry = HistoryEntry.objects.get(pk=response.data['id'])
+        entry = CrmHistory.objects.get(pk=response.data['id'])
         self.assertEqual(entry.object_type, 'contact')
         self.assertEqual(entry.object_id, contact.pk)
 
@@ -87,6 +87,6 @@ class BusinessNotesAPITest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
-        entry = HistoryEntry.objects.get(pk=response.data['id'])
+        entry = CrmHistory.objects.get(pk=response.data['id'])
         self.assertEqual(entry.object_type, 'business')
         self.assertEqual(entry.object_id, business.pk)

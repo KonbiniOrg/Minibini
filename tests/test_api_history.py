@@ -1,4 +1,5 @@
 from rest_framework.test import APIClient
+from apps.core.history import record_history
 from tests.base import BaseTestCase
 from apps.core.models import HistoryEntry, User
 from apps.api.history.serializers import HistoryEntrySerializer
@@ -14,11 +15,11 @@ class JobHistoryAPITest(BaseTestCase):
     def test_job_history_returns_entries(self):
         from apps.jobs.models import Job
         job = Job.objects.first()
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='job', object_id=job.pk,
             user=self.user, changes={'name': {'old': 'A', 'new': 'B'}},
         )
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='note', object_type='job', object_id=job.pk,
             user=self.user, text='A note',
         )
@@ -33,11 +34,11 @@ class JobHistoryAPITest(BaseTestCase):
         estimate = Estimate.objects.filter(job=job).first()
         if not estimate:
             self.skipTest('No estimate for this job')
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='job', object_id=job.pk,
             changes={'status': {'old': 'draft', 'new': 'submitted'}},
         )
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='estimate', object_id=estimate.pk,
             changes={'status': {'old': 'draft', 'new': 'open'}},
         )
@@ -51,10 +52,10 @@ class JobHistoryAPITest(BaseTestCase):
         job2 = Job.objects.exclude(pk=job1.pk).first()
         if not job2:
             self.skipTest('Need 2 jobs')
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='note', object_type='job', object_id=job1.pk, text='Job 1',
         )
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='note', object_type='job', object_id=job2.pk, text='Job 2',
         )
         response = self.client.get(f'/api/jobs/{job1.pk}/history/')
@@ -63,11 +64,11 @@ class JobHistoryAPITest(BaseTestCase):
     def test_job_history_ordered_newest_first(self):
         from apps.jobs.models import Job
         job = Job.objects.first()
-        e1 = HistoryEntry.objects.create(
+        e1 = record_history(
             entry_type='audit', object_type='job', object_id=job.pk,
             changes={'name': {'old': 'A', 'new': 'B'}},
         )
-        e2 = HistoryEntry.objects.create(
+        e2 = record_history(
             entry_type='note', object_type='job', object_id=job.pk,
             text='Later note',
         )
@@ -86,7 +87,7 @@ class ContactHistoryAPITest(BaseTestCase):
     def test_contact_history(self):
         from apps.contacts.models import Contact
         contact = Contact.objects.first()
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='contact', object_id=contact.pk,
             changes={'first_name': {'old': 'A', 'new': 'B'}},
         )
@@ -108,11 +109,11 @@ class BusinessHistoryAPITest(BaseTestCase):
         contact = Contact.objects.filter(business=business).first()
         if not contact:
             self.skipTest('No contact for this business')
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='business', object_id=business.pk,
             changes={'business_name': {'old': 'A', 'new': 'B'}},
         )
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='contact', object_id=contact.pk,
             changes={'first_name': {'old': 'X', 'new': 'Y'}},
         )
@@ -125,7 +126,7 @@ class HistoryEntrySourceLabelTest(BaseTestCase):
     def test_source_label_from_context(self):
         from apps.jobs.models import Job
         job = Job.objects.first()
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note', object_type='job', object_id=job.pk, text='hi',
         )
         ctx = {
@@ -139,7 +140,7 @@ class HistoryEntrySourceLabelTest(BaseTestCase):
     def test_source_label_defaults_null_without_context(self):
         from apps.jobs.models import Job
         job = Job.objects.first()
-        entry = HistoryEntry.objects.create(
+        entry = record_history(
             entry_type='note', object_type='job', object_id=job.pk, text='hi',
         )
         data = HistoryEntrySerializer(entry).data
@@ -158,7 +159,7 @@ class JobHistoryCollationTest(BaseTestCase):
         from apps.jobs.models import Job, Task
         job = Job.objects.first()
         task = Task.objects.create(job=job, name='History test task', rate_scheme_id=1)
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='audit', object_type='task', object_id=task.pk,
             changes={'status': {'old': 'pending', 'new': 'complete'}},
         )
@@ -194,7 +195,7 @@ class JobHistoryCollationTest(BaseTestCase):
 
         co = ChangeOrderService.create(job_id=job.pk)
 
-        HistoryEntry.objects.create(
+        record_history(
             entry_type='action', object_type='changeorder', object_id=co.pk,
             changes={'_action': 'Auto-expired'},
         )
@@ -205,11 +206,14 @@ class JobHistoryCollationTest(BaseTestCase):
     def test_excludes_estworksheet(self):
         from apps.jobs.models import Job
         from apps.estimates.models import EstWorksheet
+        from apps.core.models import JobHistory
 
         job = Job.objects.first()
         # Construct a minimal EstWorksheet — only job= is required.
         ws = EstWorksheet.objects.create(job=job)
-        HistoryEntry.objects.create(
+        # EstWorksheet is no longer tracked, so record_history won't route it;
+        # plant a stray row directly to prove the collation Q still excludes it.
+        JobHistory.objects.create(
             entry_type='audit', object_type='estworksheet', object_id=ws.pk,
             changes={'status': {'old': 'a', 'new': 'b'}},
         )
