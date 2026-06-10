@@ -706,13 +706,16 @@ system-generated description in `text`.
 Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 
 - `Contact`, `Business` — `apps/contacts/models.py`
-- `Job`, `Task`, `BlepChangeRequest` — `apps/jobs/models.py`
+- `Job`, `Task` — `apps/jobs/models.py`
 - `Estimate`, `ChangeOrder` — `apps/estimates/models.py`
 - `Invoice` — `apps/invoicing/models.py`
 - `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
 - `Material` — `apps/inventory/models.py`
 - `Deliverable`, `Shipment` — `apps/deliverables/models.py`
-- `Shift`, `ShiftChangeRequest` — `apps/core/models.py`
+
+Time/workforce models (`Shift`, `ShiftChangeRequest`, `BlepChangeRequest`)
+are **not** tracked: their lifecycle is already first-class data
+(`status`, `reviewer`, `reviewed_at`, …) and nothing read their history.
 
 Excluded fields don't appear in `changes`; if they were the only fields
 that changed, no entry is created.

@@ -48,3 +48,15 @@ class AllTrackedModelsTest(TestCase):
             getattr(EstWorksheet, '_history_tracked', False),
             'EstWorksheet should no longer be tracked',
         )
+
+    def test_time_and_workforce_models_not_tracked(self):
+        # Their lifecycle is already first-class data (status/reviewed_at/...)
+        # and nothing reads their history — see history removal decision.
+        from apps.core.models import Shift, ShiftChangeRequest
+        from apps.jobs.models import BlepChangeRequest
+        for model in (Shift, ShiftChangeRequest, BlepChangeRequest):
+            with self.subTest(model=model.__name__):
+                self.assertFalse(
+                    getattr(model, '_history_tracked', False),
+                    f'{model.__name__} should no longer be tracked',
+                )

@@ -659,7 +659,6 @@ class RateScheme(models.Model):
         return self.name
 
 
-@history(exclude=['request_id'])
 class BlepChangeRequest(TimeChangeRequest):
     request_id = models.AutoField(primary_key=True)
     blep = models.ForeignKey('jobs.Blep', on_delete=models.PROTECT,

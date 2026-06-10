@@ -3,7 +3,6 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from decimal import Decimal
-from apps.core.history import history
 from apps.core.timeutils import floor_to_minute
 
 
@@ -32,7 +31,6 @@ class User(AbstractUser):
 
 
 
-@history(exclude=['shift_id'])
 class Shift(models.Model):
     shift_id = models.AutoField(primary_key=True)
     user = models.ForeignKey('core.User', on_delete=models.PROTECT, related_name='shifts')
@@ -535,7 +533,6 @@ class TimeChangeRequest(models.Model):
         ordering = ['-created_at']
 
 
-@history(exclude=['request_id'])
 class ShiftChangeRequest(TimeChangeRequest):
     request_id = models.AutoField(primary_key=True)
     shift = models.ForeignKey('core.Shift', on_delete=models.PROTECT,
