@@ -201,7 +201,7 @@ class ScheduleService:
             Q(blep__end_time__isnull=True) |
             Q(blep__end_time__gte=today_start_local, blep__end_time__lt=today_end_local)
         ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('job_id', flat=True))
-        jobs = Job.objects.filter(pk__in=job_ids).select_related('contact')
+        jobs = Job.objects.filter(pk__in=job_ids).select_related('contact', 'project_manager')
         jobs_payload = []
         for j in jobs:
             contact_name = ''
@@ -218,6 +218,10 @@ class ScheduleService:
                 'accent_color': j.accent_color,
                 'contact_id': j.contact_id,
                 'contact_name': contact_name,
+                'project_manager_name': (
+                    (j.project_manager.get_full_name() or j.project_manager.username)
+                    if j.project_manager_id else None
+                ),
                 'due_date': j.due_date.isoformat() if j.due_date else None,
             })
 

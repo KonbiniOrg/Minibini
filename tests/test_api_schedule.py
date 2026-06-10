@@ -119,3 +119,59 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
         result = ScheduleService.get_schedule(now=timezone.now())
         worker_ids = [w['user']['id'] for w in result['workers']]
         self.assertIn(worker2.pk, worker_ids)
+
+
+class ScheduleJobsPMNameTest(BaseTestCase):
+    """jobs_payload must include project_manager_name."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        contact = Job.objects.first().contact
+        self.worker = User.objects.create_user(
+            username='worker_pm_test',
+            password='pass',
+            first_name='Test',
+            last_name='Worker',
+        )
+        self.job = Job.objects.create(
+            job_number=f'JOB-SCHED-PM-{timezone.now().timestamp()}',
+            contact=contact,
+            status=Job.STATUS_DRAFT,
+        )
+        for status in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            self.job.status = status
+            self.job.save()
+        Task.objects.create(
+            name='PM test task',
+            job=self.job,
+            assignee=self.worker,
+            status=Task.STATUS_PENDING,
+            rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
+        )
+
+    def test_schedule_jobs_include_pm_name(self):
+        pm = User.objects.create_user(
+            username='pm_erin', first_name='Erin', last_name='Evans', password='x'
+        )
+        self.job.project_manager = pm
+        self.job.save()
+
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        resp = self.client.get('/api/schedule/')
+        self.assertEqual(resp.status_code, 200)
+        match = [j for j in resp.data['jobs'] if j['job_id'] == self.job.pk]
+        self.assertEqual(len(match), 1)
+        self.assertEqual(match[0]['project_manager_name'], 'Erin Evans')
+
+    def test_schedule_jobs_pm_name_null_when_no_pm(self):
+        self.job.project_manager = None
+        self.job.save()
+
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        resp = self.client.get('/api/schedule/')
+        self.assertEqual(resp.status_code, 200)
+        match = [j for j in resp.data['jobs'] if j['job_id'] == self.job.pk]
+        self.assertEqual(len(match), 1)
+        self.assertIsNone(match[0]['project_manager_name'])
