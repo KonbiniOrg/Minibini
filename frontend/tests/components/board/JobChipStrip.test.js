@@ -31,3 +31,25 @@ describe('JobChipStrip', () => {
     expect(chipOf(getByText('Beta'))).not.toHaveClass('dimmed');
   });
 });
+
+describe('JobChipStrip PM initials', () => {
+  it('renders first+last initials in black, top-right', () => {
+    const jobs = [{ job_id: 9, job_number: 'JOB-9', name: 'Gamma', accent_color: '#fff', project_manager_name: 'Mary Jane Watson' }];
+    const { getByText } = render(JobChipStrip, { props: { jobs } });
+    const initials = getByText('MW');
+    expect(initials).toBeInTheDocument();
+    expect(initials).toHaveClass('chip-pm');
+  });
+
+  it('uses one letter for a single-word name', () => {
+    const jobs = [{ job_id: 10, job_number: 'JOB-10', name: 'Delta', accent_color: '#fff', project_manager_name: 'Cher' }];
+    const { getByText } = render(JobChipStrip, { props: { jobs } });
+    expect(getByText('C')).toBeInTheDocument();
+  });
+
+  it('renders no initials element when there is no PM', () => {
+    const jobs = [{ job_id: 11, job_number: 'JOB-11', name: 'Epsilon', accent_color: '#fff' }];
+    const { container } = render(JobChipStrip, { props: { jobs } });
+    expect(container.querySelector('.chip-pm')).toBeNull();
+  });
+});

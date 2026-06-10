@@ -71,6 +71,14 @@
     return `Due ${due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   }
 
+  function pmInitials(name) {
+    if (!name) return '';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '';
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
   let hoveredJob = $derived(hoveredJobId !== null ? jobs.find(j => j.job_id === hoveredJobId) : null);
 </script>
 
@@ -90,7 +98,12 @@
     >
       <div class="chip-border" style="background: {job.accent_color};"></div>
       <div class="chip-body">
-        <div class="chip-number">{job.job_number}</div>
+        <div class="chip-top">
+          <span class="chip-number">{job.job_number}</span>
+          {#if job.project_manager_name}
+            <span class="chip-pm" title={job.project_manager_name}>{pmInitials(job.project_manager_name)}</span>
+          {/if}
+        </div>
         <div class="chip-name">{job.name}</div>
         {#if deadlineText(job)}
           <div class="chip-deadline {deadlineClass(job)}">{deadlineText(job)}</div>
@@ -136,6 +149,8 @@
   }
   .job-chip.dimmed { opacity: 0.35; }
   .job-chip.focused { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+  .chip-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+  .chip-pm { font-size: 10px; font-weight: 700; color: #000; font-family: 'SF Mono', 'Fira Code', monospace; flex-shrink: 0; }
   .chip-number { font-size: 10px; color: #999; font-family: 'SF Mono', 'Fira Code', monospace; }
   .chip-name { font-size: 11px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 1px 0; }
   .chip-deadline { font-size: 10px; color: #888; }
