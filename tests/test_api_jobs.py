@@ -5,7 +5,7 @@ from rest_framework import status
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from tests.base import BaseTestCase
-from apps.core.models import User, HistoryEntry, AccountingCategory
+from apps.core.models import User, AccountingCategory
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (

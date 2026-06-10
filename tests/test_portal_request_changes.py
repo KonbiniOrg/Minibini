@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.test import Client, TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration, HistoryEntry
+from apps.core.models import Configuration
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job

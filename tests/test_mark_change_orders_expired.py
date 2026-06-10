@@ -8,7 +8,6 @@ from apps.core.models import JobHistory
 
 from django.utils import timezone
 
-from apps.core.models import HistoryEntry
 from apps.deliverables.models import Deliverable
 from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate
 from apps.jobs.models import Job

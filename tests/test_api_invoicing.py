@@ -2,7 +2,7 @@ from unittest.mock import patch, MagicMock
 from apps.core.models import JobHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import User, HistoryEntry, EmailRecord
+from apps.core.models import User, EmailRecord
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.jobs.models import Job
 

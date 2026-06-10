@@ -2,7 +2,6 @@ from django.test import TestCase
 from apps.core.models import JobHistory
 from django.utils import timezone
 from apps.contacts.models import Contact, Business
-from apps.core.models import HistoryEntry
 from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job

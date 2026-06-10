@@ -3,7 +3,6 @@ from apps.core.models import JobHistory
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import HistoryEntry
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.services import JobService

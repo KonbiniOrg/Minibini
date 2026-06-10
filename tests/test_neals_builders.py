@@ -968,7 +968,7 @@ class ConvertEndToEndTest(unittest.TestCase):
         models = {row['model'] for row in data}
         self.assertIn('jobs.job', models)
         self.assertIn('estimates.estimate', models)
-        self.assertIn('core.historyentry', models)
+        self.assertIn('core.jobhistory', models)
         self.assertNotIn('jobs.workorder', models)
         self.assertNotIn('jobs.blep', models)
 
@@ -982,7 +982,8 @@ class BuildHistoryUnitTest(unittest.TestCase):
         return NealsDataConverter('x.xlsx', 'x.csv', output_path='/tmp/x.json')
 
     def _history(self, c):
-        return [f for f in c.fixture_data if f['model'] == 'core.historyentry']
+        models = ('core.jobhistory', 'core.crmhistory', 'core.purchasinghistory')
+        return [f for f in c.fixture_data if f['model'] in models]
 
     def test_created_entry_for_tracked_objects_only(self):
         c = self._converter()

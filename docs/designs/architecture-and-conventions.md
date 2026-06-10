@@ -703,11 +703,6 @@ no `GenericForeignKey`. The **target table is chosen from `object_type`** by
 `history_model_for`; every read site queries the table for its domain. Ordered
 newest first.
 
-> The old single `HistoryEntry` / `history` table is deprecated and unused by
-> the app — retained only so existing rows can be copied into the three tables
-> via `scripts/migrate_history_to_partitioned_tables.sql`; dropped in a
-> follow-up once that move is verified.
-
 `changes` is a JSON field with field diffs (`{"status": {"old": "draft",
 "new": "open"}}`) plus underscore-prefixed metadata keys: `_created`
 (true on first save) and `_action` (system-generated description).

@@ -6,7 +6,7 @@ from apps.invoicing.models import Invoice
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration, HistoryEntry, ScheduledProcessRun, AppState
+from apps.core.models import Configuration, ScheduledProcessRun, AppState
 from apps.qbo.services import QBOPaymentPollingService
 
 

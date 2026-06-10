@@ -10,7 +10,6 @@ from apps.estimates.models import Estimate, EstimateLineItem, ChangeOrder, Chang
 from apps.deliverables.models import Deliverable, DeliverableSnapshot
 from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
-from apps.core.models import HistoryEntry
 
 
 def _advance_job_to_on_hold(job):

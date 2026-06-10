@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import Configuration, AccountingCategory, HistoryEntry, User
+from apps.core.models import Configuration, AccountingCategory, User
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet

@@ -1,7 +1,7 @@
 from django.test import TestCase
 from apps.core.models import JobHistory
 from apps.core.history import record_history
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from tests.base import BaseTestCase
 
 
@@ -69,7 +69,7 @@ class HistoryEntryModelTest(TestCase):
     def test_entry_type_choices(self):
         valid_types = ['audit', 'action', 'note']
         for t in valid_types:
-            entry = HistoryEntry(entry_type=t, object_type='job', object_id=1)
+            entry = JobHistory(entry_type=t, object_type='job', object_id=1)
             entry.full_clean()  # should not raise
 
 

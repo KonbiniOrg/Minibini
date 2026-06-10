@@ -504,37 +504,6 @@ class PurchasingHistory(HistoryEntryBase):
         ordering = ['-timestamp']
 
 
-class HistoryEntry(models.Model):
-    """DEPRECATED — superseded by the per-domain tables above (JobHistory /
-    CrmHistory / PurchasingHistory). No longer written or read by the app; kept
-    only so existing `history` rows can be copied into the new tables via SQL.
-    Drop after that one-time data move.
-    """
-    ENTRY_TYPES = [
-        ('audit', 'Audit'),
-        ('action', 'Action'),
-        ('note', 'Note'),
-    ]
-
-    entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
-    object_type = models.CharField(max_length=50)
-    object_id = models.IntegerField()
-    user = models.ForeignKey(
-        'core.User', null=True, blank=True, on_delete=models.SET_NULL,
-        related_name='history_entries',
-    )
-    timestamp = models.DateTimeField(auto_now_add=True)
-    changes = models.JSONField(null=True, blank=True)
-    text = models.TextField(blank=True, default='')
-
-    class Meta:
-        db_table = 'history'
-        ordering = ['-timestamp']
-
-    def __str__(self):
-        return f"{self.entry_type}: {self.object_type} #{self.object_id}"
-
-
 class ScheduledProcessRun(models.Model):
     """One row per invocation of a scheduled management command (observability)."""
     OUTCOME_OK = 'ok'

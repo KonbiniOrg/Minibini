@@ -1549,6 +1549,17 @@ _HISTORY_TRACKED_MODELS = {
     'deliverables.shipment': 'shipment',
 }
 
+# History is partitioned by domain (see apps/core/history.record_history): the
+# object_type picks the table. The converter only emits job-domain and CRM rows.
+_HISTORY_TABLE = {
+    'job': 'core.jobhistory', 'task': 'core.jobhistory', 'estimate': 'core.jobhistory',
+    'changeorder': 'core.jobhistory', 'invoice': 'core.jobhistory',
+    'material': 'core.jobhistory', 'deliverable': 'core.jobhistory',
+    'shipment': 'core.jobhistory',
+    'contact': 'core.crmhistory', 'business': 'core.crmhistory',
+    'purchaseorder': 'core.purchasinghistory', 'bill': 'core.purchasinghistory',
+}
+
 # Fallback for objects with no Job and no creation date (Contact, Business).
 _HISTORY_FALLBACK_DATE = '2024-01-01T00:00:00+00:00'
 
@@ -1712,7 +1723,8 @@ def build_history(c):
     from collections import defaultdict
 
     def emit(object_type, object_id, timestamp, entry_type, changes):
-        c.add_fixture('core.historyentry', c.next_pk('core.historyentry'), {
+        model = _HISTORY_TABLE[object_type]
+        c.add_fixture(model, c.next_pk(model), {
             'entry_type': entry_type,
             'object_type': object_type,
             'object_id': object_id,

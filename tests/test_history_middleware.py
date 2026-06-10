@@ -2,7 +2,7 @@ from django.test import TestCase
 from apps.core.models import CrmHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from apps.contacts.models import Contact
 
 

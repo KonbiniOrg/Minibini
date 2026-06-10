@@ -10,7 +10,6 @@ from apps.core.models import JobHistory
 from django.core.exceptions import ValidationError
 
 from tests.base import FixtureTestCase
-from apps.core.models import HistoryEntry
 from apps.deliverables.models import Deliverable, DeliverableSnapshot
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import (

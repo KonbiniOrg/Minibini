@@ -1,7 +1,7 @@
 from rest_framework.test import APIClient
 from apps.core.history import record_history
 from tests.base import BaseTestCase
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from apps.api.history.serializers import HistoryEntrySerializer
 
 

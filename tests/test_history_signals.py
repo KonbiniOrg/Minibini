@@ -1,6 +1,6 @@
 from tests.base import BaseTestCase
 from apps.core.models import JobHistory
-from apps.core.models import HistoryEntry, User
+from apps.core.models import User
 from apps.estimates.models import Estimate
 from apps.estimates.signals import estimate_status_changed_for_job
 from apps.jobs.models import Job

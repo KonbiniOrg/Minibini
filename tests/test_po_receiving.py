@@ -3,7 +3,7 @@ from apps.core.models import PurchasingHistory
 from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
-from apps.core.models import AccountingCategory, User, HistoryEntry
+from apps.core.models import AccountingCategory, User
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business, Contact
 from apps.inventory.models import PriceListItem, InventoryAdjustment

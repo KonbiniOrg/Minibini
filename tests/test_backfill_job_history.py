@@ -6,7 +6,6 @@ from decimal import Decimal
 from django.core.management import call_command
 from django.utils import timezone
 from tests.base import BaseTestCase
-from apps.core.models import HistoryEntry
 
 
 class BackfillJobHistoryTest(BaseTestCase):

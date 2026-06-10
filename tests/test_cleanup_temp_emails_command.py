@@ -5,7 +5,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from apps.core.models import (
-    Configuration, EmailRecord, TempEmail, ScheduledProcessRun, HistoryEntry,
+    Configuration, EmailRecord, TempEmail, ScheduledProcessRun
 )
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
@@ -30,7 +30,7 @@ class CleanupTempEmailsCommandTest(TestCase):
         return rec, temp
 
     def _record_status_change(self, object_type, object_id, new_status, days_ago):
-        """Create a HistoryEntry recording a transition into new_status at
+        """Create a  recording a transition into new_status at
         a backdated timestamp. timestamp is auto_now_add so we rewrite it."""
         h = record_history(
             entry_type='audit',
@@ -306,11 +306,11 @@ class CleanupTempEmailsCommandTest(TestCase):
 
         self.assertFalse(TempEmail.objects.filter(email_record=rec).exists())
 
-    # --- finality fallback when no HistoryEntry ------------------------------
+    # --- finality fallback when no  ------------------------------
 
     def test_final_object_with_no_history_falls_back_to_email_date(self):
         # Pre-history-tracking object or one created in a final state directly.
-        # Without a status-change HistoryEntry, fall back to TempEmail.created_at.
+        # Without a status-change , fall back to TempEmail.created_at.
         contact = self._make_contact()
         job = Job.objects.create(
             job_number='JOB-NH', name='no history', status=Job.STATUS_COMPLETED,

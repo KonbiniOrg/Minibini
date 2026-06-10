@@ -75,9 +75,8 @@ class StatusTransitionMixinTest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_reason_persisted_to_history(self):
-        """When requires_reason=True, the reason should be saved as a HistoryEntry."""
+        """When requires_reason=True, the reason should be saved as a ."""
         from apps.jobs.models import Job
-        from apps.core.models import HistoryEntry
 
         class JobSerializer(serializers.ModelSerializer):
             class Meta:

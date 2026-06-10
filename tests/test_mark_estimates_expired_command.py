@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from apps.contacts.models import Contact, Business
-from apps.core.models import HistoryEntry, ScheduledProcessRun
+from apps.core.models import ScheduledProcessRun
 from apps.estimates.models import Estimate
 from apps.jobs.models import Job
 from apps.jobs.services import JobService

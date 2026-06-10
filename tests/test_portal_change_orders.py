@@ -10,7 +10,7 @@ from django.core import mail
 from django.test import Client, TestCase, override_settings
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration, HistoryEntry
+from apps.core.models import Configuration
 from apps.deliverables.models import Deliverable
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import (
