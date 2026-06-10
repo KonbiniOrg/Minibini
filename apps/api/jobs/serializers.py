@@ -22,6 +22,7 @@ class JobSearchSerializer(serializers.ModelSerializer):
 
 class JobSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
+    project_manager_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
@@ -30,7 +31,8 @@ class JobSerializer(serializers.ModelSerializer):
         model = Job
         fields = [
             'job_id', 'job_number', 'name', 'status',
-            'contact', 'contact_name', 'customer_po_number', 'description',
+            'contact', 'contact_name', 'project_manager', 'project_manager_name',
+            'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'latest_change_request',
         ]
@@ -38,6 +40,12 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
+
+    def get_project_manager_name(self, obj):
+        u = obj.project_manager
+        if u is None:
+            return None
+        return u.get_full_name() or u.username
 
     def get_latest_change_request(self, obj):
         """Most recent customer 'Request changes' comment across the job's
