@@ -42,10 +42,10 @@ class JobSerializer(serializers.ModelSerializer):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
 
     def get_project_manager_name(self, obj):
-        u = obj.project_manager
-        if u is None:
+        pm = obj.project_manager
+        if pm is None:
             return None
-        return u.get_full_name() or u.username
+        return pm.get_full_name() or pm.username
 
     def get_latest_change_request(self, obj):
         """Most recent customer 'Request changes' comment across the job's

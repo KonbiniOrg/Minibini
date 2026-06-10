@@ -1,5 +1,4 @@
 from rest_framework.test import APIClient
-from django.contrib.auth.models import Permission
 
 from tests.base import BaseTestCase
 from apps.core.models import User
@@ -57,7 +56,7 @@ class JobProjectManagerSerializerTest(BaseTestCase):
             username='pm_bob', first_name='Bob', last_name='Brown', password='x'
         )
         self.job = Job.objects.create(
-            job_number='JOB-PMS-0001', name='Ser Job', status='draft', contact=self.contact,
+            job_number='JOB-PMS-0001', name='Ser Job', status=Job.STATUS_DRAFT, contact=self.contact,
         )
 
     def test_get_includes_pm_fields_null(self):
