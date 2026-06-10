@@ -85,7 +85,13 @@ class BaseBuildersTest(unittest.TestCase):
     def test_build_price_list_items(self):
         build.build_seed(self.c)
         build.build_price_list_items(self.c)
-        self.assertGreater(len(self._models('inventory.pricelistitem')), 100)
+        items = self._models('inventory.pricelistitem')
+        self.assertGreater(len(items), 100)
+        # purchase_price is 83.33% of selling_price.
+        for f in items:
+            sell = Decimal(f['fields']['selling_price'])
+            expected = (sell * Decimal('0.8333')).quantize(Decimal('0.01'))
+            self.assertEqual(Decimal(f['fields']['purchase_price']), expected)
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),

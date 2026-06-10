@@ -437,7 +437,10 @@ def build_price_list_items(c):
 
         description = str(row.get('Description') or '').strip()
         price_raw = row.get('Price') or row.get('Sales Price') or 0
-        selling_price = f'{P.parse_decimal(price_raw):.2f}'
+        sell = P.parse_decimal(price_raw).quantize(Decimal('0.01'))
+        selling_price = f'{sell:.2f}'
+        # Purchase price modelled as 83.33% of the listed sell price.
+        purchase_price = f'{sell * Decimal("0.8333"):.2f}'
 
         pk = c.next_pk('inventory.pricelistitem')
         c.add_fixture('inventory.pricelistitem', pk, {
@@ -445,7 +448,7 @@ def build_price_list_items(c):
             'description': description,
             'units': 'none',
             'selling_price': selling_price,
-            'purchase_price': '0.00',
+            'purchase_price': purchase_price,
             'qty_on_hand': '0.00',
             'qty_sold': '0.00',
             'qty_wasted': '0.00',
