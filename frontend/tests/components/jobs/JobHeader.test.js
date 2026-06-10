@@ -51,3 +51,17 @@ describe('JobHeader', () => {
     expect(queryByRole('combobox')).toBeNull();
   });
 });
+
+describe('JobHeader project manager', () => {
+  it('links the PM name to the PM-filtered job list', () => {
+    const pmJob = { ...job, project_manager: 3, project_manager_name: 'Carol Cole' };
+    const { getByRole } = render(JobHeader, { props: { job: pmJob } });
+    const link = getByRole('link', { name: 'Carol Cole' });
+    expect(link).toHaveAttribute('href', '#/jobs?pm=3');
+  });
+
+  it('renders no PM link when unassigned', () => {
+    const { queryByText } = render(JobHeader, { props: { job } });
+    expect(queryByText(/Project manager/i)).toBeNull();
+  });
+});
