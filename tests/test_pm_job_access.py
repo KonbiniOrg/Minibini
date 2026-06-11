@@ -320,3 +320,42 @@ class ChangeOrderPMAccessTest(BaseTestCase):
     def test_serializer_can_manage(self):
         resp = self._client(self.pm).get(f'/api/change-orders/{self.co.pk}/')
         self.assertTrue(resp.data['can_manage'])
+
+
+from apps.deliverables.models import Deliverable
+
+
+class DeliverablePMAccessTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_dl', password='x')
+        self.other = User.objects.create_user(username='other_dl', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-DL-0001', name='DL', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user=user); return c
+
+    def test_pm_create_deliverable_not_forbidden(self):
+        resp = self._client(self.pm).post(
+            f'/api/jobs/{self.job.pk}/deliverables/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_create_deliverable_forbidden(self):
+        resp = self._client(self.other).post(
+            f'/api/jobs/{self.job.pk}/deliverables/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_serializer_can_manage(self):
+        from decimal import Decimal
+        Deliverable.objects.create(
+            job=self.job, description='Stool', qty_ordered=Decimal('1'),
+            units='ea', sort_order=10,
+        )
+        resp = self._client(self.pm).get(f'/api/jobs/{self.job.pk}/deliverables/')
+        self.assertTrue(resp.data[0]['can_manage'])
