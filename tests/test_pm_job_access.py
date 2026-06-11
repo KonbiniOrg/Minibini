@@ -46,3 +46,21 @@ class UserCanManagePredicateTest(BaseTestCase):
 
     def test_tolerates_none_job(self):
         self.assertFalse(JobService.user_can_manage(self.pm, None))
+
+
+class PermissionBuildingBlocksTest(BaseTestCase):
+    def test_imports_exist(self):
+        from apps.api.permissions import CanManageJobOrPM
+        from apps.api.mixins import JobScopedPermissionMixin
+        self.assertTrue(hasattr(JobScopedPermissionMixin, 'get_object_job'))
+        self.assertTrue(hasattr(JobScopedPermissionMixin, 'get_permission_target_job'))
+        # default object-path resolution maps obj.job -> Job
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        job = Job.objects.create(
+            job_number='JOB-MIX-0001', name='Mix', status=Job.STATUS_DRAFT,
+            contact=Contact.objects.first(),
+        )
+        mixin = JobScopedPermissionMixin()
+        mixin.job_object_path = 'self'
+        self.assertEqual(mixin.get_object_job(job), job)
