@@ -169,3 +169,53 @@ class WorksheetPMAccessTest(BaseTestCase):
         self.assertTrue(resp.data['can_manage'])
         resp2 = self._client(self.other).get(f'/api/est-worksheets/{self.ws.pk}/')
         self.assertFalse(resp2.data['can_manage'])
+
+
+from apps.estimates.models import Estimate
+
+
+class EstimatePMAccessTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_est', password='x')
+        self.other = User.objects.create_user(username='other_est', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-EST-0001', name='EST', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-PM-0001',
+            status=Estimate.STATUS_DRAFT,
+        )
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user=user); return c
+
+    def test_pm_patch_estimate_not_forbidden(self):
+        resp = self._client(self.pm).patch(
+            f'/api/estimates/{self.est.pk}/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_patch_estimate_forbidden(self):
+        resp = self._client(self.other).patch(
+            f'/api/estimates/{self.est.pk}/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_pm_add_line_item_not_forbidden(self):
+        resp = self._client(self.pm).post(
+            f'/api/estimates/{self.est.pk}/line-items/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_add_line_item_forbidden(self):
+        resp = self._client(self.other).post(
+            f'/api/estimates/{self.est.pk}/line-items/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_serializer_can_manage(self):
+        resp = self._client(self.pm).get(f'/api/estimates/{self.est.pk}/')
+        self.assertTrue(resp.data['can_manage'])
