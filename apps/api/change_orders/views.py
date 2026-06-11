@@ -4,8 +4,10 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.api.mixins import LineItemMixin, StatusTransitionMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.mixins import (
+    JobScopedPermissionMixin, LineItemMixin, StatusTransitionMixin,
+)
+from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError
 from apps.estimates.change_order_service import ChangeOrderService
 from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
@@ -13,10 +15,17 @@ from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
 from .serializers import ChangeOrderLineItemSerializer, ChangeOrderSerializer
 
 
-class ChangeOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
+class ChangeOrderViewSet(
+    JobScopedPermissionMixin, StatusTransitionMixin, LineItemMixin,
+    viewsets.ModelViewSet,
+):
     queryset = ChangeOrder.objects.all().order_by('-created_date')
     serializer_class = ChangeOrderSerializer
     lookup_field = 'pk'
+
+    # JobScopedPermissionMixin config
+    job_object_path = 'job'
+    job_create_field = 'job'
 
     # LineItemMixin config
     line_item_serializer_class = ChangeOrderLineItemSerializer
@@ -38,7 +47,7 @@ class ChangeOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelVie
             return [IsAuthenticated()]
         if self.action == 'line_item_detail' and self.request.method == 'GET':
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated(), CanManageJobOrPM()]
 
     def get_queryset(self):
         qs = super().get_queryset()

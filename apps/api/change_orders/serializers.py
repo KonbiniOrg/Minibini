@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.api.mixins import JobScopedCanManageMixin
 from apps.core.units import UnitsField
 from apps.estimates.models import ChangeOrder, ChangeOrderLineItem
 
@@ -19,7 +20,9 @@ class ChangeOrderLineItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['line_item_id']
 
 
-class ChangeOrderSerializer(serializers.ModelSerializer):
+class ChangeOrderSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'job'
+
     line_items = ChangeOrderLineItemSerializer(
         source='changeorderlineitem_set', many=True, read_only=True
     )
@@ -30,7 +33,7 @@ class ChangeOrderSerializer(serializers.ModelSerializer):
             'change_order_id', 'job', 'estimate',
             'change_order_number', 'version', 'parent',
             'status', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items',
+            'expiration_date', 'line_items', 'can_manage',
         ]
         read_only_fields = [
             'change_order_id', 'change_order_number', 'version',

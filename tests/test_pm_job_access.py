@@ -266,3 +266,57 @@ class PlanTaskPMAccessTest(BaseTestCase):
     def test_serializer_can_manage(self):
         resp = self._client(self.pm).get(f'/api/plan-tasks/{self.pt.pk}/')
         self.assertTrue(resp.data['can_manage'])
+
+
+from apps.estimates.models import ChangeOrder
+
+
+class ChangeOrderPMAccessTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_co', password='x')
+        self.other = User.objects.create_user(username='other_co', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-CO-0001', name='CO', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        # ChangeOrder.estimate is required (PROTECT); save() derefs it.
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-CO-PM-0001',
+            status=Estimate.STATUS_DRAFT,
+        )
+        self.co = ChangeOrder.objects.create(
+            job=self.job, estimate=self.est, status=ChangeOrder.STATUS_DRAFT,
+        )
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user=user); return c
+
+    def test_pm_patch_co_not_forbidden(self):
+        resp = self._client(self.pm).patch(
+            f'/api/change-orders/{self.co.pk}/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_patch_co_forbidden(self):
+        resp = self._client(self.other).patch(
+            f'/api/change-orders/{self.co.pk}/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_pm_add_co_line_item_not_forbidden(self):
+        resp = self._client(self.pm).post(
+            f'/api/change-orders/{self.co.pk}/line-items/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_add_co_line_item_forbidden(self):
+        resp = self._client(self.other).post(
+            f'/api/change-orders/{self.co.pk}/line-items/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_serializer_can_manage(self):
+        resp = self._client(self.pm).get(f'/api/change-orders/{self.co.pk}/')
+        self.assertTrue(resp.data['can_manage'])
