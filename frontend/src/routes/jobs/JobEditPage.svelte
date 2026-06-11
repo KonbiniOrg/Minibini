@@ -29,10 +29,13 @@
       customerPoNumber = job.customer_po_number || '';
       dueDate = job.due_date ? toDatetimeLocal(job.due_date) : '';
       projectManager = job.project_manager != null ? String(job.project_manager) : '';
-      try {
-        users = await api.get('/api/auth/users/');
-      } catch {
-        users = [];
+      // Only the PM picker (gated behind can_manage_jobs) uses this list.
+      if (canManageJobs) {
+        try {
+          users = await api.get('/api/auth/users/');
+        } catch {
+          users = [];
+        }
       }
     } catch (e) {
       error = e.message || 'Could not load job.';
