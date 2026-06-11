@@ -17,14 +17,14 @@ describe('JobCard project manager line', () => {
     expect(container.querySelector('.card-substatus')).toBeNull();
   });
 
-  it('renders no PM line on the hover popup (showProgress)', () => {
-    const { container } = render(JobCard, {
+  it('shows the PM line on the in-progress hover popup too (showProgress)', () => {
+    const { getByText } = render(JobCard, {
       props: {
         job: { ...baseJob, project_manager_name: 'Rachel McConnell', task_total: 2, task_completed: 1 },
         showProgress: true,
       },
     });
-    expect(container.querySelector('.pm-line')).toBeNull();
+    expect(getByText('PM: Rachel McConnell')).toBeInTheDocument();
   });
 
   it('renders no PM line when there is no PM', () => {

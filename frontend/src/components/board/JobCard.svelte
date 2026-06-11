@@ -67,7 +67,7 @@
             <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
           {/if}
         </div>
-        {#if !showProgress && job.project_manager_name}
+        {#if job.project_manager_name}
           <div class="pm-line">PM: {job.project_manager_name}</div>
         {/if}
         {#if job.is_revision || deadlineText()}
