@@ -359,3 +359,56 @@ class DeliverablePMAccessTest(BaseTestCase):
         )
         resp = self._client(self.pm).get(f'/api/jobs/{self.job.pk}/deliverables/')
         self.assertTrue(resp.data[0]['can_manage'])
+
+
+from apps.jobs.models import Task
+
+
+class TaskAndContactGuardTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_tk', password='x')
+        self.other = User.objects.create_user(username='other_tk', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-TK-0001', name='TK', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        # Task.rate_scheme is NOT NULL at the DB level; supply one.
+        self.cat = AccountingCategory.objects.create(code='LAB-tk', name='Labor TK')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly TK', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        self.task = Task.objects.create(
+            job=self.job, name='Mill', rate_scheme=self.scheme, sort_order=1,
+        )
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user=user); return c
+
+    def test_task_serializer_can_manage_for_pm(self):
+        resp = self._client(self.pm).get(f'/api/tasks/{self.task.pk}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['can_manage'])
+
+    def test_task_serializer_can_manage_false_for_other(self):
+        resp = self._client(self.other).get(f'/api/tasks/{self.task.pk}/')
+        self.assertFalse(resp.data['can_manage'])
+
+    def test_job_payload_with_tasks_still_renders(self):
+        # Nested TaskSerializer has no request context -> can_manage False there,
+        # but the Job payload must not crash and the job-level can_manage is the
+        # authoritative gate for the task tree.
+        resp = self._client(self.pm).get(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['can_manage'])
+        self.assertTrue(len(resp.data['tasks']) >= 1)
+
+    def test_pm_cannot_edit_contacts(self):
+        # PM holds no can_manage_jobs atom -> contacts stay forbidden.
+        resp = self._client(self.pm).patch(
+            f'/api/contacts/{self.contact.pk}/', {'first_name': 'X'}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
