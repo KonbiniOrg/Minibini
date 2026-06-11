@@ -354,6 +354,7 @@ holds resume manually.
 - **job_number**: unique, max 50 chars. Generated via NumberGenerationService
   (pattern from Configuration). Only generated for new instances.
 - **contact** (required FK → Contact, PROTECT)
+- **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
 - **hold_reason**: TextField, blank-allowed. Free-form pause reason ("CO-2026-0007 in negotiation", "awaiting deposit"). Cleared automatically by `Job.save()` on exit to `approved` / `in_progress`.
 - **name** / **description** / **customer_po_number**: optional text

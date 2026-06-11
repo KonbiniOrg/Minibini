@@ -161,6 +161,36 @@ lossless:
   is what normally clears the hold; a discarded draft CO also clears
   the guard.
 
+### 3.1a Project manager
+
+`Job.project_manager` is a nullable FK to `core.User`
+(`on_delete=SET_NULL`, `related_name='managed_jobs'`) — an **informational**
+owner with no business-logic side effects (no status interaction, no
+permission gate of its own). It is set/cleared on the job edit page by
+anyone with `can_manage_jobs`, and the picker draws from all active users
+(`/api/auth/users/`).
+
+`JobSerializer` exposes both `project_manager` (writable PK) and
+`project_manager_name` (read-only, `get_full_name() or username`). The same
+display name is added to the board and schedule job payloads
+(`BoardService._serialize_job`, `ScheduleService` jobs_payload) so the chip
+can render it. Where the PM surfaces:
+
+- **Job detail header** (`JobHeader.svelte`) — a "Project manager:" line
+  linking to that manager's filtered job list.
+- **Board in-progress + schedule top-line chip** (`JobChipStrip.svelte`,
+  shared by both) — the PM's **initials** (first + last word of the name,
+  uppercased) top-right on the chip, in black opposite the grey job number.
+- **Job list** (`JobList.svelte`) — a PM column; the name links to the
+  filtered list.
+- **Filtered list** — `#/jobs?pm=<id>` (`JobListPage` passes
+  `?project_manager=<id>` to the jobs list endpoint and retitles to
+  "Jobs managed by <Name>").
+
+Deliberately **not** surfaced: cross-entity search, customer-facing /
+print / PDF, and job-as-reference displays on estimates / invoices / POs /
+tasks.
+
 ### 3.2 Auto-set dates
 
 `Job.save()` at `apps/jobs/models.py`:
@@ -857,7 +887,8 @@ Route: `#/jobs/:id` → `JobDetailPage.svelte`.
 Top-down:
 
 1. **JobHeader** (`components/jobs/JobHeader.svelte`) — title `JOB
-   #N: Name`, subtitle (contact / business), status pill (interactive
+   #N: Name`, subtitle (contact / business), a "Project manager:" line
+   (when set; links to `#/jobs?pm=<id>`), status pill (interactive
    `<select>` for users with `can_manage_jobs`), key dates,
    customer_po_number.
 2. **Description + History** in a flex row. `HistoryPanel`
