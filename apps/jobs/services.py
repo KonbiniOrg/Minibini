@@ -388,8 +388,10 @@ class JobService:
         (e.g. list serialization of can_manage) don't depend on Django's
         per-user-instance permission cache — that cache crosses requests for a
         reused user object and makes per-request query counts non-constant.
-        Superusers bypass, matching ``has_perm`` semantics."""
-        if user is None or not user.is_authenticated:
+        Superusers bypass. Inactive users hold nothing, matching ``has_perm``
+        (which returns False for inactive users, superuser or not) so this
+        stays a faithful stand-in."""
+        if user is None or not user.is_authenticated or not user.is_active:
             return False
         if user.is_superuser:
             return True
