@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 
 def atom_permission(perm_codename):
@@ -35,6 +35,8 @@ class CanManageJobOrPM(BasePermission):
     """
     def has_permission(self, request, view):
         from apps.jobs.services import JobService
+        if request.method in SAFE_METHODS:
+            return True
         if request.user.has_perm('core.can_manage_jobs'):
             return True
         job = view.get_permission_target_job(request)
