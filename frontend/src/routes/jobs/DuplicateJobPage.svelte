@@ -1,12 +1,9 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import ContactPicker from '../../components/ContactPicker.svelte';
 
   const { params = {} } = $props();
-
-  const canManageJobs = $derived($canManageJobsStore);
 
   let sourceJob = $state(null);
   let selectedContactId = $state(null);
@@ -52,7 +49,7 @@
   <p>Loading…</p>
 {:else if loadError}
   <p><strong>Error:</strong> {loadError}</p>
-{:else if !canManageJobs}
+{:else if !sourceJob?.can_manage}
   <p>You do not have permission to duplicate jobs.</p>
 {:else}
   <h2>Duplicate {sourceJob.job_number}</h2>
