@@ -380,6 +380,18 @@ class JobService:
     """Service for Job CRUD operations and workflows."""
 
     @staticmethod
+    def user_can_manage(user, job):
+        """Single source of truth for 'may this user manage this job and its
+        contained objects': the can_manage_jobs atom OR being the job's
+        project_manager. Tolerates AnonymousUser / job=None. has_perm returns
+        True for superusers, so they pass without a special case."""
+        if user is None or not user.is_authenticated:
+            return False
+        if user.has_perm('core.can_manage_jobs'):
+            return True
+        return job is not None and job.project_manager_id == user.id
+
+    @staticmethod
     def create_job(**kwargs):
         """Create a new Job with auto-generated number."""
         job_number = NumberGenerationService.generate_next_number('job')
