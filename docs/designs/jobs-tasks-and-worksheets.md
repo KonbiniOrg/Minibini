@@ -164,11 +164,19 @@ lossless:
 ### 3.1a Project manager
 
 `Job.project_manager` is a nullable FK to `core.User`
-(`on_delete=SET_NULL`, `related_name='managed_jobs'`) — an **informational**
-owner with no business-logic side effects (no status interaction, no
-permission gate of its own). It is set/cleared on the job edit page by
-anyone with `can_manage_jobs`, and the picker draws from all active users
-(`/api/auth/users/`).
+(`on_delete=SET_NULL`, `related_name='managed_jobs'`). It is set/cleared on
+the job edit page by anyone who can manage the job, and the picker draws
+from all active users (`/api/auth/users/`).
+
+**It grants access, scoped to that one job.** The PM gets
+`can_manage_jobs`-equivalent rights over this job and its contained objects
+(tasks, worksheets, plan-tasks, estimates, change orders, deliverables, and
+their line items) without holding the global atom — via the
+`CanManageJobOrPM` permission class and the per-object `can_manage` flag the
+SPA gates on. It has **no status side effects** and grants **nothing** on
+contacts/businesses or job creation. See
+`docs/designs/users-and-permissions.md` → "Project-manager object access"
+for the predicate, permission class, and mixins.
 
 `JobSerializer` exposes both `project_manager` (writable PK) and
 `project_manager_name` (read-only, `get_full_name() or username`). The same
@@ -276,7 +284,8 @@ for the pattern/counter mechanism.
 ### 3.6 Job duplication
 
 A Job can be duplicated into a brand-new Job via the "Duplicate…" link
-in the SPA Job detail header (gated on `can_manage_jobs`). The link
+in the SPA Job detail header (gated on the job's `can_manage` — atom or
+its PM). The link
 navigates to an intermediate page (`#/jobs/:id/duplicate`,
 `DuplicateJobPage.svelte`) where the user chooses a **Customer**
 (pre-filled from the source job's contact, editable) and a **path**
@@ -365,6 +374,31 @@ via `Task.job = FK('jobs.Job', related_name='tasks')`. Hierarchy is via
 `parent_task` (self-FK; subtasks emerge during work, not planning).
 
 `Task` is **not** decorated with `@history` — see Unfinished Work.
+
+### 4.0 Write permissions
+
+Task work is worker-driven, so most task writes are open to **any
+authenticated user**:
+
+- **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
+  `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
+  Delete is still refused by `TaskService.delete_task` when the task is
+  `in_progress`/`complete` or has any Bleps (→ 400) — that guard applies to
+  everyone.
+- **Lifecycle** — complete / block / unblock / start-work / stop-work /
+  cancel-work / actual-qty are `IsAuthenticated` (worker operations).
+
+Manager-or-PM only (`CanManageJobOrPM` — `can_manage_jobs` atom **or** the
+job's `project_manager`):
+
+- **Cancel** a task (`POST /api/tasks/{id}/cancel/`), **reorder** tasks, and
+  **mark all the job's work complete** (`POST /api/jobs/{id}/work-complete/`).
+- **Assign** a task to a worker (the SPA "assign" affordance).
+
+The SPA mirrors this: `TaskTree`/`TaskActions`/`TaskDetailPage` show
+add/edit/delete/complete to everyone, and gate cancel/assign/reorder/
+work-complete on the per-object `can_manage` flag. See
+`docs/designs/users-and-permissions.md` for the full mapping.
 
 ### 4.1 Status machine
 
