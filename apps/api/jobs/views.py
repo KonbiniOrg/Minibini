@@ -49,10 +49,11 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         if self.action in read_actions or self.action in authenticated_only_actions:
             return [IsAuthenticated()]
         if self.action == 'tasks':
-            # GET open to any authenticated user; POST requires can_manage_jobs
-            if self.request.method == 'GET':
-                return [IsAuthenticated()]
-            return [IsAuthenticated(), CanManageJobOrPM()]
+            # GET (list) and POST (add a task) are open to any authenticated
+            # user — anyone may add a task to a job. Editing/deleting a task
+            # (the task_detail action) and marking all the job's work complete
+            # stay manager-or-PM via the fall-through to CanManageJobOrPM below.
+            return [IsAuthenticated()]
         if self.action == 'start_invoice_wizard':
             from apps.api.permissions import CanManageFinancials
             return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]

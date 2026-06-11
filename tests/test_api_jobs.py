@@ -208,14 +208,34 @@ class JobTaskSubResourceTest(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_create_task_requires_can_manage_jobs(self):
+    def test_create_task_any_authenticated(self):
         worker = User.objects.create_user(username='jt_worker', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'Nope'},
+            {'name': 'Worker task', 'rate_scheme': self.scheme.pk},
             format='json',
         )
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_update_task_denied_for_worker(self):
+        # Editing an existing task stays manager-or-PM (CanManageJobOrPM).
+        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
+        worker = User.objects.create_user(username='jt_worker_edit', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.patch(
+            f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
+            {'name': 'Renamed'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_task_denied_for_worker(self):
+        # Deleting an existing task stays manager-or-PM (CanManageJobOrPM).
+        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
+        worker = User.objects.create_user(username='jt_worker_del', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
         self.assertEqual(response.status_code, 403)
 
     def test_list_tasks_any_authenticated(self):

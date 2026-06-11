@@ -134,6 +134,8 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         ('post', '/api/contacts/1/notes/', {'text': 'test note'}),
         ('post', '/api/businesses/1/notes/', {'text': 'test note'}),
         ('post', '/api/jobs/1/add-from-template/', {'task_template_id': 1}),
+        # Adding a task to a job is open to any authenticated user.
+        ('post', '/api/jobs/1/tasks/', {'name': 'New'}),
     ]
 
     def test_bare_user_can_list(self):
@@ -228,7 +230,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
 
     # ── Job task sub-resource + population writes (replaces WO endpoints) ──
     WORK_ORDER_WRITE_ENDPOINTS = [
-        ('post', '/api/jobs/1/tasks/', {'name': 'New'}),
         ('patch', '/api/jobs/1/tasks/1/', {'name': 'Updated'}),
         ('delete', '/api/jobs/1/tasks/1/', None),
         ('post', '/api/jobs/1/work-complete/', {}),
