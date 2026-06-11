@@ -295,7 +295,8 @@ with transaction.atomic():
 - API viewsets: override `get_permissions()` returning `[IsAuthenticated(), CanXxx()]`
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
 - HTML views: `@login_required` + `@permission_required('core.can_xxx', raise_exception=True)`
-- Notes (HistoryEntry) and adding tasks to a Job are `IsAuthenticated` only
+- Notes (HistoryEntry) and adding/editing/deleting/completing tasks on a Job are `IsAuthenticated` only; cancelling a task, reordering, and marking all work complete use `CanManageJobOrPM` (atom or the job's PM)
+- `CanManageJobOrPM` (`apps/api/permissions.py`) gates job-owned writes so a Job's `project_manager` gets atom-equivalent access to that one job; viewsets mix in `JobScopedPermissionMixin` and serializers expose a `can_manage` flag via `JobScopedCanManageMixin`
 - Email *reads* (`/api/emails/`, detail) are `IsAuthenticated`; email-to-job actions (link, unlink, create-job-from-email) require `CanManageJobs`
 
 See `docs/designs/users-and-permissions.md` for the full atom-to-endpoint mapping.
@@ -306,12 +307,12 @@ Four custom permission atoms on the `User` model:
 
 | Atom | Covers |
 |---|---|
-| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses; email-to-job actions (link, unlink, create-job-from-email) |
+| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses; cancel/reorder tasks and mark all a job's work complete; email-to-job actions (link, unlink, create-job-from-email). (Add/edit/delete and complete *individual* tasks are open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** (its tasks, worksheets, estimates, change orders, deliverables, line items) via `CanManageJobOrPM` — but **not** contacts/businesses or job creation. |
 | `can_manage_financials` | Full CRUD on invoices, POs, bills, price list items, expenses, reimbursements |
 | `can_manage_time` | Edit/delete anyone's bleps (own bleps are `IsAuthenticated` within the 24h rolling window) |
 | `can_manage_config` | Settings, templates, accounting categories, user admin, QBO connection |
 
-**`IsAuthenticated` (no atom):** Read access to jobs, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses, adding tasks to existing jobs, and submitting/tracking own time and expenses.
+**`IsAuthenticated` (no atom):** Read access to jobs, tasks, worksheets, estimates, contacts, businesses, payment terms, templates, accounting categories, search, price list items, invoices, purchase orders, bills, emails. Write access to notes on jobs/contacts/businesses, adding/editing/deleting (delete blocked when the task has Bleps or is in_progress/complete) and completing tasks on existing jobs, and submitting/tracking own time and expenses.
 
 **`is_superuser` bypasses every atom check.**
 
