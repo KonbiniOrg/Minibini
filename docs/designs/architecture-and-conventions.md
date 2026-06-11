@@ -232,6 +232,8 @@ All in `apps/api/mixins.py`.
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
 | `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
+| `JobScopedPermissionMixin` | JobViewSet, EstWorksheetViewSet, EstimateViewSet, PlanTaskViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
+| `JobScopedCanManageMixin` | Job/EstWorksheet/Estimate/PlanTaskDetail/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
 
 `StatusTransitionMixin.status_actions` shape:
 
@@ -268,6 +270,11 @@ CanManageTime       = atom_permission('can_manage_time')
 CanManageConfig     = atom_permission('can_manage_config')
 ```
 
+Two composite classes (hand-written, not factory-generated) live alongside the atoms:
+
+- `CanManageTimeOrFinancials` — OR of `can_manage_time` and `can_manage_financials`; gates the payroll shift report.
+- `CanManageJobOrPM` — `can_manage_jobs` OR being the target Job's `project_manager`. View-authoritative: short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (via `JobScopedPermissionMixin.get_permission_target_job`) and PM-checks it with `JobService.user_can_manage`. `has_object_permission` stays as defense-in-depth for update/destroy. Gates writes on the job-owned viewsets (Job, EstWorksheet, Estimate, PlanTask, ChangeOrder, Deliverable) so a job's PM gets atom-equivalent access **scoped to that one job** — see `users-and-permissions.md` "Project-manager object access".
+
 Default for everything else: `IsAuthenticated`. See CLAUDE.md
 "Permissions" for the full atom-to-action mapping and the default
 groups.
@@ -281,9 +288,15 @@ def get_permissions(self):
     return [IsAuthenticated(), CanManageJobs()]
 ```
 
-A few endpoints split read/write within an action — the `tasks` action
-on `JobViewSet` is `IsAuthenticated` for GET but requires `CanManageJobs`
-for POST (see `apps/api/jobs/views.py`).
+A few endpoints split read/write within an action. On `JobViewSet`, the
+`tasks` action (GET list + POST add) and the `task_detail` action
+(GET/PATCH/DELETE a task) are `IsAuthenticated` — any authenticated user
+may add, edit, and delete a task (delete is still blocked by
+`TaskService.delete_task` when the task is in_progress/complete or has
+Bleps); the manager/PM-only job actions fall through to
+`CanManageJobOrPM` (see `apps/api/jobs/views.py`). On `TaskViewSet`, the
+flat `cancel` action requires `CanManageJobOrPM` while the other
+lifecycle actions stay `IsAuthenticated`.
 
 ### 3.6 DELETE responses are 200 with JSON
 
