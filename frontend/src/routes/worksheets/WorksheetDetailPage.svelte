@@ -1,7 +1,6 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
@@ -30,10 +29,11 @@
   let materials = $state([]);
   let selectedTaskId = $state(null);
 
-  const canManageJobs = $derived($canManageJobsStore);
-  // Editability is derived from the job's live estimate (server-computed):
-  // editable while the estimate is draft/absent, frozen once it's sent.
-  const canEdit = $derived(canManageJobs && (worksheet?.editable ?? false));
+  // Permission half is the server-computed per-object `can_manage` (atom-holder
+  // OR this job's project_manager); state half is the estimate-driven
+  // `editable` flag: editable while the estimate is draft/absent, frozen once
+  // it's sent.
+  const canEdit = $derived((worksheet?.can_manage ?? false) && (worksheet?.editable ?? false));
 
   async function loadWorksheet() {
     loading = true;
@@ -240,10 +240,11 @@
   }
 
   // Delete is offered only when the server would actually allow it: the user can
-  // manage jobs, the worksheet is editable, and no atom is claimed by an estimate
-  // line item (`deletable` mirrors the backend delete check).
+  // manage this job (atom-holder or its PM), the worksheet is editable, and no
+  // atom is claimed by an estimate line item (`deletable` mirrors the backend
+  // delete check).
   const canDelete = $derived(
-    canManageJobs && (worksheet?.editable ?? false) && (worksheet?.deletable ?? false)
+    (worksheet?.can_manage ?? false) && (worksheet?.editable ?? false) && (worksheet?.deletable ?? false)
   );
 
   async function handleDeleteWorksheet() {

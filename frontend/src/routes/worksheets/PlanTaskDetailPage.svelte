@@ -1,7 +1,6 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
@@ -28,8 +27,10 @@
   let templates = $state([]);
   let editModalOpen = $state(false);
 
-  const canManageJobs = $derived($canManageJobsStore);
-  const canEdit = $derived(canManageJobs && (worksheet?.editable ?? false));
+  // Permission half is the per-object `can_manage` on the fetched plan task
+  // (atom-holder OR this job's project_manager); state half is the worksheet's
+  // estimate-driven `editable` flag.
+  const canEdit = $derived((task?.can_manage ?? false) && (worksheet?.editable ?? false));
 
   async function loadTask() {
     loading = true;
