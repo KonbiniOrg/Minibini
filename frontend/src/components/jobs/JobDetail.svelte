@@ -6,7 +6,7 @@
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
-  import { canManageJobs as canManageJobsStore, canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
+  import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
   const {
@@ -21,7 +21,10 @@
   } = $props();
 
   // Permission check
-  let canManageJobs = $derived($canManageJobsStore);
+  // Job-scoped management uses the per-object can_manage (atom-holder OR this
+  // job's PM), already ANDed server-side. Financials stays on its global atom —
+  // it's a separate permission, not part of PM access.
+  let canManageJobs = $derived(job?.can_manage ?? false);
   let canManageFinancials = $derived($canManageFinancialsStore);
 
   // Estimate versions, sorted oldest first for left-to-right tabs

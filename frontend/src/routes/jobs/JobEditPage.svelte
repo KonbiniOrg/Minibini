@@ -1,7 +1,6 @@
 <script>
   import { push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
 
   const { params = {} } = $props();
 
@@ -17,7 +16,10 @@
   let projectManager = $state('');
   let users = $state([]);
 
-  const canManageJobs = $derived($canManageJobsStore);
+  // Job-scoped management: per-object can_manage (atom-holder OR this job's PM),
+  // already ANDed server-side. A PM may edit their own job, including reassigning
+  // the PM field. Gate on this alone — not the global atom store.
+  const canManageJobs = $derived(job?.can_manage ?? false);
 
   async function load() {
     loading = true;
@@ -29,8 +31,8 @@
       customerPoNumber = job.customer_po_number || '';
       dueDate = job.due_date ? toDatetimeLocal(job.due_date) : '';
       projectManager = job.project_manager != null ? String(job.project_manager) : '';
-      // Only the PM picker (gated behind can_manage_jobs) uses this list.
-      if (canManageJobs) {
+      // Only the PM picker (shown when the user may manage this job) uses this list.
+      if (job.can_manage) {
         try {
           users = await api.get('/api/auth/users/');
         } catch {

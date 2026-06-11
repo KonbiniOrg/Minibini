@@ -13,6 +13,7 @@ import JobEditPage from '@/routes/jobs/JobEditPage.svelte';
 const JOB = {
   job_id: 7, job_number: 'JOB-7', name: 'Widget', description: '',
   customer_po_number: '', due_date: null, project_manager: null,
+  can_manage: true,
 };
 
 beforeEach(() => {
@@ -42,6 +43,15 @@ describe('JobEditPage project manager', () => {
         expect.objectContaining({ project_manager: 2 }),
       );
     });
+  });
+
+  it('renders the edit form for a PM when job.can_manage is true without the global atom', async () => {
+    user.set({ permissions: [] }); // project manager lacks the can_manage_jobs atom
+    const { getByLabelText } = render(JobEditPage, { props: { params: { id: '7' } } });
+    const nameInput = await waitFor(() => getByLabelText(/Name/i));
+    expect(nameInput).toBeInTheDocument();
+    // PM may reassign the PM field on their own job
+    expect(getByLabelText(/Project Manager/i)).toBeInTheDocument();
   });
 
   it('sends null project_manager when blank is chosen', async () => {

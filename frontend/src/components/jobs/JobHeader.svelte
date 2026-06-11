@@ -1,5 +1,4 @@
 <script>
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
   const {
@@ -8,7 +7,9 @@
     onStatusChange = null,
   } = $props();
 
-  let canManageJobs = $derived($canManageJobsStore);
+  // Job-scoped management: per-object can_manage (atom-holder OR this job's PM),
+  // already ANDed server-side. Gate on this alone — not the global atom store.
+  let canManageJobs = $derived(job?.can_manage ?? false);
 
   // The transitions the status pill offers — a subset of the Job model's
   // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's
