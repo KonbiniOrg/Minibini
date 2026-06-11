@@ -1,5 +1,6 @@
 from tests.base import BaseTestCase
 from django.contrib.auth.models import Permission
+from rest_framework.test import APIClient
 from apps.core.models import User
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
@@ -64,3 +65,58 @@ class PermissionBuildingBlocksTest(BaseTestCase):
         mixin = JobScopedPermissionMixin()
         mixin.job_object_path = 'self'
         self.assertEqual(mixin.get_object_job(job), job)
+
+
+class JobViewSetPMAccessTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_v', password='x')
+        self.other = User.objects.create_user(username='other_v', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-VS-0001', name='VS', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        self.unmanaged = Job.objects.create(
+            job_number='JOB-VS-0002', name='VS2', status=Job.STATUS_DRAFT,
+            contact=self.contact,
+        )
+
+    def _client(self, user):
+        c = APIClient()
+        c.force_authenticate(user=user)
+        return c
+
+    def test_pm_can_patch_own_job(self):
+        resp = self._client(self.pm).patch(
+            f'/api/jobs/{self.job.pk}/', {'name': 'Renamed by PM'}, format='json'
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.name, 'Renamed by PM')
+
+    def test_pm_cannot_patch_unmanaged_job(self):
+        resp = self._client(self.pm).patch(
+            f'/api/jobs/{self.unmanaged.pk}/', {'name': 'Nope'}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_non_pm_non_atom_cannot_patch(self):
+        resp = self._client(self.other).patch(
+            f'/api/jobs/{self.job.pk}/', {'name': 'Nope'}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_non_atom_cannot_create_job(self):
+        resp = self._client(self.pm).post(
+            '/api/jobs/', {'name': 'New', 'contact': self.contact.pk}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_serializer_can_manage_true_for_pm(self):
+        resp = self._client(self.pm).get(f'/api/jobs/{self.job.pk}/')
+        self.assertTrue(resp.data['can_manage'])
+
+    def test_serializer_can_manage_false_for_other(self):
+        resp = self._client(self.other).get(f'/api/jobs/{self.job.pk}/')
+        self.assertFalse(resp.data['can_manage'])

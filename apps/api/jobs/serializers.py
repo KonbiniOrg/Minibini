@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.jobs.models import Job
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class JobSummarySerializer(serializers.ModelSerializer):
@@ -20,7 +21,8 @@ class JobSearchSerializer(serializers.ModelSerializer):
                   'description', 'customer_po_number', 'contact_name']
 
 
-class JobSerializer(serializers.ModelSerializer):
+class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'self'
     contact_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
@@ -32,6 +34,7 @@ class JobSerializer(serializers.ModelSerializer):
         fields = [
             'job_id', 'job_number', 'name', 'status',
             'contact', 'contact_name', 'project_manager', 'project_manager_name',
+            'can_manage',
             'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'latest_change_request',

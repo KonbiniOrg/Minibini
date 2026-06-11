@@ -466,4 +466,19 @@ class JobScopedCanManageMixin(serializers.Serializer):
                 job = getattr(job, part, None)
                 if job is None:
                     return False
-        return JobService.user_can_manage(request.user, job)
+        # Resolve the can_manage_jobs atom once per request (cached on the
+        # request) so list serialization doesn't re-query auth_permission per
+        # row. Atom holders manage every job; otherwise fall back to the
+        # per-job PM check, which reads the already-loaded project_manager_id.
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        cache_attr = '_can_manage_jobs_atom'
+        if not hasattr(request, cache_attr):
+            setattr(request, cache_attr,
+                    JobService.user_holds_manage_jobs_atom(user))
+        if getattr(request, cache_attr):
+            return True
+        # Atom resolved above; remaining check is the per-job PM match, which
+        # reads the already-loaded project_manager_id (no query).
+        return job is not None and job.project_manager_id == user.id

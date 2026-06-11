@@ -12,14 +12,15 @@ from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
-from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
+from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
 from .serializers import JobSerializer
 
 
-class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+    job_object_path = 'self'
     queryset = Job.objects.select_related('contact') \
         .prefetch_related(
             Prefetch(
@@ -51,11 +52,11 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
             # GET open to any authenticated user; POST requires can_manage_jobs
             if self.request.method == 'GET':
                 return [IsAuthenticated()]
-            return [IsAuthenticated(), CanManageJobs()]
+            return [IsAuthenticated(), CanManageJobOrPM()]
         if self.action == 'start_invoice_wizard':
             from apps.api.permissions import CanManageFinancials
             return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
-        return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated(), CanManageJobOrPM()]
 
     def get_queryset(self):
         qs = super().get_queryset()

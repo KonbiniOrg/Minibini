@@ -380,6 +380,25 @@ class JobService:
     """Service for Job CRUD operations and workflows."""
 
     @staticmethod
+    def user_holds_manage_jobs_atom(user):
+        """True if the user holds (or bypasses) the can_manage_jobs atom.
+
+        Resolves the atom with a single direct query against user_permissions
+        rather than ``has_perm`` so callers that need it once per request
+        (e.g. list serialization of can_manage) don't depend on Django's
+        per-user-instance permission cache — that cache crosses requests for a
+        reused user object and makes per-request query counts non-constant.
+        Superusers bypass, matching ``has_perm`` semantics."""
+        if user is None or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        return user.user_permissions.filter(
+            codename='can_manage_jobs',
+            content_type__app_label='core',
+        ).exists()
+
+    @staticmethod
     def user_can_manage(user, job):
         """Single source of truth for 'may this user manage this job and its
         contained objects': the can_manage_jobs atom OR being the job's
