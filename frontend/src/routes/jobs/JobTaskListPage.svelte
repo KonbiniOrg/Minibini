@@ -331,6 +331,7 @@
     {jobMaterials}
     readonly={false}
     {jobLocked}
+    canManage={job?.can_manage}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
