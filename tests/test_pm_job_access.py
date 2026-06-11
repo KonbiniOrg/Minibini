@@ -219,3 +219,50 @@ class EstimatePMAccessTest(BaseTestCase):
     def test_serializer_can_manage(self):
         resp = self._client(self.pm).get(f'/api/estimates/{self.est.pk}/')
         self.assertTrue(resp.data['can_manage'])
+
+
+from decimal import Decimal
+from apps.jobs.models import PlanTask, RateScheme
+from apps.core.models import AccountingCategory
+
+
+class PlanTaskPMAccessTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_pt', password='x')
+        self.other = User.objects.create_user(username='other_pt', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-PT-0001', name='PT', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        self.ws = EstWorksheet.objects.create(job=self.job)
+        self.cat = AccountingCategory.objects.create(code='LAB-pm-pt', name='Labor PM PT')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly PM PT', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hour',
+            accounting_category=self.cat,
+        )
+        self.pt = PlanTask.objects.create(
+            est_worksheet=self.ws, name='Cut',
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user=user); return c
+
+    def test_pm_add_material_not_forbidden(self):
+        resp = self._client(self.pm).post(
+            f'/api/plan-tasks/{self.pt.pk}/materials/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_add_material_forbidden(self):
+        resp = self._client(self.other).post(
+            f'/api/plan-tasks/{self.pt.pk}/materials/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_serializer_can_manage(self):
+        resp = self._client(self.pm).get(f'/api/plan-tasks/{self.pt.pk}/')
+        self.assertTrue(resp.data['can_manage'])
