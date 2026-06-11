@@ -1,7 +1,6 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import UnitsSelect from '../../components/UnitsSelect.svelte';
@@ -47,7 +46,8 @@
   // Save button transient state
   let saveLabel = $state('Save');
 
-  const canManageJobs = $derived($canManageJobsStore);
+  // Per-object gate: atom-holder OR this job's project_manager (server-computed).
+  const canManageJobs = $derived(co?.can_manage ?? false);
 
   let isDraft = $derived(co?.status === 'draft');
   let isOpen = $derived(co?.status === 'open');

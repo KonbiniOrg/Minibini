@@ -1,7 +1,6 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
@@ -20,7 +19,8 @@
   let modalMode = $state('create');
   let modalItem = $state(null);
 
-  const canManageJobs = $derived($canManageJobsStore);
+  // Per-object gate: atom-holder OR this job's project_manager (server-computed).
+  const canManageJobs = $derived(estimate?.can_manage ?? false);
 
   // Send Estimate (draft → open) is handled by the mark-open action, not the dropdown.
   const VALID_TRANSITIONS = {
