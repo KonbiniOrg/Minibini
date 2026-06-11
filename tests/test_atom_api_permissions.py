@@ -136,6 +136,9 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         ('post', '/api/jobs/1/add-from-template/', {'task_template_id': 1}),
         # Adding a task to a job is open to any authenticated user.
         ('post', '/api/jobs/1/tasks/', {'name': 'New'}),
+        # Editing and deleting a task are open to any authenticated user.
+        ('patch', '/api/jobs/1/tasks/1/', {'name': 'Updated'}),
+        ('delete', '/api/jobs/1/tasks/1/', None),
     ]
 
     def test_bare_user_can_list(self):
@@ -229,9 +232,11 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
     ]
 
     # ── Job task sub-resource + population writes (replaces WO endpoints) ──
+    # Note: editing/deleting a task (PATCH/DELETE /api/jobs/1/tasks/1/) is now
+    # IsAuthenticated (see TestAuthenticatedOnlyAPI.WRITE_ENDPOINTS). Cancelling
+    # a task (/api/tasks/1/cancel/) requires the atom-or-PM gate.
     WORK_ORDER_WRITE_ENDPOINTS = [
-        ('patch', '/api/jobs/1/tasks/1/', {'name': 'Updated'}),
-        ('delete', '/api/jobs/1/tasks/1/', None),
+        ('post', '/api/tasks/1/cancel/', {}),
         ('post', '/api/jobs/1/work-complete/', {}),
         ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
         ('post', '/api/jobs/1/copy-from-worksheet/', {'worksheet_id': 1}),

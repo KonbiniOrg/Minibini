@@ -10,21 +10,31 @@ from apps.jobs.models import Task
 from apps.inventory.models import Material
 from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
+from apps.api.mixins import JobScopedPermissionMixin
+from apps.api.permissions import CanManageJobOrPM
 
 
-class TaskViewSet(RetrieveModelMixin, viewsets.GenericViewSet):
+class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.GenericViewSet):
     """Flat task endpoints — lifecycle actions, materials, subtasks.
 
     These operations only need the task id; they live at
     /api/tasks/{task_id}/... (tasks are job-scoped via Task.job).
 
     Any authenticated user can drive task lifecycle (start, complete,
-    block, unblock, cancel) and their own time tracking (start-work,
-    stop-work). These are worker operations, not manager-only.
+    block, unblock) and their own time tracking (start-work, stop-work).
+    These are worker operations, not manager-only. Cancelling a task is
+    the exception: it requires CanManageJobOrPM (atom-holder or the task's
+    job's project_manager).
     """
     queryset = Task.objects.all()
     lookup_field = 'pk'
+    job_object_path = 'job'
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == 'cancel':
+            return [IsAuthenticated(), CanManageJobOrPM()]
+        return [IsAuthenticated()]
 
     def get_serializer_class(self):
         from apps.api.tasks.serializers import TaskDetailSerializer

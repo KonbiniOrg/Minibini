@@ -44,8 +44,11 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement')
-        # add-from-template and create_material are IsAuthenticated only (workers can add tasks/materials)
-        authenticated_only_actions = ('add_from_template', 'create_material')
+        # add-from-template and create_material are IsAuthenticated only (workers
+        # can add tasks/materials). task_detail (GET/PATCH/DELETE of a task) is
+        # also open: any authenticated user may edit/delete a task. Delete stays
+        # guarded by TaskService (in_progress/complete or has Bleps -> 400).
+        authenticated_only_actions = ('add_from_template', 'create_material', 'task_detail')
         if self.action in read_actions or self.action in authenticated_only_actions:
             return [IsAuthenticated()]
         if self.action == 'tasks':
