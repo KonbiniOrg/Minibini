@@ -412,3 +412,46 @@ class TaskAndContactGuardTest(BaseTestCase):
             f'/api/contacts/{self.contact.pk}/', {'first_name': 'X'}, format='json'
         )
         self.assertEqual(resp.status_code, 403)
+
+
+class TaskAssignPMAccessTest(BaseTestCase):
+    """Manual task assignment (/api/tasks/{id}/assign/) is manager-or-PM.
+    Auto-assignment on Blep start is separate and stays open to any worker."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.jobs.models import Task, RateScheme
+        from apps.core.models import AccountingCategory
+        from decimal import Decimal
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_asg', password='x')
+        self.other = User.objects.create_user(username='other_asg', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-ASG-0001', name='ASG', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        ac = AccountingCategory.objects.create(code='ASG-AC', name='ASG AC')
+        scheme = RateScheme.objects.create(
+            name='ASG-S', algorithm='flat_fee', rate=Decimal('1'),
+            unit_label='ea', accounting_category=ac,
+        )
+        self.task = Task.objects.create(
+            job=self.job, name='T', rate_scheme=scheme, sort_order=1,
+        )
+
+    def _client(self, user):
+        c = APIClient()
+        c.force_authenticate(user=user)
+        return c
+
+    def test_pm_can_assign_on_own_job(self):
+        resp = self._client(self.pm).post(
+            f'/api/tasks/{self.task.pk}/assign/', {'assignee': None}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_non_pm_non_atom_cannot_assign(self):
+        resp = self._client(self.other).post(
+            f'/api/tasks/{self.task.pk}/assign/', {'assignee': None}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
