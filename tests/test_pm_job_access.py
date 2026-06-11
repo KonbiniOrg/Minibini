@@ -120,3 +120,52 @@ class JobViewSetPMAccessTest(BaseTestCase):
     def test_serializer_can_manage_false_for_other(self):
         resp = self._client(self.other).get(f'/api/jobs/{self.job.pk}/')
         self.assertFalse(resp.data['can_manage'])
+
+
+from apps.estimates.models import EstWorksheet
+
+
+class WorksheetPMAccessTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(username='pm_ws', password='x')
+        self.other = User.objects.create_user(username='other_ws', password='x')
+        self.job = Job.objects.create(
+            job_number='JOB-WS-0001', name='WS', status=Job.STATUS_DRAFT,
+            contact=self.contact, project_manager=self.pm,
+        )
+        self.ws = EstWorksheet.objects.create(job=self.job)
+
+    def _client(self, user):
+        c = APIClient(); c.force_authenticate(user=user); return c
+
+    def test_pm_can_patch_worksheet(self):
+        resp = self._client(self.pm).patch(
+            f'/api/est-worksheets/{self.ws.pk}/', {}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_cannot_patch_worksheet(self):
+        resp = self._client(self.other).patch(
+            f'/api/est-worksheets/{self.ws.pk}/', {}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_pm_can_create_worksheet_on_own_job(self):
+        resp = self._client(self.pm).post(
+            '/api/est-worksheets/', {'job': self.job.pk}, format='json'
+        )
+        self.assertNotEqual(resp.status_code, 403)
+
+    def test_other_cannot_create_worksheet(self):
+        resp = self._client(self.other).post(
+            '/api/est-worksheets/', {'job': self.job.pk}, format='json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_serializer_can_manage(self):
+        resp = self._client(self.pm).get(f'/api/est-worksheets/{self.ws.pk}/')
+        self.assertTrue(resp.data['can_manage'])
+        resp2 = self._client(self.other).get(f'/api/est-worksheets/{self.ws.pk}/')
+        self.assertFalse(resp2.data['can_manage'])
