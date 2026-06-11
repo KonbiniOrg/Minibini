@@ -166,6 +166,7 @@
           {task}
           user={$userStore}
           {userPermissions}
+          canManage={task?.can_manage}
           {activeBlepOnThisTask}
           onChanged={handleActionChanged}
           onConflict={handleConflict}

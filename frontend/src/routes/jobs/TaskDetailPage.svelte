@@ -310,7 +310,7 @@
     <div class="toolbar">
       <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
       <a href={`/jobs/${task.job.id}/tasklist`} use:link class="back-link">task list</a>
-      {#if !taskIsTerminal && task?.can_manage}
+      {#if !taskIsTerminal}
         <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
       {/if}
       <h2 class="task-title">Task: {task.name}</h2>
@@ -321,6 +321,7 @@
     {task}
     user={$userStore}
     {userPermissions}
+    canManage={task?.can_manage}
     {activeBlepOnThisTask}
     onChanged={refresh}
     onConflict={handleConflict}

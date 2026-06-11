@@ -47,11 +47,13 @@ describe('TaskDetailPage per-job can_manage', () => {
     expect(getByRole('button', { name: 'assign' })).toBeInTheDocument();
   });
 
-  it('hides edit/assign affordances when task.can_manage is false', async () => {
+  it('shows edit task even when task.can_manage is false (edit is open to all)', async () => {
     mockApi({ can_manage: false });
-    const { findByText, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    const { findByText, getByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
     await findByText('Task: Mill');
-    expect(queryByRole('button', { name: /edit task/i })).toBeNull();
+    // edit task is now open to any authenticated user
+    expect(getByRole('button', { name: /edit task/i })).toBeInTheDocument();
+    // assign remains manager/PM-only
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
   });
 });

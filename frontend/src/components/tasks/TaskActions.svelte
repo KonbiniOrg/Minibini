@@ -8,6 +8,7 @@
     task,
     user,
     userPermissions = [],
+    canManage = false,
     activeBlepOnThisTask = null,
     onChanged = () => {},
     onConflict = () => {},
@@ -137,7 +138,7 @@
   {#if show.complete}<button type="button" onclick={() => completeTask()} disabled={busy}>Complete</button>{/if}
   {#if show.block}<button type="button" onclick={block} disabled={busy}>Block</button>{/if}
   {#if show.unblock}<button type="button" onclick={unblock} disabled={busy}>Unblock</button>{/if}
-  {#if show.cancel}<button type="button" onclick={cancel} disabled={busy}>Cancel</button>{/if}
+  {#if show.cancel && canManage}<button type="button" onclick={cancel} disabled={busy}>Cancel</button>{/if}
 </div>
 {#if error}<p class="error">{error}</p>{/if}
 

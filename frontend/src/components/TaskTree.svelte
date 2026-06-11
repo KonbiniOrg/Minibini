@@ -177,14 +177,12 @@
         {#if !readonly && !jobLocked}
           <td class="actions-cell">
             {#if !isTerminal(task)}
-              {#if canManage}
-                <button type="button" onclick={() => onEditTask(task)}>edit</button>
-                {#if canDelete(task)}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
-              {/if}
-              {#if canCancel(task)}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
+              <button type="button" onclick={() => onEditTask(task)}>edit</button>
+              {#if canDelete(task) && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+              {#if canCancel(task) && canManage}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
               <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
               <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
-            {:else if canDelete(task) && canManage}
+            {:else if canDelete(task) && !task.has_bleps}
               <button type="button" onclick={() => onDeleteTask(task)}>del</button>
             {/if}
             {#if canManage}
@@ -251,13 +249,11 @@
           {#if !readonly && !jobLocked}
             <td class="actions-cell">
               {#if !isTerminal(sub)}
-                {#if canManage}
-                  <button type="button" onclick={() => onEditTask(sub)}>edit</button>
-                  {#if canDelete(sub)}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
-                {/if}
-                {#if canCancel(sub)}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
+                <button type="button" onclick={() => onEditTask(sub)}>edit</button>
+                {#if canDelete(sub) && !sub.has_bleps}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
+                {#if canCancel(sub) && canManage}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
                 <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
-              {:else if canDelete(sub) && canManage}
+              {:else if canDelete(sub) && !sub.has_bleps}
                 <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
               {/if}
             </td>
