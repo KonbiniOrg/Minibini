@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
-const qs = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { writable } = require('svelte/store');
+const qs = await vi.hoisted(async () => {
+  const { writable } = await import('svelte/store');
   return writable('');
 });
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), querystring: qs }));
