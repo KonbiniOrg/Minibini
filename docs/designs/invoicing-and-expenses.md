@@ -36,7 +36,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 | `invoice_number` | CharField(50), unique | Auto-generated on first save via `NumberGenerationService.generate_next_number('invoice')` if blank. See "Document numbering" in CLAUDE.md. |
 | `status` | CharField — see machine below | Default `draft`. |
 | `created_date` | DateTimeField | `default=timezone.now`. |
-| `sent_date` | DateTimeField, nullable | Currently unused by code paths; reserved for the open-transition flow. |
+| `sent_date` | DateTimeField, nullable | Stamped by `Invoice.save()` the first time the invoice transitions `draft → open` (the send-to-customer step; mirrors `Estimate`), if not already set. A row created directly as `open` is not stamped. The serializer's derived `due_date` (`sent_date + 30 days`) and `is_late` read off this. |
 | `closed_date` | DateTimeField, nullable | Stamped by `Invoice.save()` the first time the invoice transitions to `paid` (any path), if not already set. |
 | `qbo_id` | CharField(50), nullable | Set when `QBOInvoiceSyncService.push_invoice` succeeds. |
 | `qbo_payment_status` | CharField(50), default `''` | One of `Paid` / `Partial` / `Unpaid` — written by `QBOPaymentPollingService.poll_all`. |
@@ -49,7 +49,7 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 | Value | Meaning |
 |---|---|
 | `draft` | Editable. Wizard works against this state. Default on create. |
-| `open` | Sent to customer; awaiting payment. Defined in choices but the codebase has no transition path that *sets* it yet (the `draft → open` send-to-customer gap — see "Unfinished work"). Payment polling treats `open` (and `partly-paid`) as its input states, so once that gap is closed, polling promotes `open → paid` / `partly-paid` automatically. |
+| `open` | Sent to customer; awaiting payment. Set by the send-to-customer flow (`InvoiceEmailService.send_invoice` flips `draft → open` on send success, stamping `sent_date`). Payment polling treats `open` (and `partly-paid`) as its input states and promotes `open → paid` / `partly-paid` automatically. |
 | `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Set by `QBOPaymentPollingService.poll_all` when QBO reports a partial payment (some balance paid, some outstanding). |
@@ -259,6 +259,8 @@ when `qbo_id` is already set).
 - `Invoice.qbo_id` is populated on the first send.
 - `Invoice.status` flips `draft → open` on send success — Send is the
   status transition. There is no separate "Mark Sent" affordance.
+- `Invoice.sent_date` is stamped (by `Invoice.save()`) on that `draft → open`
+  transition, which is what the serializer's `due_date` / `is_late` derive from.
 - An outbound `EmailRecord` is created, linked to the Invoice's Job
   via FK (so the email shows up in the Job overview Email panel, and
   the customer's reply auto-correlates to the same Job via
@@ -589,7 +591,6 @@ The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenu
 ## Unfinished work
 
 - **Job P&L view** — consumes Invoices + Bills + Expenses + Bleps. Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
-- **Auto `draft → open` transition when an invoice is sent to the customer.** The user-facing action is "send to customer" — today that's wired through QBO (`QBOInvoiceSyncService.push_invoice`), but the action's name should reflect the customer-side intent, not the integration channel. The codebase has the `STATUS_OPEN` choice and a `sent_date` field, but nothing currently flips the status. The invoice stays `draft` even after the customer has received it. Needs design (does `cancel` on a sent invoice still hard-delete via `discard_draft`? probably not).
 - **`superseded` and `defaulted` statuses.** Both are defined in the status machine's choices but have no transition path that sets them. (Payment polling now drives `partly-paid` / `paid` — see "Payment polling" above — so those two are no longer dead.)
 - **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
 - **Standalone invoice list page in the SPA.** No `#/invoices/` route today — discovery is via the job board.

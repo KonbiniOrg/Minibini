@@ -889,10 +889,19 @@ A `cancelled` Job may carry `open` / `partly-paid` / `paid` Invoices: `CANCELLED
 - **invoice_number**: unique, max 50 chars. Auto-generated via
   NumberGenerationService if not provided.
 - **created_date**: set on creation
-- **sent_date**: nullable (when sent to customer)
-- **closed_date**: nullable (when paid in full or defaulted)
+- **sent_date**: nullable. Auto-set to `now()` by `Invoice.save()` on the
+  `draft → open` transition (the send-to-customer step; mirrors `Estimate`), and
+  left untouched thereafter. A row created directly as `open` (test/seed path) is
+  not stamped. The serializer derives `due_date` (= `sent_date + 30 days`, the
+  hard-coded `DEFAULT_INVOICE_NET_DAYS`, *not* PaymentTerms) and `is_late` from
+  it — both are `null`/`false` while `sent_date` is null.
+- **closed_date**: nullable. Auto-set to `now()` on transition to `paid`.
 - **qbo_id**, **qbo_payment_status**, **qbo_amount_paid**: nullable QBO sync
   fields
+
+> **Note:** Invoice has **no stored `due_date`** — it is computed on the fly in
+> `InvoiceSerializer` and consumed by the SPA (InvoiceDetailPage's Due Date row +
+> "(late)" flag, and JobDetail's late styling via `is_late`).
 
 #### Line item requirement
 
