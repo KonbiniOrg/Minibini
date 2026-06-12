@@ -83,6 +83,13 @@ class Invoice(models.Model):
             except Invoice.DoesNotExist:
                 pass
 
+        # Stamp sent_date the first time the invoice leaves draft for open
+        # (the send-to-customer transition; mirrors Estimate.save()). This is
+        # what the serializer's derived due_date / is_late read off of.
+        if (old_status == Invoice.STATUS_DRAFT
+                and self.status == Invoice.STATUS_OPEN and not self.sent_date):
+            self.sent_date = timezone.now()
+
         # Stamp closed_date the first time the invoice is marked paid (any path).
         if (old_status and old_status != self.status
                 and self.status == Invoice.STATUS_PAID and not self.closed_date):

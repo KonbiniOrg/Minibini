@@ -771,6 +771,9 @@ class UnpaidDataTest(FixtureTestCase):
         from apps.jobs.services import BoardService
         from apps.jobs.models import Blep
         from apps.invoicing.models import Invoice, InvoiceLineItem
+        # Labor cost is now blep hours × the average_labor_cost config.
+        Configuration.objects.update_or_create(
+            key='average_labor_cost', defaults={'value': '25'})
         worker = User.objects.create_user(username='worker', password='test')
         job = self._make_job()
         inv = Invoice.objects.create(
@@ -797,8 +800,8 @@ class UnpaidDataTest(FixtureTestCase):
         )
         result = BoardService.get_unpaid_data()
         job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
-        # 2hrs * ($50/2) = $50
-        self.assertGreaterEqual(job_data['spent'], Decimal('50.00'))
+        # 2hrs * $25/h = $50, with no materials/expenses on the job.
+        self.assertEqual(job_data['spent'], Decimal('50.00'))
 
     def test_unpaid_job_includes_qbo_payment_info(self):
         from apps.jobs.services import BoardService
