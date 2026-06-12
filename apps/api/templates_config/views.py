@@ -234,6 +234,20 @@ def settings_view(request):
                 {'blep_minimum_minutes': 'must be a non-negative integer'},
                 status=400,
             )
+    if 'average_labor_cost' in request.data:
+        from decimal import Decimal, InvalidOperation
+        raw = request.data['average_labor_cost']
+        raw = '' if raw is None else str(raw).strip()
+        # Blank is allowed — it clears the rate (labor then values at $0).
+        if raw != '':
+            try:
+                if Decimal(raw) < 0:
+                    raise ValueError
+            except (InvalidOperation, ValueError, TypeError):
+                return Response(
+                    {'average_labor_cost': 'must be a non-negative number'},
+                    status=400,
+                )
     for key, value in request.data.items():
         Configuration.objects.update_or_create(
             key=key, defaults={'value': str(value)}

@@ -6,6 +6,7 @@
   // editable from the UI by design).
   let est_expire_days = $state('');
   let board_closed_retention_days = $state('');
+  let average_labor_cost = $state('');
   let job_number_sequence = $state('');
   let invoice_number_sequence = $state('');
   let po_number_sequence = $state('');
@@ -18,6 +19,7 @@
       const data = await api.get('/api/settings/');
       est_expire_days = data.est_expire_days ?? '';
       board_closed_retention_days = data.board_closed_retention_days ?? '';
+      average_labor_cost = data.average_labor_cost ?? '';
       job_number_sequence = data.job_number_sequence ?? '';
       invoice_number_sequence = data.invoice_number_sequence ?? '';
       po_number_sequence = data.po_number_sequence ?? '';
@@ -56,8 +58,16 @@
   </p>
   <p><small>How long closed jobs stay visible on the Job Board.</small></p>
   <p>
+    <label><strong>Average labor cost</strong><br>
+      $ <input type="number" min="0" step="0.01" class="num" bind:value={average_labor_cost}> / hour
+    </label>
+    {#if errors.average_labor_cost}<em class="err">{errors.average_labor_cost}</em>{/if}
+  </p>
+  <p><small>Approximate cost per hour of logged time, used for a job's Spent
+    total. Leave blank to value labor at $0 until you set a rate.</small></p>
+  <p>
     <button type="button"
-            onclick={() => save({ est_expire_days, board_closed_retention_days }, 'Defaults')}>Save defaults</button>
+            onclick={() => save({ est_expire_days, board_closed_retention_days, average_labor_cost }, 'Defaults')}>Save defaults</button>
   </p>
 </fieldset>
 

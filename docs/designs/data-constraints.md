@@ -73,7 +73,9 @@ Job financials: `average_labor_cost` (`0`) — approximate labor cost in dollars
 per hour, applied to every logged blep hour when computing a job's **Spent**
 rollup (`apps/jobs/financials.py`). A stand-in until per-worker pay/cost rates
 exist; missing or blank is treated as `0`, so labor contributes nothing until an
-operator sets it. See `jobs-tasks-and-worksheets.md` §9.3.
+operator sets it. Editable in **Settings → Setup → Defaults**; the settings API
+(`PATCH /api/settings/`) validates it as a non-negative number (blank allowed).
+See `jobs-tasks-and-worksheets.md` §9.3.
 
 Time tracking: `blep_minimum_minutes` (`1`) — below this elapsed duration
 (whole minutes; times are minute-granular) a blep is an accidental start.
