@@ -10,11 +10,13 @@ from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
 from apps.inventory.services import InventoryService
 from apps.core.services import ServiceError, NotFoundError
-from apps.api.permissions import CanManageJobs
+from apps.api.permissions import CanManageJobOrPM
+from apps.api.mixins import JobScopedPermissionMixin
 from .serializers import PlanTaskDetailSerializer, PlanMaterialSerializer, PlanMaterialWriteSerializer
 
 
-class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
+class PlanTaskViewSet(JobScopedPermissionMixin,
+                      RetrieveModelMixin, ListModelMixin, CreateModelMixin,
                       viewsets.GenericViewSet):
     """Read-only detail for PlanTasks.
 
@@ -31,6 +33,7 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
     serializer_class = PlanTaskDetailSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'pk'
+    job_object_path = 'est_worksheet.job'
 
     def list(self, request, *args, **kwargs):
         raise MethodNotAllowed('GET')
@@ -42,7 +45,7 @@ class PlanTaskViewSet(RetrieveModelMixin, ListModelMixin, CreateModelMixin,
         if self.action in ('materials', 'material_detail'):
             if self.request.method == 'GET':
                 return [IsAuthenticated()]
-            return [IsAuthenticated(), CanManageJobs()]
+            return [IsAuthenticated(), CanManageJobOrPM()]
         return [IsAuthenticated()]
 
     @action(detail=True, methods=['get', 'post'], url_path='materials', url_name='materials')

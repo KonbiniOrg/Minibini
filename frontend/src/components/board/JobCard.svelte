@@ -1,21 +1,6 @@
 <script>
   let { job, docs = [], borderColorOverride = null, showProgress = false } = $props();
 
-  const SUB_STATUS_STYLES = {
-    'needs-scoping':     { bg: '#f1f5f9', color: '#64748b' },
-    'estimating':        { bg: '#dbeafe', color: '#2563eb' },
-    'awaiting-response': { bg: '#fef3c7', color: '#b45309' },
-    'awaiting-prep':     { bg: '#fef9c3', color: '#854d0e' },
-    'needs-tasks':       { bg: '#dcfce7', color: '#15803d' },
-    'work-ready':        { bg: '#dcfce7', color: '#0d9488' },
-    'in-progress':       { bg: '#ccfbf1', color: '#0f766e' },
-    'blocked':           { bg: '#fee2e2', color: '#b91c1c' },
-    'invoice-prepped':   { bg: '#f3e8ff', color: '#7c3aed' },
-    'invoice-sent':      { bg: '#fce7f3', color: '#be185d' },
-    'needs-invoice':     { bg: '#f1f5f9', color: '#64748b' },
-    'completed':         { bg: '#f3e8ff', color: '#7c3aed' },
-  };
-
   const BORDER_COLORS = {
     'needs-scoping': '#64748b',
     'estimating': '#2563eb',
@@ -23,18 +8,6 @@
     'awaiting-prep': '#ca8a04',
     'completed': '#7c3aed',
   };
-
-  function pillLabel(subStatus) {
-    if (!subStatus) return job.status;
-    return subStatus.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  }
-
-  function pillStyle(subStatus) {
-    const key = subStatus || job.status;
-    const s = SUB_STATUS_STYLES[key];
-    if (!s) return '';
-    return `background:${s.bg}; color:${s.color};`;
-  }
 
   function borderColor() {
     if (borderColorOverride) return borderColorOverride;
@@ -94,11 +67,11 @@
             <a class="card-customer" href="#/contacts/{job.contact_id}">{job.contact_name}</a>
           {/if}
         </div>
-        {#if (!showProgress && (job.sub_status || job.status)) || job.is_revision || deadlineText()}
+        {#if job.project_manager_name}
+          <div class="pm-line">PM: {job.project_manager_name}</div>
+        {/if}
+        {#if job.is_revision || deadlineText()}
           <div class="card-status-row">
-            {#if !showProgress && (job.sub_status || job.status)}
-              <span class="card-substatus" style={pillStyle(job.sub_status)}>{pillLabel(job.sub_status)}</span>
-            {/if}
             {#if job.is_revision}
               <span class="card-revision" title="A revised estimate is being prepared">Revision</span>
             {/if}
@@ -172,8 +145,8 @@
   .card-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
   .card-customer { font-size: 11px; color: #2563eb; text-decoration: none; }
   .card-customer:hover { text-decoration: underline; }
+  .pm-line { font-size: 10px; color: #888; margin-top: 1px; }
   .card-status-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-  .card-substatus { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; }
   .card-revision { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; background: #ffedd5; color: #c2410c; }
   .card-deadline { font-size: 11px; color: #888; margin-left: auto; }
   .card-deadline.overdue { color: #dc2626; font-weight: 600; }

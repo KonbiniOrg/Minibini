@@ -5,8 +5,8 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from django.core.exceptions import ValidationError as DjangoValidationError
 
-from apps.api.mixins import JSONDestroyMixin, StatusTransitionMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.mixins import JSONDestroyMixin, StatusTransitionMixin, JobScopedPermissionMixin
+from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError
 from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
 from apps.deliverables.services import DeliverableService, ShipmentService
@@ -22,16 +22,18 @@ def _validation_error_response(exc):
     return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class DeliverableViewSet(JSONDestroyMixin, ModelViewSet):
+class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSet):
     """Job-nested CRUD for Deliverable; all logic lives in DeliverableService."""
 
     serializer_class = DeliverableSerializer
     destroy_response_message = 'Deliverable deleted.'
+    job_object_path = 'job'
+    job_url_kwarg = 'job_id'
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve', 'editability'):
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated(), CanManageJobOrPM()]
 
     def get_queryset(self):
         return Deliverable.objects.filter(

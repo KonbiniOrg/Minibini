@@ -1,7 +1,6 @@
 <script>
   import { push, link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   const { params = {} } = $props();
@@ -13,8 +12,6 @@
   let error = $state('');
   let saving = $state(false);
   let templateId = $state('');
-
-  const canManageJobs = $derived($canManageJobsStore);
 
   async function load() {
     loading = true;
@@ -75,7 +72,7 @@
   <p>Loading...</p>
 {:else if error && !job}
   <p class="error">{error}</p>
-{:else if !canManageJobs}
+{:else if !job?.can_manage}
   <p>You do not have permission to create worksheets.</p>
 {:else if job}
   <JobHeader {job} {contact} onStatusChange={load} />

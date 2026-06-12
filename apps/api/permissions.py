@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 
 def atom_permission(perm_codename):
@@ -21,3 +21,30 @@ class CanManageTimeOrFinancials(BasePermission):
     def has_permission(self, request, view):
         return (request.user.has_perm('core.can_manage_time')
                 or request.user.has_perm('core.can_manage_financials'))
+
+
+class CanManageJobOrPM(BasePermission):
+    """can_manage_jobs atom OR being the target job's project_manager.
+
+    Authoritative at the view level: for a non-atom user we resolve the
+    request's target Job (looked-up instance, job-nested URL kwarg, or the
+    create body's parent-Job field) and PM-check it. We do NOT rely on
+    has_object_permission firing, because custom @actions don't all call
+    get_object(); has_object_permission stays as defense-in-depth for the
+    standard update/destroy path.
+    """
+    def has_permission(self, request, view):
+        from apps.jobs.services import JobService
+        if request.method in SAFE_METHODS:
+            return True
+        if request.user.has_perm('core.can_manage_jobs'):
+            return True
+        job = view.get_permission_target_job(request)
+        return job is not None and JobService.user_can_manage(request.user, job)
+
+    def has_object_permission(self, request, view, obj):
+        from apps.jobs.services import JobService
+        if request.user.has_perm('core.can_manage_jobs'):
+            return True
+        job = view.get_object_job(obj)
+        return JobService.user_can_manage(request.user, job)

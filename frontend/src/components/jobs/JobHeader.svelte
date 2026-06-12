@@ -1,5 +1,4 @@
 <script>
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
   const {
@@ -8,7 +7,9 @@
     onStatusChange = null,
   } = $props();
 
-  let canManageJobs = $derived($canManageJobsStore);
+  // Job-scoped management: per-object can_manage (atom-holder OR this job's PM),
+  // already ANDed server-side. Gate on this alone — not the global atom store.
+  let canManageJobs = $derived(job?.can_manage ?? false);
 
   function formatAmount(amount) {
     if (amount == null) return '$—';
@@ -130,6 +131,9 @@
         for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
       {/if}
     </p>
+    {#if job.project_manager_name}
+      <p class="pm-line">Project manager: <a href="#/jobs?pm={job.project_manager}">{job.project_manager_name}</a></p>
+    {/if}
     <div class="status-row">
       {#if canManageJobs && validNextStatuses.length > 0}
         <span class="status-select-wrapper">
@@ -208,8 +212,8 @@
   .titleblock h1 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; }
   .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
   .edit-link:hover { opacity: 1; text-decoration: underline; }
-  .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
-  .customer-line a { color: #fff; text-decoration: underline; }
+  .customer-line, .pm-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
+  .customer-line a, .pm-line a { color: #fff; text-decoration: underline; }
   .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
   .status-badge {
     padding: 3px 10px; border-radius: 10px; font-size: 12px;

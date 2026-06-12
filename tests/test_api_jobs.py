@@ -208,15 +208,51 @@ class JobTaskSubResourceTest(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_create_task_requires_can_manage_jobs(self):
+    def test_create_task_any_authenticated(self):
         worker = User.objects.create_user(username='jt_worker', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'Nope'},
+            {'name': 'Worker task', 'rate_scheme': self.scheme.pk},
             format='json',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_update_task_allowed_for_worker(self):
+        # Editing a task is open to any authenticated user.
+        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
+        worker = User.objects.create_user(username='jt_worker_edit', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.patch(
+            f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
+            {'name': 'Reworded'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        task.refresh_from_db()
+        self.assertEqual(task.name, 'Reworded')
+
+    def test_delete_task_allowed_for_worker_without_bleps(self):
+        # Deleting a blep-less, not-started task is open to any authenticated user.
+        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
+        worker = User.objects.create_user(username='jt_worker_del', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(Task.objects.filter(pk=task.pk).exists())
+
+    def test_delete_task_with_bleps_blocked(self):
+        # The no-Bleps rule (TaskService.delete_task) still applies to everyone:
+        # a worker deleting a task that has time entries gets a 400.
+        from apps.jobs.models import Blep
+        from django.utils import timezone
+        task = Task.objects.create(job=self.job, name='Worked', rate_scheme=self.scheme)
+        Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
+        worker = User.objects.create_user(username='jt_worker_blep', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(Task.objects.filter(pk=task.pk).exists())
 
     def test_list_tasks_any_authenticated(self):
         Task.objects.create(job=self.job, name='Read me', rate_scheme=self.scheme)
@@ -224,6 +260,25 @@ class JobTaskSubResourceTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(response.status_code, 200)
+
+    def test_work_complete_still_denied_for_worker(self):
+        # Opening task_detail must NOT open work-complete: it stays manager-or-PM.
+        worker = User.objects.create_user(username='jt_worker_wc', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(f'/api/jobs/{self.job.pk}/work-complete/', {}, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_reorder_tasks_still_denied_for_worker(self):
+        # reorder-tasks also stays manager-or-PM via the fall-through.
+        task = Task.objects.create(job=self.job, name='Reorder me', rate_scheme=self.scheme)
+        worker = User.objects.create_user(username='jt_worker_ro', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_id': task.pk, 'direction': 'up'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 class JobSerializerNestingTest(TestCase):

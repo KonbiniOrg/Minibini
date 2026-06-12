@@ -39,11 +39,19 @@ describe('TaskActions', () => {
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/unblock/', {});
   });
 
-  it('lets any authenticated worker cancel a task (cancel is a worker lifecycle op)', async () => {
+  it('hides Cancel for a non-manager even on a cancel-eligible status', () => {
+    // Cancel is manager/PM-only now (per-object can_manage). Without it, the
+    // Cancel button is not rendered even though 'blocked' is cancel-eligible.
+    const { queryByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 }, userPermissions: [], canManage: false },
+    });
+    expect(queryByRole('button', { name: 'Cancel' })).toBeNull();
+  });
+
+  it('shows and fires Cancel when canManage is true', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    // worker with no can_manage_jobs — backend cancel is IsAuthenticated by design
     const { getByRole } = render(TaskActions, {
-      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 }, userPermissions: [] },
+      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 }, userPermissions: [], canManage: true },
     });
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel/', {});

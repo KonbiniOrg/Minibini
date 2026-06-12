@@ -69,6 +69,9 @@
           <div class="card-sub">
             <a class="customer" href="#/contacts/{job.contact_id}">{job.contact_name || 'No contact'}</a>
           </div>
+          {#if job.project_manager_name}
+            <div class="pm-line">PM: {job.project_manager_name}</div>
+          {/if}
         </div>
         <div class="card-right">
           <div class="pr-line"><span class="pr-label">Invoiced</span> <span class="pr-val">{formatAmount(job.billed)}</span></div>
@@ -142,6 +145,7 @@
   .card-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
   .customer { font-size: 11px; color: #2563eb; text-decoration: none; }
   .customer:hover { text-decoration: underline; }
+  .pm-line { font-size: 10px; color: #888; margin-top: 1px; }
 
   .card-right { flex-shrink: 0; text-align: right; font-size: 10px; color: #888; line-height: 1.5; }
   .pr-line { display: flex; justify-content: flex-end; gap: 3px; }

@@ -1,7 +1,6 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs } from '../../stores/permissions.js';
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
@@ -316,12 +315,10 @@
     <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
-      {#if $canManageJobs}
-        <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
-      {/if}
+      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
     {/if}
-    {#if $canManageJobs}
+    {#if job?.can_manage}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     {/if}
   </div>
@@ -331,6 +328,7 @@
     {jobMaterials}
     readonly={false}
     {jobLocked}
+    canManage={job?.can_manage}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}

@@ -2,7 +2,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.api.permissions import CanManageJobs
 from apps.jobs.models import Task
 from apps.jobs.services import BoardService
 
@@ -66,7 +65,7 @@ def task_reorder_view(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageJobs])
+@permission_classes([IsAuthenticated])
 def task_assign_view(request, task_pk):
     """Assign a task to a worker and set queue position.
 
@@ -84,6 +83,15 @@ def task_assign_view(request, task_pk):
     task = Task.objects.filter(pk=task_pk).first()
     if not task:
         return Response({'error': 'Task not found'}, status=404)
+
+    # Manual assignment is a manager/PM action (atom holder or the job's PM).
+    # Auto-assignment on Blep start is separate and open to any worker.
+    from apps.jobs.services import JobService
+    if not JobService.user_can_manage(request.user, task.job):
+        return Response(
+            {'error': 'You do not have permission to assign tasks on this job.'},
+            status=403,
+        )
 
     assignee_id = request.data.get('assignee')
     worker_queue = request.data.get('worker_queue')

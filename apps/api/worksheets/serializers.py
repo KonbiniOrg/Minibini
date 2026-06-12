@@ -5,6 +5,7 @@ from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
@@ -91,7 +92,8 @@ class PlanMaterialAssignTaskSerializer(serializers.Serializer):
     )
 
 
-class EstWorksheetSerializer(serializers.ModelSerializer):
+class EstWorksheetSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'job'
     tasks = PlanTaskSerializer(source='plan_tasks', many=True, read_only=True)
     taskless_materials = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
@@ -115,7 +117,7 @@ class EstWorksheetSerializer(serializers.ModelSerializer):
         fields = [
             'est_worksheet_id', 'job', 'job_number', 'job_name',
             'template', 'created_date', 'editable', 'deletable',
-            'tasks', 'taskless_materials',
+            'tasks', 'taskless_materials', 'can_manage',
         ]
         read_only_fields = ['est_worksheet_id', 'created_date']
 

@@ -105,3 +105,64 @@ class ActualQtyActionTest(TestCase):
         body = resp.json()
         self.assertIn('actual_qty', body)
         self.assertEqual(Decimal(body['actual_qty']), Decimal('12.5'))
+
+
+class CancelTaskPermissionTest(TestCase):
+    """POST /api/tasks/{id}/cancel/ requires CanManageJobOrPM (atom-holder OR
+    the task's job's project_manager). A plain worker is denied (403)."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+
+        ac = AccountingCategory.objects.create(code='LABC', name='LaborC')
+        self.scheme = RateScheme.objects.create(
+            name='CancelScheme',
+            algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('10.00'),
+            unit_label='piece',
+            accounting_category=ac,
+        )
+        contact = Contact.objects.create(first_name='Cancel', last_name='Co')
+        self.job = Job.objects.create(
+            name='Cancel Job', contact=contact, job_number='JOB-CANCEL-001'
+        )
+        self.task = Task.objects.create(
+            name='Cancellable', job=self.job, rate_scheme=self.scheme
+        )
+
+        # A plain worker — no atom, not the job's PM.
+        self.worker = User.objects.create_user(
+            username='cancel_worker', password='testpass'
+        )
+        # An atom-holder.
+        self.manager = User.objects.create_user(
+            username='cancel_mgr', password='testpass'
+        )
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.manager.user_permissions.add(perm)
+        self.manager = User.objects.get(pk=self.manager.pk)
+        # The job's project manager (no atom, but is PM).
+        self.pm = User.objects.create_user(
+            username='cancel_pm', password='testpass'
+        )
+        self.job.project_manager = self.pm
+        self.job.save(update_fields=['project_manager'])
+
+    def _url(self):
+        return f'/api/tasks/{self.task.pk}/cancel/'
+
+    def test_cancel_denied_for_worker(self):
+        self.client.force_login(self.worker)
+        resp = self.client.post(self._url(), data={}, content_type='application/json')
+        self.assertEqual(resp.status_code, 403, resp.content)
+
+    def test_cancel_allowed_for_atom_holder(self):
+        # Resolves the target job via JobScopedPermissionMixin — must not 403.
+        self.client.force_login(self.manager)
+        resp = self.client.post(self._url(), data={}, content_type='application/json')
+        self.assertNotEqual(resp.status_code, 403, resp.content)
+
+    def test_cancel_allowed_for_project_manager(self):
+        self.client.force_login(self.pm)
+        resp = self.client.post(self._url(), data={}, content_type='application/json')
+        self.assertNotEqual(resp.status_code, 403, resp.content)

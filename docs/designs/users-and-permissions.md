@@ -52,7 +52,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 
 | Atom | Scope |
 |---|---|
-| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, tasks, contacts, businesses. Status transitions on each. Email-to-job actions: link, unlink, create-job-from-email. |
+| `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses. Status transitions on each. Cancel/reorder tasks and mark all a job's work complete. Email-to-job actions: link, unlink, create-job-from-email. (Adding/editing/deleting and completing individual tasks is open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** via `CanManageJobOrPM` — see "Project-manager object access". |
 | `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
 | `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
 | `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
@@ -71,7 +71,7 @@ CanManageTimeOrFinancials  # OR of the two — gates the payroll shift report
 
 ### `IsAuthenticated` (no atom)
 
-Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, bills, and emails. They also get write access to notes on jobs/contacts/businesses, can add tasks to existing jobs, and can track their own time and submit their own expenses.
+Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps, contacts, businesses, payment terms, templates, accounting categories, search, price-list items, invoices, purchase orders, bills, and emails. They also get write access to notes on jobs/contacts/businesses, can add / edit / delete tasks on existing jobs (delete blocked when the task has Bleps or is in_progress/complete) and complete individual tasks, and can track their own time and submit their own expenses.
 
 ### `is_superuser` bypass
 
@@ -83,20 +83,46 @@ Any logged-in user gets read access to jobs, estimates, worksheets, tasks, bleps
 - Submit own expenses
 - View own expenses and time entries
 
+## Project-manager object access
+
+A Job's `project_manager` (nullable FK to User, `related_name='managed_jobs'`) gets `can_manage_jobs`-equivalent access to **that one job and its contained objects** — without holding the global atom. This lets a job be delegated to someone who isn't a shop-wide manager.
+
+**The predicate.** `JobService.user_can_manage(user, job)` (in `apps/jobs/services.py`) is the single source of truth:
+
+```python
+user.has_perm('core.can_manage_jobs')  # atom holders & superusers
+    or job.project_manager_id == user.id  # the job's PM
+```
+
+It tolerates `AnonymousUser` / `job=None`. A companion, `JobService.user_holds_manage_jobs_atom(user)`, resolves *just* the atom (or superuser bypass, honouring `is_active`) with a single direct `user_permissions` query rather than `has_perm` — the serializer mixin caches its result per-request so list serialization of `can_manage` stays O(1) queries instead of N+1.
+
+**The permission class.** `CanManageJobOrPM` (in `apps/api/permissions.py`) gates writes. It is **view-authoritative**: `has_permission` short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (looked-up instance, job-nested URL kwarg, or the create body's parent-Job field) via the view and PM-checks it — it does not rely on `has_object_permission` firing, because custom `@action`s don't all call `get_object()`. `has_object_permission` remains as defense-in-depth for the standard update/destroy path.
+
+**The mixins** (in `apps/api/mixins.py`):
+- `JobScopedPermissionMixin` — gives a viewset `get_object_job(obj)` and `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'job'`, `'est_worksheet.job'`, `'estimate.job'`, `'change_order.job'`), `job_create_field` (request-body key naming the parent Job on create), and `job_url_kwarg` (URL kwarg holding the job id on job-nested routes).
+- `JobScopedCanManageMixin` — a serializer mixin adding a read-only `can_manage` boolean computed from `JobService.user_can_manage(request.user, <job>)`, where the job is reached via `can_manage_job_path`. The SPA gates per-object job-scoped edit affordances on this field instead of the global `$canManageJobs` store.
+
+**Where `can_manage` is exposed / where PM writes are accepted.** The `can_manage` field is on the Job, EstWorksheet, Estimate, PlanTask(Detail), ChangeOrder, Deliverable, and Task serializers. `CanManageJobOrPM` gates writes on `JobViewSet`, `EstWorksheetViewSet`, `EstimateViewSet` (incl. its line items), `PlanTaskViewSet` (incl. material actions), `ChangeOrderViewSet` (incl. its line items), and the job-nested `DeliverableViewSet`. So a PM may manage the job's tasks, worksheets, plan-tasks, estimates, change orders, deliverables, and their line items.
+
+**Explicitly NOT PM-scoped:**
+- **Contacts and businesses** — they share the `can_manage_jobs` atom at the view layer but are not job-owned, so they stay **atom-only**. A PM gets no access to them through this mechanism.
+- **Job create** — stays **atom-only** (there's no target job yet to be a PM of).
+- The invoice-wizard OR-gate (`CanManageJobs | CanManageFinancials`) is unchanged.
+
 ### Endpoint-to-atom mapping
 
-Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete and most action endpoints require the resource's atom. Exceptions are called out in the "Special cases" subsection below.
+Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete and most action endpoints require the resource's atom. Exceptions are called out in the "Special cases" subsection below. Several job-owned resources additionally accept the job's **project_manager** via `CanManageJobOrPM` — see "Project-manager object access" above and the per-row notes below.
 
 | Resource | Read (list / retrieve) | Write (create / update / delete) | Notes |
 |---|---|---|---|
-| `/api/jobs/` | `IsAuthenticated` | `can_manage_jobs` | several action exceptions — see below |
-| `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | |
-| `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | |
+| `/api/jobs/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`) | create stays atom-only; several action exceptions — see below |
+| `/api/contacts/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
+| `/api/businesses/` | `IsAuthenticated` | `can_manage_jobs` | atom-only — **not** PM-scoped |
 | `/api/payment-terms/` | `IsAuthenticated` | (read-only) | |
-| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
-| `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` | |
-| `/api/tasks/` (job-side) | `IsAuthenticated` | `IsAuthenticated` | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
-| `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` | retrieve open to all |
+| `/api/estimates/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. line items) | also `send-defaults` (GET, IsAuth), `send` (POST, can_manage_jobs) |
+| `/api/est-worksheets/` | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM | |
+| `/api/tasks/` (flat lifecycle) | `IsAuthenticated` | `IsAuthenticated`; `cancel` requires `can_manage_jobs` **OR** the job's PM | service enforces ownership and lifecycle rules; on-behalf start/stop requires `can_manage_time` |
+| `/api/plan-tasks/` (worksheet-side) | `IsAuthenticated` | `can_manage_jobs` **OR** the job's PM (incl. material actions) | retrieve open to all |
 | `/api/bleps/` | `IsAuthenticated` | `IsAuthenticated` | service enforces 30h rolling rule + `can_manage_time` for editing others |
 | `/api/shifts/` | `IsAuthenticated` | `IsAuthenticated` for `PATCH` (service enforces 30h self-edit window) | `DELETE` requires `can_manage_time` (200 + JSON body); `?user=me\|<id>`, `?since=` |
 | `/api/shift-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | serializes a read-only `conflicts` list (the records the request collides with); a worker can't target another user's record (403 unless `can_manage_time`) |
@@ -128,9 +154,11 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 
 #### Special cases
 
-- **`POST /api/jobs/{id}/tasks/`** — adding a task requires `can_manage_jobs`. **`GET /api/jobs/{id}/tasks/`** is `IsAuthenticated`.
+- **Task add / edit / delete** — `POST /api/jobs/{id}/tasks/` (add a task) and `GET`/`PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/` (the `task_detail` action: read, edit, delete a task) are all `IsAuthenticated` — any authenticated user may add, edit, and delete a task. Delete is still blocked by `TaskService.delete_task` when the task is `in_progress`/`complete` or has Bleps (400) — that guard applies to everyone. (This revises the earlier policy where adding a task required `can_manage_jobs`.)
+- **Cancelling a task** — `POST /api/tasks/{id}/cancel/` requires `can_manage_jobs` **OR** the task's job's PM (`CanManageJobOrPM`). The other flat task lifecycle actions (`complete`, `block`, `unblock`, `start-work`, `stop-work`, `cancel-work`, `actual-qty`) stay `IsAuthenticated` — they are worker operations.
+- **Marking all the job's work complete** — `POST /api/jobs/{id}/work-complete/` and **`POST /api/jobs/{id}/reorder-tasks/`** require `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`).
 - **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
-- **`POST /api/jobs/{id}/duplicate/`** requires `can_manage_jobs`. Duplicates the Job into a new one; body `{contact_id, path}`, returns `{job_id}` at 201.
+- **`POST /api/jobs/{id}/duplicate/`** requires `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`). Duplicates the Job into a new one; body `{contact_id, path}`, returns `{job_id}` at 201.
 - **`POST /api/jobs/{id}/start-invoice-wizard/`** accepts `can_manage_jobs` OR `can_manage_financials` — either side can spawn the draft so the other side can fill it.
 - **`POST /api/jobs/{id}/notes/`**, **`POST /api/contacts/{id}/notes/`**, **`POST /api/businesses/{id}/notes/`** are `IsAuthenticated` — anyone can add a note.
 - **`POST /api/shifts/clock-in/`**, **`POST /api/shifts/clock-out/`** are `IsAuthenticated` for self. Clocking another worker (via `?user=` / body `user`) requires `can_manage_time`; an unknown user id returns 404. Clock-out also closes the worker's open bleps.
