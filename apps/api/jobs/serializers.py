@@ -49,7 +49,6 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
 
-<<<<<<< HEAD
     def _financials(self, obj):
         """Detail-only job financial rollups, computed once and memoized.
 
@@ -83,13 +82,11 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_profit_amount(self, obj):
         return self._amount(obj, 'profit')
-=======
     def get_project_manager_name(self, obj):
         pm = obj.project_manager
         if pm is None:
             return None
         return pm.get_full_name() or pm.username
->>>>>>> main
 
     def get_latest_change_request(self, obj):
         """Most recent customer 'Request changes' comment across the job's
