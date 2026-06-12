@@ -10,6 +10,13 @@
 
   let canManageJobs = $derived($canManageJobsStore);
 
+  function formatAmount(amount) {
+    if (amount == null) return '$—';
+    return Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  }
+
+  let profitNum = $derived(job.profit_amount == null ? null : Number(job.profit_amount));
+
   // The transitions the status pill offers — a subset of the Job model's
   // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's
   // →completed/→cancelled).
@@ -172,10 +179,10 @@
     {/if}
   </div>
   <div class="pl-grid">
-    <div class="pl-item"><div class="pl-label">Estimated</div><div class="pl-value">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Spent</div><div class="pl-value pl-spent">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Billable</div><div class="pl-value pl-billable">$—</div></div>
-    <div class="pl-item"><div class="pl-label">Invoiced</div><div class="pl-value pl-invoiced">$—</div></div>
+    <div class="pl-item"><div class="pl-label">Estimate</div><div class="pl-value">{formatAmount(job.estimated_amount)}</div></div>
+    <div class="pl-item"><div class="pl-label">Spent</div><div class="pl-value pl-spent">{formatAmount(job.spent_amount)}</div></div>
+    <div class="pl-item"><div class="pl-label">Invoiced</div><div class="pl-value pl-invoiced">{formatAmount(job.invoiced_amount)}</div></div>
+    <div class="pl-item"><div class="pl-label">Profit</div><div class="pl-value" class:pl-profit-pos={profitNum != null && profitNum >= 0} class:pl-profit-neg={profitNum != null && profitNum < 0}>{formatAmount(job.profit_amount)}</div></div>
   </div>
 </div>
 
@@ -271,6 +278,7 @@
   .pl-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.65; }
   .pl-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .pl-spent { color: #fca5a5; }
-  .pl-billable { color: #fde68a; }
   .pl-invoiced { color: #86efac; }
+  .pl-profit-pos { color: #86efac; }
+  .pl-profit-neg { color: #fca5a5; }
 </style>

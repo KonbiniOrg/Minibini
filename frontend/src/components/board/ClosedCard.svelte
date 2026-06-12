@@ -56,7 +56,7 @@
           <span class="substatus {statusClass()}">{statusLabel()}</span>
         </div>
         <div class="card-right">
-          <div class="pr-line"><span class="pr-label">Billed</span> <span class="pr-val">{formatAmount(job.billed)}</span></div>
+          <div class="pr-line"><span class="pr-label">Invoiced</span> <span class="pr-val">{formatAmount(job.billed)}</span></div>
           <div class="pr-line"><span class="pr-label">Spent</span> <span class="pr-val">{formatAmount(job.spent)}</span></div>
           <div class="pr-line"><span class="pr-label">Profit</span> <span class="pr-val" class:green={Number(job.profit) >= 0} class:red={Number(job.profit) < 0}>{formatAmount(job.profit)}</span></div>
         </div>

@@ -25,6 +25,10 @@ class JobSerializer(serializers.ModelSerializer):
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
+    estimated_amount = serializers.SerializerMethodField()
+    spent_amount = serializers.SerializerMethodField()
+    invoiced_amount = serializers.SerializerMethodField()
+    profit_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
@@ -33,11 +37,46 @@ class JobSerializer(serializers.ModelSerializer):
             'contact', 'contact_name', 'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'latest_change_request',
+            'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
         ]
         read_only_fields = ['job_id', 'job_number', 'created_date', 'completed_date']
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
+
+    def _financials(self, obj):
+        """Detail-only job financial rollups, computed once and memoized.
+
+        Skipped in list context — like ``latest_change_request``, computing these
+        per row would be an N+1. Returns ``None`` in list context.
+        """
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            return None
+        cache = getattr(self, '_financials_cache', None)
+        if cache is None:
+            cache = {}
+            self._financials_cache = cache
+        if obj.pk not in cache:
+            from apps.jobs.financials import compute_job_financials
+            cache[obj.pk] = compute_job_financials(obj)
+        return cache[obj.pk]
+
+    def _amount(self, obj, key):
+        fin = self._financials(obj)
+        return None if fin is None else str(fin[key])
+
+    def get_estimated_amount(self, obj):
+        return self._amount(obj, 'estimated')
+
+    def get_spent_amount(self, obj):
+        return self._amount(obj, 'spent')
+
+    def get_invoiced_amount(self, obj):
+        return self._amount(obj, 'invoiced')
+
+    def get_profit_amount(self, obj):
+        return self._amount(obj, 'profit')
 
     def get_latest_change_request(self, obj):
         """Most recent customer 'Request changes' comment across the job's

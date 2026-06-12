@@ -50,4 +50,35 @@ describe('JobHeader', () => {
     expect(getByText('In Progress')).toBeInTheDocument();
     expect(queryByRole('combobox')).toBeNull();
   });
+
+  describe('financial rollups', () => {
+    it('renders the four amounts as currency', () => {
+      const finJob = {
+        ...job,
+        estimated_amount: '1000.00',
+        spent_amount: '250.00',
+        invoiced_amount: '400.00',
+        profit_amount: '150.00',
+      };
+      const { getByText } = render(JobHeader, { props: { job: finJob } });
+      expect(getByText('$1,000.00')).toBeInTheDocument();
+      expect(getByText('$250.00')).toBeInTheDocument();
+      expect(getByText('$400.00')).toBeInTheDocument();
+      expect(getByText('$150.00')).toBeInTheDocument();
+      // The repurposed header no longer has a Billable column.
+      expect(getByText('Profit')).toBeInTheDocument();
+    });
+
+    it('falls back to a dash when amounts are absent (e.g. list payloads)', () => {
+      const { getAllByText } = render(JobHeader, { props: { job } });
+      // All four cells show the placeholder.
+      expect(getAllByText('$—').length).toBe(4);
+    });
+
+    it('shows a negative profit (unbilled work) with its own styling', () => {
+      const finJob = { ...job, profit_amount: '-50.00' };
+      const { getByText } = render(JobHeader, { props: { job: finJob } });
+      expect(getByText('-$50.00')).toBeInTheDocument();
+    });
+  });
 });

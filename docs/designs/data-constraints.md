@@ -69,6 +69,12 @@ removed).
 Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
 (`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
 
+Job financials: `average_labor_cost` (`0`) — approximate labor cost in dollars
+per hour, applied to every logged blep hour when computing a job's **Spent**
+rollup (`apps/jobs/financials.py`). A stand-in until per-worker pay/cost rates
+exist; missing or blank is treated as `0`, so labor contributes nothing until an
+operator sets it. See `jobs-tasks-and-worksheets.md` §9.3.
+
 Time tracking: `blep_minimum_minutes` (`1`) — below this elapsed duration
 (whole minutes; times are minute-granular) a blep is an accidental start.
 Closing one (via any path — stop, clock-out, logout/deactivation) cancels it
@@ -363,6 +369,14 @@ holds resume manually.
 - **created_date**: set on creation, immutable thereafter
 - **start_date**: auto-set to `now()` on transition to `approved`. Immutable
   once set. Should be null for `draft`/`submitted`/`rejected`.
+  **Load-bearing for the Estimated rollup:** because it is set exactly once (at
+  first Approved) and never cleared, `start_date is not None` is the canonical
+  "this job was ever approved / an estimate was once accepted" signal that
+  `apps/jobs/financials.py` keys off to choose `compose_agreement` vs. the
+  highest-version-estimate fallback. **If `start_date` is ever made
+  clearable/editable, the Estimated branch in `financials.py` must be revisited**
+  — a cleared `start_date` would silently flip an approved job back to the
+  fallback path and misreport its Estimated total.
 - **due_date**: optional, user-set
 - **completed_date**: auto-set to `now()` on transition to `completed`,
   `cancelled`, or `rejected`. Immutable once set — *except* it is cleared

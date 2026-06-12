@@ -1562,56 +1562,21 @@ class BoardService:
 
     @staticmethod
     def _compute_profitability(job):
-        """Compute billed/spent/profit for a job."""
-        from apps.invoicing.models import InvoiceLineItem
-        from apps.purchasing.models import PurchaseOrderLineItem
-        from apps.inventory.models import Material
-        from apps.jobs.models import Blep
+        """Billed/spent/profit for a board card.
 
-        billed = InvoiceLineItem.objects.filter(
-            invoice__job=job
-        ).exclude(
-            invoice__status__in=['cancelled', 'superseded']
-        ).aggregate(
-            total=models.Sum(models.F('qty') * models.F('price'))
-        )['total'] or Decimal('0.00')
+        Thin adapter over the single source of truth in apps.jobs.financials so
+        the board and the job-detail header can never drift. The card's "billed"
+        is the shared "invoiced" figure (drafts/cancelled/superseded excluded);
+        spent includes the average_labor_cost-based labor term; profit is
+        invoiced − spent. Values are already quantized to cents.
+        """
+        from apps.jobs.financials import compute_job_financials
 
-        line_ids = Material.objects.filter(
-            job=job, po_line_item__isnull=False,
-        ).values_list('po_line_item_id', flat=True)
-        material_cost = PurchaseOrderLineItem.objects.filter(
-            line_item_id__in=line_ids,
-        ).exclude(
-            purchase_order__status='cancelled'
-        ).aggregate(
-            total=models.Sum(models.F('qty') * models.F('price'))
-        )['total'] or Decimal('0.00')
-
-        # TODO: Replace charge rate / 2 with actual User.pay_rate once that
-        # field exists. Using half the billing rate as a temporary proxy.
-        labor_cost = Decimal('0.00')
-        bleps = Blep.objects.filter(
-            task__job=job,
-            start_time__isnull=False,
-            end_time__isnull=False,
-        ).select_related('task__rate_scheme')
-        for blep in bleps:
-            try:
-                rate = blep.task.rate_scheme.rate
-            except AttributeError:
-                rate = None
-            if rate:
-                elapsed_hours = Decimal(str(blep.elapsed.total_seconds() / 3600))
-                labor_cost += elapsed_hours * (rate / 2)
-
-        spent = material_cost + labor_cost
-        # qty x price aggregates and the labor loop all yield >2dp values;
-        # quantize to cents so the board profit display stays clean.
-        cents = Decimal('0.01')
+        fin = compute_job_financials(job)
         return {
-            'billed': billed.quantize(cents),
-            'spent': spent.quantize(cents),
-            'profit': (billed - spent).quantize(cents),
+            'billed': fin['invoiced'],
+            'spent': fin['spent'],
+            'profit': fin['profit'],
         }
 
     @staticmethod

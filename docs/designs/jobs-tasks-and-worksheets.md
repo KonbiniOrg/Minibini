@@ -884,6 +884,43 @@ table (with materials nested under tasks); Estimate shows line items
 with grand total; Tasks shows the active Task list; Invoice / PO
 pillars are summary tables.
 
+### 9.3 Header financial rollups
+
+`JobHeader` shows four figures: **Estimate | Spent | Invoiced | Profit**. They
+are the single source of truth in `apps/jobs/financials.py`
+(`compute_job_financials(job)` → `{estimated, spent, invoiced, profit}`, all
+Decimal, quantized to cents), surfaced as detail-only serializer fields
+`estimated_amount` / `spent_amount` / `invoiced_amount` / `profit_amount` on
+`JobSerializer`. Like `latest_change_request`, they are computed once per detail
+render (memoized) and returned as `null` in list context, so the board list
+payload stays cheap; the header falls back to `$—` when a value is `null`.
+
+- **Estimate** — `compose_agreement(job).grand_total` when the job was ever
+  approved (keyed off the immutable `Job.start_date`; see data-constraints §1.8);
+  otherwise the highest-version estimate's `Σ qty×price` (0 if none).
+- **Spent** — expenses billed to the job (`Expense.material.job`, excluding
+  `rejected`) + consumed materials with **no** linked expense at cost
+  (`Σ quantity×unit_cost`; materials acquired via an expense are represented by
+  that expense, avoiding double-count) + labor (`Σ blep hours on the job ×
+  Configuration['average_labor_cost']`; every logged hour costs the same,
+  regardless of the task's RateScheme — labor cost is about hours worked, not how
+  the work is billed; a running blep counts its time so far).
+- **Invoiced** — `Σ qty×price` of the job's invoice line items, excluding
+  `draft` / `cancelled` / `superseded` invoices.
+- **Profit** — `invoiced − spent`. Intentionally negative for work done but not
+  yet billed (if it is never billed, the shop is genuinely out that cost).
+
+The job-board Unpaid and Closed cards consume the same module via
+`BoardService._compute_profitability` (a thin adapter returning `billed` =
+invoiced, `spent`, `profit`), so the board and header can never drift. The cards
+label the figure "Invoiced".
+
+**Deferred — Billable.** A fifth figure (value of work earned, at selling price,
+optionally plus estimate for not-yet-actualed lines) is intentionally not built;
+its definition is unsettled. When chosen it slots into `compute_job_financials`
+as one more function and one header column (between Spent and Invoiced) with no
+rework to the other four.
+
 ## 10. UI: Task Detail page
 
 Route: `#/jobs/:jobId/tasks/:taskId` → `TaskDetailPage.svelte`.
