@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.api.mixins import JobScopedCanManageMixin
 from apps.jobs.models import Task
 from apps.inventory.models import Material
 from apps.core.models import AccountingCategory
@@ -63,8 +64,9 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class TaskSerializer(serializers.ModelSerializer):
+class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
+    can_manage_job_path = 'job'
     assignee_name = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
     scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
@@ -88,6 +90,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
+            'can_manage',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 

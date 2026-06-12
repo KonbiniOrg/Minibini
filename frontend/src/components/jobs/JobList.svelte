@@ -11,6 +11,7 @@
         <th>Job #</th>
         <th>Name</th>
         <th>Status</th>
+        <th>PM</th>
       </tr>
     </thead>
     <tbody>
@@ -27,6 +28,13 @@
           </td>
           <td>{job.name}</td>
           <td>{job.status}</td>
+          <td>
+            {#if job.project_manager_name}
+              <a href="#/jobs?pm={job.project_manager}">{job.project_manager_name}</a>
+            {:else}
+              —
+            {/if}
+          </td>
         </tr>
       {/each}
     </tbody>

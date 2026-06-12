@@ -1,5 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
+from apps.api.mixins import JobScopedCanManageMixin
 from apps.deliverables.models import Deliverable, DeliverableSnapshot, Shipment, ShipmentItem
 from apps.deliverables.services import DeliverableService
 
@@ -12,7 +13,8 @@ def _q(value):
     return str(Decimal(value).quantize(_TWO_PLACES))
 
 
-class DeliverableSerializer(serializers.ModelSerializer):
+class DeliverableSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'job'
     qty_picked_up = serializers.SerializerMethodField()
     qty_prepped = serializers.SerializerMethodField()
     qty_remaining = serializers.SerializerMethodField()
@@ -22,7 +24,7 @@ class DeliverableSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'job', 'description', 'qty_ordered', 'units', 'sort_order',
             'qty_picked_up', 'qty_prepped', 'qty_remaining',
-            'created_at', 'updated_at',
+            'can_manage', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'job', 'created_at', 'updated_at',
                             'qty_picked_up', 'qty_prepped', 'qty_remaining']

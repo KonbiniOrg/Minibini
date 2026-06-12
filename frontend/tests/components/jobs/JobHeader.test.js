@@ -7,7 +7,7 @@ import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import JobHeader from '@/components/jobs/JobHeader.svelte';
 
-const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress' };
+const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress', can_manage: true };
 
 beforeEach(() => {
   api.patch.mockReset();
@@ -44,10 +44,50 @@ describe('JobHeader', () => {
     confirmSpy.mockRestore();
   });
 
-  it('shows a read-only badge without the jobs permission', () => {
+  it('shows a read-only badge when the job is not manageable', () => {
     user.set({ permissions: [] });
-    const { getByText, queryByRole } = render(JobHeader, { props: { job } });
+    const readOnlyJob = { ...job, can_manage: false };
+    const { getByText, queryByRole } = render(JobHeader, { props: { job: readOnlyJob } });
     expect(getByText('In Progress')).toBeInTheDocument();
     expect(queryByRole('combobox')).toBeNull();
+  });
+});
+
+describe('JobHeader project manager', () => {
+  it('links the PM name to the PM-filtered job list', () => {
+    const pmJob = { ...job, project_manager: 3, project_manager_name: 'Carol Cole' };
+    const { getByRole } = render(JobHeader, { props: { job: pmJob } });
+    const link = getByRole('link', { name: 'Carol Cole' });
+    expect(link).toHaveAttribute('href', '#/jobs?pm=3');
+  });
+
+  it('renders no PM link when unassigned', () => {
+    const { queryByText } = render(JobHeader, { props: { job } });
+    expect(queryByText(/Project manager/i)).toBeNull();
+  });
+});
+
+describe('JobHeader per-job can_manage gating', () => {
+  it('shows edit affordances + status dropdown when job.can_manage is true even without the global atom', () => {
+    user.set({ permissions: [] }); // no can_manage_jobs atom
+    const pmJob = { ...job, can_manage: true };
+    const { getByText, getByRole } = render(JobHeader, { props: { job: pmJob } });
+    expect(getByText('edit')).toBeInTheDocument();
+    expect(getByRole('combobox')).toBeInTheDocument();
+  });
+
+  it('hides edit affordances + status dropdown when job.can_manage is false even with the global atom', () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    const lockedJob = { ...job, can_manage: false };
+    const { queryByText, queryByRole } = render(JobHeader, { props: { job: lockedJob } });
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByRole('combobox')).toBeNull();
+  });
+
+  it('shows Release to floor for an approved job when job.can_manage is true', () => {
+    user.set({ permissions: [] });
+    const approvedPmJob = { ...job, status: 'approved', can_manage: true };
+    const { getByRole } = render(JobHeader, { props: { job: approvedPmJob } });
+    expect(getByRole('button', { name: 'Release to floor' })).toBeInTheDocument();
   });
 });

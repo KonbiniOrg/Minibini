@@ -124,7 +124,7 @@ working-day scroll offset (clamped ±60). Response envelope:
     "config_workday_start": "08:00", "config_workday_end": "17:00"
   },
   "days":    [ { "date": "…", "is_working": true, "label": "Mon · May 19" } ],
-  "jobs":    [ { "job_id": 110, "name": "…", "accent_color": "#dc2626", … } ],
+  "jobs":    [ { "job_id": 110, "name": "…", "accent_color": "#dc2626", "project_manager_name": "Rachel McConnell", … } ],
   "workers": [ { "user": { "id": 5, "name": "…", "initials": "RP" },
                  "bars": [ { "task_id": …, "kind": "actual", "is_running": true, "segments": [ … ] } ] } ]
 }
@@ -162,7 +162,9 @@ auto-refresh + reorder). The Board's `JobChipStrip` is reused at the top.
   via `POST /api/tasks/reorder/`, so the order matches the job board. No
   cross-lane drag (reassignment is out of scope).
 - **Job focus**: clicking a chip in `JobChipStrip` toggles `focusedJobIds`,
-  dimming non-focused jobs' bars across lanes.
+  dimming non-focused jobs' bars across lanes. Each chip also shows the job's
+  project-manager initials top-right (from `project_manager_name` in the jobs
+  payload) — see `jobs-tasks-and-worksheets.md` §3.1a.
 - **Clickable bars** open `TaskQuickCard` — task identity, live-blep banner,
   embedded `TaskActions` (start/stop/complete/block/unblock/cancel), reassign
   via `AssignModal`, and a link to the full task. For `can_manage_time`

@@ -1,7 +1,6 @@
 <script>
   import { push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import { canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
 
   const { params = {} } = $props();
 
@@ -14,8 +13,13 @@
   let description = $state('');
   let dueDate = $state('');
   let customerPoNumber = $state('');
+  let projectManager = $state('');
+  let users = $state([]);
 
-  const canManageJobs = $derived($canManageJobsStore);
+  // Job-scoped management: per-object can_manage (atom-holder OR this job's PM),
+  // already ANDed server-side. A PM may edit their own job, including reassigning
+  // the PM field. Gate on this alone — not the global atom store.
+  const canManageJobs = $derived(job?.can_manage ?? false);
 
   async function load() {
     loading = true;
@@ -26,6 +30,15 @@
       description = job.description || '';
       customerPoNumber = job.customer_po_number || '';
       dueDate = job.due_date ? toDatetimeLocal(job.due_date) : '';
+      projectManager = job.project_manager != null ? String(job.project_manager) : '';
+      // Only the PM picker (shown when the user may manage this job) uses this list.
+      if (job.can_manage) {
+        try {
+          users = await api.get('/api/auth/users/');
+        } catch {
+          users = [];
+        }
+      }
     } catch (e) {
       error = e.message || 'Could not load job.';
     } finally {
@@ -48,6 +61,7 @@
       description,
       customer_po_number: customerPoNumber,
       due_date: dueDate ? new Date(dueDate).toISOString() : null,
+      project_manager: projectManager ? Number(projectManager) : null,
     };
     try {
       await api.patch(`/api/jobs/${params.id}/`, payload);
@@ -103,6 +117,16 @@
     <p>
       <label for="customer_po"><strong>Customer PO Number</strong></label><br>
       <input id="customer_po" type="text" maxlength="50" bind:value={customerPoNumber}>
+    </p>
+
+    <p>
+      <label for="project_manager"><strong>Project Manager</strong></label><br>
+      <select id="project_manager" bind:value={projectManager}>
+        <option value="">-- None --</option>
+        {#each users as u}
+          <option value={String(u.id)}>{u.name}</option>
+        {/each}
+      </select>
     </p>
 
     <p>

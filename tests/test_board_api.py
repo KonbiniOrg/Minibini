@@ -369,3 +369,39 @@ class LazyBoardEndpointTest(FixtureTestCase):
                      '/api/jobs/board/unpaid/', '/api/jobs/board/closed/']:
             response = self.client.get(path)
             self.assertEqual(response.status_code, 403, f'{path} should require auth')
+
+
+class BoardJobPmNameTest(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days', defaults={'value': '14'}
+        )
+        self.client_user = User.objects.get(username='admin')
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.client_user)
+        self.contact = Contact.objects.first()
+        self.pm = User.objects.create_user(
+            username='pm_dave', first_name='Dave', last_name='Davis', password='x'
+        )
+        self.job = Job.objects.create(
+            job_number='JOB-BPM-0001', name='Board PM Job', status=Job.STATUS_IN_PROGRESS,
+            contact=self.contact, project_manager=self.pm,
+        )
+
+    def test_approved_payload_includes_pm_name(self):
+        resp = self.client.get('/api/jobs/board/approved/')
+        self.assertEqual(resp.status_code, 200)
+        match = [j for j in resp.data['jobs'] if j['job_number'] == 'JOB-BPM-0001']
+        self.assertEqual(len(match), 1)
+        self.assertEqual(match[0]['project_manager_name'], 'Dave Davis')
+
+    def test_pm_name_none_when_unset(self):
+        Job.objects.create(
+            job_number='JOB-BPM-0002', name='No PM', status=Job.STATUS_IN_PROGRESS, contact=self.contact,
+        )
+        resp = self.client.get('/api/jobs/board/approved/')
+        match = [j for j in resp.data['jobs'] if j['job_number'] == 'JOB-BPM-0002']
+        self.assertEqual(len(match), 1)
+        self.assertIsNone(match[0]['project_manager_name'])

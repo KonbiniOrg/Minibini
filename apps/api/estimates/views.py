@@ -6,8 +6,12 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.api.mixins import LineItemMixin, StatusTransitionMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.mixins import (
+    JobScopedPermissionMixin,
+    LineItemMixin,
+    StatusTransitionMixin,
+)
+from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError, ServiceError
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
 from apps.estimates.services import (
@@ -19,10 +23,15 @@ from apps.estimates.services import (
 from .serializers import EstimateLineItemSerializer, EstimateSerializer
 
 
-class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
+class EstimateViewSet(
+    JobScopedPermissionMixin, StatusTransitionMixin, LineItemMixin,
+    viewsets.ModelViewSet,
+):
     queryset = Estimate.objects.all().order_by('-created_date')
     serializer_class = EstimateSerializer
     lookup_field = 'pk'
+    job_object_path = 'job'
+    job_create_field = 'job'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve')
@@ -31,7 +40,7 @@ class EstimateViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSe
             return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated(), CanManageJobOrPM()]
 
     # Line item mixin config
     line_item_serializer_class = EstimateLineItemSerializer

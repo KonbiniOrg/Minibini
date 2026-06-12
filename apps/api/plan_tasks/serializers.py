@@ -3,6 +3,7 @@ from apps.jobs.models import PlanTask
 from apps.inventory.models import PlanMaterial
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class PlanMaterialSerializer(serializers.ModelSerializer):
@@ -57,7 +58,8 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class PlanTaskDetailSerializer(serializers.ModelSerializer):
+class PlanTaskDetailSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'est_worksheet.job'
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
     est_worksheet = serializers.SerializerMethodField()
     scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
@@ -73,7 +75,7 @@ class PlanTaskDetailSerializer(serializers.ModelSerializer):
             'rate_scheme', 'active_modifiers', 'est_qty', 'est_worker_time',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
-            'plan_materials', 'est_worksheet',
+            'plan_materials', 'est_worksheet', 'can_manage',
         ]
         read_only_fields = fields
 

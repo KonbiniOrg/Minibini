@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.core.units import UnitsField
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class EstimateLineItemSourceSerializer(serializers.Serializer):
@@ -39,7 +40,8 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['line_item_id']
 
 
-class EstimateSerializer(serializers.ModelSerializer):
+class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'job'
     line_items = EstimateLineItemSerializer(
         source='estimatelineitem_set', many=True, read_only=True
     )
@@ -54,7 +56,7 @@ class EstimateSerializer(serializers.ModelSerializer):
             'estimate_id', 'job', 'job_number', 'job_name',
             'estimate_number', 'version', 'status', 'is_amended',
             'parent', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items', 'worksheet',
+            'expiration_date', 'line_items', 'worksheet', 'can_manage',
         ]
         read_only_fields = [
             'estimate_id', 'estimate_number', 'version',

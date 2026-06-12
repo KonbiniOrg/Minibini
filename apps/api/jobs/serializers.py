@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.jobs.models import Job
+from apps.api.mixins import JobScopedCanManageMixin
 
 
 class JobSummarySerializer(serializers.ModelSerializer):
@@ -20,8 +21,10 @@ class JobSearchSerializer(serializers.ModelSerializer):
                   'description', 'customer_po_number', 'contact_name']
 
 
-class JobSerializer(serializers.ModelSerializer):
+class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'self'
     contact_name = serializers.SerializerMethodField()
+    project_manager_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
     latest_change_request = serializers.SerializerMethodField()
@@ -30,7 +33,9 @@ class JobSerializer(serializers.ModelSerializer):
         model = Job
         fields = [
             'job_id', 'job_number', 'name', 'status',
-            'contact', 'contact_name', 'customer_po_number', 'description',
+            'contact', 'contact_name', 'project_manager', 'project_manager_name',
+            'can_manage',
+            'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'latest_change_request',
         ]
@@ -38,6 +43,12 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"
+
+    def get_project_manager_name(self, obj):
+        pm = obj.project_manager
+        if pm is None:
+            return None
+        return pm.get_full_name() or pm.username
 
     def get_latest_change_request(self, obj):
         """Most recent customer 'Request changes' comment across the job's

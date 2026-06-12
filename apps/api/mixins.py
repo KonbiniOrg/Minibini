@@ -1,6 +1,6 @@
 from django.core.exceptions import ValidationError
 from apps.core.history import record_history
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from apps.core.services import ServiceError, NotFoundError
@@ -405,3 +405,80 @@ class JobTaskMixin:
         except Task.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
+
+
+class JobScopedPermissionMixin:
+    """Resolve a viewset's target Job for CanManageJobOrPM.
+
+    Configure per viewset:
+      - job_object_path: attribute chain instance -> Job ('self' for JobViewSet,
+        'job', 'est_worksheet.job', 'estimate.job', 'change_order.job', ...).
+      - job_create_field: request.data key naming the parent Job on create.
+      - job_url_kwarg: URL kwarg holding the job id (job-nested routes).
+    """
+    job_object_path = 'job'
+    job_create_field = None
+    job_url_kwarg = None
+
+    def get_object_job(self, obj):
+        if self.job_object_path == 'self':
+            return obj
+        target = obj
+        for part in self.job_object_path.split('.'):
+            target = getattr(target, part, None)
+            if target is None:
+                return None
+        return target
+
+    def get_permission_target_job(self, request):
+        from apps.jobs.models import Job
+        if self.job_url_kwarg and self.kwargs.get(self.job_url_kwarg):
+            return Job.objects.filter(pk=self.kwargs[self.job_url_kwarg]).first()
+        lookup = self.lookup_url_kwarg or self.lookup_field
+        if self.kwargs.get(lookup) is not None:
+            model = self.get_queryset().model
+            obj = model._default_manager.filter(pk=self.kwargs[lookup]).first()
+            if obj is not None:
+                return self.get_object_job(obj)
+        if self.job_create_field:
+            jid = request.data.get(self.job_create_field)
+            if jid:
+                return Job.objects.filter(pk=jid).first()
+        return None
+
+
+class JobScopedCanManageMixin(serializers.Serializer):
+    """Adds read-only `can_manage` = JobService.user_can_manage(request.user,
+    <job>). Set `can_manage_job_path` to the chain instance -> Job ('self',
+    'job', 'estimate.job', ...). Returns False when there's no request in
+    context (e.g. nested serialization without context)."""
+    can_manage = serializers.SerializerMethodField()
+    can_manage_job_path = 'job'
+
+    def get_can_manage(self, obj):
+        from apps.jobs.services import JobService
+        request = self.context.get('request')
+        if request is None:
+            return False
+        job = obj
+        if self.can_manage_job_path != 'self':
+            for part in self.can_manage_job_path.split('.'):
+                job = getattr(job, part, None)
+                if job is None:
+                    return False
+        # Resolve the can_manage_jobs atom once per request (cached on the
+        # request) so list serialization doesn't re-query auth_permission per
+        # row. Atom holders manage every job; otherwise fall back to the
+        # per-job PM check, which reads the already-loaded project_manager_id.
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        cache_attr = '_can_manage_jobs_atom'
+        if not hasattr(request, cache_attr):
+            setattr(request, cache_attr,
+                    JobService.user_holds_manage_jobs_atom(user))
+        if getattr(request, cache_attr):
+            return True
+        # Atom resolved above; remaining check is the per-job PM match, which
+        # reads the already-loaded project_manager_id (no query).
+        return job is not None and job.project_manager_id == user.id

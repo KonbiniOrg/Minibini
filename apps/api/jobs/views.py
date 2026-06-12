@@ -12,14 +12,15 @@ from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
-from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
+from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
 from .serializers import JobSerializer
 
 
-class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+    job_object_path = 'self'
     queryset = Job.objects.select_related('contact') \
         .prefetch_related(
             Prefetch(
@@ -43,25 +44,32 @@ class JobViewSet(JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement')
-        # add-from-template and create_material are IsAuthenticated only (workers can add tasks/materials)
-        authenticated_only_actions = ('add_from_template', 'create_material')
+        # add-from-template and create_material are IsAuthenticated only (workers
+        # can add tasks/materials). task_detail (GET/PATCH/DELETE of a task) is
+        # also open: any authenticated user may edit/delete a task. Delete stays
+        # guarded by TaskService (in_progress/complete or has Bleps -> 400).
+        authenticated_only_actions = ('add_from_template', 'create_material', 'task_detail')
         if self.action in read_actions or self.action in authenticated_only_actions:
             return [IsAuthenticated()]
         if self.action == 'tasks':
-            # GET open to any authenticated user; POST requires can_manage_jobs
-            if self.request.method == 'GET':
-                return [IsAuthenticated()]
-            return [IsAuthenticated(), CanManageJobs()]
+            # GET (list) and POST (add a task) are open to any authenticated
+            # user — anyone may add a task to a job. Editing/deleting a task
+            # (the task_detail action) and marking all the job's work complete
+            # stay manager-or-PM via the fall-through to CanManageJobOrPM below.
+            return [IsAuthenticated()]
         if self.action == 'start_invoice_wizard':
             from apps.api.permissions import CanManageFinancials
             return [IsAuthenticated(), (CanManageJobs | CanManageFinancials)()]
-        return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated(), CanManageJobOrPM()]
 
     def get_queryset(self):
         qs = super().get_queryset()
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
+        project_manager = self.request.query_params.get('project_manager')
+        if project_manager:
+            qs = qs.filter(project_manager_id=project_manager)
         search = self.request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(

@@ -6,18 +6,20 @@ from apps.estimates.models import EstWorksheet
 from apps.estimates.services import WorksheetService
 from django.core.exceptions import ValidationError
 from apps.core.services import ServiceError, NotFoundError, SchemeSupersededError
-from apps.api.mixins import StatusTransitionMixin, PlanTaskMixin
-from apps.api.permissions import CanManageJobs
+from apps.api.mixins import StatusTransitionMixin, PlanTaskMixin, JobScopedPermissionMixin
+from apps.api.permissions import CanManageJobOrPM
 from .serializers import (
     EstWorksheetSerializer, PlanTaskSerializer,
     PlanMaterialWriteSerializer, PlanMaterialAssignTaskSerializer,
 )
 
 
-class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelViewSet):
+class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanTaskMixin, viewsets.ModelViewSet):
     queryset = EstWorksheet.objects.all().order_by('-created_date')
     serializer_class = EstWorksheetSerializer
     lookup_field = 'pk'
+    job_object_path = 'job'
+    job_create_field = 'job'
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve')
@@ -26,7 +28,7 @@ class EstWorksheetViewSet(StatusTransitionMixin, PlanTaskMixin, viewsets.ModelVi
             return [IsAuthenticated()]
         if self.action in mixed_actions and self.request.method == 'GET':
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageJobs()]
+        return [IsAuthenticated(), CanManageJobOrPM()]
 
     # PlanTaskMixin config
     plan_task_serializer_class = PlanTaskSerializer

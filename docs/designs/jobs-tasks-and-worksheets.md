@@ -161,6 +161,44 @@ lossless:
   is what normally clears the hold; a discarded draft CO also clears
   the guard.
 
+### 3.1a Project manager
+
+`Job.project_manager` is a nullable FK to `core.User`
+(`on_delete=SET_NULL`, `related_name='managed_jobs'`). It is set/cleared on
+the job edit page by anyone who can manage the job, and the picker draws
+from all active users (`/api/auth/users/`).
+
+**It grants access, scoped to that one job.** The PM gets
+`can_manage_jobs`-equivalent rights over this job and its contained objects
+(tasks, worksheets, plan-tasks, estimates, change orders, deliverables, and
+their line items) without holding the global atom — via the
+`CanManageJobOrPM` permission class and the per-object `can_manage` flag the
+SPA gates on. It has **no status side effects** and grants **nothing** on
+contacts/businesses or job creation. See
+`docs/designs/users-and-permissions.md` → "Project-manager object access"
+for the predicate, permission class, and mixins.
+
+`JobSerializer` exposes both `project_manager` (writable PK) and
+`project_manager_name` (read-only, `get_full_name() or username`). The same
+display name is added to the board and schedule job payloads
+(`BoardService._serialize_job`, `ScheduleService` jobs_payload) so the chip
+can render it. Where the PM surfaces:
+
+- **Job detail header** (`JobHeader.svelte`) — a "Project manager:" line
+  linking to that manager's filtered job list.
+- **Board in-progress + schedule top-line chip** (`JobChipStrip.svelte`,
+  shared by both) — the PM's **initials** (first + last word of the name,
+  uppercased) top-right on the chip, in black opposite the grey job number.
+- **Job list** (`JobList.svelte`) — a PM column; the name links to the
+  filtered list.
+- **Filtered list** — `#/jobs?pm=<id>` (`JobListPage` passes
+  `?project_manager=<id>` to the jobs list endpoint and retitles to
+  "Jobs managed by <Name>").
+
+Deliberately **not** surfaced: cross-entity search, customer-facing /
+print / PDF, and job-as-reference displays on estimates / invoices / POs /
+tasks.
+
 ### 3.2 Auto-set dates
 
 `Job.save()` at `apps/jobs/models.py`:
@@ -246,7 +284,8 @@ for the pattern/counter mechanism.
 ### 3.6 Job duplication
 
 A Job can be duplicated into a brand-new Job via the "Duplicate…" link
-in the SPA Job detail header (gated on `can_manage_jobs`). The link
+in the SPA Job detail header (gated on the job's `can_manage` — atom or
+its PM). The link
 navigates to an intermediate page (`#/jobs/:id/duplicate`,
 `DuplicateJobPage.svelte`) where the user chooses a **Customer**
 (pre-filled from the source job's contact, editable) and a **path**
@@ -335,6 +374,31 @@ via `Task.job = FK('jobs.Job', related_name='tasks')`. Hierarchy is via
 `parent_task` (self-FK; subtasks emerge during work, not planning).
 
 `Task` is **not** decorated with `@history` — see Unfinished Work.
+
+### 4.0 Write permissions
+
+Task work is worker-driven, so most task writes are open to **any
+authenticated user**:
+
+- **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
+  `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
+  Delete is still refused by `TaskService.delete_task` when the task is
+  `in_progress`/`complete` or has any Bleps (→ 400) — that guard applies to
+  everyone.
+- **Lifecycle** — complete / block / unblock / start-work / stop-work /
+  cancel-work / actual-qty are `IsAuthenticated` (worker operations).
+
+Manager-or-PM only (`CanManageJobOrPM` — `can_manage_jobs` atom **or** the
+job's `project_manager`):
+
+- **Cancel** a task (`POST /api/tasks/{id}/cancel/`), **reorder** tasks, and
+  **mark all the job's work complete** (`POST /api/jobs/{id}/work-complete/`).
+- **Assign** a task to a worker (the SPA "assign" affordance).
+
+The SPA mirrors this: `TaskTree`/`TaskActions`/`TaskDetailPage` show
+add/edit/delete/complete to everyone, and gate cancel/assign/reorder/
+work-complete on the per-object `can_manage` flag. See
+`docs/designs/users-and-permissions.md` for the full mapping.
 
 ### 4.1 Status machine
 
@@ -857,7 +921,8 @@ Route: `#/jobs/:id` → `JobDetailPage.svelte`.
 Top-down:
 
 1. **JobHeader** (`components/jobs/JobHeader.svelte`) — title `JOB
-   #N: Name`, subtitle (contact / business), status pill (interactive
+   #N: Name`, subtitle (contact / business), a "Project manager:" line
+   (when set; links to `#/jobs?pm=<id>`), status pill (interactive
    `<select>` for users with `can_manage_jobs`), key dates,
    customer_po_number.
 2. **Description + History** in a flex row. `HistoryPanel`
