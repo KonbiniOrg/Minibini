@@ -864,6 +864,14 @@ QBO sync: pointer to `docs/designs/quickbooks-integration.md`
 (forthcoming). The viewset action
 `POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill`.
 
+**Needed when bill payment sync lands:** `Bill` has no amount-paid field
+(only `qbo_payment_status`), so a `partly_paid` bill's outstanding balance is
+unknown. Add `qbo_amount_paid` to `Bill` (mirroring `Invoice.qbo_amount_paid`)
+and have the forthcoming bill payment polling populate it. Until then, the
+Financials Bill list reports a coarse balance — full total for any non-fully-paid
+status — which overstates `partly_paid` bills. See
+`docs/plans/2026-06-12-financials-list-views-design.md`.
+
 ---
 
 ## 14. Line item API pattern

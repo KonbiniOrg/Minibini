@@ -460,3 +460,12 @@ IMAP-SMTP machinery and tend to be worked together.
   - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
     `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
     with prefill-by-id — the shape these capped pickers should move to.
+
+- **Track bill partial-payment amounts (add `Bill.qbo_amount_paid`).** — _added 2026-06-12_
+  `Bill` records only `qbo_payment_status` (a string), not an amount paid, so a
+  `partly_paid` bill's outstanding balance can't be computed. The Financials Bill
+  list (shipped 2026-06) shows a coarse balance — full total for any non-fully-paid
+  status — which overstates `partly_paid` bills (footnoted in the UI). _Done when:_
+  `Bill` grows a `qbo_amount_paid` field (mirroring `Invoice.qbo_amount_paid`), the
+  forthcoming bill QBO payment polling populates it, and the Bill list/detail balance
+  becomes exact. See `docs/plans/2026-06-12-financials-list-views-design.md`.
