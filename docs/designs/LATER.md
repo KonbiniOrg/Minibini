@@ -469,3 +469,16 @@ IMAP-SMTP machinery and tend to be worked together.
   `Bill` grows a `qbo_amount_paid` field (mirroring `Invoice.qbo_amount_paid`), the
   forthcoming bill QBO payment polling populates it, and the Bill list/detail balance
   becomes exact. See `docs/plans/2026-06-12-financials-list-views-design.md`.
+
+- **Consolidate the customer/contact pickers around `CustomerPicker`.** — _added 2026-06-12_
+  Once the new `CustomerPicker` (dual-source contact+business typeahead, emits
+  `{type, id}`; from `docs/plans/2026-06-12-financials-list-views-design.md`) ships,
+  revisit the existing single-source pickers. `ContactPicker.svelte` is currently used
+  only by `DuplicateJobPage.svelte`; in places that conceptually pick "a customer" we
+  may actually want `CustomerPicker` (which can surface a standalone business, not just
+  a contact). Audit each `ContactPicker` site (and consider whether `JobPicker` shares
+  enough shape to fold into a generic typeahead too). _Done when:_ each picker site has
+  been deliberately assigned to the right component, and any genuinely-duplicated
+  picker bodies are collapsed into a shared base — or a note records why they stay
+  separate. Don't churn working code without a reason; this is a consolidation pass,
+  not a mandate to merge everything.
