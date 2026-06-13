@@ -142,11 +142,13 @@ def build_configuration(c):
     numbering no longer uses this service, so it gets no sequence/counter keys.
     """
     config = [
-        ('job_number_sequence',      'J{counter:04d}'),
-        ('invoice_number_sequence',  'INV{counter:04d}'),
-        ('po_number_sequence',       'PO{counter:04d}'),
-        ('est_expire_days',          '30'),
-        ('email_retention_days',     '30'),
+        ('job_number_sequence',         'J{counter:04d}'),
+        ('invoice_number_sequence',     'INV{counter:04d}'),
+        ('po_number_sequence',          'PO{counter:04d}'),
+        ('est_expire_days',             '30'),
+        ('email_retention_days',        '30'),
+        ('board_closed_retention_days', '5'),
+        ('average_labor_cost',          '50'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
         # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
