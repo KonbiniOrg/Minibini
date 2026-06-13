@@ -22,16 +22,23 @@ editing, invoice list polish, a possible `/financials` hub page) come later.
 - New sidebar "Financials" section (Invoices, Bills, Expenses) above "Admin".
 - Invoice list page (`/invoices`) — new.
 - Bill list page (`/bills`) — new.
-- Minimal Bill detail page (`/bills/:id`) — new, read-only.
+- Bill detail page (`/bills/:id`) — new, **interactive** (see "Bill editing").
+- **Bill editing** — header form (new + edit), draft line-item CRUD, status
+  lifecycle actions, draft delete. New.
 - `CustomerPicker` shared component — new.
 - Backend: list serializers + filtering (status presets, due-date range) +
-  ordering for invoices and bills; balance/total/customer fields.
+  ordering for invoices and bills; balance/total/customer fields; a
+  `BillService.update_bill` header-update method + viewset `perform_update`;
+  expanded bill `status_actions`.
 
 **Out of scope (future / later passes)**
 
 - A `/financials` hub/landing page with at-a-glance totals (the "option 3"
   submenu idea). May revisit.
-- Bill editing, bill line-item CRUD UI, "New Bill" creation flow from the list.
+- **All Bill ↔ QBO integration** — the `send-to-qbo` action endpoint already
+  exists but the new UI does not surface it; bill QBO push, payment sync, and
+  the `partly_paid` status (which needs a paid amount we don't track yet) all
+  wait for a later pass.
 - Invoice detail-page changes (already exists; untouched here).
 - Refactoring `ContactPicker` / `JobPicker` into a generic typeahead.
 - Tracking bill partial-payment amounts (see "Bill balance is lossy" below).
@@ -169,11 +176,42 @@ them later.)
 - **Ordering** `?ordering=`: `due_date` (default ascending; nulls last),
   `-due_date`, `-balance`, `-total`, `vendor_name`, `-received_date`.
 
-### Bill detail endpoint
+### Bill detail + write endpoints
 
 `BillViewSet.retrieve` already returns `BillSerializer`. Confirm it serializes
 header fields, the linked PO (number + id), line items, and a `balance` (add
 the coarse balance to `BillSerializer` too so the detail page matches the list).
+
+Write plumbing to add/verify (mirror `PurchaseOrderService` / `PurchaseOrderViewSet`):
+
+- **`BillService.update_bill(pk, **kwargs)`** — new; draft-only header update
+  via `_validate_draft`, mirroring `PurchaseOrderService.update_po`. Editable
+  header fields: `business`, `contact`, `vendor_invoice_number`, `due_date`.
+  (`purchase_order` link is set at creation and shown read-only this pass;
+  changing it post-create is an edge case, deferred.) Re-runs `Bill.clean()`
+  (business/contact-belongs-to-business validation already lives there).
+- **`BillViewSet.perform_update`** — new override delegating to
+  `BillService.update_bill` (today PATCH falls through to the default DRF
+  `serializer.save()`, bypassing the service — fix this to match the
+  viewset-delegates-to-service convention).
+- **`BillSerializer`** — ensure `business`, `contact`, `vendor_invoice_number`,
+  `due_date`, `purchase_order` are writable on create; `vendor_invoice_number` /
+  `business` / `contact` / `due_date` writable on update. Header writes are
+  draft-only (enforced in the service).
+- **Line-item PLI routing** — the catalog ("From Price List") add must route to
+  `BillService.add_line_item_from_pli(bill_id, price_list_item_id, qty)` when
+  the POST carries `price_list_item`, mirroring how the invoice line-item add
+  handles catalog vs. manual. Verify `LineItemMixin` passes the kwarg through,
+  or override `line_items` POST as the invoice viewset does.
+- **`status_actions`** — extend beyond the existing `cancel`:
+  - `receive` → `draft → received` (the model's `clean()` already blocks this
+    with zero line items).
+  - `mark-paid` → `received → paid_in_full` (stamps `paid_date`; coarse balance
+    drops to 0). `partly_paid` is **not** exposed (no paid-amount tracking;
+    waits for QBO). `paid_in_full → refunded` also deferred.
+  - Keep `cancel` (`requires_reason: True`).
+  All status actions stay `IsAuthenticated + CanManageFinancials`.
+- **`send-to-qbo`** action is left in place but **not** wired into the new UI.
 
 ### Permissions
 
@@ -181,14 +219,27 @@ the coarse balance to `BillSerializer` too so the detail page matches the list).
   The sidebar gate (`can_manage_financials`) is the discovery control; the
   pages additionally guard on `$canManageFinancials` and show a not-authorized
   state on deep-link by a non-financials user.
-- No write endpoints added in this pass.
+- All Bill **writes** (create, update, line-item CRUD, status actions, delete)
+  require `CanManageFinancials` — already the case in `BillViewSet.get_permissions`
+  and `LineItemMixin`. No invoice write endpoints added in this pass.
 
 ## Frontend pages
 
 Conventions: follow existing list pages (`PurchaseOrderListPage`,
 `ExpenseListPage`) — `.data-table`, `lib/pagination.js` helpers, status
-`<select>`, `api.js` GET, row link/button to detail. Register routes in
-`App.svelte`.
+`<select>`, `api.js` GET, row link/button to detail. Detail/form pages follow
+`InvoiceDetailPage` (line items) and `PurchaseOrderDetailPage` /
+`PurchaseOrderFormPage` (status actions, two-mode form).
+
+New routes to register in `App.svelte`:
+
+| Route | Component |
+|---|---|
+| `/invoices` | `routes/invoices/InvoiceListPage.svelte` |
+| `/bills` | `routes/bills/BillListPage.svelte` |
+| `/bills/new` | `routes/bills/BillFormPage.svelte` (new mode) |
+| `/bills/:id` | `routes/bills/BillDetailPage.svelte` |
+| `/bills/:id/edit` | `routes/bills/BillFormPage.svelte` (edit mode) |
 
 ### Invoice list (`/invoices` → `routes/invoices/InvoiceListPage.svelte`)
 
@@ -206,15 +257,50 @@ Columns: **Vendor Inv #** (link → `/bills/:id`) · **Vendor** · **PO #**
 **Due** · **Amount** · **Balance** (footnoted re: partial payments).
 
 Filter bar: status `<select>` (default Open) · due-date range · `CustomerPicker`.
-Sort `<select>` (default Due ↑). Pagination.
+Sort `<select>` (default Due ↑). Pagination. **New Bill** button
+(`can_manage_financials` only) → `/bills/new`.
 
-### Bill detail — minimal (`/bills/:id` → `routes/bills/BillDetailPage.svelte`)
+### Bill form (`/bills/new` and `/bills/:id/edit` → `routes/bills/BillFormPage.svelte`)
 
-Read-only. Header: vendor (business), vendor invoice #, linked PO (link to the
-PO detail when present), status, dates (created / due / received / paid),
-**Balance**. Read-only line-items table (`.data-table`: description, qty,
-units, price, line total). No edit/line-item CRUD this pass — note in-page or
-in docs that editing is the next pass.
+Header create + edit, mirroring `PurchaseOrderFormPage` (new + edit modes in
+one page). Fields: vendor (business) + optional contact — reuse
+`PurchaseOrderForm`'s business/contact selection pattern; `vendor_invoice_number`;
+`due_date`. New mode optionally accepts `?po=<id>` to pre-link a PO (routes
+`perform_create` through `create_bill_from_po`). Edit mode is draft-only — for a
+non-draft bill, the page shows the header read-only with a "received bills can't
+be edited" note. A **"New Bill"** button on the Bill list (financials-only)
+links here.
+
+> Judgment call (flag for review): standalone "New Bill" creation was cut in the
+> first scope pass, but it falls out almost free here — `PurchaseOrderFormPage`
+> is a direct two-mode template and `create_bill` already backs it, and an AP
+> Bills list with no create affordance is awkward. Included; trim if unwanted.
+
+### Bill detail (`/bills/:id` → `routes/bills/BillDetailPage.svelte`)
+
+Interactive, mirroring `InvoiceDetailPage` (line items) and
+`PurchaseOrderDetail` (status actions). Header: vendor (business), vendor
+invoice #, linked PO (link to PO detail when present), status, dates
+(created / due / received / paid / cancelled), **Balance** (footnoted re:
+partial payments). Bill-level history panel if the existing purchasing history
+surface applies (PO detail has one).
+
+- **Edit header** — "Edit" link → `/bills/:id/edit`, shown only on `draft`
+  bills to `can_manage_financials`.
+- **Line items** — `.data-table` (description, qty, units, price, line total).
+  On `draft` bills, `can_manage_financials` users add / edit / delete / reorder
+  via the shared **`LineItemModal.svelte`** (same modal as estimates/invoices —
+  manual entry or "From Price List" catalog mode). Bill lines have no job /
+  material linkage (unlike PO lines), so the simpler invoice-style modal fits;
+  no `JobPicker`. Deletes go through the renumber service (already the case in
+  `BillService.delete_line_item`).
+- **Status actions** — buttons reflecting the bill state machine:
+  - `draft`: **Mark Received** (disabled with a hint until ≥1 line item),
+    **Delete** (draft-only, irreversible → confirm).
+  - `received`: **Mark Paid in Full**, **Cancel** (Cancel requires a reason).
+  - terminal (`paid_in_full` / `cancelled` / `refunded`): no actions.
+  - `partly_paid` not reachable from the UI this pass.
+  No "Send to QBO" button (deferred).
 
 ## Reuse notes
 
@@ -238,22 +324,39 @@ in docs that editing is the next pass.
   paid_in_full); `business`/`contact`; due-date range; ordering; coarse balance
   per status (partly_paid → full total; paid_in_full → 0).
 - Bill detail: balance present and matches list.
+- Bill editing (service + viewset):
+  - `BillService.update_bill` updates header on draft; **rejects** non-draft
+    (raises like the other `_validate_draft` services); re-runs `clean()`
+    (contact-belongs-to-business).
+  - `perform_update` routes PATCH through the service (a header PATCH on a
+    non-draft bill 400s, doesn't silently save).
+  - Line-item add (manual + PLI), edit, delete-with-renumber, reorder — all
+    draft-only; non-draft attempts rejected.
+  - `status_actions`: `receive` blocked with zero line items, allowed with ≥1;
+    `mark-paid` stamps `paid_date` and zeroes balance; `cancel` requires reason;
+    invalid transitions (e.g. `draft → paid_in_full`) rejected by `clean()`.
+  - Write actions require `CanManageFinancials` (403 without).
 
 **Frontend** (`frontend/`, Vitest, `npm run test:run`):
 
 - `CustomerPicker`: dual-source merge + tagging; emits `{type,id}`; clear.
 - Invoice/Bill list pages: render rows, default filters applied, sort/filter
-  controls wire to query params, customer picker → correct param, row links.
-- Bill detail: renders header + line items + balance; PO link conditional.
+  controls wire to query params, customer picker → correct param, row links;
+  Bill list "New Bill" button gated on `canManageFinancials`.
+- Bill detail: renders header + line items + balance; PO link conditional;
+  edit/line-item/status controls present only on the right status + permission;
+  status buttons call the right endpoints; Mark Received disabled with no lines.
+- Bill form: new + edit modes; edit blocked/read-only for non-draft.
 
 ## Docs to update (same session as implementation)
 
 - `docs/designs/invoicing-and-expenses.md` — replace "Standalone invoice list
   page … No `#/invoices/` route today" with the shipped list; add the
   Financials nav grouping.
-- `docs/designs/materials-inventory-and-purchasing.md` — add the Bill list +
-  minimal Bill detail surfaces (§15-ish); add the `qbo_amount_paid`-needed note
-  in §13's "forthcoming" QBO area.
+- `docs/designs/materials-inventory-and-purchasing.md` — add the Bill list,
+  detail, and form surfaces + the editing flow (`BillService.update_bill`,
+  expanded `status_actions`) to §13 / §15; the `qbo_amount_paid`-needed note in
+  §13's "forthcoming" QBO area is already added.
 - `docs/designs/architecture-and-conventions.md` §8 — update the sidebar link
   list with the Financials section.
 - `docs/designs/LATER.md` — "track bill partial-payment amounts (add
