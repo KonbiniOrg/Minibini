@@ -438,6 +438,9 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         if self.action != 'list':
             return qs
 
+        # List-only: select_related to avoid N+1 from BillSummarySerializer
+        qs = qs.select_related('business', 'contact', 'purchase_order')
+
         # List-only: annotations, status presets, due-date range, ordering
         qs = qs.annotate(
             total_anno=Coalesce(

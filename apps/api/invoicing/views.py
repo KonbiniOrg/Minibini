@@ -77,6 +77,9 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         if self.action != 'list':
             return qs
 
+        # List-only: select_related to avoid N+1 from InvoiceSummarySerializer
+        qs = qs.select_related('job', 'job__contact', 'job__contact__business')
+
         qs = qs.annotate(
             total_anno=Coalesce(
                 Sum(ExpressionWrapper(

@@ -62,3 +62,19 @@ class BillListAPITest(BaseTestCase):
         ordered = [r['bill_id'] for r in resp.data['results']]
         self.assertLess(ordered.index(soonest.bill_id),
                         ordered.index(latest.bill_id))
+
+    def test_filter_by_business_exact(self):
+        bill = self._bill(number='V-BIZ')
+        resp = self.client.get(f'/api/bills/?status=all&business={self.vendor.pk}')
+        self.assertEqual(resp.status_code, 200)
+        ids = {r['bill_id'] for r in resp.data['results']}
+        self.assertIn(bill.bill_id, ids)
+
+    def test_status_draft_preset(self):
+        draft = self._bill(status=Bill.STATUS_DRAFT, number='V-DRAFT2')
+        received = self._bill(status=Bill.STATUS_RECEIVED, number='V-RECV2')
+        resp = self.client.get('/api/bills/?status=draft')
+        self.assertEqual(resp.status_code, 200)
+        ids = {r['bill_id'] for r in resp.data['results']}
+        self.assertIn(draft.bill_id, ids)
+        self.assertNotIn(received.bill_id, ids)
