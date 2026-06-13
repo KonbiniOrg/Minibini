@@ -105,4 +105,75 @@ describe('BillDetailPage', () => {
     expect(queryByText(container, 'Mark Received')).toBeNull();
     expect(queryByText(container, 'Delete')).toBeNull();
   });
+
+  it('hides Edit header for non-financials user and shows it for financials user on a draft bill', async () => {
+    // Non-financials user: Edit header absent
+    user.set({ username: 'worker', permissions: [] });
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve(DRAFT_BILL);
+    });
+    const { container: containerNonFin, unmount } = render(BillDetailPage, {
+      props: { params: { id: '1' } },
+    });
+    await findByText(containerNonFin, 'V-DRAFT'); // wait for load to settle
+    expect(queryByText(containerNonFin, 'Edit header')).toBeNull();
+    unmount();
+
+    // Financials user: Edit header present
+    user.set({ username: 'fin', permissions: ['can_manage_financials'] });
+    const { container: containerFin } = render(BillDetailPage, {
+      props: { params: { id: '1' } },
+    });
+    expect(await findByText(containerFin, 'Edit header')).toBeInTheDocument();
+  });
+
+  it('Cancel Bill button is disabled without a reason and enabled after typing one', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve(RECEIVED_BILL);
+    });
+    user.set({ username: 'fin', permissions: ['can_manage_financials'] });
+    const { container } = render(BillDetailPage, { props: { params: { id: '2' } } });
+    const cancelBtn = await findByText(container, 'Cancel Bill');
+    expect(cancelBtn).toBeDisabled();
+
+    // Type a reason into the textbox
+    const reasonInput = container.querySelector('input[type="text"][placeholder="Enter reason…"]');
+    reasonInput.value = 'Duplicate invoice';
+    reasonInput.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 0)); // flush Svelte reactivity
+
+    expect(cancelBtn).not.toBeDisabled();
+  });
+
+  it('renders a PO link when po_number is set and no link when absent', async () => {
+    const billWithPO = {
+      ...DRAFT_BILL,
+      bill_id: 4,
+      po_number: 'PO-2026-0001',
+      purchase_order: 42,
+    };
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve(billWithPO);
+    });
+    const { container: containerWithPO } = render(BillDetailPage, {
+      props: { params: { id: '4' } },
+    });
+    const poLink = await findByText(containerWithPO, 'PO-2026-0001');
+    expect(poLink.tagName).toBe('A');
+    expect(poLink.getAttribute('href')).toBe('#/purchase-orders/42');
+
+    // Bill without a PO: link absent
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve(DRAFT_BILL); // po_number: null
+    });
+    const { container: containerNoPO } = render(BillDetailPage, {
+      props: { params: { id: '1' } },
+    });
+    await findByText(containerNoPO, 'V-DRAFT'); // wait for load
+    expect(queryByText(containerNoPO, 'PO-2026-0001')).toBeNull();
+  });
 });

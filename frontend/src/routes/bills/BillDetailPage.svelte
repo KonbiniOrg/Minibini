@@ -56,7 +56,6 @@
   function handleSaved() { modalOpen = false; modalItem = null; load(); }
 
   async function handleDeleteItem(li) {
-    if (!confirm('Delete this line item?')) return;
     try {
       await api.delete(`/api/bills/${billId}/line-items/${li.line_item_id}/`);
       await load();
@@ -114,7 +113,7 @@
       <tr><td><strong>Due</strong></td><td>{bill.due_date ? bill.due_date.slice(0, 10) : '—'}</td></tr>
       <tr><td><strong>Received</strong></td><td>{bill.received_date ? bill.received_date.slice(0, 10) : '—'}</td></tr>
       <tr><td><strong>Paid</strong></td><td>{bill.paid_date ? bill.paid_date.slice(0, 10) : '—'}</td></tr>
-      <tr><td><strong>Balance</strong></td><td>${bill.balance}</td></tr>
+      <tr><td><strong>Balance</strong></td><td>${Number(bill.balance).toFixed(2)}</td></tr>
     </tbody>
   </table>
 
