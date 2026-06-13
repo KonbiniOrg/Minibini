@@ -479,11 +479,30 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
     line_item_service_class = BillService
 
     status_actions = {
+        'receive': {
+            'service': lambda pk, reason=None: BillService.update_status(
+                pk, Bill.STATUS_RECEIVED),
+        },
+        'mark_paid': {
+            'service': lambda pk, reason=None: BillService.update_status(
+                pk, Bill.STATUS_PAID_IN_FULL),
+        },
         'cancel': {
-            'service': lambda pk, reason=None: BillService.update_status(pk, Bill.STATUS_CANCELLED),
+            'service': lambda pk, reason=None: BillService.update_status(
+                pk, Bill.STATUS_CANCELLED),
             'requires_reason': True,
         },
     }
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        try:
+            bill = BillService.update_bill(
+                serializer.instance.pk, **serializer.validated_data)
+        except DjangoValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
+            raise DRFValidationError(detail)
+        serializer.instance = bill
 
     def perform_create(self, serializer):
         data = serializer.validated_data
