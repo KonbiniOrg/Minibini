@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 from apps.core.units import UnitsField
@@ -11,18 +12,37 @@ class PurchaseOrderSummarySerializer(serializers.ModelSerializer):
 
 class BillSummarySerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
+    vendor_name = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return obj.contact.name if obj.contact else None
 
+    def get_vendor_name(self, obj):
+        return obj.business.business_name if obj.business else None
+
     def get_po_number(self, obj):
         return obj.purchase_order.po_number if obj.purchase_order else None
+
+    def get_total(self, obj):
+        val = getattr(obj, 'total_anno', None)
+        if val is not None:
+            return str(Decimal(val).quantize(Decimal('0.01')))
+        return '0.00'
+
+    def get_balance(self, obj):
+        val = getattr(obj, 'balance_anno', None)
+        if val is not None:
+            return str(Decimal(val).quantize(Decimal('0.01')))
+        return '0.00'
 
     class Meta:
         model = Bill
         fields = ['bill_id', 'status', 'vendor_invoice_number', 'created_date',
-                  'contact_name', 'po_number']
+                  'due_date', 'received_date', 'contact_name', 'vendor_name',
+                  'po_number', 'purchase_order', 'total', 'balance']
 
 
 class POLineItemSerializer(serializers.ModelSerializer):

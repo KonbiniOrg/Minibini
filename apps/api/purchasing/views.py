@@ -1,4 +1,8 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import (
+    F, Sum, Value, Case, When, DecimalField, ExpressionWrapper,
+)
+from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -16,8 +20,27 @@ from apps.api.permissions import CanManageFinancials
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
-    BillSerializer, BillLineItemSerializer,
+    BillSerializer, BillSummarySerializer, BillLineItemSerializer,
 )
+
+_BILL_MONEY = DecimalField(max_digits=12, decimal_places=2)
+
+BILL_STATUS_PRESETS = {
+    'open': [Bill.STATUS_RECEIVED, Bill.STATUS_PARTLY_PAID],
+    'paid': [Bill.STATUS_PAID_IN_FULL],
+    'draft': [Bill.STATUS_DRAFT],
+    'cancelled': [Bill.STATUS_CANCELLED],
+    'refunded': [Bill.STATUS_REFUNDED],
+}
+
+BILL_ORDERING = {
+    'due_date': F('due_date').asc(nulls_last=True),
+    '-due_date': F('due_date').desc(nulls_last=True),
+    '-balance': F('balance_anno').desc(nulls_last=True),
+    '-total': F('total_anno').desc(nulls_last=True),
+    'vendor_name': F('business__business_name').asc(nulls_last=True),
+    '-received_date': F('received_date').desc(nulls_last=True),
+}
 
 
 class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
@@ -396,15 +419,57 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return BillSummarySerializer
+        return BillSerializer
+
     def get_queryset(self):
         qs = super().get_queryset()
+
+        # Filters that apply to all actions (preserve existing business/contact)
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
-        return qs
+
+        if self.action != 'list':
+            return qs
+
+        # List-only: annotations, status presets, due-date range, ordering
+        qs = qs.annotate(
+            total_anno=Coalesce(
+                Sum(ExpressionWrapper(
+                    F('billlineitem__qty') * F('billlineitem__price'),
+                    output_field=_BILL_MONEY)),
+                Value(0), output_field=_BILL_MONEY),
+        ).annotate(
+            balance_anno=Case(
+                When(status__in=[Bill.STATUS_PAID_IN_FULL,
+                                 Bill.STATUS_CANCELLED,
+                                 Bill.STATUS_REFUNDED],
+                     then=Value(0, output_field=_BILL_MONEY)),
+                default=F('total_anno'),
+                output_field=_BILL_MONEY),
+        )
+
+        status_param = self.request.query_params.get('status', 'open')
+        if status_param != 'all':
+            statuses = BILL_STATUS_PRESETS.get(status_param)
+            if statuses is not None:
+                qs = qs.filter(status__in=statuses)
+
+        due_from = self.request.query_params.get('due_from')
+        if due_from:
+            qs = qs.filter(due_date__date__gte=due_from)
+        due_to = self.request.query_params.get('due_to')
+        if due_to:
+            qs = qs.filter(due_date__date__lte=due_to)
+
+        ordering = self.request.query_params.get('ordering', 'due_date')
+        return qs.order_by(BILL_ORDERING.get(ordering, BILL_ORDERING['due_date']))
 
     line_item_serializer_class = BillLineItemSerializer
     line_item_parent_field = 'bill'
