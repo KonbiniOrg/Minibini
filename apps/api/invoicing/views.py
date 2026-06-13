@@ -12,7 +12,10 @@ from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceService, InvoiceWizardService
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin
 from apps.api.permissions import CanManageFinancials, CanManageJobs
-from .serializers import InvoiceSerializer, InvoiceLineItemSerializer, InvoiceSummarySerializer
+from .serializers import (
+    InvoiceSerializer, InvoiceLineItemSerializer, InvoiceSummarySerializer,
+    DEFAULT_INVOICE_NET_DAYS,
+)
 
 
 _MONEY = DecimalField(max_digits=12, decimal_places=2)
@@ -83,7 +86,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             amount_paid_anno=Coalesce(F('qbo_amount_paid'), Value(0),
                                       output_field=_MONEY),
             due_date_anno=ExpressionWrapper(
-                F('sent_date') + timedelta(days=30),
+                F('sent_date') + timedelta(days=DEFAULT_INVOICE_NET_DAYS),
                 output_field=DateTimeField()),
             customer_sort=Coalesce(
                 F('job__contact__business__business_name'),

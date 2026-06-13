@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
 from apps.jobs.models import Job
+from apps.contacts.models import Business
 from apps.invoicing.models import Invoice, InvoiceLineItem
 
 
@@ -82,12 +83,15 @@ class InvoiceListAPITest(BaseTestCase):
     def test_filter_by_business_rolls_up_contacts(self):
         contact = self.job.contact
         self.assertIsNotNone(contact)
+        business = Business.objects.create(
+            business_name='Test Rollup Co', default_contact=contact)
+        contact.business = business
+        contact.save()
         inv = self._invoice(status=Invoice.STATUS_OPEN)
-        if contact.business:
-            resp = self.client.get(
-                f'/api/invoices/?status=all&business={contact.business_id}')
-            ids = {r['invoice_id'] for r in resp.data['results']}
-            self.assertIn(inv.invoice_id, ids)
+        resp = self.client.get(
+            f'/api/invoices/?status=all&business={business.business_id}')
+        ids = {r['invoice_id'] for r in resp.data['results']}
+        self.assertIn(inv.invoice_id, ids)
 
     def test_filter_by_contact_exact(self):
         contact = self.job.contact

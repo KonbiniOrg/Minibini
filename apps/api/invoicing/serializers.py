@@ -173,7 +173,8 @@ class InvoiceSummarySerializer(serializers.ModelSerializer):
         return due < timezone.now()
 
     def get_total(self, obj):
-        val = getattr(obj, 'total_anno', None) or Decimal('0.00')
+        val = getattr(obj, 'total_anno', None)
+        val = val if val is not None else Decimal('0.00')
         return str(Decimal(val).quantize(Decimal('0.01')))
 
     def get_amount_paid(self, obj):
@@ -182,5 +183,6 @@ class InvoiceSummarySerializer(serializers.ModelSerializer):
         return str(Decimal(val).quantize(Decimal('0.01')))
 
     def get_balance(self, obj):
-        val = getattr(obj, 'balance_anno', None) or Decimal('0.00')
+        val = getattr(obj, 'balance_anno', None)
+        val = val if val is not None else Decimal('0.00')
         return str(Decimal(val).quantize(Decimal('0.01')))
