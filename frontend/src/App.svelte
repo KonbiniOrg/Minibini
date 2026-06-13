@@ -20,8 +20,12 @@
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
+  import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
   import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
+  import BillListPage from './routes/bills/BillListPage.svelte';
+  import BillFormPage from './routes/bills/BillFormPage.svelte';
+  import BillDetailPage from './routes/bills/BillDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
@@ -90,9 +94,14 @@
     '/purchase-orders/:id/edit': PurchaseOrderFormPage,
     '/purchase-orders/:id/send': PurchaseOrderSendPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
+    '/invoices': InvoiceListPage,
     '/invoices/:id/wizard': InvoiceWizardPage,
     '/invoices/:id/send': InvoiceSendPage,
     '/invoices/:id': InvoiceDetailPage,
+    '/bills': BillListPage,
+    '/bills/new': BillFormPage,
+    '/bills/:id/edit': BillFormPage,
+    '/bills/:id': BillDetailPage,
     '/settings': SettingsPage,
     '/users': UserListPage,
     '/users/new': UserCreatePage,
