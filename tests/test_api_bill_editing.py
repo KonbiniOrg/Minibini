@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework.test import APIClient
@@ -6,6 +7,7 @@ from tests.base import BaseTestCase
 from apps.core.models import User
 from apps.contacts.models import Business
 from apps.purchasing.models import Bill, BillLineItem
+from apps.purchasing.services import BillService
 
 
 class BillDetailSerializerTest(BaseTestCase):
@@ -30,10 +32,6 @@ class BillDetailSerializerTest(BaseTestCase):
         self.assertIn('due_date', resp.data)
         self.assertIn('paid_date', resp.data)
         self.assertEqual(resp.data['balance'], '30.00')
-
-
-from apps.purchasing.services import BillService
-from django.core.exceptions import ValidationError
 
 
 class BillUpdateServiceTest(BaseTestCase):

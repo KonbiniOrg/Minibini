@@ -5,6 +5,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -478,6 +479,7 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
     line_item_parent_field = 'bill'
     line_item_service_class = BillService
 
+    # No partly_paid action: that status will be driven by QBO bill payment sync (deferred).
     status_actions = {
         'receive': {
             'service': lambda pk, reason=None: BillService.update_status(
@@ -495,13 +497,14 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
     }
 
     def perform_update(self, serializer):
-        from rest_framework.exceptions import ValidationError as DRFValidationError
         try:
             bill = BillService.update_bill(
                 serializer.instance.pk, **serializer.validated_data)
         except DjangoValidationError as e:
             detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
             raise DRFValidationError(detail)
+        except NotFoundError as e:
+            raise NotFound(detail=str(e))
         serializer.instance = bill
 
     def perform_create(self, serializer):
