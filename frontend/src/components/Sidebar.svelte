@@ -24,7 +24,6 @@
   }
 
   let showFinancials = $derived($canManageFinancials);
-  let showAdminLabel = $derived($canManageFinancials || $canManageConfig);
 
   let searchQuery = $state('');
   let searchFocused = $state(false);
@@ -63,16 +62,15 @@
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     <a href="/purchase-orders" use:link>Purchasing</a>
-    {#if showAdminLabel}
-      <div class="section-label">Admin</div>
-    {/if}
     {#if showFinancials}
+      <div class="section-label">Financials</div>
+      <a href="/invoices" use:link>Invoices</a>
+      <a href="/bills" use:link>Bills</a>
       <a href="/expenses" use:link>Expenses</a>
     {/if}
     {#if $canManageConfig}
+      <div class="section-label">Admin</div>
       <a href="/users" use:link>Users</a>
-    {/if}
-    {#if $canManageConfig}
       <a href="/settings" use:link>Settings</a>
     {/if}
     <form class="sidebar-search" onsubmit={handleSearch}>
