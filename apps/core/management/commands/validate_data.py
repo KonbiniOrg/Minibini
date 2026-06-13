@@ -123,6 +123,7 @@ class Command(BaseCommand):
         self.check_estimates()
         self.check_worksheets()
         self.check_tasks()
+        self.check_bleps_and_shifts()
         self.check_materials()
         self.check_line_items()
         self.check_purchase_orders()
@@ -214,6 +215,55 @@ class Command(BaseCommand):
                             Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
                             Job.STATUS_WORK_COMPLETE) and j.completed_date:
                 self.warnings.append(f'Job {j.job_number}: status is {j.status} but completed_date is set')
+
+    # ── Bleps & Shifts ────────────────────────────────────────
+
+    def check_bleps_and_shifts(self):
+        """Enforce the time-tracking invariants (data-constraints §1.2a/§1.11/§1.12):
+        a Blep's task is never pending; every closed Blep is enclosed by a Shift
+        of the same user; no two of a user's Bleps overlap.
+        """
+        from collections import defaultdict
+        from apps.jobs.models import Blep, Task
+        from apps.core.models import Shift
+
+        bleps = list(Blep.objects.select_related('task', 'user').all())
+
+        # A Task with any Blep must not be pending.
+        for b in bleps:
+            if b.task.status == Task.STATUS_PENDING:
+                self.errors.append(
+                    f'Blep {b.pk}: task {b.task.pk} is pending but has a blep')
+
+        shifts_by_user = defaultdict(list)
+        for s in Shift.objects.all():
+            shifts_by_user[s.user_id].append(s)
+        bleps_by_user = defaultdict(list)
+        for b in bleps:
+            bleps_by_user[b.user_id].append(b)
+
+        for user_id, ubleps in bleps_by_user.items():
+            ushifts = shifts_by_user.get(user_id, [])
+            # Enclosure: each closed blep fully inside some shift of the same user.
+            for b in ubleps:
+                if b.start_time is None or b.end_time is None:
+                    continue
+                enclosed = any(
+                    s.start_time is not None and s.end_time is not None
+                    and s.start_time <= b.start_time and b.end_time <= s.end_time
+                    for s in ushifts
+                )
+                if not enclosed:
+                    self.errors.append(
+                        f'Blep {b.pk}: not enclosed by any shift of user {user_id}')
+            # No overlapping bleps for one user.
+            closed = sorted(
+                (b for b in ubleps if b.start_time and b.end_time),
+                key=lambda b: b.start_time)
+            for prev, cur in zip(closed, closed[1:]):
+                if cur.start_time < prev.end_time:
+                    self.errors.append(
+                        f'Blep {cur.pk}: overlaps blep {prev.pk} for user {user_id}')
 
     # ── Estimates ─────────────────────────────────────────────
 

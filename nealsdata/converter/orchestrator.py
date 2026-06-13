@@ -1,5 +1,6 @@
 """Orchestrates the Neal's data conversion phases."""
 import json
+import random
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,10 @@ from nealsdata.converter import parsing as P
 # rate schemes (resolved relative to the repo root).
 _DEFAULT_SEED_PATH = (Path(__file__).resolve().parents[2]
                       / 'fixtures' / 'large_datasets' / 'nealseed.json')
+
+# Fixed RNG seed so regeneration is byte-stable unless the inputs change
+# (invented worker times and blep lengths/placement draw from random).
+_RNG_SEED = 20260612
 
 
 class NealsDataConverter:
@@ -30,6 +35,8 @@ class NealsDataConverter:
         self.ac_svc_pk = None
         self.ac_mat_pk = None
         self.pli_map = {}
+        self.pli_index = []             # [{'code','description'}] for material matching
+        self.pli_purchase_by_code = {}  # code -> purchase_price string
         self.org_map = {}
         self.job_map = {}
         self.jobs = {}
@@ -37,9 +44,13 @@ class NealsDataConverter:
         self.line_items = {}
         self.estimates = {}
         self.flat_fee_scheme_pk = None  # shared flat-fee scheme (build_seed)
+        self.scheme_algorithm_by_pk = {}  # ratescheme pk -> algorithm (for actuals)
+        self.user_by_username = {}      # username -> pk (build_seed assigns user pks)
+        self.rotation_user_pks = []     # ordered blep-rotation pool (excludes system)
+        self._mint_template = None      # a seed worker's fields, cloned when minting
+        self._mint_seq = 1              # worker{N} mint counter
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
         self.cut_plan_task = {}     # base_ref -> plan_task_pk (plan-side analogue)
-        self.time_match_misses = 0  # count of CSV worker-time values with no matching task
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
         self.fake_deliverable_count = 0  # jobs that got a synthetic 'Fake Deliverable'
         self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'skip'
@@ -83,6 +94,8 @@ class NealsDataConverter:
 
     def convert(self):
         from nealsdata.converter import build, reconcile
+        # Seed the RNG before any random-driven phase so output is deterministic.
+        random.seed(_RNG_SEED)
         self.loader.load()
         self.csv_cards = self.csv_loader.load()
         self.spine = self.select_spine()
@@ -93,10 +106,14 @@ class NealsDataConverter:
         build.build_jobs(self)
         build.build_estimates(self)
         build.derive_atoms(self)
+        build.assign_worker_times(self)  # per-task random est_worker_time
+        build.assign_est_quantities(self)  # real-task est_qty heuristic (needs worker times)
         build.build_invoices(self)
         build.build_invoice_line_item_sources(self)
         reconcile.reconcile(self)
+        build.assign_project_managers(self)  # after reconcile: needs final job status
         build.build_shipments(self)   # after reconcile: needs final job dates
+        build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:

@@ -35,3 +35,18 @@ class NealsFixtureLoadTest(TestCase):
         call_command('validate_data', stdout=out)
         # It always prints an error summary line ('N error(s)' or 'No errors').
         self.assertIn('error', out.getvalue().lower())
+
+    def test_bleps_and_shifts_loaded_and_invariants_hold(self):
+        # Bleps + Shifts are present, and the time-tracking invariants
+        # (enclosure / no per-user overlap / task-not-pending) report no errors.
+        from apps.jobs.models import Blep
+        from apps.core.models import Shift
+        call_command('loaddata', FIXTURE, verbosity=0)
+        self.assertGreater(Blep.objects.count(), 0)
+        self.assertGreater(Shift.objects.count(), 0)
+        out = StringIO()
+        call_command('validate_data', stdout=out)
+        text = out.getvalue()
+        for marker in ('not enclosed by any shift', 'overlaps blep',
+                       'is pending but has a blep'):
+            self.assertNotIn(marker, text, f'validate_data reported: {marker}')

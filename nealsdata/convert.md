@@ -56,8 +56,9 @@ Notes on individual columns:
 - **Stage** drives the Job's status (see the table below). `Swimlane`
   refines the `Estimate` stage only: `Neal's do` → draft, anything else
   → submitted.
-- **est *cut* time** and **est ASS time** are job-level hour estimates that
-  land on one task each (see §4). `est $` is ignored.
+- **est *cut* time**, **est ASS time**, and **est $** are **no longer
+  consumed** — worker times are now invented per-task (see §4). The columns may
+  still be present in the export; they are simply ignored.
 - **Created at** / **Archived at** drive Job dates.
 - **Checklist** is multi-line text where each line is `[ ] some task` or
   `[x] some completed task`. Each line becomes a `jobs.task` (with two
@@ -102,8 +103,13 @@ to a database. Tests load it into the auto-created test DB via
    rows whose `Reference` base matches the card's `External ID`. The
    newest `--limit` matched cards become the Jobs we'll build.
 3. **`build_seed`**: copies users, accounting categories and rate schemes
-   verbatim from `fixtures/large_datasets/nealseed.json`, then creates one
-   extra shared "Flat Fee" RateScheme for tasks that don't fit a seeded one.
+   from `fixtures/large_datasets/nealseed.json`, then creates one extra shared
+   "Flat Fee" RateScheme for tasks that don't fit a seeded one. **Assigns
+   explicit pks to the (otherwise pk-less) seed users** and builds
+   `c.user_by_username`, the blep-rotation pool `c.rotation_user_pks` (every
+   active seed user except `system`), and `c.scheme_algorithm_by_pk` (used for
+   entered_qty actuals). Records a seed worker's fields as the clone template
+   for minting extra users (§4).
 4. **`build_configuration`**: emits the `core.configuration` entries the
    app needs at runtime (numbering patterns + counters, `units_list`,
    retention windows).
@@ -115,9 +121,12 @@ to a database. Tests load it into the auto-created test DB via
 7. **`build_jobs`**: one Job per spine entry, named from the card
    Description, status from Stage + Swimlane. Job number is the FreeAgent
    estimate base reference (the digit run, e.g. `03024`) — the same
-   identifier used to join Kanban cards to Estimates rows. Accent color is
-   round-robined through `JOB_ACCENT_COLOR_PALETTE` (mirrored from
-   `apps.jobs.models`) so loaddata-emitted jobs render with the colored
+   identifier used to join Kanban cards to Estimates rows. **`created_date` is
+   the earliest container estimate's `Date` minus one day** (the job object
+   exists a day before its first estimate); `start_date` is filled later by
+   reconcile from the *latest* estimate's date, so `created_date < start_date`.
+   Accent color is round-robined through `JOB_ACCENT_COLOR_PALETTE` (mirrored
+   from `apps.jobs.models`) so loaddata-emitted jobs render with the colored
    bars the SPA board expects.
 8. **`build_estimates`**: emits the Estimate + its line items for every
    revision in the chain. Estimate number is `{job_number}-{version}` — the
@@ -132,12 +141,21 @@ to a database. Tests load it into the auto-created test DB via
    `draft`/`submitted` route to the plan side (one EstWorksheet per Job,
    PlanTasks + PlanMaterials on it, and an EstimateLineItemSource per
    LI-derived atom); everything else routes to the real side. Deliverables
-   stay on the Job either way. This is where most of the interesting logic
-   lives — see §4.
+   stay on the Job either way. Materials get a `unit_cost` and an optional
+   `price_list_item` link via fuzzy matching (§4). This is where most of the
+   interesting logic lives — see §4.
+9a. **`assign_worker_times`**: gives every Task and PlanTask an invented
+    per-task `est_worker_time` — random in `[0.5, 4.0]` hours, 2 sig figs,
+    minute granularity (§4).
+9b. **`assign_est_quantities`**: fills `est_qty` on every real Task by its
+    rate-scheme algorithm (hourly = worker hours; flat fee = 1; entered_qty =
+    piece count tied to worker time) — §4.
 10. **`build_invoices`**: emits Invoices + line items via the
     Project-name link. Stashes each emitted line's classification (`task`,
     `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
-    next phase.
+    next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
+    invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
+    own line-item total; `draft` invoices stay null-dated — §8).
 11. **`build_invoice_line_item_sources`**: heuristic source-link wiring
     — for each Invoice, claim Tasks/Materials on the Job in deterministic
     order against the invoice's line items so the SPA shows them as
@@ -149,6 +167,18 @@ to a database. Tests load it into the auto-created test DB via
     status / dates. Builds a Shipment + ShipmentItems for any card whose
     checklist has a checked `Picked up/Delivered` line OR for any Job that
     landed in `completed` status without a marker (synthesised — see §4).
+13a. **`assign_project_managers`**: runs *after* reconcile (needs final job
+    status). Assigns a random `project_manager` from the seed rotation pool to
+    every Job beyond `draft`; draft jobs keep a null PM.
+14. **`build_bleps_and_shifts`**: runs *after* reconcile (needs final task
+    statuses + job dates). Emits one Blep per complete Task, the Shifts that
+    enclose them, and `actual_qty` for complete `entered_qty` tasks (§4).
+15. **`build_history`**: last — emits a created/transition entry per tracked
+    object.
+
+The RNG is seeded with a fixed constant at the top of `convert()` so the
+invented worker times and blep placement are byte-stable across regenerations
+unless the inputs change.
 
 ## 4. Building Tasks, Materials, and Deliverables
 
@@ -222,17 +252,59 @@ them up automatically.
 
 ### Estimated worker time
 
-The Kanban card carries two job-level hour columns: `est *cut* time` and
-`est ASS time`. `_apply_worker_times` lands each on at most one task:
+Every Task **and** PlanTask gets an invented per-task `est_worker_time` in a
+single pass (`assign_worker_times`, run after `derive_atoms`): a random value
+uniform in `[0.5, 4.0]` hours, rounded to 2 significant figures and stored at
+minute granularity. The pass iterates in `(model, pk)` order with the seeded
+RNG, so output is deterministic.
 
-- **cut time** → the first task on the job whose name contains `cut`.
-- **ass time** → the first task whose name contains `assemb`, `build`,
-  or `make`, *and* isn't the same task already given the cut time.
+The old `est *cut*`/`est ASS` Kanban columns are **no longer consumed** — they
+were rare *whole-job* estimates wrongly stamped onto a single task, which made
+no sense once every task carries its own per-task estimate. The checklist holds
+no per-task time data, so a real estimate isn't derivable from it anyway.
 
-The cut/ass columns are sparse in recent data, so in practice almost
-nothing matches. Every other task — and that's most of them — gets a flat
-**1-hour** default (`_DEFAULT_WORKER_TIME`). The checklist itself carries
-no per-task time data, so a real estimate is not derivable from it.
+### Estimated quantity (real Tasks)
+
+`assign_est_quantities` (after `assign_worker_times`) fills `est_qty` on every
+real Task by its rate-scheme algorithm. `est_qty` is optional on `Task` (nullable
+at the DB level and unenforced; only `PlanTask` requires it), but the dataset
+wants it populated:
+
+- **elapsed_time** (hourly, the most common): `est_qty` = the worker-time
+  estimate in hours (`02:30:00` → `2.50`), set always — so estimated billable
+  hours equal the estimated worker time.
+- **flat_fee**: `1.00` (a single fixed charge), unless a source line set a qty.
+- **entered_qty** (piece counts): tied to the worker time — `round(worker_hours
+  × pieces_per_hour)`, `pieces_per_hour` random 2–6 (min 1) — unless a source
+  line set a qty. This also feeds the `entered_qty` actuals.
+
+PlanTasks keep the `est_qty` they were built with.
+
+### Bleps, Shifts, and entered_qty actuals
+
+`build_bleps_and_shifts` (after reconcile) gives the dataset time-tracking data:
+
+- **One Blep per complete Task** (real-side only). Length =
+  `est_worker_time × {1.0, 1.10, 0.95}` on a deterministic ⅓-rotation index
+  (`P.thirds_factor`), floored to whole minutes. The task's **`assignee`** is set
+  to the blep's user (the worker who logged the time).
+- **Placement** satisfies two invariants at once: each blep falls inside its
+  **job's active window** `[start_date or created_date → completed_date or
+  latest-invoice-date]`, clamped to ≤ the newest real date in the dataset
+  (`_dataset_now`, so in-progress jobs get no future bleps); and **no user's
+  bleps overlap**. A blep sits in an 08:00–16:00 UTC workday (weekends allowed),
+  packed back-to-back. Users are taken round-robin from `c.rotation_user_pks`;
+  if every existing user is booked across a job's window, a new worker is
+  **minted** (`_mint_user`) as the pressure valve.
+- **Shifts**: one `core.shift` per (user, calendar day) with bleps, tightly
+  enclosing that day's bleps (`start` = first blep start, `end` = last blep
+  end) — satisfying the shift↔blep enclosure invariant. `loaddata` bypasses
+  `Blep.save()`/`Shift.save()`, so all timestamps are emitted pre-floored to
+  the minute.
+- **entered_qty actuals**: a complete task on an `entered_qty` scheme gets an
+  `actual_qty = est_qty × {thirds}` (fallback base `1` when `est_qty` is null)
+  so it doesn't invoice at zero. `elapsed_time` tasks derive qty from their
+  bleps; `flat_fee` uses `est_qty`/1 — neither needs an explicit actual.
 
 ### Materials
 
@@ -248,6 +320,14 @@ ways. Each line becomes exactly one fixture:
 Materials link to the job's first cut-named task via `c.cut_task` (so the
 Material's `task` FK lands on the right Task — there is always at most one
 per job).
+
+**Unit cost + PriceListItem link** (`_material_cost_and_pli`): each raw-stock
+Material/PlanMaterial is fuzzy-matched to a PriceListItem by material keyword +
+thickness (`P.match_pli`). On a match the `price_list_item` FK is set and
+`unit_cost` is the PLI's `purchase_price`; on a miss the FK stays null and
+`unit_cost = sell_price × _COST_RATIO` (0.8333, the same factor PLIs use). The
+match is precision-first — prose with no thickness, or a material family absent
+from the price list, is an acceptable miss.
 
 ### Deliverables
 
@@ -306,9 +386,12 @@ Deliverables default to `units='ea'` (canon form of `each`).
    in `draft`/`submitted`, the Job is rejected.
 4. **Estimate dates** — sent/expiration/closed dates filled in to match
    each estimate's status.
-5. **Job status & dates** — `start_date` for started jobs, `completed_date`
-   for terminal jobs (preferring `Archived at`, falling back to the
-   estimate's `closed_date`, finally the job's `created_date`).
+5. **Job status & dates** — `start_date` for started jobs = the **latest**
+   estimate version's date (the job started when its newest estimate was drawn
+   up; this is ≥ `created_date`, which `build_jobs` set to the earliest estimate
+   − 1 day). `completed_date` for terminal jobs (preferring `Archived at`,
+   falling back to the estimate's `closed_date`, finally the job's
+   `created_date`).
 6. **Downgrade `completed` Jobs with unpaid invoices** — §2.5 says every
    Invoice on a `completed` Job must be `paid`/`cancelled`. FreeAgent
    invoice data is authoritative on payment status; any `completed` Job
@@ -365,10 +448,12 @@ carries everything between phases: `c.fixture_data` (the output list),
 `c.org_map`, `c.job_map`, `c.jobs` (with `'status'` for plan/real
 branching in `derive_atoms`), `c.estimates`, `c.line_items`, `c.cut_task`
 and `c.cut_plan_task` (the real/plan-side first-cut-task index for
-material attach), `c.scheme_by_name`, `c.invoice_line_kinds` (per-line
-classifications used by `build_invoice_line_item_sources`), the pk
-counters, and a few diagnostics (`c.discarded_cards`,
-`c.time_match_misses`, `c.fake_deliverable_count`).
+material attach), `c.scheme_by_name`, `c.scheme_algorithm_by_pk` (for
+entered_qty actuals), `c.user_by_username` / `c.rotation_user_pks` (blep
+rotation), `c.pli_index` / `c.pli_purchase_by_code` (material→PLI matching),
+`c.invoice_line_kinds` (per-line classifications used by
+`build_invoice_line_item_sources`), the pk counters, and a diagnostic
+(`c.discarded_cards`, `c.fake_deliverable_count`).
 
 ## 8. Common updates you'll likely need
 
@@ -379,8 +464,8 @@ counters, and a few diagnostics (`c.discarded_cards`,
   immediately.
 - **A Kanban column was added/renamed/removed.** Update `KanbanCsvLoader`
   isn't necessary — it uses `DictReader` and is column-name-driven — but
-  any consumer (`build_jobs`, `_apply_worker_times`, etc.) that names the
-  column directly needs the change. Update §1's column table here too.
+  any consumer (`build_jobs`, etc.) that names the column directly needs the
+  change. Update §1's column table here too.
 - **Stage names changed on the board.** `_STAGE_TO_JOB_STATUS` in
   `build.py`. Add the new Stage → Minibini-status mapping.
 - **A new "noise" line keeps showing up on every card's checklist.**
@@ -399,19 +484,30 @@ counters, and a few diagnostics (`c.discarded_cards`,
 
 The script invents data where the sources don't say:
 
-- **Worker time defaults to 1 hour** for any task not matched by the
-  card's `est *cut* time` or `est ASS time`. The checklists carry no time
-  data, so there is no better source. ("won't be accurate to real life
-  but is likely all we can really do.")
+- **Worker time** is a per-task random value in `[0.5, 4.0]` hours (2 sig
+  figs). The checklists carry no per-task time data, so this is fully invented
+  ("won't be accurate to real life but is likely all we can really do"). The RNG
+  is fixed-seeded so regen is stable.
+- **Bleps + Shifts** are entirely synthetic — one blep per complete task, its
+  length pegged to the (invented) worker-time estimate, placed in the job's date
+  window and wrapped in enclosing shifts. Extra worker users are minted if the
+  rotation pool can't absorb the load. Real shop time was never in the sources.
+- **entered_qty actuals** and **invoice paid amounts** are derived (thirds-rule
+  vs est_qty; invoice line-item total), not real.
+- **Material unit costs** are the PLI purchase price when matched, else
+  `sell_price × 0.8333`; the PLI link itself is a best-effort fuzzy match.
+- **Project managers** are random rotation-pool users on every non-draft Job —
+  informational only (no business-logic side effects), so any user fits.
 - **Fake Deliverables** are synthesised for jobs whose estimate has no
   line item that classifies as a deliverable. The verbose summary counts
   these; review them periodically.
 - **Job names** come from the Kanban Description (FreeAgent has no job
   names). They're truncated to 50 characters.
 - **Job numbers** are the FreeAgent base reference verbatim (e.g.
-  `03024`). When `Date` is missing on the primary estimate row, the Job's
-  `created_date` falls back to `_FALLBACK_YEAR-01-01T00:00:00+00:00`
-  (currently 2025); the job_number itself is unaffected by this.
+  `03024`). When no container estimate `Date` parses, the Job's `created_date`
+  falls back to `_FALLBACK_YEAR-01-01T00:00:00+00:00` (currently 2025);
+  otherwise it is the earliest estimate date − 1 day. The job_number itself is
+  unaffected by this.
 - **PII** is replaced, never preserved. The dataset is intended to look
   realistic but contain nothing real.
 
@@ -426,13 +522,19 @@ The pipeline is covered by:
   The fixture file is auto-discovered via `discover_datasets` so any
   matching pair of `.xlsx`/`.csv` works without editing the test.
   Several behavioural changes (Shipment synthesis, Invoice source-link
-  wiring, completed-job downgrade) are covered by dedicated
-  `*SynthesisTest` / `*WiringTest` / `Downgrade*Test` classes that build
-  minimal synthetic state and assert the new behaviour directly — they
-  don't depend on the real data exercising the case.
+  wiring, completed-job downgrade, blep/shift placement, the job-date swap,
+  invoice dates) are covered by dedicated `*SynthesisTest` / `*WiringTest` /
+  `*SwapTest` / `Downgrade*Test` classes that build minimal synthetic state and
+  assert the new behaviour directly — they don't depend on the real data
+  exercising the case.
 - `tests/test_neals_fixture.py` — loads the generated `converted.json`
   into the test database and runs `validate_data` over it. This is the
-  end-to-end safety net.
+  end-to-end safety net; it also asserts bleps/shifts load and that the
+  enclosure / no-overlap / task-not-pending invariants report no errors.
+
+`validate_data` now also enforces the time-tracking invariants
+(`check_bleps_and_shifts`): a blep's task is never pending, every closed blep is
+enclosed by a shift of the same user, and no two of a user's bleps overlap.
 
 Run them with:
 

@@ -301,15 +301,41 @@ class AtomDerivationTest(unittest.TestCase):
                 self.assertIsInstance(mods, dict)
                 self.assertIn('flat_fee_price', mods)
 
-    def test_every_task_has_an_est_worker_time(self):
-        # Cut/assembly tasks get the Kanban card's time columns; every other
-        # task gets the invented flat 1-hour default.
+    def test_assign_worker_times_random_per_task_in_range(self):
+        # Every task/plantask gets an invented per-task estimate in [0.5, 4.0]h
+        # (2 sig figs); cut/ass card columns are no longer consumed.
+        import random as _random
         build.derive_atoms(self.c)
-        tasks = self._models('jobs.task')
+        # Before the pass, tasks carry no worker time.
+        self.assertTrue(all(t['fields']['est_worker_time'] is None
+                            for t in self._models('jobs.task')))
+        _random.seed(123)
+        build.assign_worker_times(self.c)
+
+        def hrs(s):
+            h, m, sec = map(int, s.split(':'))
+            return h + m / 60 + sec / 3600
+
+        tasks = self._models('jobs.task') + self._models('jobs.plantask')
         self.assertGreater(len(tasks), 0)
         for t in tasks:
-            self.assertIsNotNone(t['fields']['est_worker_time'],
-                                 f"task {t['pk']} has no est_worker_time")
+            ewt = t['fields']['est_worker_time']
+            self.assertIsNotNone(ewt, f"task {t['pk']} has no est_worker_time")
+            self.assertGreaterEqual(hrs(ewt), 0.5)
+            self.assertLessEqual(hrs(ewt), 4.0)
+
+    def test_assign_worker_times_is_deterministic_for_fixed_seed(self):
+        import random as _random
+        build.derive_atoms(self.c)
+        _random.seed(999)
+        build.assign_worker_times(self.c)
+        first = {t['pk']: t['fields']['est_worker_time']
+                 for t in self._models('jobs.task')}
+        _random.seed(999)
+        build.assign_worker_times(self.c)
+        second = {t['pk']: t['fields']['est_worker_time']
+                  for t in self._models('jobs.task')}
+        self.assertEqual(first, second)
 
     def test_materials_link_to_cut_task_when_present(self):
         build.derive_atoms(self.c)
@@ -969,8 +995,9 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertIn('jobs.job', models)
         self.assertIn('estimates.estimate', models)
         self.assertIn('core.jobhistory', models)
+        self.assertIn('jobs.blep', models)
+        self.assertIn('core.shift', models)
         self.assertNotIn('jobs.workorder', models)
-        self.assertNotIn('jobs.blep', models)
 
 
 class BuildHistoryUnitTest(unittest.TestCase):
@@ -1119,3 +1146,312 @@ class BuildHistoryUnitTest(unittest.TestCase):
         # only the _created entry for each — no status diffs
         self.assertEqual(len(self._for(c, 'job', 1)), 1)
         self.assertEqual(len(self._for(c, 'task', 2)), 1)
+
+
+class BlepShiftSynthesisTest(unittest.TestCase):
+    """Bleps + Shifts for complete tasks: window placement, enclosure, no
+    per-user overlap, entered_qty actuals. Synthetic state for control."""
+
+    def _converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        # Two seed-style users in the rotation pool.
+        c.user_by_username = {'u1': 1, 'u2': 2}
+        c.rotation_user_pks = [1, 2]
+        c.scheme_algorithm_by_pk = {10: 'elapsed_time', 11: 'entered_qty'}
+        c._pk_counters['core.user'] = 2
+        return c
+
+    def _add_job(self, c, pk, status='completed',
+                 start='2026-01-05T00:00:00+00:00',
+                 completed='2026-02-05T00:00:00+00:00'):
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'J{pk}', 'name': 'j', 'contact': 1, 'status': status,
+            'created_date': '2026-01-04T00:00:00+00:00', 'start_date': start,
+            'due_date': None,
+            'completed_date': completed if status == 'completed' else None,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+        })
+
+    def _add_task(self, c, pk, job, status='complete', scheme=10,
+                  ewt='02:00:00', est_qty=None, sort_order=1):
+        c.add_fixture('jobs.task', pk, {
+            'job': job, 'rate_scheme': scheme, 'name': f't{pk}', 'description': '',
+            'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
+            'active_modifiers': [], 'status': status, 'blocked_reason': '',
+            'worker_queue': None, 'assignee': None, 'parent_task': None,
+            'source_template': None, 'source_plan_task': None, 'sort_order': sort_order,
+        })
+
+    def _m(self, c, model):
+        return [f for f in c.fixture_data if f['model'] == model]
+
+    def test_one_blep_per_complete_task_only(self):
+        c = self._converter()
+        self._add_job(c, 1)
+        self._add_task(c, 10, 1, status='complete', sort_order=1)
+        self._add_task(c, 11, 1, status='pending', sort_order=2)
+        build.build_bleps_and_shifts(c)
+        bleps = self._m(c, 'jobs.blep')
+        self.assertEqual(len(bleps), 1)
+        self.assertEqual(bleps[0]['fields']['task'], 10)
+
+    def test_bleps_inside_job_window_and_enclosed_no_overlap(self):
+        from datetime import datetime
+        c = self._converter()
+        # Several jobs, many complete tasks, to exercise placement.
+        for j in range(1, 4):
+            self._add_job(c, j)
+            for t in range(5):
+                self._add_task(c, 100 * j + t, j, sort_order=t)
+        build.build_bleps_and_shifts(c)
+        bleps = self._m(c, 'jobs.blep')
+        shifts = self._m(c, 'core.shift')
+        self.assertEqual(len(bleps), 15)
+        self.assertTrue(shifts)
+
+        def dt(s):
+            return datetime.fromisoformat(s.replace('Z', '+00:00'))
+
+        # All blep times are whole-minute and end >= start.
+        for b in bleps:
+            s, e = dt(b['fields']['start_time']), dt(b['fields']['end_time'])
+            self.assertEqual(s.second, 0)
+            self.assertEqual(e.second, 0)
+            self.assertGreaterEqual(e, s)
+
+        # Enclosure + no per-user overlap.
+        from collections import defaultdict
+        sh = defaultdict(list)
+        for s in shifts:
+            f = s['fields']
+            sh[f['user']].append((dt(f['start_time']), dt(f['end_time'])))
+        bl = defaultdict(list)
+        for b in bleps:
+            f = b['fields']
+            bl[f['user']].append((dt(f['start_time']), dt(f['end_time'])))
+        for u, items in bl.items():
+            for s, e in items:
+                self.assertTrue(any(ss <= s and e <= ee for ss, ee in sh[u]),
+                                f'blep {s}-{e} not enclosed for user {u}')
+            ordered = sorted(items)
+            for (s1, e1), (s2, e2) in zip(ordered, ordered[1:]):
+                self.assertGreaterEqual(s2, e1, f'overlap for user {u}')
+
+    def test_minting_when_pool_saturated(self):
+        # One user, a one-day window, more tasks than fit in a single 8h day →
+        # extra users get minted.
+        c = self._converter()
+        c.user_by_username = {'u1': 1}
+        c.rotation_user_pks = [1]
+        c._pk_counters['core.user'] = 1
+        self._add_job(c, 1, start='2026-03-02T00:00:00+00:00',
+                      completed='2026-03-02T00:00:00+00:00')
+        for t in range(6):  # 6 × ~2h = 12h > one 8h day
+            self._add_task(c, 50 + t, 1, ewt='02:00:00', sort_order=t)
+        build.build_bleps_and_shifts(c)
+        users = self._m(c, 'core.user')
+        self.assertGreater(len(users), 0)  # minted at least one extra worker
+        minted = [u for u in users if u['fields']['username'].startswith('worker')]
+        self.assertTrue(minted)
+        # Still no per-user overlap.
+        from collections import defaultdict
+        from datetime import datetime
+        bl = defaultdict(list)
+        for b in self._m(c, 'jobs.blep'):
+            f = b['fields']
+            bl[f['user']].append((datetime.fromisoformat(f['start_time'].replace('Z', '+00:00')),
+                                  datetime.fromisoformat(f['end_time'].replace('Z', '+00:00'))))
+        for u, items in bl.items():
+            ordered = sorted(items)
+            for (s1, e1), (s2, e2) in zip(ordered, ordered[1:]):
+                self.assertGreaterEqual(s2, e1)
+
+    def test_blepped_task_gets_assignee_of_its_blep_user(self):
+        c = self._converter()
+        self._add_job(c, 1)
+        self._add_task(c, 10, 1, status='complete')
+        self._add_task(c, 11, 1, status='pending')
+        build.build_bleps_and_shifts(c)
+        blep = self._m(c, 'jobs.blep')[0]
+        by_pk = {f['pk']: f['fields'] for f in self._m(c, 'jobs.task')}
+        self.assertEqual(blep['fields']['task'], 10)
+        self.assertEqual(by_pk[10]['assignee'], blep['fields']['user'])
+        self.assertIsNone(by_pk[11]['assignee'])  # no blep, no assignee
+
+    def test_entered_qty_complete_tasks_get_actual_qty(self):
+        c = self._converter()
+        self._add_job(c, 1)
+        # entered_qty scheme (11): est_qty present and absent.
+        self._add_task(c, 20, 1, scheme=11, est_qty='4.00', sort_order=1)
+        self._add_task(c, 21, 1, scheme=11, est_qty=None, sort_order=2)
+        # elapsed_time scheme (10): actual_qty stays None (bleps drive it).
+        self._add_task(c, 22, 1, scheme=10, sort_order=3)
+        build.build_bleps_and_shifts(c)
+        by_pk = {f['pk']: f['fields'] for f in self._m(c, 'jobs.task')}
+        self.assertIsNotNone(by_pk[20]['actual_qty'])
+        self.assertIsNotNone(by_pk[21]['actual_qty'])
+        self.assertIsNone(by_pk[22]['actual_qty'])
+
+
+class EstQuantityHeuristicTest(unittest.TestCase):
+    """assign_est_quantities fills est_qty on real Tasks by scheme algorithm."""
+
+    def _converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.scheme_algorithm_by_pk = {1: 'elapsed_time', 2: 'entered_qty', 3: 'flat_fee'}
+        return c
+
+    def _add_task(self, c, pk, scheme, ewt='02:30:00', est_qty=None):
+        c.add_fixture('jobs.task', pk, {
+            'job': 1, 'rate_scheme': scheme, 'name': 't', 'description': '',
+            'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
+            'active_modifiers': [], 'status': 'complete', 'blocked_reason': '',
+            'worker_queue': None, 'assignee': None, 'parent_task': None,
+            'source_template': None, 'source_plan_task': None, 'sort_order': 1,
+        })
+
+    def _qty(self, c, pk):
+        return next(f['fields']['est_qty'] for f in c.fixture_data if f['pk'] == pk)
+
+    def test_elapsed_time_est_qty_equals_worker_hours(self):
+        c = self._converter()
+        self._add_task(c, 10, 1, ewt='02:30:00')
+        build.assign_est_quantities(c)
+        self.assertEqual(self._qty(c, 10), '2.50')
+
+    def test_elapsed_time_overrides_source_qty(self):
+        c = self._converter()
+        self._add_task(c, 10, 1, ewt='01:00:00', est_qty='5.00')
+        build.assign_est_quantities(c)
+        self.assertEqual(self._qty(c, 10), '1.00')
+
+    def test_flat_fee_defaults_to_one_but_keeps_source(self):
+        c = self._converter()
+        self._add_task(c, 10, 3, est_qty=None)
+        self._add_task(c, 11, 3, est_qty='3.00')
+        build.assign_est_quantities(c)
+        self.assertEqual(self._qty(c, 10), '1.00')
+        self.assertEqual(self._qty(c, 11), '3.00')
+
+    def test_entered_qty_generated_when_missing_kept_when_present(self):
+        import random as _random
+        _random.seed(7)
+        c = self._converter()
+        self._add_task(c, 10, 2, ewt='02:00:00', est_qty=None)
+        self._add_task(c, 11, 2, est_qty='7.00')
+        build.assign_est_quantities(c)
+        self.assertGreaterEqual(Decimal(self._qty(c, 10)), Decimal('1'))
+        self.assertEqual(self._qty(c, 11), '7.00')
+
+
+class ProjectManagerAssignmentTest(unittest.TestCase):
+    """assign_project_managers gives a rotation-pool PM to every non-draft Job."""
+
+    def _converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.rotation_user_pks = [1, 2, 3]
+        return c
+
+    def _add_job(self, c, pk, status):
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'J{pk}', 'name': 'j', 'contact': 1, 'status': status,
+            'created_date': '2026-01-01T00:00:00+00:00', 'start_date': None,
+            'due_date': None, 'completed_date': None, 'customer_po_number': '',
+            'description': '', 'accent_color': '#f97066', 'hold_reason': '',
+            'project_manager': None,
+        })
+
+    def test_non_draft_jobs_get_pm_draft_does_not(self):
+        import random as _random
+        _random.seed(3)
+        c = self._converter()
+        self._add_job(c, 1, 'draft')
+        for pk, st in ((2, 'submitted'), (3, 'in_progress'), (4, 'completed'),
+                       (5, 'rejected'), (6, 'cancelled')):
+            self._add_job(c, pk, st)
+        build.assign_project_managers(c)
+        by_pk = {f['pk']: f['fields'] for f in c.fixture_data if f['model'] == 'jobs.job'}
+        self.assertIsNone(by_pk[1]['project_manager'])
+        for pk in (2, 3, 4, 5, 6):
+            self.assertIn(by_pk[pk]['project_manager'], (1, 2, 3),
+                          f'job {pk} PM not from rotation pool')
+
+    def test_no_pool_is_a_noop(self):
+        c = self._converter()
+        c.rotation_user_pks = []
+        self._add_job(c, 1, 'in_progress')
+        build.assign_project_managers(c)
+        f = next(x['fields'] for x in c.fixture_data if x['pk'] == 1)
+        self.assertIsNone(f['project_manager'])
+
+
+class JobDateSwapTest(unittest.TestCase):
+    """created_date = earliest estimate − 1 day; start_date = latest estimate."""
+
+    def _converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.jobs = {}
+        c.job_map = {}
+        c.estimates = {}
+        return c
+
+    def test_started_job_created_before_start(self):
+        c = self._converter()
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': '00001', 'name': 'j', 'contact': 1, 'status': 'in_progress',
+            'created_date': '2026-01-09T00:00:00+00:00',  # earliest(01-10) − 1 day
+            'start_date': None, 'due_date': None, 'completed_date': None,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+        })
+        c.job_map['00001'] = pk
+        c.jobs['00001'] = {'job_pk': pk, 'card': {}, 'estimate_rows': [], 'primary_ref': '00001'}
+        c.estimates['00001'] = [
+            {'est_pk': 1, 'status': 'accepted', 'created_date': '2026-01-10', 'version': 1, 'base_ref': '00001'},
+            {'est_pk': 2, 'status': 'accepted', 'created_date': '2026-01-20', 'version': 2, 'base_ref': '00001'},
+        ]
+        reconcile.reconcile(c)
+        f = next(x['fields'] for x in c.fixture_data
+                 if x['model'] == 'jobs.job' and x['pk'] == pk)
+        # start_date = latest estimate (v2, 01-20); created_date < start_date.
+        self.assertEqual(f['start_date'], '2026-01-20T00:00:00+00:00')
+        self.assertLess(f['created_date'], f['start_date'])
+
+
+class InvoiceDatesAndPaidAmountTest(unittest.TestCase):
+    """sent_date for open/paid; qbo_amount_paid (per-invoice line total) for paid."""
+
+    def _setup(self, limit=15):
+        c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=limit)
+        c.loader.load()
+        c.csv_cards = c.csv_loader.load()
+        c.spine = c.select_spine()
+        build.build_seed(c)
+        build.build_contacts_and_businesses(c)
+        build.build_jobs(c)
+        build.build_estimates(c)
+        build.derive_atoms(c)
+        build.build_invoices(c)
+        return c
+
+    def test_sent_date_and_paid_amount(self):
+        c = self._setup()
+        invs = [f for f in c.fixture_data if f['model'] == 'invoicing.invoice']
+        lines = [f for f in c.fixture_data if f['model'] == 'invoicing.invoicelineitem']
+        from collections import defaultdict
+        from decimal import Decimal as D
+        tot = defaultdict(lambda: D('0'))
+        for li in lines:
+            tot[li['fields']['invoice']] += D(li['fields']['qty']) * D(li['fields']['price'])
+        for inv in invs:
+            f = inv['fields']
+            if f['status'] in ('open', 'paid'):
+                self.assertEqual(f['sent_date'], f['created_date'])
+            else:
+                self.assertIsNone(f['sent_date'])
+            if f['status'] == 'paid':
+                self.assertEqual(
+                    D(f['qbo_amount_paid']),
+                    tot[inv['pk']].quantize(D('0.01')))
+            else:
+                self.assertIsNone(f['qbo_amount_paid'])

@@ -141,3 +141,69 @@ class ChecklistTest(unittest.TestCase):
         self.assertEqual(P.checklist_scheme_name('draw the part'), 'CAD')
         self.assertEqual(P.checklist_scheme_name('model the bracket'), 'CAD')
         self.assertEqual(P.checklist_scheme_name('assemble frames'), 'Shop labor')
+
+
+class SyntheticValueHelpersTest(unittest.TestCase):
+    def test_thirds_factor_rotation(self):
+        self.assertEqual(P.thirds_factor(0), Decimal('1.0'))
+        self.assertEqual(P.thirds_factor(1), Decimal('1.10'))
+        self.assertEqual(P.thirds_factor(2), Decimal('0.95'))
+        self.assertEqual(P.thirds_factor(3), Decimal('1.0'))  # wraps
+
+    def test_round_2sig(self):
+        self.assertEqual(P.round_2sig(0.5), 0.5)
+        self.assertEqual(P.round_2sig(0.554), 0.55)   # 2 dp below 1.0
+        self.assertEqual(P.round_2sig(1.234), 1.2)    # 1 dp at/above 1.0
+        self.assertEqual(P.round_2sig(3.86), 3.9)
+        self.assertEqual(P.round_2sig(0), 0.0)
+
+    def test_parse_duration(self):
+        from datetime import timedelta
+        self.assertEqual(P.parse_duration('01:30:00'), timedelta(hours=1, minutes=30))
+        self.assertEqual(P.parse_duration('00:00:45'), timedelta(seconds=45))
+        self.assertIsNone(P.parse_duration(None))
+        self.assertIsNone(P.parse_duration(''))
+        self.assertIsNone(P.parse_duration('garbage'))
+
+
+class ThicknessExtractionTest(unittest.TestCase):
+    def test_fractions_and_decimals_normalise(self):
+        self.assertIn('0.75', P.extract_thicknesses('4\'x8\' x 3/4" sheet of ply'))
+        self.assertIn('0.125', P.extract_thicknesses('1/8" acrylic'))
+        self.assertIn('0.125', P.extract_thicknesses('x 1/8 sheet'))
+        self.assertIn('0.5', P.extract_thicknesses('x .5" sheet'))
+        self.assertIn('1', P.extract_thicknesses('1" thick stock'))
+
+    def test_large_quoted_dimensions_ignored(self):
+        # 48" x 96" are panel sizes, not thicknesses (> 3 inch cap).
+        th = P.extract_thicknesses('48" x 96" panel')
+        self.assertNotIn('48', th)
+        self.assertNotIn('96', th)
+
+
+class MatchPliTest(unittest.TestCase):
+    PLI = [
+        {'code': 'BBPLY.75', 'description': '4\'x8\' x 3/4" sheet(s) of Baltic Birch plywood'},
+        {'code': 'BBPLY.25', 'description': '4\'x8\' x 1/4" sheet(s) of Baltic Birch plywood'},
+        {'code': 'ACR.25', 'description': '4\'x8\' x 1/4" sheet(s) of clear acrylic'},
+        {'code': 'MDF.5', 'description': '4\'x8\' x 1/2" sheet of MDF'},
+    ]
+
+    def test_matches_keyword_plus_thickness(self):
+        self.assertEqual(
+            P.match_pli('4\'x8\' x 3/4" sheet of Baltic Birch plywood', self.PLI),
+            'BBPLY.75')
+        self.assertEqual(
+            P.match_pli('sheet of 1/4" clear acrylic', self.PLI), 'ACR.25')
+        self.assertEqual(
+            P.match_pli('sheet of 1/2" MDF from stock', self.PLI), 'MDF.5')
+
+    def test_thickness_disambiguates_same_family(self):
+        self.assertEqual(
+            P.match_pli('(12) sheets 1/4" Baltic Birch plywood', self.PLI),
+            'BBPLY.25')
+
+    def test_no_thickness_or_no_family_returns_none(self):
+        self.assertIsNone(P.match_pli('Baltic birch plywood from stock', self.PLI))
+        self.assertIsNone(P.match_pli('3/4" sheet of unobtainium', self.PLI))
+        self.assertIsNone(P.match_pli('', self.PLI))

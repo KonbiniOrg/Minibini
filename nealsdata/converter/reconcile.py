@@ -206,15 +206,16 @@ def _pass_job_status_and_dates(c, index):
 
         status = fields['status']
 
-        # start_date: required for approved-or-later.
+        # start_date: required for approved-or-later. The job started when its
+        # latest estimate was drawn up (approval ≈ the newest revision's date),
+        # which is ≥ created_date (= earliest estimate − 1 day, set in build_jobs).
         if status in _STARTED_JOB_STATUSES and not fields.get('start_date'):
             est_list = c.estimates.get(base_ref) or []
-            # c.estimates entries store bare 'YYYY-MM-DD' created_date values.
-            created_dates = [
-                e['created_date'] for e in est_list if e.get('created_date')
-            ]
-            if created_dates:
-                fields['start_date'] = _as_dt_field(min(created_dates))
+            if est_list:
+                latest = max(est_list, key=lambda e: e['version'])
+                fields['start_date'] = (
+                    _as_dt_field(latest.get('created_date'))
+                    or fields.get('created_date'))
             else:
                 # fields['created_date'] is already tz-aware.
                 fields['start_date'] = fields.get('created_date')
