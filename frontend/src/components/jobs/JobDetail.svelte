@@ -518,7 +518,7 @@
       <p class="preserve-breaks"><LinkifiedText text={job.description || 'No description.'} /></p>
     </div>
   </div>
-  <DeliverablesSection jobId={job.job_id} />
+  <DeliverablesSection jobId={job.job_id} canManage={job.can_manage} />
   <div class="panel history-panel">
     <div class="panel-scroll history-scroll-host">
       <EmailPanel {emails} />

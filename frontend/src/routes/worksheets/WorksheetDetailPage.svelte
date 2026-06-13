@@ -5,6 +5,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
   import { formatQtyUnits } from '../../lib/format.js';
 
   let { params = {} } = $props();
@@ -342,6 +343,10 @@
         Delete worksheet
       </button>
     </p>
+  {/if}
+
+  {#if worksheet.job}
+    <DeliverablesSection jobId={worksheet.job} canManage={worksheet.can_manage} />
   {/if}
 
   <WorkItemForm

@@ -277,7 +277,7 @@
   />
 
   {#if estimate.job}
-    <DeliverablesSection jobId={estimate.job} allowEdit={true} />
+    <DeliverablesSection jobId={estimate.job} canManage={estimate.can_manage} />
   {/if}
 
   <LineItemModal

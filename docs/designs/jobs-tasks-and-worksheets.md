@@ -1118,7 +1118,10 @@ see §12.2 and §12.9).
   this shipment.
 
 **Permissions — deliberate asymmetry.** Editing the **Deliverables** list
-requires `can_manage_jobs` (it defines the agreed scope), but **Shipments**
+requires `can_manage_jobs` **or** being the job's `project_manager`
+(`CanManageJobOrPM`; the UI gates the Edit affordance on the per-object
+`can_manage` flag — see §12.8) because it defines the agreed scope, but
+**Shipments**
 are `IsAuthenticated` for all operations (`ShipmentViewSet` has no per-action
 atom). This is intentional, not an oversight: fulfillment is shop-floor work —
 any authenticated user must be able to create a shipment, add items, and mark
@@ -1273,6 +1276,20 @@ matching the chrome of its neighbors. The list shows simple
 `qty units description` lines (no headers, no computed columns). An
 "Edit" link in the panel head opens `<DeliverablesEditModal>` when the
 list is editable.
+
+**Three mount points, one component.** The same `<DeliverablesSection>`
+is mounted on the **Job detail** page, the **Estimate detail** page, and
+the **Worksheet detail** page (bottom of each), so the planning scope can
+be edited wherever the user happens to be pre-acceptance. It takes
+`jobId` plus a `canManage` prop, which each parent feeds from its own
+already-fetched per-object `can_manage` flag (`job.can_manage`,
+`estimate.can_manage`, `worksheet.can_manage` — all from
+`JobScopedCanManageMixin` / `JobService.user_can_manage`). The "Edit"
+affordance shows only when `canManage && editability.editable`, so the
+button appears exactly when the server would accept the write (atom
+holder **or** the job's PM, and the list not yet locked by a sent/
+accepted estimate or open change order — see §12.2). The component is
+only ever mounted on Job-related pages, so `jobId` is always resolvable.
 
 A read-only **Shipments pillar** sits between the Invoices and Purchase
 Orders pillars in the accordion. It renders the same matrix table as

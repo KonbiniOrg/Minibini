@@ -2,7 +2,7 @@
   import { api } from '../../lib/api.js';
   import DeliverablesEditModal from './DeliverablesEditModal.svelte';
 
-  let { jobId, allowEdit = false } = $props();
+  let { jobId, canManage = false } = $props();
 
   let deliverables = $state([]);
   let editability = $state({ editable: false, reason: null });
@@ -49,7 +49,7 @@
 <div class="panel deliverables-panel">
   <div class="panel-head">
     Deliverables
-    {#if allowEdit && editability.editable}
+    {#if canManage && editability.editable}
       <button type="button" class="edit-link" onclick={openEdit}>Edit</button>
     {/if}
   </div>
@@ -59,7 +59,7 @@
     {:else if deliverables.length === 0}
       <p class="empty">
         No deliverables yet.
-        {#if allowEdit && editability.editable}
+        {#if canManage && editability.editable}
           <button type="button" class="edit-link" onclick={openEdit}>Add deliverables</button>
         {/if}
       </p>

@@ -31,9 +31,23 @@ describe('DeliverablesSection', () => {
     expect(await findByText(/No deliverables yet/)).toBeInTheDocument();
   });
 
-  it('offers Edit only when editable and allowed', async () => {
+  it('offers Edit when the user can manage and the list is editable', async () => {
     mockApi({ items: [{ qty_ordered: '1', units: 'ea', description: 'X' }], editable: true });
-    const { findByRole } = render(DeliverablesSection, { props: { jobId: 5, allowEdit: true } });
+    const { findByRole } = render(DeliverablesSection, { props: { jobId: 5, canManage: true } });
     expect(await findByRole('button', { name: 'Edit' })).toBeInTheDocument();
+  });
+
+  it('hides Edit when the user cannot manage, even if editable', async () => {
+    mockApi({ items: [{ qty_ordered: '1', units: 'ea', description: 'X' }], editable: true });
+    const { findByText, queryByRole } = render(DeliverablesSection, { props: { jobId: 5, canManage: false } });
+    await findByText('X'); // wait for load to settle
+    expect(queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+
+  it('hides Edit when not editable, even if the user can manage', async () => {
+    mockApi({ items: [{ qty_ordered: '1', units: 'ea', description: 'X' }], editable: false });
+    const { findByText, queryByRole } = render(DeliverablesSection, { props: { jobId: 5, canManage: true } });
+    await findByText('X'); // wait for load to settle
+    expect(queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 });
