@@ -1,111 +1,272 @@
-# Expenses ↔ Job attribution — redesign (deferred)
+# Expenses ↔ Job attribution — design spec
 
-**Status:** Deferred. Captured 2026-06-13 mid-discussion; to revisit after the
-financials list-views feature is done. No code written yet — there is one open
-question (below) to settle before specing.
+**Status:** Active. Branch `feature/expenses`. Brainstormed & agreed 2026-06-13
+(supersedes the earlier deferred stub of the same name). Next step: a
+writing-plans implementation plan.
+
+**Goal:** Make a **Job** the anchor for an expense's cost, so any job cost —
+including service costs with no physical good (e.g. a third-party shipping fee) —
+can attach to a job, be rolled into job P&L, and (when not already represented by
+a Material) be surfaced for billing in the invoice wizard.
+
+**Two parts, one feature, sequenced:**
+- **Part A — Expense↔Job foundation.** Job becomes the cost anchor; expenses
+  become a job-contained list; cost lives on the Material when one is linked;
+  full editability with an invoiced-freeze; Job-UI surfacing. Ships and is
+  useful on its own.
+- **Part B — Billing.** A material-less job expense becomes a first-class
+  billable atom in the invoice wizard. Part A is *dangerously incomplete*
+  without this (costs you can't recover aren't managed), so it's in the same
+  feature, built as a later phase.
+
+---
 
 ## Problem
 
-An Expense that is a **service cost with no physical good** has nowhere to
-attach to a Job. The triggering case: a **shipping fee paid to a delivery
-service**. It's a real cost of a job, but it isn't a Material, and today the
-*only* path from an Expense to a Job runs through a Material.
+An Expense that is a **service cost with no physical good** has nowhere to attach
+to a Job. Triggering case: a **shipping fee paid to a delivery service** — a real
+cost of a job, but not a Material, and today the *only* path from an Expense to a
+Job runs through a Material. Forcing a fake "FedEx shipping" Material models a
+cost as inventory (wrong; pollutes Materials/earmarks/QOH).
 
-Forcing a fake "FedEx shipping" Material would work mechanically but models a
-cost as inventory — wrong, and it pollutes Materials/earmarks/QOH.
+Real-world framing: in-house delivery is a flat-fee `RateScheme` **Task**
+(billable work we perform); third-party shipping is **not** work we perform —
+it's a cost we pay, so it's an Expense, not a Task.
 
-Related real-world framing the user raised: in-house delivery is modeled as a
-flat-fee `RateScheme` **Task** (billable work we perform). Shipping via a
-third-party service is **not** a task we perform — it's a cost we pay. So it
-doesn't fit the "delivery = Task" pattern; it's an Expense.
+### Current model (pre-change)
 
-## Current model (as of 2026-06-13)
-
-- **No `Expense.job` FK exists.** `apps/expenses/models.py` `Expense` has
-  `material` (FK SET_NULL, nullable) but no job field.
-- Job is **derived through the material**: `ExpenseSerializer._job(obj)`
-  (`apps/api/expenses/serializers.py`) returns `expense.material.job`
-  (legacy fallback: `expense.material.task.job`). The expense list's
-  `job_id`/`job_number`/`job_name` come from this — all `null` when there is no
-  material, so the **Job column is blank** for material-less expenses.
+- **No `Expense.job` FK.** `Expense` has `material` (FK SET_NULL, nullable) but
+  no job field.
+- Job is **derived through the material**: `ExpenseSerializer._job(obj)` returns
+  `expense.material.job` (legacy fallback `expense.material.task.job`). All of
+  `job_id`/`job_number`/`job_name` are `null` when there's no material → the
+  **Job column is blank** for material-less expenses (the symptom that started
+  this).
 - Creation: `ExpenseService.submit(..., new_material={...})` inline-creates a
-  Material on a job (`MaterialService.create_on_job`) and, for inventoried PLIs,
-  records an ad-hoc receipt. The expense's job linkage is a side effect of that
-  material.
+  Material on a job and, for inventoried PLIs, records an ad-hoc receipt. The
+  expense's job linkage is a *side effect* of that material.
 
-### UX trap (the symptom that started this)
+### UX trap to remove
 
-`frontend/src/components/expenses/MaterialPicker.svelte` ("Link to job
-(optional)") is a **two-step** control:
-1. Pick a **Job** — `pickJob()` loads that job's materials and *clears* any
-   material selection (`materialId = null; newMaterial = null`).
-2. Then **pick an existing material** OR click **"+ Add new material"**.
+`MaterialPicker.svelte` ("Link to job (optional)") is two-step: pick a Job
+(`pickJob()` clears any material selection), then pick/create a material. If the
+user stops after picking the job and hits Save, `ExpenseForm.svelte` submits
+`material: null` with no `new_material` → expense created with **no material → no
+job**, silently. Violates the app's "don't lose work as a side effect"
+convention. The redesign kills this by construction: picking a job alone is valid
+and meaningful.
 
-If the user stops after step 1 (picks the job, sees it in the field, hits Save),
-`ExpenseForm.svelte` submits `material: null` with no `new_material` → the
-expense is created with **no material → no job**. Selecting a job alone links
-nothing, silently. This violates the app's "don't lose work as a side effect"
-convention. Whatever we land on should remove this silent drop.
+---
 
-## Proposed direction (not yet finalized)
+## The model: three independent properties
 
-Make **Job the anchor**, decoupling "which job's cost is this" from "what did it
-pay for":
+An expense can independently have:
 
-- Add a **nullable `Expense.job` FK** = "this cost belongs to this job"
-  (`null` = overhead). Job P&L groups expenses by `expense.job` directly.
-- Keep **`Expense.material`** as an *optional refinement* for the physical-good
-  case — its inventory-receiving behavior (earmark, ad-hoc receipt, reject/unwind
-  that deletes the material) stays exactly as is, gated on a material being
-  present.
-- **Consistency rule:** if `material` (and/or `task`, see open question) is set,
-  it must belong to `expense.job`.
-- **Serializer:** read `job` directly; material/task become optional extra info.
-- **Migration:** backfill `Expense.job` from `material.job` (then
+1. **A job** — cost attribution. The new `Expense.job` anchor. `null` = overhead.
+2. **A material line** — "this purchase is a tracked job material" (freeform
+   *or* PLI-linked). Optional.
+3. **Inventory tracking** — only when that material is a PLI flagged
+   `is_inventoried`.
+
+They nest: inventory ⇒ a material; a material ⇒ a job; but a job needs neither a
+material nor inventory. A `Material` already does **not** require a PLI
+(`price_list_item` is nullable) and inventory receipt only fires for inventoried
+PLIs — so the "freeform material = pure job cost, zero inventory" shape already
+exists today.
+
+### The four real cases
+
+| Case | job | material | inventory |
+|---|---|---|---|
+| Steel for Job 21 (stock) | ✓ | ✓ PLI | ✓ QOH/earmark dance |
+| Shipping fee for Job 21 | ✓ | — | — |
+| One-off bracket, consumed today | ✓ | — (or freeform if desired) | — |
+| Shop consumables (tape, sandpaper) | — overhead | — | — |
+
+The common one-off (bracket) is captured **fully by the expense alone**
+(description + amount + accounting_category + job). A `Material` object is only
+worth creating when you actually want inventory/QOH tracking (the "mini-PO").
+
+---
+
+## Part A — Expense↔Job foundation
+
+### A1. `Expense.job` anchor
+
+- Add nullable `Expense.job = FK('jobs.Job', on_delete=PROTECT or SET_NULL,
+  null=True, blank=True)`. (Decide PROTECT vs SET_NULL in the plan; PROTECT is
+  safer for cost integrity, but Job cascade behavior for its other children
+  should be checked.) `null` = overhead.
+- Expenses become a **job-contained list**, alongside Tasks/Materials/
+  Deliverables.
+
+### A2. Cost lives on the Material when one is linked (no double-count)
+
+- **Material-linked expense** → the Expense is purely the **payment/accounting
+  record** (who paid, payment account, reimbursable?). The *cost* for job P&L
+  comes from the **Material** (`unit_cost × quantity`). The expense `amount` is
+  **not** a separate job-cost line.
+- **Material-less expense** → carries its **own** cost (`amount`) against the
+  job.
+- Net: on the cost axis, money is counted exactly once.
+
+### A3. Entry / edit flow
+
+Pick a **Job** → the job's existing Materials become selectable link targets:
+- **(a)** link an existing material (records the actual paid cost against it), or
+- **(b)** leave it job-only (the one-off that was never a Material), or
+- **(c)** create a new Material — PLI-inventoried → QOH/earmark dance; freeform →
+  cost only.
+
+Picking the job alone is **always valid** → structurally removes the silent-drop
+trap. Overhead = pick no job.
+
+### A4. No `Expense.task`
+
+Task attachment leaves expenses entirely. (A non-inventory material doesn't do
+the consumption dance, so there's no reason to pin it to a Task; the doc's old
+"do we need `Expense.task`?" question resolves to **no**.) The vestigial
+`task_name` derivation in the serializer goes away with the material-derived job.
+
+### A5. Full editability + invoiced freeze
+
+- **Fully editable after entry, no reason-gating.** Correcting a wrong-job
+  mistake is indistinguishable from any other edit, so all of job / material
+  link / amount / category stay editable.
+- **Moving an expense (and a linked inventoried material) to the right job**
+  composes existing primitives — `InventoryService.unconsume()` (already exists;
+  restores QOH/qty_sold/earmark, flips to pending) → move earmark via
+  `_mutate_earmark` → re-consume if it was consumed. **No new inventory
+  machinery.** `ExpenseService.reject()`'s consumed-material wall stays for
+  *reject* only (rejecting a reimbursement claim), not for editing/moving.
+- **Invoiced freeze (hard lock):** an expense is **immutable while it — or its
+  material — is on an invoice** (has a live `InvoiceLineItemSource`). Up to that
+  line, full editability; past it, hands off. The freeze tracks *being on an
+  invoice*, not "ever touched one": to fix a genuine error, remove it from the
+  invoice (possible only while that invoice is still editable) → it thaws → fix →
+  re-bill. This is exactly how Materials/Tasks already behave when billed.
+
+### A6. Serializer & API
+
+- `ExpenseSerializer` reads `job` **directly** (not via material);
+  `job_id`/`job_number`/`job_name` populate for material-less expenses → fixes
+  the blank-Job-column symptom.
+- `job` becomes a writable field (subject to the freeze and the consistency
+  rule: if a material is linked, `material.job == expense.job`).
+- Drop `task_name` (or keep deriving from `material.task` only if a material is
+  present — but expenses no longer set tasks).
+- `ExpenseService.submit`/`update` accept and persist `job` directly;
+  `new_material` path still supported for case (c).
+
+### A7. Migration / backfill
+
+- Add the column; backfill `Expense.job` from `material.job` (then legacy
   `material.task.job`) for existing rows. Backward compatible.
-- **UX:** picking a Job is sufficient and meaningful on its own; Material becomes
-  a separate optional "this paid for a specific inventory item" step. Kill the
-  silent-drop behavior.
 
-### Cost vs. billing (keep separate — important)
+### A8. Job-cost rollup
+
+- Job P&L = material costs **+** material-less expense amounts. Locate the
+  existing job profit/cost computation (the "profit blurb" / job overview
+  totals) and extend it to sum material-less expenses by `Expense.job`,
+  **excluding** material-linked expenses (their material already counts).
+
+### A9. Job-UI surfacing
+
+- **Job overview (`JobDetail.svelte`) — Materials pillar.** Expenses live in the
+  Materials pillar (retitle to *Materials & Expenses* or similar).
+  - **Material-less** expenses render as their own rows (amount, category,
+    payment method, an "expense" badge).
+  - **Material-linked** expenses do **not** get a second row — they become a
+    small "paid $X via …" annotation on their material's row (preserves an
+    honest visual count; no double-show). *(Confirm in review.)*
+  - The pillar count includes material-less expenses.
+- **Full Task List (`JobTaskListPage.svelte`).** Expenses show at the **job
+  level** (no task), the way taskless materials already do. Same material-less /
+  material-linked rendering rule as above.
+
+---
+
+## Part B — Billing (later phase, same feature)
+
+### B1. Expense as a first-class `BillableAtom`
+
+- A **material-less** job expense implements the same `BillableAtom` interface
+  (`compute_amount(active_modifiers=None)`, etc.) as Material / TaskCharge, so
+  the invoice wizard **enumerates, displays, marks already-invoiced, and
+  `InvoiceLineItemSource`-links it uniformly** — no special-casing.
+- **Material-linked** expenses are **not** billable atoms — they bill *through
+  their Material* (which is already an atom). This is what prevents
+  double-billing. So "material-less" is the precise trigger for an Expense atom.
+- Overhead (no-job) expenses are never billable (no customer/job).
+
+### B2. Pricing: pass-through cost, invoicer sets sell price
+
+- The Expense carries only `amount` (cost). In the wizard, **cost is shown as
+  reference** and the **invoicer sets the sell price** on the line (mark up,
+  round, or $0 to absorb). No `sell_price` field added to the Expense model —
+  the invoice line item is already freely editable.
+- Reaffirms cost-vs-billing separation: the cost/price gap is the invoicer's
+  decision, made per-invoice.
+
+### B3. Already-invoiced behavior
+
+- Billed expenses are **shown in the candidate list, marked already-invoiced and
+  unavailable for the current invoice** — identical to billed Materials/Tasks
+  (a job may have several invoices). `InvoiceLineItemSource` is the link.
+- Interacts with A5: being on an invoice is exactly what freezes the expense.
+
+---
+
+## Cost vs. billing (keep separate)
 
 An Expense is **only ever a cost** (reduces job profit). Whether the customer is
-**charged** for shipping is an independent decision that lives on the **invoice**
-(a line item — flat-fee task or a "shipping" material via the invoice wizard).
-This redesign must not introduce any path where an Expense flows onto an invoice.
+**charged** is an independent, per-invoice decision (Part B). The "third atom
+type" exists *so the invoicer can choose to recover the cost* — it does not make
+expenses auto-flow onto invoices. (This intentionally revises the earlier stub's
+"no path from expense to invoice" line, which we reversed in design.)
 
-## OPEN QUESTION (resolve before specing)
+---
 
-**Do we need per-Task cost attribution now, or is Job-level enough for the first
-cut?**
+## Out of scope / unaffected
 
-- **Job-level only (leaner):** `Expense.job` + keep `Material`. "This $40
-  shipping fee is a cost of Job 21." Add task attribution later, the day Job P&L
-  actually consumes task-level cost rollups (YAGNI).
-- **Add optional `Expense.task`:** also pin an expense to a specific Task on the
-  job ("…the Delivery task"), with the rule task.job == expense.job, for
-  task-level cost rollups.
-
-User is leaning undecided; deferred along with the rest.
-
-## Things unaffected / out of scope
-
-- **QBO sync:** job linkage to QBO is already deferred (the QBO `Purchase` push
-  doesn't carry job/class info today). Adding `Expense.job` doesn't change QBO
-  behavior.
-- **Inventory receiving:** unchanged — still triggered only when a Material/PLI
+- **Inventory reframe (catalog vs. transient lots).** A separate future feature —
+  see `docs/plans/2026-06-13-inventory-catalog-vs-lots-protospec.md`. This
+  feature builds on **today's** inventory model and stays forward-compatible: the
+  "create a Material" path inherits universal tracking for free if/when that
+  lands. No partial/fractional-scrap tracking here.
+- **QBO sync.** Job linkage isn't carried to QBO today (the `Purchase` push has
+  no job/class); adding `Expense.job` doesn't change QBO behavior.
+- **Inventory receiving.** Unchanged — still only when a PLI-inventoried Material
   is involved.
-- **Reimbursements:** unaffected (batching is orthogonal to job attribution).
+- **Reimbursements.** Unaffected (batching is orthogonal to job attribution).
+
+---
+
+## Open items to confirm during spec/plan review
+
+1. `Expense.job` `on_delete`: PROTECT vs SET_NULL (cost integrity vs. job
+   deletion ergonomics).
+2. Materials-pillar rendering of material-linked expenses (annotation vs. no
+   display at all).
+3. Exact `BillableAtom` enumeration hook the wizard uses (read invoice-wizard +
+   `InvoiceLineItemSource` to mirror it precisely in the plan).
+4. Where the job-cost/profit rollup lives, to extend it correctly.
 
 ## Pointers
 
-- Models: `apps/expenses/models.py` (Expense)
-- Service: `apps/expenses/services.py` (ExpenseService.submit / update / reject)
-- Serializer: `apps/api/expenses/serializers.py` (ExpenseSerializer._job)
+- Models: `apps/expenses/models.py` (Expense), `apps/inventory/models.py`
+  (Material, PriceListItem, Earmark).
+- Services: `apps/expenses/services.py` (ExpenseService), `apps/inventory/
+  services.py` (`InventoryService.consume/unconsume/restock/receive_ad_hoc/
+  reverse_ad_hoc/_mutate_earmark`, `MaterialService.create_on_job`).
+- Serializer: `apps/api/expenses/serializers.py`.
+- Invoice wizard / atoms: `apps/invoicing/` + `apps/api/invoicing/`,
+  `InvoiceLineItemSource`; atom interface shared with `MaterialBase.compute_amount`
+  / TaskCharge / PlanTask.
 - Frontend: `frontend/src/components/expenses/ExpenseForm.svelte`,
-  `frontend/src/components/expenses/MaterialPicker.svelte`
-- Durable doc to update when built: `docs/designs/invoicing-and-expenses.md`
-  (Expense section) and `docs/designs/materials-inventory-and-purchasing.md`
+  `MaterialPicker.svelte`; `frontend/src/components/jobs/JobDetail.svelte`
+  (Materials pillar); `frontend/src/routes/jobs/JobTaskListPage.svelte`.
+- Durable docs to update when built: `docs/designs/invoicing-and-expenses.md`
+  (Expense section, billing), `docs/designs/jobs-tasks-and-worksheets.md`
+  (Job-UI surfacing), `docs/designs/materials-inventory-and-purchasing.md`
   (Material job-costing link).
-- Related: the `MaterialPicker` silent-drop is the concrete bug this redesign
-  should also resolve.
