@@ -277,3 +277,64 @@ class ExpenseDeleteTest(TestCase):
 # tests in test_expense_service.py. A replacement job-scoped API
 # endpoint for bucket-mode material creation can be added when the
 # frontend requires it.
+
+
+class ExpenseJobFieldTest(TestCase):
+    """Expense.job is read directly and writable via the API."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{counter:04d}'})
+        Configuration.objects.update_or_create(key='job_counter', defaults={'value': '0'})
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core')
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
+        self.job = Job.objects.create(job_number='JOB-A3-1', contact=self.contact)
+        self.other_job = Job.objects.create(job_number='JOB-A3-2', contact=self.contact)
+        self.client_http.force_login(self.admin)
+
+    def _post(self, **extra):
+        body = dict(
+            amount='25.00', purchased_on='2026-04-01',
+            accounting_category=self.cat.pk,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            purchased_by=self.admin.pk,
+        )
+        body.update(extra)
+        return self.client_http.post(
+            '/api/expenses/', data=body, content_type='application/json')
+
+    def test_create_with_job_no_material(self):
+        r = self._post(job=self.job.pk)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()['job_id'], self.job.pk)
+        self.assertEqual(r.json()['job_number'], 'JOB-A3-1')
+
+    def test_overhead_expense_has_null_job(self):
+        r = self._post()
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertIsNone(r.json()['job_id'])
+
+    def test_patch_job(self):
+        r = self._post(job=self.job.pk)
+        eid = r.json()['id']
+        r2 = self.client_http.patch(
+            f'/api/expenses/{eid}/', data={'job': self.other_job.pk},
+            content_type='application/json')
+        self.assertEqual(r2.status_code, 200, r2.content)
+        self.assertEqual(r2.json()['job_id'], self.other_job.pk)
+
+    def test_list_filter_by_job(self):
+        self._post(job=self.job.pk)
+        self._post(job=self.other_job.pk)
+        r = self.client_http.get(f'/api/expenses/?job={self.job.pk}')
+        self.assertEqual(r.status_code, 200)
+        job_ids = {row['job_id'] for row in r.json()['results']}
+        self.assertEqual(job_ids, {self.job.pk})
