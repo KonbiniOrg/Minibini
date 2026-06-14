@@ -451,3 +451,51 @@ class ExpenseReimbursedFreezeTest(TestCase):
     def test_delete_blocked(self):
         with self.assertRaises(ValidationError):
             ExpenseService.delete(expense=self.exp, actor=self.user)
+
+
+class ExpenseUnlinkCostRestoreTest(TestCase):
+    """What a material's cost reverts to when its expense is unlinked."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.user = User.objects.create_user(username='ur', password='x')
+        self.cat = AccountingCategory.objects.create(code='UR', name='ur')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='u@t.com')
+        self.job = Job.objects.create(job_number='JOB-UR-1', contact=self.contact)
+
+    def _expense(self, amount, material=None):
+        return ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user, amount=amount,
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, material=material)
+
+    def test_pli_material_restores_catalog_cost_on_unlink(self):
+        from apps.inventory.models import PriceListItem, Material
+        pli = PriceListItem.objects.create(
+            code='P-UR', description='p', purchase_price=Decimal('3.00'),
+            accounting_category=self.cat)
+        mat = Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='m',
+            quantity=Decimal('1.00'), price_list_item=pli)
+        mat.refresh_from_db()
+        self.assertEqual(mat.unit_cost, Decimal('3.00'))   # PLI catalog estimate
+        exp = self._expense(Decimal('25.00'), material=mat)
+        mat.refresh_from_db()
+        self.assertEqual(mat.unit_cost, Decimal('25.00'))  # actualized by expense
+        ExpenseService.update(expense=exp, actor=self.user, material=None)
+        mat.refresh_from_db()
+        self.assertEqual(mat.unit_cost, Decimal('3.00'))   # ← catalog cost restored?
+
+    def test_freeform_material_resets_to_zero_on_unlink(self):
+        from apps.inventory.models import Material
+        mat = Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='m',
+            quantity=Decimal('1.00'))
+        exp = self._expense(Decimal('25.00'), material=mat)
+        mat.refresh_from_db()
+        self.assertEqual(mat.unit_cost, Decimal('25.00'))
+        ExpenseService.update(expense=exp, actor=self.user, material=None)
+        mat.refresh_from_db()
+        self.assertEqual(mat.unit_cost, Decimal('0.00'))
