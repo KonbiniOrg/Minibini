@@ -441,7 +441,9 @@ class MaterialService:
                 if pli.qty_on_hand < qty:
                     raise ValidationError(
                         f'Cannot consume {qty} {pli.units} of {pli.code}: '
-                        f'only {pli.qty_on_hand} on hand.'
+                        f'only {pli.qty_on_hand} on hand. To start now, reduce '
+                        f'this material to {pli.qty_on_hand} and add a second '
+                        f'task/material for the remainder while it is procured.'
                     )
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') - qty
