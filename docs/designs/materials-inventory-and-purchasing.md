@@ -175,35 +175,30 @@ to dedupe `PlanMaterial → Material` on estimate accept.
 - `task.job_id == job_id` when `task` is set
 - `restocked_qty >= 0`
 
-#### `unit_cost` provenance — freeform cost is document-sourced
+#### `unit_cost` provenance & expenses (cost-model redesign 2026-06-14)
 
-Every path that sets `Material.unit_cost` is backed by a document **except**
-manual entry:
+`Material.unit_cost` comes from: PLI catalog (`_populate_from_pli` / carry-over),
+a PO line (`resolve_or_create_for_line(unit_cost=li.price)`), or — for a
+**cost-expense** — the user-entered `price` at creation (`create_on_job`,
+`cost_source='document'`). A **freeform** (no-PLI) actual Material's cost is still
+document-sourced only (no manual typing): `create_on_job`'s `cost_source` guard +
+`MaterialSerializer.validate` + the material-modal disabling the Unit Cost field
+when freeform. PLI materials and `PlanMaterial` estimates are unaffected.
 
-| Source | How |
-|---|---|
-| PLI catalog | `_populate_from_pli()` fills from `purchase_price` when cost is 0; carry-over (`carry_over.py`, always PLI-linked) |
-| PO line | `resolve_or_create_for_line(unit_cost=li.price)` on receiving |
-| Expense | `ExpenseService` on link: `unit_cost = Σ(linked expense amounts) / qty` |
-| Manual | user-typed via the material modal / add-material endpoints |
+**Expenses & materials** (driven by `ExpenseService`): expenses **never link an
+existing material** — they only create their own (no recost, no clobber, no
+division; the earlier link/unlink machinery was removed). Two modes:
 
-**Rule:** a **freeform** (no-PLI) actual Material may *only* get its cost from a
-document (Expense or PO) — never typed. Enforcement: `MaterialService.create_on_job`
-takes `cost_source` (`'document'` default; `'manual'` from the two user-facing
-create views) and rejects a manual non-zero cost on a no-PLI material;
-`MaterialSerializer.validate` blocks the same on the PATCH edit path; the
-material-modal UI disables the Unit Cost input when freeform. PLI-linked
-materials and worksheet `PlanMaterial` estimates are unaffected.
-
-**Link/unlink** (driven by `ExpenseService`): linking an expense **actualizes**
-the material's cost from what was actually paid (`Σ linked amounts / qty`) — a PLI
-catalog price is only an *estimate*, so it's overwritten. The one cost not
-silently clobbered is a **PO-received** one (`po_line_item` set): linking is
-refused there. Unlinking recomputes from any remaining linked expenses, or resets
-to 0 when nothing else backs the cost (no PO line).
-Job-costing reads the **material** cost for material-linked expenses and
-`Expense.amount` for material-less ones — see
-`docs/designs/invoicing-and-expenses.md` (Expense).
+- **Cost expense** → creates one consumable material at the entered `unit_cost`;
+  `Expense.amount` is the job cost (cost-at-purchase). `Material.expenses` is the
+  reverse of `Expense.material`.
+- **Stock receipt** → an **inventoried** PLI purchase bumps QOH
+  (`InventoryService.receive_stock`); **no material is created**. The cost is
+  recognised at **consumption** (the job's own material), not at purchase — so
+  `_spent` excludes stock-receipt expenses (`stock_pli` set). This is what lets a
+  worker "buy the missing 3 sheets" as an expense without double-counting: the
+  receipt tops up QOH, the existing material consumes once. See
+  `docs/designs/invoicing-and-expenses.md` (Expense).
 
 ### PlanMaterial
 
