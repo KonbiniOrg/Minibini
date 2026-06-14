@@ -217,8 +217,10 @@
     defaultDescription={description}
     defaultAmount={amount}
   />
+  {#each fieldErr('material') as msg}<p class="error"><em>{msg}</em></p>{/each}
 
-  {#each fieldErr('non_field_errors') as msg}<p><em>{msg}</em></p>{/each}
+  {#each fieldErr('non_field_errors') as msg}<p class="error"><em>{msg}</em></p>{/each}
+  {#each fieldErr('detail') as msg}<p class="error"><em>{msg}</em></p>{/each}
 
   <p>
     <button type="submit" disabled={saving}>

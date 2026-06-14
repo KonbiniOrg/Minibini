@@ -195,10 +195,12 @@ create views) and rejects a manual non-zero cost on a no-PLI material;
 material-modal UI disables the Unit Cost input when freeform. PLI-linked
 materials and worksheet `PlanMaterial` estimates are unaffected.
 
-**Link/unlink** (driven by `ExpenseService`): linking an expense sets the
-freeform material's cost; linking to an already-costed (PLI/PO-backed) material
-raises a mismatch rather than clobbering. Unlinking recomputes from any remaining
-linked expenses, or resets to 0 when nothing else backs the cost (no PO line).
+**Link/unlink** (driven by `ExpenseService`): linking an expense **actualizes**
+the material's cost from what was actually paid (`Σ linked amounts / qty`) — a PLI
+catalog price is only an *estimate*, so it's overwritten. The one cost not
+silently clobbered is a **PO-received** one (`po_line_item` set): linking is
+refused there. Unlinking recomputes from any remaining linked expenses, or resets
+to 0 when nothing else backs the cost (no PO line).
 Job-costing reads the **material** cost for material-linked expenses and
 `Expense.amount` for material-less ones — see
 `docs/designs/invoicing-and-expenses.md` (Expense).

@@ -299,8 +299,29 @@ class ExpenseJobLinkTest(TestCase):
         self.assertEqual(mat.unit_cost, Decimal('25.00'))  # 50 / 2
         self.assertEqual(exp.job_id, self.job.pk)          # job derived from material
 
-    def test_link_does_not_clobber_existing_cost(self):
+    def test_link_actualizes_estimated_cost(self):
+        # A material carrying an estimate (e.g. a PLI catalog price) is actualized
+        # by the real expense — linking overwrites the estimate, no error.
         mat = self._material(quantity=Decimal('1.00'), unit_cost=Decimal('10.00'))
+        exp = self._expense(amount=Decimal('50.00'))
+        ExpenseService.update(expense=exp, actor=self.user, material=mat)
+        mat.refresh_from_db()
+        self.assertEqual(mat.unit_cost, Decimal('50.00'))
+
+    def test_link_blocked_when_material_is_po_backed(self):
+        from apps.contacts.models import Business
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        from apps.core.models import Configuration, AppState
+        Configuration.objects.get_or_create(
+            key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
+        AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
+        biz = Business.objects.create(business_name='V', default_contact=self.contact)
+        po = PurchaseOrder.objects.create(business=biz)
+        line = PurchaseOrderLineItem.objects.create(
+            purchase_order=po, description='x', qty=Decimal('1.00'), price=Decimal('7.00'))
+        mat = self._material(quantity=Decimal('1.00'), unit_cost=Decimal('7.00'))
+        mat.po_line_item = line
+        mat.save()
         exp = self._expense(amount=Decimal('50.00'))
         with self.assertRaises(ValidationError):
             ExpenseService.update(expense=exp, actor=self.user, material=mat)

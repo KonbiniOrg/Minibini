@@ -199,13 +199,15 @@ class ExpenseService:
 
     @staticmethod
     def _assert_no_cost_clobber(material):
-        """A material with a non-zero cost that is NOT backed by an expense has an
-        independent source (PLI/PO/manual) we must not silently overwrite."""
-        if (material.unit_cost and material.unit_cost != Decimal('0.00')
-                and not material.expenses.exists()):
+        """Linking an expense actualizes the material's cost from what was actually
+        paid. A PLI catalog price is only an *estimate*, so it's fine to overwrite.
+        The one cost we must not silently clobber is a **PO-received** one — the
+        purchase order is the authoritative cost source there."""
+        if material.po_line_item_id and not material.expenses.exists():
             raise ValidationError({
-                'material': 'Linked material already has a cost from another '
-                            'source; reconcile it before linking this expense.'
+                'material': 'This material’s cost comes from a purchase order; '
+                            'link the expense to a different material or leave it '
+                            'job-only.'
             })
 
     @staticmethod

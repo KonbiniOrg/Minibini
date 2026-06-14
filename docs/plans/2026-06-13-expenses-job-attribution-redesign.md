@@ -142,11 +142,12 @@ removes the only source of link/unlink ambiguity.
 
 **Link / unlink cost behavior** (follows directly from the rule above):
 
-- **Link** an expense to a material → set `material.unit_cost = amount /
-  quantity` (guard `quantity == 0`). If the material already has a non-zero cost
-  from another source, **don't silently clobber** — surface the mismatch for
-  reconciliation. *(Because manual entry is prohibited for freeform, an existing
-  non-zero cost means a PLI/PO basis — exactly the thing not to overwrite.)*
+- **Link** an expense to a material → **actualize** `material.unit_cost = amount /
+  quantity` (guard `quantity == 0`) from what was actually paid. A PLI catalog
+  price is an *estimate*, so it's overwritten. *(Revised post-build: an earlier
+  draft blocked any non-zero cost, which broke the common "record the cost of a
+  catalog material" path; only a **PO-received** cost (`po_line_item` set) is
+  protected — linking is refused there.)*
 - **Unlink** → reset `unit_cost` to 0 **only when nothing else backs it** (no
   `po_line_item`, no other linked expense). Otherwise leave it. With manual entry
   gone, there is never a hand-typed "legit independent number" to preserve, so
