@@ -74,9 +74,13 @@
       } else {
         const resp = await api.get(`/api/shifts/?user=${uid}&since=${encodeURIComponent(
           new Date(new Date(s).getTime() - 86400000).toISOString())}`);
-        const shifts = (resp.results || resp).filter(sh => sh.end_time);
+        const shifts = resp.results || resp;
+        // An ongoing shift (no end_time yet) is still running, so it encloses
+        // any blep starting at/after its start — matches the backend's
+        // enclosing_shift_for_blep.
         const enclosed = shifts.some(sh =>
-          new Date(sh.start_time) <= new Date(s) && new Date(e) <= new Date(sh.end_time));
+          new Date(sh.start_time) <= new Date(s) &&
+          (!sh.end_time || new Date(e) <= new Date(sh.end_time)));
         if (!enclosed) conflictMsg = action === 'request'
           ? "Heads up: this time isn't covered by one of your shifts — your manager will adjust the shift when reviewing the request."
           : 'No shift covers this time — widen the enclosing shift first.';

@@ -52,4 +52,30 @@ describe('TimeEditModal', () => {
       reason: 'fix start', task: 3, blep: 7,
     }));
   });
+
+  it('does not block a blep edit when an ongoing (open) shift covers it', async () => {
+    // Open shift starting before the blep, still running (end_time null).
+    api.get.mockResolvedValue([
+      { shift_id: 1, start_time: '2026-03-01T13:00:00Z', end_time: null },
+    ]);
+    const { getByLabelText, getByRole, queryByText } = render(TimeEditModal, {
+      props: { open: true, recordType: 'blep', action: 'edit', record: blep, currentUser: { id: 2 } },
+    });
+    await fireEvent.blur(getByLabelText('Start'));
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
+    await api.get.mock.results[0].value;            // the shifts promise the component awaits
+    await new Promise((r) => setTimeout(r, 0));     // flush .then continuation + Svelte update
+    expect(queryByText(/No shift covers this time/i)).not.toBeInTheDocument();
+    expect(getByRole('button', { name: 'Save' })).not.toBeDisabled();
+  });
+
+  it('blocks a blep edit when no shift covers it (control: the check runs)', async () => {
+    api.get.mockResolvedValue([]); // no shifts at all
+    const { getByLabelText, getByRole, findByText } = render(TimeEditModal, {
+      props: { open: true, recordType: 'blep', action: 'edit', record: blep, currentUser: { id: 2 } },
+    });
+    await fireEvent.blur(getByLabelText('Start'));
+    expect(await findByText(/No shift covers this time/i)).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
 });
