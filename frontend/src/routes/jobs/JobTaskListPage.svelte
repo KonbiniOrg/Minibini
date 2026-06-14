@@ -13,6 +13,7 @@
   let contact = $state(null);
   let enrichedTasks = $state([]);
   let jobMaterials = $state([]);
+  let jobExpenses = $state([]);
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
@@ -50,6 +51,14 @@
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
       jobMaterials = (job.materials || []).filter(m => !m.task);
+      try {
+        const expData = await api.get(`/api/expenses/?job=${params.id}`);
+        // Material-less expenses surface at the job level (material-linked ones
+        // are represented by their material in the tree).
+        jobExpenses = (expData.results ?? expData).filter(e => !e.material);
+      } catch (e) {
+        jobExpenses = [];
+      }
       await enrichTasks();
       if (job.contact) {
         try {
@@ -344,6 +353,24 @@
     onMoveMaterial={handleMoveMaterial}
     bind:selectedTaskId
   />
+
+  {#if jobExpenses.length > 0}
+    <div class="job-expenses">
+      <h3>Expenses (no material)</h3>
+      <table border="1">
+        <thead><tr><th>Description</th><th>Category</th><th class="text-right">Amount</th></tr></thead>
+        <tbody>
+          {#each jobExpenses as exp (exp.id)}
+            <tr>
+              <td>{exp.description || '(expense)'}</td>
+              <td>{exp.accounting_category_name || '—'}</td>
+              <td class="text-right">{exp.amount != null ? `$${Number(exp.amount).toFixed(2)}` : '—'}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
 
   <!-- Modals -->
   <WorkItemForm
