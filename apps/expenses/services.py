@@ -105,6 +105,8 @@ class ExpenseService:
         }
         # Frozen while it (or its material) is on an invoice.
         ExpenseService._assert_not_invoiced(expense)
+        # Once reimbursed, the money fields are settled (the person was paid).
+        ExpenseService._assert_reimbursed_money_unchanged(expense, fields)
         old_material_id = expense.material_id
         with transaction.atomic():
             for key, value in fields.items():
@@ -169,6 +171,31 @@ class ExpenseService:
                 'Cannot edit an expense that is on an invoice; '
                 'remove it from the invoice first.'
             )
+
+    @staticmethod
+    def _assert_reimbursed_money_unchanged(expense, fields):
+        """Once an expense is reimbursed (the person has been paid), its money
+        fields are settled. Block changes to amount / payment_method /
+        payment_account_id / purchased_by. Cost-attribution (job, material) and
+        clerical fields (description, reference) stay editable. Unwind the
+        reimbursement batch first to change a paid amount."""
+        if not (expense.reimbursement_id
+                or expense.status == Expense.STATUS_REIMBURSED):
+            return
+        for f in ('amount', 'payment_method', 'payment_account_id'):
+            if f in fields and fields[f] != getattr(expense, f):
+                raise ValidationError(
+                    'Cannot change the money fields of a reimbursed expense; '
+                    'unwind the reimbursement first.'
+                )
+        if 'purchased_by' in fields:
+            new_pb = fields['purchased_by']
+            new_pb_id = getattr(new_pb, 'pk', new_pb)
+            if new_pb_id != expense.purchased_by_id:
+                raise ValidationError(
+                    'Cannot change who is reimbursed on a reimbursed expense; '
+                    'unwind the reimbursement first.'
+                )
 
     @staticmethod
     def _assert_no_cost_clobber(material):
@@ -258,6 +285,10 @@ class ExpenseService:
     @staticmethod
     def delete(*, expense, actor):
         ExpenseService._assert_not_invoiced(expense)
+        if expense.reimbursement_id:
+            raise ValidationError(
+                'Cannot delete a reimbursed expense; unwind the reimbursement first.'
+            )
         from apps.qbo.services import QBOExpenseSyncService
         if expense.qbo_id and not expense.reimbursement_id:
             QBOExpenseSyncService.void_expense(expense)

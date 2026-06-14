@@ -391,6 +391,13 @@ non-cancelled invoice** (`ExpenseService._assert_not_invoiced`, checked in
 `update`/`delete`). To edit a billed expense, remove it from the invoice first.
 `reject()`'s consumed-material wall still applies to *rejection* (not to editing).
 
+A second money lock covers reimbursement: once an expense is **reimbursed** (in a
+batch — the person has been paid), `_assert_reimbursed_money_unchanged` blocks
+changes to `amount` / `payment_method` / `payment_account_id` / `purchased_by`,
+and `delete()` is refused. Cost-attribution (`job`, `material`) and clerical
+fields stay editable. To change a paid amount, unwind the reimbursement first
+(`ReimbursementService.delete` flips the expenses back to `submitted`).
+
 ### Billing: expense as a billable atom
 
 A **material-less** job expense is a first-class `BillableAtom` in the invoice

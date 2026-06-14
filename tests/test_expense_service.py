@@ -386,3 +386,47 @@ class ExpenseInvoiceFreezeTest(TestCase):
             source_type=InvoiceLineItemSource.SOURCE_EXPENSE, source_pk=exp.pk)
         with self.assertRaises(ValidationError):
             ExpenseService.update(expense=exp, actor=self.user, amount=Decimal('99.00'))
+
+
+class ExpenseReimbursedFreezeTest(TestCase):
+    """A reimbursed expense's money fields are locked; it can't be deleted."""
+
+    def setUp(self):
+        from apps.expenses.models import Reimbursement
+        self.user = User.objects.create_user(username='rb', password='x')
+        self.other = User.objects.create_user(username='rb2', password='x')
+        self.cat = AccountingCategory.objects.create(code='RB', name='rb')
+        self.exp = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('40.00'),
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL)
+        self.batch = Reimbursement.objects.create(
+            purchased_by=self.user, paid_on=date(2026, 4, 2),
+            payment_account_id='ACC', created_by=self.user)
+        self.exp.reimbursement = self.batch
+        self.exp.status = Expense.STATUS_REIMBURSED
+        self.exp.save(update_fields=['reimbursement', 'status'])
+
+    def test_amount_locked(self):
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=self.exp, actor=self.user, amount=Decimal('99.00'))
+
+    def test_purchased_by_locked(self):
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=self.exp, actor=self.user, purchased_by=self.other)
+
+    def test_nonmoney_field_editable(self):
+        ExpenseService.update(expense=self.exp, actor=self.user, description='clarified')
+        self.exp.refresh_from_db()
+        self.assertEqual(self.exp.description, 'clarified')
+
+    def test_unchanged_money_field_ok(self):
+        # Re-sending the same amount (e.g. full-payload PATCH) is not a change.
+        ExpenseService.update(expense=self.exp, actor=self.user,
+                              amount=Decimal('40.00'), description='note')
+        self.exp.refresh_from_db()
+        self.assertEqual(self.exp.description, 'note')
+
+    def test_delete_blocked(self):
+        with self.assertRaises(ValidationError):
+            ExpenseService.delete(expense=self.exp, actor=self.user)
