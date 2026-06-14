@@ -360,7 +360,7 @@
   {#if jobExpenses.length > 0}
     <div class="job-expenses">
       <h3>Expenses (no material)</h3>
-      <table border="1">
+      <table class="data-table">
         <thead><tr><th>Description</th><th>Category</th><th class="text-right">Amount</th></tr></thead>
         <tbody>
           {#each jobExpenses as exp (exp.id)}
