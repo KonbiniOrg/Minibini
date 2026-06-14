@@ -57,6 +57,23 @@ class MaterialSerializer(serializers.ModelSerializer):
             'qty_on_order', 'qty_on_hand',
         ]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Freeform (no-PLI) actual materials get their cost from a document
+        # (Expense/PO), never typed manually. (PLI-linked materials are exempt.)
+        instance = getattr(self, 'instance', None)
+        has_pli = attrs.get(
+            'price_list_item', getattr(instance, 'price_list_item', None),
+        ) is not None
+        if 'unit_cost' in attrs and not has_pli:
+            uc = attrs.get('unit_cost')
+            if uc and uc != Decimal('0.00'):
+                raise serializers.ValidationError({
+                    'unit_cost': 'A freeform material’s cost comes from a linked '
+                                 'expense or PO, not manual entry.'
+                })
+        return attrs
+
     def get_price_list_item_is_inventoried(self, obj):
         return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
 

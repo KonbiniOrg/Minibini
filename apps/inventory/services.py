@@ -381,9 +381,18 @@ class MaterialService:
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
                       price_list_item=None, accounting_category=None, units='none',
-                      source_plan_material=None):
+                      source_plan_material=None, cost_source='document'):
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
+        # Freeform (no-PLI) actual materials get their cost from a document
+        # (Expense/PO), never typed manually.
+        if (cost_source == 'manual' and price_list_item is None
+                and unit_cost and unit_cost != Decimal('0.00')):
+            from django.core.exceptions import ValidationError
+            raise ValidationError({
+                'unit_cost': 'A freeform material’s cost comes from a linked '
+                             'expense or PO, not manual entry.'
+            })
         from django.db import transaction
         with transaction.atomic():
             m = Material(

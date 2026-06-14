@@ -77,7 +77,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
                        if k != 'propagate_to_pli'}
         try:
             mat = MaterialService.create_on_job(
-                job=task.job, task=task, **create_data
+                job=task.job, task=task, cost_source='manual', **create_data
             )
         except ValidationError as e:
             detail = e.message_dict if hasattr(e, 'message_dict') else (

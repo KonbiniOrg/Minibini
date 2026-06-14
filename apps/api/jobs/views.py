@@ -318,6 +318,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 sell_price=_Decimal(str(data.get('sell_price', 0))),
                 price_list_item=pli,
                 accounting_category=ac,
+                cost_source='manual',
             )
         except ValidationError as e:
             # Surface field-level errors as {field: [messages]} so the SPA
