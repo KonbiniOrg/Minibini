@@ -57,6 +57,18 @@ class Expense(models.Model):
         related_name='expenses',
     )
 
+    # Stock-receipt mode: an inventoried-PLI purchase. QOH goes up by stock_qty;
+    # the amount is NOT job-costed (cost flows at consumption). Mutually exclusive
+    # with `material` (the cost-expense mode).
+    stock_pli = models.ForeignKey(
+        'inventory.PriceListItem', on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='+',
+    )
+    stock_qty = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED,
     )
@@ -89,6 +101,18 @@ class Expense(models.Model):
                 errors['payment_account_id'] = 'Required for company-paid expenses.'
         if self.material_id and self.job_id and self.material.job_id != self.job_id:
             errors['job'] = 'Expense job must match the linked material’s job.'
+        if self.stock_pli_id:
+            if self.material_id:
+                errors['stock_pli'] = (
+                    'A stock-receipt expense cannot also create a consumable '
+                    'material — record the stock purchase separately.'
+                )
+            if not self.stock_qty or self.stock_qty <= Decimal('0.00'):
+                errors['stock_qty'] = 'Stock quantity must be positive.'
+            if self.stock_pli and not self.stock_pli.is_inventoried:
+                errors['stock_pli'] = (
+                    'Stock receipts are only for inventoried price-list items.'
+                )
         if errors:
             raise ValidationError(errors)
 

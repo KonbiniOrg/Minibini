@@ -194,3 +194,53 @@ class ExpenseJobTest(TestCase):
     def test_material_without_explicit_job_ok(self):
         exp = self._build(material=self.material, job=self.job)
         exp.full_clean()  # should not raise
+
+
+class ExpenseStockReceiptModelTest(TestCase):
+    """Stock-receipt mode validation (inventoried PLI + qty; not mixed with material)."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.inventory.models import PriceListItem, Material
+        self.user = User.objects.create_user(username='sr', password='x')
+        self.cat = AccountingCategory.objects.create(code='SR', name='sr')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='s@t.com')
+        self.job = Job.objects.create(job_number='JOB-SR-1', contact=self.contact)
+        self.inv_pli = PriceListItem.objects.create(
+            code='INV', description='inv', accounting_category=self.cat, is_inventoried=True)
+        self.noninv_pli = PriceListItem.objects.create(
+            code='NONINV', description='n', accounting_category=self.cat, is_inventoried=False)
+
+    def _build(self, **overrides):
+        defaults = dict(
+            entered_by=self.user, purchased_by=self.user,
+            amount=Decimal('40.00'), purchased_on=date(2026, 4, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=self.job,
+        )
+        defaults.update(overrides)
+        return Expense(**defaults)
+
+    def test_valid_stock_receipt(self):
+        exp = self._build(stock_pli=self.inv_pli, stock_qty=Decimal('3.00'))
+        exp.full_clean()  # should not raise
+
+    def test_stock_requires_positive_qty(self):
+        exp = self._build(stock_pli=self.inv_pli, stock_qty=None)
+        with self.assertRaises(ValidationError):
+            exp.full_clean()
+
+    def test_stock_pli_must_be_inventoried(self):
+        exp = self._build(stock_pli=self.noninv_pli, stock_qty=Decimal('3.00'))
+        with self.assertRaises(ValidationError):
+            exp.full_clean()
+
+    def test_cannot_mix_stock_and_material(self):
+        from apps.inventory.models import Material
+        mat = Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='m',
+            quantity=Decimal('1.00'))
+        exp = self._build(stock_pli=self.inv_pli, stock_qty=Decimal('3.00'), material=mat)
+        with self.assertRaises(ValidationError):
+            exp.full_clean()
