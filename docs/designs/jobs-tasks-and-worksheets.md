@@ -1001,6 +1001,11 @@ Expenses attached to a job (`Expense.job`) surface in two places, fed by
   "Expenses (no material)" section below the task tree, mirroring how taskless
   materials surface.
 
+An expense can be **created in place** from the Task detail page: an "Add Expense"
+button opens `ExpenseModal` (a thin overlay around `ExpenseForm`) pre-anchored to
+the task's job via the form's `initialJob` prop. Expense create is open to any
+authenticated user, so the button is ungated.
+
 ## 10. UI: Task Detail page
 
 Route: `#/jobs/:jobId/tasks/:taskId` → `TaskDetailPage.svelte`.

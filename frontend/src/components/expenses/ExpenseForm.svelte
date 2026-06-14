@@ -14,6 +14,9 @@
     // When true, force purchased_by to the logged-in user and hide the picker.
     // Used by the Home-card "My Expenses" surface.
     lockPurchasedByToSelf = false,
+    // Optional { job_id, job_number } to pre-anchor a new expense (e.g. opened
+    // from a Task detail page). Ignored when editing an existing expense.
+    initialJob = null,
   } = $props();
 
   let isEdit = $derived(!!expense);
@@ -34,7 +37,7 @@
   let jobSel = $state(
     expense?.job
       ? { job_id: expense.job, job_number: expense.job_number }
-      : null
+      : (initialJob || null)
   );
   let jobId = $derived(jobSel?.job_id ?? null);
 
