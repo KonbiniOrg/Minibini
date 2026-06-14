@@ -110,6 +110,56 @@ worth creating when you actually want inventory/QOH tracking (the "mini-PO").
   job.
 - Net: on the cost axis, money is counted exactly once.
 
+### A2.1. Material cost provenance & the expense link
+
+**How `Material.unit_cost` is set today** (every path is document-backed except
+manual entry):
+
+| Path | Source | Provenance |
+|---|---|---|
+| `_populate_from_pli()` (fills from `pli.purchase_price` when cost is 0) | PLI catalog | document |
+| Carry-over from accepted estimate (`carry_over.py`, always PLI-linked) | PLI catalog | document |
+| PO/Bill receiving (`resolve_or_create_for_line(unit_cost=li.price)`) | PO line price | document |
+| Expense create-new-material (`submit`, `unit_cost = price or amount`) | Expense amount | document |
+| **Manual entry** (`create_on_job` / `update_pricing`, material modal & add-material views) | user-typed | **none** |
+| `copy_fields()` clone | inherits source | derived |
+
+**New rule — freeform actual-Material cost is document-sourced only, never
+typed.** A freeform (no-PLI) `Material` on a Job may receive its `unit_cost` only
+from a **linked Expense** or a **PO line** — the manual-entry path (the cost
+field on the material modal / add-material views) is removed/disabled for
+freeform actual Materials. Rationale: an *actual* cost should be recorded from a
+real document, not guessed; this also makes cost provenance always traceable and
+removes the only source of link/unlink ambiguity.
+
+- **PLI-linked materials unaffected** — cost still flows from the catalog
+  (`_populate_from_pli`) and may propagate via `update_pricing(propagate_to_pli)`.
+- **Estimating unaffected** — `PlanMaterial` costs on the worksheet are
+  *estimates* and stay freely editable; carry-over produces PLI-linked materials
+  only, so no freeform-with-typed-cost material is ever created that way.
+- A freeform material with no expense/PO yet shows cost "—" (informative: "we
+  have/plan this, haven't recorded what it cost"), not a fabricated number.
+
+**Link / unlink cost behavior** (follows directly from the rule above):
+
+- **Link** an expense to a material → set `material.unit_cost = amount /
+  quantity` (guard `quantity == 0`). If the material already has a non-zero cost
+  from another source, **don't silently clobber** — surface the mismatch for
+  reconciliation. *(Because manual entry is prohibited for freeform, an existing
+  non-zero cost means a PLI/PO basis — exactly the thing not to overwrite.)*
+- **Unlink** → reset `unit_cost` to 0 **only when nothing else backs it** (no
+  `po_line_item`, no other linked expense). Otherwise leave it. With manual entry
+  gone, there is never a hand-typed "legit independent number" to preserve, so
+  the rule needs no special case for it.
+- `Material.expenses` is **to-many**: if several expenses back one material, its
+  cost is the **sum** of their amounts, and "reset on unlink" fires only when the
+  **last** one leaves.
+
+This keeps the no-double-count invariant intact through edits: while linked, only
+the material counts; on unlink the expense becomes material-less and counts its
+own amount, and the copied cost comes off the material so the same money is never
+counted twice.
+
 ### A3. Entry / edit flow
 
 Pick a **Job** → the job's existing Materials become selectable link targets:
@@ -266,7 +316,28 @@ expenses auto-flow onto invoices. (This intentionally revises the earlier stub's
 - Frontend: `frontend/src/components/expenses/ExpenseForm.svelte`,
   `MaterialPicker.svelte`; `frontend/src/components/jobs/JobDetail.svelte`
   (Materials pillar); `frontend/src/routes/jobs/JobTaskListPage.svelte`.
-- Durable docs to update when built: `docs/designs/invoicing-and-expenses.md`
-  (Expense section, billing), `docs/designs/jobs-tasks-and-worksheets.md`
-  (Job-UI surfacing), `docs/designs/materials-inventory-and-purchasing.md`
-  (Material job-costing link).
+## Durable docs to update (when the feature lands)
+
+These describe *built* behavior, so edit them as each part ships — not before
+(avoids the doc-ahead-of-code drift CLAUDE.md warns against). Concrete points:
+
+- **`docs/designs/invoicing-and-expenses.md`** (Expense section):
+  - `Expense.job` anchor; `null` = overhead; expenses are a job-contained list.
+  - Cost-on-material rule (material-linked expense = payment record only; cost
+    counted via the material) and the no-double-count invariant.
+  - Full editability + the **invoiced-freeze** (immutable while it — or its
+    material — is on an invoice).
+  - **Part B billing:** material-less expense as a `BillableAtom`; pass-through
+    cost, invoicer-set sell price; `InvoiceLineItemSource` + already-invoiced
+    marking. Revise any prior "no path from expense to invoice" statement.
+- **`docs/designs/materials-inventory-and-purchasing.md`**:
+  - The **`Material.unit_cost` provenance map** (A2.1) and the new rule:
+    *freeform actual-Material cost is document-sourced only (Expense or PO),
+    never typed*; PLI/estimating paths unaffected.
+  - Link/unlink cost behavior; `Material.expenses` to-many summing.
+  - Note that expense-driven job-costing reads material cost for
+    material-linked expenses and `Expense.amount` for material-less ones.
+- **`docs/designs/jobs-tasks-and-worksheets.md`**:
+  - Job-UI surfacing: expenses in the Materials (& Expenses) pillar and at job
+    level in the full Task List; material-linked-expense-as-annotation rule.
+  - Job P&L rollup = material costs + material-less expense amounts.
