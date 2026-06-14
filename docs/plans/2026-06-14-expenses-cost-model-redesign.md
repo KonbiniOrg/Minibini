@@ -238,3 +238,43 @@ raises QOH so the blocked start proceeds, and the cost lands at that consumption
 - Phasing option: ship rows O–3 (non-inventoried, single amount, own materials,
   no join) first as a clean increment; tackle row 4 (inventoried
   cost-at-consumption) as a second phase with the inventory redesign.
+
+---
+
+## 11. Decisions (2026-06-14)
+
+- **Open Q1 → DO IT NOW.** Implement the inventoried cost-at-consumption model in
+  this pass (not deferred). Rationale: it makes the later inventory work less
+  onerous and leaves a functional app at the end.
+- **Open Q2 → accept** the standard-cost-at-consumption simplification (purchase-
+  price variance not tracked).
+- **Open Q4 → accept** that leftover inventoried stock on an abandoned job is an
+  asset, not charged to the buyer.
+- **New decision — single-mode expenses (no mixing).** A single `amount` can't be
+  split between purchase-cost and consumption-cost items, so an expense is **one
+  mode**: either a **cost** (amount job-costed at purchase; creates 0..N
+  freeform/non-inventoried consumable materials) **or** a **stock receipt** (an
+  inventoried PLI purchase: QOH ↑, amount *not* job-costed, cost flows at
+  consumption). Mixing inventoried + non-inventoried items in one expense is a
+  validation error ("record the stock purchase separately"). This resolves the
+  open mechanics behind Q3: an inventoried expense is a **pure receipt** — it does
+  **not** create a competing consumable material (which is what would re-introduce
+  the quantity double-count). First purchase with no consumable on the job yet:
+  the user adds/uses a material as normal; the job realizes the cost when that
+  material is consumed (so an inventoried-only job can read $0 spent until
+  consumption — the honest cost-at-consumption behavior).
+
+### Workaround note — task blocked by short stock (trust-the-user)
+
+When a worker is blocked from starting a task because a PLI material is short
+(§6), and procurement is in flight, they can **edit the task's material down to
+the quantity actually on hand** (so the task can start now), and **add a second
+Task/Material combo to hold the remainder** until the rest is procured. This is
+fully in trust-the-user territory — the system shouldn't force it — but we want
+to **surface it as a suggestion in the shortfall-block message** when the
+inevitable happens. (Implemented as part of the shortfall-block UX task.)
+
+---
+
+**Implementation:** see
+`docs/plans/2026-06-14-expenses-cost-at-consumption-implementation.md`.
