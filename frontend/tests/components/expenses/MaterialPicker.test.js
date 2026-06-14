@@ -8,30 +8,27 @@ import MaterialPicker from '@/components/expenses/MaterialPicker.svelte';
 
 beforeEach(() => {
   api.get.mockReset();
-  api.get.mockImplementation((url) => {
-    if (url === '/api/jobs/1/') {
-      return Promise.resolve({ job_id: 1, materials: [
-        { material_id: 100, description: 'Steel', quantity: 5, units: 'kg' },
-      ] });
-    }
-    return Promise.resolve({ results: [] });
-  });
+  api.get.mockResolvedValue({ results: [] }); // PriceListItemPicker catalog
 });
 
-describe('MaterialPicker', () => {
+describe('MaterialPicker (expense purchased item)', () => {
   it('prompts to choose a job when none is selected', async () => {
     const { findByText } = render(MaterialPicker, { props: { jobId: null } });
     expect(await findByText(/Choose a job above/)).toBeInTheDocument();
   });
 
-  it('loads the chosen job materials from the jobId prop', async () => {
-    const { findByText } = render(MaterialPicker, { props: { jobId: 1 } });
-    expect(await findByText(/Steel/)).toBeInTheDocument();
+  it('reveals freeform item fields after "Add"', async () => {
+    const { getByText, getByLabelText } = render(MaterialPicker, { props: { jobId: 1 } });
+    await fireEvent.click(getByText('+ Add a purchased item'));
+    expect(getByLabelText('Item description')).toBeInTheDocument();
+    expect(getByLabelText('Quantity')).toBeInTheDocument();
+    expect(getByLabelText('Unit cost')).toBeInTheDocument();
   });
 
-  it('queues a new material', async () => {
-    const { findByText } = render(MaterialPicker, { props: { jobId: 1 } });
-    await fireEvent.click(await findByText('+ Add new material'));
-    expect(await findByText(/New material/)).toBeInTheDocument();
+  it('does not offer an existing-material list (no joining)', async () => {
+    const { getByText, queryByText } = render(MaterialPicker, { props: { jobId: 1 } });
+    await fireEvent.click(getByText('+ Add a purchased item'));
+    // The control only creates new items; it never lists existing materials.
+    expect(queryByText(/existing material/i)).toBeNull();
   });
 });

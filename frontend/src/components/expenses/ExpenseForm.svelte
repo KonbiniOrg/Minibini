@@ -31,7 +31,6 @@
   let payment_account_id = $state(expense?.payment_account_id || '');
   let reference_number = $state(expense?.reference_number || '');
   let purchased_by = $state(expense?.purchased_by || $currentUser?.id || null);
-  let material = $state(expense?.material || null);
   let newMaterial = $state(null);
 
   // Job is the cost anchor. JobPicker emits { job_id, job_number }.
@@ -103,18 +102,12 @@
         reference_number,
         purchased_by: payment_method === 'personal' ? purchased_by : (purchased_by || null),
         job: jobId,
-        material: material,
       };
 
-      // If the user queued a new material, include it in the expense payload.
-      // The backend creates both atomically.
+      // If the user queued a purchased item, include it. The backend creates a
+      // consumable material, or — for an inventoried PLI — a stock receipt.
       if (newMaterial) {
-        payload.material = null;
-        payload.new_material = {
-          job_id: jobId,
-          description: newMaterial.description || description,
-          price: amount,
-        };
+        payload.new_material = { ...newMaterial, job_id: jobId };
       }
 
       let saved;
@@ -212,7 +205,6 @@
 
   <MaterialPicker
     jobId={jobId}
-    bind:materialId={material}
     bind:newMaterial={newMaterial}
     defaultDescription={description}
     defaultAmount={amount}

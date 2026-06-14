@@ -338,3 +338,36 @@ class ExpenseJobFieldTest(TestCase):
         self.assertEqual(r.status_code, 200)
         job_ids = {row['job_id'] for row in r.json()['results']}
         self.assertEqual(job_ids, {self.job.pk})
+
+
+class ExpenseStockReceiptApiTest(TestCase):
+    """POST new_material with an inventoried PLI → a stock receipt (QOH up, no material)."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.inventory.models import PriceListItem
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='SR', name='Stock')
+        self.user = User.objects.create_user(username='w', password='x')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
+        self.job = Job.objects.create(job_number='JOB-SRA-1', contact=self.contact)
+        self.pli = PriceListItem.objects.create(
+            code='PLY', description='plywood', accounting_category=self.cat,
+            is_inventoried=True, qty_on_hand=Decimal('7.00'))
+        self.client_http.force_login(self.user)
+
+    def test_inventoried_new_material_creates_stock_receipt(self):
+        from apps.inventory.models import Material
+        r = self.client_http.post('/api/expenses/', data={
+            'amount': '73.33', 'purchased_on': '2026-04-01',
+            'accounting_category': self.cat.pk,
+            'payment_method': Expense.PAYMENT_METHOD_PERSONAL,
+            'purchased_by': self.user.pk,
+            'new_material': {'job_id': self.job.pk,
+                             'price_list_item_id': self.pli.pk, 'quantity': '3'},
+        }, content_type='application/json')
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertFalse(Material.objects.filter(job=self.job).exists())  # no consumable
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10.00'))  # 7 + 3

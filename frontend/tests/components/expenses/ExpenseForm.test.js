@@ -23,11 +23,7 @@ beforeEach(() => {
     if (url.startsWith('/api/jobs/?search')) {
       return Promise.resolve({ results: [{ job_id: 7, job_number: 'JOB-7', description: 'demo' }] });
     }
-    if (url === '/api/jobs/7/') {
-      return Promise.resolve({ job_id: 7, materials: [
-        { material_id: 50, description: 'Steel', quantity: '2', units: 'ea' },
-      ] });
-    }
+    if (url.startsWith('/api/price-list-items/')) return Promise.resolve({ results: [] });
     return Promise.resolve({ results: [] });
   });
   api.post.mockResolvedValue({ id: 99 });
@@ -68,12 +64,12 @@ describe('ExpenseForm', () => {
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'JOB' } });
     await fireEvent.click(await findByRole('button', { name: /JOB-7/ }));
     await fireEvent.click(getByRole('button', { name: 'Submit expense' }));
-    expect(api.post).toHaveBeenCalledWith('/api/expenses/', expect.objectContaining({
-      job: 7, material: null,
-    }));
+    const [, body] = api.post.mock.calls[0];
+    expect(body.job).toBe(7);
+    expect(body.new_material).toBeUndefined();  // no purchased item drafted
   });
 
-  it('links an existing material on the chosen job', async () => {
+  it('creates a freeform purchased item on the chosen job', async () => {
     const { getByLabelText, findByRole, getByRole, getByPlaceholderText } = render(
       ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
     await findByRole('option', { name: 'Meals' });
@@ -81,11 +77,16 @@ describe('ExpenseForm', () => {
     await fireEvent.change(getByLabelText(/Category/), { target: { value: '1' } });
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'JOB' } });
     await fireEvent.click(await findByRole('button', { name: /JOB-7/ }));
-    await fireEvent.click(await findByRole('button', { name: /Steel/ }));
+    await fireEvent.click(getByRole('button', { name: '+ Add a purchased item' }));
+    await fireEvent.input(getByLabelText('Item description'), { target: { value: 'bracket' } });
+    await fireEvent.input(getByLabelText('Quantity'), { target: { value: '3' } });
+    await fireEvent.input(getByLabelText('Unit cost'), { target: { value: '4.50' } });
     await fireEvent.click(getByRole('button', { name: 'Submit expense' }));
-    expect(api.post).toHaveBeenCalledWith('/api/expenses/', expect.objectContaining({
-      job: 7, material: 50,
-    }));
+    const [, body] = api.post.mock.calls[0];
+    expect(body.new_material).toMatchObject({
+      job_id: 7, description: 'bracket', quantity: 3, price: 4.5,
+      price_list_item_id: null,
+    });
   });
 
   it('hides the purchased-by pulldown without financials permission', async () => {

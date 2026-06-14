@@ -1,124 +1,96 @@
 <script>
-  import { api } from '../../lib/api.js';
+  // What an expense bought (optional). Inventoried PLI → a stock purchase
+  // (adds to inventory; cost flows at consumption). Freeform / non-inventoried
+  // PLI → a consumable material at the entered unit cost. Expenses never link to
+  // an existing material — this only creates new ones.
+  import PriceListItemPicker from '../PriceListItemPicker.svelte';
 
   let {
-    // The chosen job's id (owned by the parent form — the cost anchor).
     jobId = null,
-    // Bound to parent — the selected existing material id, or null.
-    materialId = $bindable(null),
-    // Bound to parent — if the user inline-creates, describes the new material.
     newMaterial = $bindable(null),
     defaultDescription = '',
     defaultAmount = '',
   } = $props();
 
-  let materials = $state([]);
-  let loading = $state(false);
-  let loadError = $state('');
-  let loadedJobId = $state(null);
+  let adding = $state(false);
+  let pli = $state(null);          // selected PLI object, or null (freeform)
+  let description = $state('');
+  let quantity = $state(1);
+  let unitCost = $state('');
 
-  // Load the chosen job's materials. Switching to a *different* job invalidates
-  // any prior material selection; the initial load (edit mode) does not clear.
+  let isStock = $derived(!!(pli && pli.is_inventoried));
+
+  function startAdd() {
+    adding = true;
+    description = defaultDescription || '';
+    unitCost = defaultAmount || '';
+  }
+  function removeItem() {
+    adding = false; pli = null; description = ''; quantity = 1; unitCost = '';
+  }
+  function onPli(item) {
+    pli = item;
+    if (item && item.description) description = item.description;
+  }
+
+  // Keep the bound newMaterial in sync while drafting (job_id is injected by the
+  // parent form, which owns the job).
   $effect(() => {
-    const jid = jobId;
-    if (jid && jid !== loadedJobId) {
-      const wasLoaded = loadedJobId;
-      loadedJobId = jid;
-      if (wasLoaded !== null) {
-        materialId = null;
-        newMaterial = null;
-      }
-      loadMaterials(jid);
-    } else if (!jid) {
-      materials = [];
-      loadedJobId = null;
+    if (!adding || !jobId) { newMaterial = null; return; }
+    if (isStock) {
+      newMaterial = {
+        price_list_item_id: pli.price_list_item_id,
+        quantity: Number(quantity) || 1,
+      };
+    } else {
+      newMaterial = {
+        price_list_item_id: pli ? pli.price_list_item_id : null,
+        description,
+        quantity: Number(quantity) || 1,
+        price: unitCost === '' ? null : unitCost,
+      };
     }
   });
-
-  async function loadMaterials(id) {
-    loading = true;
-    loadError = '';
-    try {
-      // job.materials is the complete list (task-attached and job-level).
-      const job = await api.get(`/api/jobs/${id}/`);
-      materials = (job.materials || []).map((m) => ({
-        id: m.material_id || m.id,
-        description: m.description,
-        quantity: m.quantity,
-        unit: m.units,
-      }));
-    } catch (err) {
-      loadError = err.message || 'Could not load materials.';
-    } finally {
-      loading = false;
-    }
-  }
-
-  function pickMaterial(m) {
-    materialId = m.id;
-    newMaterial = null;
-  }
-
-  function clearMaterial() {
-    materialId = null;
-  }
-
-  function addNewMaterial() {
-    materialId = null;
-    newMaterial = {
-      job_id: jobId,
-      description: defaultDescription || '',
-      quantity: 1,
-      price: defaultAmount || '',
-    };
-  }
-
-  function clearNewMaterial() {
-    newMaterial = null;
-  }
 </script>
 
 <fieldset>
-  <legend><strong>Link a material (optional)</strong></legend>
+  <legend><strong>Purchased item (optional)</strong></legend>
 
   {#if !jobId}
-    <p><em>Choose a job above to link a material. The expense is recorded
+    <p><em>Choose a job above to record what this bought. The expense is recorded
       against the job either way.</em></p>
-  {:else if loading}
-    <p><em>Loading materials…</em></p>
-  {:else if loadError}
-    <p><em>{loadError}</em></p>
+  {:else if !adding}
+    <button type="button" onclick={startAdd}>+ Add a purchased item</button>
   {:else}
-    <div style="border: 1px solid #999; padding: 6px; max-height: 180px; overflow-y: auto">
-      {#each materials as m (m.id)}
-        <button
-          type="button"
-          aria-pressed={materialId === m.id}
-          style="display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid #ddd; padding: 4px; font: inherit; cursor: pointer; background: {materialId === m.id ? '#e8f0fe' : 'transparent'}"
-          onclick={() => pickMaterial(m)}
-        >
-          <strong>{m.description || '(no description)'}</strong>
-          {#if m.quantity} — qty {m.quantity}{/if}
-        </button>
-      {/each}
-      {#if !newMaterial}
-        <button
-          type="button"
-          style="display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 4px; font: inherit; color: #1a66ff; cursor: pointer"
-          onclick={addNewMaterial}
-        >
-          + Add new material
-        </button>
-      {/if}
-    </div>
+    <p>
+      <label for="mp-pli">Price list item</label><br>
+      <PriceListItemPicker onSelect={onPli} />
+    </p>
 
-    {#if materialId}
-      <p><em>Linked to an existing material.</em>
-        <button type="button" onclick={clearMaterial} style="font-size: 12px">unlink</button></p>
+    {#if isStock}
+      <p><em>Inventoried item — recorded as a <strong>stock purchase</strong>
+        (adds to inventory; its cost is charged when the job consumes it).</em></p>
+      <p>
+        <label for="mp-qty">Quantity</label><br>
+        <input id="mp-qty" type="number" min="0" step="0.01" bind:value={quantity}>
+      </p>
+    {:else}
+      {#if !pli}
+        <p>
+          <label for="mp-desc">Item description</label><br>
+          <input id="mp-desc" type="text" bind:value={description}>
+        </p>
+      {/if}
+      <p>
+        <label for="mp-qty">Quantity</label><br>
+        <input id="mp-qty" type="number" min="0" step="0.01" bind:value={quantity}>
+      </p>
+      <p>
+        <label for="mp-cost">Unit cost</label><br>
+        <input id="mp-cost" type="number" min="0" step="0.01" bind:value={unitCost}>
+      </p>
     {/if}
-    {#if newMaterial}
-      <p><em>New material: {newMaterial.description || '(no description)'}</em>
-        — <button type="button" onclick={clearNewMaterial} style="font-size: 12px">remove</button></p>
-    {/if}
+
+    <p><button type="button" onclick={removeItem}>remove item</button></p>
   {/if}
 </fieldset>
