@@ -11,6 +11,7 @@
   let invoices = $state(null);
   let purchaseOrders = $state(null);
   let emails = $state(null);
+  let expenses = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let error = $state(null);
@@ -20,13 +21,14 @@
     loadError = null;
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
-      const [contactData, estimatesData, worksheetsData, invoicesData, poData, emailData] = await Promise.all([
+      const [contactData, estimatesData, worksheetsData, invoicesData, poData, emailData, expenseData] = await Promise.all([
         api.get(`/api/contacts/${job.contact}/`),
         api.get(`/api/estimates/?job=${params.id}`),
         api.get(`/api/est-worksheets/?job=${params.id}`),
         api.get(`/api/invoices/?job=${params.id}`),
         api.get(`/api/purchase-orders/?job=${params.id}`),
         api.get(`/api/emails/?job=${params.id}`),
+        api.get(`/api/expenses/?job=${params.id}`),
       ]);
       contact = contactData;
       estimates = estimatesData;
@@ -34,6 +36,7 @@
       invoices = invoicesData;
       purchaseOrders = poData;
       emails = emailData;
+      expenses = expenseData;
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -69,6 +72,7 @@
     {invoices}
     {purchaseOrders}
     {emails}
+    {expenses}
     onStatusChange={loadJob}
   />
 {/if}
