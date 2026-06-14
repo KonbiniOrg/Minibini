@@ -92,6 +92,12 @@ class Expense(models.Model):
         if errors:
             raise ValidationError(errors)
 
+    def compute_amount(self, active_modifiers=None):
+        """Uniform billable-atom interface (shared with Material/Task): a
+        material-less expense bills at pass-through cost. The parameter is
+        accepted to match the atom interface and is ignored."""
+        return self.amount
+
     def __str__(self):
         return f"Expense {self.pk}: ${self.amount} ({self.status})"
 

@@ -933,7 +933,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         inv = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
         pool = InvoiceWizardService.get_source_pool(inv)
 
-        loose = [g for g in pool['tasks'] if g['task_id'] is None]
+        loose = [g for g in pool['tasks'] if g['name'] == 'Materials (no task)']
         self.assertEqual(len(loose), 1)
         atoms = loose[0]['atoms']
         self.assertEqual([a['id'] for a in atoms], [m1.pk])
@@ -1072,3 +1072,75 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         ]
         li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(li.description, '')
+
+
+class ExpenseAtomTest(TestCase):
+    """Material-less job expenses are billable atoms in the invoice wizard."""
+
+    def setUp(self):
+        from apps.expenses.models import Expense
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{counter:04d}')
+        AppState.objects.create(key='invoice_counter', value='0')
+        self.user = User.objects.create_user(username='exp_atom', password='pw')
+        self.cat = AccountingCategory.objects.create(name='Freight', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@e.com', mobile_number='555')
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-EXA-1')
+
+        self.shipping = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('40.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            description='FedEx shipping', job=self.job,
+        )
+        # Material-linked expense: bills via its material, must NOT be offered.
+        self.material = Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='steel',
+            quantity=Decimal('1.00'), unit_cost=Decimal('5.00'))
+        self.linked = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('5.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            job=self.job, material=self.material)
+        # Overhead (no job) + rejected: never offered.
+        self.overhead = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('9.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=None)
+        self.rejected = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('7.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=self.job,
+            status=Expense.STATUS_REJECTED)
+
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def _expense_group(self, pool):
+        return next((g for g in pool['tasks'] if g['name'] == 'Expenses'), None)
+
+    def test_expense_compute_amount(self):
+        self.assertEqual(self.shipping.compute_amount(), Decimal('40.00'))
+
+    def test_source_pool_lists_material_less_expenses(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        grp = self._expense_group(pool)
+        self.assertIsNotNone(grp)
+        ids = {a['id'] for a in grp['atoms']}
+        self.assertEqual(ids, {self.shipping.pk})  # not linked/overhead/rejected
+
+    def test_add_expense_atom_creates_line_item(self):
+        atoms = [{'type': 'expense', 'id': self.shipping.pk}]
+        li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(li.qty, Decimal('1'))
+        self.assertEqual(li.price, Decimal('40.00'))  # pass-through cost
+        self.assertTrue(InvoiceLineItemSource.objects.filter(
+            source_type=InvoiceLineItemSource.SOURCE_EXPENSE,
+            source_pk=self.shipping.pk).exists())
+
+    def test_expense_already_invoiced_marked(self):
+        InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'expense', 'id': self.shipping.pk}])
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        atom = self._expense_group(pool)['atoms'][0]
+        self.assertEqual(atom['state'], 'claimed_by_current')

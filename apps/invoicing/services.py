@@ -515,6 +515,38 @@ class InvoiceWizardService(BaseWizardService):
             'atoms': loose_atoms,
         })
 
+        # "Expenses" group — material-less, non-rejected expenses on the job.
+        # (Material-linked expenses bill through their material, so they are
+        # not offered here — that's what prevents double-billing.)
+        from apps.expenses.models import Expense
+        expenses = (
+            Expense.objects.filter(job=job, material__isnull=True)
+            .exclude(status=Expense.STATUS_REJECTED)
+            .order_by('pk')
+        )
+        expense_atoms = []
+        for exp in expenses:
+            detail = InvoiceWizardService._atom_detail(exp)
+            key = (InvoiceLineItemSource.SOURCE_EXPENSE, exp.pk)
+            state_info = claims.get(key, default_state)
+            expense_atoms.append({
+                'type': 'expense',
+                'id': exp.pk,
+                'description': InvoiceWizardService._atom_description(exp),
+                'sub_info': '',
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'units': detail['units'],
+                'amount': detail['amount'],
+                **state_info,
+            })
+        task_list.append({
+            'task_id': None,
+            'name': 'Expenses',
+            'has_billable_atoms': len(expense_atoms) > 0,
+            'atoms': expense_atoms,
+        })
+
         return {'tasks': task_list}
 
     # ── BaseWizardService hooks ────────────────────────────────────────
@@ -543,14 +575,21 @@ class InvoiceWizardService(BaseWizardService):
             raise ValidationError('Wizard can only modify draft invoices.')
 
     @classmethod
+    def _expense_model(cls):
+        from apps.expenses.models import Expense
+        return Expense
+
+    @classmethod
     def _resolve_atom(cls, atom_ref):
-        """Given {'type': 'material'|'task', 'id': N}, return the concrete instance."""
+        """Given {'type': 'material'|'task'|'expense', 'id': N}, return the instance."""
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if atom_ref['type'] == 'material':
             return Material.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'task':
             return Task.objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'expense':
+            return cls._expense_model().objects.get(pk=atom_ref['id'])
         raise ValueError(f"Unknown atom type: {atom_ref['type']}")
 
     @classmethod
@@ -562,6 +601,8 @@ class InvoiceWizardService(BaseWizardService):
             return InvoiceLineItemSource.SOURCE_TASK
         if isinstance(atom_instance, Material):
             return InvoiceLineItemSource.SOURCE_MATERIAL
+        if isinstance(atom_instance, cls._expense_model()):
+            return InvoiceLineItemSource.SOURCE_EXPENSE
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @classmethod
@@ -576,6 +617,36 @@ class InvoiceWizardService(BaseWizardService):
                 return atom_instance.price_list_item.units
             return 'none'
         return 'none'
+
+    @classmethod
+    def _atom_category(cls, atom_instance):
+        if isinstance(atom_instance, cls._expense_model()):
+            return atom_instance.accounting_category
+        return super()._atom_category(atom_instance)
+
+    @classmethod
+    def _atom_description(cls, atom_instance):
+        if isinstance(atom_instance, cls._expense_model()):
+            return atom_instance.description or (
+                atom_instance.accounting_category.name
+                if atom_instance.accounting_category_id else 'Expense'
+            )
+        return super()._atom_description(atom_instance)
+
+    @classmethod
+    def _atom_qty_and_price(cls, atom_instance, total_price):
+        # A material-less expense bills at pass-through cost: qty 1 × amount.
+        if isinstance(atom_instance, cls._expense_model()):
+            return Decimal('1'), atom_instance.amount
+        return super()._atom_qty_and_price(atom_instance, total_price)
+
+    @classmethod
+    def _atom_detail(cls, atom_instance):
+        if isinstance(atom_instance, cls._expense_model()):
+            amount = cls._atom_computed_amount(atom_instance)
+            return {'qty': Decimal('1'), 'rate': amount,
+                    'units': 'none', 'amount': amount}
+        return super()._atom_detail(atom_instance)
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):

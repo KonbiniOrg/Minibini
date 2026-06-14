@@ -165,9 +165,11 @@ class InvoiceLineItemSource(models.Model):
     """
     SOURCE_MATERIAL = 'material'
     SOURCE_TASK = 'task'
+    SOURCE_EXPENSE = 'expense'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
+        (SOURCE_EXPENSE, 'Expense'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -191,6 +193,9 @@ class InvoiceLineItemSource(models.Model):
         if self.source_type == self.SOURCE_TASK:
             from apps.jobs.models import Task
             return Task.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_EXPENSE:
+            from apps.expenses.models import Expense
+            return Expense.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):
