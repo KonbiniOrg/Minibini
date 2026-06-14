@@ -285,8 +285,9 @@ class ExpenseJobLinkTest(TestCase):
 
     def test_freeform_new_material_uses_entered_cost_no_division(self):
         # The created material's unit_cost is what the user entered (price),
-        # NOT amount/quantity. amount ($50, tax incl) ≠ qty×unit_cost ($60).
-        exp = self._expense(amount=Decimal('50.00'), new_material={
+        # NOT amount/quantity. Goods = 2 × $30 = $60; amount $66 (incl $6 tax) —
+        # the amount exceeds goods, and unit_cost stays $30 (not $33 = 66/2).
+        exp = self._expense(amount=Decimal('66.00'), new_material={
             'job_id': self.job.pk, 'description': 'Steel',
             'quantity': 2, 'price': Decimal('30.00')})
         self.assertEqual(exp.job_id, self.job.pk)

@@ -64,8 +64,9 @@ Payment branch:
 ## 3. What the purchased item creates
 
 - [ ] **Freeform / non-inv PLI → consumable material at the entered cost.** Enter
-  qty 2, unit cost $30, amount $50 (tax incl). The material's unit cost is **$30**
-  (what you typed) — *not* $25 (amount ÷ qty). No division, no surprise.
+  qty 2, unit cost $30 (goods = $60), amount **$66** (the $6 over is tax/shipping).
+  The material's unit cost is **$30** (what you typed) — *not* $33 (amount ÷ qty).
+  No division, no surprise; the gap between `amount` and goods is unbudgeted tax.
 - [ ] **Inventoried PLI → stock receipt, no material.** After saving, the job has
   **no new material row** for it, but the PLI's **quantity-on-hand increased** by
   the entered quantity (check the price-list item / inventory).
