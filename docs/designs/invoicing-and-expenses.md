@@ -341,7 +341,8 @@ Tracks two kinds of business expenses:
 | `payment_method` | CharField — `'company'` or `'personal'` | Two values, no other options. |
 | `payment_account_id` | CharField(50), blank | References `Configuration['qbo_payment_accounts'][*].qbo_account_id`. **Required for company**, **forbidden for personal** (validated in `clean()`). |
 | `reference_number` | CharField(50), blank | Check number, confirmation number, etc. Always optional. |
-| `material` | FK Material (SET_NULL, nullable, `expenses`) | Optional job-costing link. `SET_NULL` because the expense outlives any particular material link. |
+| `job` | FK Job (SET_NULL, nullable, `expenses`) | **The cost anchor.** `null` = overhead. Job P&L groups expenses by this directly. `SET_NULL` mirrors `material` (the financial record outlives a hard-deleted job, becoming overhead). |
+| `material` | FK Material (SET_NULL, nullable, `expenses`) | Optional refinement — "this expense also brought in / paid for this material". When set, the **cost lives on the material** (see below) and `material.job` must equal `job`. |
 | `status` | CharField — see machine | Default `submitted`. |
 | `qbo_id` | CharField(50), blank | Set when the QBO push succeeds (company-paid only — personal expenses' QBO IDs live on their reimbursement batch). |
 | `qbo_sync_error` | TextField, blank | |
@@ -353,8 +354,61 @@ Tracks two kinds of business expenses:
 `clean()` enforces:
 - Personal: `purchased_by` required, `payment_account_id` must be blank.
 - Company: `payment_account_id` required.
+- If `material` and `job` are both set, `material.job == job` (consistency).
 
 The model is **not** decorated with `@history` — Expense changes do not write to the audit log automatically.
+
+### Job anchor, cost-on-material, and the no-double-count rule
+
+A Job is the cost anchor. An expense has three independent properties: a **job**
+(cost attribution; `null` = overhead), an optional **material** ("this is a
+tracked job material"), and inventory tracking (only when that material is a
+PLI-inventoried one). They nest: inventory ⇒ material ⇒ job; a job needs neither.
+
+- **Material-linked expense** → the expense is purely the payment/accounting
+  record; the **cost lives on the material** (`unit_cost`). On link,
+  `ExpenseService` sets `material.unit_cost = (sum of linked expense amounts) /
+  quantity` (won't clobber a PLI/PO-backed cost — raises a mismatch instead). On
+  unlink it clears the cost (or recomputes from remaining expenses; PO-backed
+  costs are left alone). `Material.expenses` is to-many.
+- **Material-less expense** → carries its own cost (`amount`) against the job.
+- **Job P&L** (`apps/jobs/financials.py` `_spent`) sums *all* non-rejected
+  expenses on the job by `amount` (covers both kinds; overhead `job=null`
+  excluded) plus consumed materials that have no expense, at cost. Money is
+  counted exactly once.
+
+Backfill migration `expenses/0002` set `job` from `material.job` (legacy
+`material.task.job`) for existing rows.
+
+### Editability and the invoiced freeze
+
+Expenses are **fully editable after entry** (no reason-gating) — correcting a
+wrong job is the same as any other edit. Moving a material-linked expense to
+another job moves its material too (composing `InventoryService.unconsume` →
+move earmark → re-consume for a consumed inventoried material). The one hard
+lock: an expense is **immutable while it — or its material — is on a
+non-cancelled invoice** (`ExpenseService._assert_not_invoiced`, checked in
+`update`/`delete`). To edit a billed expense, remove it from the invoice first.
+`reject()`'s consumed-material wall still applies to *rejection* (not to editing).
+
+### Billing: expense as a billable atom
+
+A **material-less** job expense is a first-class `BillableAtom` in the invoice
+wizard, alongside Task charges and Materials (`Expense.compute_amount()` returns
+`amount`). The wizard's source pool exposes an **Expenses** group (material-less,
+non-rejected expenses on the job); `InvoiceWizardService` atom hooks
+(`_resolve_atom`/`_atom_source_type`/`_atom_units`/`_atom_category`/
+`_atom_description`/`_atom_qty_and_price`/`_atom_detail`) handle the `'expense'`
+type, and `InvoiceLineItemSource` gained `SOURCE_EXPENSE`.
+
+- **Pass-through cost:** a line built from an expense atom gets `qty=1`,
+  `price=amount`; the invoicer edits the line to set the actual sell price (mark
+  up / round / zero to absorb). Cost vs. billing stay separate.
+- **No double-billing:** material-*linked* expenses are **not** offered as atoms
+  — they bill through their material. So "material-less" is the precise trigger.
+- **Already-invoiced:** once on a non-cancelled invoice, the expense shows
+  `claimed_by_*` in the pool (not removed) — same as Materials/Tasks. This is
+  also exactly what freezes the expense (see above).
 
 ### Status machine
 

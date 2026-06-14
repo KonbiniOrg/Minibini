@@ -175,6 +175,34 @@ to dedupe `PlanMaterial → Material` on estimate accept.
 - `task.job_id == job_id` when `task` is set
 - `restocked_qty >= 0`
 
+#### `unit_cost` provenance — freeform cost is document-sourced
+
+Every path that sets `Material.unit_cost` is backed by a document **except**
+manual entry:
+
+| Source | How |
+|---|---|
+| PLI catalog | `_populate_from_pli()` fills from `purchase_price` when cost is 0; carry-over (`carry_over.py`, always PLI-linked) |
+| PO line | `resolve_or_create_for_line(unit_cost=li.price)` on receiving |
+| Expense | `ExpenseService` on link: `unit_cost = Σ(linked expense amounts) / qty` |
+| Manual | user-typed via the material modal / add-material endpoints |
+
+**Rule:** a **freeform** (no-PLI) actual Material may *only* get its cost from a
+document (Expense or PO) — never typed. Enforcement: `MaterialService.create_on_job`
+takes `cost_source` (`'document'` default; `'manual'` from the two user-facing
+create views) and rejects a manual non-zero cost on a no-PLI material;
+`MaterialSerializer.validate` blocks the same on the PATCH edit path; the
+material-modal UI disables the Unit Cost input when freeform. PLI-linked
+materials and worksheet `PlanMaterial` estimates are unaffected.
+
+**Link/unlink** (driven by `ExpenseService`): linking an expense sets the
+freeform material's cost; linking to an already-costed (PLI/PO-backed) material
+raises a mismatch rather than clobbering. Unlinking recomputes from any remaining
+linked expenses, or resets to 0 when nothing else backs the cost (no PO line).
+Job-costing reads the **material** cost for material-linked expenses and
+`Expense.amount` for material-less ones — see
+`docs/designs/invoicing-and-expenses.md` (Expense).
+
 ### PlanMaterial
 
 `apps/inventory/models.py` — `PlanMaterial`, `db_table='plan_materials'`.
