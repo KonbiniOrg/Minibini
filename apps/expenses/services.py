@@ -150,18 +150,21 @@ class ExpenseService:
     def _assert_not_invoiced(expense):
         """Raise if the expense — or its linked material — is on a non-cancelled
         invoice. An expense is immutable while billed (remove it from the invoice
-        first). The expense-atom source case is added in Part B."""
+        first)."""
+        from django.db.models import Q
         from apps.invoicing.models import InvoiceLineItemSource, Invoice
         live = InvoiceLineItemSource.objects.exclude(
             invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED
         )
-        on_invoice = False
+        cond = Q(
+            source_type=InvoiceLineItemSource.SOURCE_EXPENSE, source_pk=expense.pk,
+        )
         if expense.material_id:
-            on_invoice = live.filter(
+            cond |= Q(
                 source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
                 source_pk=expense.material_id,
-            ).exists()
-        if on_invoice:
+            )
+        if live.filter(cond).exists():
             raise ValidationError(
                 'Cannot edit an expense that is on an invoice; '
                 'remove it from the invoice first.'

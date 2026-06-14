@@ -356,3 +356,33 @@ class ExpenseJobLinkTest(TestCase):
         self.assertEqual(exp.job_id, self.other_job.pk)
         self.assertEqual(mat.job_id, self.other_job.pk)
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
+
+class ExpenseInvoiceFreezeTest(TestCase):
+    """A material-less expense is frozen while it is itself on an invoice (B2)."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.user = User.objects.create_user(username='frz', password='x')
+        self.cat = AccountingCategory.objects.create(code='FRZ', name='frz')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='f@t.com')
+        self.job = Job.objects.create(job_number='JOB-FRZ-1', contact=self.contact)
+
+    def test_frozen_when_expense_on_invoice(self):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        exp = ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('40.00'),
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=self.job)
+        inv = Invoice.objects.create(
+            job=self.job, invoice_number='INV-FRZ-1', status=Invoice.STATUS_OPEN)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, line_number=1, description='shipping',
+            qty=Decimal('1.00'), price=Decimal('40.00'), accounting_category=self.cat)
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_EXPENSE, source_pk=exp.pk)
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=exp, actor=self.user, amount=Decimal('99.00'))
