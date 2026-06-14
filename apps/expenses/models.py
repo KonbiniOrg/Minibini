@@ -45,6 +45,12 @@ class Expense(models.Model):
     payment_account_id = models.CharField(max_length=50, blank=True, default='')
     reference_number = models.CharField(max_length=50, blank=True, default='')
 
+    job = models.ForeignKey(
+        'jobs.Job', on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='expenses',
+    )
+
     material = models.ForeignKey(
         'inventory.Material', on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -81,6 +87,8 @@ class Expense(models.Model):
         elif self.payment_method == self.PAYMENT_METHOD_COMPANY:
             if not self.payment_account_id:
                 errors['payment_account_id'] = 'Required for company-paid expenses.'
+        if self.material_id and self.job_id and self.material.job_id != self.job_id:
+            errors['job'] = 'Expense job must match the linked material’s job.'
         if errors:
             raise ValidationError(errors)
 
