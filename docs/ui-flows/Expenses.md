@@ -25,6 +25,31 @@ to an existing material. See `docs/plans/2026-06-14-expenses-cost-model-redesign
 QBO they land in `sync_failed` — expected, not a bug. Prefer **personal**
 expenses except where you're specifically exercising the company/QBO path.
 
+## Prerequisites (test-data setup)
+
+Several flows are silently no-ops without the right data — set these up first, or
+whole branches of the feature won't actually be exercised:
+
+- [ ] **An *inventoried* PriceListItem** (`is_inventoried = True`). This is the
+  big one: without it there is **no stock-receipt path** — no QOH bump, no
+  earmarks, no cost-at-consumption — so §3 (stock receipt), §5 (cost-at-
+  consumption, the plywood top-up), and §6 (shortfall block) can't run at all. An
+  expense against a *non*-inventoried PLI just makes a consumable material and the
+  inventory half of the feature never triggers.
+- [ ] **A non-inventoried PriceListItem** — to exercise the "cost item — non-inv
+  PLI" shape distinctly from freeform.
+- [ ] **A startable Job** (`approved`/`in_progress`) with a **Task**, and an
+  **inventoried material whose quantity exceeds on-hand QOH** — required to hit
+  the shortfall block (§6) and the plywood top-up (§5). If QOH already covers it,
+  the task just starts and there's nothing to top up.
+- [ ] **An AccountingCategory linked to a QBO account** (`qbo_expense_account_id`
+  set) — the expense form's Category dropdown only lists linked categories; with
+  none, you can't submit at all.
+- [ ] **A configured payment account** (`Configuration['qbo_payment_accounts']`) —
+  needed for the company-paid branch.
+- [ ] **Two users** — a plain worker (no atoms) and a `can_manage_financials`
+  user — for the persona-dependent steps.
+
 ---
 
 ## 1. Creating expenses — the shapes
