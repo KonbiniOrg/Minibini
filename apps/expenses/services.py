@@ -15,67 +15,62 @@ class ExpenseService:
     @staticmethod
     def submit(*, entered_by, payment_method, amount, purchased_on, accounting_category,
                description='', payment_account_id='', reference_number='',
-               purchased_by=None, material=None, new_material=None, job=None):
-        created_new_material = False
+               purchased_by=None, new_material=None, job=None,
+               stock_pli=None, stock_qty=None):
+        """Create an expense in one of two modes:
+        - **cost**: optionally creates ONE consumable material from `new_material`
+          (freeform or non-inventoried PLI); `amount` is the job cost.
+        - **stock receipt**: an inventoried PLI (passed directly as
+          `stock_pli`/`stock_qty`, or detected from an inventoried `new_material`)
+          bumps QOH; `amount` is NOT job-costed (cost flows at consumption).
+        Expenses never link to an existing material."""
+        from apps.inventory.services import InventoryService
+        material = None
         with transaction.atomic():
-            # If new_material info is provided, create the material atomically
-            if new_material and not material:
-                created_new_material = True
+            if new_material:
                 from apps.jobs.models import Job
                 from apps.inventory.models import PriceListItem
-                from apps.inventory.services import InventoryService, MaterialService
-                job = Job.objects.get(pk=new_material['job_id'])
+                from apps.inventory.services import MaterialService
+                nm_job = Job.objects.get(pk=new_material['job_id'])
+                if job is None:
+                    job = nm_job
                 pli = None
                 if new_material.get('price_list_item_id'):
                     pli = PriceListItem.objects.get(pk=new_material['price_list_item_id'])
                 qty = new_material.get('quantity') or Decimal('1')
-                price = new_material.get('price')
-                if price is None:
-                    price = amount
-                # For PLI-linked materials, _populate_from_pli fills the category.
-                # For freeform (no PLI), inherit the expense's accounting_category.
-                mat_category = None if pli else accounting_category
-                material = MaterialService.create_on_job(
-                    job=job, task=None,
-                    description=new_material.get('description', description),
-                    quantity=qty,
-                    unit_cost=price,
-                    price_list_item=pli,
-                    accounting_category=mat_category,
-                )
                 if pli and pli.is_inventoried:
-                    InventoryService.receive_ad_hoc_purchase(material)
+                    # Inventoried → stock receipt (no consumable material).
+                    stock_pli, stock_qty = pli, qty
+                else:
+                    price = new_material.get('price')
+                    if price is None:
+                        price = amount
+                    material = MaterialService.create_on_job(
+                        job=nm_job, task=None,
+                        description=new_material.get('description', description),
+                        quantity=qty, unit_cost=price,
+                        price_list_item=pli,
+                        accounting_category=(None if pli else accounting_category),
+                        cost_source='document',
+                    )
 
-            # A linked material implies the job (cost anchor). Derive it when the
-            # caller didn't pass one explicitly.
             if material and job is None:
                 job = material.job
 
-            # Linking an EXISTING material at submit must not silently clobber a
-            # cost that came from another source (PLI/PO/another expense).
-            if material and not created_new_material:
-                ExpenseService._assert_no_cost_clobber(material)
-
             expense = Expense(
-                entered_by=entered_by,
-                purchased_by=purchased_by,
-                amount=amount,
-                purchased_on=purchased_on,
-                accounting_category=accounting_category,
-                description=description,
-                payment_method=payment_method,
-                payment_account_id=payment_account_id,
-                reference_number=reference_number,
-                job=job,
-                material=material,
+                entered_by=entered_by, purchased_by=purchased_by, amount=amount,
+                purchased_on=purchased_on, accounting_category=accounting_category,
+                description=description, payment_method=payment_method,
+                payment_account_id=payment_account_id, reference_number=reference_number,
+                job=job, material=material, stock_pli=stock_pli, stock_qty=stock_qty,
             )
             expense.full_clean()
             expense.save()
 
-            # Cost lives on the material: actualize it from the linked expense(s).
-            # (A freshly created new_material already carries its intended cost.)
-            if material and not created_new_material:
-                ExpenseService._recost_material_from_expenses(material)
+            if stock_pli is not None:
+                InventoryService.receive_stock(
+                    stock_pli, stock_qty,
+                    reason=f'Stock receipt (expense {expense.pk})')
 
         if payment_method == Expense.PAYMENT_METHOD_COMPANY:
             ExpenseService._push_and_set_status(expense)
@@ -98,49 +93,40 @@ class ExpenseService:
 
     @staticmethod
     def update(*, expense, actor, **fields):
+        # `material` is not editable post-create (expenses never link/relink an
+        # existing material). `stock_qty` adjusts the receipt's QOH by the delta.
         allowed = {
             'amount', 'purchased_on', 'description', 'accounting_category',
             'payment_method', 'payment_account_id', 'reference_number',
-            'purchased_by', 'material', 'job',
+            'purchased_by', 'job', 'stock_qty',
         }
         # Frozen while it (or its material) is on an invoice.
         ExpenseService._assert_not_invoiced(expense)
         # Once reimbursed, the money fields are settled (the person was paid).
         ExpenseService._assert_reimbursed_money_unchanged(expense, fields)
-        old_material_id = expense.material_id
+        old_stock_qty = expense.stock_qty
         with transaction.atomic():
             for key, value in fields.items():
                 if key in allowed:
                     setattr(expense, key, value)
 
-            new_material = expense.material
-            # A linked material implies the job; derive it if the expense has none.
-            if new_material and not expense.job_id:
-                expense.job = new_material.job
-            # Moving the expense to another job moves its linked material too, so
-            # the material.job == expense.job consistency rule holds.
-            if new_material and expense.job_id and new_material.job_id != expense.job_id:
-                ExpenseService._move_material_to_job(new_material, expense.job)
-
-            is_new_link = new_material and new_material.pk != old_material_id
-            if is_new_link:
-                ExpenseService._assert_no_cost_clobber(new_material)
+            # A linked consumable material follows a job change so the
+            # material.job == expense.job consistency rule holds (no cost effect).
+            if (expense.material_id and expense.job_id
+                    and expense.material.job_id != expense.job_id):
+                ExpenseService._move_material_to_job(expense.material, expense.job)
 
             expense.full_clean()
             expense.save()
 
-            # Recost: actualize the (now-)linked material's cost; clear/recompute
-            # the material we just unlinked from.
-            if old_material_id and old_material_id != expense.material_id:
-                from apps.inventory.models import Material
-                try:
-                    ExpenseService._recost_after_unlink(
-                        Material.objects.get(pk=old_material_id)
-                    )
-                except Material.DoesNotExist:
-                    pass
-            if expense.material_id:
-                ExpenseService._recost_material_from_expenses(expense.material)
+            # Stock-receipt qty change → adjust QOH by the delta.
+            if expense.stock_pli_id and 'stock_qty' in fields:
+                from apps.inventory.services import InventoryService
+                delta = (expense.stock_qty or Decimal('0.00')) - (old_stock_qty or Decimal('0.00'))
+                if delta != Decimal('0.00'):
+                    InventoryService.receive_stock(
+                        expense.stock_pli, delta,
+                        reason=f'Stock receipt adj (expense {expense.pk})')
 
         if expense.qbo_id:
             ExpenseService._resync(expense)
@@ -197,44 +183,6 @@ class ExpenseService:
                     'unwind the reimbursement first.'
                 )
 
-    @staticmethod
-    def _assert_no_cost_clobber(material):
-        """Linking an expense actualizes the material's cost from what was actually
-        paid. A PLI catalog price is only an *estimate*, so it's fine to overwrite.
-        The one cost we must not silently clobber is a **PO-received** one — the
-        purchase order is the authoritative cost source there."""
-        if material.po_line_item_id and not material.expenses.exists():
-            raise ValidationError({
-                'material': 'This material’s cost comes from a purchase order; '
-                            'link the expense to a different material or leave it '
-                            'job-only.'
-            })
-
-    @staticmethod
-    def _recost_material_from_expenses(material):
-        """Set the material's unit_cost to (sum of linked expense amounts) / qty.
-        Cost lives on the material; this is the document-sourced cost path."""
-        from apps.inventory.services import MaterialService
-        if not material.quantity or material.quantity == Decimal('0.00'):
-            return
-        total = sum((e.amount for e in material.expenses.all()), Decimal('0.00'))
-        new_cost = (total / material.quantity).quantize(Decimal('0.01'))
-        MaterialService.update_pricing(
-            material, unit_cost=new_cost, cost_source='document',
-        )
-
-    @staticmethod
-    def _recost_after_unlink(material):
-        """After an expense detaches: recompute from remaining expenses; if none
-        remain and nothing else backs the cost (no PO line), reset to 0."""
-        from apps.inventory.services import MaterialService
-        if material.expenses.exists():
-            ExpenseService._recost_material_from_expenses(material)
-        elif not material.po_line_item_id:
-            MaterialService.update_pricing(
-                material, unit_cost=Decimal('0.00'), cost_source='document',
-            )
-        # else: PO-backed — leave the cost as-is.
 
     @staticmethod
     def _move_material_to_job(material, new_job):
@@ -294,6 +242,12 @@ class ExpenseService:
         from apps.qbo.services import QBOExpenseSyncService
         if expense.qbo_id and not expense.reimbursement_id:
             QBOExpenseSyncService.void_expense(expense)
+        # Reverse a stock receipt's QOH bump.
+        if expense.stock_pli_id and expense.stock_qty:
+            from apps.inventory.services import InventoryService
+            InventoryService.receive_stock(
+                expense.stock_pli, -expense.stock_qty,
+                reason=f'Stock receipt void (expense {expense.pk})')
         expense.delete()
 
     @staticmethod
@@ -306,19 +260,24 @@ class ExpenseService:
             raise ValidationError(
                 f'Cannot reject an expense in status {expense.status!r}.'
             )
-        materials = list(Material.objects.filter(expenses=expense))
-        for m in materials:
-            if m.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
-                raise ValidationError(
-                    'Cannot reject expense with consumed materials; adjust inventory manually.'
-                )
+        mat = expense.material
+        if mat and mat.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+            raise ValidationError(
+                'Cannot reject expense with consumed materials; adjust inventory manually.'
+            )
         with transaction.atomic():
-            for m in materials:
+            if mat:
                 InventoryService._mutate_earmark(
-                    m.price_list_item, m.job, -m.quantity,
+                    mat.price_list_item, mat.job, -mat.quantity,
                 )
-                InventoryService.reverse_ad_hoc_purchase(m)
-                m.delete()
+                InventoryService.reverse_ad_hoc_purchase(mat)
+                mat.delete()
+                expense.material = None  # drop the now-deleted FK before save
+            # Reverse a stock-receipt's QOH bump.
+            if expense.stock_pli_id and expense.stock_qty:
+                InventoryService.receive_stock(
+                    expense.stock_pli, -expense.stock_qty,
+                    reason=f'Stock receipt void on reject (expense {expense.pk})')
             expense.status = Expense.STATUS_REJECTED
             expense.save(update_fields=['status'])
         return expense

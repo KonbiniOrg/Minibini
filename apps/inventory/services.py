@@ -105,6 +105,23 @@ class InventoryService:
             reason=f'Ad-hoc reverse on job {material.job.job_number}',
         )
 
+    @staticmethod
+    def receive_stock(pli, qty, *, reason=''):
+        """Increase QOH for a material-less stock receipt (an inventoried-PLI
+        expense). No earmark, no Material — the job's consumable draws it down at
+        consumption. Returns the delta applied (0 if not inventoried)."""
+        from django.db.models import F
+        if not pli or not pli.is_inventoried or not qty or qty == Decimal('0.00'):
+            return Decimal('0.00')
+        pli.qty_on_hand = F('qty_on_hand') + qty
+        pli.save(update_fields=['qty_on_hand'])
+        pli.refresh_from_db()
+        InventoryAdjustment.objects.create(
+            price_list_item=pli, quantity_change=qty,
+            reason=reason or 'Stock receipt (expense)',
+        )
+        return qty
+
     # --- PlanMaterial CRUD (worksheet-side) ---
 
     @staticmethod

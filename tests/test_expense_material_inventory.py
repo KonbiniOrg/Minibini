@@ -114,7 +114,7 @@ class ExpenseSubmitPathTest(TestCase):
             qty_on_hand=Decimal('10'),
         )
 
-    def test_submit_inventoried_creates_taskless_material_and_bumps_qoh(self):
+    def test_submit_inventoried_is_stock_receipt(self):
         exp = ExpenseService.submit(
             entered_by=self.user, purchased_by=self.user,
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
@@ -128,13 +128,15 @@ class ExpenseSubmitPathTest(TestCase):
                 'price_list_item_id': self.pli.pk,
             },
         )
-        self.assertEqual(exp.material.job_id, self.job.pk)
-        self.assertIsNone(exp.material.task_id)
-        self.assertEqual(exp.material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        # Inventoried PLI → stock receipt: no consumable material, QOH bumped,
+        # no earmark (cost flows at consumption via the job's own material).
+        self.assertIsNone(exp.material_id)
+        self.assertEqual(exp.stock_pli_id, self.pli.pk)
+        self.assertEqual(exp.stock_qty, Decimal('5'))
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
-        e = Earmark.objects.get(price_list_item=self.pli, job=self.job)
-        self.assertEqual(e.quantity, Decimal('5'))
+        self.assertFalse(Earmark.objects.filter(
+            price_list_item=self.pli, job=self.job).exists())
 
     def test_submit_does_not_create_placeholder_task(self):
         from apps.jobs.models import Task
@@ -151,19 +153,20 @@ class ExpenseSubmitPathTest(TestCase):
         self.assertFalse(Task.objects.filter(job=self.job, name='Materials').exists())
 
 
-class ExpenseRejectCascadeTest(TestCase):
+class ExpenseRejectStockReceiptTest(TestCase):
+    """Rejecting an inventoried (stock-receipt) expense reverses its QOH bump;
+    rejecting a freeform consumable deletes the material; consumed → forbidden."""
+
     def setUp(self):
         contact = Contact.objects.create(
             first_name='Reject', last_name='User',
             email='rjtest@example.com', work_number='555-0300',
         )
         business = Business.objects.create(
-            business_name='Reject Test Business',
-            default_contact=contact,
+            business_name='Reject Test Business', default_contact=contact,
         )
         contact.business = business
         contact.save()
-
         self.cat = AccountingCategory.objects.create(name='c', code='RJCAT1')
         self.user = User.objects.create(username='rj_user')
         self.job = Job.objects.create(job_number='JOB-RJ-1', contact=contact)
@@ -172,7 +175,7 @@ class ExpenseRejectCascadeTest(TestCase):
             qty_on_hand=Decimal('10'),
         )
 
-    def _submit(self, qty=Decimal('3')):
+    def _submit_stock(self, qty=Decimal('3')):
         return ExpenseService.submit(
             entered_by=self.user, purchased_by=self.user,
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
@@ -180,64 +183,34 @@ class ExpenseRejectCascadeTest(TestCase):
             accounting_category=self.cat,
             new_material={
                 'job_id': self.job.pk, 'description': 'x',
-                'quantity': qty, 'price': Decimal('10'),
-                'price_list_item_id': self.pli.pk,
+                'quantity': qty, 'price_list_item_id': self.pli.pk,
             },
         )
 
-    def test_reject_pending_reverses_earmark_qoh_and_deletes_material(self):
-        exp = self._submit()
-        mid = exp.material.pk
-        ExpenseService.reject(expense=exp, actor=self.user)
-        self.assertFalse(Material.objects.filter(pk=mid).exists())
+    def test_reject_reverses_stock_receipt_qoh(self):
+        exp = self._submit_stock()
         self.pli.refresh_from_db()
-        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
-        self.assertFalse(Earmark.objects.filter(
-            price_list_item=self.pli, job=self.job).exists())
+        self.assertEqual(self.pli.qty_on_hand, Decimal('13'))  # 10 + 3
+        ExpenseService.reject(expense=exp, actor=self.user)
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))  # reversed
+        exp.refresh_from_db()
+        self.assertEqual(exp.status, Expense.STATUS_REJECTED)
 
-    def test_reject_forbidden_when_material_consumed(self):
+    def test_reject_forbidden_when_freeform_material_consumed(self):
         from django.core.exceptions import ValidationError
-        exp = self._submit()
-        MaterialService.consume(exp.material)
+        exp = ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('10'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            new_material={
+                'job_id': self.job.pk, 'description': 'freeform',
+                'quantity': Decimal('1'), 'price': Decimal('10')},
+        )
+        MaterialService.consume(exp.material)  # freeform: no QOH effect
         with self.assertRaises(ValidationError):
             ExpenseService.reject(expense=exp, actor=self.user)
-
-    def test_reject_after_full_restock_expense_bound_survives_until_reject(self):
-        exp = self._submit(qty=Decimal('5'))
-        MaterialService.restock(exp.material, Decimal('5'))
-        exp.material.refresh_from_db()
-        # After full restock on expense-bound: Material still exists,
-        # quantity=0, restocked_qty=5 (invariant: quantity+restocked_qty == 5).
-        self.assertTrue(Material.objects.filter(pk=exp.material.pk).exists())
-        self.assertEqual(exp.material.quantity, Decimal('0'))
-        self.assertEqual(exp.material.restocked_qty, Decimal('5'))
-
-    def test_reject_expense_with_partial_restock(self):
-        # Submit: quantity=5, earmark=5, QOH=15 (10 start + 5).
-        exp = self._submit(qty=Decimal('5'))
-        self.pli.refresh_from_db()
-        self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
-        earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
-        self.assertEqual(earmark.quantity, Decimal('5'))
-
-        # Partial restock of 2: quantity=3, restocked_qty=2, earmark=3, QOH=15.
-        MaterialService.restock(exp.material, Decimal('2'))
-        exp.material.refresh_from_db()
-        self.assertEqual(exp.material.quantity, Decimal('3'))
-        self.assertEqual(exp.material.restocked_qty, Decimal('2'))
-        earmark.refresh_from_db()
-        self.assertEqual(earmark.quantity, Decimal('3'))
-        self.pli.refresh_from_db()
-        self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
-
-        # Reject: Material deleted, earmark gone (deducted by quantity=3 -> 0),
-        # QOH reversed by full original purchase (5) -> back to 10.
-        ExpenseService.reject(expense=exp, actor=self.user)
-        self.assertFalse(Material.objects.filter(pk=exp.material.pk).exists())
-        self.pli.refresh_from_db()
-        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
-        self.assertFalse(Earmark.objects.filter(
-            price_list_item=self.pli, job=self.job).exists())
 
 
 class ExpenseRejectNonInventoriedTest(TestCase):

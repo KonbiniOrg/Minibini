@@ -522,6 +522,7 @@ class InvoiceWizardService(BaseWizardService):
         expenses = (
             Expense.objects.filter(job=job, material__isnull=True)
             .exclude(status=Expense.STATUS_REJECTED)
+            .exclude(stock_pli__isnull=False)  # stock receipts are inventory, not billable
             .order_by('pk')
         )
         expense_atoms = []

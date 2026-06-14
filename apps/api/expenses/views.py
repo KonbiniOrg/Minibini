@@ -50,6 +50,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data.copy()
         purchased_by = data.pop('purchased_by', None)
         new_material = data.pop('new_material', None)
+        # Expenses no longer link an existing material; ignore any inbound id.
+        data.pop('material', None)
         try:
             expense = ExpenseService.submit(
                 entered_by=self.request.user,

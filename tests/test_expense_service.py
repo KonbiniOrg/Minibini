@@ -249,7 +249,7 @@ class ExpenseRetrySyncTest(TestCase):
 
 
 class ExpenseJobLinkTest(TestCase):
-    """Job anchor, cost-on-material link/unlink, invoiced-freeze, move-between-jobs."""
+    """Job anchor, own-material creation, stock receipts, freeze, move-between-jobs."""
 
     def setUp(self):
         _seed_job_config()
@@ -265,19 +265,12 @@ class ExpenseJobLinkTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-L1', contact=self.contact)
         self.other_job = Job.objects.create(job_number='JOB-L2', contact=self.contact)
 
-    def _material(self, *, job=None, quantity=Decimal('1.00'), unit_cost=Decimal('0.00')):
-        from apps.inventory.models import Material
-        return Material.objects.create(
-            job=job or self.job, accounting_category=self.cat,
-            description='Steel', quantity=quantity, unit_cost=unit_cost,
-        )
-
-    def _expense(self, *, amount=Decimal('10.00'), job=None, material=None):
+    def _expense(self, *, amount=Decimal('10.00'), job=None, new_material=None):
         return ExpenseService.submit(
             entered_by=self.user, purchased_by=self.user, amount=amount,
             purchased_on=date(2026, 4, 1), accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
-            job=job, material=material,
+            job=job, new_material=new_material,
         )
 
     def test_submit_accepts_job(self):
@@ -290,65 +283,45 @@ class ExpenseJobLinkTest(TestCase):
         exp.refresh_from_db()
         self.assertEqual(exp.job_id, self.other_job.pk)
 
-    def test_link_existing_material_sets_cost(self):
-        mat = self._material(quantity=Decimal('2.00'), unit_cost=Decimal('0.00'))
-        exp = self._expense(amount=Decimal('50.00'))  # material-less, no job
-        ExpenseService.update(expense=exp, actor=self.user, material=mat)
-        mat.refresh_from_db()
-        exp.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('25.00'))  # 50 / 2
-        self.assertEqual(exp.job_id, self.job.pk)          # job derived from material
+    def test_freeform_new_material_uses_entered_cost_no_division(self):
+        # The created material's unit_cost is what the user entered (price),
+        # NOT amount/quantity. amount ($50, tax incl) ≠ qty×unit_cost ($60).
+        exp = self._expense(amount=Decimal('50.00'), new_material={
+            'job_id': self.job.pk, 'description': 'Steel',
+            'quantity': 2, 'price': Decimal('30.00')})
+        self.assertEqual(exp.job_id, self.job.pk)
+        self.assertIsNotNone(exp.material_id)
+        exp.material.refresh_from_db()
+        self.assertEqual(exp.material.unit_cost, Decimal('30.00'))
 
-    def test_link_actualizes_estimated_cost(self):
-        # A material carrying an estimate (e.g. a PLI catalog price) is actualized
-        # by the real expense — linking overwrites the estimate, no error.
-        mat = self._material(quantity=Decimal('1.00'), unit_cost=Decimal('10.00'))
-        exp = self._expense(amount=Decimal('50.00'))
-        ExpenseService.update(expense=exp, actor=self.user, material=mat)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('50.00'))
+    def test_inventoried_pli_becomes_stock_receipt(self):
+        from apps.inventory.models import PriceListItem
+        pli = PriceListItem.objects.create(
+            code='PLY', description='plywood', accounting_category=self.cat,
+            is_inventoried=True, qty_on_hand=Decimal('7.00'))
+        exp = self._expense(amount=Decimal('73.33'), new_material={
+            'job_id': self.job.pk, 'price_list_item_id': pli.pk, 'quantity': 3})
+        self.assertIsNone(exp.material_id)             # no consumable
+        self.assertEqual(exp.stock_pli_id, pli.pk)
+        self.assertEqual(exp.stock_qty, Decimal('3.00'))
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('10.00'))  # 7 + 3
 
-    def test_link_blocked_when_material_is_po_backed(self):
-        from apps.contacts.models import Business
-        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
-        from apps.core.models import Configuration, AppState
-        Configuration.objects.get_or_create(
-            key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
-        AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
-        biz = Business.objects.create(business_name='V', default_contact=self.contact)
-        po = PurchaseOrder.objects.create(business=biz)
-        line = PurchaseOrderLineItem.objects.create(
-            purchase_order=po, description='x', qty=Decimal('1.00'), price=Decimal('7.00'))
-        mat = self._material(quantity=Decimal('1.00'), unit_cost=Decimal('7.00'))
-        mat.po_line_item = line
-        mat.save()
-        exp = self._expense(amount=Decimal('50.00'))
-        with self.assertRaises(ValidationError):
-            ExpenseService.update(expense=exp, actor=self.user, material=mat)
-
-    def test_unlink_clears_expense_sourced_cost(self):
-        mat = self._material(quantity=Decimal('1.00'))
-        exp = self._expense(amount=Decimal('40.00'), material=mat)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('40.00'))
-        ExpenseService.update(expense=exp, actor=self.user, material=None)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('0.00'))
-
-    def test_unlink_recomputes_cost_when_other_expense_remains(self):
-        mat = self._material(quantity=Decimal('1.00'))
-        e2 = self._expense(amount=Decimal('20.00'), material=mat)
-        e1 = self._expense(amount=Decimal('30.00'), material=mat)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('50.00'))  # 20 + 30
-        ExpenseService.update(expense=e1, actor=self.user, material=None)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('20.00'))  # remaining e2
+    def test_stock_receipt_delete_reverses_qoh(self):
+        from apps.inventory.models import PriceListItem
+        pli = PriceListItem.objects.create(
+            code='PLY2', description='p', accounting_category=self.cat,
+            is_inventoried=True, qty_on_hand=Decimal('7.00'))
+        exp = self._expense(amount=Decimal('73.33'), new_material={
+            'job_id': self.job.pk, 'price_list_item_id': pli.pk, 'quantity': 3})
+        ExpenseService.delete(expense=exp, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))  # back to 7
 
     def test_frozen_when_material_on_invoice(self):
         from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
-        mat = self._material(quantity=Decimal('1.00'))
-        exp = self._expense(amount=Decimal('15.00'), material=mat)
+        exp = self._expense(amount=Decimal('15.00'), new_material={
+            'job_id': self.job.pk, 'description': 'm', 'quantity': 1, 'price': Decimal('15.00')})
         inv = Invoice.objects.create(
             job=self.job, invoice_number='INV-FREEZE-1', status=Invoice.STATUS_OPEN,
         )
@@ -358,25 +331,20 @@ class ExpenseJobLinkTest(TestCase):
         )
         InvoiceLineItemSource.objects.create(
             invoice_line_item=li,
-            source_type=InvoiceLineItemSource.SOURCE_MATERIAL, source_pk=mat.pk,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL, source_pk=exp.material_id,
         )
         with self.assertRaises(ValidationError):
             ExpenseService.update(expense=exp, actor=self.user, amount=Decimal('99.00'))
 
     def test_move_material_linked_expense_moves_material_job(self):
         from apps.inventory.models import Material
-        from apps.inventory.services import MaterialService
-        mat = self._material(quantity=Decimal('1.00'))
-        exp = self._expense(amount=Decimal('15.00'), material=mat)
-        MaterialService.consume(mat)  # freeform consume: no QOH effect
-        mat.refresh_from_db()
-        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+        exp = self._expense(amount=Decimal('15.00'), new_material={
+            'job_id': self.job.pk, 'description': 'm', 'quantity': 1, 'price': Decimal('15.00')})
         ExpenseService.update(expense=exp, actor=self.user, job=self.other_job)
-        mat.refresh_from_db()
         exp.refresh_from_db()
+        exp.material.refresh_from_db()
         self.assertEqual(exp.job_id, self.other_job.pk)
-        self.assertEqual(mat.job_id, self.other_job.pk)
-        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+        self.assertEqual(exp.material.job_id, self.other_job.pk)
 
 
 class ExpenseInvoiceFreezeTest(TestCase):
@@ -451,51 +419,3 @@ class ExpenseReimbursedFreezeTest(TestCase):
     def test_delete_blocked(self):
         with self.assertRaises(ValidationError):
             ExpenseService.delete(expense=self.exp, actor=self.user)
-
-
-class ExpenseUnlinkCostRestoreTest(TestCase):
-    """What a material's cost reverts to when its expense is unlinked."""
-
-    def setUp(self):
-        _seed_job_config()
-        from apps.contacts.models import Contact
-        from apps.jobs.models import Job
-        self.user = User.objects.create_user(username='ur', password='x')
-        self.cat = AccountingCategory.objects.create(code='UR', name='ur')
-        self.contact = Contact.objects.create(first_name='T', last_name='C', email='u@t.com')
-        self.job = Job.objects.create(job_number='JOB-UR-1', contact=self.contact)
-
-    def _expense(self, amount, material=None):
-        return ExpenseService.submit(
-            entered_by=self.user, purchased_by=self.user, amount=amount,
-            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
-            payment_method=Expense.PAYMENT_METHOD_PERSONAL, material=material)
-
-    def test_pli_material_restores_catalog_cost_on_unlink(self):
-        from apps.inventory.models import PriceListItem, Material
-        pli = PriceListItem.objects.create(
-            code='P-UR', description='p', purchase_price=Decimal('3.00'),
-            accounting_category=self.cat)
-        mat = Material.objects.create(
-            job=self.job, accounting_category=self.cat, description='m',
-            quantity=Decimal('1.00'), price_list_item=pli)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('3.00'))   # PLI catalog estimate
-        exp = self._expense(Decimal('25.00'), material=mat)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('25.00'))  # actualized by expense
-        ExpenseService.update(expense=exp, actor=self.user, material=None)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('3.00'))   # ← catalog cost restored?
-
-    def test_freeform_material_resets_to_zero_on_unlink(self):
-        from apps.inventory.models import Material
-        mat = Material.objects.create(
-            job=self.job, accounting_category=self.cat, description='m',
-            quantity=Decimal('1.00'))
-        exp = self._expense(Decimal('25.00'), material=mat)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('25.00'))
-        ExpenseService.update(expense=exp, actor=self.user, material=None)
-        mat.refresh_from_db()
-        self.assertEqual(mat.unit_cost, Decimal('0.00'))

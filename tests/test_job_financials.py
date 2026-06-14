@@ -143,6 +143,23 @@ class SpentTests(FixtureTestCase):
         self.assertEqual(compute_job_financials(self.job)['spent'],
                          Decimal('0.00'))
 
+    def test_excludes_stock_receipt_expense(self):
+        # A stock-receipt expense (inventoried PLI) is inventory, costed at
+        # consumption — its amount is NOT in spent at purchase.
+        from apps.jobs.financials import compute_job_financials
+        from apps.inventory.models import PriceListItem
+        pli = PriceListItem.objects.create(
+            code='SR-FIN', description='p', accounting_category=self.cat,
+            is_inventoried=True)
+        Expense.objects.create(
+            entered_by=self.user, amount=Decimal('100.00'),
+            purchased_on=date.today(), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='ACC', job=self.job,
+            stock_pli=pli, stock_qty=Decimal('3.00'))
+        self.assertEqual(compute_job_financials(self.job)['spent'],
+                         Decimal('0.00'))
+
     def test_sums_expenses_excluding_rejected(self):
         from apps.jobs.financials import compute_job_financials
         mat = self._material(1, 0, Material.CONSUMPTION_STATE_PENDING)

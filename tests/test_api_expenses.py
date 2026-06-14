@@ -338,35 +338,3 @@ class ExpenseJobFieldTest(TestCase):
         self.assertEqual(r.status_code, 200)
         job_ids = {row['job_id'] for row in r.json()['results']}
         self.assertEqual(job_ids, {self.job.pk})
-
-
-class ExpenseLinkCostedMaterialTest(TestCase):
-    """Regression: linking an expense to a material that already has a (catalog)
-    cost must succeed (actualize), not 400."""
-
-    def setUp(self):
-        from apps.contacts.models import Contact
-        from apps.jobs.models import Job
-        from apps.inventory.models import Material
-        self.client_http = Client()
-        self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
-        self.user = User.objects.create_user(username='w', password='x')
-        self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
-        self.job = Job.objects.create(job_number='JOB-LC-1', contact=self.contact)
-        self.material = Material.objects.create(
-            job=self.job, accounting_category=self.cat, description='Steel',
-            quantity=Decimal('2.00'), unit_cost=Decimal('3.00'))  # catalog estimate
-        self.client_http.force_login(self.user)
-
-    def test_link_costed_material_returns_201_and_actualizes(self):
-        from apps.inventory.models import Material
-        r = self.client_http.post('/api/expenses/', data={
-            'amount': '50.00', 'purchased_on': '2026-04-01',
-            'accounting_category': self.cat.pk,
-            'payment_method': Expense.PAYMENT_METHOD_PERSONAL,
-            'purchased_by': self.user.pk,
-            'job': self.job.pk, 'material': self.material.pk,
-        }, content_type='application/json')
-        self.assertEqual(r.status_code, 201, r.content)
-        self.material.refresh_from_db()
-        self.assertEqual(self.material.unit_cost, Decimal('25.00'))  # 50 / 2
