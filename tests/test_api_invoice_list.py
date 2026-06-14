@@ -33,7 +33,7 @@ class InvoiceListAPITest(BaseTestCase):
 
     def test_list_returns_total_paid_balance_and_customer(self):
         inv = self._invoice(qty='2', price='50.00', paid='30.00')
-        resp = self.client.get('/api/invoices/?status=all')
+        resp = self.client.get('/api/invoices/?summary=true&status=all')
         self.assertEqual(resp.status_code, 200)
         row = next(r for r in resp.data['results'] if r['invoice_id'] == inv.invoice_id)
         self.assertEqual(row['total'], '100.00')
@@ -46,7 +46,7 @@ class InvoiceListAPITest(BaseTestCase):
 
     def test_null_qbo_amount_paid_treated_as_zero(self):
         inv = self._invoice(qty='1', price='40.00', paid=None)
-        resp = self.client.get('/api/invoices/?status=all')
+        resp = self.client.get('/api/invoices/?summary=true&status=all')
         row = next(r for r in resp.data['results'] if r['invoice_id'] == inv.invoice_id)
         self.assertEqual(row['amount_paid'], '0.00')
         self.assertEqual(row['balance'], '40.00')
@@ -56,7 +56,7 @@ class InvoiceListAPITest(BaseTestCase):
         partly = self._invoice(status=Invoice.STATUS_PARTLY_PAID)
         draft = self._invoice(status=Invoice.STATUS_DRAFT, sent_days_ago=None)
         paid = self._invoice(status=Invoice.STATUS_PAID)
-        resp = self.client.get('/api/invoices/')  # no status param
+        resp = self.client.get('/api/invoices/?summary=true')  # no status param
         ids = {r['invoice_id'] for r in resp.data['results']}
         self.assertIn(open_inv.invoice_id, ids)
         self.assertIn(partly.invoice_id, ids)
@@ -66,7 +66,7 @@ class InvoiceListAPITest(BaseTestCase):
     def test_status_paid_preset(self):
         paid = self._invoice(status=Invoice.STATUS_PAID)
         open_inv = self._invoice(status=Invoice.STATUS_OPEN)
-        resp = self.client.get('/api/invoices/?status=paid')
+        resp = self.client.get('/api/invoices/?summary=true&status=paid')
         ids = {r['invoice_id'] for r in resp.data['results']}
         self.assertIn(paid.invoice_id, ids)
         self.assertNotIn(open_inv.invoice_id, ids)
@@ -75,7 +75,7 @@ class InvoiceListAPITest(BaseTestCase):
         # earlier sent_date => earlier due_date => most overdue => first
         old = self._invoice(sent_days_ago=60)
         recent = self._invoice(sent_days_ago=5)
-        resp = self.client.get('/api/invoices/?status=open')
+        resp = self.client.get('/api/invoices/?summary=true&status=open')
         ordered = [r['invoice_id'] for r in resp.data['results']]
         self.assertLess(ordered.index(old.invoice_id),
                         ordered.index(recent.invoice_id))
@@ -89,7 +89,7 @@ class InvoiceListAPITest(BaseTestCase):
         contact.save()
         inv = self._invoice(status=Invoice.STATUS_OPEN)
         resp = self.client.get(
-            f'/api/invoices/?status=all&business={business.business_id}')
+            f'/api/invoices/?summary=true&status=all&business={business.business_id}')
         ids = {r['invoice_id'] for r in resp.data['results']}
         self.assertIn(inv.invoice_id, ids)
 
@@ -97,6 +97,6 @@ class InvoiceListAPITest(BaseTestCase):
         contact = self.job.contact
         inv = self._invoice(status=Invoice.STATUS_OPEN)
         resp = self.client.get(
-            f'/api/invoices/?status=all&contact={contact.contact_id}')
+            f'/api/invoices/?summary=true&status=all&contact={contact.contact_id}')
         ids = {r['invoice_id'] for r in resp.data['results']}
         self.assertIn(inv.invoice_id, ids)

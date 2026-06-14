@@ -24,7 +24,7 @@
     loading = true;
     error = null;
     try {
-      let url = `/api/bills/?page=${page}&status=${statusFilter}&ordering=${ordering}`;
+      let url = `/api/bills/?summary=true&page=${page}&status=${statusFilter}&ordering=${ordering}`;
       if (dueFrom) url += `&due_from=${dueFrom}`;
       if (dueTo) url += `&due_to=${dueTo}`;
       url += customerParam();

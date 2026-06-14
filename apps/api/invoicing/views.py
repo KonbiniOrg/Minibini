@@ -63,8 +63,15 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         },
     }
 
+    def _summary_mode(self):
+        """The financials A/R list opts into lightweight summary mode with
+        ?summary=true. Without it, the list endpoint keeps its original
+        contract (full serializer with line_items, all statuses) for
+        pre-existing consumers like the Job overview (/api/invoices/?job=)."""
+        return self.request.query_params.get('summary') in ('true', '1')
+
     def get_serializer_class(self):
-        if self.action == 'list':
+        if self.action == 'list' and self._summary_mode():
             return InvoiceSummarySerializer
         return InvoiceSerializer
 
@@ -74,10 +81,11 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         if job:
             qs = qs.filter(job_id=job)
 
-        if self.action != 'list':
+        if not (self.action == 'list' and self._summary_mode()):
             return qs
 
-        # List-only: select_related to avoid N+1 from InvoiceSummarySerializer
+        # Summary (financials A/R) mode only: select_related to avoid N+1 from
+        # InvoiceSummarySerializer
         qs = qs.select_related('job', 'job__contact', 'job__contact__business')
 
         qs = qs.annotate(

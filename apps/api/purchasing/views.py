@@ -420,8 +420,16 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
+    def _summary_mode(self):
+        """The financials A/P list opts into lightweight summary mode with
+        ?summary=true. Without it, the list endpoint keeps its original
+        contract (full serializer with line_items, all statuses) for
+        pre-existing consumers (Business/Contact detail bill panels, the
+        email-associate-bill picker)."""
+        return self.request.query_params.get('summary') in ('true', '1')
+
     def get_serializer_class(self):
-        if self.action == 'list':
+        if self.action == 'list' and self._summary_mode():
             return BillSummarySerializer
         return BillSerializer
 
@@ -436,10 +444,11 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         if contact:
             qs = qs.filter(contact_id=contact)
 
-        if self.action != 'list':
+        if not (self.action == 'list' and self._summary_mode()):
             return qs
 
-        # List-only: select_related to avoid N+1 from BillSummarySerializer
+        # Summary (financials A/P) mode only: select_related to avoid N+1 from
+        # BillSummarySerializer
         qs = qs.select_related('business', 'contact', 'purchase_order')
 
         # List-only: annotations, status presets, due-date range, ordering

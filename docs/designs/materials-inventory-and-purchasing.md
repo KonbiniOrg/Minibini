@@ -937,8 +937,10 @@ Bill routes live under the **Financials** sidebar section (gated on `can_manage_
 
 **Serializers:**
 
-- `BillSummarySerializer` — lightweight list serializer; exposes `vendor_name`, `po_number`, `status`, dates, total, and coarse balance.
-- `BillSerializer` — full detail/create/update serializer; includes all header fields plus line items, total, coarse balance, and `can_manage` flag.
+- `BillSummarySerializer` — lightweight list serializer; exposes `vendor_name`, `po_number`, `purchase_order`, `status`, dates, total, and coarse balance.
+- `BillSerializer` — full detail/create/update serializer; includes all header fields plus line items, total, coarse balance.
+
+**`?summary=true` opt-in (dual contract).** Like the invoice list, `BillViewSet` only uses `BillSummarySerializer` + the default-open status filter + presets/due-range/ordering in **summary mode** (the financials A/P list page calls `GET /api/bills/?summary=true`). **Without** `summary=true`, the list endpoint keeps its original contract — the full `BillSerializer` (with `line_items`) and **all** statuses — preserving pre-existing consumers: the **Business detail** (`?business=`) and **Contact detail** (`?contact=`) bill panels and the **email-associate-bill** picker. (`?business=`/`?contact=` filtering applies in both modes.)
 
 Components in `frontend/src/components/purchaseorders/`:
 
