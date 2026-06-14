@@ -478,6 +478,8 @@ The previous `can_approve_expenses` permission atom is retired. `apps/api/permis
 
 `entered_by` is always the logged-in user. `purchased_by` is who physically made the purchase. Same person for self-submissions; different when an admin enters expenses on behalf of someone (e.g., from a pile of receipts). There is no `submitted_by` or `approved_by`.
 
+In the UI, `ExpenseForm` shows the **Purchased by** picker (defaulting to the current user) only to `can_manage_financials` holders — entering an expense *for someone else* is a financials capability. Everyone else's expense is implicitly their own (the picker is hidden). The task-list "Expenses (no material)" table shows a Purchased-by column.
+
 ### Reimbursement link
 
 `Expense.reimbursement` is null until the expense is batched. `ReimbursementService.create_batch` flips `submitted` → `reimbursed` and sets the FK. Cascade rules: a Reimbursement cannot be deleted while expenses point at it (PROTECT); the `delete` service path clears the FK first.
@@ -533,8 +535,8 @@ See `docs/designs/quickbooks-integration.md`. One `Purchase` per batch, with one
 
 | Method | Responsibility |
 |---|---|
-| `submit(*, entered_by, payment_method, amount, purchased_on, accounting_category, description='', payment_account_id='', reference_number='', purchased_by=None, material=None, new_material=None) -> Expense` | Atomic create. Inline-creates a Material via `MaterialService.create_on_job` if `new_material` is provided. Calls `_push_and_set_status` for company-paid (sets `synced` or `sync_failed`); leaves personal as `submitted`. |
-| `update(*, expense, actor, **fields) -> Expense` | Whitelist of editable fields: amount, purchased_on, description, accounting_category, payment_method, payment_account_id, reference_number, purchased_by, material. Calls `_resync` if `expense.qbo_id` is set. |
+| `submit(*, entered_by, payment_method, amount, purchased_on, accounting_category, description='', payment_account_id='', reference_number='', purchased_by=None, material=None, new_material=None, job=None) -> Expense` | Atomic create. A linked material derives `job` when not given. Inline-creates a Material via `MaterialService.create_on_job` if `new_material` is provided. Calls `_push_and_set_status` for company-paid (sets `synced` or `sync_failed`); leaves personal as `submitted`. |
+| `update(*, expense, actor, **fields) -> Expense` | Whitelist of editable fields: amount, purchased_on, description, accounting_category, payment_method, payment_account_id, reference_number, purchased_by, material, **job**. Guards: invoiced-freeze and reimbursed-money lock (above); cost link/unlink and job-move side effects. Calls `_resync` if `expense.qbo_id` is set. |
 | `delete(*, expense, actor)` | Voids the QBO Purchase if `qbo_id` and not in a batch. Hard-deletes the row. (Reimbursed expenses' QBO state is owned by the batch, so this path doesn't void QBO for them.) |
 | `reject(*, expense, actor) -> Expense` | Personal + `submitted` only. Unwinds materials (earmark, ad-hoc receipt, delete) — refuses if any material is `consumed`. Sets `STATUS_REJECTED`. |
 | `retry_sync(*, expense, actor) -> Expense` | `sync_failed` only. Re-pushes via `_push_and_set_status`. |

@@ -361,12 +361,13 @@
     <div class="job-expenses">
       <h3>Expenses (no material)</h3>
       <table class="data-table">
-        <thead><tr><th>Description</th><th>Category</th><th class="text-right">Amount</th></tr></thead>
+        <thead><tr><th>Description</th><th>Category</th><th>Purchased by</th><th class="text-right">Amount</th></tr></thead>
         <tbody>
           {#each jobExpenses as exp (exp.id)}
             <tr>
               <td>{exp.description || '(expense)'}</td>
               <td>{exp.accounting_category_name || '—'}</td>
+              <td>{exp.purchased_by_name || '—'}</td>
               <td class="text-right">{exp.amount != null ? `$${Number(exp.amount).toFixed(2)}` : '—'}</td>
             </tr>
           {/each}

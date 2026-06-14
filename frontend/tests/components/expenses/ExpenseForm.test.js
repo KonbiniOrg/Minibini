@@ -88,6 +88,24 @@ describe('ExpenseForm', () => {
     }));
   });
 
+  it('hides the purchased-by pulldown without financials permission', async () => {
+    user.set({ id: 2 }); // no atoms
+    const { findByRole, queryByLabelText } = render(
+      ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+    await findByRole('option', { name: 'Meals' });
+    expect(queryByLabelText(/Purchased by/)).toBeNull();
+  });
+
+  it('shows the purchased-by pulldown for a financials user, defaulting to self', async () => {
+    user.set({ id: 2, permissions: ['can_manage_financials'] });
+    const { findByLabelText, findByRole } = render(
+      ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });
+    const sel = await findByLabelText(/Purchased by/);
+    await findByRole('option', { name: /Sam/ }); // workers loaded
+    expect(sel).toBeInTheDocument();
+    expect(sel.value).toBe('2'); // current user
+  });
+
   it('surfaces field errors from the server', async () => {
     api.post.mockRejectedValue({ data: { amount: ['Too high'] } });
     const { getByLabelText, findByRole, getByRole, findByText } = render(ExpenseForm, { props: { onSaved: vi.fn(), onCancel: vi.fn() } });

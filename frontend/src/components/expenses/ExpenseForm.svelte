@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user as currentUser } from '../../stores/auth.js';
+  import { canManageFinancials } from '../../stores/permissions.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import MaterialPicker from './MaterialPicker.svelte';
   import JobPicker from '../JobPicker.svelte';
@@ -191,7 +192,7 @@
     </p>
   {/if}
 
-  {#if payment_method === 'personal' && !lockPurchasedByToSelf}
+  {#if payment_method === 'personal' && !lockPurchasedByToSelf && $canManageFinancials}
     <p>
       <label for="ef-purchby"><strong>Purchased by *</strong></label><br>
       <select id="ef-purchby" bind:value={purchased_by}>
