@@ -502,3 +502,12 @@ IMAP-SMTP machinery and tend to be worked together.
   bypasses Model.save()" rule. _Done when:_ cancel routes through a service method that loads the invoice and
   calls `.save()` (or otherwise invokes the completion gate), with a test that a cancelled last-invoice on an
   all-shipped job completes the job.
+
+- **Reimbursement QBO push fails consistently with an error.** — _added 2026-06-14_
+  Surfaced during Expenses UI testing: creating a `Reimbursement` batch (`ReimbursementService.create_batch`
+  → `QBOExpenseSyncService.push_reimbursement`) fails on the QBO push, leaving the batch in `sync_failed`
+  every time. The DB commit stands (expenses still flip to `reimbursed`), but the QBO sync never succeeds.
+  Error text not yet captured here — paste it in when reproducing. Could be env-only (QBO connection/
+  credentials in this dev env) or a real defect in the reimbursement push payload; needs triage to tell which.
+  _Done when:_ the push succeeds against a connected QBO sandbox, or the failure is root-caused to an env/config
+  issue and documented (with the retry path via `ReimbursementService.retry_sync` confirmed working).
