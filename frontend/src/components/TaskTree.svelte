@@ -23,8 +23,21 @@
     onRestockMaterial = () => {},
     onDrawMoreMaterial = () => {},
     onMoveMaterial = () => {},
+    expenses = [],
+    onEditExpense = () => {},
     selectedTaskId = $bindable(null),
   } = $props();
+
+  // Expenses that created a material show nested under it; material-less
+  // expenses (service costs / stock receipts) show at job level.
+  const expenseByMaterial = $derived.by(() => {
+    const map = {};
+    for (const e of (expenses || [])) {
+      if (e.material) map[e.material] = e;
+    }
+    return map;
+  });
+  const looseExpenses = $derived((expenses || []).filter((e) => !e.material));
 
   function taskTotalInfo(task) {
     // Prefer the live computed_charge (driven by actuals: bleps for elapsed_time,
@@ -137,6 +150,30 @@
       || (mat.is_expense_bound && Number(mat.quantity) === 0);
   }
 </script>
+
+{#snippet expenseRow(exp, deep)}
+  <tr class="expense-row">
+    {#if !readonly && !jobLocked}<td class="move-cell"></td>{/if}
+    <td class={deep ? 'indent-2' : 'indent'}>
+      <span class="expense-marker">$</span> {exp.description || '(expense)'}
+      {#if exp.purchased_by_name}<small class="dim">· {exp.purchased_by_name}</small>{/if}
+    </td>
+    {#if showAssignee}<td></td>{/if}
+    <td></td>
+    {#if showStatus}<td></td>{/if}
+    <td class="text-right">-</td>
+    <td class="text-right">-</td>
+    <td class="text-right">-</td>
+    <td></td>
+    <td></td>
+    <td class="text-right">{fmt(exp.amount)}</td>
+    {#if !readonly}
+      <td class="actions-cell">
+        <button type="button" onclick={() => onEditExpense(exp)}>edit</button>
+      </td>
+    {/if}
+  </tr>
+{/snippet}
 
 <table class="data-table task-tree-table">
   <thead>
@@ -330,6 +367,18 @@
             <td class="actions-cell"></td>
           {/if}
         </tr>
+        {#if expenseByMaterial[mat.material_id]}
+          {@render expenseRow(expenseByMaterial[mat.material_id], true)}
+        {/if}
+      {/each}
+    {/if}
+
+    {#if looseExpenses.length}
+      <tr class="job-materials-header">
+        <td colspan={colCount}><strong>Expenses</strong></td>
+      </tr>
+      {#each looseExpenses as exp (exp.id)}
+        {@render expenseRow(exp, false)}
       {/each}
     {/if}
   </tbody>
@@ -359,6 +408,8 @@
   .subtask-row { background: #f0f9ff; }
   .material-row { background: #fefce8; }
   .material-row.consumed { color: #9ca3af; }
+  .expense-row { background: #f0fdf4; }
+  .expense-marker { color: #166534; font-weight: 600; margin-right: 4px; }
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
   .job-materials-header td { background: #fef9c3; padding-top: 8px; }
 

@@ -27,6 +27,11 @@
 
   let materialModalOpen = $state(false);
   let expenseModalOpen = $state(false);
+  let editingExpense = $state(null);
+  function openEditExpense(exp) {
+    editingExpense = exp;
+    expenseModalOpen = true;
+  }
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
@@ -57,7 +62,7 @@
         const expData = await api.get(`/api/expenses/?job=${params.id}`);
         // Material-less expenses surface at the job level (material-linked ones
         // are represented by their material in the tree).
-        jobExpenses = (expData.results ?? expData).filter(e => !e.material);
+        jobExpenses = (expData.results ?? expData);
       } catch (e) {
         jobExpenses = [];
       }
@@ -328,7 +333,7 @@
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
       <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
-      <button type="button" onclick={() => { expenseModalOpen = true; }}>Add Expense</button>
+      <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
     {#if job?.can_manage}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
@@ -354,27 +359,10 @@
     onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
     onCancelTask={handleCancelTask}
     onMoveMaterial={handleMoveMaterial}
+    expenses={jobExpenses}
+    onEditExpense={openEditExpense}
     bind:selectedTaskId
   />
-
-  {#if jobExpenses.length > 0}
-    <div class="job-expenses">
-      <h3>Expenses (no material)</h3>
-      <table class="data-table">
-        <thead><tr><th>Description</th><th>Category</th><th>Purchased by</th><th class="text-right">Amount</th></tr></thead>
-        <tbody>
-          {#each jobExpenses as exp (exp.id)}
-            <tr>
-              <td>{exp.description || '(expense)'}</td>
-              <td>{exp.accounting_category_name || '—'}</td>
-              <td>{exp.purchased_by_name || '—'}</td>
-              <td class="text-right">{exp.amount != null ? `$${Number(exp.amount).toFixed(2)}` : '—'}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
 
   <!-- Modals -->
   <WorkItemForm
@@ -402,9 +390,10 @@
 
   <ExpenseModal
     open={expenseModalOpen}
+    expense={editingExpense}
     initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
-    onSaved={() => { expenseModalOpen = false; loadJob(); }}
-    onClose={() => { expenseModalOpen = false; }}
+    onSaved={() => { expenseModalOpen = false; editingExpense = null; loadJob(); }}
+    onClose={() => { expenseModalOpen = false; editingExpense = null; }}
   />
 
   <WorkItemForm
