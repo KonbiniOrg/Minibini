@@ -121,8 +121,27 @@ class SpentTests(FixtureTestCase):
             entered_by=self.user, amount=Decimal(str(amount)),
             purchased_on=date.today(), accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
-            payment_account_id='ACC', material=material, status=status,
+            payment_account_id='ACC',
+            job=material.job if material else self.job,
+            material=material, status=status,
         )
+
+    def test_includes_material_less_job_expense(self):
+        from apps.jobs.financials import compute_job_financials
+        self._expense(40)  # material-less, attributed directly to self.job
+        self.assertEqual(compute_job_financials(self.job)['spent'],
+                         Decimal('40.00'))
+
+    def test_excludes_overhead_expense(self):
+        from apps.jobs.financials import compute_job_financials
+        Expense.objects.create(
+            entered_by=self.user, amount=Decimal('99.00'),
+            purchased_on=date.today(), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='ACC', job=None, material=None,
+        )
+        self.assertEqual(compute_job_financials(self.job)['spent'],
+                         Decimal('0.00'))
 
     def test_sums_expenses_excluding_rejected(self):
         from apps.jobs.financials import compute_job_financials
@@ -220,7 +239,7 @@ class InvoicedAndProfitTests(FixtureTestCase):
             entered_by=self.user, amount=Decimal('200'),
             purchased_on=date.today(), accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
-            payment_account_id='ACC',
+            payment_account_id='ACC', job=self.job,
             material=Material.objects.create(
                 job=self.job, accounting_category=self.cat, description='m',
                 quantity=Decimal('1'), unit_cost=Decimal('0'),

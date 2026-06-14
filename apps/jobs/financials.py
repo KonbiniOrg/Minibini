@@ -92,7 +92,9 @@ def _labor_cost(job):
 def _spent(job):
     """Cash outlay + approximate labor.
 
-    = expenses billed to the job (excluding rejected)
+    = all non-rejected expenses attributed to the job (Expense.job), by amount —
+      this covers both material-linked expenses and material-less ones (e.g. a
+      shipping fee); overhead expenses (Expense.job is null) are excluded
     + consumed materials with no linked expense, at cost (quantity × unit_cost)
     + labor cost.
 
@@ -104,7 +106,7 @@ def _spent(job):
     from apps.inventory.models import Material
 
     expenses_total = Expense.objects.filter(
-        material__job=job,
+        job=job,
     ).exclude(
         status=Expense.STATUS_REJECTED,
     ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0')
