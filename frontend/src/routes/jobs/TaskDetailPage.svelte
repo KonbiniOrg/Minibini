@@ -12,7 +12,6 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import LinkifiedText from '../../components/LinkifiedText.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
-  import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
@@ -35,7 +34,6 @@
   let materials = $state([]);
   let categories = $state([]);
   let matModalOpen = $state(false);
-  let expenseModalOpen = $state(false);
   let matModalMode = $state('create');
   let matModalMaterial = $state(null);
 
@@ -421,12 +419,7 @@
     <p>No materials.</p>
   {/if}
   {#if !taskIsTerminal}
-    <p>
-      <button type="button" onclick={openAddMaterial}>Add Material</button>
-      {#if job}
-        <button type="button" onclick={() => { expenseModalOpen = true; }}>Add Expense</button>
-      {/if}
-    </p>
+    <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
   {/if}
 
   <MaterialModal
@@ -437,13 +430,6 @@
     {categories}
     onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
     onClose={handleMatModalClose}
-  />
-
-  <ExpenseModal
-    open={expenseModalOpen}
-    initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
-    onSaved={() => { expenseModalOpen = false; }}
-    onClose={() => { expenseModalOpen = false; }}
   />
 
   <!-- Subtasks section -->

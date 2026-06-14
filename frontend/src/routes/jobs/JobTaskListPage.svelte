@@ -4,6 +4,7 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
+  import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
 
@@ -25,6 +26,7 @@
   let taskModalTask = $state(null);
 
   let materialModalOpen = $state(false);
+  let expenseModalOpen = $state(false);
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
@@ -326,6 +328,7 @@
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
       <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      <button type="button" onclick={() => { expenseModalOpen = true; }}>Add Expense</button>
     {/if}
     {#if job?.can_manage}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
@@ -394,6 +397,13 @@
     {categories}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
+  />
+
+  <ExpenseModal
+    open={expenseModalOpen}
+    initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
+    onSaved={() => { expenseModalOpen = false; loadJob(); }}
+    onClose={() => { expenseModalOpen = false; }}
   />
 
   <WorkItemForm
