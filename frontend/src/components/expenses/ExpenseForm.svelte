@@ -3,6 +3,7 @@
   import { user as currentUser } from '../../stores/auth.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import MaterialPicker from './MaterialPicker.svelte';
+  import JobPicker from '../JobPicker.svelte';
 
   let {
     // Optional: pass an existing expense to edit. If null, it's a create form.
@@ -28,6 +29,14 @@
   let purchased_by = $state(expense?.purchased_by || $currentUser?.id || null);
   let material = $state(expense?.material || null);
   let newMaterial = $state(null);
+
+  // Job is the cost anchor. JobPicker emits { job_id, job_number }.
+  let jobSel = $state(
+    expense?.job
+      ? { job_id: expense.job, job_number: expense.job_number }
+      : null
+  );
+  let jobId = $derived(jobSel?.job_id ?? null);
 
   // Compound "paid by" select value: "personal" or "company:<account_id>"
   let paidByValue = $state(
@@ -89,6 +98,7 @@
         payment_account_id: payment_method === 'company' ? payment_account_id : '',
         reference_number,
         purchased_by: payment_method === 'personal' ? purchased_by : (purchased_by || null),
+        job: jobId,
         material: material,
       };
 
@@ -97,7 +107,7 @@
       if (newMaterial) {
         payload.material = null;
         payload.new_material = {
-          job_id: newMaterial.job_id,
+          job_id: jobId,
           description: newMaterial.description || description,
           price: amount,
         };
@@ -190,7 +200,19 @@
     {#each fieldErr('purchased_by') as msg}<p><em>{msg}</em></p>{/each}
   {/if}
 
-  <MaterialPicker bind:materialId={material} bind:newMaterial={newMaterial} defaultDescription={description} defaultAmount={amount} />
+  <p>
+    <label for="ef-job"><strong>Job</strong> (leave blank for overhead)</label><br>
+    <JobPicker bind:value={jobSel} />
+  </p>
+  {#each fieldErr('job') as msg}<p><em>{msg}</em></p>{/each}
+
+  <MaterialPicker
+    jobId={jobId}
+    bind:materialId={material}
+    bind:newMaterial={newMaterial}
+    defaultDescription={description}
+    defaultAmount={amount}
+  />
 
   {#each fieldErr('non_field_errors') as msg}<p><em>{msg}</em></p>{/each}
 
