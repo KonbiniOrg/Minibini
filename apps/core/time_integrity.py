@@ -57,13 +57,16 @@ def unenclosed_bleps_for_shift(user, shift_start, shift_end, exclude_shift=None,
 
 def enclosing_shift_for_blep(user, blep_start, blep_end, exclude_blep=None):
     """Return a Shift of `user` that fully encloses [blep_start, blep_end], or None.
-    Only closed shifts can enclose (an open shift has no end yet)."""
+
+    A closed shift encloses when start <= blep_start and end >= blep_end. An
+    open/ongoing shift (end_time is None) is still running, so its end is
+    effectively unbounded — it encloses any blep starting at/after its start
+    (a blep's end can never be in the future). This mirrors the open-shift
+    handling in unenclosed_bleps_for_shift."""
+    from django.db.models import Q
     return (
-        user.shifts.filter(
-            end_time__isnull=False,
-            start_time__lte=blep_start,
-            end_time__gte=blep_end,
-        )
+        user.shifts.filter(start_time__lte=blep_start)
+        .filter(Q(end_time__isnull=True) | Q(end_time__gte=blep_end))
         .order_by('start_time')
         .first()
     )
