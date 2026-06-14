@@ -511,3 +511,20 @@ IMAP-SMTP machinery and tend to be worked together.
   credentials in this dev env) or a real defect in the reimbursement push payload; needs triage to tell which.
   _Done when:_ the push succeeds against a connected QBO sandbox, or the failure is root-caused to an env/config
   issue and documented (with the retry path via `ReimbursementService.retry_sync` confirmed working).
+
+- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
+  An expense is single-mode (cost OR stock receipt) and records one purchased item.
+  Real corner case: on one trip a worker buys 3 sheets of an **inventoried** PLI (the
+  shortfall) **and** a special **non-PLI finish** the job needs. If they record the
+  inventoried item, the expense becomes a stock receipt — its `amount` is treated as
+  inventory (cost-at-consumption, excluded from `_spent`), so the finish's cost is
+  effectively **dropped** (absorbed into the amount as if it were tax/fee). If they
+  record the finish instead, the plywood never hits QOH and the task stays blocked.
+  Today the workaround is to record **two separate expenses** (one stock receipt, one
+  cost), but nothing surfaces that, so the cost can silently vanish. Not super likely,
+  but real. See `docs/plans/2026-06-14-expenses-cost-model-redesign.md` (single-mode
+  decision) and the deferred many-materials/line-item direction.
+  _Done when:_ either an expense supports multiple purchased items with per-item mode
+  handling (inventoried rows → receipts, cost rows → job cost), or the form detects a
+  mixed receipt and prompts the user to split it — so a non-inventory cost can never be
+  silently swallowed by a stock receipt.
