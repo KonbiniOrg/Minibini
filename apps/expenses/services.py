@@ -15,10 +15,12 @@ class ExpenseService:
     @staticmethod
     def submit(*, entered_by, payment_method, amount, purchased_on, accounting_category,
                description='', payment_account_id='', reference_number='',
-               purchased_by=None, material=None, new_material=None):
+               purchased_by=None, material=None, new_material=None, job=None):
+        created_new_material = False
         with transaction.atomic():
             # If new_material info is provided, create the material atomically
             if new_material and not material:
+                created_new_material = True
                 from apps.jobs.models import Job
                 from apps.inventory.models import PriceListItem
                 from apps.inventory.services import InventoryService, MaterialService
@@ -44,6 +46,16 @@ class ExpenseService:
                 if pli and pli.is_inventoried:
                     InventoryService.receive_ad_hoc_purchase(material)
 
+            # A linked material implies the job (cost anchor). Derive it when the
+            # caller didn't pass one explicitly.
+            if material and job is None:
+                job = material.job
+
+            # Linking an EXISTING material at submit must not silently clobber a
+            # cost that came from another source (PLI/PO/another expense).
+            if material and not created_new_material:
+                ExpenseService._assert_no_cost_clobber(material)
+
             expense = Expense(
                 entered_by=entered_by,
                 purchased_by=purchased_by,
@@ -54,10 +66,16 @@ class ExpenseService:
                 payment_method=payment_method,
                 payment_account_id=payment_account_id,
                 reference_number=reference_number,
+                job=job,
                 material=material,
             )
             expense.full_clean()
             expense.save()
+
+            # Cost lives on the material: actualize it from the linked expense(s).
+            # (A freshly created new_material already carries its intended cost.)
+            if material and not created_new_material:
+                ExpenseService._recost_material_from_expenses(material)
 
         if payment_method == Expense.PAYMENT_METHOD_COMPANY:
             ExpenseService._push_and_set_status(expense)
@@ -83,18 +101,131 @@ class ExpenseService:
         allowed = {
             'amount', 'purchased_on', 'description', 'accounting_category',
             'payment_method', 'payment_account_id', 'reference_number',
-            'purchased_by', 'material',
+            'purchased_by', 'material', 'job',
         }
+        # Frozen while it (or its material) is on an invoice.
+        ExpenseService._assert_not_invoiced(expense)
+        old_material_id = expense.material_id
         with transaction.atomic():
             for key, value in fields.items():
                 if key in allowed:
                     setattr(expense, key, value)
+
+            new_material = expense.material
+            # A linked material implies the job; derive it if the expense has none.
+            if new_material and not expense.job_id:
+                expense.job = new_material.job
+            # Moving the expense to another job moves its linked material too, so
+            # the material.job == expense.job consistency rule holds.
+            if new_material and expense.job_id and new_material.job_id != expense.job_id:
+                ExpenseService._move_material_to_job(new_material, expense.job)
+
+            is_new_link = new_material and new_material.pk != old_material_id
+            if is_new_link:
+                ExpenseService._assert_no_cost_clobber(new_material)
+
             expense.full_clean()
             expense.save()
+
+            # Recost: actualize the (now-)linked material's cost; clear/recompute
+            # the material we just unlinked from.
+            if old_material_id and old_material_id != expense.material_id:
+                from apps.inventory.models import Material
+                try:
+                    ExpenseService._recost_after_unlink(
+                        Material.objects.get(pk=old_material_id)
+                    )
+                except Material.DoesNotExist:
+                    pass
+            if expense.material_id:
+                ExpenseService._recost_material_from_expenses(expense.material)
 
         if expense.qbo_id:
             ExpenseService._resync(expense)
         return expense
+
+    # ----- job/material cost & freeze helpers -------------------------------
+
+    @staticmethod
+    def _assert_not_invoiced(expense):
+        """Raise if the expense — or its linked material — is on a non-cancelled
+        invoice. An expense is immutable while billed (remove it from the invoice
+        first). The expense-atom source case is added in Part B."""
+        from apps.invoicing.models import InvoiceLineItemSource, Invoice
+        live = InvoiceLineItemSource.objects.exclude(
+            invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED
+        )
+        on_invoice = False
+        if expense.material_id:
+            on_invoice = live.filter(
+                source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+                source_pk=expense.material_id,
+            ).exists()
+        if on_invoice:
+            raise ValidationError(
+                'Cannot edit an expense that is on an invoice; '
+                'remove it from the invoice first.'
+            )
+
+    @staticmethod
+    def _assert_no_cost_clobber(material):
+        """A material with a non-zero cost that is NOT backed by an expense has an
+        independent source (PLI/PO/manual) we must not silently overwrite."""
+        if (material.unit_cost and material.unit_cost != Decimal('0.00')
+                and not material.expenses.exists()):
+            raise ValidationError({
+                'material': 'Linked material already has a cost from another '
+                            'source; reconcile it before linking this expense.'
+            })
+
+    @staticmethod
+    def _recost_material_from_expenses(material):
+        """Set the material's unit_cost to (sum of linked expense amounts) / qty.
+        Cost lives on the material; this is the document-sourced cost path."""
+        from apps.inventory.services import MaterialService
+        if not material.quantity or material.quantity == Decimal('0.00'):
+            return
+        total = sum((e.amount for e in material.expenses.all()), Decimal('0.00'))
+        new_cost = (total / material.quantity).quantize(Decimal('0.01'))
+        MaterialService.update_pricing(
+            material, unit_cost=new_cost, cost_source='document',
+        )
+
+    @staticmethod
+    def _recost_after_unlink(material):
+        """After an expense detaches: recompute from remaining expenses; if none
+        remain and nothing else backs the cost (no PO line), reset to 0."""
+        from apps.inventory.services import MaterialService
+        if material.expenses.exists():
+            ExpenseService._recost_material_from_expenses(material)
+        elif not material.po_line_item_id:
+            MaterialService.update_pricing(
+                material, unit_cost=Decimal('0.00'), cost_source='document',
+            )
+        # else: PO-backed — leave the cost as-is.
+
+    @staticmethod
+    def _move_material_to_job(material, new_job):
+        """Move a linked material to a new job. A pending, inventoried material's
+        earmark follows it; a consumed material's inventory is already settled
+        (QOH/qty_sold are global), so only its job changes."""
+        from apps.inventory.models import Material
+        from apps.inventory.services import InventoryService
+        if material.job_id == new_job.pk:
+            return
+        pli = material.price_list_item
+        move_earmark = (
+            material.consumption_state == Material.CONSUMPTION_STATE_PENDING
+            and pli and pli.is_inventoried
+            and material.quantity > Decimal('0.00')
+        )
+        old_job = material.job
+        if move_earmark:
+            InventoryService._mutate_earmark(pli, old_job, -material.quantity)
+        material.job = new_job
+        material.save()
+        if move_earmark:
+            InventoryService._mutate_earmark(pli, new_job, material.quantity)
 
     @staticmethod
     def _resync(expense):
@@ -123,6 +254,7 @@ class ExpenseService:
 
     @staticmethod
     def delete(*, expense, actor):
+        ExpenseService._assert_not_invoiced(expense)
         from apps.qbo.services import QBOExpenseSyncService
         if expense.qbo_id and not expense.reimbursement_id:
             QBOExpenseSyncService.void_expense(expense)

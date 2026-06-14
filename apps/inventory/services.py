@@ -333,10 +333,15 @@ class MaterialService:
     All earmark mutations go through InventoryService._mutate_earmark."""
 
     @staticmethod
-    def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False):
+    def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False,
+                       cost_source='manual'):
         """Update unit_cost and/or sell_price on a Material. If propagate_to_pli is
         True and the Material is PLI-linked, also update the PLI's purchase_price /
         selling_price to match — but only for fields that actually changed.
+
+        `cost_source` records where a unit_cost change originates: 'manual' (a user
+        typing a cost) or 'document' (an Expense/PO supplying it). Freeform (no-PLI)
+        materials only accept a document-sourced cost — see Task A5 enforcement.
 
         No permission check: open to any authenticated user (deliberate carve-out
         from can_manage_financials per design).
