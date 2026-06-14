@@ -16,22 +16,29 @@ beforeEach(() => {
 });
 
 describe('MaterialModal', () => {
-  it('creates a freeform material on a task', async () => {
+  it('creates a freeform material on a task (cost is document-sourced, not typed)', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10, onSaved },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '2' } });
-    await fireEvent.input(getByLabelText(/Unit Cost/), { target: { value: '5' } });
+    // Unit Cost is disabled for a freeform material — not set here.
     await fireEvent.input(getByLabelText(/Sell Price/), { target: { value: '8' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/tasks/10/materials/', {
-      description: 'Steel', quantity: 2, units: 'none', unit_cost: 5, sell_price: 8,
+      description: 'Steel', quantity: 2, units: 'none', unit_cost: '0', sell_price: 8,
       price_list_item: null, accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('disables the unit cost field for a freeform (no-PLI) material', () => {
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    expect(getByLabelText(/Unit Cost/)).toBeDisabled();
   });
 
   it('prompts to propagate a PLI price change, then patches with the flag', async () => {

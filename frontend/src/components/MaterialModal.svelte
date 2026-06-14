@@ -205,8 +205,11 @@
 
       <p>
         <label><strong>Unit Cost</strong><br>
-          <input type="number" step="0.01" bind:value={unitCost}>
+          <input type="number" step="0.01" bind:value={unitCost} disabled={!pliLocked}>
         </label>
+        {#if !pliLocked}
+          <br><small><em>A freeform material's cost comes from a linked expense or PO, not manual entry.</em></small>
+        {/if}
       </p>
 
       <p>
