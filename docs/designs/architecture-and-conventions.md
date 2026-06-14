@@ -1160,11 +1160,16 @@ page (0.25 s ease) without shifting content.
 ```
 Home
 Jobs               → /jobs/board
+Schedule
+Activity
 Contacts
 Email
 Purchasing         → /purchase-orders
-─── Admin ───      (label only if user has any admin perm)
+─── Financials ─── (label only if user has can_manage_financials)
+Invoices           (can_manage_financials) → /invoices
+Bills              (can_manage_financials) → /bills
 Expenses           (can_manage_financials)
+─── Admin ───      (label only if user has can_manage_config)
 Users              (can_manage_config)
 Settings           (can_manage_config)
 [spacer]

@@ -58,3 +58,33 @@ class ShiftAPITest(BaseTestCase):
     def test_invalid_since_is_ignored(self):
         r = self.client.get('/api/shifts/?user=me&since=not-a-date')
         self.assertEqual(r.status_code, 200, r.data)
+
+    def test_patch_open_shift_without_end_does_not_500(self):
+        """Regression: PATCHing an open (end_time=None) shift without supplying
+        an end_time passes end_time=None into ShiftService.update. The enclosure
+        check used to crash on max(None, datetime). Should succeed and keep the
+        shift open."""
+        s = Shift.objects.create(
+            user=self.user, start_time=timezone.now() - timedelta(hours=2),
+            end_time=None)
+        new_start = (timezone.now() - timedelta(hours=3)).isoformat()
+        r = self.client.patch(f'/api/shifts/{s.pk}/',
+                              {'start_time': new_start}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        s.refresh_from_db()
+        self.assertIsNone(s.end_time)  # still open
+
+    def test_unenclosed_bleps_handles_open_shift_end(self):
+        """The pure helper must treat a None shift end as an unbounded upper
+        bound (open/ongoing shift) rather than crashing."""
+        from apps.core.time_integrity import unenclosed_bleps_for_shift
+        now = timezone.now()
+        start = now - timedelta(hours=2)
+        # New end None, old span closed (the exact server-error scenario).
+        self.assertEqual(
+            unenclosed_bleps_for_shift(self.user, start, None,
+                                       also_span=(start, now)), [])
+        # Both ends open (defensive).
+        self.assertEqual(
+            unenclosed_bleps_for_shift(self.user, start, None,
+                                       also_span=(start, None)), [])

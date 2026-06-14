@@ -539,6 +539,7 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 
 | Surface | Component |
 |---|---|
+| Invoice list | `frontend/src/routes/invoices/InvoiceListPage.svelte` (route `#/invoices`) |
 | Invoice detail | `frontend/src/routes/invoices/InvoiceDetailPage.svelte` |
 | Invoice wizard | `frontend/src/routes/invoices/InvoiceWizardPage.svelte` (route `#/invoices/:id/wizard`) |
 | Source pool | `frontend/src/components/invoices/WizardSourcePool.svelte` |
@@ -546,6 +547,20 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 | Line item card (shared with estimates) | `frontend/src/components/wizards/WizardLineItemCard.svelte` |
 | Footer actions (shared with estimates) | `frontend/src/components/wizards/WizardActions.svelte` |
 | Send-to-QBO dialog | `frontend/src/components/invoices/SendToQBODialog.svelte` |
+
+### Invoice list page
+
+`InvoiceListPage.svelte` is the SPA route at `#/invoices`, accessible via the **Financials** sidebar section (gated on `can_manage_financials`).
+
+**Columns:** Invoice#, Job, Customer, Status, Sent, Due (with a late flag when past due and unpaid), Amount, Paid, Balance.
+
+**Default view:** status preset **Open** (includes `open` + `partly-paid` invoices), sorted by due date ascending — most overdue first, nulls last.
+
+**Status presets:** Open / Paid / Draft / Cancelled / All.
+
+**Filters:** status preset, due-date range (from/to), and a `CustomerPicker` component that emits `{type: 'business'|'contact', id}`. A business selection maps to `?business=<id>`, rolling up invoices for all of that business's contacts; a contact selection maps to `?contact=<id>`.
+
+**Backend — `?summary=true` opt-in (dual contract).** The financials list page calls `GET /api/invoices/?summary=true`. Only in **summary mode** does `InvoiceViewSet` switch to the lightweight `InvoiceSummarySerializer`, apply the annotated totals, default the status filter to **open** (open + partly-paid), and apply the status presets / due-date range / `?business=` / `?contact=` / ordering. **Without** `summary=true`, the list endpoint keeps its original contract — the full `InvoiceSerializer` (with nested `line_items`) and **all** statuses (no default filter). This preserves the pre-existing consumer `GET /api/invoices/?job=<id>`, which the **Job overview** (`JobDetailPage`) uses to render each invoice's line items and compute billed/paid rollups. (Switching the bare list action to the summary serializer + default-open unconditionally was a regression that left the Job overview showing invoices with no line items and no totals.) List read permission stays `IsAuthenticated` in both modes — the Financials sidebar gate is a UI convention only.
 
 `InvoiceWizardPage` tracks `selectedAtoms` with `$state`; "Add to line item" and "Create new line item" both POST and reload. 409 from the API surfaces as an alert prompting the user to reopen the wizard for a fresh source pool.
 
@@ -558,7 +573,7 @@ The Job overview page (invoice pillar) follows a Create/View model:
 
 Both can appear together: for example, a job may have a sent (`open`) invoice and no draft, in which case "View Invoice" and "Create Invoice" are both shown (the "Create" would open a second draft for the new billing event). One draft per job is guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job` — a second "Create" while a draft already exists returns the existing draft rather than creating a new one. (The `unique_draft_invoice_per_job` partial unique constraint is declared on the model but is **not** created on MySQL, which doesn't support conditional unique constraints — Django emits `models.W036` — so the invariant rests on the service, not the DB.)
 
-There is currently no separate `InvoiceListPage.svelte` route in `frontend/src/routes/invoices/` — invoice listing happens via the job board's "unpaid" view (`/api/jobs/board/unpaid/`) and per-job filters. A standalone invoice list is "Unfinished work."
+A standalone invoice list is available at `#/invoices` — see "Invoice list page" above.
 
 ---
 
@@ -593,7 +608,7 @@ The Job P&L view consumes invoices, bills, expenses, and bleps to compute revenu
 - **Job P&L view** — consumes Invoices + Bills + Expenses + Bleps. Was Phase 5 of the QBO integration roadmap. Data is being captured today; the view is not built.
 - **`superseded` and `defaulted` statuses.** Both are defined in the status machine's choices but have no transition path that sets them. (Payment polling now drives `partly-paid` / `paid` — see "Payment polling" above — so those two are no longer dead.)
 - **One-click invoice generation.** Auto-create a draft invoice from all uninvoiced atoms when a Job hits `work_complete`, without going through the wizard. Will share the data model with the wizard. Out of scope per the 2026-04-09 design.
-- **Standalone invoice list page in the SPA.** No `#/invoices/` route today — discovery is via the job board.
+- **Invoice list customer filter — cross-contact rollup.** The `CustomerPicker` → `?business=` filter rolls up all of a business's contacts' invoices via an annotated queryset join; this may produce unexpected results for businesses where multiple contacts have separate billing relationships.
 - **Invoice revision** — the "Revise" button on `open`/`partly-paid` invoices is a disabled placeholder. The mechanism for creating a revised draft from a sent invoice (parallel to `EstimateService.revise_estimate`) is not yet implemented.
 - **Flat-rate task billing without bleps or materials.** Current workaround: model the charge as a Material row.
 - **Direct invoice email from Minibini.** Today the customer-facing send always goes through QBO. If Minibini ever emails invoices directly, follow the PO email pattern (status change captured by `@history`; manual `action` HistoryEntry for the send event with the recipient list). See `apps/purchasing/services.py` `PurchaseOrderEmailService.send_po`.

@@ -1,6 +1,11 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import (
+    F, Sum, Value, Case, When, DecimalField, ExpressionWrapper,
+)
+from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -16,8 +21,27 @@ from apps.api.permissions import CanManageFinancials
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
-    BillSerializer, BillLineItemSerializer,
+    BillSerializer, BillSummarySerializer, BillLineItemSerializer,
 )
+
+_BILL_MONEY = DecimalField(max_digits=12, decimal_places=2)
+
+BILL_STATUS_PRESETS = {
+    'open': [Bill.STATUS_RECEIVED, Bill.STATUS_PARTLY_PAID],
+    'paid': [Bill.STATUS_PAID_IN_FULL],
+    'draft': [Bill.STATUS_DRAFT],
+    'cancelled': [Bill.STATUS_CANCELLED],
+    'refunded': [Bill.STATUS_REFUNDED],
+}
+
+BILL_ORDERING = {
+    'due_date': F('due_date').asc(nulls_last=True),
+    '-due_date': F('due_date').desc(nulls_last=True),
+    '-balance': F('balance_anno').desc(nulls_last=True),
+    '-total': F('total_anno').desc(nulls_last=True),
+    'vendor_name': F('business__business_name').asc(nulls_last=True),
+    '-received_date': F('received_date').desc(nulls_last=True),
+}
 
 
 class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
@@ -396,26 +420,101 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
+    def _summary_mode(self):
+        """The financials A/P list opts into lightweight summary mode with
+        ?summary=true. Without it, the list endpoint keeps its original
+        contract (full serializer with line_items, all statuses) for
+        pre-existing consumers (Business/Contact detail bill panels, the
+        email-associate-bill picker)."""
+        return self.request.query_params.get('summary') in ('true', '1')
+
+    def get_serializer_class(self):
+        if self.action == 'list' and self._summary_mode():
+            return BillSummarySerializer
+        return BillSerializer
+
     def get_queryset(self):
         qs = super().get_queryset()
+
+        # Filters that apply to all actions (preserve existing business/contact)
         business = self.request.query_params.get('business')
         if business:
             qs = qs.filter(business_id=business)
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
-        return qs
+
+        if not (self.action == 'list' and self._summary_mode()):
+            return qs
+
+        # Summary (financials A/P) mode only: select_related to avoid N+1 from
+        # BillSummarySerializer
+        qs = qs.select_related('business', 'contact', 'purchase_order')
+
+        # List-only: annotations, status presets, due-date range, ordering
+        qs = qs.annotate(
+            total_anno=Coalesce(
+                Sum(ExpressionWrapper(
+                    F('billlineitem__qty') * F('billlineitem__price'),
+                    output_field=_BILL_MONEY)),
+                Value(0), output_field=_BILL_MONEY),
+        ).annotate(
+            balance_anno=Case(
+                When(status__in=[Bill.STATUS_PAID_IN_FULL,
+                                 Bill.STATUS_CANCELLED,
+                                 Bill.STATUS_REFUNDED],
+                     then=Value(0, output_field=_BILL_MONEY)),
+                default=F('total_anno'),
+                output_field=_BILL_MONEY),
+        )
+
+        status_param = self.request.query_params.get('status', 'open')
+        if status_param != 'all':
+            statuses = BILL_STATUS_PRESETS.get(status_param)
+            if statuses is not None:
+                qs = qs.filter(status__in=statuses)
+
+        due_from = self.request.query_params.get('due_from')
+        if due_from:
+            qs = qs.filter(due_date__date__gte=due_from)
+        due_to = self.request.query_params.get('due_to')
+        if due_to:
+            qs = qs.filter(due_date__date__lte=due_to)
+
+        ordering = self.request.query_params.get('ordering', 'due_date')
+        return qs.order_by(BILL_ORDERING.get(ordering, BILL_ORDERING['due_date']))
 
     line_item_serializer_class = BillLineItemSerializer
     line_item_parent_field = 'bill'
     line_item_service_class = BillService
 
+    # No partly_paid action: that status will be driven by QBO bill payment sync (deferred).
     status_actions = {
+        'receive': {
+            'service': lambda pk, reason=None: BillService.update_status(
+                pk, Bill.STATUS_RECEIVED),
+        },
+        'mark_paid': {
+            'service': lambda pk, reason=None: BillService.update_status(
+                pk, Bill.STATUS_PAID_IN_FULL),
+        },
         'cancel': {
-            'service': lambda pk, reason=None: BillService.update_status(pk, Bill.STATUS_CANCELLED),
+            'service': lambda pk, reason=None: BillService.update_status(
+                pk, Bill.STATUS_CANCELLED),
             'requires_reason': True,
         },
     }
+
+    def perform_update(self, serializer):
+        try:
+            bill = BillService.update_bill(
+                serializer.instance.pk, **serializer.validated_data)
+        except DjangoValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
+            raise DRFValidationError(detail)
+        except NotFoundError as e:
+            raise NotFound(detail=str(e))
+        serializer.instance = bill
 
     def perform_create(self, serializer):
         data = serializer.validated_data

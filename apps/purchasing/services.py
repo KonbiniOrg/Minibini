@@ -725,6 +725,21 @@ class BillService:
         return bill
 
     @staticmethod
+    def update_bill(pk, **kwargs):
+        """Update a draft bill's header fields. Draft-only."""
+        try:
+            bill = Bill.objects.get(pk=pk)
+        except Bill.DoesNotExist:
+            raise NotFoundError(f'Bill {pk} not found')
+        if bill.status != Bill.STATUS_DRAFT:
+            raise ValidationError('Can only edit draft bills.')
+        for field, value in kwargs.items():
+            setattr(bill, field, value)
+        bill.full_clean()
+        bill.save()
+        return bill
+
+    @staticmethod
     @transaction.atomic
     def create_bill_from_po(po_id, **kwargs):
         """Create a bill from a PO, copying its line items."""

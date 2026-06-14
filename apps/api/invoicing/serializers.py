@@ -122,3 +122,67 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job:
             return obj.job.description
         return ''
+
+
+class InvoiceSummarySerializer(serializers.ModelSerializer):
+    """Lightweight list serializer for the A/R list. Reads total/amount_paid/
+    balance/due_date off annotations set by InvoiceViewSet.get_queryset; falls
+    back to direct computation if accessed unannotated."""
+    job_number = serializers.SerializerMethodField()
+    job_name = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    due_date = serializers.SerializerMethodField()
+    is_late = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
+    amount_paid = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Invoice
+        fields = [
+            'invoice_id', 'invoice_number', 'status', 'job',
+            'job_number', 'job_name', 'customer_name',
+            'sent_date', 'due_date', 'is_late',
+            'total', 'amount_paid', 'balance',
+        ]
+
+    def get_job_number(self, obj):
+        return obj.job.job_number if obj.job else None
+
+    def get_job_name(self, obj):
+        return getattr(obj.job, 'name', None) if obj.job else None
+
+    def get_customer_name(self, obj):
+        contact = obj.job.contact if obj.job else None
+        if not contact:
+            return None
+        if contact.business:
+            return contact.business.business_name
+        return contact.name
+
+    def get_due_date(self, obj):
+        if not obj.sent_date:
+            return None
+        due = obj.sent_date + timedelta(days=DEFAULT_INVOICE_NET_DAYS)
+        return due.date().isoformat()
+
+    def get_is_late(self, obj):
+        if not obj.sent_date or obj.status not in UNPAID_STATUSES:
+            return False
+        due = obj.sent_date + timedelta(days=DEFAULT_INVOICE_NET_DAYS)
+        return due < timezone.now()
+
+    def get_total(self, obj):
+        val = getattr(obj, 'total_anno', None)
+        val = val if val is not None else Decimal('0.00')
+        return str(Decimal(val).quantize(Decimal('0.01')))
+
+    def get_amount_paid(self, obj):
+        anno = getattr(obj, 'amount_paid_anno', None)
+        val = anno if anno is not None else (obj.qbo_amount_paid or Decimal('0.00'))
+        return str(Decimal(val).quantize(Decimal('0.01')))
+
+    def get_balance(self, obj):
+        val = getattr(obj, 'balance_anno', None)
+        val = val if val is not None else Decimal('0.00')
+        return str(Decimal(val).quantize(Decimal('0.01')))

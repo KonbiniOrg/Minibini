@@ -460,3 +460,45 @@ IMAP-SMTP machinery and tend to be worked together.
   - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
     `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
     with prefill-by-id — the shape these capped pickers should move to.
+
+- **Track bill partial-payment amounts (add `Bill.qbo_amount_paid`).** — _added 2026-06-12_
+  `Bill` records only `qbo_payment_status` (a string), not an amount paid, so a
+  `partly_paid` bill's outstanding balance can't be computed. The Financials Bill
+  list (shipped 2026-06) shows a coarse balance — full total for any non-fully-paid
+  status — which overstates `partly_paid` bills (footnoted in the UI). _Done when:_
+  `Bill` grows a `qbo_amount_paid` field (mirroring `Invoice.qbo_amount_paid`), the
+  forthcoming bill QBO payment polling populates it, and the Bill list/detail balance
+  becomes exact. See `docs/plans/2026-06-12-financials-list-views-design.md`.
+
+- **Consolidate the customer/contact pickers around `CustomerPicker`.** — _added 2026-06-12_
+  Once the new `CustomerPicker` (dual-source contact+business typeahead, emits
+  `{type, id}`; from `docs/plans/2026-06-12-financials-list-views-design.md`) ships,
+  revisit the existing single-source pickers. `ContactPicker.svelte` is currently used
+  only by `DuplicateJobPage.svelte`; in places that conceptually pick "a customer" we
+  may actually want `CustomerPicker` (which can surface a standalone business, not just
+  a contact). Audit each `ContactPicker` site (and consider whether `JobPicker` shares
+  enough shape to fold into a generic typeahead too). _Done when:_ each picker site has
+  been deliberately assigned to the right component, and any genuinely-duplicated
+  picker bodies are collapsed into a shared base — or a note records why they stay
+  separate. Don't churn working code without a reason; this is a consolidation pass,
+  not a mandate to merge everything.
+
+- **Consolidate `BillSerializer.get_balance` and `BillSummarySerializer.get_balance` into a shared helper.** — _added 2026-06-13_
+  The two serializers duplicate the coarse-balance definition: 0 for `paid_in_full`/`cancelled`/`refunded`,
+  otherwise the line-item sum. `BillSerializer.get_balance` computes it in Python (looping over
+  line items); `BillSummarySerializer.get_balance` reads a DB annotation (`balance_anno`).
+  If the balance definition changes — e.g. when bill partial-payment tracking lands and
+  `partly_paid` bills need an exact `total − qbo_amount_paid` figure — both must be updated
+  in sync. A shared helper (or a model method) would consolidate the rule.
+  See `docs/plans/2026-06-12-financials-list-views-design.md`.
+  _Done when:_ the balance logic lives once and both serializers reference it.
+
+- **Invoice `cancel` action bypasses `Invoice.save()` (no job auto-complete).** — _added 2026-06-13_
+  `InvoiceViewSet.status_actions['cancel']` does `Invoice.objects.filter(pk=pk).update(status=STATUS_CANCELLED)`,
+  which skips `Invoice.save()` → `_maybe_complete_job()`. `JobService.maybe_complete_if_resolved` counts
+  `cancelled` invoices as resolved, so cancelling the last unresolved invoice on an all-shipped job will NOT
+  auto-complete the job (it stays in its prior status until some other trigger). Pre-existing (predates the
+  2026-06 financials-list work; surfaced during that review). Also conflicts with the CLAUDE.md "QuerySet.update()
+  bypasses Model.save()" rule. _Done when:_ cancel routes through a service method that loads the invoice and
+  calls `.save()` (or otherwise invokes the completion gate), with a test that a cancelled last-invoice on an
+  all-shipped job completes the job.

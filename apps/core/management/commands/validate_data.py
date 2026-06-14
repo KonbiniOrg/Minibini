@@ -248,9 +248,13 @@ class Command(BaseCommand):
             for b in ubleps:
                 if b.start_time is None or b.end_time is None:
                     continue
+                # An ongoing shift (end_time is None) is still running, so it
+                # encloses any blep starting at/after its start — matching
+                # enclosing_shift_for_blep / unenclosed_bleps_for_shift.
                 enclosed = any(
-                    s.start_time is not None and s.end_time is not None
-                    and s.start_time <= b.start_time and b.end_time <= s.end_time
+                    s.start_time is not None
+                    and s.start_time <= b.start_time
+                    and (s.end_time is None or b.end_time <= s.end_time)
                     for s in ushifts
                 )
                 if not enclosed:

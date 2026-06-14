@@ -856,13 +856,26 @@ physical receipt (the linked PO does).
 |---|---|
 | `create_bill(**kwargs)` | Create a Bill |
 | `create_bill_from_po(po_id, **kwargs)` | Create bill and copy PO line items |
+| `update_bill(pk, **kwargs)` | Draft-only header update (business, contact, vendor_invoice_number, dates) |
 | `update_status(pk, new_status)` | Status change |
 | `delete_bill(pk)` | Draft-only delete |
 | `add_line_item`, `add_line_item_from_pli`, `update_line_item`, `reorder_line_items`, `reorder_line_item`, `delete_line_item` | Line item CRUD; all draft-only |
 
+`BillService.update_bill` is the service entry point for PATCH on a Bill's header fields. `BillViewSet.perform_update` routes PATCH requests through it (draft-only; rejects updates on non-draft bills). All bill write actions require `CanManageFinancials`.
+
+`BillViewSet.status_actions` registers: `receive` (draft → received), `mark_paid` (received → paid_in_full), `cancel` (received → cancelled, requires reason).
+
 QBO sync: pointer to `docs/designs/quickbooks-integration.md`
 (forthcoming). The viewset action
-`POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill`.
+`POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill`
+(endpoint exists; not yet wired in the UI).
+
+**Needed when bill payment sync lands:** `Bill` has no amount-paid field
+(only `qbo_payment_status`), so a `partly_paid` bill's outstanding balance is
+unknown. Add `qbo_amount_paid` to `Bill` (mirroring `Invoice.qbo_amount_paid`)
+and have the forthcoming bill payment polling populate it. Until then, the
+Financials Bill list reports a coarse balance — full total for any non-fully-paid
+status — which overstates `partly_paid` bills.
 
 ---
 
@@ -889,6 +902,45 @@ Routes (`#/`-prefixed hash routes):
 | `#/purchase-orders/new` | `routes/purchaseorders/PurchaseOrderFormPage.svelte` → `PurchaseOrderForm.svelte` |
 | `#/purchase-orders/:id` | `routes/purchaseorders/PurchaseOrderDetailPage.svelte` → `PurchaseOrderDetail.svelte` |
 | `#/purchase-orders/:id/edit` | `PurchaseOrderFormPage.svelte` (edit mode, draft only) |
+
+### Bill surfaces
+
+Bill routes live under the **Financials** sidebar section (gated on `can_manage_financials`):
+
+| Route | Component | Notes |
+|---|---|---|
+| `#/bills` | `routes/bills/BillListPage.svelte` | Bill list page |
+| `#/bills/new` | `routes/bills/BillFormPage.svelte` (create mode) | Create a new Bill; accepts `?po=<id>` to pre-populate from a PO and `?email=<id>&vendor=<id>` from the email create-bill flow |
+| `#/bills/:id` | `routes/bills/BillDetailPage.svelte` | Bill detail — interactive |
+| `#/bills/:id/edit` | `routes/bills/BillFormPage.svelte` (edit mode, draft only) | Edit a draft Bill's header fields |
+
+**Bill list page** (`BillListPage.svelte`):
+
+- Columns: Vendor Inv#, Vendor, PO#, Status, Received, Due, Amount, Balance.
+- Default view: status preset **Open** (includes `received` + `partly_paid`), sorted by due date ascending.
+- Status presets: Open / Paid / Draft / Cancelled / Refunded / All.
+- Filters: status preset, due-date range, and a `CustomerPicker` (`?business=` / `?contact=`) for filtering by vendor.
+- **New Bill** button — visible to users with `can_manage_financials` only.
+- **Balance column note:** Balance is a coarse figure — full remaining total for any non-`paid_in_full` status. Partial payment amounts are not tracked in Minibini (see "Needed when bill payment sync lands" note in §13), so `partly_paid` bills overstate the balance until `qbo_amount_paid` is added.
+
+**Bill detail page** (`BillDetailPage.svelte`):
+
+- Displays Bill header (vendor invoice#, vendor, PO link, status, dates) and balance.
+- On `draft` Bills, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte`.
+- Status actions: **Mark Received** (draft → received), **Mark Paid in Full** (received → paid_in_full), **Cancel** (received → cancelled, requires a reason), **Delete** (draft only).
+- No Send-to-QBO button in the UI for this phase (the `send-to-qbo` endpoint exists but is not yet wired).
+
+**Bill form page** (`BillFormPage.svelte`):
+
+- Create mode (`/bills/new`): full header form (vendor business/contact, vendor invoice number, dates). Accepts `?po=<id>` to pre-fill vendor and copy PO line items via `BillService.create_bill_from_po`.
+- Edit mode (`/bills/:id/edit`): draft-only header edit; routes through `BillService.update_bill`.
+
+**Serializers:**
+
+- `BillSummarySerializer` — lightweight list serializer; exposes `vendor_name`, `po_number`, `purchase_order`, `status`, dates, total, and coarse balance.
+- `BillSerializer` — full detail/create/update serializer; includes all header fields plus line items, total, coarse balance.
+
+**`?summary=true` opt-in (dual contract).** Like the invoice list, `BillViewSet` only uses `BillSummarySerializer` + the default-open status filter + presets/due-range/ordering in **summary mode** (the financials A/P list page calls `GET /api/bills/?summary=true`). **Without** `summary=true`, the list endpoint keeps its original contract — the full `BillSerializer` (with `line_items`) and **all** statuses — preserving pre-existing consumers: the **Business detail** (`?business=`) and **Contact detail** (`?contact=`) bill panels and the **email-associate-bill** picker. (`?business=`/`?contact=` filtering applies in both modes.)
 
 Components in `frontend/src/components/purchaseorders/`:
 

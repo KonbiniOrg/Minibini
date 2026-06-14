@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework import serializers
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 from apps.core.units import UnitsField
@@ -11,18 +12,37 @@ class PurchaseOrderSummarySerializer(serializers.ModelSerializer):
 
 class BillSummarySerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
+    vendor_name = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return obj.contact.name if obj.contact else None
 
+    def get_vendor_name(self, obj):
+        return obj.business.business_name if obj.business else None
+
     def get_po_number(self, obj):
         return obj.purchase_order.po_number if obj.purchase_order else None
+
+    def get_total(self, obj):
+        val = getattr(obj, 'total_anno', None)
+        if val is not None:
+            return str(Decimal(val).quantize(Decimal('0.01')))
+        return '0.00'
+
+    def get_balance(self, obj):
+        val = getattr(obj, 'balance_anno', None)
+        if val is not None:
+            return str(Decimal(val).quantize(Decimal('0.01')))
+        return '0.00'
 
     class Meta:
         model = Bill
         fields = ['bill_id', 'status', 'vendor_invoice_number', 'created_date',
-                  'contact_name', 'po_number']
+                  'due_date', 'received_date', 'contact_name', 'vendor_name',
+                  'po_number', 'purchase_order', 'total', 'balance']
 
 
 class POLineItemSerializer(serializers.ModelSerializer):
@@ -119,13 +139,34 @@ class BillSerializer(serializers.ModelSerializer):
     line_items = BillLineItemSerializer(
         source='billlineitem_set', many=True, read_only=True
     )
+    po_number = serializers.SerializerMethodField()
+    vendor_name = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
 
     class Meta:
         model = Bill
         fields = [
-            'bill_id', 'purchase_order', 'vendor_invoice_number',
-            'business', 'contact', 'status',
-            'created_date', 'received_date', 'cancelled_date', 'line_items',
+            'bill_id', 'purchase_order', 'po_number',
+            'vendor_invoice_number', 'business', 'vendor_name', 'contact',
+            'status', 'created_date', 'due_date', 'received_date',
+            'paid_date', 'cancelled_date', 'line_items', 'balance',
             'qbo_id', 'qbo_payment_status',
         ]
-        read_only_fields = ['bill_id', 'created_date', 'qbo_id', 'qbo_payment_status']
+        read_only_fields = [
+            'bill_id', 'status', 'created_date', 'received_date',
+            'paid_date', 'cancelled_date', 'qbo_id', 'qbo_payment_status',
+        ]
+
+    def get_po_number(self, obj):
+        return obj.purchase_order.po_number if obj.purchase_order else None
+
+    def get_vendor_name(self, obj):
+        return obj.business.business_name if obj.business else None
+
+    def get_balance(self, obj):
+        if obj.status in (Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED,
+                          Bill.STATUS_REFUNDED):
+            return '0.00'
+        total = sum((li.qty * li.price for li in obj.billlineitem_set.all()),
+                    Decimal('0'))
+        return str(total.quantize(Decimal('0.01')))
