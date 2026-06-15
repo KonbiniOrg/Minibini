@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.db import transaction
 from django.db.models import F, Sum
 from apps.inventory.models import Earmark, Material, PlanMaterial
 from apps.inventory.models import InventoryItem
@@ -86,6 +87,102 @@ class InventoryService:
             },
             text=reason,
         )
+
+    MERGE_OVERRIDE_FIELDS = (
+        'code', 'description', 'units', 'purchase_price', 'selling_price',
+        'is_catalog',
+    )
+
+    @staticmethod
+    def merge(keep_id, discard_id, *, user=None, overrides=None):
+        """Consolidate two inventory items into one (the manual dedup tool).
+
+        Moves the discard's on-hand onto keep, repoints EVERY reference
+        (earmarks — sum-collapsed on the (item, job) unique constraint —
+        materials, plan materials, all four line-item tables, template-material
+        associations, and expense stock links), folds the quantity aggregates,
+        applies the caller's retained-field choices to keep, then deletes the
+        now-reference-free discard. `overrides` is a dict of final values for
+        keep (the frontend resolves which side's value to keep).
+
+        Hard-blocks on a unit mismatch (the QOH addition would be nonsense) and
+        refuses to discard a catalog item (demote it first)."""
+        from django.core.exceptions import ValidationError
+        from apps.estimates.models import EstimateLineItem
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
+        from apps.inventory.models import TemplateMaterialAssociation
+        from apps.expenses.models import Expense
+        from apps.core.history import record_history
+
+        overrides = overrides or {}
+        if keep_id == discard_id:
+            raise ValidationError('Cannot merge an item into itself.')
+        keep = InventoryItem.objects.get(pk=keep_id)
+        discard = InventoryItem.objects.get(pk=discard_id)
+        if discard.is_catalog:
+            raise ValidationError(
+                'Cannot discard a catalog item; uncheck its catalog flag to '
+                'demote it to a lot first, then merge.')
+        if keep.units != discard.units:
+            raise ValidationError(
+                f'Unit mismatch: cannot merge {discard.units!r} into '
+                f'{keep.units!r}.')
+
+        moved = discard.qty_on_hand
+        discard_code = discard.code
+        discard_desc = discard.description
+        with transaction.atomic():
+            # Earmarks: sum-collapse on the (item, job) unique constraint.
+            for em in Earmark.objects.filter(price_list_item=discard):
+                existing = Earmark.objects.filter(
+                    price_list_item=keep, job=em.job).first()
+                if existing:
+                    existing.quantity += em.quantity
+                    existing.save(update_fields=['quantity'])
+                    em.delete()
+                else:
+                    em.price_list_item = keep
+                    em.save(update_fields=['price_list_item'])
+            # Repoint every remaining reference (pure FK swaps).
+            Material.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            PlanMaterial.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            EstimateLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            InvoiceLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            PurchaseOrderLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            BillLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            TemplateMaterialAssociation.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            Expense.objects.filter(stock_pli=discard).update(stock_pli=keep)
+            # Fold quantity aggregates.
+            keep.qty_on_hand += discard.qty_on_hand
+            keep.qty_sold += discard.qty_sold
+            keep.qty_wasted += discard.qty_wasted
+            # Record the discard's outgoing entry, then delete it — BEFORE
+            # saving keep, so a retained `code` from discard won't collide on
+            # the unique constraint while discard still holds it.
+            record_history(
+                'inventoryitem', entry_type='action', object_id=discard.pk,
+                user=user,
+                changes={
+                    '_action': 'Merge (discarded)',
+                    'qty_change': str((-moved).quantize(Decimal('0.01'))),
+                    'qty_on_hand': '0.00',
+                    'code': discard_code, 'description': discard_desc,
+                    'merged_into': keep.code,
+                },
+                text=f'Merged into {keep.code}')
+            discard.delete()
+            # Apply retained-field choices, then save keep.
+            for field in InventoryService.MERGE_OVERRIDE_FIELDS:
+                if field in overrides:
+                    setattr(keep, field, overrides[field])
+            keep.full_clean()
+            keep.save()
+            keep.refresh_from_db()
+            InventoryService._record_qoh_history(
+                keep, moved, action='Merge (received)',
+                reason=f'Merged from {discard_code}', user=user)
+        return keep
 
     @staticmethod
     def write_off(item, *, user=None, reason=''):

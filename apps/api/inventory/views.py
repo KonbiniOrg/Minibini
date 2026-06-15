@@ -69,6 +69,30 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         item.refresh_from_db()
         return Response(self.get_serializer(item).data)
 
+    @action(detail=False, methods=['post'], url_path='merge')
+    def merge(self, request):
+        """Consolidate two items: move the discard's stock + references onto the
+        keep, then delete the discard. Body: keep_id, discard_id, optional
+        overrides (final field values for keep)."""
+        keep_id = request.data.get('keep_id')
+        discard_id = request.data.get('discard_id')
+        if not keep_id or not discard_id:
+            return Response({'error': 'keep_id and discard_id are required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            keep = InventoryService.merge(
+                keep_id, discard_id, user=request.user,
+                overrides=request.data.get('overrides') or {},
+            )
+        except InventoryItem.DoesNotExist:
+            return Response({'error': 'Item not found.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        except DjangoValidationError as e:
+            msg = e.message_dict if hasattr(e, 'message_dict') else (
+                e.message if hasattr(e, 'message') else str(e))
+            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(keep).data)
+
 
 class MaterialViewSet(viewsets.ModelViewSet):
     queryset = Material.objects.select_related('price_list_item').all()
