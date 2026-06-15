@@ -91,6 +91,27 @@ class ExpenseCreateTest(TestCase):
         self.assertEqual(exp.status, Expense.STATUS_SUBMITTED)
         self.assertEqual(exp.entered_by, self.user)
 
+    def test_create_ignores_inbound_existing_material_link(self):
+        """Expenses are create-only: a `material` id in the payload is ignored,
+        never linked (the redesign removed expense->existing-material linking)."""
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.inventory.models import Material
+        contact = Contact.objects.create(first_name='C', last_name='O')
+        job = Job.objects.create(job_number='JOB-CO-1', contact=contact)
+        existing = Material.objects.create(
+            job=job, description='pre-existing', quantity=Decimal('1'),
+            accounting_category=self.cat)
+        payload = {
+            'amount': '47.50', 'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk, 'payment_method': 'personal',
+            'purchased_by': self.user.pk, 'material': existing.pk,
+        }
+        r = self.client_http.post('/api/expenses/', payload, content_type='application/json')
+        self.assertEqual(r.status_code, 201, r.content)
+        exp = Expense.objects.get()
+        self.assertIsNone(exp.material_id)  # the inbound link was ignored
+
     def test_create_personal_without_purchased_by_returns_400(self):
         payload = {
             'amount': '47.50',

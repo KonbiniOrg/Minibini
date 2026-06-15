@@ -82,6 +82,33 @@ class MergeServiceTest(TestCase):
         self.assertEqual(self.keep.description, 'gray felt 1/4')
         self.assertEqual(self.keep.code, 'DISC')
 
+    def test_merge_repoints_protected_refs_and_deletes_discard(self):
+        """The critical case: a discard referenced by PROTECT FKs (a PO line
+        item and a template-material association) must have those refs repointed
+        so the discard can be deleted without ProtectedError."""
+        from apps.contacts.models import Business
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        from apps.estimates.models import WorkTemplate
+        from apps.inventory.models import TemplateMaterialAssociation
+        biz = Business.objects.create(business_name='V', default_contact=self.contact)
+        po = PurchaseOrder.objects.create(
+            business=biz, po_number='PO-MRG', status=PurchaseOrder.STATUS_DRAFT)
+        poli = PurchaseOrderLineItem.objects.create(
+            purchase_order=po, description='x', qty=Decimal('1'),
+            price=Decimal('1'), price_list_item=self.discard)
+        wt = WorkTemplate.objects.create(template_name='WT-MRG')
+        tma = TemplateMaterialAssociation.objects.create(
+            work_template=wt, price_list_item=self.discard, quantity=Decimal('1'))
+
+        # Would raise ProtectedError if any PROTECT ref were left dangling.
+        InventoryService.merge(self.keep.pk, self.discard.pk)
+
+        self.assertFalse(InventoryItem.objects.filter(pk=self.discard.pk).exists())
+        poli.refresh_from_db()
+        tma.refresh_from_db()
+        self.assertEqual(poli.price_list_item_id, self.keep.pk)
+        self.assertEqual(tma.price_list_item_id, self.keep.pk)
+
     def test_merge_records_both_history_entries(self):
         InventoryService.merge(self.keep.pk, self.discard.pk)
         keep_in = InventoryHistory.objects.filter(
