@@ -24,6 +24,8 @@
   }
 
   let showFinancials = $derived($canManageFinancials);
+  // Inventory items are owned by both the money role and the admin role.
+  let showInventory = $derived($canManageFinancials || $canManageConfig);
 
   let searchQuery = $state('');
   let searchFocused = $state(false);
@@ -62,6 +64,9 @@
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     <a href="/purchase-orders" use:link>Purchasing</a>
+    {#if showInventory}
+      <a href="/inventory" use:link>Inventory</a>
+    {/if}
     {#if showFinancials}
       <div class="section-label">Financials</div>
       <a href="/invoices" use:link>Invoices</a>

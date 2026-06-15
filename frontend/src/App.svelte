@@ -19,6 +19,7 @@
   import CreateWorksheetPage from './routes/jobs/CreateWorksheetPage.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
+  import InventoryListPage from './routes/inventory/InventoryListPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
@@ -103,6 +104,7 @@
     '/bills/:id/edit': BillFormPage,
     '/bills/:id': BillDetailPage,
     '/settings': SettingsPage,
+    '/inventory': InventoryListPage,
     '/users': UserListPage,
     '/users/new': UserCreatePage,
     '/users/:id': UserDetailPage,
