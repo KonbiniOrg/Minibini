@@ -80,8 +80,10 @@ class MaterialCRUDTest(TestCase):
         response = self.client.post(
             f'/api/tasks/{self.task.pk}/materials/',
             {
+                # Freeform material: no manual unit_cost — cost comes from a
+                # linked expense/PO, and the serializer guard enforces that.
                 'description': 'Epoxy glue', 'quantity': '1.00',
-                'unit_cost': '15.00', 'sell_price': '25.00',
+                'sell_price': '25.00',
                 'accounting_category': self.category.pk,
             },
             format='json',
@@ -97,7 +99,7 @@ class MaterialCRUDTest(TestCase):
             f'/api/tasks/{self.task.pk}/materials/',
             {
                 'description': 'Screws', 'quantity': '10.00',
-                'unit_cost': '0.50', 'sell_price': '1.00',
+                'sell_price': '1.00',
                 'accounting_category': self.category.pk,
             },
             format='json',
