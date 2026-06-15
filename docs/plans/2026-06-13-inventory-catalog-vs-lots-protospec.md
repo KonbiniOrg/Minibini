@@ -63,9 +63,9 @@ that difference is the whole point.
   whole-unit only. (Relates to the existing units-divisibility idea.)
 - **Earmarking does not apply here.** Earmarks reserve *shared global stock*
   against competing jobs. A transient lot bought for one job and used on that job
-  is *dedicated* — nothing to reserve. (It was only associated with "inventory"
   by mental habit.)
 - **Restock-before-consume ordering** is an existing sharp edge (restock must be
+  is *dedicated* — nothing to reserve. (It was only associated with "inventory"
   hit before consumption) that would now apply more broadly.
 
 ## Open problems to resolve before specing
@@ -104,3 +104,7 @@ that difference is the whole point.
 - Services: `apps/inventory/services.py` (`InventoryService`, `MaterialService`).
 - Durable doc to update when built:
   `docs/designs/materials-inventory-and-purchasing.md`.
+
+## Misc notes
+
+- Inventory items will need a visible purchase history, maybe this is @History or maybe not
