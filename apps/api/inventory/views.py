@@ -66,7 +66,11 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         except DjangoValidationError as e:
             msg = e.message if hasattr(e, 'message') else str(e)
             return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
-        item.refresh_from_db()
+        try:
+            item.refresh_from_db()
+        except InventoryItem.DoesNotExist:
+            # A reference-free lot is collected (deleted) on write-off.
+            return Response({'message': 'Item written off and removed.', 'deleted': True})
         return Response(self.get_serializer(item).data)
 
     @action(detail=False, methods=['post'], url_path='merge')

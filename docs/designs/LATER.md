@@ -537,12 +537,28 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ a decision is recorded — either a QBO push path for write-offs
   exists, or it's documented that write-offs are deliberately inventory-only.
 
-- **Hidden-tombstone pruner for finished lots.** — _added 2026-06-15_
-  Finished transient lots (not catalog, QOH 0, no earmarks) are **hidden, not
-  deleted** — line items and template associations PROTECT-reference items, so
-  physical deletion raises `ProtectedError`. Hidden rows accumulate slowly in
-  `inventory_item`. Not a problem yet; merge removes some. If the table ever
-  bloats, add a pruner — but it must handle the PROTECT FKs (only truly
-  reference-free finished lots are deletable; the rest stay hidden forever).
-  _Done when:_ either the table is shown to stay small enough to ignore, or a
-  pruner deletes reference-free finished lots on a schedule.
+- **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
+  Background: the original plan was *delete-on-spend*, but the code review surfaced
+  that line items (estimate/invoice/PO/bill) and `TemplateMaterialAssociation`
+  reference items via **PROTECT**, so unconditional deletion raises
+  `ProtectedError`. The shipped model is **hide-on-spend**: a finished transient
+  lot (not catalog, QOH 0, no earmarks) is hidden by the list filter, not deleted.
+  On top of that, `InventoryService.collect_if_finished` now **deletes a finished
+  lot when it is genuinely reference-free** (`can_be_deleted`), else hides it —
+  but only at **demote** (`update_item`) and **write-off**, the deliberate,
+  non-undoable transitions. It is deliberately **NOT** applied at:
+  - **consume** — reversible via `unconsume()` (blep-cancel undo), which needs the
+    item to restore stock; deleting on consume would break that undo.
+  - **`release_earmarks_for_job`** (job cancel/complete) — a bulk
+    `Earmark.objects.filter(job=job).delete()` that can leave a QOH-0 lot
+    reference-free, but the cleanup hook isn't wired there yet.
+  Also note `can_be_deleted` ignores Materials (SET_NULL) by design, so a
+  consumed lot is "reference-free" even though a Material points at it — fine
+  because Materials are self-contained and history survives, but worth a
+  deliberate decision.
+  To revisit: (a) should consume/job-cancellation also collect, with a
+  reversibility-safe approach (e.g. collect on job close, or on unconsume-window
+  expiry)? (b) a periodic **pruner** for hidden tombstones that have since become
+  reference-free; (c) whether demote-deletes-when-unreferenced is the right UX or
+  should prompt. _Done when:_ a single documented policy covers every finished-lot
+  transition (demote, write-off, consume, job-cancel) and tombstone cleanup.

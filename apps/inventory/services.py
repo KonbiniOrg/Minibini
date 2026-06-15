@@ -57,7 +57,31 @@ class InventoryService:
             setattr(pli, field, value)
         pli.full_clean()
         pli.save()
+        # Demoting a catalog item to an empty, unreferenced lot collects it.
+        InventoryService.collect_if_finished(pli)
         return pli
+
+    @staticmethod
+    def collect_if_finished(item):
+        """Hard-delete a finished lot when it is genuinely reference-free,
+        otherwise leave it (the list filter keeps it hidden as a tombstone).
+
+        A finished lot is `not is_catalog and qty_on_hand == 0 and no earmarks`.
+        Deletion is only safe when `can_be_deleted` (no estimate/invoice/PO/bill
+        line items or earmarks reference it) — those FKs are PROTECT. Materials
+        and Expense.stock_pli are SET_NULL and stay self-contained; the
+        InventoryHistory trail survives via its loose object ref. Returns True if
+        the row was deleted.
+
+        Applied at deliberate, non-undoable transitions only (demote, write-off).
+        NOT at consume — consume is reversible via unconsume(), which needs the
+        item to restore stock. See docs/designs/LATER.md.
+        """
+        item.refresh_from_db()
+        if item.is_finished_lot and item.can_be_deleted:
+            item.delete()
+            return True
+        return False
 
     # --- Inventory history (durable audit trail) ---
 
@@ -200,6 +224,8 @@ class InventoryService:
         InventoryService.manual_adjustment(
             item, -remaining, reason=reason or 'Write-off', user=user,
         )
+        # A written-off lot with no references is collected; otherwise hidden.
+        InventoryService.collect_if_finished(item)
         return item
 
     # --- QOH operations ---

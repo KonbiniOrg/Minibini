@@ -9,8 +9,23 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from django.contrib.auth.models import Permission
 from apps.core.models import AccountingCategory, User, InventoryHistory
+from apps.contacts.models import Contact, Business
 from apps.inventory.models import InventoryItem
 from apps.inventory.services import InventoryService
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+
+
+def _reference(item, po_number):
+    """Pin a PROTECT'd line item to `item` so it is hidden (not collected) on
+    write-off — lets these tests inspect the surviving row. The collect-when-
+    unreferenced path is covered in test_inventory_collect.py."""
+    contact = Contact.objects.create(first_name='R', last_name='Ef')
+    biz = Business.objects.create(business_name='V', default_contact=contact)
+    po = PurchaseOrder.objects.create(
+        business=biz, po_number=po_number, status=PurchaseOrder.STATUS_DRAFT)
+    PurchaseOrderLineItem.objects.create(
+        purchase_order=po, description='x', qty=Decimal('1'),
+        price=Decimal('1'), price_list_item=item)
 
 
 class WriteOffServiceTest(TestCase):
@@ -20,6 +35,7 @@ class WriteOffServiceTest(TestCase):
         self.lot = InventoryItem.objects.create(
             code='WO1', is_catalog=False, qty_on_hand=Decimal('4.00'),
             accounting_category=self.cat)
+        _reference(self.lot, 'PO-WO-SVC')  # survives write-off (hidden) for inspection
 
     def test_write_off_zeroes_qoh_and_books_waste(self):
         InventoryService.write_off(self.lot, reason='water damage')
@@ -57,6 +73,7 @@ class WriteOffEndpointTest(TestCase):
         self.lot = InventoryItem.objects.create(
             code='WOE', is_catalog=False, qty_on_hand=Decimal('3.00'),
             accounting_category=self.cat)
+        _reference(self.lot, 'PO-WO-EP')  # survives write-off (hidden) for inspection
 
     def _user(self, *atoms):
         u = User.objects.create(username='wo_' + '_'.join(atoms) or 'wo_plain')
