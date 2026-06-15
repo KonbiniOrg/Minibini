@@ -26,6 +26,18 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if is_active_param is not None:
             value = is_active_param.lower() in ('true', '1', 'yes')
             qs = qs.filter(is_active=value)
+        # Hide-on-spend: a finished transient lot (not catalog, QOH 0, no
+        # earmarks) is filtered from the active list and allocation pickers.
+        # Catalog management opts back in with ?include_finished=true to reach
+        # finished lots for merge/write-off.
+        include_finished = self.request.query_params.get(
+            'include_finished', '').lower() in ('true', '1', 'yes')
+        if not include_finished:
+            from decimal import Decimal
+            from django.db.models import Count
+            qs = qs.annotate(_em_count=Count('earmark')).exclude(
+                is_catalog=False, qty_on_hand=Decimal('0.00'), _em_count=0,
+            )
         return qs
 
     def get_permissions(self):

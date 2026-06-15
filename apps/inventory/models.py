@@ -57,6 +57,18 @@ class InventoryItem(models.Model):
         """Quantity available (on hand minus earmarked)."""
         return self.qty_on_hand - self.qty_earmarked
 
+    @property
+    def is_finished_lot(self):
+        """A transient lot whose life is over: not a catalog type, nothing on
+        hand, and nothing waiting for it. Hidden from the active inventory list
+        and allocation pickers (catalog items always survive at QOH 0). Not
+        deleted — line items reference items via PROTECT — just filtered out."""
+        return (
+            not self.is_catalog
+            and self.qty_on_hand == Decimal('0.00')
+            and not self.earmark_set.exists()
+        )
+
     class Meta:
         db_table = 'inventory_item'
         constraints = [
