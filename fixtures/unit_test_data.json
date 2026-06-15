@@ -201,6 +201,13 @@
         }
     },
     {
+        "model": "core.configuration",
+        "pk": "default_material_markup_percent",
+        "fields": {
+            "value": "0"
+        }
+    },
+    {
         "model": "core.appstate",
         "pk": "job_counter",
         "fields": {

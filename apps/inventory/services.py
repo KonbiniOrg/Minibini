@@ -10,10 +10,36 @@ class InventoryService:
     # --- PriceListItem CRUD ---
 
     @staticmethod
+    def _default_markup_percent():
+        """Config-driven default material markup, as a Decimal percent.
+        Unset/invalid → 0 (selling price defaults to cost)."""
+        from decimal import InvalidOperation
+        from apps.core.models import Configuration
+        try:
+            raw = Configuration.objects.get(
+                key='default_material_markup_percent').value
+        except Configuration.DoesNotExist:
+            return Decimal('0')
+        try:
+            return Decimal(raw)
+        except (InvalidOperation, TypeError):
+            return Decimal('0')
+
+    @staticmethod
     def create_item(**kwargs):
-        """Create a new PriceListItem."""
+        """Create a new PriceListItem.
+
+        When no explicit (non-zero) selling_price is given, derive it from
+        purchase_price × the config markup, snapshotted at creation. update_item
+        never re-applies this — the stored value is authoritative thereafter.
+        """
         from apps.core.services import NotFoundError
         pli = PriceListItem(**kwargs)
+        if not kwargs.get('selling_price') and kwargs.get('purchase_price'):
+            markup = InventoryService._default_markup_percent()
+            pli.selling_price = (
+                pli.purchase_price * (Decimal('1') + markup / Decimal('100'))
+            ).quantize(Decimal('0.01'))
         pli.full_clean()
         pli.save()
         return pli

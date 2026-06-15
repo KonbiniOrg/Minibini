@@ -126,3 +126,52 @@ class AssignPlanTaskServiceTest(TestCase):
             InventoryService.assign_plan_task(self.mat, self.other_task)
         self.mat.refresh_from_db()
         self.assertEqual(self.mat.plan_task_id, self.task_a.pk)
+
+
+class InventoryMarkupTest(TestCase):
+    """Phase B0: markup-config drives selling_price at creation only."""
+
+    def setUp(self):
+        from apps.core.models import Configuration
+        self.category = AccountingCategory.objects.get_or_create(
+            code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+        Configuration.objects.update_or_create(
+            key='default_material_markup_percent', defaults={'value': '25'})
+
+    def test_markup_applied_when_selling_unset(self):
+        pli = InventoryService.create_item(
+            code='MK-1', purchase_price=Decimal('100.00'),
+            accounting_category=self.category)
+        self.assertEqual(pli.selling_price, Decimal('125.00'))
+
+    def test_explicit_selling_respected(self):
+        pli = InventoryService.create_item(
+            code='MK-2', purchase_price=Decimal('100.00'),
+            selling_price=Decimal('150.00'), accounting_category=self.category)
+        self.assertEqual(pli.selling_price, Decimal('150.00'))
+
+    def test_update_does_not_reapply_markup(self):
+        pli = InventoryService.create_item(
+            code='MK-3', purchase_price=Decimal('100.00'),
+            accounting_category=self.category)  # selling -> 125
+        updated = InventoryService.update_item(
+            pli.pk, purchase_price=Decimal('200.00'))
+        self.assertEqual(updated.selling_price, Decimal('125.00'))  # unchanged
+
+    def test_zero_markup_sell_equals_cost(self):
+        from apps.core.models import Configuration
+        Configuration.objects.update_or_create(
+            key='default_material_markup_percent', defaults={'value': '0'})
+        pli = InventoryService.create_item(
+            code='MK-4', purchase_price=Decimal('100.00'),
+            accounting_category=self.category)
+        self.assertEqual(pli.selling_price, Decimal('100.00'))
+
+    def test_unset_config_defaults_to_zero_markup(self):
+        from apps.core.models import Configuration
+        Configuration.objects.filter(
+            key='default_material_markup_percent').delete()
+        pli = InventoryService.create_item(
+            code='MK-5', purchase_price=Decimal('80.00'),
+            accounting_category=self.category)
+        self.assertEqual(pli.selling_price, Decimal('80.00'))
