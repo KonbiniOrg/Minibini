@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
+  import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
 
   // Write access: either the money role or the admin role.
   let canManage = $derived($canManageFinancials || $canManageConfig);
@@ -8,6 +9,15 @@
   let items = $state([]);
   let loading = $state(true);
   let error = $state('');
+
+  // Create/edit form state
+  let showForm = $state(false);
+  let editingItem = $state(null);
+
+  function newItem() { editingItem = null; showForm = true; }
+  function editItem(it) { editingItem = it; showForm = true; }
+  function onSaved() { showForm = false; editingItem = null; load(); }
+  function onCancel() { showForm = false; editingItem = null; }
 
   // Filters
   let search = $state('');
@@ -47,6 +57,23 @@
 
 <h2>Inventory</h2>
 
+{#if canManage}
+  <p>
+    {#if !showForm}
+      <button type="button" onclick={newItem}>+ New item</button>
+    {/if}
+  </p>
+  {#if showForm}
+    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
+      <h3>{editingItem ? 'Edit item' : 'New item'}</h3>
+      <!-- key on the edited item so the form re-seeds when switching rows -->
+      {#key editingItem}
+        <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
+      {/key}
+    </div>
+  {/if}
+{/if}
+
 <fieldset style="margin-bottom: 10px">
   <legend>Filters</legend>
   <label>Search: <input type="search" bind:value={search} placeholder="code or description"></label>
@@ -73,6 +100,7 @@
         <th>Kind</th>
         <th style="text-align: right">Cost</th>
         <th style="text-align: right">Sell</th>
+        {#if canManage}<th>Actions</th>{/if}
       </tr>
     </thead>
     <tbody>
@@ -87,6 +115,9 @@
           <td>{it.is_catalog ? 'catalog' : 'lot'}{!it.is_active ? ' · inactive' : ''}</td>
           <td style="text-align: right">${it.purchase_price}</td>
           <td style="text-align: right">${it.selling_price}</td>
+          {#if canManage}
+            <td><button type="button" onclick={() => editItem(it)}>edit</button></td>
+          {/if}
         </tr>
       {/each}
     </tbody>
