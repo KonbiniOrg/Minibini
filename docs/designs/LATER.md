@@ -528,3 +528,21 @@ IMAP-SMTP machinery and tend to be worked together.
   handling (inventoried rows → receipts, cost rows → job cost), or the form detects a
   mixed receipt and prompts the user to split it — so a non-inventory cost can never be
   silently swallowed by a stock receipt.
+
+- **Write-off → QBO?** — _added 2026-06-15_
+  Inventory write-off (`InventoryService.write_off`) zeroes a lot's QOH and books
+  the remainder to `qty_wasted`, recording an `InventoryHistory` entry. It does
+  **not** push anything to QBO. Decide whether written-off inventory should post
+  to QBO as an expense / COGS / shrinkage adjustment, or stay inventory-only.
+  _Done when:_ a decision is recorded — either a QBO push path for write-offs
+  exists, or it's documented that write-offs are deliberately inventory-only.
+
+- **Hidden-tombstone pruner for finished lots.** — _added 2026-06-15_
+  Finished transient lots (not catalog, QOH 0, no earmarks) are **hidden, not
+  deleted** — line items and template associations PROTECT-reference items, so
+  physical deletion raises `ProtectedError`. Hidden rows accumulate slowly in
+  `inventory_item`. Not a problem yet; merge removes some. If the table ever
+  bloats, add a pruner — but it must handle the PROTECT FKs (only truly
+  reference-free finished lots are deletable; the rest stay hidden forever).
+  _Done when:_ either the table is shown to stay small enough to ignore, or a
+  pruner deletes reference-free finished lots on a schedule.
