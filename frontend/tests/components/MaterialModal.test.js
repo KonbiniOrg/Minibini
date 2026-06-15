@@ -60,4 +60,38 @@ describe('MaterialModal', () => {
       unit_cost: 7, sell_price: 10, propagate_to_pli: true,
     });
   });
+
+  function mockEarmarkedItem() {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/price-list-items/')) {
+        return Promise.resolve({ results: [{
+          price_list_item_id: 1, code: 'FELT', description: 'grey felt',
+          units: 'sheet', purchase_price: '4', selling_price: '8',
+          qty_on_hand: '5.00', qty_earmarked: '2.00', qty_available: '3.00',
+        }] });
+      }
+      return Promise.resolve([]); // UnitsSelect
+    });
+  }
+
+  it('warns that a picked item is earmarked for other jobs (allocation visibility)', async () => {
+    mockEarmarkedItem();
+    const { getByPlaceholderText, findByText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.focus(getByPlaceholderText('Search price list items...'));
+    await fireEvent.mouseDown(await findByText(/grey felt/));
+    expect(await findByText(/earmarked for other jobs/)).toBeInTheDocument();
+  });
+
+  it('warns when the requested quantity exceeds what is available', async () => {
+    mockEarmarkedItem();
+    const { getByPlaceholderText, findByText, getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.focus(getByPlaceholderText('Search price list items...'));
+    await fireEvent.mouseDown(await findByText(/grey felt/));
+    await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '4' } });
+    expect(await findByText(/Only 3.00 of 5.00/)).toBeInTheDocument();
+  });
 });

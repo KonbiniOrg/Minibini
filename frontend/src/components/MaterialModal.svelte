@@ -28,6 +28,29 @@
   let pliUnitCost = $state(null);    // PLI's current price, for prompt comparison
   let pliSellPrice = $state(null);
   let showPropagatePrompt = $state(false);
+  // Allocation-time stock visibility for a selected catalog/lot item.
+  let pliOnHand = $state(null);
+  let pliEarmarked = $state(null);
+  let pliAvailable = $state(null);
+
+  // Warn when the picked item is partly/fully spoken for, or the requested
+  // quantity exceeds what's actually available (the rest is earmarked elsewhere).
+  let earmarkWarning = $derived.by(() => {
+    if (pliId == null || pliAvailable == null) return '';
+    const avail = Number(pliAvailable);
+    const earmarked = Number(pliEarmarked ?? 0);
+    const want = Number(quantity || 0);
+    if (want > avail) {
+      return `Only ${pliAvailable} of ${pliOnHand} ${units} available — `
+        + `${pliEarmarked} already earmarked for other jobs. `
+        + `You can still commit it (it will show a shortfall until restocked).`;
+    }
+    if (earmarked > 0) {
+      return `${pliOnHand} ${units} on hand, ${pliEarmarked} earmarked for other `
+        + `jobs (${pliAvailable} available).`;
+    }
+    return '';
+  });
 
   $effect(() => {
     if (open) {
@@ -84,6 +107,9 @@
       pliSellPrice = pli.selling_price ?? null;
       if (pli.accounting_category) accountingCategory = pli.accounting_category;
       pliLocked = true;
+      pliOnHand = pli.qty_on_hand ?? null;
+      pliEarmarked = pli.qty_earmarked ?? null;
+      pliAvailable = pli.qty_available ?? null;
     } else {
       pliId = null;
       description = '';
@@ -93,6 +119,9 @@
       pliUnitCost = null;
       pliSellPrice = null;
       pliLocked = false;
+      pliOnHand = null;
+      pliEarmarked = null;
+      pliAvailable = null;
     }
   }
 
@@ -195,6 +224,9 @@
         {#if mode === 'edit'}
           <small style="color:#666;">To change quantity, use Restock or Draw more on the row.</small>
         {/if}
+        {#if earmarkWarning}
+          <p class="earmark-warning">{earmarkWarning}</p>
+        {/if}
       </p>
 
       <p>
@@ -257,5 +289,6 @@
   .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
+  .earmark-warning { margin: 6px 0 0; padding: 6px 8px; background: #fffbe6; border: 1px solid #ffe58f; font-size: 0.9em; }
   .propagate-prompt { margin-top: 12px; padding: 12px; background: #f0f9ff; border: 1px solid #91d5ff; }
 </style>
