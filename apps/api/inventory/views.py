@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
-from apps.api.permissions import CanManageFinancials
+from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from .serializers import InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
 
@@ -41,9 +41,11 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
+        # B7: inventory items are owned by both the money role (financials) and
+        # the admin role (config) — either atom grants full CRUD + write-off/merge.
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageFinancials()]
+        return [IsAuthenticated(), CanManageFinancialsOrConfig()]
 
     def perform_create(self, serializer):
         item = InventoryService.create_item(**serializer.validated_data)
@@ -51,6 +53,21 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         InventoryService.update_item(self.get_object().pk, **serializer.validated_data)
+
+    @action(detail=True, methods=['post'], url_path='write-off')
+    def write_off(self, request, pk=None):
+        """Write off the item's remaining on-hand stock as wasted."""
+        item = self.get_object()
+        try:
+            InventoryService.write_off(
+                item, user=request.user,
+                reason=request.data.get('reason', '') or 'Write-off',
+            )
+        except DjangoValidationError as e:
+            msg = e.message if hasattr(e, 'message') else str(e)
+            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
+        item.refresh_from_db()
+        return Response(self.get_serializer(item).data)
 
 
 class MaterialViewSet(viewsets.ModelViewSet):

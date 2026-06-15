@@ -87,6 +87,24 @@ class InventoryService:
             text=reason,
         )
 
+    @staticmethod
+    def write_off(item, *, user=None, reason=''):
+        """Write off a lot's remaining on-hand stock as wasted.
+
+        Zeroes QOH and books the remainder to qty_wasted, recording the wastage
+        history entry (via manual_adjustment) BEFORE any further state change so
+        the wastage is never lost. Afterward the lot becomes a finished lot
+        (hidden) unless it still has earmarks. Catalog items can be written off
+        too (they survive at QOH 0 by the catalog flag, just emptied)."""
+        from django.core.exceptions import ValidationError
+        remaining = item.qty_on_hand
+        if remaining <= Decimal('0.00'):
+            raise ValidationError('Nothing on hand to write off.')
+        InventoryService.manual_adjustment(
+            item, -remaining, reason=reason or 'Write-off', user=user,
+        )
+        return item
+
     # --- QOH operations ---
 
     @staticmethod
