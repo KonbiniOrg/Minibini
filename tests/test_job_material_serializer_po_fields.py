@@ -42,3 +42,27 @@ class JobMaterialSerializerPOFieldsTest(TestCase):
         self.assertEqual(mat['po_id'], self.po.pk)
         self.assertEqual(mat['po_number'], self.po.po_number)
         self.assertEqual(mat['po_status'], self.po.status)
+
+
+class MaterialQtyOnHandTest(TestCase):
+    """qty_on_hand for an inventoried, non-PO material reports the PLI's real QOH
+    — not the material's required quantity (which hid physical shortfalls)."""
+
+    def setUp(self):
+        from apps.inventory.models import Material
+        cat = AccountingCategory.objects.get_or_create(
+            code='MAT2', defaults={'name': 'Material'})[0]
+        contact = Contact.objects.create(first_name='C', last_name='C', work_number='9')
+        self.job = Job.objects.create(job_number='J-QOH', contact=contact, description='j')
+        self.pli = PriceListItem.objects.create(
+            code='INV', description='inv', accounting_category=cat,
+            is_inventoried=True, qty_on_hand=Decimal('5.00'))
+        self.mat = Material.objects.create(
+            job=self.job, accounting_category=cat, description='widget',
+            quantity=Decimal('8.00'), price_list_item=self.pli)
+
+    def test_qty_on_hand_is_pli_qoh_not_material_quantity(self):
+        from apps.api.inventory.serializers import MaterialSerializer
+        data = MaterialSerializer(self.mat).data
+        self.assertEqual(data['qty_on_hand'], '5.00')   # PLI QOH, not 8
+        self.assertEqual(str(self.mat.quantity), '8.00')  # required still 8

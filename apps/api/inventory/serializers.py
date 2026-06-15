@@ -108,7 +108,12 @@ class MaterialSerializer(serializers.ModelSerializer):
         if obj.po_line_item_id:
             return str(obj.po_line_item.qty_received)
         if obj.price_list_item_id and obj.price_list_item.is_inventoried:
-            return str(obj.quantity)
+            # The PLI's real physical stock — NOT the material's required qty.
+            # (Returning obj.quantity made on_hand always equal required, so the
+            # overview's "needs more / order" check never fired and a physical
+            # shortfall was hidden until consume-time.) Earmark-aware availability
+            # is a later refinement — see qty_available on PriceListItem.
+            return str(obj.price_list_item.qty_on_hand)
         return '0'
 
     def update(self, instance, validated_data):
