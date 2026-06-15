@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Earmark, PriceListItem
+from apps.inventory.models import Earmark, InventoryItem
 from apps.inventory.services import InventoryService
 from apps.core.models import AccountingCategory
 
@@ -14,10 +14,10 @@ class MutateEarmarkTest(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(job_number='JOB-E-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='A', accounting_category=self.cat, is_inventoried=True,
         )
-        self.noninv = PriceListItem.objects.create(
+        self.noninv = InventoryItem.objects.create(
             code='B', accounting_category=self.cat, is_inventoried=False,
         )
 

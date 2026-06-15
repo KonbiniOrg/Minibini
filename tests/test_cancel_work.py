@@ -14,7 +14,7 @@ from tests.base import BaseTestCase
 from apps.jobs.models import Job, Task, Blep
 from apps.jobs.services import TaskLifecycleService
 from apps.core.models import User, AccountingCategory
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 from apps.inventory.services import MaterialService
 
 
@@ -57,7 +57,7 @@ class CancelWorkFirstActivityTest(BaseTestCase):
 
     def test_cancel_unconsumes_materials(self):
         cat = AccountingCategory.objects.create(name='cw')
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='CW', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )

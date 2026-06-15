@@ -198,11 +198,11 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         """
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.inventory.models import Earmark, Material, PriceListItem
+        from apps.inventory.models import Earmark, Material, InventoryItem
         cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
-        non_inv = PriceListItem.objects.create(
+        non_inv = InventoryItem.objects.create(
             code='PLI-NI-ML', description='Labor',
             is_inventoried=False, qty_on_hand=Decimal('0.00'),
             qty_sold=Decimal('0.00'), accounting_category=cat,
@@ -749,12 +749,12 @@ class StartStopWorkTest(BaseTestCase):
         """
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.inventory.models import Material, PriceListItem
+        from apps.inventory.models import Material, InventoryItem
         # Material on the task so we can confirm re-consumption.
         cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
-        non_inv = PriceListItem.objects.create(
+        non_inv = InventoryItem.objects.create(
             code='PLI-NI-TKO', description='Labor',
             is_inventoried=False, qty_on_hand=Decimal('0.00'),
             qty_sold=Decimal('0.00'), accounting_category=cat,

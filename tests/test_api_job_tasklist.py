@@ -11,7 +11,7 @@ from django.test import TestCase
 from apps.core.models import User, AccountingCategory
 from apps.jobs.models import Job, Task, RateScheme
 from apps.contacts.models import Contact
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 
 
 def _make_scheme(name_suffix=''):
@@ -105,7 +105,7 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_create_material_with_pli(self):
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='EPOXY-01', description='Epoxy 2-part', units='tube',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.category,

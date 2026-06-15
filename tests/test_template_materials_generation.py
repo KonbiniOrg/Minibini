@@ -3,7 +3,7 @@ from django.test import TestCase
 from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact
 from apps.inventory.models import (
-    Material, PlanMaterial, PriceListItem, TemplateMaterialAssociation,
+    Material, PlanMaterial, InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
@@ -21,7 +21,7 @@ class _Setup(TestCase):
             name='Hourly', rate=Decimal('100'), unit_label='hour',
             accounting_category=cls.cat,
         )
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,

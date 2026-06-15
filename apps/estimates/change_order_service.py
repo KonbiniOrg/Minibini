@@ -316,8 +316,8 @@ class ChangeOrderService:
 
     @staticmethod
     def add_line_item_from_pli(co_pk, pli_pk, qty):
-        """Add a line item from a PriceListItem to a draft change order."""
-        from apps.inventory.models import PriceListItem
+        """Add a line item from a InventoryItem to a draft change order."""
+        from apps.inventory.models import InventoryItem
         try:
             co = ChangeOrder.objects.get(pk=co_pk)
         except ChangeOrder.DoesNotExist:
@@ -325,9 +325,9 @@ class ChangeOrderService:
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft change orders.')
         try:
-            pli = PriceListItem.objects.get(pk=pli_pk)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {pli_pk} not found')
+            pli = InventoryItem.objects.get(pk=pli_pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pli_pk} not found')
 
         li = ChangeOrderLineItem.objects.create(
             change_order=co,

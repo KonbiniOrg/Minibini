@@ -7,7 +7,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, Task, RateScheme
-from apps.inventory.models import Material, PriceListItem, Earmark
+from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.inventory.services import InventoryService
 
 
@@ -31,7 +31,7 @@ class EarmarkPreviewTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -41,7 +41,7 @@ class EarmarkPreviewTest(TestCase):
             is_inventoried=True,
             accounting_category=self.category,
         )
-        self.screws = PriceListItem.objects.create(
+        self.screws = InventoryItem.objects.create(
             code='SCR.100',
             description='Wood Screws Box of 100',
             units='ea',
@@ -149,7 +149,7 @@ class EarmarkPreviewTest(TestCase):
         self.assertEqual(len(preview), 0)
 
     def test_preview_ignores_non_inventoried_pli(self):
-        non_inv = PriceListItem.objects.create(
+        non_inv = InventoryItem.objects.create(
             code='NONINV', description='Not tracked', is_inventoried=False,
             accounting_category=self.category,
         )
@@ -181,7 +181,7 @@ class UpsertEarmarksTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -191,7 +191,7 @@ class UpsertEarmarksTest(TestCase):
             is_inventoried=True,
             accounting_category=self.category,
         )
-        self.screws = PriceListItem.objects.create(
+        self.screws = InventoryItem.objects.create(
             code='SCR.100',
             description='Wood Screws Box of 100',
             units='ea',
@@ -244,7 +244,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         from apps.core.models import AccountingCategory
         from apps.jobs.models import Job, PlanTask, RateScheme
         from apps.estimates.models import EstWorksheet
-        from apps.inventory.models import PriceListItem, PlanMaterial, Earmark
+        from apps.inventory.models import InventoryItem, PlanMaterial, Earmark
         from apps.inventory.services import InventoryService
         from apps.jobs.services import JobService
         # Setup - follow existing patterns in this file for Contact/Business/Job
@@ -258,7 +258,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
             name='S-nop', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
         )
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='I-NOP', accounting_category=cat, is_inventoried=True,
         )
         src_job = Job.objects.create(job_number='JOB-NOP-SRC', contact=contact)

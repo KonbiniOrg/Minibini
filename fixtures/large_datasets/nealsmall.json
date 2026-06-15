@@ -66037,7 +66037,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 1,
   "fields": {
     "code": "1 estimate",
@@ -66054,7 +66054,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 2,
   "fields": {
     "code": "1 rough estimate",
@@ -66071,7 +66071,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 3,
   "fields": {
     "code": "2 SETUP",
@@ -66088,7 +66088,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 4,
   "fields": {
     "code": "3 AXYZ",
@@ -66105,7 +66105,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 5,
   "fields": {
     "code": "3 KOMO",
@@ -66122,7 +66122,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 6,
   "fields": {
     "code": "3 LASER",
@@ -66139,7 +66139,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 7,
   "fields": {
     "code": "3 MM",
@@ -66156,7 +66156,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 8,
   "fields": {
     "code": "4 PROV",
@@ -66173,7 +66173,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 9,
   "fields": {
     "code": "5 CAD",
@@ -66190,7 +66190,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 10,
   "fields": {
     "code": "6 FINISH",
@@ -66207,7 +66207,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 11,
   "fields": {
     "code": "7 DELIVERY",
@@ -66224,7 +66224,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 12,
   "fields": {
     "code": "7 DELIVERY PEN",
@@ -66241,7 +66241,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 13,
   "fields": {
     "code": "7 DELIVERY SF",
@@ -66258,7 +66258,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 14,
   "fields": {
     "code": "7 DELIVERY SF car",
@@ -66275,7 +66275,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 15,
   "fields": {
     "code": "7 DELIVERY SF lg",
@@ -66292,7 +66292,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 16,
   "fields": {
     "code": "8 MIN",
@@ -66309,7 +66309,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 17,
   "fields": {
     "code": "9 CONSULT",
@@ -66326,7 +66326,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 18,
   "fields": {
     "code": "ABS.125",
@@ -66343,7 +66343,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 19,
   "fields": {
     "code": "ACM.125",
@@ -66360,7 +66360,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 20,
   "fields": {
     "code": "ACR.125",
@@ -66377,7 +66377,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 21,
   "fields": {
     "code": "ACR.25",
@@ -66394,7 +66394,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 22,
   "fields": {
     "code": "ACR.5",
@@ -66411,7 +66411,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 23,
   "fields": {
     "code": "ACR.75",
@@ -66428,7 +66428,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 24,
   "fields": {
     "code": "ACX.375",
@@ -66445,7 +66445,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 25,
   "fields": {
     "code": "ACX.5",
@@ -66462,7 +66462,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 26,
   "fields": {
     "code": "ACX.625",
@@ -66479,7 +66479,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 27,
   "fields": {
     "code": "ACX.75",
@@ -66496,7 +66496,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 28,
   "fields": {
     "code": "ALU.05-4x12",
@@ -66513,7 +66513,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 29,
   "fields": {
     "code": "ALU.125",
@@ -66530,7 +66530,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 30,
   "fields": {
     "code": "ALU.125-5x12",
@@ -66547,7 +66547,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 31,
   "fields": {
     "code": "APPLY.5",
@@ -66564,7 +66564,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 32,
   "fields": {
     "code": "APPLY.5P",
@@ -66581,7 +66581,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 33,
   "fields": {
     "code": "APPLY.75P",
@@ -66598,7 +66598,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 34,
   "fields": {
     "code": "APPLY1.0",
@@ -66615,7 +66615,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 35,
   "fields": {
     "code": "ARZABE",
@@ -66632,7 +66632,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 36,
   "fields": {
     "code": "BAU1",
@@ -66649,7 +66649,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 37,
   "fields": {
     "code": "BAU2",
@@ -66666,7 +66666,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 38,
   "fields": {
     "code": "BBPLY.125-5x5",
@@ -66683,7 +66683,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 39,
   "fields": {
     "code": "BBPLY.25",
@@ -66700,7 +66700,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 40,
   "fields": {
     "code": "BBPLY.25-5x5",
@@ -66717,7 +66717,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 41,
   "fields": {
     "code": "BBPLY.375",
@@ -66734,7 +66734,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 42,
   "fields": {
     "code": "BBPLY.5",
@@ -66751,7 +66751,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 43,
   "fields": {
     "code": "BBPLY.5-5x5",
@@ -66768,7 +66768,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 44,
   "fields": {
     "code": "BBPLY.5-5x5P",
@@ -66785,7 +66785,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 45,
   "fields": {
     "code": "BBPLY.5BBB",
@@ -66802,7 +66802,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 46,
   "fields": {
     "code": "BBPLY.5P",
@@ -66819,7 +66819,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 47,
   "fields": {
     "code": "BBPLY.625",
@@ -66836,7 +66836,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 48,
   "fields": {
     "code": "BBPLY.625P-5X5",
@@ -66853,7 +66853,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 49,
   "fields": {
     "code": "BBPLY.75",
@@ -66870,7 +66870,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 50,
   "fields": {
     "code": "BBPLY.75-5x10",
@@ -66887,7 +66887,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 51,
   "fields": {
     "code": "BBPLY.75-5x5",
@@ -66904,7 +66904,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 52,
   "fields": {
     "code": "BBPLY.75P",
@@ -66921,7 +66921,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 53,
   "fields": {
     "code": "BBPLY1.0",
@@ -66938,7 +66938,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 54,
   "fields": {
     "code": "CRATE",
@@ -66955,7 +66955,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 55,
   "fields": {
     "code": "EDGE1",
@@ -66972,7 +66972,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 56,
   "fields": {
     "code": "GLAMP",
@@ -66989,7 +66989,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 57,
   "fields": {
     "code": "GLPVAN",
@@ -67006,7 +67006,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 58,
   "fields": {
     "code": "HDPE.25",
@@ -67023,7 +67023,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 59,
   "fields": {
     "code": "HDPE.375",
@@ -67040,7 +67040,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 60,
   "fields": {
     "code": "HDPE.5",
@@ -67057,7 +67057,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 61,
   "fields": {
     "code": "HDPE.75",
@@ -67074,7 +67074,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 62,
   "fields": {
     "code": "HDU1.0",
@@ -67091,7 +67091,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 63,
   "fields": {
     "code": "HIVE- 1-5",
@@ -67108,7 +67108,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 64,
   "fields": {
     "code": "HIVE- 6+",
@@ -67125,7 +67125,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 65,
   "fields": {
     "code": "IMPLY.25",
@@ -67142,7 +67142,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 66,
   "fields": {
     "code": "IMPLY.5",
@@ -67159,7 +67159,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 67,
   "fields": {
     "code": "IMPLY.58",
@@ -67176,7 +67176,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 68,
   "fields": {
     "code": "IMPLY.5P",
@@ -67193,7 +67193,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 69,
   "fields": {
     "code": "IMPLY.75",
@@ -67210,7 +67210,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 70,
   "fields": {
     "code": "IMPLY.75P",
@@ -67227,7 +67227,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 71,
   "fields": {
     "code": "IMPLY1",
@@ -67244,7 +67244,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 72,
   "fields": {
     "code": "IR-mat'l",
@@ -67261,7 +67261,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 73,
   "fields": {
     "code": "IR-palletize",
@@ -67278,7 +67278,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 74,
   "fields": {
     "code": "IR-POSv2",
@@ -67295,7 +67295,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 75,
   "fields": {
     "code": "IR-sign",
@@ -67312,7 +67312,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 76,
   "fields": {
     "code": "LAUAN.25",
@@ -67329,7 +67329,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 77,
   "fields": {
     "code": "M67-full",
@@ -67346,7 +67346,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 78,
   "fields": {
     "code": "MAPLY.25",
@@ -67363,7 +67363,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 79,
   "fields": {
     "code": "MAPLY.25P",
@@ -67380,7 +67380,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 80,
   "fields": {
     "code": "MAPLY.5P",
@@ -67397,7 +67397,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 81,
   "fields": {
     "code": "MAPLY.75",
@@ -67414,7 +67414,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 82,
   "fields": {
     "code": "MAPLY.75P",
@@ -67431,7 +67431,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 83,
   "fields": {
     "code": "MAPLY.75P1S",
@@ -67448,7 +67448,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 84,
   "fields": {
     "code": "MAPLY1.0",
@@ -67465,7 +67465,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 85,
   "fields": {
     "code": "MAR.5",
@@ -67482,7 +67482,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 86,
   "fields": {
     "code": "MAR.75",
@@ -67499,7 +67499,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 87,
   "fields": {
     "code": "MAR1.0",
@@ -67516,7 +67516,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 88,
   "fields": {
     "code": "MARO.75",
@@ -67533,7 +67533,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 89,
   "fields": {
     "code": "MDF.125",
@@ -67550,7 +67550,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 90,
   "fields": {
     "code": "MDF.25",
@@ -67567,7 +67567,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 91,
   "fields": {
     "code": "MDF.375",
@@ -67584,7 +67584,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 92,
   "fields": {
     "code": "MDF.5",
@@ -67601,7 +67601,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 93,
   "fields": {
     "code": "MDF.625",
@@ -67618,7 +67618,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 94,
   "fields": {
     "code": "MDF.75",
@@ -67635,7 +67635,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 95,
   "fields": {
     "code": "MDF.75-4X10",
@@ -67652,7 +67652,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 96,
   "fields": {
     "code": "MDF.75-5x10",
@@ -67669,7 +67669,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 97,
   "fields": {
     "code": "MDF.75-5x8",
@@ -67686,7 +67686,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 98,
   "fields": {
     "code": "MDF.75U",
@@ -67703,7 +67703,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 99,
   "fields": {
     "code": "MDF1.0",
@@ -67720,7 +67720,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 100,
   "fields": {
     "code": "MDFUL.5",
@@ -67737,7 +67737,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 101,
   "fields": {
     "code": "MDFUL.75",
@@ -67754,7 +67754,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 102,
   "fields": {
     "code": "MEL.75-5X8",
@@ -67771,7 +67771,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 103,
   "fields": {
     "code": "P-FABsetup",
@@ -67788,7 +67788,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 104,
   "fields": {
     "code": "P-RECsetup",
@@ -67805,7 +67805,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 105,
   "fields": {
     "code": "PLYBOO.5",
@@ -67822,7 +67822,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 106,
   "fields": {
     "code": "PLYBOO.75",
@@ -67839,7 +67839,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 107,
   "fields": {
     "code": "PLYBOO1.0",
@@ -67856,7 +67856,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 108,
   "fields": {
     "code": "PM-4x8.75",
@@ -67873,7 +67873,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 109,
   "fields": {
     "code": "PM-5x10.75",
@@ -67890,7 +67890,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 110,
   "fields": {
     "code": "POLY.125",
@@ -67907,7 +67907,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 111,
   "fields": {
     "code": "POLY.25",
@@ -67924,7 +67924,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 112,
   "fields": {
     "code": "POLY.50",
@@ -67941,7 +67941,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 113,
   "fields": {
     "code": "PVC .25",
@@ -67958,7 +67958,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 114,
   "fields": {
     "code": "PVC.125",
@@ -67975,7 +67975,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 115,
   "fields": {
     "code": "PVC.5",
@@ -67992,7 +67992,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 116,
   "fields": {
     "code": "R1-oil",
@@ -68009,7 +68009,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 117,
   "fields": {
     "code": "R1S-BED",
@@ -68026,7 +68026,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 118,
   "fields": {
     "code": "R1S-KIT",
@@ -68043,7 +68043,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 119,
   "fields": {
     "code": "R1T-KIT",
@@ -68060,7 +68060,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 120,
   "fields": {
     "code": "R1T-KIT-M",
@@ -68077,7 +68077,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 121,
   "fields": {
     "code": "R1T-SLD",
@@ -68094,7 +68094,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 122,
   "fields": {
     "code": "R1T-SLD-M",
@@ -68111,7 +68111,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 123,
   "fields": {
     "code": "R1T-STB",
@@ -68128,7 +68128,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 124,
   "fields": {
     "code": "R1T-STB-05M",
@@ -68145,7 +68145,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 125,
   "fields": {
     "code": "SHOPB.5",
@@ -68162,7 +68162,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 126,
   "fields": {
     "code": "SHOPB.75",
@@ -68179,7 +68179,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 127,
   "fields": {
     "code": "SHOPB.75P",
@@ -68196,7 +68196,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 128,
   "fields": {
     "code": "SHOPM.5P",
@@ -68213,7 +68213,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 129,
   "fields": {
     "code": "SHOPM.75",
@@ -68230,7 +68230,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 130,
   "fields": {
     "code": "SHOPM.75P",
@@ -68247,7 +68247,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 131,
   "fields": {
     "code": "TIG.75",
@@ -68264,7 +68264,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 132,
   "fields": {
     "code": "WAL.5",
@@ -68281,7 +68281,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 133,
   "fields": {
     "code": "WESTERNDRILL",
@@ -68298,7 +68298,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 134,
   "fields": {
     "code": "WESTERNLF8mm",
@@ -68315,7 +68315,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 135,
   "fields": {
     "code": "WIG.25",
@@ -68332,7 +68332,7 @@
   }
 },
 {
-  "model": "inventory.pricelistitem",
+  "model": "inventory.inventoryitem",
   "pk": 136,
   "fields": {
     "code": "WOAK.75",

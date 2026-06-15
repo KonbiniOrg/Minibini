@@ -61,7 +61,7 @@ class Expense(models.Model):
     # the amount is NOT job-costed (cost flows at consumption). Mutually exclusive
     # with `material` (the cost-expense mode).
     stock_pli = models.ForeignKey(
-        'inventory.PriceListItem', on_delete=models.SET_NULL,
+        'inventory.InventoryItem', on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='+',
     )

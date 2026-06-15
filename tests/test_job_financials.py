@@ -147,8 +147,8 @@ class SpentTests(FixtureTestCase):
         # A stock-receipt expense (inventoried PLI) is inventory, costed at
         # consumption — its amount is NOT in spent at purchase.
         from apps.jobs.financials import compute_job_financials
-        from apps.inventory.models import PriceListItem
-        pli = PriceListItem.objects.create(
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
             code='SR-FIN', description='p', accounting_category=self.cat,
             is_inventoried=True)
         Expense.objects.create(

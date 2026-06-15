@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
 from apps.inventory.models import (
-    Material, PlanMaterial, PriceListItem,
+    Material, PlanMaterial, InventoryItem,
 )
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
@@ -16,7 +16,7 @@ class _Setup(APITestCase):
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,

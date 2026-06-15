@@ -33,7 +33,7 @@
         }
     },
     {
-        "model": "inventory.pricelistitem",
+        "model": "inventory.inventoryitem",
         "pk": 1,
         "fields": {
             "code": "SCREW001",
@@ -48,7 +48,7 @@
         }
     },
     {
-        "model": "inventory.pricelistitem",
+        "model": "inventory.inventoryitem",
         "pk": 2,
         "fields": {
             "code": "LABOR001",

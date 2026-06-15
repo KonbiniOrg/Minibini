@@ -8,7 +8,7 @@ from django.test import TestCase
 
 from apps.core.models import AccountingCategory
 from apps.jobs.models import PlanTask, Task, RateScheme
-from apps.inventory.models import PlanMaterial, Material, PriceListItem
+from apps.inventory.models import PlanMaterial, Material, InventoryItem
 
 
 def _make_scheme(suffix):
@@ -56,7 +56,7 @@ class TaskBaseCopyFieldsTest(TestCase):
 class MaterialBaseCopyFieldsTest(TestCase):
     def test_copy_fields_returns_full_materialbase_field_set(self):
         ac = AccountingCategory.objects.create(code='CF-MAT', name='cf-mat')
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             description='Steel', units='kg', accounting_category=ac,
         )
         pm = PlanMaterial(

@@ -1,13 +1,13 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.inventory.services import InventoryService
-from .forms import InventoryItemForm, PriceListItemForm
+from .forms import InventoryItemForm, InventoryItemForm
 
 
 def inventory_list(request):
     """Display all active inventoried items with stock quantities."""
-    items = PriceListItem.objects.filter(
+    items = InventoryItem.objects.filter(
         is_inventoried=True, is_active=True,
     ).prefetch_related('earmark_set').order_by('code')
     return render(request, 'inventory/inventory_list.html', {'items': items})
@@ -37,7 +37,7 @@ def inventory_item_add(request):
 
 def inventory_item_edit(request, item_id):
     """Edit an existing inventoried item."""
-    item = get_object_or_404(PriceListItem, price_list_item_id=item_id, is_inventoried=True)
+    item = get_object_or_404(InventoryItem, price_list_item_id=item_id, is_inventoried=True)
 
     if request.method == 'POST':
         form = InventoryItemForm(request.POST, instance=item)
@@ -65,9 +65,9 @@ def price_list_item_list(request):
     show_archived = request.GET.get('show_archived') == '1'
 
     if show_archived:
-        items = PriceListItem.objects.all().order_by('code')
+        items = InventoryItem.objects.all().order_by('code')
     else:
-        items = PriceListItem.objects.filter(is_active=True).order_by('code')
+        items = InventoryItem.objects.filter(is_active=True).order_by('code')
 
     return render(request, 'invoicing/price_list_item_list.html', {
         'items': items,
@@ -78,13 +78,13 @@ def price_list_item_list(request):
 def price_list_item_add(request):
     """Add a new price list item."""
     if request.method == 'POST':
-        form = PriceListItemForm(request.POST)
+        form = InventoryItemForm(request.POST)
         if form.is_valid():
             item = InventoryService.create_item(**form.cleaned_data)
             messages.success(request, f'Price List Item "{item.code}" created successfully.')
             return redirect('inventory:price_list_item_list')
     else:
-        form = PriceListItemForm()
+        form = InventoryItemForm()
 
     return render(request, 'invoicing/price_list_item_form.html', {
         'form': form,
@@ -95,16 +95,16 @@ def price_list_item_add(request):
 
 def price_list_item_edit(request, item_id):
     """Edit an existing price list item."""
-    item = get_object_or_404(PriceListItem, price_list_item_id=item_id)
+    item = get_object_or_404(InventoryItem, price_list_item_id=item_id)
 
     if request.method == 'POST':
-        form = PriceListItemForm(request.POST, instance=item)
+        form = InventoryItemForm(request.POST, instance=item)
         if form.is_valid():
             InventoryService.update_item(item.pk, **form.cleaned_data)
             messages.success(request, f'Price List Item "{item.code}" updated successfully.')
             return redirect('inventory:price_list_item_list')
     else:
-        form = PriceListItemForm(instance=item)
+        form = InventoryItemForm(instance=item)
 
     return render(request, 'invoicing/price_list_item_form.html', {
         'form': form,

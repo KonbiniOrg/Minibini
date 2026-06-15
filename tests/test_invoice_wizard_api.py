@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from apps.core.models import User, Configuration, AccountingCategory, AppState
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task, Blep, RateScheme
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 
 

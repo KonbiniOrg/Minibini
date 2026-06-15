@@ -4,14 +4,14 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import PriceListItem, PlanMaterial, Material, Earmark
+from apps.inventory.models import InventoryItem, PlanMaterial, Material, Earmark
 from apps.jobs.services import JobService
 
 
 class CopyFromWorksheetMaterialsTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='c', code='CW1')
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-CW', accounting_category=self.cat, is_inventoried=True,
         )
         self.contact = Contact.objects.create(

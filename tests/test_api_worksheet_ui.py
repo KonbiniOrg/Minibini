@@ -8,7 +8,7 @@ from apps.core.models import User, AccountingCategory
 from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet, TaskTemplate
-from apps.inventory.models import PlanMaterial, PriceListItem
+from apps.inventory.models import PlanMaterial, InventoryItem
 
 
 class PlanMaterialCRUDTest(TestCase):
@@ -86,7 +86,7 @@ class PlanMaterialCRUDTest(TestCase):
         self.assertEqual(PlanMaterial.objects.filter(plan_task=self.plan_task).count(), 2)
 
     def test_create_material_with_pli(self):
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='EPOXY-01', description='Epoxy 2-part', units='tube',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.category,

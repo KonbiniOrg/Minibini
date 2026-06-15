@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, RateScheme
-from apps.inventory.models import Material, Earmark, PriceListItem
+from apps.inventory.models import Material, Earmark, InventoryItem
 from apps.inventory.services import MaterialService
 from apps.core.models import AccountingCategory
 
@@ -14,10 +14,10 @@ class MaterialServiceCreateOnJobTest(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(job_number='JOB-MS-1', contact=self.contact)
-        self.pli_inv = PriceListItem.objects.create(
+        self.pli_inv = InventoryItem.objects.create(
             code='I', accounting_category=self.cat, is_inventoried=True,
         )
-        self.pli_noninv = PriceListItem.objects.create(
+        self.pli_noninv = InventoryItem.objects.create(
             code='N', accounting_category=self.cat, is_inventoried=False,
         )
         self.scheme = RateScheme.objects.create(

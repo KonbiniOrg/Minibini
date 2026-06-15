@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
 
 User = get_user_model()
@@ -19,7 +19,7 @@ class FreeformMaterialCostServiceTest(TestCase):
         self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
         self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
         self.job = Job.objects.create(job_number='JOB-FF-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLI-1', description='cataloged', accounting_category=self.cat,
             purchase_price=Decimal('3.00'),
         )

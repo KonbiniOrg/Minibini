@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Earmark, Material, PriceListItem, InventoryAdjustment
+from apps.inventory.models import Earmark, Material, InventoryItem, InventoryAdjustment
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.purchasing.services import PurchaseOrderService, PurchaseOrderReceivingService
 from apps.core.models import AccountingCategory, Configuration, User, AppState
@@ -19,7 +19,7 @@ class POReceiveWithMaterialTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
             selling_price=Decimal('2.00'), accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('0.00'),

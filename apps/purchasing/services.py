@@ -193,17 +193,17 @@ class PurchaseOrderService:
 
     @staticmethod
     def add_line_item_from_pli(po_id, price_list_item_id, qty, job=None, material_id=None):
-        """Add a line item from a PriceListItem to a draft PO. Accepts optional job, material_id."""
-        from apps.inventory.models import PriceListItem
+        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id."""
+        from apps.inventory.models import InventoryItem
         try:
             po = PurchaseOrder.objects.get(pk=po_id)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
         try:
-            pli = PriceListItem.objects.get(pk=price_list_item_id)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {price_list_item_id} not found')
+            pli = InventoryItem.objects.get(pk=price_list_item_id)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {price_list_item_id} not found')
         with transaction.atomic():
             li = PurchaseOrderLineItem(
                 purchase_order=po,
@@ -826,17 +826,17 @@ class BillService:
 
     @staticmethod
     def add_line_item_from_pli(bill_id, price_list_item_id, qty):
-        """Add a line item from a PriceListItem to a draft bill."""
-        from apps.inventory.models import PriceListItem
+        """Add a line item from a InventoryItem to a draft bill."""
+        from apps.inventory.models import InventoryItem
         try:
             bill = Bill.objects.get(pk=bill_id)
         except Bill.DoesNotExist:
             raise NotFoundError(f'Bill {bill_id} not found')
         BillService._validate_draft(bill)
         try:
-            pli = PriceListItem.objects.get(pk=price_list_item_id)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {price_list_item_id} not found')
+            pli = InventoryItem.objects.get(pk=price_list_item_id)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {price_list_item_id} not found')
         li = BillLineItem(
             bill=bill,
             price_list_item=pli,

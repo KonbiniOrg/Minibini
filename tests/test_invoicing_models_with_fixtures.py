@@ -1,7 +1,7 @@
 from django.test import TestCase
 from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.estimates.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 from apps.jobs.models import Job, Task
@@ -11,14 +11,14 @@ from .base import FixtureTestCase
 
 
 
-class PriceListItemModelFixtureTest(FixtureTestCase):
+class InventoryItemModelFixtureTest(FixtureTestCase):
     """
-    Test PriceListItem model using fixture data
+    Test InventoryItem model using fixture data
     """
     
     def test_price_list_items_exist_from_fixture(self):
         """Test that price list items from fixture data exist and have correct properties"""
-        screw_item = PriceListItem.objects.get(code="SCREW001")
+        screw_item = InventoryItem.objects.get(code="SCREW001")
         self.assertEqual(screw_item.description, "Stainless steel screws 2.5 inch")
         self.assertEqual(screw_item.purchase_price, Decimal('0.25'))
         self.assertEqual(screw_item.selling_price, Decimal('0.50'))
@@ -26,7 +26,7 @@ class PriceListItemModelFixtureTest(FixtureTestCase):
         self.assertEqual(screw_item.qty_sold, Decimal('150.00'))
         self.assertEqual(screw_item.qty_wasted, Decimal('5.00'))
         
-        labor_item = PriceListItem.objects.get(code="LABOR001")
+        labor_item = InventoryItem.objects.get(code="LABOR001")
         self.assertEqual(labor_item.description, "Skilled labor hourly rate")
         self.assertEqual(labor_item.purchase_price, Decimal('0.00'))
         self.assertEqual(labor_item.selling_price, Decimal('75.00'))
@@ -35,7 +35,7 @@ class PriceListItemModelFixtureTest(FixtureTestCase):
         
     def test_price_list_item_str_method_with_fixture_data(self):
         """Test price list item string representation with fixture data"""
-        item = PriceListItem.objects.get(code="SCREW001")
+        item = InventoryItem.objects.get(code="SCREW001")
         expected_str = "SCREW001 - Stainless steel screws 2.5 inch"
         self.assertEqual(str(item), expected_str)
         
@@ -43,7 +43,7 @@ class PriceListItemModelFixtureTest(FixtureTestCase):
     def test_create_new_price_list_item(self):
         """Test creating a new price list item"""
         category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        new_item = PriceListItem.objects.create(
+        new_item = InventoryItem.objects.create(
             code="WOOD001",
             units="bd ft",
             description="Oak lumber 1x6",
@@ -52,7 +52,7 @@ class PriceListItemModelFixtureTest(FixtureTestCase):
             accounting_category=category
         )
         self.assertEqual(new_item.code, "WOOD001")
-        self.assertEqual(PriceListItem.objects.count(), 3)  # 2 from fixture + 1 new
+        self.assertEqual(InventoryItem.objects.count(), 3)  # 2 from fixture + 1 new
 
 
 class InvoiceModelFixtureTest(FixtureTestCase):
@@ -204,7 +204,7 @@ class LineItemModelFixtureTest(FixtureTestCase):
         self.assertIsNone(invoice_item2.task)
 
         # Test price list item relationship for items that have price list items
-        price_item = PriceListItem.objects.get(code="SCREW001")
+        price_item = InventoryItem.objects.get(code="SCREW001")
         self.assertEqual(estimate_item.price_list_item, price_item)
         self.assertEqual(invoice_item.price_list_item, price_item)
 

@@ -8,7 +8,7 @@ from apps.invoicing.services import InvoiceService, InvoiceWizardService, ClaimC
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory, AppState, User
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 
 
 class OpenForJobTest(TestCase):
@@ -145,7 +145,7 @@ class GetSourcePoolTest(TestCase):
             end_time=None,
         )
 
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLYWOOD', description='Plywood 4x8',
             selling_price=Decimal('25.00'),
             accounting_category=self.category,
@@ -320,7 +320,7 @@ class AddAtomsToNewLineItemTest(TestCase):
             start_time=start + timezone.timedelta(hours=5),
             end_time=start + timezone.timedelta(hours=6),
         )
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLY', description='Plywood',
             selling_price=Decimal('25.00'),
             accounting_category=self.cat_materials,
@@ -361,7 +361,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.units, 'hours')
 
     def test_single_material_atom_copy_over(self):
-        # material has quantity=1.00, sell_price=25.00, linked to a PriceListItem
+        # material has quantity=1.00, sell_price=25.00, linked to a InventoryItem
         # whose units default to 'none' -> qty=1, price=25, units='none'
         atoms = [{'type': 'material', 'id': self.material.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
@@ -902,11 +902,11 @@ class SourcePoolLooseMaterialsTest(TestCase):
         from apps.jobs.models import Job
         from apps.invoicing.models import Invoice
         from apps.invoicing.services import InvoiceWizardService
-        from apps.inventory.models import PriceListItem
+        from apps.inventory.models import InventoryItem
         from apps.inventory.services import MaterialService
         from apps.expenses.models import Expense
         cat = AccountingCategory.objects.create(name='c', code='IWL1')
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='I-IWL', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -944,10 +944,10 @@ class SourcePoolLooseMaterialsTest(TestCase):
         from apps.core.models import AccountingCategory
         from apps.jobs.models import Job
         from apps.invoicing.services import InvoiceWizardService
-        from apps.inventory.models import PriceListItem
+        from apps.inventory.models import InventoryItem
         from apps.inventory.services import MaterialService
         cat = AccountingCategory.objects.create(name='c', code='IWL2')
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='I-IWL2', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -990,7 +990,7 @@ class TaskAttachedPartialRestockTest(TestCase):
             accounting_category=self.cat,
         )
         task = Task.objects.create(job=job, name='work', rate_scheme=scheme)
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
             is_inventoried=True, selling_price=Decimal('3.00'),
             qty_on_hand=Decimal('20'),

@@ -6,7 +6,7 @@ from apps.jobs.models import Job, Task
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
 
 
@@ -163,7 +163,7 @@ class SearchService:
     @staticmethod
     def search_price_list_items(query):
         """Search for price list items matching the query"""
-        return PriceListItem.objects.annotate(
+        return InventoryItem.objects.annotate(
             purchase_price_text=Cast('purchase_price', CharField()),
             selling_price_text=Cast('selling_price', CharField())
         ).filter(
@@ -721,7 +721,7 @@ class SearchService:
             'jobs': 'Job',
             'contacts': 'Contact',
             'businesses': 'Business',
-            'price_list_items': 'PriceListItem',
+            'price_list_items': 'InventoryItem',
             'invoices': 'Invoice',
             'estimates': 'Estimate',
             'bills': 'Bill',
@@ -842,9 +842,9 @@ class SearchService:
                 }
 
         # PRICE LIST ITEMS
-        if 'PriceListItem' in result_ids and result_ids['PriceListItem']:
-            price_list_items = PriceListItem.objects.filter(
-                pk__in=result_ids['PriceListItem']
+        if 'InventoryItem' in result_ids and result_ids['InventoryItem']:
+            price_list_items = InventoryItem.objects.filter(
+                pk__in=result_ids['InventoryItem']
             ).annotate(
                 purchase_price_text=Cast('purchase_price', CharField()),
                 selling_price_text=Cast('selling_price', CharField())

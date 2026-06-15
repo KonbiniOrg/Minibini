@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, User
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import Job
 
@@ -27,7 +27,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
     def setUpTestData(cls):
         Configuration.objects.create(key='units_list', value='["none","ea","sheets","lbs","hours"]')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
@@ -75,7 +75,7 @@ class MaterialSerializerUnitsTests(APITestCase):
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,

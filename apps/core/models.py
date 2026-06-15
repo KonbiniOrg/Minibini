@@ -330,7 +330,7 @@ class BaseLineItem(models.Model):
     # reserved for a future "service PO" feature). EstimateLineItem and
     # InvoiceLineItem do not carry a task FK; they link to their source
     # atoms via EstimateLineItemSource / InvoiceLineItemSource respectively.
-    price_list_item = models.ForeignKey('inventory.PriceListItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
+    price_list_item = models.ForeignKey('inventory.InventoryItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, default='none')
@@ -376,7 +376,7 @@ class BaseLineItem(models.Model):
                 raise ValidationError("LineItem cannot have both task and price_list_item")
 
     def _populate_from_pli(self):
-        """Copy description/units/accounting_category from linked PriceListItem if not already set.
+        """Copy description/units/accounting_category from linked InventoryItem if not already set.
 
         Price is NOT populated here because purchase vs selling price is a
         business decision — services set the correct price for each entity type.

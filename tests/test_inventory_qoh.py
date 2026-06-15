@@ -8,7 +8,7 @@ from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, PlanTask, Task, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.inventory.models import Earmark, InventoryAdjustment
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.inventory.services import InventoryService, MaterialService
@@ -45,7 +45,7 @@ class ConsumeMaterialTest(TestCase):
             sort_order=1,
             rate_scheme=self.scheme,
         )
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -170,7 +170,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             sort_order=1,
             rate_scheme=self.scheme,
         )
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -251,7 +251,7 @@ class ManualAdjustmentTest(TestCase):
 
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',

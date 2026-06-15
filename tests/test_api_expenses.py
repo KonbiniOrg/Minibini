@@ -346,13 +346,13 @@ class ExpenseStockReceiptApiTest(TestCase):
     def setUp(self):
         from apps.contacts.models import Contact
         from apps.jobs.models import Job
-        from apps.inventory.models import PriceListItem
+        from apps.inventory.models import InventoryItem
         self.client_http = Client()
         self.cat = AccountingCategory.objects.create(code='SR', name='Stock')
         self.user = User.objects.create_user(username='w', password='x')
         self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
         self.job = Job.objects.create(job_number='JOB-SRA-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLY', description='plywood', accounting_category=self.cat,
             is_inventoried=True, qty_on_hand=Decimal('7.00'))
         self.client_http.force_login(self.user)

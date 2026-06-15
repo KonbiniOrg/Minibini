@@ -18,7 +18,7 @@ from django.apps import apps as django_apps
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.jobs.models import Job, Task, RateScheme
 
 
@@ -41,10 +41,10 @@ class BackfillMaterialJobTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='mig10', code='MIG10')
         self.contact = _make_contact()
-        self.pli_inv = PriceListItem.objects.create(
+        self.pli_inv = InventoryItem.objects.create(
             code='MIG-I10', accounting_category=self.cat, is_inventoried=True,
         )
-        self.pli_noninv = PriceListItem.objects.create(
+        self.pli_noninv = InventoryItem.objects.create(
             code='MIG-N10', accounting_category=self.cat, is_inventoried=False,
         )
         self.job = Job.objects.create(job_number='JOB-MIG10-1', contact=self.contact)

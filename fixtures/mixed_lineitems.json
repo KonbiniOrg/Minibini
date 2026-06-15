@@ -81,7 +81,7 @@
         }
     },
     {
-        "model": "inventory.pricelistitem",
+        "model": "inventory.inventoryitem",
         "pk": 200,
         "fields": {
             "code": "WOOD001",
@@ -96,7 +96,7 @@
         }
     },
     {
-        "model": "inventory.pricelistitem",
+        "model": "inventory.inventoryitem",
         "pk": 201,
         "fields": {
             "code": "FINISH001",

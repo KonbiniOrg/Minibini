@@ -3,7 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 from apps.purchasing.models import PurchaseOrder
 from apps.purchasing.services import PurchaseOrderService
 from apps.core.models import AccountingCategory, Configuration, User, AppState
@@ -22,7 +22,7 @@ class APIPOJobMaterialTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
             selling_price=Decimal('2.00'), accounting_category=self.cat, is_inventoried=True,
         )

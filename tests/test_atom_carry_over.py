@@ -7,7 +7,7 @@ from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.carry_over import AtomCarryOverService
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Earmark, Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Earmark, Material, PlanMaterial, InventoryItem
 from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
 
@@ -99,7 +99,7 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         self.assertEqual(m.units, 'kg')
 
     def test_carry_over_creates_earmarks_for_inventoried_materials(self):
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='CO-EARM', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('50'),
         )
@@ -136,7 +136,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             template_name='Setup', rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='STEEL', description='steel rod', units='ft',
             purchase_price=Decimal('3'), selling_price=Decimal('5'),
             accounting_category=self.cat,

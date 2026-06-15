@@ -9,7 +9,7 @@ from apps.estimates.models import (
     Estimate, EstWorksheet,
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
@@ -351,7 +351,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         ws_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
             rate_scheme=self.scheme, est_qty=Decimal('1'))
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='STL-001', description='Steel plate',
             purchase_price=Decimal('50.00'),
             accounting_category=self.lit)
@@ -392,7 +392,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
             rate_scheme=self.scheme, est_qty=Decimal('1'))
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='LINK-001', description='Linked item',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.lit)

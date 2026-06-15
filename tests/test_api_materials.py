@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase, APIClient
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, RateScheme
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.contacts.models import Contact, Business
 
 User = get_user_model()
@@ -20,7 +20,7 @@ class MaterialApiTest(APITestCase):
         biz = Business.objects.create(business_name='B', default_contact=contact)
         contact.business = biz; contact.save()
         self.job = Job.objects.create(job_number='JOB-API-1', contact=contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-API', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -116,11 +116,11 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='JOB-MIVF-1', contact=contact)
-        self.pli_inv = PriceListItem.objects.create(
+        self.pli_inv = InventoryItem.objects.create(
             code='I-INV', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
-        self.pli_free = PriceListItem.objects.create(
+        self.pli_free = InventoryItem.objects.create(
             code='I-FREE', accounting_category=self.cat, is_inventoried=False,
         )
 
@@ -243,7 +243,7 @@ class MaterialApiPermissionTest(APITestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='JOB-PERM-1', contact=contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-PERM', accounting_category=self.cat, is_inventoried=False,
         )
 

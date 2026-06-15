@@ -8,7 +8,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
-from apps.inventory.models import PriceListItem, Earmark
+from apps.inventory.models import InventoryItem, Earmark
 
 
 class EarmarkReleaseOnWorkCompleteTest(TestCase):
@@ -29,7 +29,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
             code='SVC',
             defaults={'name': 'Service', 'taxable': False},
         )[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.REL', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
@@ -143,7 +143,7 @@ class EarmarkReleaseOnTerminalStatusesTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLY.T5', description='Plywood', units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),

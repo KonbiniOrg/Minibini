@@ -1,7 +1,7 @@
 from django.test import TestCase
 from decimal import Decimal
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -10,12 +10,12 @@ from apps.core.models import AccountingCategory, Configuration
 
 
 
-class PriceListItemModelTest(TestCase):
+class InventoryItemModelTest(TestCase):
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
     def test_price_list_item_creation(self):
-        item = PriceListItem.objects.create(
+        item = InventoryItem.objects.create(
             code="ITEM001",
             units="ea",
             description="Test item description",
@@ -36,7 +36,7 @@ class PriceListItemModelTest(TestCase):
         self.assertEqual(item.qty_wasted, Decimal('2.00'))
         
     def test_price_list_item_str_method(self):
-        item = PriceListItem.objects.create(
+        item = InventoryItem.objects.create(
             code="TEST123",
             description="This is a very long description that should be truncated in the string representation",
             accounting_category=self.category
@@ -44,7 +44,7 @@ class PriceListItemModelTest(TestCase):
         self.assertEqual(str(item), "TEST123 - This is a very long description that should be tru")
         
     def test_price_list_item_defaults(self):
-        item = PriceListItem.objects.create(
+        item = InventoryItem.objects.create(
             code="DEFAULT001",
             accounting_category=self.category
         )
@@ -154,7 +154,7 @@ class InvoiceLineItemModelTest(TestCase):
             contact=self.contact,
             vendor_invoice_number="VIN001"
         )
-        self.price_list_item = PriceListItem.objects.create(
+        self.price_list_item = InventoryItem.objects.create(
             code="ITEM001",
             accounting_category=self.category
         )

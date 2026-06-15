@@ -6,7 +6,7 @@ from tests.base import BaseTestCase
 from apps.core.models import AccountingCategory, User
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business, Contact
-from apps.inventory.models import PriceListItem, InventoryAdjustment
+from apps.inventory.models import InventoryItem, InventoryAdjustment
 
 
 class POReceivingTestBase(BaseTestCase):
@@ -27,7 +27,7 @@ class POReceivingTestBase(BaseTestCase):
         )
         pli = None
         if with_pli:
-            pli = PriceListItem.objects.create(
+            pli = InventoryItem.objects.create(
                 code='TEST-PLI-RECV',
                 description='Test PLI',
                 purchase_price=Decimal('10.00'),
@@ -175,7 +175,7 @@ class InventoryIntegrationTest(POReceivingTestBase):
 
     def test_receive_updates_qty_on_hand(self):
         po = self._make_issued_po(with_pli=True)
-        pli = PriceListItem.objects.get(code='TEST-PLI-RECV')
+        pli = InventoryItem.objects.get(code='TEST-PLI-RECV')
         self.assertEqual(pli.qty_on_hand, Decimal('0.00'))
 
         li = PurchaseOrderLineItem.objects.filter(
@@ -191,7 +191,7 @@ class InventoryIntegrationTest(POReceivingTestBase):
 
     def test_receive_creates_inventory_adjustment(self):
         po = self._make_issued_po(with_pli=True)
-        pli = PriceListItem.objects.get(code='TEST-PLI-RECV')
+        pli = InventoryItem.objects.get(code='TEST-PLI-RECV')
         li = PurchaseOrderLineItem.objects.filter(
             purchase_order=po, price_list_item=pli,
         ).first()
@@ -353,7 +353,7 @@ class ReverseReceiptTest(POReceivingTestBase):
 
     def test_reverse_receipt_updates_inventory(self):
         po = self._make_issued_po(with_pli=True)
-        pli = PriceListItem.objects.get(code='TEST-PLI-RECV')
+        pli = InventoryItem.objects.get(code='TEST-PLI-RECV')
         li = PurchaseOrderLineItem.objects.filter(
             purchase_order=po, price_list_item=pli,
         ).first()

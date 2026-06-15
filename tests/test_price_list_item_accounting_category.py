@@ -1,16 +1,16 @@
 """
-Tests for PriceListItem.accounting_category field - TDD approach.
-Testing linking PriceListItem to AccountingCategory for catalog items.
+Tests for InventoryItem.accounting_category field - TDD approach.
+Testing linking InventoryItem to AccountingCategory for catalog items.
 """
 from decimal import Decimal
 from django.test import TestCase
 from django.db.models import ProtectedError
 from apps.core.models import AccountingCategory
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 
-class PriceListItemAccountingCategoryTest(TestCase):
-    """Tests for accounting_category field on PriceListItem model."""
+class InventoryItemAccountingCategoryTest(TestCase):
+    """Tests for accounting_category field on InventoryItem model."""
 
     @classmethod
     def setUpTestData(cls):
@@ -28,7 +28,7 @@ class PriceListItemAccountingCategoryTest(TestCase):
         """Test that accounting_category is required."""
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
-            PriceListItem.objects.create(
+            InventoryItem.objects.create(
                 code='ITEM-001',
                 description='Test Item',
                 selling_price=Decimal('100.00')
@@ -36,7 +36,7 @@ class PriceListItemAccountingCategoryTest(TestCase):
 
     def test_accounting_category_can_be_assigned(self):
         """Test that accounting_category can be assigned."""
-        item = PriceListItem.objects.create(
+        item = InventoryItem.objects.create(
             code='ITEM-002',
             description='Product Item',
             selling_price=Decimal('50.00'),
@@ -47,7 +47,7 @@ class PriceListItemAccountingCategoryTest(TestCase):
 
     def test_accounting_category_can_be_updated(self):
         """Test that accounting_category can be updated."""
-        item = PriceListItem.objects.create(
+        item = InventoryItem.objects.create(
             code='ITEM-003',
             description='Updateable Item',
             selling_price=Decimal('75.00'),
@@ -61,13 +61,13 @@ class PriceListItemAccountingCategoryTest(TestCase):
         self.assertEqual(item.accounting_category, self.freight_type)
 
     def test_accounting_category_protect_on_delete(self):
-        """Test that deleting a AccountingCategory is protected if PriceListItems reference it."""
+        """Test that deleting a AccountingCategory is protected if InventoryItems reference it."""
         test_type = AccountingCategory.objects.create(
             code='TST',
             name='Test Type'
         )
 
-        PriceListItem.objects.create(
+        InventoryItem.objects.create(
             code='ITEM-004',
             description='Protected Item',
             selling_price=Decimal('25.00'),
@@ -78,14 +78,14 @@ class PriceListItemAccountingCategoryTest(TestCase):
             test_type.delete()
 
     def test_accounting_category_related_name(self):
-        """Test that AccountingCategory has access to related PriceListItems."""
-        item1 = PriceListItem.objects.create(
+        """Test that AccountingCategory has access to related InventoryItems."""
+        item1 = InventoryItem.objects.create(
             code='ITEM-005',
             description='Product 1',
             selling_price=Decimal('10.00'),
             accounting_category=self.product_type
         )
-        item2 = PriceListItem.objects.create(
+        item2 = InventoryItem.objects.create(
             code='ITEM-006',
             description='Product 2',
             selling_price=Decimal('20.00'),

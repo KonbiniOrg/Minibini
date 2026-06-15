@@ -9,7 +9,7 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
-from apps.inventory.models import Earmark, PriceListItem
+from apps.inventory.models import Earmark, InventoryItem
 from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice
 from apps.jobs.models import Job
@@ -22,7 +22,7 @@ class ReleaseLooseMaterialsHelperTest(TestCase):
             first_name='T', last_name='C', email='t6@c.com',
         )
         self.cat = AccountingCategory.objects.create(name='B6 Cat', code='B6')
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-B6', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('20'),
         )
@@ -55,7 +55,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
             first_name='Inv', last_name='C', email='inv6@c.com',
         )
         self.cat = AccountingCategory.objects.create(name='B6 Inv Cat', code='B6I')
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-B6I', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('20'),
         )

@@ -662,7 +662,7 @@ class ChangeOrderLineItem(BaseLineItem):
         null=True, blank=True,
     )
     price_list_item = models.ForeignKey(
-        'inventory.PriceListItem',
+        'inventory.InventoryItem',
         on_delete=models.SET_NULL,
         null=True, blank=True,
     )

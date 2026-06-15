@@ -297,14 +297,14 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     def create_material(self, request, pk=None):
         from decimal import Decimal as _Decimal
         from apps.inventory.services import MaterialService
-        from apps.inventory.models import PriceListItem
+        from apps.inventory.models import InventoryItem
         from apps.core.models import AccountingCategory
         from apps.api.inventory.serializers import MaterialSerializer
         job = self.get_object()
         data = request.data
         pli = None
         if data.get('price_list_item'):
-            pli = PriceListItem.objects.get(pk=data['price_list_item'])
+            pli = InventoryItem.objects.get(pk=data['price_list_item'])
         ac = None
         if data.get('accounting_category'):
             ac = AccountingCategory.objects.get(pk=data['accounting_category'])

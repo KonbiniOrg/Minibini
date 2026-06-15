@@ -11,7 +11,7 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
-from apps.inventory.models import Material, Earmark, PriceListItem
+from apps.inventory.models import Material, Earmark, InventoryItem
 from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job
 
@@ -37,7 +37,7 @@ class AdHocPurchaseTest(TestCase):
         )
 
         self.cat = AccountingCategory.objects.create(code='CAT1', name='c')
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I',
             accounting_category=self.cat,
             is_inventoried=True,
@@ -70,7 +70,7 @@ class AdHocPurchaseTest(TestCase):
     def test_receive_ad_hoc_purchase_non_inventoried_is_noop(self):
         """receive_ad_hoc_purchase on a non-inventoried PLI does nothing."""
         cat = AccountingCategory.objects.create(code='CAT2', name='d')
-        pli_noninv = PriceListItem.objects.create(
+        pli_noninv = InventoryItem.objects.create(
             code='NI', accounting_category=cat, is_inventoried=False,
             qty_on_hand=Decimal('5'),
         )
@@ -109,7 +109,7 @@ class ExpenseSubmitPathTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='c', code='EXCAT1')
         self.user = User.objects.create(username='exp_user')
         self.job = Job.objects.create(job_number='JOB-EX-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-EX', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -170,7 +170,7 @@ class ExpenseRejectStockReceiptTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='c', code='RJCAT1')
         self.user = User.objects.create(username='rj_user')
         self.job = Job.objects.create(job_number='JOB-RJ-1', contact=contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-RJ', accounting_category=self.cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -231,7 +231,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='ni', code='NICAT1')
         self.user = User.objects.create(username='ni_user')
         self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact)
-        self.pli_noninv = PriceListItem.objects.create(
+        self.pli_noninv = InventoryItem.objects.create(
             code='NI-PLI', accounting_category=self.cat, is_inventoried=False,
             qty_on_hand=Decimal('5'),
         )

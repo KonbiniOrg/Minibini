@@ -165,9 +165,9 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         self.assertIsNotNone(li.pk)
 
     def test_add_line_item_from_pli(self):
-        """Add a line item from a PriceListItem."""
-        from apps.inventory.models import PriceListItem
-        pli = PriceListItem.objects.create(
+        """Add a line item from a InventoryItem."""
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
             code='STL-001', description='Steel plate', units='sheets',
             purchase_price=Decimal('50.00'), selling_price=Decimal('75.00'),
             accounting_category=self.lit,
@@ -340,9 +340,9 @@ class BillServiceLineItemTest(PurchasingTestBase):
         self.assertEqual(li.description, 'Bolts')
 
     def test_add_line_item_from_pli(self):
-        """Add a line item from a PriceListItem."""
-        from apps.inventory.models import PriceListItem
-        pli = PriceListItem.objects.create(
+        """Add a line item from a InventoryItem."""
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
             code='BLT-001', description='Bolts', units='pcs',
             purchase_price=Decimal('0.50'), selling_price=Decimal('1.00'),
             accounting_category=self.lit,

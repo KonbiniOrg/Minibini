@@ -3,7 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.purchasing.services import PurchaseOrderService
 from apps.purchasing.models import PurchaseOrder
 from apps.core.models import AccountingCategory, Configuration, User, AppState
@@ -19,7 +19,7 @@ class JobMaterialSerializerPOFieldsTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
             selling_price=Decimal('2.00'), accounting_category=cat,
         )
@@ -54,7 +54,7 @@ class MaterialQtyOnHandTest(TestCase):
             code='MAT2', defaults={'name': 'Material'})[0]
         contact = Contact.objects.create(first_name='C', last_name='C', work_number='9')
         self.job = Job.objects.create(job_number='J-QOH', contact=contact, description='j')
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='INV', description='inv', accounting_category=cat,
             is_inventoried=True, qty_on_hand=Decimal('5.00'))
         self.mat = Material.objects.create(

@@ -4,7 +4,7 @@ from tests.base import BaseTestCase
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, RateScheme
 from apps.estimates.models import TaskTemplate
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.invoicing.models import InvoiceLineItem
 
 
@@ -12,7 +12,7 @@ class UnitsDefaultTest(BaseTestCase):
 
     def test_price_list_item_defaults_to_none(self):
         category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        pli = PriceListItem.objects.create(code='TEST-UNIT-PLI', accounting_category=category)
+        pli = InventoryItem.objects.create(code='TEST-UNIT-PLI', accounting_category=category)
         self.assertEqual(pli.units, 'none')
 
     def test_line_item_defaults_to_none(self):

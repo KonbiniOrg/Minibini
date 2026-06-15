@@ -9,7 +9,7 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import User, AccountingCategory
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.jobs.models import Job, Task
 from apps.search.services import SearchService
 from tests.base import BaseTestCase
@@ -280,15 +280,15 @@ class PriceFilterServiceTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         cat = AccountingCategory.objects.first()
-        self.cheap = PriceListItem.objects.create(
+        self.cheap = InventoryItem.objects.create(
             code='CHEAP', description='price filter cheap item',
             selling_price=Decimal('5.00'), accounting_category=cat
         )
-        self.mid = PriceListItem.objects.create(
+        self.mid = InventoryItem.objects.create(
             code='MID', description='price filter mid item',
             selling_price=Decimal('50.00'), accounting_category=cat
         )
-        self.expensive = PriceListItem.objects.create(
+        self.expensive = InventoryItem.objects.create(
             code='EXP', description='price filter expensive item',
             selling_price=Decimal('500.00'), accounting_category=cat
         )
@@ -364,11 +364,11 @@ class PriceFilterAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         cat = AccountingCategory.objects.first()
-        PriceListItem.objects.create(
+        InventoryItem.objects.create(
             code='SRCH-CHEAP', description='searchable price item cheap',
             selling_price=Decimal('5.00'), accounting_category=cat
         )
-        PriceListItem.objects.create(
+        InventoryItem.objects.create(
             code='SRCH-EXP', description='searchable price item expensive',
             selling_price=Decimal('999.00'), accounting_category=cat
         )

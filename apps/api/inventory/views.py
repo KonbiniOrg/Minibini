@@ -3,16 +3,16 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import ValidationError as DjangoValidationError
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials
 from apps.api.mixins import JSONDestroyMixin
-from .serializers import PriceListItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
+from .serializers import InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
 
 
-class PriceListItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
-    queryset = PriceListItem.objects.all().order_by('code')
-    serializer_class = PriceListItemSerializer
+class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
+    queryset = InventoryItem.objects.all().order_by('code')
+    serializer_class = InventoryItemSerializer
     lookup_field = 'pk'
     destroy_response_message = 'Price list item deleted.'
 

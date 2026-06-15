@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.expenses.models import Expense
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
 from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskLifecycleService
@@ -29,7 +29,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             name='S-wcg', algorithm=RateScheme.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=cat,
         )
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I-WCG', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -86,7 +86,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
     def test_taskless_non_inventoried_pending_material_blocks_transition(self):
         """A pending task-less non-inventoried material also blocks work_complete."""
         cat = AccountingCategory.objects.first()
-        non_inv_pli = PriceListItem.objects.create(
+        non_inv_pli = InventoryItem.objects.create(
             code='NI-WCG', accounting_category=cat, is_inventoried=False,
         )
         MaterialService.create_on_job(
@@ -99,7 +99,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
     def test_consumed_non_inventoried_does_not_block(self):
         """A consumed task-less non-inventoried material does not block work_complete."""
         cat = AccountingCategory.objects.first()
-        non_inv_pli = PriceListItem.objects.create(
+        non_inv_pli = InventoryItem.objects.create(
             code='NI-WCG2', accounting_category=cat, is_inventoried=False,
         )
         m = MaterialService.create_on_job(

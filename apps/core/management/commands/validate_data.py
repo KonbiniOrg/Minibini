@@ -57,7 +57,7 @@ Per-model field checks:
                    W  job has no accepted estimate
   ShipmentItem     E  qty must be positive
                    E  shipped qty per deliverable exceeds qty_ordered
-  PriceListItem    E  missing accounting_category (causes silent tax-exemption)
+  InventoryItem    E  missing accounting_category (causes silent tax-exemption)
                    E  negative purchase_price, selling_price, qty_on_hand, qty_sold, qty_wasted
                    E  duplicate code
                    W  not inventoried but has non-zero quantity values
@@ -554,8 +554,8 @@ class Command(BaseCommand):
     # ── Price List Items ──────────────────────────────────────
 
     def check_price_list_items(self):
-        from apps.inventory.models import PriceListItem
-        for pli in PriceListItem.objects.all():
+        from apps.inventory.models import InventoryItem
+        for pli in InventoryItem.objects.all():
             if not pli.accounting_category_id:
                 self.errors.append(
                     f'PLI {pli.code}: missing accounting_category '
@@ -580,7 +580,7 @@ class Command(BaseCommand):
                     )
             # Duplicate codes
         codes = list(
-            PriceListItem.objects.values_list('code', flat=True)
+            InventoryItem.objects.values_list('code', flat=True)
         )
         seen = set()
         for code in codes:

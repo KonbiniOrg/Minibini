@@ -6,7 +6,7 @@ from apps.core.history import history
 
 class Earmark(models.Model):
     earmark_id = models.AutoField(primary_key=True)
-    price_list_item = models.ForeignKey('PriceListItem', on_delete=models.CASCADE)
+    price_list_item = models.ForeignKey('InventoryItem', on_delete=models.CASCADE)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     created_date = models.DateTimeField(auto_now_add=True)
@@ -22,7 +22,7 @@ class Earmark(models.Model):
 
 class InventoryAdjustment(models.Model):
     adjustment_id = models.AutoField(primary_key=True)
-    price_list_item = models.ForeignKey('PriceListItem', on_delete=models.CASCADE)
+    price_list_item = models.ForeignKey('InventoryItem', on_delete=models.CASCADE)
     quantity_change = models.DecimalField(max_digits=10, decimal_places=2)
     reason = models.TextField(blank=True, default='')
     created_date = models.DateTimeField(auto_now_add=True)
@@ -34,7 +34,7 @@ class InventoryAdjustment(models.Model):
         return f"{self.price_list_item.code} adjusted by {self.quantity_change}"
 
 
-class PriceListItem(models.Model):
+class InventoryItem(models.Model):
     price_list_item_id = models.AutoField(primary_key=True)
     code = models.CharField(max_length=50, unique=True)
     units = models.CharField(max_length=50, default='none')
@@ -68,7 +68,7 @@ class PriceListItem(models.Model):
         return self.qty_on_hand - self.qty_earmarked
 
     class Meta:
-        db_table = 'price_list'
+        db_table = 'inventory_item'
         constraints = [
             models.CheckConstraint(
                 check=models.Q(qty_on_hand__gte=0),
@@ -107,7 +107,7 @@ class MaterialBase(models.Model):
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     price_list_item = models.ForeignKey(
-        'PriceListItem', on_delete=models.SET_NULL,
+        'InventoryItem', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
     accounting_category = models.ForeignKey(
@@ -151,7 +151,7 @@ class MaterialBase(models.Model):
         return self.quantity * self.sell_price
 
     def _populate_from_pli(self):
-        """Copy description/units/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
+        """Copy description/units/unit_cost/sell_price/accounting_category from linked InventoryItem if not already set."""
         if self.price_list_item:
             if not self.description:
                 self.description = self.price_list_item.description[:255]
@@ -198,7 +198,7 @@ class PlanMaterial(MaterialBase):
 
 
 class TemplateMaterialAssociation(models.Model):
-    """A reusable PriceListItem associated with a WorkTemplate.
+    """A reusable InventoryItem associated with a WorkTemplate.
 
     Replaces the old TemplateMaterial model: PLI is already the catalog of
     reusable materials, so a TemplateMaterial-as-separate-catalog was
@@ -217,7 +217,7 @@ class TemplateMaterialAssociation(models.Model):
         related_name='material_associations',
     )
     price_list_item = models.ForeignKey(
-        'PriceListItem', on_delete=models.PROTECT,
+        'InventoryItem', on_delete=models.PROTECT,
     )
     template_task_association = models.ForeignKey(
         'estimates.TemplateTaskAssociation',

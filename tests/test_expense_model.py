@@ -202,14 +202,14 @@ class ExpenseStockReceiptModelTest(TestCase):
     def setUp(self):
         from apps.contacts.models import Contact
         from apps.jobs.models import Job
-        from apps.inventory.models import PriceListItem, Material
+        from apps.inventory.models import InventoryItem, Material
         self.user = User.objects.create_user(username='sr', password='x')
         self.cat = AccountingCategory.objects.create(code='SR', name='sr')
         self.contact = Contact.objects.create(first_name='T', last_name='C', email='s@t.com')
         self.job = Job.objects.create(job_number='JOB-SR-1', contact=self.contact)
-        self.inv_pli = PriceListItem.objects.create(
+        self.inv_pli = InventoryItem.objects.create(
             code='INV', description='inv', accounting_category=self.cat, is_inventoried=True)
-        self.noninv_pli = PriceListItem.objects.create(
+        self.noninv_pli = InventoryItem.objects.create(
             code='NONINV', description='n', accounting_category=self.cat, is_inventoried=False)
 
     def _build(self, **overrides):

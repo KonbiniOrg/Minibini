@@ -1,16 +1,16 @@
 from decimal import Decimal
 from rest_framework import serializers
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.core.units import UnitsField
 
 
-class PriceListItemSerializer(serializers.ModelSerializer):
+class InventoryItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     qty_earmarked = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     qty_available = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
-        model = PriceListItem
+        model = InventoryItem
         fields = [
             'price_list_item_id', 'code', 'units', 'description',
             'purchase_price', 'selling_price',
@@ -112,7 +112,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             # (Returning obj.quantity made on_hand always equal required, so the
             # overview's "needs more / order" check never fired and a physical
             # shortfall was hidden until consume-time.) Earmark-aware availability
-            # is a later refinement — see qty_available on PriceListItem.
+            # is a later refinement — see qty_available on InventoryItem.
             return str(obj.price_list_item.qty_on_hand)
         return '0'
 

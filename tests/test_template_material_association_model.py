@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 from django.contrib.auth.models import Permission
 from apps.inventory.models import (
-    PriceListItem, TemplateMaterialAssociation,
+    InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
@@ -22,7 +22,7 @@ class TemplateMaterialAssociationModelTests(TestCase):
             algorithm=RateScheme.ELAPSED_TIME,
             accounting_category=cls.cat,
         )
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-A', units='sheets', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
@@ -92,7 +92,7 @@ class TemplateMaterialAssociationApiTests(APITestCase):
             name='H', rate=Decimal('50'), unit_label='hour',
             accounting_category=cls.cat,
         )
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLITMA', units='sheets', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
@@ -169,7 +169,7 @@ class TemplateMaterialAssociationApiPermissionTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.cat = AccountingCategory.objects.create(code='CP', name='CatP')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLIP', units='sheets', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
@@ -239,7 +239,7 @@ class CrossTemplateValidationTests(APITestCase):
             rate=Decimal('50'), unit_label='hour',
             accounting_category=cls.cat,
         )
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='X-PLI', units='sheets', description='X',
             purchase_price=Decimal('1'), selling_price=Decimal('2'),
             accounting_category=cls.cat,

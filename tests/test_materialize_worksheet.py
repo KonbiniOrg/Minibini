@@ -10,7 +10,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import PlanMaterial, Material, Earmark, PriceListItem
+from apps.inventory.models import PlanMaterial, Material, Earmark, InventoryItem
 from apps.jobs.services import JobService
 
 
@@ -30,7 +30,7 @@ class MaterializeWorksheetTest(TestCase):
             first_name='T', last_name='C', email='mw@test.com')
         self.job = Job.objects.create(job_number='JOB-MW', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='MW-PLI', accounting_category=self.ac, is_inventoried=True,
             qty_on_hand=Decimal('100'),
         )

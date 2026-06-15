@@ -4,7 +4,7 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.inventory.models import Earmark, InventoryAdjustment, PriceListItem, Material
+from apps.inventory.models import Earmark, InventoryAdjustment, InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import EstWorksheet, Estimate
@@ -21,7 +21,7 @@ class ConsumeMaterialTest(TestCase):
             job_number='JOB-001', contact=self.contact)
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
@@ -118,7 +118,7 @@ class ConsumeMaterialTest(TestCase):
 
     def test_skips_non_inventoried_items(self):
         """Non-inventoried items are silently skipped."""
-        non_inv = PriceListItem.objects.create(
+        non_inv = InventoryItem.objects.create(
             code='PLI-NI', description='Service', is_inventoried=False,
             accounting_category=self.category)
 
@@ -179,7 +179,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             job_number='JOB-001', contact=self.contact)
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
@@ -229,7 +229,7 @@ class CompleteTaskAdjustmentTest(TestCase):
 
     def test_skips_non_inventoried(self):
         """Non-inventoried items are silently skipped."""
-        non_inv = PriceListItem.objects.create(
+        non_inv = InventoryItem.objects.create(
             code='PLI-NI', description='Service', is_inventoried=False,
             qty_on_hand=Decimal('0.00'), qty_sold=Decimal('0.00'),
             accounting_category=self.category)
@@ -266,7 +266,7 @@ class ManualAdjustmentTest(TestCase):
 
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
             is_inventoried=True, qty_on_hand=Decimal('50.00'),
             qty_wasted=Decimal('0.00'), accounting_category=self.category)

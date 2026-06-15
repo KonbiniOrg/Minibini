@@ -16,7 +16,7 @@ from apps.estimates.models import (
 )
 from apps.core.services import NumberGenerationService, NotFoundError
 from apps.core.wizard import BaseWizardService
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +301,7 @@ class EstimateService:
 
     @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
-        """Add a line item from a PriceListItem to a draft estimate."""
+        """Add a line item from a InventoryItem to a draft estimate."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -309,9 +309,9 @@ class EstimateService:
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         try:
-            pli = PriceListItem.objects.get(pk=pli_pk)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {pli_pk} not found')
+            pli = InventoryItem.objects.get(pk=pli_pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pli_pk} not found')
 
         li = EstimateLineItem.objects.create(
             estimate=estimate,

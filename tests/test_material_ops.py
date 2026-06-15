@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Material, Earmark, PriceListItem
+from apps.inventory.models import Material, Earmark, InventoryItem
 from apps.inventory.services import InventoryService, MaterialService
 from apps.core.models import AccountingCategory
 
@@ -15,7 +15,7 @@ class ConsumeTest(TestCase):
             first_name='Test', last_name='Contact', email='c@test.com'
         )
         self.job = Job.objects.create(job_number='JOB-C-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -120,7 +120,7 @@ class RestockTest(TestCase):
             first_name='Test', last_name='Contact', email='r@test.com'
         )
         self.job = Job.objects.create(job_number='JOB-R-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )
@@ -213,7 +213,7 @@ class DrawMoreTest(TestCase):
             first_name='Test', last_name='Contact', email='d@test.com'
         )
         self.job = Job.objects.create(job_number='JOB-D-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='I', accounting_category=cat, is_inventoried=True,
             qty_on_hand=Decimal('10'),
         )

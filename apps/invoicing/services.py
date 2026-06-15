@@ -36,17 +36,17 @@ class InvoiceService:
 
     @staticmethod
     def add_line_item_from_pli(invoice_pk, pli_pk, qty):
-        """Add a line item from a PriceListItem to a draft invoice."""
-        from apps.inventory.models import PriceListItem
+        """Add a line item from a InventoryItem to a draft invoice."""
+        from apps.inventory.models import InventoryItem
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
         InvoiceService._validate_draft(invoice)
         try:
-            pli = PriceListItem.objects.get(pk=pli_pk)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {pli_pk} not found')
+            pli = InventoryItem.objects.get(pk=pli_pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pli_pk} not found')
         li = InvoiceLineItem(
             invoice=invoice,
             price_list_item=pli,

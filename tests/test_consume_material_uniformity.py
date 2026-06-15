@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 from apps.inventory.services import MaterialService
 from apps.jobs.models import Job, Task, RateScheme
 
@@ -21,7 +21,7 @@ class ConsumeMaterialUniformityTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-CU-1', contact=self.contact)
         self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='CU-I', accounting_category=self.cat,
             is_inventoried=True, qty_on_hand=Decimal('20'),
         )

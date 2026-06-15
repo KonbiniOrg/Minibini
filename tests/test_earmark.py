@@ -7,7 +7,7 @@ from django.db import IntegrityError
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.inventory.models import Earmark, InventoryAdjustment
 
 
@@ -34,7 +34,7 @@ class EarmarkModelTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -44,7 +44,7 @@ class EarmarkModelTest(TestCase):
             is_inventoried=True,
             accounting_category=self.category,
         )
-        self.screws = PriceListItem.objects.create(
+        self.screws = InventoryItem.objects.create(
             code='SCR.100',
             description='Wood Screws Box of 100',
             units='ea',
@@ -127,7 +127,7 @@ class EarmarkModelTest(TestCase):
 
 
 class InventoryItemAvailabilityTest(TestCase):
-    """Tests for qty_earmarked and qty_available properties on PriceListItem."""
+    """Tests for qty_earmarked and qty_available properties on InventoryItem."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -149,7 +149,7 @@ class InventoryItemAvailabilityTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -190,7 +190,7 @@ class InventoryAdjustmentModelTest(TestCase):
 
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',

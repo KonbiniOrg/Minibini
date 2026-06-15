@@ -324,8 +324,8 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         self.assertEqual(li.description, 'Custom work')
 
     def test_add_line_item_from_pli(self):
-        from apps.inventory.models import PriceListItem
-        pli = PriceListItem.objects.create(
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
             code='WLD-001', description='Welding rod', units='ea',
             purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
             accounting_category=self.lit,

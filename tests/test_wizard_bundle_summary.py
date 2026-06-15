@@ -13,7 +13,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import EstWorksheet
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceWizardService
 from apps.jobs.models import Blep, Job, PlanTask, RateScheme, Task

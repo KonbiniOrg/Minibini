@@ -29,14 +29,14 @@ class ExpenseService:
         with transaction.atomic():
             if new_material:
                 from apps.jobs.models import Job
-                from apps.inventory.models import PriceListItem
+                from apps.inventory.models import InventoryItem
                 from apps.inventory.services import MaterialService
                 nm_job = Job.objects.get(pk=new_material['job_id'])
                 if job is None:
                     job = nm_job
                 pli = None
                 if new_material.get('price_list_item_id'):
-                    pli = PriceListItem.objects.get(pk=new_material['price_list_item_id'])
+                    pli = InventoryItem.objects.get(pk=new_material['price_list_item_id'])
                 qty = new_material.get('quantity') or Decimal('1')
                 if pli and pli.is_inventoried:
                     # Inventoried → stock receipt (no consumable material).

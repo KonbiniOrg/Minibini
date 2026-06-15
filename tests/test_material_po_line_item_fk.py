@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.core.models import AccountingCategory, Configuration, AppState
 
@@ -17,7 +17,7 @@ class MaterialPOLineItemFKTest(TestCase):
         self.contact.save()
         self.job = Job.objects.create(job_number='J-1', contact=self.contact, description='j')
         self.category = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='BOLT', description='bolt', purchase_price=Decimal('1.00'),
             selling_price=Decimal('2.00'), accounting_category=self.category,
         )

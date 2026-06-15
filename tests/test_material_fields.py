@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task
-from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
+from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import PlanTask, RateScheme
@@ -144,7 +144,7 @@ class MaterialJobCascadeTest(TestCase):
             email='casctest@example.com',
         )
         self.job = Job.objects.create(job_number='JOB-CASC-1', contact=self.contact)
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='CASC-I', accounting_category=self.cat, is_inventoried=True,
         )
 

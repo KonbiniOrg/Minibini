@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact
-from apps.inventory.models import PriceListItem, PlanMaterial
+from apps.inventory.models import InventoryItem, PlanMaterial
 from apps.estimates.models import EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
 from apps.jobs.models import Job
@@ -17,7 +17,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
         cls.contact = Contact.objects.create(
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
@@ -75,7 +75,7 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         from apps.contacts.models import Contact
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j3@d.com')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-Q', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,

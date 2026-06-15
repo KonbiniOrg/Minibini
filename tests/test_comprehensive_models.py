@@ -10,7 +10,7 @@ from apps.core.models import User, Configuration, AccountingCategory
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.estimates.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -96,7 +96,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             invoice_number="INV001"
         )
 
-        price_list_item = PriceListItem.objects.create(
+        price_list_item = InventoryItem.objects.create(
             code="ITEM001",
             description="Test item",
             purchase_price=Decimal('10.00'),
@@ -153,7 +153,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         # Test creating both purchase order and bill line items
         # Create price list item for testing
-        price_item = PriceListItem.objects.create(
+        price_item = InventoryItem.objects.create(
             code="TEST001",
             selling_price=Decimal('25.00'),
             accounting_category=self.category,
@@ -290,7 +290,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         self.assertNotIn(new_group, developer_user.groups.all())
 
     def test_price_calculation_accuracy(self):
-        price_list_item = PriceListItem.objects.create(
+        price_list_item = InventoryItem.objects.create(
             code="BOLT001",
             purchase_price=Decimal('1.50'),
             selling_price=Decimal('2.25'),
@@ -411,7 +411,7 @@ class LineItemValidationTest(TestCase):
 
         # Create price list item
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.price_list_item = PriceListItem.objects.create(
+        self.price_list_item = InventoryItem.objects.create(
             code="TEST001",
             selling_price=Decimal('25.00'),
             accounting_category=self.category,

@@ -1,5 +1,5 @@
 from django import forms
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsFieldMixin
 
@@ -8,7 +8,7 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
     """Form for adding and editing inventoried price list items."""
 
     class Meta:
-        model = PriceListItem
+        model = InventoryItem
         fields = [
             'code',
             'units',
@@ -21,7 +21,7 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
 
     def clean_code(self):
         code = self.cleaned_data['code']
-        existing_query = PriceListItem.objects.filter(code=code, is_inventoried=True)
+        existing_query = InventoryItem.objects.filter(code=code, is_inventoried=True)
         if self.instance.pk:
             existing_query = existing_query.exclude(pk=self.instance.pk)
         if existing_query.exists():
@@ -54,11 +54,11 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
         return instance
 
 
-class PriceListItemForm(UnitsFieldMixin, forms.ModelForm):
-    """Form for creating and editing PriceListItem."""
+class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
+    """Form for creating and editing InventoryItem."""
 
     class Meta:
-        model = PriceListItem
+        model = InventoryItem
         fields = [
             'code',
             'units',
@@ -99,7 +99,7 @@ class PriceListItemForm(UnitsFieldMixin, forms.ModelForm):
         """Ensure code is unique when creating a new item or updating."""
         code = self.cleaned_data['code']
         # Check for duplicates, excluding the current instance if it's an update
-        existing_query = PriceListItem.objects.filter(code=code)
+        existing_query = InventoryItem.objects.filter(code=code)
         if self.instance.pk:
             existing_query = existing_query.exclude(pk=self.instance.pk)
 

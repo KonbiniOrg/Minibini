@@ -7,7 +7,7 @@ from apps.contacts.models import Contact
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate
 from apps.invoicing.models import Invoice
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 
 class CatalogLineItemAddTest(TestCase):
@@ -29,7 +29,7 @@ class CatalogLineItemAddTest(TestCase):
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001',
         )
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='WIDGET-1', description='Standard widget', units='ea',
             selling_price=Decimal('42.50'), accounting_category=self.category,
         )

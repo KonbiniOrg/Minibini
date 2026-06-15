@@ -1,13 +1,13 @@
 from decimal import Decimal
 from django.db.models import F, Sum
 from apps.inventory.models import Earmark, InventoryAdjustment, Material, PlanMaterial
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 
 class InventoryService:
-    """Service for inventory operations: PriceListItem CRUD, QOH updates, and earmarks."""
+    """Service for inventory operations: InventoryItem CRUD, QOH updates, and earmarks."""
 
-    # --- PriceListItem CRUD ---
+    # --- InventoryItem CRUD ---
 
     @staticmethod
     def _default_markup_percent():
@@ -27,14 +27,14 @@ class InventoryService:
 
     @staticmethod
     def create_item(**kwargs):
-        """Create a new PriceListItem.
+        """Create a new InventoryItem.
 
         When no explicit (non-zero) selling_price is given, derive it from
         purchase_price × the config markup, snapshotted at creation. update_item
         never re-applies this — the stored value is authoritative thereafter.
         """
         from apps.core.services import NotFoundError
-        pli = PriceListItem(**kwargs)
+        pli = InventoryItem(**kwargs)
         if not kwargs.get('selling_price') and kwargs.get('purchase_price'):
             markup = InventoryService._default_markup_percent()
             pli.selling_price = (
@@ -46,12 +46,12 @@ class InventoryService:
 
     @staticmethod
     def update_item(pk, **kwargs):
-        """Update an existing PriceListItem by PK."""
+        """Update an existing InventoryItem by PK."""
         from apps.core.services import NotFoundError
         try:
-            pli = PriceListItem.objects.get(pk=pk)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {pk} not found')
+            pli = InventoryItem.objects.get(pk=pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pk} not found')
         for field, value in kwargs.items():
             setattr(pli, field, value)
         pli.full_clean()
@@ -281,7 +281,7 @@ class InventoryService:
 
         preview = []
         for entry in materials:
-            item = PriceListItem.objects.get(pk=entry['price_list_item'])
+            item = InventoryItem.objects.get(pk=entry['price_list_item'])
             needed = entry['total_qty']
             available = item.qty_available
             shortfall = max(needed - available, Decimal('0.00'))
@@ -331,7 +331,7 @@ class InventoryService:
             qty = entry['quantity']
             if qty <= Decimal('0.00'):
                 continue
-            item = PriceListItem.objects.get(pk=entry['price_list_item_id'])
+            item = InventoryItem.objects.get(pk=entry['price_list_item_id'])
             earmark, created = Earmark.objects.get_or_create(
                 price_list_item=item,
                 job=job,

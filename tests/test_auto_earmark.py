@@ -13,7 +13,7 @@ from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation,
 )
-from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
+from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
 from apps.jobs.services import JobService
 
 
@@ -45,13 +45,13 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         )
         from apps.core.models import AccountingCategory
         self.category = AccountingCategory.objects.create(name='Material', code='MAT')
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
             is_inventoried=True, accounting_category=self.category,
         )
-        self.screws = PriceListItem.objects.create(
+        self.screws = InventoryItem.objects.create(
             code='SCR.100', description='Screws',
             units='ea', qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'), selling_price=Decimal('12.00'),
@@ -182,7 +182,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         )
         from apps.core.models import AccountingCategory
         self.category = AccountingCategory.objects.create(name='Material', code='MAT2')
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.99', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),

@@ -1,10 +1,10 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 
-class PriceListItemAPITest(BaseTestCase):
+class InventoryItemAPITest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
@@ -28,13 +28,13 @@ class PriceListItemAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_retrieve_price_list_item(self):
-        pli = PriceListItem.objects.first()
+        pli = InventoryItem.objects.first()
         if pli:
             response = self.client.get(f'/api/price-list-items/{pli.pk}/')
             self.assertEqual(response.status_code, 200)
 
     def test_update_price_list_item(self):
-        pli = PriceListItem.objects.first()
+        pli = InventoryItem.objects.first()
         if pli:
             response = self.client.patch(f'/api/price-list-items/{pli.pk}/', {
                 'selling_price': '25.00',

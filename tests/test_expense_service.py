@@ -296,8 +296,8 @@ class ExpenseJobLinkTest(TestCase):
         self.assertEqual(exp.material.unit_cost, Decimal('30.00'))
 
     def test_inventoried_pli_becomes_stock_receipt(self):
-        from apps.inventory.models import PriceListItem
-        pli = PriceListItem.objects.create(
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
             code='PLY', description='plywood', accounting_category=self.cat,
             is_inventoried=True, qty_on_hand=Decimal('7.00'))
         exp = self._expense(amount=Decimal('73.33'), new_material={
@@ -309,8 +309,8 @@ class ExpenseJobLinkTest(TestCase):
         self.assertEqual(pli.qty_on_hand, Decimal('10.00'))  # 7 + 3
 
     def test_stock_receipt_delete_reverses_qoh(self):
-        from apps.inventory.models import PriceListItem
-        pli = PriceListItem.objects.create(
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
             code='PLY2', description='p', accounting_category=self.cat,
             is_inventoried=True, qty_on_hand=Decimal('7.00'))
         exp = self._expense(amount=Decimal('73.33'), new_material={
