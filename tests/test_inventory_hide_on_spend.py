@@ -87,3 +87,20 @@ class HideOnSpendListTest(TestCase):
         codes = self._codes('?include_finished=true')
         self.assertIn('DONE', codes)
         self.assertIn('CAT', codes)
+
+    def test_finished_lot_is_reachable_by_pk(self):
+        """A hidden finished lot must still be retrievable by pk — get_object()
+        must not be scoped by the list's hide-on-spend filter."""
+        resp = self.client.get(f'/api/price-list-items/{self.finished_lot.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['code'], 'DONE')
+
+    def test_finished_lot_can_be_re_promoted_to_catalog(self):
+        """The bug: PATCHing a hidden finished lot 404'd because get_object went
+        through the list filter. It must succeed (e.g. to re-promote it)."""
+        resp = self.client.patch(
+            f'/api/price-list-items/{self.finished_lot.pk}/',
+            {'is_catalog': True}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.finished_lot.refresh_from_db()
+        self.assertTrue(self.finished_lot.is_catalog)

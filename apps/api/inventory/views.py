@@ -18,6 +18,13 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Only the LIST (and pickers, which list) is scoped by is_active /
+        # hide-on-spend. Detail, update, delete, and detail-actions must reach
+        # ANY item by pk — get_object() runs through get_queryset(), so scoping
+        # it here would 404 a finished/hidden lot or a deactivated item and make
+        # it impossible to retrieve or edit (e.g. to re-promote it to catalog).
+        if self.action != 'list':
+            return qs
         # Optional filter: ?is_active=true|false (omit to include all).
         # Pickers (Material modal, etc.) pass is_active=true so deactivated
         # PLIs don't appear as selection options. Catalog management omits
