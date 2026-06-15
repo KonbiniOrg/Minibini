@@ -9,7 +9,7 @@ from apps.jobs.models import Job, PlanTask, Task, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
 from apps.inventory.models import InventoryItem
-from apps.inventory.models import Earmark, InventoryAdjustment
+from apps.inventory.models import Earmark
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.inventory.services import InventoryService, MaterialService
 
@@ -279,13 +279,16 @@ class ManualAdjustmentTest(TestCase):
         self.assertEqual(self.plywood.qty_on_hand, Decimal('25.00'))
 
     def test_adjustment_creates_audit_record(self):
-        """Manual adjustment creates an InventoryAdjustment record."""
+        """Manual adjustment records an InventoryHistory action entry."""
+        from apps.core.models import InventoryHistory
         InventoryService.manual_adjustment(
             self.plywood, Decimal('-2.00'), 'Waste',
         )
-        adj = InventoryAdjustment.objects.get(price_list_item=self.plywood)
-        self.assertEqual(adj.quantity_change, Decimal('-2.00'))
-        self.assertEqual(adj.reason, 'Waste')
+        entry = InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=self.plywood.pk,
+            entry_type='action').latest('timestamp')
+        self.assertEqual(entry.changes['qty_change'], '-2.00')
+        self.assertEqual(entry.text, 'Waste')
 
     def test_negative_adjustment_tracks_waste(self):
         """Negative adjustment increases qty_wasted."""

@@ -8,7 +8,9 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.inventory.models import InventoryItem
-from apps.inventory.models import Earmark, InventoryAdjustment
+from apps.inventory.models import Earmark
+from apps.inventory.services import InventoryService
+from apps.core.models import InventoryHistory
 
 
 class EarmarkModelTest(TestCase):
@@ -185,8 +187,9 @@ class InventoryItemAvailabilityTest(TestCase):
         self.assertEqual(self.plywood.qty_available, Decimal('12.00'))
 
 
-class InventoryAdjustmentModelTest(TestCase):
-    """Tests for the InventoryAdjustment model."""
+class InventoryHistoryRecordTest(TestCase):
+    """Inventory QOH events record durable InventoryHistory action entries
+    (the retired InventoryAdjustment's replacement)."""
 
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
@@ -201,43 +204,33 @@ class InventoryAdjustmentModelTest(TestCase):
             accounting_category=self.category,
         )
 
-    def test_create_adjustment(self):
-        """Can create an inventory adjustment record."""
-        adj = InventoryAdjustment.objects.create(
-            price_list_item=self.plywood,
-            quantity_change=Decimal('-2.00'),
-            reason='Damaged in storage',
-        )
-        self.assertEqual(adj.price_list_item, self.plywood)
-        self.assertEqual(adj.quantity_change, Decimal('-2.00'))
-        self.assertEqual(adj.reason, 'Damaged in storage')
-        self.assertIsNotNone(adj.created_date)
+    def _entries(self, item=None):
+        item = item or self.plywood
+        return InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=item.pk, entry_type='action')
 
-    def test_positive_adjustment(self):
-        """Positive adjustments (stock count correction)."""
-        adj = InventoryAdjustment.objects.create(
-            price_list_item=self.plywood,
-            quantity_change=Decimal('5.00'),
-            reason='Stock count correction',
-        )
-        self.assertEqual(adj.quantity_change, Decimal('5.00'))
+    def test_manual_adjustment_records_entry(self):
+        InventoryService.manual_adjustment(
+            self.plywood, Decimal('-2.00'), reason='Damaged in storage')
+        entry = self._entries().latest('timestamp')
+        self.assertEqual(entry.text, 'Damaged in storage')
+        self.assertEqual(entry.changes['qty_change'], '-2.00')
+        self.assertEqual(entry.changes['code'], 'PLY.75')
+        self.assertEqual(entry.changes['qty_on_hand'], '18.00')
 
-    def test_cascade_on_item_delete(self):
-        """Adjustments deleted when price list item is deleted."""
-        InventoryAdjustment.objects.create(
-            price_list_item=self.plywood,
-            quantity_change=Decimal('-1.00'),
-            reason='Waste',
-        )
+    def test_entry_snapshots_identity(self):
+        InventoryService.manual_adjustment(
+            self.plywood, Decimal('5.00'), reason='Stock count correction')
+        entry = self._entries().latest('timestamp')
+        self.assertEqual(entry.changes['description'], '3/4" Baltic Birch Plywood')
+
+    def test_history_survives_item_deletion(self):
+        """The whole point of the loose ref: history outlives the item."""
+        pk = self.plywood.pk
+        InventoryService.manual_adjustment(
+            self.plywood, Decimal('-1.00'), reason='Waste')
         self.plywood.delete()
-        self.assertEqual(InventoryAdjustment.objects.count(), 0)
-
-    def test_str_representation(self):
-        """Adjustment has a useful string representation."""
-        adj = InventoryAdjustment.objects.create(
-            price_list_item=self.plywood,
-            quantity_change=Decimal('-2.00'),
-            reason='Damaged',
-        )
-        self.assertIn('PLY.75', str(adj))
-        self.assertIn('-2.00', str(adj))
+        survivors = InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=pk, entry_type='action')
+        self.assertEqual(survivors.count(), 1)
+        self.assertEqual(survivors.first().changes['code'], 'PLY.75')

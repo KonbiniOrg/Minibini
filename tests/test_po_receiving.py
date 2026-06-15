@@ -6,7 +6,8 @@ from tests.base import BaseTestCase
 from apps.core.models import AccountingCategory, User
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business, Contact
-from apps.inventory.models import InventoryItem, InventoryAdjustment
+from apps.inventory.models import InventoryItem
+from apps.core.models import InventoryHistory
 
 
 class POReceivingTestBase(BaseTestCase):
@@ -200,23 +201,28 @@ class InventoryIntegrationTest(POReceivingTestBase):
             {'items': [{'line_item_id': li.pk, 'qty_received': 7}]},
             format='json',
         )
-        adj = InventoryAdjustment.objects.filter(price_list_item=pli).first()
+        adj = InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=pli.pk,
+            entry_type='action').first()
         self.assertIsNotNone(adj)
-        self.assertEqual(adj.quantity_change, Decimal('7.00'))
-        self.assertIn(po.po_number, adj.reason)
+        self.assertEqual(adj.changes['qty_change'], '7.00')
+        self.assertIn(po.po_number, adj.text)
 
     def test_non_pli_line_does_not_create_adjustment(self):
         po = self._make_issued_po(with_pli=True)
         li_no_pli = PurchaseOrderLineItem.objects.filter(
             purchase_order=po, price_list_item__isnull=True,
         ).first()
-        adj_count_before = InventoryAdjustment.objects.count()
+        adj_count_before = InventoryHistory.objects.filter(
+            entry_type='action').count()
         self.client.post(
             f'/api/purchase-orders/{po.po_id}/receive/',
             {'items': [{'line_item_id': li_no_pli.pk, 'qty_received': 5}]},
             format='json',
         )
-        self.assertEqual(InventoryAdjustment.objects.count(), adj_count_before)
+        self.assertEqual(
+            InventoryHistory.objects.filter(entry_type='action').count(),
+            adj_count_before)
 
 
 class CancelLineItemTest(POReceivingTestBase):
@@ -371,11 +377,12 @@ class ReverseReceiptTest(POReceivingTestBase):
         )
         pli.refresh_from_db()
         self.assertEqual(pli.qty_on_hand, Decimal('0.00'))
-        adjustments = InventoryAdjustment.objects.filter(price_list_item=pli)
+        adjustments = InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=pli.pk, entry_type='action')
         self.assertEqual(adjustments.count(), 2)
         reversal = adjustments.order_by('-pk').first()
-        self.assertEqual(reversal.quantity_change, Decimal('-7.00'))
-        self.assertIn('Reversed', reversal.reason)
+        self.assertEqual(reversal.changes['qty_change'], '-7.00')
+        self.assertIn('Reversed', reversal.text)
 
     def test_reverse_receipt_clears_qty_cancelled(self):
         po = self._make_issued_po()

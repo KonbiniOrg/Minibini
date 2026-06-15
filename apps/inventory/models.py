@@ -20,20 +20,6 @@ class Earmark(models.Model):
         return f"{self.price_list_item.code} earmarked {self.quantity} for {self.job.job_number}"
 
 
-class InventoryAdjustment(models.Model):
-    adjustment_id = models.AutoField(primary_key=True)
-    price_list_item = models.ForeignKey('InventoryItem', on_delete=models.CASCADE)
-    quantity_change = models.DecimalField(max_digits=10, decimal_places=2)
-    reason = models.TextField(blank=True, default='')
-    created_date = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'inv_adjustments'
-
-    def __str__(self):
-        return f"{self.price_list_item.code} adjusted by {self.quantity_change}"
-
-
 class InventoryItem(models.Model):
     price_list_item_id = models.AutoField(primary_key=True)
     code = models.CharField(max_length=50, unique=True)
@@ -94,8 +80,7 @@ class InventoryItem(models.Model):
             InvoiceLineItem.objects.filter(price_list_item=self).exists() or
             PurchaseOrderLineItem.objects.filter(price_list_item=self).exists() or
             BillLineItem.objects.filter(price_list_item=self).exists() or
-            self.earmark_set.exists() or
-            self.inventoryadjustment_set.exists()
+            self.earmark_set.exists()
         )
 
 

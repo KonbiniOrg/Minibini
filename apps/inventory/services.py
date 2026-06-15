@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.db.models import F, Sum
-from apps.inventory.models import Earmark, InventoryAdjustment, Material, PlanMaterial
+from apps.inventory.models import Earmark, Material, PlanMaterial
 from apps.inventory.models import InventoryItem
 
 
@@ -58,6 +58,35 @@ class InventoryService:
         pli.save()
         return pli
 
+    # --- Inventory history (durable audit trail) ---
+
+    @staticmethod
+    def _record_qoh_history(item, quantity_change, *, action, reason='',
+                            user=None, job=None, document=''):
+        """Append a durable inventory-history 'action' entry for a QOH event.
+
+        Snapshots code/description so the entry stays legible after the item is
+        hidden or deleted. Call AFTER the QOH change is saved + refreshed.
+        Replaces the retired InventoryAdjustment audit object.
+        """
+        from apps.core.history import record_history
+        job_ref = None
+        if job is not None:
+            job_ref = getattr(job, 'job_number', None) or getattr(job, 'pk', None)
+        record_history(
+            'inventoryitem', entry_type='action', object_id=item.pk, user=user,
+            changes={
+                '_action': action,
+                'qty_change': str(Decimal(quantity_change).quantize(Decimal('0.01'))),
+                'qty_on_hand': str(item.qty_on_hand),
+                'code': item.code,
+                'description': item.description,
+                'job': job_ref,
+                'document': document or None,
+            },
+            text=reason,
+        )
+
     # --- QOH operations ---
 
     @staticmethod
@@ -81,8 +110,8 @@ class InventoryService:
         pli.refresh_from_db()
 
     @staticmethod
-    def manual_adjustment(price_list_item, quantity_change, reason=''):
-        """Manually adjust QOH and create an audit record.
+    def manual_adjustment(price_list_item, quantity_change, reason='', user=None):
+        """Manually adjust QOH and record an audit-trail entry.
         Negative adjustments track as waste."""
         price_list_item.qty_on_hand = F('qty_on_hand') + quantity_change
         if quantity_change < Decimal('0.00'):
@@ -90,10 +119,9 @@ class InventoryService:
         price_list_item.save(update_fields=['qty_on_hand', 'qty_wasted'] if quantity_change < Decimal('0.00') else ['qty_on_hand'])
         price_list_item.refresh_from_db()
 
-        InventoryAdjustment.objects.create(
-            price_list_item=price_list_item,
-            quantity_change=quantity_change,
-            reason=reason,
+        InventoryService._record_qoh_history(
+            price_list_item, quantity_change,
+            action='Manual adjustment', reason=reason, user=user,
         )
 
     @staticmethod
@@ -107,10 +135,10 @@ class InventoryService:
         pli.qty_on_hand = F('qty_on_hand') + material.quantity
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
-        InventoryAdjustment.objects.create(
-            price_list_item=pli,
-            quantity_change=material.quantity,
+        InventoryService._record_qoh_history(
+            pli, material.quantity, action='Ad-hoc receive',
             reason=f'Ad-hoc receive on job {material.job.job_number}',
+            job=material.job,
         )
 
     @staticmethod
@@ -125,14 +153,14 @@ class InventoryService:
         pli.qty_on_hand = F('qty_on_hand') - total
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
-        InventoryAdjustment.objects.create(
-            price_list_item=pli,
-            quantity_change=-total,
+        InventoryService._record_qoh_history(
+            pli, -total, action='Ad-hoc reverse',
             reason=f'Ad-hoc reverse on job {material.job.job_number}',
+            job=material.job,
         )
 
     @staticmethod
-    def receive_stock(pli, qty, *, reason=''):
+    def receive_stock(pli, qty, *, reason='', user=None):
         """Increase QOH for a material-less stock receipt (an inventoried-PLI
         expense). No earmark, no Material — the job's consumable draws it down at
         consumption. Returns the delta applied (0 if not inventoried)."""
@@ -142,9 +170,9 @@ class InventoryService:
         pli.qty_on_hand = F('qty_on_hand') + qty
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
-        InventoryAdjustment.objects.create(
-            price_list_item=pli, quantity_change=qty,
-            reason=reason or 'Stock receipt (expense)',
+        InventoryService._record_qoh_history(
+            pli, qty, action='Stock receipt',
+            reason=reason or 'Stock receipt (expense)', user=user,
         )
         return qty
 

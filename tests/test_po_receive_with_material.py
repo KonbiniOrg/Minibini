@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Earmark, Material, InventoryItem, InventoryAdjustment
+from apps.inventory.models import Earmark, Material, InventoryItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.purchasing.services import PurchaseOrderService, PurchaseOrderReceivingService
 from apps.core.models import AccountingCategory, Configuration, User, AppState

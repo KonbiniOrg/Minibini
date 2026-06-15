@@ -504,6 +504,17 @@ class PurchasingHistory(HistoryEntryBase):
         ordering = ['-timestamp']
 
 
+class InventoryHistory(HistoryEntryBase):
+    """History for inventory items — quantity events (receipts, consumption,
+    write-offs, merges) and field edits. The single durable audit trail for
+    inventory: entries reference their item by loose object_type+object_id, so
+    they survive item deletion (a code/description snapshot in `changes` keeps a
+    deleted/hidden lot's log legible)."""
+    class Meta:
+        db_table = 'inventory_history'
+        ordering = ['-timestamp']
+
+
 class ScheduledProcessRun(models.Model):
     """One row per invocation of a scheduled management command (observability)."""
     OUTCOME_OK = 'ok'

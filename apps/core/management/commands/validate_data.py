@@ -134,7 +134,6 @@ class Command(BaseCommand):
         self.check_shipment_items()
         self.check_price_list_items()
         self.check_earmarks()
-        self.check_inventory_adjustments()
 
         # Cross-model relationship invariants
         self.check_estimate_versioning()
@@ -605,16 +604,6 @@ class Command(BaseCommand):
                 self.warnings.append(
                     f'Earmark {em.pk}: quantity {em.quantity} exceeds QOH '
                     f'{em.price_list_item.qty_on_hand} for {em.price_list_item.code}'
-                )
-
-    # ── Inventory Adjustments ─────────────────────────────────
-
-    def check_inventory_adjustments(self):
-        from apps.inventory.models import InventoryAdjustment
-        for adj in InventoryAdjustment.objects.select_related('price_list_item').all():
-            if not adj.price_list_item.is_inventoried:
-                self.warnings.append(
-                    f'InventoryAdjustment {adj.pk}: PLI {adj.price_list_item.code} is not inventoried'
                 )
 
     # ══════════════════════════════════════════════════════════

@@ -4,7 +4,8 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.inventory.models import Earmark, InventoryAdjustment, InventoryItem, Material
+from apps.inventory.models import Earmark, InventoryItem, Material
+from apps.core.models import InventoryHistory
 from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import EstWorksheet, Estimate
@@ -303,35 +304,38 @@ class ManualAdjustmentTest(TestCase):
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_wasted, Decimal('5.00'))
 
+    def _entries(self):
+        return InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=self.pli.pk,
+            entry_type='action')
+
     def test_creates_audit_record(self):
-        """Adjustment creates an InventoryAdjustment audit record."""
+        """Adjustment records an InventoryHistory action entry."""
         InventoryService.manual_adjustment(
             self.pli, Decimal('-3.00'), reason='Spill damage')
 
-        adj = InventoryAdjustment.objects.get(price_list_item=self.pli)
-        self.assertEqual(adj.quantity_change, Decimal('-3.00'))
-        self.assertEqual(adj.reason, 'Spill damage')
+        entry = self._entries().latest('timestamp')
+        self.assertEqual(entry.changes['qty_change'], '-3.00')
+        self.assertEqual(entry.text, 'Spill damage')
 
     def test_multiple_adjustments_create_multiple_records(self):
-        """Each adjustment creates its own audit record."""
+        """Each adjustment records its own audit entry."""
         InventoryService.manual_adjustment(
             self.pli, Decimal('10.00'), reason='Restock')
         InventoryService.manual_adjustment(
             self.pli, Decimal('-2.00'), reason='Breakage')
 
-        self.assertEqual(
-            InventoryAdjustment.objects.filter(price_list_item=self.pli).count(), 2)
+        self.assertEqual(self._entries().count(), 2)
 
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('58.00'))
         self.assertEqual(self.pli.qty_wasted, Decimal('2.00'))
 
     def test_zero_adjustment(self):
-        """Zero adjustment still creates audit record."""
+        """Zero adjustment still records an audit entry."""
         InventoryService.manual_adjustment(
             self.pli, Decimal('0.00'), reason='Verification')
 
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('50.00'))
-        self.assertEqual(
-            InventoryAdjustment.objects.filter(price_list_item=self.pli).count(), 1)
+        self.assertEqual(self._entries().count(), 1)

@@ -339,7 +339,7 @@ class PurchaseOrderReceivingService:
         """Record receipt of items on a PO.
         Material.quantity is unchanged — planned consumption is set at line-add time.
         QOH bumps by received qty for inventoried PLIs. Overage is accepted."""
-        from apps.inventory.models import InventoryAdjustment
+        from apps.inventory.services import InventoryService
         from django.utils import timezone
 
         if po.status not in (
@@ -380,10 +380,11 @@ class PurchaseOrderReceivingService:
                 if li.price_list_item and li.price_list_item.is_inventoried:
                     li.price_list_item.qty_on_hand += qty
                     li.price_list_item.save(update_fields=['qty_on_hand'])
-                    InventoryAdjustment.objects.create(
-                        price_list_item=li.price_list_item,
-                        quantity_change=qty,
+                    li.price_list_item.refresh_from_db()
+                    InventoryService._record_qoh_history(
+                        li.price_list_item, qty, action='PO receipt',
                         reason=f'Received on {po.po_number}',
+                        user=user, document=po.po_number,
                     )
                     inventory_updates.append(li.price_list_item.code)
 
@@ -476,7 +477,8 @@ class PurchaseOrderReceivingService:
         they were planned. If the linked Material has already been consumed,
         the reversal is rejected (the caller must restock the Material first).
         """
-        from apps.inventory.models import InventoryAdjustment, Material
+        from apps.inventory.models import Material
+        from apps.inventory.services import InventoryService
 
         if po.status not in (
             PurchaseOrder.STATUS_ISSUED,
@@ -509,10 +511,11 @@ class PurchaseOrderReceivingService:
             if li.price_list_item and li.price_list_item.is_inventoried:
                 li.price_list_item.qty_on_hand -= reversed_qty
                 li.price_list_item.save(update_fields=['qty_on_hand'])
-                InventoryAdjustment.objects.create(
-                    price_list_item=li.price_list_item,
-                    quantity_change=-reversed_qty,
+                li.price_list_item.refresh_from_db()
+                InventoryService._record_qoh_history(
+                    li.price_list_item, -reversed_qty, action='PO receipt reversal',
                     reason=f'Reversed receipt on {po.po_number}',
+                    user=user, document=po.po_number,
                 )
 
             li.qty_received = Decimal('0.00')
