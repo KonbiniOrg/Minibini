@@ -22,7 +22,7 @@ class UnconsumeTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-U-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=self.cat, is_inventoried=True,
+            code='I', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
 
@@ -61,13 +61,13 @@ class UnconsumeTest(TestCase):
         with self.assertRaises(ValidationError):
             MaterialService.unconsume(m)
 
-    def test_unconsume_non_inventoried_just_flips_state(self):
-        pli2 = InventoryItem.objects.create(
-            code='NI', accounting_category=self.cat, is_inventoried=False,
-        )
+    def test_unconsume_no_item_just_flips_state(self):
+        """A material with no inventory item flips state with no QOH effects
+        (the only no-op path under universal tracking)."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('2'), price_list_item=pli2,
+            quantity=Decimal('2'), price_list_item=None,
+            accounting_category=self.cat,
         )
         MaterialService.consume(m)
         MaterialService.unconsume(m)

@@ -58,7 +58,7 @@ class CancelWorkFirstActivityTest(BaseTestCase):
     def test_cancel_unconsumes_materials(self):
         cat = AccountingCategory.objects.create(name='cw')
         pli = InventoryItem.objects.create(
-            code='CW', accounting_category=cat, is_inventoried=True,
+            code='CW', accounting_category=cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
         mat = MaterialService.create_on_job(

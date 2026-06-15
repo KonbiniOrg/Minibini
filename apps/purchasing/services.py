@@ -377,7 +377,7 @@ class PurchaseOrderReceivingService:
                 )
 
                 # QOH for inventoried PLI-backed lines
-                if li.price_list_item and li.price_list_item.is_inventoried:
+                if li.price_list_item:
                     li.price_list_item.qty_on_hand += qty
                     li.price_list_item.save(update_fields=['qty_on_hand'])
                     li.price_list_item.refresh_from_db()
@@ -508,7 +508,7 @@ class PurchaseOrderReceivingService:
 
             reversed_qty = li.qty_received
 
-            if li.price_list_item and li.price_list_item.is_inventoried:
+            if li.price_list_item:
                 li.price_list_item.qty_on_hand -= reversed_qty
                 li.price_list_item.save(update_fields=['qty_on_hand'])
                 li.price_list_item.refresh_from_db()

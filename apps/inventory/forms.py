@@ -21,7 +21,7 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
 
     def clean_code(self):
         code = self.cleaned_data['code']
-        existing_query = InventoryItem.objects.filter(code=code, is_inventoried=True)
+        existing_query = InventoryItem.objects.filter(code=code, is_catalog=True)
         if self.instance.pk:
             existing_query = existing_query.exclude(pk=self.instance.pk)
         if existing_query.exists():
@@ -48,7 +48,7 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        instance.is_inventoried = True
+        instance.is_catalog = True
         if commit:
             instance.save()
         return instance
@@ -65,7 +65,7 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
             'description',
             'purchase_price',
             'selling_price',
-            'is_inventoried',
+            'is_catalog',
             'qty_on_hand',
             'qty_sold',
             'qty_wasted',
@@ -86,10 +86,10 @@ class InventoryItemForm(UnitsFieldMixin, forms.ModelForm):
 
         # Hide quantity fields for non-inventoried items
         # Check both the instance (for GET) and submitted data (for POST)
-        is_inventoried = self.instance.is_inventoried
+        is_catalog = self.instance.is_catalog
         if self.data:
-            is_inventoried = 'is_inventoried' in self.data
-        if not is_inventoried:
+            is_catalog = 'is_catalog' in self.data
+        if not is_catalog:
             del self.fields['qty_on_hand']
             del self.fields['qty_sold']
             del self.fields['qty_wasted']

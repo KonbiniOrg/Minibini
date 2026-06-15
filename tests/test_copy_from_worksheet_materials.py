@@ -12,7 +12,7 @@ class CopyFromWorksheetMaterialsTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='c', code='CW1')
         self.pli = InventoryItem.objects.create(
-            code='I-CW', accounting_category=self.cat, is_inventoried=True,
+            code='I-CW', accounting_category=self.cat, is_catalog=True,
         )
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User', email='cfw@test.com'

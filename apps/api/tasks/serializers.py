@@ -9,7 +9,7 @@ from apps.core.units import UnitsField
 
 class MaterialSerializer(serializers.ModelSerializer):
     is_expense_bound = serializers.BooleanField(read_only=True)
-    price_list_item_is_inventoried = serializers.SerializerMethodField()
+    price_list_item_is_catalog = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -18,12 +18,12 @@ class MaterialSerializer(serializers.ModelSerializer):
             'units', 'unit_cost', 'sell_price', 'price_list_item',
             'accounting_category',
             'consumption_state', 'restocked_qty',
-            'is_expense_bound', 'price_list_item_is_inventoried',
+            'is_expense_bound', 'price_list_item_is_catalog',
         ]
         read_only_fields = fields
 
-    def get_price_list_item_is_inventoried(self, obj):
-        return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
+    def get_price_list_item_is_catalog(self, obj):
+        return bool(obj.price_list_item and obj.price_list_item.is_catalog)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):

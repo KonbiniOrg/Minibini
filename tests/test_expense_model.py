@@ -208,9 +208,9 @@ class ExpenseStockReceiptModelTest(TestCase):
         self.contact = Contact.objects.create(first_name='T', last_name='C', email='s@t.com')
         self.job = Job.objects.create(job_number='JOB-SR-1', contact=self.contact)
         self.inv_pli = InventoryItem.objects.create(
-            code='INV', description='inv', accounting_category=self.cat, is_inventoried=True)
+            code='INV', description='inv', accounting_category=self.cat, is_catalog=True)
         self.noninv_pli = InventoryItem.objects.create(
-            code='NONINV', description='n', accounting_category=self.cat, is_inventoried=False)
+            code='NONINV', description='n', accounting_category=self.cat, is_catalog=False)
 
     def _build(self, **overrides):
         defaults = dict(

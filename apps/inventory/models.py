@@ -31,7 +31,11 @@ class InventoryItem(models.Model):
     qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
-    is_inventoried = models.BooleanField(default=False)
+    # Catalog flag: a catalog item is a reorderable *type* (survives at QOH 0,
+    # allocation uncapped); without it, the row is a transient *lot* (hidden when
+    # finished — QOH 0 + no earmarks). Default True: items created via the
+    # price-list/inventory UI are catalog; transient lots are minted is_catalog=False.
+    is_catalog = models.BooleanField(default=True)
 
     # AccountingCategory for categorization and taxability
     accounting_category = models.ForeignKey(

@@ -354,7 +354,7 @@ class ExpenseStockReceiptApiTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-SRA-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
             code='PLY', description='plywood', accounting_category=self.cat,
-            is_inventoried=True, qty_on_hand=Decimal('7.00'))
+            is_catalog=True, qty_on_hand=Decimal('7.00'))
         self.client_http.force_login(self.user)
 
     def test_inventoried_new_material_creates_stock_receipt(self):

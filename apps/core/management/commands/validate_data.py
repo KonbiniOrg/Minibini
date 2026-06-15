@@ -570,13 +570,8 @@ class Command(BaseCommand):
                 self.errors.append(f'PLI {pli.code}: negative qty_sold {pli.qty_sold}')
             if pli.qty_wasted < 0:
                 self.errors.append(f'PLI {pli.code}: negative qty_wasted {pli.qty_wasted}')
-            # Non-inventoried items should have zero quantities
-            if not pli.is_inventoried:
-                if pli.qty_on_hand != 0 or pli.qty_sold != 0 or pli.qty_wasted != 0:
-                    self.warnings.append(
-                        f'PLI {pli.code}: not inventoried but has quantity values '
-                        f'(qoh={pli.qty_on_hand}, sold={pli.qty_sold}, wasted={pli.qty_wasted})'
-                    )
+            # (Universal tracking: every item carries quantities — no
+            # "non-inventoried but has quantity" warning anymore.)
             # Duplicate codes
         codes = list(
             InventoryItem.objects.values_list('code', flat=True)
@@ -596,10 +591,8 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'Earmark {em.pk}: non-positive quantity {em.quantity}'
                 )
-            if not em.price_list_item.is_inventoried:
-                self.errors.append(
-                    f'Earmark {em.pk}: PLI {em.price_list_item.code} is not inventoried'
-                )
+            # (Universal tracking: earmarks apply to every item — no
+            # "earmark on non-inventoried item" error anymore.)
             if em.quantity > em.price_list_item.qty_on_hand:
                 self.warnings.append(
                     f'Earmark {em.pk}: quantity {em.quantity} exceeds QOH '

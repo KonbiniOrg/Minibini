@@ -38,7 +38,7 @@ class ExpenseService:
                 if new_material.get('price_list_item_id'):
                     pli = InventoryItem.objects.get(pk=new_material['price_list_item_id'])
                 qty = new_material.get('quantity') or Decimal('1')
-                if pli and pli.is_inventoried:
+                if pli and pli.is_catalog:
                     # Inventoried → stock receipt (no consumable material).
                     stock_pli, stock_qty = pli, qty
                 else:
@@ -196,7 +196,7 @@ class ExpenseService:
         pli = material.price_list_item
         move_earmark = (
             material.consumption_state == Material.CONSUMPTION_STATE_PENDING
-            and pli and pli.is_inventoried
+            and pli and pli.is_catalog
             and material.quantity > Decimal('0.00')
         )
         old_job = material.job
@@ -267,10 +267,13 @@ class ExpenseService:
             )
         with transaction.atomic():
             if mat:
+                # Release the earmark and delete the material. The cost-material
+                # path earmarks but never bumps QOH (it's a job cost, not a stock
+                # receipt), so there is no ad-hoc receipt to reverse here — stock
+                # receipts are handled separately below.
                 InventoryService._mutate_earmark(
                     mat.price_list_item, mat.job, -mat.quantity,
                 )
-                InventoryService.reverse_ad_hoc_purchase(mat)
                 mat.delete()
                 expense.material = None  # drop the now-deleted FK before save
             # Reverse a stock-receipt's QOH bump.

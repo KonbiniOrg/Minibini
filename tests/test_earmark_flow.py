@@ -38,7 +38,7 @@ class EarmarkPreviewTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
@@ -48,7 +48,7 @@ class EarmarkPreviewTest(TestCase):
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -148,9 +148,11 @@ class EarmarkPreviewTest(TestCase):
         preview = InventoryService.get_earmark_preview(self.job)
         self.assertEqual(len(preview), 0)
 
-    def test_preview_ignores_non_inventoried_pli(self):
+    def test_preview_includes_lot_item(self):
+        """Universal tracking: the earmark preview includes every item-backed
+        material (catalog or non-catalog lot), not just inventoried ones."""
         non_inv = InventoryItem.objects.create(
-            code='NONINV', description='Not tracked', is_inventoried=False,
+            code='NONINV', description='Not tracked', is_catalog=False,
             accounting_category=self.category,
         )
         Material.objects.create(
@@ -158,7 +160,7 @@ class EarmarkPreviewTest(TestCase):
             quantity=Decimal('5.00'), unit_cost=Decimal('10.00'), sell_price=Decimal('20.00'),
         )
         preview = InventoryService.get_earmark_preview(self.job)
-        self.assertEqual(len(preview), 0)
+        self.assertEqual(len(preview), 1)
 
 
 class UpsertEarmarksTest(TestCase):
@@ -188,7 +190,7 @@ class UpsertEarmarksTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
@@ -198,7 +200,7 @@ class UpsertEarmarksTest(TestCase):
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -259,7 +261,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
             rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
         )
         pli = InventoryItem.objects.create(
-            code='I-NOP', accounting_category=cat, is_inventoried=True,
+            code='I-NOP', accounting_category=cat, is_catalog=True,
         )
         src_job = Job.objects.create(job_number='JOB-NOP-SRC', contact=contact)
         ws = EstWorksheet.objects.create(job=src_job)

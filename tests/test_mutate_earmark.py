@@ -15,10 +15,10 @@ class MutateEarmarkTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-E-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='A', accounting_category=self.cat, is_inventoried=True,
+            code='A', accounting_category=self.cat, is_catalog=True,
         )
         self.noninv = InventoryItem.objects.create(
-            code='B', accounting_category=self.cat, is_inventoried=False,
+            code='B', accounting_category=self.cat, is_catalog=False,
         )
 
     def test_positive_delta_creates_earmark(self):
@@ -45,9 +45,12 @@ class MutateEarmarkTest(TestCase):
             Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists()
         )
 
-    def test_noop_for_noninventoried_pli(self):
+    def test_lot_item_gets_earmark(self):
+        """Universal tracking: a non-catalog lot earmarks like any item
+        (only a None item is a no-op — see test_noop_for_none_pli)."""
         InventoryService._mutate_earmark(self.noninv, self.job, Decimal('3'))
-        self.assertFalse(Earmark.objects.exists())
+        self.assertTrue(Earmark.objects.filter(
+            price_list_item=self.noninv, job=self.job).exists())
 
     def test_noop_for_none_pli(self):
         InventoryService._mutate_earmark(None, self.job, Decimal('3'))

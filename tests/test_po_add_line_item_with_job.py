@@ -20,7 +20,7 @@ class POAddLineItemWithJobTest(TestCase):
         self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
         self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=self.cat, is_inventoried=True,
+            selling_price=Decimal('2.00'), accounting_category=self.cat, is_catalog=True,
         )
         self.po = PurchaseOrder.objects.create(business=self.business)
 

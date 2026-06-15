@@ -56,7 +56,7 @@ class MaterialQtyOnHandTest(TestCase):
         self.job = Job.objects.create(job_number='J-QOH', contact=contact, description='j')
         self.pli = InventoryItem.objects.create(
             code='INV', description='inv', accounting_category=cat,
-            is_inventoried=True, qty_on_hand=Decimal('5.00'))
+            is_catalog=True, qty_on_hand=Decimal('5.00'))
         self.mat = Material.objects.create(
             job=self.job, accounting_category=cat, description='widget',
             quantity=Decimal('8.00'), price_list_item=self.pli)

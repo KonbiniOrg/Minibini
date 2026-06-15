@@ -8,7 +8,7 @@ from .forms import InventoryItemForm, InventoryItemForm
 def inventory_list(request):
     """Display all active inventoried items with stock quantities."""
     items = InventoryItem.objects.filter(
-        is_inventoried=True, is_active=True,
+        is_catalog=True, is_active=True,
     ).prefetch_related('earmark_set').order_by('code')
     return render(request, 'inventory/inventory_list.html', {'items': items})
 
@@ -21,7 +21,7 @@ def inventory_item_add(request):
             data = form.cleaned_data.copy()
             data.pop('units_select', None)
             data.pop('units_custom', None)
-            data['is_inventoried'] = True
+            data['is_catalog'] = True
             item = InventoryService.create_item(**data)
             messages.success(request, f'Inventory item "{item.code}" added successfully.')
             return redirect('inventory:inventory_list')
@@ -37,7 +37,7 @@ def inventory_item_add(request):
 
 def inventory_item_edit(request, item_id):
     """Edit an existing inventoried item."""
-    item = get_object_or_404(InventoryItem, price_list_item_id=item_id, is_inventoried=True)
+    item = get_object_or_404(InventoryItem, price_list_item_id=item_id, is_catalog=True)
 
     if request.method == 'POST':
         form = InventoryItemForm(request.POST, instance=item)
@@ -45,7 +45,7 @@ def inventory_item_edit(request, item_id):
             data = form.cleaned_data.copy()
             data.pop('units_select', None)
             data.pop('units_custom', None)
-            data['is_inventoried'] = True
+            data['is_catalog'] = True
             item = InventoryService.update_item(item.pk, **data)
             messages.success(request, f'Inventory item "{item.code}" updated successfully.')
             return redirect('inventory:inventory_list')

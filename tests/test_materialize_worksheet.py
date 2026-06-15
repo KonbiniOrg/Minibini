@@ -31,7 +31,7 @@ class MaterializeWorksheetTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-MW', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.pli = InventoryItem.objects.create(
-            code='MW-PLI', accounting_category=self.ac, is_inventoried=True,
+            code='MW-PLI', accounting_category=self.ac, is_catalog=True,
             qty_on_hand=Decimal('100'),
         )
         self.pt = PlanTask.objects.create(

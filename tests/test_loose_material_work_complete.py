@@ -30,7 +30,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             rate=1, unit_label='ea', accounting_category=cat,
         )
         self.pli = InventoryItem.objects.create(
-            code='I-WCG', accounting_category=cat, is_inventoried=True,
+            code='I-WCG', accounting_category=cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
         self.job = Job.objects.create(
@@ -87,7 +87,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """A pending task-less non-inventoried material also blocks work_complete."""
         cat = AccountingCategory.objects.first()
         non_inv_pli = InventoryItem.objects.create(
-            code='NI-WCG', accounting_category=cat, is_inventoried=False,
+            code='NI-WCG', accounting_category=cat, is_catalog=False,
         )
         MaterialService.create_on_job(
             job=self.job, task=None, description='non-inv pending',
@@ -96,15 +96,14 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         with self.assertRaises(ValidationError):
             JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
 
-    def test_consumed_non_inventoried_does_not_block(self):
-        """A consumed task-less non-inventoried material does not block work_complete."""
+    def test_consumed_no_item_does_not_block(self):
+        """A consumed task-less material with no inventory item does not block
+        work_complete (the no-side-effect path under universal tracking)."""
         cat = AccountingCategory.objects.first()
-        non_inv_pli = InventoryItem.objects.create(
-            code='NI-WCG2', accounting_category=cat, is_inventoried=False,
-        )
         m = MaterialService.create_on_job(
-            job=self.job, task=None, description='non-inv consume',
-            quantity=Decimal('1'), price_list_item=non_inv_pli,
+            job=self.job, task=None, description='no-item consume',
+            quantity=Decimal('1'), price_list_item=None,
+            accounting_category=cat,
         )
         MaterialService.consume(m)
         JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)

@@ -145,7 +145,7 @@ class MaterialJobCascadeTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-CASC-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='CASC-I', accounting_category=self.cat, is_inventoried=True,
+            code='CASC-I', accounting_category=self.cat, is_catalog=True,
         )
 
     def test_delete_job_removes_material_and_earmark(self):

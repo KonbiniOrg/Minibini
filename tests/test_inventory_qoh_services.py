@@ -24,7 +24,7 @@ class ConsumeMaterialTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_inventoried=True, qty_on_hand=Decimal('20.00'),
+            is_catalog=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
         self.scheme = RateScheme.objects.create(
             name='S-qohs1', algorithm=RateScheme.FLAT_FEE,
@@ -117,23 +117,9 @@ class ConsumeMaterialTest(TestCase):
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15.00'))
 
-    def test_skips_non_inventoried_items(self):
-        """Non-inventoried items are silently skipped."""
-        non_inv = InventoryItem.objects.create(
-            code='PLI-NI', description='Service', is_inventoried=False,
-            accounting_category=self.category)
-
-        material = Material(
-            job=self.job,
-            task=self.task, price_list_item=non_inv,
-            description='Service', quantity=Decimal('5.00'),
-            unit_cost=Decimal('10.00'))
-        material.save()
-
-        MaterialService.consume(material)
-
-        non_inv.refresh_from_db()
-        self.assertEqual(non_inv.qty_on_hand, Decimal('0.00'))
+    # (Removed test_skips_non_inventoried_items: under universal tracking a
+    # non-catalog lot is NOT skipped — only a None-item material is, covered by
+    # test_skips_no_pli below.)
 
     def test_skips_no_pli(self):
         """Materials without a PLI are silently skipped."""
@@ -182,7 +168,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_inventoried=True, qty_on_hand=Decimal('20.00'),
+            is_catalog=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
         self.scheme = RateScheme.objects.create(
             name='S-qohs2', algorithm=RateScheme.FLAT_FEE,
@@ -228,25 +214,9 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.assertEqual(self.pli.qty_on_hand, Decimal('22.00'))
         self.assertEqual(self.pli.qty_sold, Decimal('3.00'))
 
-    def test_skips_non_inventoried(self):
-        """Non-inventoried items are silently skipped."""
-        non_inv = InventoryItem.objects.create(
-            code='PLI-NI', description='Service', is_inventoried=False,
-            qty_on_hand=Decimal('0.00'), qty_sold=Decimal('0.00'),
-            accounting_category=self.category)
-
-        material = Material(
-            job=self.job,
-            task=self.task, price_list_item=non_inv,
-            description='Service', quantity=Decimal('5.00'),
-            unit_cost=Decimal('10.00'))
-        material.save()
-
-        InventoryService.complete_task_adjustment(material, Decimal('8.00'))
-
-        non_inv.refresh_from_db()
-        self.assertEqual(non_inv.qty_on_hand, Decimal('0.00'))
-        self.assertEqual(non_inv.qty_sold, Decimal('0.00'))
+    # (Removed test_skips_non_inventoried: under universal tracking
+    # complete_task_adjustment runs for any item-backed material; the only
+    # no-op path is a None-item material.)
 
     def test_skips_no_pli(self):
         """Materials without a PLI are silently skipped."""
@@ -269,7 +239,7 @@ class ManualAdjustmentTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_inventoried=True, qty_on_hand=Decimal('50.00'),
+            is_catalog=True, qty_on_hand=Decimal('50.00'),
             qty_wasted=Decimal('0.00'), accounting_category=self.category)
 
     def test_positive_adjustment_increases_qoh(self):

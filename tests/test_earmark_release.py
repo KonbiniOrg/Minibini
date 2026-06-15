@@ -33,7 +33,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
             code='PLY.REL', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
 
     def test_earmarks_released_on_job_work_complete(self):
@@ -147,7 +147,7 @@ class EarmarkReleaseOnTerminalStatusesTest(TestCase):
             code='PLY.T5', description='Plywood', units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
 
     def _job(self, *statuses):

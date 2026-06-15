@@ -16,7 +16,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
             'purchase_price', 'selling_price',
             'qty_on_hand', 'qty_sold', 'qty_wasted',
             'qty_earmarked', 'qty_available',
-            'is_active', 'is_inventoried', 'accounting_category',
+            'is_active', 'is_catalog', 'accounting_category',
         ]
         read_only_fields = [
             'price_list_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',
@@ -25,7 +25,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
 
 class MaterialSerializer(serializers.ModelSerializer):
     is_expense_bound = serializers.BooleanField(read_only=True)
-    price_list_item_is_inventoried = serializers.SerializerMethodField()
+    price_list_item_is_catalog = serializers.SerializerMethodField()
     po_line_item_id = serializers.SerializerMethodField()
     po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
@@ -44,7 +44,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             'description', 'quantity', 'unit_cost', 'sell_price',
             'price_list_item', 'accounting_category',
             'consumption_state', 'restocked_qty',
-            'is_expense_bound', 'price_list_item_is_inventoried',
+            'is_expense_bound', 'price_list_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
@@ -52,7 +52,7 @@ class MaterialSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'material_id', 'job', 'task',
             'consumption_state', 'restocked_qty', 'is_expense_bound',
-            'price_list_item_is_inventoried',
+            'price_list_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_order', 'qty_on_hand',
         ]
@@ -74,8 +74,8 @@ class MaterialSerializer(serializers.ModelSerializer):
                 })
         return attrs
 
-    def get_price_list_item_is_inventoried(self, obj):
-        return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
+    def get_price_list_item_is_catalog(self, obj):
+        return bool(obj.price_list_item and obj.price_list_item.is_catalog)
 
     def get_po_line_item_id(self, obj):
         return obj.po_line_item_id
@@ -107,12 +107,12 @@ class MaterialSerializer(serializers.ModelSerializer):
             return '0'
         if obj.po_line_item_id:
             return str(obj.po_line_item.qty_received)
-        if obj.price_list_item_id and obj.price_list_item.is_inventoried:
-            # The PLI's real physical stock — NOT the material's required qty.
-            # (Returning obj.quantity made on_hand always equal required, so the
-            # overview's "needs more / order" check never fired and a physical
-            # shortfall was hidden until consume-time.) Earmark-aware availability
-            # is a later refinement — see qty_available on InventoryItem.
+        if obj.price_list_item_id:
+            # The item's real physical stock — NOT the material's required qty.
+            # Universal tracking: every item-backed material reports its item's
+            # QOH (catalog or transient lot), so the overview's "needs more /
+            # order" check sees a genuine shortfall instead of required==on_hand.
+            # Earmark-aware availability is surfaced separately (qty_available).
             return str(obj.price_list_item.qty_on_hand)
         return '0'
 

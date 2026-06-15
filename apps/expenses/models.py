@@ -109,7 +109,7 @@ class Expense(models.Model):
                 )
             if not self.stock_qty or self.stock_qty <= Decimal('0.00'):
                 errors['stock_qty'] = 'Stock quantity must be positive.'
-            if self.stock_pli and not self.stock_pli.is_inventoried:
+            if self.stock_pli and not self.stock_pli.is_catalog:
                 errors['stock_pli'] = (
                     'Stock receipts are only for inventoried price-list items.'
                 )

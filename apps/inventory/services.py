@@ -95,7 +95,7 @@ class InventoryService:
         If actual < estimated, return excess to stock.
         If actual > estimated, consume additional stock."""
         pli = material.price_list_item
-        if not pli or not pli.is_inventoried:
+        if not pli:
             return
 
         difference = actual_qty - material.quantity
@@ -130,7 +130,7 @@ class InventoryService:
         QOH-only — earmark was already created by MaterialService.create_on_job."""
         from django.db.models import F
         pli = material.price_list_item
-        if not pli or not pli.is_inventoried:
+        if not pli:
             return
         pli.qty_on_hand = F('qty_on_hand') + material.quantity
         pli.save(update_fields=['qty_on_hand'])
@@ -147,7 +147,7 @@ class InventoryService:
         Reverses the full original purchase quantity (quantity + restocked_qty)."""
         from django.db.models import F
         pli = material.price_list_item
-        if not pli or not pli.is_inventoried:
+        if not pli:
             return
         total = material.quantity + material.restocked_qty
         pli.qty_on_hand = F('qty_on_hand') - total
@@ -165,7 +165,7 @@ class InventoryService:
         expense). No earmark, no Material — the job's consumable draws it down at
         consumption. Returns the delta applied (0 if not inventoried)."""
         from django.db.models import F
-        if not pli or not pli.is_inventoried or not qty or qty == Decimal('0.00'):
+        if not pli or not qty or qty == Decimal('0.00'):
             return Decimal('0.00')
         pli.qty_on_hand = F('qty_on_hand') + qty
         pli.save(update_fields=['qty_on_hand'])
@@ -302,7 +302,7 @@ class InventoryService:
 
         materials = Material.objects.filter(
             task__job=job,
-            price_list_item__is_inventoried=True,
+            price_list_item__isnull=False,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
         )
@@ -334,7 +334,7 @@ class InventoryService:
 
         materials = Material.objects.filter(
             job=job,
-            price_list_item__is_inventoried=True,
+            price_list_item__isnull=False,
         ).values('price_list_item').annotate(
             total_qty=Sum('quantity'),
         )
@@ -373,7 +373,7 @@ class InventoryService:
     def _mutate_earmark(pli, job, delta):
         """Apply `delta` to the (pli, job) Earmark. Upsert if positive net, delete if zero.
         No-op if pli is None or not inventoried. Sole writer of Earmark rows."""
-        if pli is None or not pli.is_inventoried:
+        if pli is None:
             return
         try:
             earmark = Earmark.objects.get(price_list_item=pli, job=job)
@@ -490,7 +490,7 @@ class MaterialService:
         qty = material.quantity
         with transaction.atomic():
             pli = material.price_list_item
-            if pli and pli.is_inventoried and qty > Decimal('0.00'):
+            if pli and qty > Decimal('0.00'):
                 pli.refresh_from_db()
                 if pli.qty_on_hand < qty:
                     raise ValidationError(
@@ -524,7 +524,7 @@ class MaterialService:
         qty = material.quantity
         with transaction.atomic():
             pli = material.price_list_item
-            if pli and pli.is_inventoried and qty > Decimal('0.00'):
+            if pli and qty > Decimal('0.00'):
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') + qty
                 pli.qty_sold = F('qty_sold') - qty

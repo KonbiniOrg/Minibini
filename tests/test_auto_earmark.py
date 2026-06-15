@@ -49,13 +49,13 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
             code='PLY.75', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
             code='SCR.100', description='Screws',
             units='ea', qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'), selling_price=Decimal('12.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = _make_scheme('cfw')
@@ -186,7 +186,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
             code='PLY.99', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-AEM-005', version=1,

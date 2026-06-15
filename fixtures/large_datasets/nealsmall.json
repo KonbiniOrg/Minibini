@@ -66049,7 +66049,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66066,7 +66066,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66083,7 +66083,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66100,7 +66100,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66117,7 +66117,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66134,7 +66134,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66151,7 +66151,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66168,7 +66168,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66185,7 +66185,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66202,7 +66202,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66219,7 +66219,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66236,7 +66236,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66253,7 +66253,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66270,7 +66270,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66287,7 +66287,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66304,7 +66304,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66321,7 +66321,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66338,7 +66338,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66355,7 +66355,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66372,7 +66372,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66389,7 +66389,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66406,7 +66406,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66423,7 +66423,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66440,7 +66440,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66457,7 +66457,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66474,7 +66474,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66491,7 +66491,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66508,7 +66508,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66525,7 +66525,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66542,7 +66542,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66559,7 +66559,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66576,7 +66576,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66593,7 +66593,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66610,7 +66610,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66627,7 +66627,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66644,7 +66644,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66661,7 +66661,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66678,7 +66678,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66695,7 +66695,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66712,7 +66712,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66729,7 +66729,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66746,7 +66746,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66763,7 +66763,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66780,7 +66780,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66797,7 +66797,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66814,7 +66814,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66831,7 +66831,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66848,7 +66848,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66865,7 +66865,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66882,7 +66882,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66899,7 +66899,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66916,7 +66916,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66933,7 +66933,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66950,7 +66950,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66967,7 +66967,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -66984,7 +66984,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67001,7 +67001,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67018,7 +67018,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67035,7 +67035,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67052,7 +67052,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67069,7 +67069,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67086,7 +67086,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67103,7 +67103,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67120,7 +67120,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67137,7 +67137,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67154,7 +67154,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67171,7 +67171,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67188,7 +67188,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67205,7 +67205,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67222,7 +67222,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67239,7 +67239,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67256,7 +67256,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67273,7 +67273,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67290,7 +67290,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67307,7 +67307,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67324,7 +67324,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67341,7 +67341,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67358,7 +67358,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67375,7 +67375,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67392,7 +67392,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67409,7 +67409,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67426,7 +67426,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67443,7 +67443,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67460,7 +67460,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67477,7 +67477,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67494,7 +67494,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67511,7 +67511,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67528,7 +67528,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67545,7 +67545,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67562,7 +67562,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67579,7 +67579,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67596,7 +67596,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67613,7 +67613,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67630,7 +67630,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67647,7 +67647,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67664,7 +67664,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67681,7 +67681,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67698,7 +67698,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67715,7 +67715,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67732,7 +67732,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67749,7 +67749,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67766,7 +67766,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67783,7 +67783,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67800,7 +67800,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67817,7 +67817,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67834,7 +67834,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67851,7 +67851,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67868,7 +67868,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67885,7 +67885,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67902,7 +67902,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67919,7 +67919,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67936,7 +67936,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67953,7 +67953,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67970,7 +67970,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -67987,7 +67987,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68004,7 +68004,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68021,7 +68021,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68038,7 +68038,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68055,7 +68055,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68072,7 +68072,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68089,7 +68089,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68106,7 +68106,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68123,7 +68123,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68140,7 +68140,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68157,7 +68157,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68174,7 +68174,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68191,7 +68191,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68208,7 +68208,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68225,7 +68225,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68242,7 +68242,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68259,7 +68259,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68276,7 +68276,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68293,7 +68293,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68310,7 +68310,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68327,7 +68327,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },
@@ -68344,7 +68344,7 @@
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "is_inventoried": false,
+    "is_catalog": true,
     "accounting_category": 2
   }
 },

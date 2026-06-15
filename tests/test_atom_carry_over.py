@@ -100,7 +100,7 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
 
     def test_carry_over_creates_earmarks_for_inventoried_materials(self):
         pli = InventoryItem.objects.create(
-            code='CO-EARM', accounting_category=self.cat, is_inventoried=True,
+            code='CO-EARM', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('50'),
         )
         PlanMaterial.objects.create(

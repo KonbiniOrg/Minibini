@@ -54,7 +54,7 @@ class MaterialTestBase(TestCase):
             units='sheets',
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
         self.price_list_item = InventoryItem.objects.create(

@@ -15,10 +15,10 @@ class MaterialServiceCreateOnJobTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-MS-1', contact=self.contact)
         self.pli_inv = InventoryItem.objects.create(
-            code='I', accounting_category=self.cat, is_inventoried=True,
+            code='I', accounting_category=self.cat, is_catalog=True,
         )
         self.pli_noninv = InventoryItem.objects.create(
-            code='N', accounting_category=self.cat, is_inventoried=False,
+            code='N', accounting_category=self.cat, is_catalog=False,
         )
         self.scheme = RateScheme.objects.create(
             name='S-msc', algorithm=RateScheme.FLAT_FEE,
@@ -37,14 +37,17 @@ class MaterialServiceCreateOnJobTest(TestCase):
         e = Earmark.objects.get(price_list_item=self.pli_inv, job=self.job)
         self.assertEqual(e.quantity, Decimal('4.00'))
 
-    def test_create_taskless_noninventoried_no_earmark(self):
+    def test_create_taskless_lot_item_earmarks(self):
+        """Universal tracking: a material backed by any item (catalog or lot)
+        earmarks it. Only a None-item material skips earmarking."""
         m = MaterialService.create_on_job(
             job=self.job, task=None,
             description='x', quantity=Decimal('4.00'),
             price_list_item=self.pli_noninv,
         )
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
-        self.assertFalse(Earmark.objects.exists())
+        self.assertTrue(Earmark.objects.filter(
+            price_list_item=self.pli_noninv, job=self.job).exists())
 
     def test_create_task_attached_invariant_enforced(self):
         other = Job.objects.create(job_number='JOB-MS-2', contact=self.contact)
