@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
+import { user } from '@/stores/auth.js';
 import InventoryListPage from '@/routes/inventory/InventoryListPage.svelte';
 
 const ITEMS = [
@@ -21,7 +22,10 @@ const ITEMS = [
 
 beforeEach(() => {
   api.get.mockReset();
+  api.post.mockReset();
   api.get.mockResolvedValue({ results: ITEMS });
+  api.post.mockResolvedValue({});
+  user.set({ username: 'u', permissions: [] });  // no manage by default
 });
 
 describe('InventoryListPage', () => {
@@ -59,5 +63,48 @@ describe('InventoryListPage', () => {
     await fireEvent.input(getByPlaceholderText('code or description'), { target: { value: 'ply' } });
     expect(queryByText('FELT')).toBeNull();
     expect(queryByText('leftover ply')).toBeInTheDocument();
+  });
+
+  it('hides manage actions without an atom', async () => {
+    const { findByText, queryByRole } = render(InventoryListPage);
+    await findByText('FELT');
+    expect(queryByRole('button', { name: '+ New item' })).toBeNull();
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+  });
+});
+
+describe('InventoryListPage — manage actions (financials/config)', () => {
+  beforeEach(() => {
+    user.set({ username: 'fin', permissions: ['can_manage_financials'] });
+    vi.stubGlobal('confirm', vi.fn(() => true));
+  });
+
+  it('writes off an item with stock', async () => {
+    const { findAllByRole } = render(InventoryListPage);
+    const writeOffBtns = await findAllByRole('button', { name: 'write off' });
+    await fireEvent.click(writeOffBtns[0]);
+    await vi.waitFor(() => {
+      const urls = api.post.mock.calls.map((c) => c[0]);
+      expect(urls.some((u) => u.includes('/write-off/'))).toBe(true);
+    });
+  });
+
+  it('merges a discard lot into a keep item', async () => {
+    const { findByText, getByRole, getByText } = render(InventoryListPage);
+    await findByText('FELT');
+    await fireEvent.click(getByRole('button', { name: 'Merge items' }));
+    const selects = document.querySelectorAll('select');
+    // last two selects in the merge panel are keep + discard
+    const keepSel = selects[selects.length - 2];
+    const discardSel = selects[selects.length - 1];
+    await fireEvent.change(keepSel, { target: { value: '1' } });   // FELT (keep)
+    await fireEvent.change(discardSel, { target: { value: '2' } }); // LOT-1 (lot)
+    await fireEvent.click(getByText('Merge'));
+    await vi.waitFor(() => {
+      const call = api.post.mock.calls.find((c) => c[0] === '/api/price-list-items/merge/');
+      expect(call).toBeTruthy();
+      expect(String(call[1].keep_id)).toBe('1');
+      expect(String(call[1].discard_id)).toBe('2');
+    });
   });
 });

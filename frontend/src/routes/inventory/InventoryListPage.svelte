@@ -19,6 +19,44 @@
   function onSaved() { showForm = false; editingItem = null; load(); }
   function onCancel() { showForm = false; editingItem = null; }
 
+  // Write-off (irreversible → confirm)
+  async function writeOff(it) {
+    if (!confirm(
+      `Write off all ${it.qty_on_hand} ${it.units} of ${it.code} as wasted? `
+      + `This can't be undone.`
+    )) return;
+    error = '';
+    try {
+      await api.post(`/api/price-list-items/${it.price_list_item_id}/write-off/`);
+      load();
+    } catch (err) {
+      error = err.message || 'Write-off failed.';
+    }
+  }
+
+  // Merge (irreversible). Discard must be a lot (non-catalog); the server also
+  // enforces unit-match and catalog-discard rules.
+  let showMerge = $state(false);
+  let mergeKeep = $state('');
+  let mergeDiscard = $state('');
+  let mergeError = $state('');
+  let lotOptions = $derived(items.filter((it) => !it.is_catalog));
+
+  async function doMerge() {
+    mergeError = '';
+    if (!mergeKeep || !mergeDiscard) { mergeError = 'Pick both a keep and a discard item.'; return; }
+    if (String(mergeKeep) === String(mergeDiscard)) { mergeError = 'Pick two different items.'; return; }
+    try {
+      await api.post('/api/price-list-items/merge/', {
+        keep_id: mergeKeep, discard_id: mergeDiscard,
+      });
+      showMerge = false; mergeKeep = ''; mergeDiscard = '';
+      load();
+    } catch (err) {
+      mergeError = err.message || 'Merge failed.';
+    }
+  }
+
   // Filters
   let search = $state('');
   let includeFinished = $state(false);
@@ -61,6 +99,9 @@
   <p>
     {#if !showForm}
       <button type="button" onclick={newItem}>+ New item</button>
+      <button type="button" onclick={() => { showMerge = !showMerge; mergeError = ''; }}>
+        {showMerge ? 'Cancel merge' : 'Merge items'}
+      </button>
     {/if}
   </p>
   {#if showForm}
@@ -70,6 +111,29 @@
       {#key editingItem}
         <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
       {/key}
+    </div>
+  {/if}
+  {#if showMerge}
+    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
+      <h3>Merge items</h3>
+      <p>Fold a lot's stock and references into a keep item, then delete the lot.
+        The discard must be a lot (demote a catalog item first); units must match.</p>
+      {#if mergeError}<p style="color:#c00">{mergeError}</p>{/if}
+      <p><label>Keep (survivor):
+        <select bind:value={mergeKeep}>
+          <option value="">-- select --</option>
+          {#each items as it (it.price_list_item_id)}
+            <option value={it.price_list_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
+          {/each}
+        </select></label></p>
+      <p><label>Discard (folded in &amp; deleted):
+        <select bind:value={mergeDiscard}>
+          <option value="">-- select a lot --</option>
+          {#each lotOptions as it (it.price_list_item_id)}
+            <option value={it.price_list_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
+          {/each}
+        </select></label></p>
+      <p><button type="button" onclick={doMerge}>Merge</button></p>
     </div>
   {/if}
 {/if}
@@ -116,7 +180,12 @@
           <td style="text-align: right">${it.purchase_price}</td>
           <td style="text-align: right">${it.selling_price}</td>
           {#if canManage}
-            <td><button type="button" onclick={() => editItem(it)}>edit</button></td>
+            <td>
+              <button type="button" onclick={() => editItem(it)}>edit</button>
+              {#if Number(it.qty_on_hand) > 0}
+                <button type="button" onclick={() => writeOff(it)}>write off</button>
+              {/if}
+            </td>
           {/if}
         </tr>
       {/each}
