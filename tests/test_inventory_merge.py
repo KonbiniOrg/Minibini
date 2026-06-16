@@ -138,7 +138,7 @@ class MergeEndpointTest(TestCase):
         self.client.force_authenticate(User.objects.get(pk=u.pk))
 
     def test_merge_endpoint_happy(self):
-        resp = self.client.post('/api/price-list-items/merge/', {
+        resp = self.client.post('/api/inventory/merge/', {
             'keep_id': self.keep.pk, 'discard_id': self.discard.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 200)
@@ -146,6 +146,6 @@ class MergeEndpointTest(TestCase):
         self.assertEqual(self.keep.qty_on_hand, Decimal('2.00'))
 
     def test_merge_endpoint_missing_ids(self):
-        resp = self.client.post('/api/price-list-items/merge/', {
+        resp = self.client.post('/api/inventory/merge/', {
             'keep_id': self.keep.pk}, format='json')
         self.assertEqual(resp.status_code, 400)

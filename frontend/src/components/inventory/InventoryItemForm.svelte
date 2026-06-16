@@ -56,9 +56,9 @@
       }
       if (editing) {
         payload.is_active = isActive;
-        await api.patch(`/api/price-list-items/${item.price_list_item_id}/`, payload);
+        await api.patch(`/api/inventory/${item.price_list_item_id}/`, payload);
       } else {
-        await api.post('/api/price-list-items/', payload);
+        await api.post('/api/inventory/', payload);
       }
       onSaved();
     } catch (err) {

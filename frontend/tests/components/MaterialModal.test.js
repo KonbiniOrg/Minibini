@@ -63,7 +63,7 @@ describe('MaterialModal', () => {
 
   function mockEarmarkedItem() {
     api.get.mockImplementation((url) => {
-      if (url.includes('/api/price-list-items/')) {
+      if (url.includes('/api/inventory/')) {
         return Promise.resolve({ results: [{
           price_list_item_id: 1, code: 'FELT', description: 'grey felt',
           units: 'sheet', purchase_price: '4', selling_price: '8',

@@ -49,7 +49,7 @@
     try {
       const [tts, plis] = await Promise.all([
         api.get('/api/task-templates/?page_size=9999'),
-        api.get('/api/price-list-items/?page_size=9999'),
+        api.get('/api/inventory/?page_size=9999'),
       ]);
       taskTemplates = tts.results || tts;
       priceListItems = plis.results || plis;

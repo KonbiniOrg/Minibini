@@ -27,7 +27,7 @@
     )) return;
     error = '';
     try {
-      await api.post(`/api/price-list-items/${it.price_list_item_id}/write-off/`);
+      await api.post(`/api/inventory/${it.price_list_item_id}/write-off/`);
       load();
     } catch (err) {
       error = err.message || 'Write-off failed.';
@@ -47,7 +47,7 @@
     if (!mergeKeep || !mergeDiscard) { mergeError = 'Pick both a keep and a discard item.'; return; }
     if (String(mergeKeep) === String(mergeDiscard)) { mergeError = 'Pick two different items.'; return; }
     try {
-      await api.post('/api/price-list-items/merge/', {
+      await api.post('/api/inventory/merge/', {
         keep_id: mergeKeep, discard_id: mergeDiscard,
       });
       showMerge = false; mergeKeep = ''; mergeDiscard = '';
@@ -70,7 +70,7 @@
       params.set('page_size', '200');
       if (activeOnly) params.set('is_active', 'true');
       if (includeFinished) params.set('include_finished', 'true');
-      const data = await api.get('/api/price-list-items/?' + params.toString());
+      const data = await api.get('/api/inventory/?' + params.toString());
       items = data.results || data;
     } catch (err) {
       error = err.message || 'Could not load inventory.';

@@ -25,13 +25,13 @@ class InventoryItemIsActiveFilterTests(APITestCase):
         return sorted(item['code'] for item in response.json()['results'])
 
     def test_no_filter_returns_all(self):
-        resp = self.client.get('/api/price-list-items/')
+        resp = self.client.get('/api/inventory/')
         self.assertEqual(self._codes(resp), ['ACT-1', 'INACT-1'])
 
     def test_is_active_true_excludes_deactivated(self):
-        resp = self.client.get('/api/price-list-items/?is_active=true')
+        resp = self.client.get('/api/inventory/?is_active=true')
         self.assertEqual(self._codes(resp), ['ACT-1'])
 
     def test_is_active_false_returns_only_deactivated(self):
-        resp = self.client.get('/api/price-list-items/?is_active=false')
+        resp = self.client.get('/api/inventory/?is_active=false')
         self.assertEqual(self._codes(resp), ['INACT-1'])

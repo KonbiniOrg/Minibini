@@ -101,7 +101,7 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
     await fireEvent.change(discardSel, { target: { value: '2' } }); // LOT-1 (lot)
     await fireEvent.click(getByText('Merge'));
     await vi.waitFor(() => {
-      const call = api.post.mock.calls.find((c) => c[0] === '/api/price-list-items/merge/');
+      const call = api.post.mock.calls.find((c) => c[0] === '/api/inventory/merge/');
       expect(call).toBeTruthy();
       expect(String(call[1].keep_id)).toBe('1');
       expect(String(call[1].discard_id)).toBe('2');

@@ -83,17 +83,17 @@ class WriteOffEndpointTest(TestCase):
 
     def test_financials_can_write_off(self):
         self.client.force_authenticate(self._user('can_manage_financials'))
-        resp = self.client.post(f'/api/price-list-items/{self.lot.pk}/write-off/')
+        resp = self.client.post(f'/api/inventory/{self.lot.pk}/write-off/')
         self.assertEqual(resp.status_code, 200)
         self.lot.refresh_from_db()
         self.assertEqual(self.lot.qty_on_hand, Decimal('0.00'))
 
     def test_config_can_write_off(self):
         self.client.force_authenticate(self._user('can_manage_config'))
-        resp = self.client.post(f'/api/price-list-items/{self.lot.pk}/write-off/')
+        resp = self.client.post(f'/api/inventory/{self.lot.pk}/write-off/')
         self.assertEqual(resp.status_code, 200)
 
     def test_plain_user_forbidden(self):
         self.client.force_authenticate(self._user())
-        resp = self.client.post(f'/api/price-list-items/{self.lot.pk}/write-off/')
+        resp = self.client.post(f'/api/inventory/{self.lot.pk}/write-off/')
         self.assertEqual(resp.status_code, 403)

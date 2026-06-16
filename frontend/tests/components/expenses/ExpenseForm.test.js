@@ -23,7 +23,7 @@ beforeEach(() => {
     if (url.startsWith('/api/jobs/?search')) {
       return Promise.resolve({ results: [{ job_id: 7, job_number: 'JOB-7', description: 'demo' }] });
     }
-    if (url.startsWith('/api/price-list-items/')) return Promise.resolve({ results: [] });
+    if (url.startsWith('/api/inventory/')) return Promise.resolve({ results: [] });
     return Promise.resolve({ results: [] });
   });
   api.post.mockResolvedValue({ id: 99 });

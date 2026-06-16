@@ -37,7 +37,7 @@ describe('InventoryItemForm', () => {
 
     await vi.waitFor(() => expect(api.post).toHaveBeenCalled());
     const [url, payload] = api.post.mock.calls[0];
-    expect(url).toBe('/api/price-list-items/');
+    expect(url).toBe('/api/inventory/');
     expect(payload.code).toBe('NEW-1');
     expect(payload.is_catalog).toBe(true);
     expect('selling_price' in payload).toBe(false);
@@ -58,7 +58,7 @@ describe('InventoryItemForm', () => {
 
     await vi.waitFor(() => expect(api.patch).toHaveBeenCalled());
     const [url, payload] = api.patch.mock.calls[0];
-    expect(url).toBe('/api/price-list-items/5/');
+    expect(url).toBe('/api/inventory/5/');
     expect(payload.is_catalog).toBe(false);
   });
 });

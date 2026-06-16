@@ -34,7 +34,7 @@
     form.qty = String(prefillMaterial.quantity ?? '');
     if (prefillMaterial.price_list_item) {
       mode = 'pli';
-      api.get(`/api/price-list-items/${prefillMaterial.price_list_item}/`)
+      api.get(`/api/inventory/${prefillMaterial.price_list_item}/`)
         .then(pli => { handlePLISelect(pli); })
         .catch(() => {
           // Fall back to manual mode if PLI fetch fails

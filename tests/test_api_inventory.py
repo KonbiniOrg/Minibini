@@ -13,11 +13,11 @@ class InventoryItemAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_list_price_list_items(self):
-        response = self.client.get('/api/price-list-items/')
+        response = self.client.get('/api/inventory/')
         self.assertEqual(response.status_code, 200)
 
     def test_create_price_list_item(self):
-        response = self.client.post('/api/price-list-items/', {
+        response = self.client.post('/api/inventory/', {
             'code': 'API-TEST-001',
             'description': 'API test item',
             'units': 'ea',
@@ -30,13 +30,13 @@ class InventoryItemAPITest(BaseTestCase):
     def test_retrieve_price_list_item(self):
         pli = InventoryItem.objects.first()
         if pli:
-            response = self.client.get(f'/api/price-list-items/{pli.pk}/')
+            response = self.client.get(f'/api/inventory/{pli.pk}/')
             self.assertEqual(response.status_code, 200)
 
     def test_update_price_list_item(self):
         pli = InventoryItem.objects.first()
         if pli:
-            response = self.client.patch(f'/api/price-list-items/{pli.pk}/', {
+            response = self.client.patch(f'/api/inventory/{pli.pk}/', {
                 'selling_price': '25.00',
             }, format='json')
             self.assertEqual(response.status_code, 200)
