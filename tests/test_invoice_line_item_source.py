@@ -83,7 +83,7 @@ class InvoiceLineItemSourceTest(TestCase):
             task=self.task,
             quantity=Decimal('3.00'),
             sell_price=Decimal('10.00'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         source = InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,

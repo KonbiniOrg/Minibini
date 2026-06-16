@@ -82,10 +82,10 @@ class BaseBuildersTest(unittest.TestCase):
                  'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
         self.assertEqual(value, canon)
 
-    def test_build_price_list_items(self):
+    def test_build_inventory_items(self):
         build.build_seed(self.c)
-        build.build_price_list_items(self.c)
-        items = self._models('inventory.pricelistitem')
+        build.build_inventory_items(self.c)
+        items = self._models('inventory.inventoryitem')
         self.assertGreater(len(items), 100)
         # purchase_price is 83.33% of selling_price.
         for f in items:
@@ -1026,7 +1026,7 @@ class BuildHistoryUnitTest(unittest.TestCase):
         # untracked — must NOT get history
         c.add_fixture('estimates.estworksheet', 10, {'job': 1})
         c.add_fixture('jobs.plantask', 11, {})
-        c.add_fixture('inventory.pricelistitem', 12, {})
+        c.add_fixture('inventory.inventoryitem', 12, {})
 
         build.build_history(c)
 

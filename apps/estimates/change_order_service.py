@@ -272,7 +272,7 @@ class ChangeOrderService:
                 price=li.price,
                 line_number=li.line_number,
                 source_template=li.source_template,
-                price_list_item=li.price_list_item,
+                inventory_item=li.inventory_item,
             )
 
         return new_co
@@ -332,7 +332,7 @@ class ChangeOrderService:
         li = ChangeOrderLineItem.objects.create(
             change_order=co,
             action=ChangeOrderLineItem.ACTION_ADD,
-            price_list_item=pli,
+            inventory_item=pli,
             description=pli.description,
             qty=qty,
             units=pli.units,

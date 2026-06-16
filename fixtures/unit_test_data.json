@@ -544,7 +544,7 @@
         "pk": 1,
         "fields": {
             "estimate": 1,
-            "price_list_item": 1,
+            "inventory_item": 1,
             "line_number": 1,
             "qty": "50.00",
             "units": "ea",
@@ -557,7 +557,7 @@
         "pk": 2,
         "fields": {
             "estimate": 1,
-            "price_list_item": null,
+            "inventory_item": null,
             "line_number": 2,
             "qty": "8.00",
             "units": "hours",
@@ -570,7 +570,7 @@
         "pk": 1,
         "fields": {
             "invoice": 1,
-            "price_list_item": 1,
+            "inventory_item": 1,
             "line_number": 1,
             "qty": "50.00",
             "units": "ea",
@@ -583,7 +583,7 @@
         "pk": 2,
         "fields": {
             "invoice": 1,
-            "price_list_item": null,
+            "inventory_item": null,
             "line_number": 2,
             "qty": "8.00",
             "units": "hours",
@@ -597,7 +597,7 @@
         "fields": {
             "purchase_order": 1,
             "task": null,
-            "price_list_item": 1,
+            "inventory_item": 1,
             "line_number": 3,
             "qty": "100.00",
             "units": "ea",
@@ -611,7 +611,7 @@
         "fields": {
             "bill": 1,
             "task": null,
-            "price_list_item": 1,
+            "inventory_item": 1,
             "line_number": 4,
             "qty": "100.00",
             "units": "ea",

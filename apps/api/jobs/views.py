@@ -32,7 +32,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             Prefetch(
                 'materials',
                 queryset=Material.objects.select_related(
-                    'price_list_item', 'po_line_item__purchase_order',
+                    'inventory_item', 'po_line_item__purchase_order',
                 ),
             ),
         ) \
@@ -303,8 +303,8 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         job = self.get_object()
         data = request.data
         pli = None
-        if data.get('price_list_item'):
-            pli = InventoryItem.objects.get(pk=data['price_list_item'])
+        if data.get('inventory_item'):
+            pli = InventoryItem.objects.get(pk=data['inventory_item'])
         ac = None
         if data.get('accounting_category'):
             ac = AccountingCategory.objects.get(pk=data['accounting_category'])
@@ -316,7 +316,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 units=data.get('units', 'none'),
                 unit_cost=_Decimal(str(data.get('unit_cost', 0))),
                 sell_price=_Decimal(str(data.get('sell_price', 0))),
-                price_list_item=pli,
+                inventory_item=pli,
                 accounting_category=ac,
                 cost_source='manual',
             )

@@ -32,9 +32,9 @@
   $effect(() => {
     if (!prefillMaterial) return;
     form.qty = String(prefillMaterial.quantity ?? '');
-    if (prefillMaterial.price_list_item) {
+    if (prefillMaterial.inventory_item) {
       mode = 'pli';
-      api.get(`/api/inventory/${prefillMaterial.price_list_item}/`)
+      api.get(`/api/inventory/${prefillMaterial.inventory_item}/`)
         .then(pli => { handlePLISelect(pli); })
         .catch(() => {
           // Fall back to manual mode if PLI fetch fails
@@ -66,7 +66,7 @@
     const data = {};
 
     if (mode === 'pli' && selectedPLI) {
-      data.price_list_item = selectedPLI.price_list_item_id;
+      data.inventory_item = selectedPLI.inventory_item_id;
       data.qty = Number(form.qty);
     } else {
       data.description = form.description;
@@ -106,7 +106,7 @@
       <p>
         <label><strong>Price List Item *</strong></label><br>
         <PriceListItemPicker
-          value={selectedPLI?.price_list_item_id}
+          value={selectedPLI?.inventory_item_id}
           selectedItem={selectedPLI}
           onSelect={handlePLISelect}
         />

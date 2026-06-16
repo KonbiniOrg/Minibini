@@ -301,7 +301,7 @@ class ExpenseJobLinkTest(TestCase):
             code='PLY', description='plywood', accounting_category=self.cat,
             is_catalog=True, qty_on_hand=Decimal('7.00'))
         exp = self._expense(amount=Decimal('73.33'), new_material={
-            'job_id': self.job.pk, 'price_list_item_id': pli.pk, 'quantity': 3})
+            'job_id': self.job.pk, 'inventory_item_id': pli.pk, 'quantity': 3})
         self.assertIsNone(exp.material_id)             # no consumable
         self.assertEqual(exp.stock_pli_id, pli.pk)
         self.assertEqual(exp.stock_qty, Decimal('3.00'))
@@ -314,7 +314,7 @@ class ExpenseJobLinkTest(TestCase):
             code='PLY2', description='p', accounting_category=self.cat,
             is_catalog=True, qty_on_hand=Decimal('7.00'))
         exp = self._expense(amount=Decimal('73.33'), new_material={
-            'job_id': self.job.pk, 'price_list_item_id': pli.pk, 'quantity': 3})
+            'job_id': self.job.pk, 'inventory_item_id': pli.pk, 'quantity': 3})
         ExpenseService.delete(expense=exp, actor=self.user)
         pli.refresh_from_db()
         self.assertEqual(pli.qty_on_hand, Decimal('7.00'))  # back to 7

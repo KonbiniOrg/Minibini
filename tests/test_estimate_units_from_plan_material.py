@@ -42,7 +42,7 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
-            quantity=Decimal('1'), price_list_item=self.pli,
+            quantity=Decimal('1'), inventory_item=self.pli,
         )
         self.assertEqual(pm.units, 'sheets')
         self.assertEqual(EstimateWizardService._atom_units(pm), 'sheets')
@@ -102,7 +102,7 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
         ws = EstWorksheet.objects.create(job=self.job)
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=None,
-            quantity=Decimal('3'), price_list_item=self.pli,
+            quantity=Decimal('3'), inventory_item=self.pli,
         )
         result = EstimateWizardService.send_all_atoms_to_estimate(ws)
         li = EstimateLineItem.objects.get(estimate=result['estimate'])

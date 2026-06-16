@@ -40,10 +40,10 @@ class CatalogLineItemAddTest(TestCase):
         )
         resp = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
-            {'price_list_item': self.pli.pk, 'qty': '3'}, format='json',
+            {'inventory_item': self.pli.pk, 'qty': '3'}, format='json',
         )
         self.assertIn(resp.status_code, [200, 201])
-        self.assertEqual(resp.data['price_list_item'], self.pli.pk)
+        self.assertEqual(resp.data['inventory_item'], self.pli.pk)
         self.assertEqual(resp.data['description'], 'Standard widget')
         self.assertEqual(Decimal(resp.data['price']), Decimal('42.50'))
 
@@ -51,8 +51,8 @@ class CatalogLineItemAddTest(TestCase):
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         resp = self.client.post(
             f'/api/invoices/{inv.pk}/line-items/',
-            {'price_list_item': self.pli.pk, 'qty': '2'}, format='json',
+            {'inventory_item': self.pli.pk, 'qty': '2'}, format='json',
         )
         self.assertIn(resp.status_code, [200, 201])
-        self.assertEqual(resp.data['price_list_item'], self.pli.pk)
+        self.assertEqual(resp.data['inventory_item'], self.pli.pk)
         self.assertEqual(Decimal(resp.data['price']), Decimal('42.50'))

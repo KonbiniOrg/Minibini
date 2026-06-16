@@ -89,9 +89,9 @@ def _serialize_categories(categories):
             result.append(data)
         out['purchase_orders'] = result
 
-    if 'price_list_items' in categories:
-        out['price_list_items'] = InventoryItemSerializer(
-            categories['price_list_items']['items'], many=True
+    if 'inventory_items' in categories:
+        out['inventory_items'] = InventoryItemSerializer(
+            categories['inventory_items']['items'], many=True
         ).data
 
     if 'est_worksheets' in categories:

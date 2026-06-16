@@ -117,11 +117,11 @@ def purchase_order_add_line_item(request, po_id):
             # Price list line item form submitted
             pricelist_form = POPriceListLineItemForm(request.POST)
             if pricelist_form.is_valid():
-                price_list_item = pricelist_form.cleaned_data['price_list_item']
+                inventory_item = pricelist_form.cleaned_data['inventory_item']
                 qty = pricelist_form.cleaned_data['qty']
 
                 line_item = PurchaseOrderService.add_line_item_from_pli(
-                    purchase_order.pk, price_list_item.pk, qty,
+                    purchase_order.pk, inventory_item.pk, qty,
                 )
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
                 return redirect('purchasing:purchase_order_detail', po_id=purchase_order.po_id)
@@ -310,12 +310,12 @@ def bill_add_line_item(request, bill_id):
     if request.method == 'POST':
         form = BillLineItemForm(request.POST)
         if form.is_valid():
-            price_list_item = form.cleaned_data['price_list_item']
+            inventory_item = form.cleaned_data['inventory_item']
             qty = form.cleaned_data['qty']
 
-            if price_list_item:
+            if inventory_item:
                 line_item = BillService.add_line_item_from_pli(
-                    bill.pk, price_list_item.pk, qty,
+                    bill.pk, inventory_item.pk, qty,
                 )
                 messages.success(request, f'Line item "{line_item.description}" added from price list')
             else:

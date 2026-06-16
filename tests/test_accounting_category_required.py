@@ -58,7 +58,7 @@ class FreeformMaterialRequiresCategoryTests(_Setup):
         resp = self.client.post(
             f'/api/jobs/{self.job.pk}/materials/',
             {
-                'price_list_item': self.pli.pk,
+                'inventory_item': self.pli.pk,
                 'quantity': '1',
             },
             format='json',

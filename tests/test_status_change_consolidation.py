@@ -36,7 +36,7 @@ class ReleaseLooseMaterialsHelperTest(TestCase):
     def test_release_loose_materials_restocks_and_reports(self):
         MaterialService.create_on_job(
             job=self.job, task=None, description='loose mat',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         released = JobService.release_loose_materials(self.job)
         self.assertEqual(len(released), 1)
@@ -84,7 +84,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
     def test_invoice_completion_releases_earmarks(self):
         job = self._job(Job.STATUS_APPROVED)
         Earmark.objects.create(
-            price_list_item=self.pli, job=job, quantity=Decimal('3'),
+            inventory_item=self.pli, job=job, quantity=Decimal('3'),
         )
         self._pay_invoice(job)
         job.refresh_from_db()
@@ -95,7 +95,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
         job = self._job(Job.STATUS_APPROVED)
         MaterialService.create_on_job(
             job=job, task=None, description='loose-on-invoice',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         self._pay_invoice(job)
         job.refresh_from_db()

@@ -26,7 +26,7 @@ class JobMaterialSerializerPOFieldsTest(TestCase):
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         self.client = APIClient()
         self.client.force_authenticate(self.user)
@@ -59,7 +59,7 @@ class MaterialQtyOnHandTest(TestCase):
             is_catalog=True, qty_on_hand=Decimal('5.00'))
         self.mat = Material.objects.create(
             job=self.job, accounting_category=cat, description='widget',
-            quantity=Decimal('8.00'), price_list_item=self.pli)
+            quantity=Decimal('8.00'), inventory_item=self.pli)
 
     def test_qty_on_hand_is_pli_qoh_not_material_quantity(self):
         from apps.api.inventory.serializers import MaterialSerializer

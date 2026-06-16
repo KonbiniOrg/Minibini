@@ -13,7 +13,7 @@ beforeEach(() => {
       return Promise.resolve({ results: [{ template_id: 1, template_name: 'Welding', description: 'weld', rate: '25', units: 'hr' }] });
     }
     if (url.startsWith('/api/inventory/')) {
-      return Promise.resolve({ results: [{ price_list_item_id: 2, code: 'STEEL', description: 'steel', selling_price: '5', units: 'kg' }] });
+      return Promise.resolve({ results: [{ inventory_item_id: 2, code: 'STEEL', description: 'steel', selling_price: '5', units: 'kg' }] });
     }
     return Promise.resolve({ results: [] });
   });

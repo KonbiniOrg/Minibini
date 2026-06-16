@@ -29,14 +29,14 @@ class FreeformMaterialCostServiceTest(TestCase):
             MaterialService.create_on_job(
                 job=self.job, description='freeform', quantity=Decimal('1'),
                 unit_cost=Decimal('5.00'), accounting_category=self.cat,
-                price_list_item=None, cost_source='manual',
+                inventory_item=None, cost_source='manual',
             )
 
     def test_create_freeform_document_cost_ok(self):
         mat = MaterialService.create_on_job(
             job=self.job, description='freeform', quantity=Decimal('1'),
             unit_cost=Decimal('5.00'), accounting_category=self.cat,
-            price_list_item=None, cost_source='document',
+            inventory_item=None, cost_source='document',
         )
         self.assertEqual(mat.unit_cost, Decimal('5.00'))
 
@@ -45,7 +45,7 @@ class FreeformMaterialCostServiceTest(TestCase):
         mat = MaterialService.create_on_job(
             job=self.job, description='freeform', quantity=Decimal('1'),
             unit_cost=Decimal('0.00'), accounting_category=self.cat,
-            price_list_item=None, cost_source='manual',
+            inventory_item=None, cost_source='manual',
         )
         self.assertEqual(mat.unit_cost, Decimal('0.00'))
 
@@ -53,14 +53,14 @@ class FreeformMaterialCostServiceTest(TestCase):
         mat = MaterialService.create_on_job(
             job=self.job, description='cataloged', quantity=Decimal('1'),
             unit_cost=Decimal('5.00'), accounting_category=self.cat,
-            price_list_item=self.pli, cost_source='manual',
+            inventory_item=self.pli, cost_source='manual',
         )
         self.assertEqual(mat.unit_cost, Decimal('5.00'))
 
     def test_update_pricing_document_sets_freeform_cost(self):
         mat = MaterialService.create_on_job(
             job=self.job, description='freeform', quantity=Decimal('1'),
-            accounting_category=self.cat, price_list_item=None,
+            accounting_category=self.cat, inventory_item=None,
         )
         MaterialService.update_pricing(mat, unit_cost=Decimal('9.00'), cost_source='document')
         mat.refresh_from_db()

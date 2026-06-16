@@ -9,12 +9,12 @@ import InventoryListPage from '@/routes/inventory/InventoryListPage.svelte';
 
 const ITEMS = [
   {
-    price_list_item_id: 1, code: 'FELT', description: 'grey felt', units: 'sheet',
+    inventory_item_id: 1, code: 'FELT', description: 'grey felt', units: 'sheet',
     qty_on_hand: '5.00', qty_earmarked: '2.00', qty_available: '3.00',
     is_catalog: true, is_active: true, purchase_price: '4.00', selling_price: '8.00',
   },
   {
-    price_list_item_id: 2, code: 'LOT-1', description: 'leftover ply', units: 'sheet',
+    inventory_item_id: 2, code: 'LOT-1', description: 'leftover ply', units: 'sheet',
     qty_on_hand: '1.00', qty_earmarked: '0.00', qty_available: '1.00',
     is_catalog: false, is_active: true, purchase_price: '40.00', selling_price: '0.00',
   },

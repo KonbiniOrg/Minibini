@@ -37,7 +37,7 @@ class _Setup(APITestCase):
 class MaterialImmutabilityTests(_Setup):
     def test_patch_pli_linked_material_description_rejected(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -49,7 +49,7 @@ class MaterialImmutabilityTests(_Setup):
 
     def test_patch_pli_linked_material_units_rejected(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -60,7 +60,7 @@ class MaterialImmutabilityTests(_Setup):
 
     def test_patch_pli_linked_material_unit_cost_allowed(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -73,7 +73,7 @@ class MaterialImmutabilityTests(_Setup):
 
     def test_patch_pli_linked_material_sell_price_allowed(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -86,7 +86,7 @@ class MaterialImmutabilityTests(_Setup):
 
     def test_patch_freeform_material_description_allowed(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=None,
+            job=self.job, inventory_item=None,
             description='start', quantity=Decimal('1'),
             accounting_category=self.cat,
         )
@@ -101,7 +101,7 @@ class MaterialImmutabilityTests(_Setup):
 
     def test_patch_freeform_material_units_allowed(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=None,
+            job=self.job, inventory_item=None,
             description='x', quantity=Decimal('1'),
             accounting_category=self.cat,
         )
@@ -119,7 +119,7 @@ class PlanMaterialImmutabilityTests(_Setup):
     def test_patch_pli_linked_plan_material_description_rejected(self):
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
-            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
@@ -131,7 +131,7 @@ class PlanMaterialImmutabilityTests(_Setup):
     def test_patch_pli_linked_plan_material_unit_cost_allowed(self):
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
-            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
@@ -146,7 +146,7 @@ class PlanMaterialImmutabilityTests(_Setup):
         Restock/Draw-more state-machine ops; not the case for PlanMaterial.)"""
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
-            est_worksheet=ws, price_list_item=None,
+            est_worksheet=ws, inventory_item=None,
             description='loose', quantity=Decimal('1'),
             accounting_category=self.cat,
         )
@@ -164,7 +164,7 @@ class PlanMaterialImmutabilityTests(_Setup):
         rule — quantity is not in the carve-out."""
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
-            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
@@ -180,7 +180,7 @@ class PropagateFlagOnFreeformAndPostPathsTests(_Setup):
     def test_freeform_material_patch_with_propagate_flag_succeeds(self):
         # Freeform Material — no PLI to propagate to. Flag should be a no-op.
         m = Material.objects.create(
-            job=self.job, price_list_item=None,
+            job=self.job, inventory_item=None,
             description='start', quantity=Decimal('1'),
             accounting_category=self.cat,
         )

@@ -156,7 +156,7 @@ class GetSourcePoolTest(TestCase):
             description='Plywood 4x8',
             quantity=Decimal('1.00'),
             sell_price=Decimal('25.00'),
-            price_list_item=self.pli,
+            inventory_item=self.pli,
             accounting_category=self.category,
         )
 
@@ -328,7 +328,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.material = Material.objects.create(
             job=self.job, task=self.task, description='Plywood',
             quantity=Decimal('1.00'), sell_price=Decimal('25.00'),
-            price_list_item=self.pli, accounting_category=self.cat_materials,
+            inventory_item=self.pli, accounting_category=self.cat_materials,
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
@@ -914,12 +914,12 @@ class SourcePoolLooseMaterialsTest(TestCase):
         m1 = MaterialService.create_on_job(
             job=job, task=None, description='m1',
             quantity=Decimal('3'), sell_price=Decimal('2'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         m2 = MaterialService.create_on_job(
             job=job, task=None, description='fully restocked',
             quantity=Decimal('2'), sell_price=Decimal('2'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         user = User.objects.create(username='iwl_user')
         Expense.objects.create(
@@ -955,7 +955,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         m = MaterialService.create_on_job(
             job=job, task=None, description='m',
             quantity=Decimal('5'), sell_price=Decimal('2'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         MaterialService.restock(m, Decimal('2'))
         amount = InvoiceWizardService._atom_computed_amount(m)
@@ -999,7 +999,7 @@ class TaskAttachedPartialRestockTest(TestCase):
         m = MaterialService.create_on_job(
             job=job, task=task, description='bolts',
             quantity=Decimal('5'), sell_price=Decimal('2.00'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         MaterialService.restock(m, Decimal('2'))
         invoice = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)

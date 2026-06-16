@@ -50,7 +50,7 @@
         "fields": {
             "purchase_order": 1,
             "task": null,
-            "price_list_item": 1,
+            "inventory_item": 1,
             "line_number": 3,
             "qty": "100.00",
             "units": "ea",
@@ -64,7 +64,7 @@
         "fields": {
             "bill": 1,
             "task": null,
-            "price_list_item": 1,
+            "inventory_item": 1,
             "line_number": 4,
             "qty": "100.00",
             "units": "ea",

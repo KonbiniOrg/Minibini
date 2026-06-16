@@ -41,7 +41,7 @@ class IsFinishedLotPropertyTest(TestCase):
 
     def test_lot_with_earmark_is_not_finished(self):
         lot = self._item(code='L3', is_catalog=False, qty_on_hand=Decimal('0.00'))
-        Earmark.objects.create(price_list_item=lot, job=self.job, quantity=Decimal('2'))
+        Earmark.objects.create(inventory_item=lot, job=self.job, quantity=Decimal('2'))
         self.assertFalse(lot.is_finished_lot)
 
 
@@ -64,7 +64,7 @@ class HideOnSpendListTest(TestCase):
             code='EARM', is_catalog=False, qty_on_hand=Decimal('0.00'),
             accounting_category=self.cat)
         Earmark.objects.create(
-            price_list_item=self.earmarked_lot, job=self.job, quantity=Decimal('2'))
+            inventory_item=self.earmarked_lot, job=self.job, quantity=Decimal('2'))
         self.finished_lot = InventoryItem.objects.create(
             code='DONE', is_catalog=False, qty_on_hand=Decimal('0.00'),
             accounting_category=self.cat)

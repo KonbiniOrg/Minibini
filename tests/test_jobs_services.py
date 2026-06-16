@@ -357,7 +357,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             accounting_category=self.lit)
         PlanMaterial(
             plan_task=ws_task, est_worksheet=self.worksheet,
-            price_list_item=pli,
+            inventory_item=pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'), sell_price=Decimal('75.00')).save()
 
@@ -371,7 +371,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         self.assertEqual(mat.quantity, Decimal('5.00'))
         self.assertEqual(mat.unit_cost, Decimal('50.00'))
         self.assertEqual(mat.sell_price, Decimal('75.00'))
-        self.assertEqual(mat.price_list_item, pli)
+        self.assertEqual(mat.inventory_item, pli)
 
     def test_empty_worksheet(self):
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
@@ -398,12 +398,12 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             accounting_category=self.lit)
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet,
-            plan_task=plan_task, price_list_item=pli,
+            plan_task=plan_task, inventory_item=pli,
             description='Linked', quantity=Decimal('2.00'))
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
         job_task = Task.objects.get(job=self.job)
         material = job_task.materials.get()
-        self.assertEqual(material.price_list_item, pli)
+        self.assertEqual(material.inventory_item, pli)
 
     def test_job_not_found(self):
         with self.assertRaises(NotFoundError):

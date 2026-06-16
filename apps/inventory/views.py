@@ -37,7 +37,7 @@ def inventory_item_add(request):
 
 def inventory_item_edit(request, item_id):
     """Edit an existing inventoried item."""
-    item = get_object_or_404(InventoryItem, price_list_item_id=item_id, is_catalog=True)
+    item = get_object_or_404(InventoryItem, inventory_item_id=item_id, is_catalog=True)
 
     if request.method == 'POST':
         form = InventoryItemForm(request.POST, instance=item)
@@ -60,7 +60,7 @@ def inventory_item_edit(request, item_id):
     })
 
 
-def price_list_item_list(request):
+def inventory_item_list(request):
     """Display price list items, filtered by active status."""
     show_archived = request.GET.get('show_archived') == '1'
 
@@ -69,44 +69,44 @@ def price_list_item_list(request):
     else:
         items = InventoryItem.objects.filter(is_active=True).order_by('code')
 
-    return render(request, 'invoicing/price_list_item_list.html', {
+    return render(request, 'invoicing/inventory_item_list.html', {
         'items': items,
         'show_archived': show_archived
     })
 
 
-def price_list_item_add(request):
+def inventory_item_add(request):
     """Add a new price list item."""
     if request.method == 'POST':
         form = InventoryItemForm(request.POST)
         if form.is_valid():
             item = InventoryService.create_item(**form.cleaned_data)
             messages.success(request, f'Price List Item "{item.code}" created successfully.')
-            return redirect('inventory:price_list_item_list')
+            return redirect('inventory:inventory_item_list')
     else:
         form = InventoryItemForm()
 
-    return render(request, 'invoicing/price_list_item_form.html', {
+    return render(request, 'invoicing/inventory_item_form.html', {
         'form': form,
         'title': 'Add Price List Item',
         'button_text': 'Create Item'
     })
 
 
-def price_list_item_edit(request, item_id):
+def inventory_item_edit(request, item_id):
     """Edit an existing price list item."""
-    item = get_object_or_404(InventoryItem, price_list_item_id=item_id)
+    item = get_object_or_404(InventoryItem, inventory_item_id=item_id)
 
     if request.method == 'POST':
         form = InventoryItemForm(request.POST, instance=item)
         if form.is_valid():
             InventoryService.update_item(item.pk, **form.cleaned_data)
             messages.success(request, f'Price List Item "{item.code}" updated successfully.')
-            return redirect('inventory:price_list_item_list')
+            return redirect('inventory:inventory_item_list')
     else:
         form = InventoryItemForm(instance=item)
 
-    return render(request, 'invoicing/price_list_item_form.html', {
+    return render(request, 'invoicing/inventory_item_form.html', {
         'form': form,
         'item': item,
         'title': f'Edit Price List Item: {item.code}',

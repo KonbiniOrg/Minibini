@@ -49,7 +49,7 @@ class InvoiceService:
             raise NotFoundError(f'InventoryItem {pli_pk} not found')
         li = InvoiceLineItem(
             invoice=invoice,
-            price_list_item=pli,
+            inventory_item=pli,
             description=pli.description,
             qty=qty,
             units=pli.units,
@@ -614,8 +614,8 @@ class InvoiceWizardService(BaseWizardService):
         if isinstance(atom_instance, Task):
             return atom_instance.rate_scheme.unit_label
         if isinstance(atom_instance, Material):
-            if atom_instance.price_list_item_id:
-                return atom_instance.price_list_item.units
+            if atom_instance.inventory_item_id:
+                return atom_instance.inventory_item.units
             return 'none'
         return 'none'
 

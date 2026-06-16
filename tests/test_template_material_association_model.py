@@ -39,7 +39,7 @@ class TemplateMaterialAssociationModelTests(TestCase):
 
     def test_minimal_creation_no_task_pairing(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('5'),
         )
         self.assertIsNone(a.template_task_association)
@@ -47,7 +47,7 @@ class TemplateMaterialAssociationModelTests(TestCase):
 
     def test_creation_with_task_pairing(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             template_task_association=self.tta,
             quantity=Decimal('5'),
         )
@@ -55,14 +55,14 @@ class TemplateMaterialAssociationModelTests(TestCase):
 
     def test_work_template_related_name(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         self.assertEqual(self.wt.material_associations.count(), 1)
 
     def test_template_task_association_related_name(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             template_task_association=self.tta, quantity=Decimal('1'),
         )
         self.assertEqual(self.tta.material_associations.count(), 1)
@@ -113,12 +113,12 @@ class TemplateMaterialAssociationApiTests(APITestCase):
     def test_post_creates_association(self):
         resp = self.client.post(
             f'/api/work-templates/{self.wt.pk}/materials/',
-            {'price_list_item': self.pli.pk, 'quantity': '5'},
+            {'inventory_item': self.pli.pk, 'quantity': '5'},
             format='json',
         )
         self.assertEqual(resp.status_code, 201, resp.content)
         body = resp.json()
-        self.assertEqual(body['price_list_item'], self.pli.pk)
+        self.assertEqual(body['inventory_item'], self.pli.pk)
         self.assertEqual(body['quantity'], '5.00')
         self.assertIsNone(body['template_task_association'])
 
@@ -126,7 +126,7 @@ class TemplateMaterialAssociationApiTests(APITestCase):
         resp = self.client.post(
             f'/api/work-templates/{self.wt.pk}/materials/',
             {
-                'price_list_item': self.pli.pk,
+                'inventory_item': self.pli.pk,
                 'quantity': '2',
                 'template_task_association': self.tta.pk,
             },
@@ -137,7 +137,7 @@ class TemplateMaterialAssociationApiTests(APITestCase):
 
     def test_patch_quantity(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         resp = self.client.patch(
@@ -151,7 +151,7 @@ class TemplateMaterialAssociationApiTests(APITestCase):
 
     def test_delete(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         resp = self.client.delete(
@@ -183,14 +183,14 @@ class TemplateMaterialAssociationApiPermissionTests(APITestCase):
     def test_worker_cannot_post(self):
         resp = self.client.post(
             f'/api/work-templates/{self.wt.pk}/materials/',
-            {'price_list_item': self.pli.pk, 'quantity': '1'},
+            {'inventory_item': self.pli.pk, 'quantity': '1'},
             format='json',
         )
         self.assertEqual(resp.status_code, 403, resp.content)
 
     def test_worker_cannot_patch(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         resp = self.client.patch(
@@ -202,7 +202,7 @@ class TemplateMaterialAssociationApiPermissionTests(APITestCase):
 
     def test_worker_cannot_delete(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         resp = self.client.delete(
@@ -212,7 +212,7 @@ class TemplateMaterialAssociationApiPermissionTests(APITestCase):
 
     def test_worker_can_get_list(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         resp = self.client.get(
@@ -263,7 +263,7 @@ class CrossTemplateValidationTests(APITestCase):
         resp = self.client.post(
             f'/api/work-templates/{self.wt1.pk}/materials/',
             {
-                'price_list_item': self.pli.pk,
+                'inventory_item': self.pli.pk,
                 'quantity': '1',
                 'template_task_association': self.tta_on_wt2.pk,
             },
@@ -273,7 +273,7 @@ class CrossTemplateValidationTests(APITestCase):
 
     def test_patch_to_cross_template_tta_returns_400(self):
         a = TemplateMaterialAssociation.objects.create(
-            work_template=self.wt1, price_list_item=self.pli,
+            work_template=self.wt1, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         resp = self.client.patch(

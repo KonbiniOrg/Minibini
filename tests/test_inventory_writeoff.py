@@ -25,7 +25,7 @@ def _reference(item, po_number):
         business=biz, po_number=po_number, status=PurchaseOrder.STATUS_DRAFT)
     PurchaseOrderLineItem.objects.create(
         purchase_order=po, description='x', qty=Decimal('1'),
-        price=Decimal('1'), price_list_item=item)
+        price=Decimal('1'), inventory_item=item)
 
 
 class WriteOffServiceTest(TestCase):

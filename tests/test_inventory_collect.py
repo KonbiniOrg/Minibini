@@ -28,19 +28,19 @@ class CollectIfFinishedTest(TestCase):
             business=biz, po_number='PO-COL', status=PurchaseOrder.STATUS_DRAFT)
         return PurchaseOrderLineItem.objects.create(
             purchase_order=po, description='x', qty=Decimal('1'),
-            price=Decimal('1'), price_list_item=item)
+            price=Decimal('1'), inventory_item=item)
 
     # --- demote ---
 
     def test_demote_empty_unreferenced_deletes(self):
         it = self._item(code='D1', is_catalog=True, qty_on_hand=Decimal('0.00'))
-        InventoryService.update_item(it.price_list_item_id, is_catalog=False)
+        InventoryService.update_item(it.inventory_item_id, is_catalog=False)
         self.assertFalse(InventoryItem.objects.filter(pk=it.pk).exists())
 
     def test_demote_empty_referenced_hides_not_deletes(self):
         it = self._item(code='D2', is_catalog=True, qty_on_hand=Decimal('0.00'))
         self._po_line_referencing(it)
-        InventoryService.update_item(it.price_list_item_id, is_catalog=False)
+        InventoryService.update_item(it.inventory_item_id, is_catalog=False)
         it.refresh_from_db()
         self.assertFalse(it.is_catalog)
         self.assertTrue(it.is_finished_lot)   # hidden by the list filter
@@ -48,7 +48,7 @@ class CollectIfFinishedTest(TestCase):
 
     def test_demote_with_stock_keeps(self):
         it = self._item(code='D3', is_catalog=True, qty_on_hand=Decimal('5.00'))
-        InventoryService.update_item(it.price_list_item_id, is_catalog=False)
+        InventoryService.update_item(it.inventory_item_id, is_catalog=False)
         self.assertTrue(InventoryItem.objects.filter(pk=it.pk).exists())
 
     # --- write-off ---
@@ -79,7 +79,7 @@ class CollectIfFinishedTest(TestCase):
         task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
         it = self._item(code='C1', is_catalog=False, qty_on_hand=Decimal('5.00'))
         m = Material.objects.create(
-            job=self.job, task=task, price_list_item=it,
+            job=self.job, task=task, inventory_item=it,
             description='x', quantity=Decimal('5.00'))
         MaterialService.consume(m)
         # Lot is now QOH 0 + no earmark + reference-free, but must survive so

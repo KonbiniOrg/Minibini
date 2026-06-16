@@ -27,7 +27,7 @@
     )) return;
     error = '';
     try {
-      await api.post(`/api/inventory/${it.price_list_item_id}/write-off/`);
+      await api.post(`/api/inventory/${it.inventory_item_id}/write-off/`);
       load();
     } catch (err) {
       error = err.message || 'Write-off failed.';
@@ -122,15 +122,15 @@
       <p><label>Keep (survivor):
         <select bind:value={mergeKeep}>
           <option value="">-- select --</option>
-          {#each items as it (it.price_list_item_id)}
-            <option value={it.price_list_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
+          {#each items as it (it.inventory_item_id)}
+            <option value={it.inventory_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
           {/each}
         </select></label></p>
       <p><label>Discard (folded in &amp; deleted):
         <select bind:value={mergeDiscard}>
           <option value="">-- select a lot --</option>
-          {#each lotOptions as it (it.price_list_item_id)}
-            <option value={it.price_list_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
+          {#each lotOptions as it (it.inventory_item_id)}
+            <option value={it.inventory_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
           {/each}
         </select></label></p>
       <p><button type="button" onclick={doMerge}>Merge</button></p>
@@ -168,7 +168,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each shown as it (it.price_list_item_id)}
+      {#each shown as it (it.inventory_item_id)}
         <tr class:finished={!it.is_catalog && Number(it.qty_on_hand) === 0 && Number(it.qty_earmarked) === 0}>
           <td>{it.code}</td>
           <td class="preserve-breaks">{it.description || '—'}</td>

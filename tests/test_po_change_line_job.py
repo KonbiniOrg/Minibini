@@ -27,7 +27,7 @@ class POChangeLineJobTest(TestCase):
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job_a.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job_a.pk,
         )
         self.assertIsNotNone(self.line.linked_material)
 
@@ -35,13 +35,13 @@ class POChangeLineJobTest(TestCase):
         PurchaseOrderService.change_line_job(self.line.pk, self.job_b.pk, sever_decision='delete')
         self.line.refresh_from_db()
         # Old material gone
-        self.assertFalse(Earmark.objects.filter(price_list_item=self.pli, job=self.job_a).exists())
+        self.assertFalse(Earmark.objects.filter(inventory_item=self.pli, job=self.job_a).exists())
         # New material linked on job_b
         new_mat = self.line.linked_material
         self.assertIsNotNone(new_mat)
         self.assertEqual(new_mat.job_id, self.job_b.pk)
         self.assertEqual(new_mat.quantity, Decimal('5.00'))
-        ea = Earmark.objects.filter(price_list_item=self.pli, job=self.job_b).first()
+        ea = Earmark.objects.filter(inventory_item=self.pli, job=self.job_b).first()
         self.assertEqual(ea.quantity, Decimal('5.00'))
 
     def test_change_job_with_keep_preserves_old_material_unlinked(self):
@@ -51,7 +51,7 @@ class POChangeLineJobTest(TestCase):
         old = Material.objects.get(pk=original_mat_id)
         self.assertEqual(old.job_id, self.job_a.pk)
         self.assertIsNone(old.po_line_item_id)
-        self.assertEqual(Earmark.objects.get(price_list_item=self.pli, job=self.job_a).quantity, Decimal('5.00'))
+        self.assertEqual(Earmark.objects.get(inventory_item=self.pli, job=self.job_a).quantity, Decimal('5.00'))
         # New material on job_b
         self.line.refresh_from_db()
         new_mat = self.line.linked_material

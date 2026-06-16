@@ -64,7 +64,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
         task = self.get_object()
         if request.method == 'GET':
-            materials = Material.objects.filter(task=task).select_related('price_list_item')
+            materials = Material.objects.filter(task=task).select_related('inventory_item')
             serializer = MaterialSerializer(materials, many=True)
             return Response(serializer.data)
 
@@ -131,7 +131,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if material.price_list_item_id is not None and (
+        if material.inventory_item_id is not None and (
             'unit_cost' in serializer.validated_data
             or 'sell_price' in serializer.validated_data
         ):

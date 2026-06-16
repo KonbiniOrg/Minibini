@@ -1,7 +1,7 @@
 # Materials, Inventory & Purchasing
 
 This document is the consolidated reference for the inventory catalog
-(`PriceListItem`), the materials lifecycle (`Material` / `PlanMaterial`,
+(`InventoryItem`), the materials lifecycle (`Material` / `PlanMaterial`,
 earmarks, consumption state), the configurable units system, and purchasing
 (POs, Bills, receiving, PO ↔ Material integration).
 
@@ -64,9 +64,11 @@ Files:
 > (`db_table='price_list'`) and the flag was `is_inventoried`. The reframe
 > renamed both and flipped the model: **quantity tracking is now universal** —
 > every physical thing in the shop is tracked while it's here — and a catalog
-> flag distinguishes *types* you reorder from one-time *lots*. The FK field on
-> Material/Earmark/line items is still named `price_list_item` (FK rename was out
-> of scope). See `docs/plans/2026-06-14-inventory-catalog-vs-lots-spec.md`.
+> flag distinguishes *types* you reorder from one-time *lots*. A follow-up
+> completed the rename so nothing says "price_list" anymore: the API route is now
+> `/api/inventory/`, the FK field on Material/Earmark/line items is `inventory_item`,
+> and the PK is `inventory_item_id` (all formerly `price_list_item*`). See
+> `docs/plans/2026-06-14-inventory-catalog-vs-lots-spec.md`.
 
 Every physical item flows through this one table — catalog items that estimates,
 invoices, POs, bills, and Materials reference, and transient lots minted behind
@@ -132,7 +134,7 @@ so they stay self-contained when a lot is later hidden.
 
 Line items and `TemplateMaterialAssociation` reference the item with `PROTECT`
 (preserves historical documents — and is why finished lots are hidden, not
-deleted). `MaterialBase.price_list_item` and `Expense.stock_pli` use `SET_NULL`.
+deleted). `MaterialBase.inventory_item` and `Expense.stock_pli` use `SET_NULL`.
 `can_be_deleted` still gates the (rare) hard delete:
 
 ```python
@@ -160,7 +162,7 @@ the template side.
 | `units` | `CharField(50)` default `'none'` | |
 | `unit_cost` | `Decimal(10,2)` default 0 | What we paid (or expect to pay) |
 | `sell_price` | `Decimal(10,2)` default 0 | What we charge |
-| `price_list_item` | FK SET_NULL nullable | Optional PLI link |
+| `inventory_item` | FK SET_NULL nullable | Optional PLI link |
 | `accounting_category` | FK PROTECT | Required |
 
 `_populate_from_pli()` (called from `save()`) copies `description`,
@@ -253,7 +255,7 @@ set.
 
 ### PLI-linked vs freeform: the immutability rule
 
-A `Material` (or `PlanMaterial`) with a non-null `price_list_item` is a
+A `Material` (or `PlanMaterial`) with a non-null `inventory_item` is a
 faithful instance of that PLI. The labelling/categorization fields —
 `description`, `units`, `accounting_category` — are populated from the
 PLI at create time and locked thereafter. To change any of those, the
@@ -361,7 +363,7 @@ through `InventoryService._mutate_earmark`.
 
 | Operation | Effect |
 |---|---|
-| `create_on_job(*, job, task=None, ..., price_list_item=None, ...)` | Creates `Material`, calls `_mutate_earmark(pli, job, +quantity)` |
+| `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`, calls `_mutate_earmark(pli, job, +quantity)` |
 | `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` |
 | `restock(material, qty)` | `quantity -= qty`, earmark `-= qty`; manual-add full-restock deletes row; expense-bound bumps `restocked_qty` |
 | `draw_more(material, qty)` | `quantity += qty`, earmark `+= qty`; rejects if expense-bound |
@@ -384,12 +386,12 @@ test setUp where no inventory side effect is wanted.
 
 | Field | Type | Notes |
 |---|---|---|
-| `price_list_item` | FK CASCADE | |
+| `inventory_item` | FK CASCADE | |
 | `job` | FK CASCADE | |
 | `quantity` | `Decimal(10,2)` | Aggregate per (PLI, Job) |
 | `created_date` | auto_now_add | |
 
-`unique_together = [('price_list_item', 'job')]` — one row per (PLI,
+`unique_together = [('inventory_item', 'job')]` — one row per (PLI,
 Job) pair. Per-PLI-per-Job aggregate, not per-Material.
 
 ### `_mutate_earmark` is the sole writer
@@ -550,7 +552,7 @@ attaches to the corresponding generated PlanTask/Task.
 | Field | Type | Notes |
 |---|---|---|
 | `work_template` | FK CASCADE | |
-| `price_list_item` | FK PROTECT | **Required** — no freeform template materials |
+| `inventory_item` | FK PROTECT | **Required** — no freeform template materials |
 | `template_task_association` | FK SET_NULL nullable | Pairs to a template task association for instance pairing |
 | `quantity` | `Decimal(10,2)` | Per-instance quantity at generation time |
 | `sort_order` | int | |
@@ -765,12 +767,12 @@ receipt; receipt is recorded as bookkeeping only.
 ### Three-step resolver
 
 `MaterialService.resolve_or_create_for_line(po_line, *, job=None,
-price_list_item=None, qty, unit_cost, description,
+inventory_item=None, qty, unit_cost, description,
 accounting_category=None, material_id=None)`:
 
 1. **Explicit** — if `material_id` is given, link that Material
    (validates: same job if both supplied, pending, unlinked).
-2. **Claim** — if `job` and `price_list_item` given, look for pending
+2. **Claim** — if `job` and `inventory_item` given, look for pending
    Materials on `(job, pli)` with no `po_line_item`. If exactly one
    matches, link it.
 3. **Create** — otherwise call `MaterialService.create_on_job(...)` and

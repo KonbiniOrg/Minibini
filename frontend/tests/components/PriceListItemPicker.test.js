@@ -8,7 +8,7 @@ import PriceListItemPicker from '@/components/PriceListItemPicker.svelte';
 
 beforeEach(() => {
   api.get.mockReset();
-  api.get.mockResolvedValue({ results: [{ price_list_item_id: 1, code: 'PLI-1', description: 'Steel bar' }] });
+  api.get.mockResolvedValue({ results: [{ inventory_item_id: 1, code: 'PLI-1', description: 'Steel bar' }] });
 });
 
 describe('PriceListItemPicker', () => {
@@ -23,7 +23,7 @@ describe('PriceListItemPicker', () => {
     const { getByPlaceholderText, findByText } = render(PriceListItemPicker, { props: { onSelect } });
     await fireEvent.focus(getByPlaceholderText('Search price list items...'));
     await fireEvent.mouseDown(await findByText(/Steel bar/));
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ price_list_item_id: 1 }));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ inventory_item_id: 1 }));
   });
 
   it('shows the prefilled label from selectedItem', () => {

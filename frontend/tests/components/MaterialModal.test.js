@@ -29,7 +29,7 @@ describe('MaterialModal', () => {
 
     expect(api.post).toHaveBeenCalledWith('/api/tasks/10/materials/', {
       description: 'Steel', quantity: 2, units: 'none', unit_cost: '0', sell_price: 8,
-      price_list_item: null, accounting_category: null,
+      inventory_item: null, accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -45,7 +45,7 @@ describe('MaterialModal', () => {
     const { getByLabelText, getByRole, getByText } = render(MaterialModal, {
       props: {
         open: true, mode: 'edit',
-        material: { material_id: 1, price_list_item: 99, unit_cost: 5, sell_price: 10, units: 'none', quantity: 2, description: 'X' },
+        material: { material_id: 1, inventory_item: 99, unit_cost: 5, sell_price: 10, units: 'none', quantity: 2, description: 'X' },
       },
     });
     await fireEvent.input(getByLabelText(/Unit Cost/), { target: { value: '7' } });
@@ -65,7 +65,7 @@ describe('MaterialModal', () => {
     api.get.mockImplementation((url) => {
       if (url.includes('/api/inventory/')) {
         return Promise.resolve({ results: [{
-          price_list_item_id: 1, code: 'FELT', description: 'grey felt',
+          inventory_item_id: 1, code: 'FELT', description: 'grey felt',
           units: 'sheet', purchase_price: '4', selling_price: '8',
           qty_on_hand: '5.00', qty_earmarked: '2.00', qty_available: '3.00',
         }] });

@@ -27,7 +27,7 @@ describe('PlanMaterialModal', () => {
 
     expect(api.post).toHaveBeenCalledWith('/api/plan-tasks/4/materials/', {
       description: 'Steel', quantity: 3, units: 'none', unit_cost: 5, sell_price: 8,
-      price_list_item: null, accounting_category: null,
+      inventory_item: null, accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });

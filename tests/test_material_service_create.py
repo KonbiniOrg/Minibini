@@ -29,12 +29,12 @@ class MaterialServiceCreateOnJobTest(TestCase):
         m = MaterialService.create_on_job(
             job=self.job, task=None,
             description='x', quantity=Decimal('4.00'),
-            price_list_item=self.pli_inv,
+            inventory_item=self.pli_inv,
         )
         self.assertIsNone(m.task_id)
         self.assertEqual(m.job_id, self.job.pk)
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
-        e = Earmark.objects.get(price_list_item=self.pli_inv, job=self.job)
+        e = Earmark.objects.get(inventory_item=self.pli_inv, job=self.job)
         self.assertEqual(e.quantity, Decimal('4.00'))
 
     def test_create_taskless_lot_item_earmarks(self):
@@ -43,11 +43,11 @@ class MaterialServiceCreateOnJobTest(TestCase):
         m = MaterialService.create_on_job(
             job=self.job, task=None,
             description='x', quantity=Decimal('4.00'),
-            price_list_item=self.pli_noninv,
+            inventory_item=self.pli_noninv,
         )
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertTrue(Earmark.objects.filter(
-            price_list_item=self.pli_noninv, job=self.job).exists())
+            inventory_item=self.pli_noninv, job=self.job).exists())
 
     def test_create_task_attached_invariant_enforced(self):
         other = Job.objects.create(job_number='JOB-MS-2', contact=self.contact)
@@ -63,9 +63,9 @@ class MaterialServiceCreateOnJobTest(TestCase):
         t = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
         m = MaterialService.create_on_job(
             job=self.job, task=t, description='x', quantity=Decimal('2.00'),
-            price_list_item=self.pli_inv,
+            inventory_item=self.pli_inv,
         )
-        e = Earmark.objects.get(price_list_item=self.pli_inv, job=self.job)
+        e = Earmark.objects.get(inventory_item=self.pli_inv, job=self.job)
         self.assertEqual(e.quantity, Decimal('2.00'))
         # Gap 4a: task-attached inventoried material must be CONSUMPTION_STATE_PENDING
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING,

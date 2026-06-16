@@ -39,7 +39,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_post_line_with_job_creates_material(self):
         r = self._post_line(
             description='x', qty='5.00', price='1.00',
-            price_list_item=self.pli.pk, job=self.job.pk,
+            inventory_item=self.pli.pk, job=self.job.pk,
         )
         self.assertEqual(r.status_code, 201)
         self.assertEqual(Material.objects.filter(job=self.job, po_line_item__isnull=False).count(), 1)
@@ -47,7 +47,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_patch_line_change_job_requires_sever_decision(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         other_job = Job.objects.create(job_number='J-2', contact=self.job.contact, description='o')
         r = self.client.patch(
@@ -60,7 +60,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_patch_line_change_job_with_delete_succeeds(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         other_job = Job.objects.create(job_number='J-2', contact=self.job.contact, description='o')
         r = self.client.patch(
@@ -74,7 +74,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_cancel_line_item_requires_sever_decision(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
@@ -87,7 +87,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_cancel_po_requires_sever_decisions(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
@@ -100,7 +100,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_delete_draft_po_requires_sever_decisions(self):
         PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         r = self.client.delete(f'/api/purchase-orders/{self.po.pk}/?confirm=true')
         self.assertEqual(r.status_code, 400)
@@ -108,7 +108,7 @@ class APIPOJobMaterialTest(TestCase):
     def test_po_list_filtered_by_job_returns_pos_for_that_job(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         other_job = Job.objects.create(job_number='J-2', contact=self.job.contact, description='o')
         r = self.client.get(f'/api/purchase-orders/?job={self.job.pk}')

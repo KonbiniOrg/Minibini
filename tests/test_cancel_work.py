@@ -63,7 +63,7 @@ class CancelWorkFirstActivityTest(BaseTestCase):
         )
         mat = MaterialService.create_on_job(
             job=self.job, task=self.task, description='m',
-            quantity=Decimal('4'), price_list_item=pli,
+            quantity=Decimal('4'), inventory_item=pli,
         )
         TaskLifecycleService.start_work(self.task.pk, self.user)
         mat.refresh_from_db()

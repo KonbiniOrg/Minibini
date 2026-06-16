@@ -39,7 +39,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
     def test_earmarks_released_on_job_work_complete(self):
         """Remaining earmarks for the job are deleted when job enters work_complete."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
+            inventory_item=self.plywood, job=self.job,
             quantity=Decimal('3.00'),
         )
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 1)
@@ -51,7 +51,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
     def test_partial_earmark_released_on_complete(self):
         """Even partially consumed earmarks are cleaned up."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
+            inventory_item=self.plywood, job=self.job,
             quantity=Decimal('1.50'),
         )
 
@@ -71,11 +71,11 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
             job_number='J-REL-002', contact=self.contact,
         )
         Earmark.objects.create(
-            price_list_item=self.plywood, job=other_job,
+            inventory_item=self.plywood, job=other_job,
             quantity=Decimal('5.00'),
         )
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
+            inventory_item=self.plywood, job=self.job,
             quantity=Decimal('3.00'),
         )
 
@@ -162,7 +162,7 @@ class EarmarkReleaseOnTerminalStatusesTest(TestCase):
 
     def _earmark(self, job, qty='3.00'):
         return Earmark.objects.create(
-            price_list_item=self.pli, job=job, quantity=Decimal(qty),
+            inventory_item=self.pli, job=job, quantity=Decimal(qty),
         )
 
     def test_cancel_releases_earmarks(self):

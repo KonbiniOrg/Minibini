@@ -30,7 +30,7 @@ class ConsumeMaterialUniformityTest(TestCase):
         """MaterialService.consume must set consumption_state=consumed."""
         m = MaterialService.create_on_job(
             job=self.job, task=self.task, description='x',
-            quantity=Decimal('3'), price_list_item=self.pli,
+            quantity=Decimal('3'), inventory_item=self.pli,
         )
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         MaterialService.consume(m)

@@ -161,7 +161,7 @@ class PurchaseOrderService:
         MaterialService.resolve_or_create_for_line(
             li,
             job=job_obj,
-            price_list_item=li.price_list_item,
+            inventory_item=li.inventory_item,
             qty=li.qty,
             unit_cost=li.price,
             description=li.description,
@@ -192,7 +192,7 @@ class PurchaseOrderService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, price_list_item_id, qty, job=None, material_id=None):
+    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None):
         """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id."""
         from apps.inventory.models import InventoryItem
         try:
@@ -201,13 +201,13 @@ class PurchaseOrderService:
             raise NotFoundError(f'PurchaseOrder {po_id} not found')
         PurchaseOrderService._validate_draft(po)
         try:
-            pli = InventoryItem.objects.get(pk=price_list_item_id)
+            pli = InventoryItem.objects.get(pk=inventory_item_id)
         except InventoryItem.DoesNotExist:
-            raise NotFoundError(f'InventoryItem {price_list_item_id} not found')
+            raise NotFoundError(f'InventoryItem {inventory_item_id} not found')
         with transaction.atomic():
             li = PurchaseOrderLineItem(
                 purchase_order=po,
-                price_list_item=pli,
+                inventory_item=pli,
                 description=pli.description,
                 qty=qty,
                 units=pli.units,
@@ -263,7 +263,7 @@ class PurchaseOrderService:
                 MaterialService.resolve_or_create_for_line(
                     li,
                     job=new_job_obj,
-                    price_list_item=li.price_list_item,
+                    inventory_item=li.inventory_item,
                     qty=li.qty,
                     unit_cost=li.price,
                     description=li.description,
@@ -377,16 +377,16 @@ class PurchaseOrderReceivingService:
                 )
 
                 # QOH for inventoried PLI-backed lines
-                if li.price_list_item:
-                    li.price_list_item.qty_on_hand += qty
-                    li.price_list_item.save(update_fields=['qty_on_hand'])
-                    li.price_list_item.refresh_from_db()
+                if li.inventory_item:
+                    li.inventory_item.qty_on_hand += qty
+                    li.inventory_item.save(update_fields=['qty_on_hand'])
+                    li.inventory_item.refresh_from_db()
                     InventoryService._record_qoh_history(
-                        li.price_list_item, qty, action='PO receipt',
+                        li.inventory_item, qty, action='PO receipt',
                         reason=f'Received on {po.po_number}',
                         user=user, document=po.po_number,
                     )
-                    inventory_updates.append(li.price_list_item.code)
+                    inventory_updates.append(li.inventory_item.code)
 
             PurchaseOrderReceivingService._update_po_status(po)
 
@@ -508,12 +508,12 @@ class PurchaseOrderReceivingService:
 
             reversed_qty = li.qty_received
 
-            if li.price_list_item:
-                li.price_list_item.qty_on_hand -= reversed_qty
-                li.price_list_item.save(update_fields=['qty_on_hand'])
-                li.price_list_item.refresh_from_db()
+            if li.inventory_item:
+                li.inventory_item.qty_on_hand -= reversed_qty
+                li.inventory_item.save(update_fields=['qty_on_hand'])
+                li.inventory_item.refresh_from_db()
                 InventoryService._record_qoh_history(
-                    li.price_list_item, -reversed_qty, action='PO receipt reversal',
+                    li.inventory_item, -reversed_qty, action='PO receipt reversal',
                     reason=f'Reversed receipt on {po.po_number}',
                     user=user, document=po.po_number,
                 )
@@ -767,7 +767,7 @@ class BillService:
         for po_li in po_line_items:
             BillLineItem.objects.create(
                 bill=bill,
-                price_list_item=po_li.price_list_item,
+                inventory_item=po_li.inventory_item,
                 task=po_li.task,
                 description=po_li.description,
                 qty=po_li.qty,
@@ -828,7 +828,7 @@ class BillService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(bill_id, price_list_item_id, qty):
+    def add_line_item_from_pli(bill_id, inventory_item_id, qty):
         """Add a line item from a InventoryItem to a draft bill."""
         from apps.inventory.models import InventoryItem
         try:
@@ -837,12 +837,12 @@ class BillService:
             raise NotFoundError(f'Bill {bill_id} not found')
         BillService._validate_draft(bill)
         try:
-            pli = InventoryItem.objects.get(pk=price_list_item_id)
+            pli = InventoryItem.objects.get(pk=inventory_item_id)
         except InventoryItem.DoesNotExist:
-            raise NotFoundError(f'InventoryItem {price_list_item_id} not found')
+            raise NotFoundError(f'InventoryItem {inventory_item_id} not found')
         li = BillLineItem(
             bill=bill,
-            price_list_item=pli,
+            inventory_item=pli,
             description=pli.description,
             qty=qty,
             units=pli.units,

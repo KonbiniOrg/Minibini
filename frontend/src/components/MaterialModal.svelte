@@ -60,8 +60,8 @@
         units = material.units || 'none';
         unitCost = material.unit_cost ?? '';
         sellPrice = material.sell_price ?? '';
-        pliId = material.price_list_item || null;
-        pliLocked = !!material.price_list_item;
+        pliId = material.inventory_item || null;
+        pliLocked = !!material.inventory_item;
         accountingCategory = material.accounting_category ?? '';
         // For prompt comparison on price edits, we'd ideally fetch the PLI's
         // current prices here. For simplicity, read them off the material
@@ -98,7 +98,7 @@
 
   function handlePliSelect(pli) {
     if (pli) {
-      pliId = pli.price_list_item_id;
+      pliId = pli.inventory_item_id;
       description = pli.description || '';
       units = pli.units || 'none';
       unitCost = pli.purchase_price ?? '';
@@ -150,7 +150,7 @@
       units,
       unit_cost: unitCost || '0',
       sell_price: sellPrice || '0',
-      price_list_item: pliId,
+      inventory_item: pliId,
       accounting_category: accountingCategory || null,
     };
 

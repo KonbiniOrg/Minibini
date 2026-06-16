@@ -35,7 +35,7 @@
     }
     if (value) {
       if (allItems.length > 0) {
-        const found = allItems.find(i => i.price_list_item_id === value);
+        const found = allItems.find(i => i.inventory_item_id === value);
         if (found) selectedLabel = `${found.code} — ${found.description}`;
       } else {
         fetchAllItems();

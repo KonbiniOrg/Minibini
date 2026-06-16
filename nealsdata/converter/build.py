@@ -456,15 +456,49 @@ def build_jobs(c):
         }
 
 
-def build_price_list_items(c):
-    """Emit inventory.pricelistitem fixtures from the 'Price List Items' sheet.
+# Description-word → canonical unit (must be a value in units_list). Checked
+# most-specific first; whole-word / phrase match, case-insensitive. Single-letter
+# units ('m', 'L') are intentionally omitted — too error-prone to detect in prose.
+_UNIT_PATTERNS = [
+    (r'\bsq(?:uare)?\.?\s*(?:ft|ft\.|feet|foot)\b|\bsqft\b', 'sq ft'),
+    (r'\b(?:b(?:oar)?d)\.?\s*(?:ft|feet|foot)\b', 'bd ft'),
+    (r'\b(?:lin(?:ear)?|ln)\.?\s*(?:ft|feet|foot)\b', 'ln ft'),
+    (r'\bsheets?\b', 'sheets'),
+    (r'\b(?:ft|feet|foot)\b', 'ft'),
+    (r'\b(?:yards?|yds?)\b', 'yd'),
+    (r'\b(?:gallons?|gal)\b', 'gal'),
+    (r'\b(?:quarts?|qt)\b', 'qt'),
+    (r'\b(?:pounds?|lbs?)\b', 'lbs'),
+    (r'\b(?:kg|kilograms?)\b', 'kg'),
+    (r'\b(?:hours?|hrs?)\b', 'hours'),
+    (r'\bmin(?:ute)?s?\b', 'min'),
+]
 
-    Skips rows with no Code value and deduplicates by code.
-    Sets c.pli_map (code -> pk) for use by downstream builders.
+
+def _unit_from_description(description):
+    """Pick a unit by scanning the description for a unit word; default 'ea'."""
+    d = description.lower()
+    for pattern, unit in _UNIT_PATTERNS:
+        if re.search(pattern, d):
+            return unit
+    return 'ea'
+
+
+def build_inventory_items(c):
+    """Emit inventory.inventoryitem fixtures from the 'Price List Items' sheet.
+
+    Skips rows with no Code value, deduplicates by code, and **excludes service
+    items** — those whose code starts with a digit are dropped (a heuristic;
+    other service items in the source can't be identified programmatically and
+    still come through). Sets c.pli_map (code -> pk) for downstream builders.
+
+    Units are inferred from the description (e.g. "sheets"), defaulting to 'ea'.
+    All items use the Materials accounting category. A random ~10% are seeded
+    with on-hand stock (1–10) and a separate ~10% with qty_sold (1–20); the
+    per-code RNG keeps this deterministic across re-conversions.
 
     Sheet column headers (positional reference from spec):
       [0] Code, [1] Quantity, [2] Type, [3] Price, [4] Description
-    The loader returns header-keyed dicts, so we access by header name.
     """
     rows = c.loader.sheets_data.get('Price List Items', [])
     seen_codes = set()
@@ -480,6 +514,10 @@ def build_price_list_items(c):
             continue
         if code in seen_codes:
             continue
+        # Service items: codes starting with a digit are not stock. (Others
+        # exist but have no reliable programmatic signal — left as a known gap.)
+        if code[0].isdigit():
+            continue
         seen_codes.add(code)
 
         description = str(row.get('Description') or '').strip()
@@ -489,18 +527,23 @@ def build_price_list_items(c):
         # Purchase price modelled as 83.33% of the listed sell price.
         purchase_price = f'{sell * Decimal("0.8333"):.2f}'
 
-        pk = c.next_pk('inventory.pricelistitem')
-        c.add_fixture('inventory.pricelistitem', pk, {
+        # Deterministic-per-code seeding so re-conversions are stable.
+        rng = random.Random(code)
+        qty_on_hand = f'{rng.randint(1, 10)}.00' if rng.random() < 0.10 else '0.00'
+        qty_sold = f'{rng.randint(1, 20)}.00' if rng.random() < 0.10 else '0.00'
+
+        pk = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', pk, {
             'code': code,
             'description': description,
-            'units': 'none',
+            'units': _unit_from_description(description),
             'selling_price': selling_price,
             'purchase_price': purchase_price,
-            'qty_on_hand': '0.00',
-            'qty_sold': '0.00',
+            'qty_on_hand': qty_on_hand,
+            'qty_sold': qty_sold,
             'qty_wasted': '0.00',
             'is_active': True,
-            'is_inventoried': False,
+            'is_catalog': True,
             'accounting_category': c.ac_mat_pk,
         })
         c.pli_map[code] = pk
@@ -669,7 +712,7 @@ def build_estimates(c):
                 c.add_fixture('estimates.estimatelineitem', li_pk, {
                     'estimate':          est_pk,
                     'source_template':   None,
-                    'price_list_item':   None,
+                    'inventory_item':   None,
                     'line_number':       line_number,
                     'qty':               f'{qty:.2f}',
                     'units':             units,
@@ -750,7 +793,7 @@ _LABOR_VERB_PREFIXES = ('prepare', 'apply', 'glue', 'engrave')
 
 
 def _material_cost_and_pli(c, description, sell_price):
-    """Resolve (unit_cost_str, price_list_item_pk) for a material line.
+    """Resolve (unit_cost_str, inventory_item_pk) for a material line.
 
     Fuzzy-match the description to a PriceListItem (keyword + thickness). On a
     match, link the FK and take the PLI's purchase_price as unit_cost. On a miss,
@@ -1080,7 +1123,7 @@ def _build_plan_raw_materials(c, base_ref, ws_pk, raw_lines):
             'unit_cost':           unit_cost,
             'sell_price':          f"{li['price']:.2f}",
             'accounting_category': c.ac_mat_pk,
-            'price_list_item':     pli_pk,
+            'inventory_item':     pli_pk,
         })
         _emit_estimate_line_item_source(
             c, li['line_item_pk'], 'plan_material', pm_pk)
@@ -1245,7 +1288,7 @@ def derive_atoms(c):
                 'unit_cost':           unit_cost,
                 'sell_price':          f"{li['price']:.2f}",
                 'accounting_category': c.ac_mat_pk,
-                'price_list_item':     pli_pk,
+                'inventory_item':     pli_pk,
                 'consumption_state':   'pending',
                 'restocked_qty':       '0.00',
                 'po_line_item':        None,
@@ -1404,7 +1447,7 @@ def build_invoices(c):
             li_pk = c.next_pk('invoicing.invoicelineitem')
             c.add_fixture('invoicing.invoicelineitem', li_pk, {
                 'invoice':             inv_pk,
-                'price_list_item':     None,
+                'inventory_item':     None,
                 'line_number':         line_number,
                 'qty':                 f'{qty:.2f}',
                 'units':               'none',  # intentional: FreeAgent invoice line items carry no unit signal

@@ -60,11 +60,11 @@ class EarmarkModelTest(TestCase):
     def test_create_earmark(self):
         """Can create an earmark linking price list item to job."""
         earmark = Earmark.objects.create(
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             job=self.job_a,
             quantity=Decimal('5.00'),
         )
-        self.assertEqual(earmark.price_list_item, self.plywood)
+        self.assertEqual(earmark.inventory_item, self.plywood)
         self.assertEqual(earmark.job, self.job_a)
         self.assertEqual(earmark.quantity, Decimal('5.00'))
         self.assertIsNotNone(earmark.created_date)
@@ -72,7 +72,7 @@ class EarmarkModelTest(TestCase):
     def test_earmark_with_notes(self):
         """Earmark can have notes."""
         earmark = Earmark.objects.create(
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             job=self.job_a,
             quantity=Decimal('10.00'),
             notes='Reserved for kitchen cabinets',
@@ -80,15 +80,15 @@ class EarmarkModelTest(TestCase):
         self.assertEqual(earmark.notes, 'Reserved for kitchen cabinets')
 
     def test_unique_together_item_job(self):
-        """Only one earmark per price_list_item + job combination."""
+        """Only one earmark per inventory_item + job combination."""
         Earmark.objects.create(
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             job=self.job_a,
             quantity=Decimal('5.00'),
         )
         with self.assertRaises(IntegrityError):
             Earmark.objects.create(
-                price_list_item=self.plywood,
+                inventory_item=self.plywood,
                 job=self.job_a,
                 quantity=Decimal('3.00'),
             )
@@ -96,17 +96,17 @@ class EarmarkModelTest(TestCase):
     def test_same_item_different_jobs(self):
         """Same item can be earmarked for different jobs."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
         )
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_b, quantity=Decimal('3.00'),
+            inventory_item=self.plywood, job=self.job_b, quantity=Decimal('3.00'),
         )
-        self.assertEqual(Earmark.objects.filter(price_list_item=self.plywood).count(), 2)
+        self.assertEqual(Earmark.objects.filter(inventory_item=self.plywood).count(), 2)
 
     def test_cascade_on_item_delete(self):
         """Earmarks deleted when price list item is deleted."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
         )
         self.plywood.delete()
         self.assertEqual(Earmark.objects.count(), 0)
@@ -114,7 +114,7 @@ class EarmarkModelTest(TestCase):
     def test_cascade_on_job_delete(self):
         """Earmarks deleted when job is deleted."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
         )
         self.job_a.delete()
         self.assertEqual(Earmark.objects.count(), 0)
@@ -122,7 +122,7 @@ class EarmarkModelTest(TestCase):
     def test_str_representation(self):
         """Earmark has a useful string representation."""
         earmark = Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
         )
         self.assertIn('PLY.75', str(earmark))
         self.assertIn('J-EAR-001', str(earmark))
@@ -170,7 +170,7 @@ class InventoryItemAvailabilityTest(TestCase):
     def test_earmarked_reduces_available(self):
         """Earmarked quantity reduces available quantity."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_a, quantity=Decimal('8.00'),
+            inventory_item=self.plywood, job=self.job_a, quantity=Decimal('8.00'),
         )
         self.assertEqual(self.plywood.qty_earmarked, Decimal('8.00'))
         self.assertEqual(self.plywood.qty_available, Decimal('12.00'))
@@ -178,10 +178,10 @@ class InventoryItemAvailabilityTest(TestCase):
     def test_multiple_earmarks_sum(self):
         """Multiple earmarks sum up for total earmarked."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job_a, quantity=Decimal('5.00'),
         )
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job_b, quantity=Decimal('3.00'),
+            inventory_item=self.plywood, job=self.job_b, quantity=Decimal('3.00'),
         )
         self.assertEqual(self.plywood.qty_earmarked, Decimal('8.00'))
         self.assertEqual(self.plywood.qty_available, Decimal('12.00'))

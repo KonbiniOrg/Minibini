@@ -386,7 +386,7 @@ class ExpenseStockReceiptApiTest(TestCase):
             'payment_method': Expense.PAYMENT_METHOD_PERSONAL,
             'purchased_by': self.user.pk,
             'new_material': {'job_id': self.job.pk,
-                             'price_list_item_id': self.pli.pk, 'quantity': '3'},
+                             'inventory_item_id': self.pli.pk, 'quantity': '3'},
         }, content_type='application/json')
         self.assertEqual(r.status_code, 201, r.content)
         self.assertFalse(Material.objects.filter(job=self.job).exists())  # no consumable

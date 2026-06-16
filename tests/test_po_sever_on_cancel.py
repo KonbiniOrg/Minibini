@@ -27,7 +27,7 @@ class POSeverOnCancelTest(TestCase):
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
 
     def test_cancel_line_item_with_linked_pending_requires_sever_decision(self):

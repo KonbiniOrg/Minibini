@@ -11,7 +11,7 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
-            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category',
         ]
         read_only_fields = fields
@@ -32,7 +32,7 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
-            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['plan_material_id']
@@ -44,7 +44,7 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
         )
         # plan_task is not a field here (plan_task is the parent resource);
         # just apply the standard PLI allowlist check.
-        if instance.price_list_item_id is not None:
+        if instance.inventory_item_id is not None:
             enforce_pli_linked_allowlist(
                 instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
             )

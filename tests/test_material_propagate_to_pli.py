@@ -33,7 +33,7 @@ class _Setup(APITestCase):
 class MaterialPropagateTests(_Setup):
     def test_propagate_true_updates_pli(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -50,7 +50,7 @@ class MaterialPropagateTests(_Setup):
 
     def test_propagate_false_leaves_pli_alone(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -66,7 +66,7 @@ class MaterialPropagateTests(_Setup):
     def test_propagate_only_changed_field(self):
         # User edits only unit_cost; sell_price stays the same as the PLI.
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -82,7 +82,7 @@ class MaterialPropagateTests(_Setup):
         # Permission carve-out: any authenticated user can propagate.
         self.assertFalse(self.user.has_perm('core.can_manage_financials'))
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/materials/{m.pk}/',
@@ -98,7 +98,7 @@ class PlanMaterialPropagateTests(_Setup):
     def test_propagate_via_plan_material_updates_pli(self):
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial.objects.create(
-            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
         )
         resp = self.client.patch(
             f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',

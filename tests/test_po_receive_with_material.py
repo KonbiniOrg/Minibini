@@ -27,7 +27,7 @@ class POReceiveWithMaterialTest(TestCase):
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('10.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
@@ -48,7 +48,7 @@ class POReceiveWithMaterialTest(TestCase):
         mat.refresh_from_db()
         self.assertEqual(mat.quantity, original_qty)
         self.assertEqual(
-            Earmark.objects.get(price_list_item=self.pli, job=self.job).quantity,
+            Earmark.objects.get(inventory_item=self.pli, job=self.job).quantity,
             original_qty,
         )
 

@@ -158,24 +158,24 @@ class InventoryService:
         discard_desc = discard.description
         with transaction.atomic():
             # Earmarks: sum-collapse on the (item, job) unique constraint.
-            for em in Earmark.objects.filter(price_list_item=discard):
+            for em in Earmark.objects.filter(inventory_item=discard):
                 existing = Earmark.objects.filter(
-                    price_list_item=keep, job=em.job).first()
+                    inventory_item=keep, job=em.job).first()
                 if existing:
                     existing.quantity += em.quantity
                     existing.save(update_fields=['quantity'])
                     em.delete()
                 else:
-                    em.price_list_item = keep
-                    em.save(update_fields=['price_list_item'])
+                    em.inventory_item = keep
+                    em.save(update_fields=['inventory_item'])
             # Repoint every remaining reference (pure FK swaps).
-            Material.objects.filter(price_list_item=discard).update(price_list_item=keep)
-            PlanMaterial.objects.filter(price_list_item=discard).update(price_list_item=keep)
-            EstimateLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
-            InvoiceLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
-            PurchaseOrderLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
-            BillLineItem.objects.filter(price_list_item=discard).update(price_list_item=keep)
-            TemplateMaterialAssociation.objects.filter(price_list_item=discard).update(price_list_item=keep)
+            Material.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            PlanMaterial.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            EstimateLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            InvoiceLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            PurchaseOrderLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            BillLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            TemplateMaterialAssociation.objects.filter(inventory_item=discard).update(inventory_item=keep)
             Expense.objects.filter(stock_pli=discard).update(stock_pli=keep)
             # Fold quantity aggregates.
             keep.qty_on_hand += discard.qty_on_hand
@@ -235,7 +235,7 @@ class InventoryService:
         """Adjust inventory when task completes and actual quantity differs from estimated.
         If actual < estimated, return excess to stock.
         If actual > estimated, consume additional stock."""
-        pli = material.price_list_item
+        pli = material.inventory_item
         if not pli:
             return
 
@@ -251,17 +251,17 @@ class InventoryService:
         pli.refresh_from_db()
 
     @staticmethod
-    def manual_adjustment(price_list_item, quantity_change, reason='', user=None):
+    def manual_adjustment(inventory_item, quantity_change, reason='', user=None):
         """Manually adjust QOH and record an audit-trail entry.
         Negative adjustments track as waste."""
-        price_list_item.qty_on_hand = F('qty_on_hand') + quantity_change
+        inventory_item.qty_on_hand = F('qty_on_hand') + quantity_change
         if quantity_change < Decimal('0.00'):
-            price_list_item.qty_wasted = F('qty_wasted') - quantity_change
-        price_list_item.save(update_fields=['qty_on_hand', 'qty_wasted'] if quantity_change < Decimal('0.00') else ['qty_on_hand'])
-        price_list_item.refresh_from_db()
+            inventory_item.qty_wasted = F('qty_wasted') - quantity_change
+        inventory_item.save(update_fields=['qty_on_hand', 'qty_wasted'] if quantity_change < Decimal('0.00') else ['qty_on_hand'])
+        inventory_item.refresh_from_db()
 
         InventoryService._record_qoh_history(
-            price_list_item, quantity_change,
+            inventory_item, quantity_change,
             action='Manual adjustment', reason=reason, user=user,
         )
 
@@ -270,7 +270,7 @@ class InventoryService:
         """Increase QOH for an ad-hoc (job-level, no PO) purchase material.
         QOH-only — earmark was already created by MaterialService.create_on_job."""
         from django.db.models import F
-        pli = material.price_list_item
+        pli = material.inventory_item
         if not pli:
             return
         pli.qty_on_hand = F('qty_on_hand') + material.quantity
@@ -287,7 +287,7 @@ class InventoryService:
         """Decrease QOH to reverse a previously received ad-hoc purchase.
         Reverses the full original purchase quantity (quantity + restocked_qty)."""
         from django.db.models import F
-        pli = material.price_list_item
+        pli = material.inventory_item
         if not pli:
             return
         total = material.quantity + material.restocked_qty
@@ -378,8 +378,8 @@ class InventoryService:
             if update_fields:
                 plan_material.save(update_fields=update_fields)
 
-            if propagate_to_pli and plan_material.price_list_item_id is not None:
-                pli = plan_material.price_list_item
+            if propagate_to_pli and plan_material.inventory_item_id is not None:
+                pli = plan_material.inventory_item
                 pli_fields = []
                 if cost_changed and pli.purchase_price != plan_material.unit_cost:
                     pli.purchase_price = plan_material.unit_cost
@@ -435,27 +435,27 @@ class InventoryService:
     def get_earmark_preview(job):
         """Get preview of inventoried items needed for a job's task materials.
 
-        Aggregates by price_list_item across all Materials on all Tasks
-        for this job. Returns list of dicts with price_list_item, needed_qty,
+        Aggregates by inventory_item across all Materials on all Tasks
+        for this job. Returns list of dicts with inventory_item, needed_qty,
         available_qty, shortfall.
         """
         from apps.inventory.models import Material
 
         materials = Material.objects.filter(
             task__job=job,
-            price_list_item__isnull=False,
-        ).values('price_list_item').annotate(
+            inventory_item__isnull=False,
+        ).values('inventory_item').annotate(
             total_qty=Sum('quantity'),
         )
 
         preview = []
         for entry in materials:
-            item = InventoryItem.objects.get(pk=entry['price_list_item'])
+            item = InventoryItem.objects.get(pk=entry['inventory_item'])
             needed = entry['total_qty']
             available = item.qty_available
             shortfall = max(needed - available, Decimal('0.00'))
             preview.append({
-                'price_list_item': item,
+                'inventory_item': item,
                 'needed_qty': needed,
                 'available_qty': available,
                 'shortfall': shortfall,
@@ -475,8 +475,8 @@ class InventoryService:
 
         materials = Material.objects.filter(
             job=job,
-            price_list_item__isnull=False,
-        ).values('price_list_item').annotate(
+            inventory_item__isnull=False,
+        ).values('inventory_item').annotate(
             total_qty=Sum('quantity'),
         )
 
@@ -485,7 +485,7 @@ class InventoryService:
 
         earmark_data = [
             {
-                'price_list_item_id': entry['price_list_item'],
+                'inventory_item_id': entry['inventory_item'],
                 'quantity': entry['total_qty'],
             }
             for entry in materials
@@ -495,14 +495,14 @@ class InventoryService:
     @staticmethod
     def _upsert_earmarks(job, earmark_data):
         """Create or update earmarks from user-confirmed data.
-        earmark_data: list of dicts with price_list_item_id and quantity."""
+        earmark_data: list of dicts with inventory_item_id and quantity."""
         for entry in earmark_data:
             qty = entry['quantity']
             if qty <= Decimal('0.00'):
                 continue
-            item = InventoryItem.objects.get(pk=entry['price_list_item_id'])
+            item = InventoryItem.objects.get(pk=entry['inventory_item_id'])
             earmark, created = Earmark.objects.get_or_create(
-                price_list_item=item,
+                inventory_item=item,
                 job=job,
                 defaults={'quantity': qty},
             )
@@ -517,10 +517,10 @@ class InventoryService:
         if pli is None:
             return
         try:
-            earmark = Earmark.objects.get(price_list_item=pli, job=job)
+            earmark = Earmark.objects.get(inventory_item=pli, job=job)
         except Earmark.DoesNotExist:
             if delta > Decimal('0.00'):
-                Earmark.objects.create(price_list_item=pli, job=job, quantity=delta)
+                Earmark.objects.create(inventory_item=pli, job=job, quantity=delta)
             return
         new_qty = earmark.quantity + delta
         if new_qty <= Decimal('0.00'):
@@ -576,8 +576,8 @@ class MaterialService:
             if update_fields:
                 material.save(update_fields=update_fields)
 
-            if propagate_to_pli and material.price_list_item_id is not None:
-                pli = material.price_list_item
+            if propagate_to_pli and material.inventory_item_id is not None:
+                pli = material.inventory_item
                 pli_fields = []
                 if cost_changed and pli.purchase_price != material.unit_cost:
                     pli.purchase_price = material.unit_cost
@@ -592,13 +592,13 @@ class MaterialService:
     @staticmethod
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
-                      price_list_item=None, accounting_category=None, units='none',
+                      inventory_item=None, accounting_category=None, units='none',
                       source_plan_material=None, cost_source='document'):
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
         # Freeform (no-PLI) actual materials get their cost from a document
         # (Expense/PO), never typed manually.
-        if (cost_source == 'manual' and price_list_item is None
+        if (cost_source == 'manual' and inventory_item is None
                 and unit_cost and unit_cost != Decimal('0.00')):
             from django.core.exceptions import ValidationError
             raise ValidationError({
@@ -611,13 +611,13 @@ class MaterialService:
                 job=job, task=task,
                 description=description, quantity=quantity,
                 unit_cost=unit_cost, sell_price=sell_price,
-                price_list_item=price_list_item,
+                inventory_item=inventory_item,
                 accounting_category=accounting_category,
                 units=units,
                 source_plan_material=source_plan_material,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
-            InventoryService._mutate_earmark(price_list_item, job, quantity)
+            InventoryService._mutate_earmark(inventory_item, job, quantity)
         return m
 
     @staticmethod
@@ -630,7 +630,7 @@ class MaterialService:
             )
         qty = material.quantity
         with transaction.atomic():
-            pli = material.price_list_item
+            pli = material.inventory_item
             if pli and qty > Decimal('0.00'):
                 pli.refresh_from_db()
                 if pli.qty_on_hand < qty:
@@ -664,7 +664,7 @@ class MaterialService:
             )
         qty = material.quantity
         with transaction.atomic():
-            pli = material.price_list_item
+            pli = material.inventory_item
             if pli and qty > Decimal('0.00'):
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') + qty
@@ -686,7 +686,7 @@ class MaterialService:
             raise ValidationError('restock requires pending state')
         expense_bound = material.is_expense_bound
         with transaction.atomic():
-            InventoryService._mutate_earmark(material.price_list_item, material.job, -qty)
+            InventoryService._mutate_earmark(material.inventory_item, material.job, -qty)
             material.quantity = material.quantity - qty
             update_fields = ['quantity']
             if expense_bound:
@@ -710,7 +710,7 @@ class MaterialService:
         with transaction.atomic():
             material.quantity = material.quantity + qty
             material.save(update_fields=['quantity'])
-            InventoryService._mutate_earmark(material.price_list_item, material.job, qty)
+            InventoryService._mutate_earmark(material.inventory_item, material.job, qty)
         return material
 
     @staticmethod
@@ -762,12 +762,12 @@ class MaterialService:
             return
         with transaction.atomic():
             InventoryService._mutate_earmark(
-                material.price_list_item, material.job, -material.quantity,
+                material.inventory_item, material.job, -material.quantity,
             )
             material.delete()
 
     @staticmethod
-    def resolve_or_create_for_line(po_line, *, job=None, price_list_item=None,
+    def resolve_or_create_for_line(po_line, *, job=None, inventory_item=None,
                                     qty, unit_cost, description,
                                     accounting_category=None, material_id=None):
         """Resolver precedence: explicit (material_id) -> claim exactly-one -> create new.
@@ -803,10 +803,10 @@ class MaterialService:
                 raise ValidationError('job is required when material_id is not provided')
 
             # Step 2: claim exactly-one unlinked pending match
-            if price_list_item is not None:
+            if inventory_item is not None:
                 candidates = Material.objects.select_for_update().filter(
                     job=job,
-                    price_list_item=price_list_item,
+                    inventory_item=inventory_item,
                     consumption_state=Material.CONSUMPTION_STATE_PENDING,
                     po_line_item__isnull=True,
                 )
@@ -818,7 +818,7 @@ class MaterialService:
             # Step 3: create new
             mat = MaterialService.create_on_job(
                 job=job,
-                price_list_item=price_list_item,
+                inventory_item=inventory_item,
                 description=description,
                 quantity=qty,
                 unit_cost=unit_cost,

@@ -33,8 +33,8 @@
         || p.code.toLowerCase().includes(lower)
         || (p.description || '').toLowerCase().includes(lower))
       .map(p => ({
-        kind: 'price_list_item',
-        id: p.price_list_item_id,
+        kind: 'inventory_item',
+        id: p.inventory_item_id,
         label: p.code,
         sub: p.description || '',
         meta: `$${p.selling_price}/${p.units}`,

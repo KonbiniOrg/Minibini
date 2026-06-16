@@ -126,7 +126,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
 
         service = self.line_item_service_class
         data = request.data.copy()
-        pli_id = data.get('price_list_item')
+        pli_id = data.get('inventory_item')
         has_manual_fields = data.get('description') or data.get('price')
         job = data.pop('job', None)
         material_id = data.pop('material_id', None)

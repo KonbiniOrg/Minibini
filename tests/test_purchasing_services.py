@@ -175,7 +175,7 @@ class PurchaseOrderServiceLineItemTest(PurchasingTestBase):
         li = PurchaseOrderService.add_line_item_from_pli(
             self.po.pk, pli.pk, qty=Decimal('10.00'),
         )
-        self.assertEqual(li.price_list_item, pli)
+        self.assertEqual(li.inventory_item, pli)
         self.assertEqual(li.price, Decimal('50.00'))
         self.assertEqual(li.description, 'Steel plate')
 
@@ -350,7 +350,7 @@ class BillServiceLineItemTest(PurchasingTestBase):
         li = BillService.add_line_item_from_pli(
             self.bill.pk, pli.pk, qty=Decimal('100.00'),
         )
-        self.assertEqual(li.price_list_item, pli)
+        self.assertEqual(li.inventory_item, pli)
         self.assertEqual(li.price, Decimal('0.50'))
 
     def test_reorder_line_item(self):

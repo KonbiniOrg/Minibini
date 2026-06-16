@@ -49637,7 +49637,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 1,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -49654,7 +49654,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 2,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -49671,7 +49671,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 3,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -49688,7 +49688,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 4,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "4.00",
     "units": "hours",
@@ -49705,7 +49705,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 5,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -49722,7 +49722,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 6,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -49739,7 +49739,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 7,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -49756,7 +49756,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 8,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -49773,7 +49773,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 9,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -49790,7 +49790,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 10,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -49807,7 +49807,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 11,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -49824,7 +49824,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 12,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "80.00",
     "units": "none",
@@ -49841,7 +49841,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 13,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "80.00",
     "units": "none",
@@ -49858,7 +49858,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 14,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "18.00",
     "units": "none",
@@ -49875,7 +49875,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 15,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -49892,7 +49892,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 16,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "6.00",
     "units": "hours",
@@ -49909,7 +49909,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 17,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -49926,7 +49926,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 18,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "7.00",
     "units": "none",
@@ -49943,7 +49943,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 19,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -49960,7 +49960,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 20,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "14.00",
     "units": "none",
@@ -49977,7 +49977,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 21,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "7.00",
     "units": "none",
@@ -49994,7 +49994,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 22,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "14.00",
     "units": "none",
@@ -50011,7 +50011,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 23,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -50028,7 +50028,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 24,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -50045,7 +50045,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 25,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50062,7 +50062,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 26,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "7.00",
     "units": "none",
@@ -50079,7 +50079,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 27,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "7.00",
     "units": "none",
@@ -50096,7 +50096,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 28,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "20.00",
     "units": "none",
@@ -50113,7 +50113,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 29,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -50130,7 +50130,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 30,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "14.00",
     "units": "none",
@@ -50147,7 +50147,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 31,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "28.00",
     "units": "none",
@@ -50164,7 +50164,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 32,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -50181,7 +50181,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 33,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50198,7 +50198,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 34,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "7.00",
     "units": "none",
@@ -50215,7 +50215,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 35,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "6.00",
     "units": "none",
@@ -50232,7 +50232,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 36,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "20.00",
     "units": "none",
@@ -50249,7 +50249,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 37,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "14.00",
     "units": "none",
@@ -50266,7 +50266,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 38,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "28.00",
     "units": "none",
@@ -50283,7 +50283,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 39,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -50300,7 +50300,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 40,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -50317,7 +50317,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 41,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50334,7 +50334,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 42,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50351,7 +50351,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 43,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -50368,7 +50368,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 44,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -50385,7 +50385,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 45,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50402,7 +50402,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 46,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50419,7 +50419,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 47,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -50436,7 +50436,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 48,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50453,7 +50453,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 49,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "115.00",
     "units": "none",
@@ -50470,7 +50470,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 50,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -50487,7 +50487,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 51,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "5.00",
     "units": "none",
@@ -50504,7 +50504,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 52,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50521,7 +50521,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 53,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "25.00",
     "units": "none",
@@ -50538,7 +50538,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 54,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "5.00",
     "units": "none",
@@ -50555,7 +50555,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 55,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "5.00",
     "units": "none",
@@ -50572,7 +50572,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 56,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50589,7 +50589,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 57,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50606,7 +50606,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 58,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -50623,7 +50623,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 59,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -50640,7 +50640,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 60,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "2.00",
     "units": "hours",
@@ -50657,7 +50657,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 61,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50674,7 +50674,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 62,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50691,7 +50691,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 63,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50708,7 +50708,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 64,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "6.00",
     "units": "none",
@@ -50725,7 +50725,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 65,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -50742,7 +50742,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 66,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50759,7 +50759,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 67,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -50776,7 +50776,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 68,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -50793,7 +50793,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 69,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -50810,7 +50810,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 70,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50827,7 +50827,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 71,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50844,7 +50844,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 72,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "4.00",
     "units": "none",
@@ -50861,7 +50861,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 73,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "4.00",
     "units": "none",
@@ -50878,7 +50878,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 74,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "2.00",
     "units": "none",
@@ -50895,7 +50895,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 75,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -50912,7 +50912,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 76,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -50929,7 +50929,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 77,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "210.00",
     "units": "none",
@@ -50946,7 +50946,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 78,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "17.00",
     "units": "none",
@@ -50963,7 +50963,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 79,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1010.00",
     "units": "none",
@@ -50980,7 +50980,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 80,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "78.00",
     "units": "none",
@@ -50997,7 +50997,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 81,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51014,7 +51014,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 82,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -51031,7 +51031,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 83,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -51048,7 +51048,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 84,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -51065,7 +51065,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 85,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -51082,7 +51082,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 86,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "135.00",
     "units": "none",
@@ -51099,7 +51099,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 87,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "40.00",
     "units": "hours",
@@ -51116,7 +51116,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 88,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -51133,7 +51133,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 89,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "80.00",
     "units": "hours",
@@ -51150,7 +51150,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 90,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "20.00",
     "units": "none",
@@ -51167,7 +51167,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 91,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "20.00",
     "units": "none",
@@ -51184,7 +51184,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 92,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -51201,7 +51201,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 93,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -51218,7 +51218,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 94,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "1.00",
     "units": "none",
@@ -51235,7 +51235,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 95,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "48.00",
     "units": "hours",
@@ -51252,7 +51252,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 96,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "20.00",
     "units": "none",
@@ -51269,7 +51269,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 97,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "20.00",
     "units": "none",
@@ -51286,7 +51286,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 98,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 13,
     "qty": "1.00",
     "units": "none",
@@ -51303,7 +51303,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 99,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 14,
     "qty": "40.00",
     "units": "hours",
@@ -51320,7 +51320,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 100,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 15,
     "qty": "30.00",
     "units": "none",
@@ -51337,7 +51337,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 101,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 16,
     "qty": "30.00",
     "units": "none",
@@ -51354,7 +51354,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 102,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 17,
     "qty": "1.00",
     "units": "none",
@@ -51371,7 +51371,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 103,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "5.00",
     "units": "none",
@@ -51388,7 +51388,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 104,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -51405,7 +51405,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 105,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -51422,7 +51422,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 106,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "3.00",
     "units": "none",
@@ -51439,7 +51439,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 107,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51456,7 +51456,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 108,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "5.00",
     "units": "none",
@@ -51473,7 +51473,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 109,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -51490,7 +51490,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 110,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "3.00",
     "units": "none",
@@ -51507,7 +51507,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 111,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51524,7 +51524,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 112,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "50.00",
     "units": "none",
@@ -51541,7 +51541,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 113,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -51558,7 +51558,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 114,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "50.00",
     "units": "none",
@@ -51575,7 +51575,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 115,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51592,7 +51592,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 116,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "4.00",
     "units": "none",
@@ -51609,7 +51609,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 117,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -51626,7 +51626,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 118,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "9.00",
     "units": "none",
@@ -51643,7 +51643,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 119,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "2.00",
     "units": "none",
@@ -51660,7 +51660,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 120,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "2.00",
     "units": "none",
@@ -51677,7 +51677,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 121,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "8.00",
     "units": "none",
@@ -51694,7 +51694,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 122,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "2.00",
     "units": "none",
@@ -51711,7 +51711,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 123,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "2.00",
     "units": "none",
@@ -51728,7 +51728,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 124,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51745,7 +51745,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 125,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -51762,7 +51762,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 126,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "none",
@@ -51779,7 +51779,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 127,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "2.00",
     "units": "none",
@@ -51796,7 +51796,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 128,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -51813,7 +51813,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 129,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "hours",
@@ -51830,7 +51830,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 130,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51847,7 +51847,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 131,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -51864,7 +51864,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 132,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -51881,7 +51881,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 133,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51898,7 +51898,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 134,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -51915,7 +51915,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 135,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -51932,7 +51932,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 136,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "6.00",
     "units": "none",
@@ -51949,7 +51949,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 137,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -51966,7 +51966,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 138,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "100.00",
     "units": "none",
@@ -51983,7 +51983,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 139,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52000,7 +52000,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 140,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52017,7 +52017,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 141,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -52034,7 +52034,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 142,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "10.00",
     "units": "none",
@@ -52051,7 +52051,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 143,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "10.00",
     "units": "none",
@@ -52068,7 +52068,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 144,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "0.25",
     "units": "none",
@@ -52085,7 +52085,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 145,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52102,7 +52102,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 146,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -52119,7 +52119,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 147,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -52136,7 +52136,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 148,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -52153,7 +52153,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 149,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -52170,7 +52170,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 150,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -52187,7 +52187,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 151,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52204,7 +52204,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 152,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -52221,7 +52221,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 153,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -52238,7 +52238,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 154,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -52255,7 +52255,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 155,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "2.00",
     "units": "hours",
@@ -52272,7 +52272,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 156,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -52289,7 +52289,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 157,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -52306,7 +52306,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 158,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52323,7 +52323,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 159,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -52340,7 +52340,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 160,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -52357,7 +52357,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 161,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -52374,7 +52374,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 162,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -52391,7 +52391,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 163,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -52408,7 +52408,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 164,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "2.00",
     "units": "hours",
@@ -52425,7 +52425,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 165,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -52442,7 +52442,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 166,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52459,7 +52459,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 167,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "8.00",
     "units": "none",
@@ -52476,7 +52476,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 168,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "4.00",
     "units": "none",
@@ -52493,7 +52493,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 169,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "hours",
@@ -52510,7 +52510,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 170,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "4.00",
     "units": "none",
@@ -52527,7 +52527,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 171,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "3.00",
     "units": "none",
@@ -52544,7 +52544,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 172,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -52561,7 +52561,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 173,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "27.00",
     "units": "none",
@@ -52578,7 +52578,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 174,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "27.00",
     "units": "none",
@@ -52595,7 +52595,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 175,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "31.00",
     "units": "none",
@@ -52612,7 +52612,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 176,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -52629,7 +52629,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 177,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52646,7 +52646,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 178,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52663,7 +52663,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 179,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "12.00",
     "units": "none",
@@ -52680,7 +52680,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 180,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "20.00",
     "units": "none",
@@ -52697,7 +52697,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 181,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "30.00",
     "units": "none",
@@ -52714,7 +52714,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 182,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -52731,7 +52731,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 183,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52748,7 +52748,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 184,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "50.00",
     "units": "none",
@@ -52765,7 +52765,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 185,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "100.00",
     "units": "none",
@@ -52782,7 +52782,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 186,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "50.00",
     "units": "none",
@@ -52799,7 +52799,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 187,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "100.00",
     "units": "none",
@@ -52816,7 +52816,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 188,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52833,7 +52833,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 189,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -52850,7 +52850,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 190,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -52867,7 +52867,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 191,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -52884,7 +52884,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 192,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "6.00",
     "units": "none",
@@ -52901,7 +52901,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 193,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "2.00",
     "units": "none",
@@ -52918,7 +52918,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 194,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "2.00",
     "units": "none",
@@ -52935,7 +52935,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 195,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "4.00",
     "units": "none",
@@ -52952,7 +52952,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 196,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "4.00",
     "units": "none",
@@ -52969,7 +52969,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 197,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "4.00",
     "units": "none",
@@ -52986,7 +52986,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 198,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "1.00",
     "units": "none",
@@ -53003,7 +53003,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 199,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "20.00",
     "units": "none",
@@ -53020,7 +53020,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 200,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "8.00",
     "units": "none",
@@ -53037,7 +53037,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 201,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "4.00",
     "units": "none",
@@ -53054,7 +53054,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 202,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 13,
     "qty": "8.00",
     "units": "none",
@@ -53071,7 +53071,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 203,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53088,7 +53088,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 204,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "3.00",
     "units": "none",
@@ -53105,7 +53105,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 205,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "48.00",
     "units": "none",
@@ -53122,7 +53122,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 206,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53139,7 +53139,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 207,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "100.00",
     "units": "none",
@@ -53156,7 +53156,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 208,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -53173,7 +53173,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 209,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53190,7 +53190,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 210,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53207,7 +53207,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 211,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "3.00",
     "units": "none",
@@ -53224,7 +53224,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 212,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "12.00",
     "units": "none",
@@ -53241,7 +53241,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 213,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "12.00",
     "units": "none",
@@ -53258,7 +53258,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 214,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "12.00",
     "units": "none",
@@ -53275,7 +53275,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 215,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "12.00",
     "units": "none",
@@ -53292,7 +53292,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 216,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "12.00",
     "units": "none",
@@ -53309,7 +53309,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 217,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "3.00",
     "units": "none",
@@ -53326,7 +53326,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 218,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53343,7 +53343,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 219,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -53360,7 +53360,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 220,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53377,7 +53377,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 221,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "0.00",
     "units": "none",
@@ -53394,7 +53394,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 222,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "31.00",
     "units": "none",
@@ -53411,7 +53411,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 223,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -53428,7 +53428,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 224,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53445,7 +53445,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 225,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53462,7 +53462,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 226,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "6.00",
     "units": "none",
@@ -53479,7 +53479,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 227,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -53496,7 +53496,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 228,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "2.00",
     "units": "none",
@@ -53513,7 +53513,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 229,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "4.00",
     "units": "none",
@@ -53530,7 +53530,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 230,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "2.00",
     "units": "none",
@@ -53547,7 +53547,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 231,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "4.00",
     "units": "none",
@@ -53564,7 +53564,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 232,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "2.00",
     "units": "none",
@@ -53581,7 +53581,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 233,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "4.00",
     "units": "none",
@@ -53598,7 +53598,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 234,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "2.00",
     "units": "none",
@@ -53615,7 +53615,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 235,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "2.00",
     "units": "none",
@@ -53632,7 +53632,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 236,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "2.00",
     "units": "none",
@@ -53649,7 +53649,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 237,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 13,
     "qty": "2.00",
     "units": "none",
@@ -53666,7 +53666,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 238,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 14,
     "qty": "2.00",
     "units": "none",
@@ -53683,7 +53683,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 239,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 15,
     "qty": "2.00",
     "units": "none",
@@ -53700,7 +53700,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 240,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 16,
     "qty": "1.00",
     "units": "none",
@@ -53717,7 +53717,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 241,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 17,
     "qty": "4.00",
     "units": "none",
@@ -53734,7 +53734,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 242,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 18,
     "qty": "8.00",
     "units": "none",
@@ -53751,7 +53751,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 243,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 19,
     "qty": "3.00",
     "units": "none",
@@ -53768,7 +53768,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 244,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 20,
     "qty": "3.00",
     "units": "none",
@@ -53785,7 +53785,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 245,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 21,
     "qty": "2.00",
     "units": "none",
@@ -53802,7 +53802,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 246,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 22,
     "qty": "2.00",
     "units": "none",
@@ -53819,7 +53819,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 247,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 23,
     "qty": "1.00",
     "units": "none",
@@ -53836,7 +53836,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 248,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 24,
     "qty": "8.00",
     "units": "none",
@@ -53853,7 +53853,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 249,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 25,
     "qty": "4.00",
     "units": "none",
@@ -53870,7 +53870,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 250,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 26,
     "qty": "3.00",
     "units": "none",
@@ -53887,7 +53887,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 251,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 27,
     "qty": "1.00",
     "units": "none",
@@ -53904,7 +53904,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 252,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 28,
     "qty": "1.00",
     "units": "none",
@@ -53921,7 +53921,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 253,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -53938,7 +53938,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 254,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "4.00",
     "units": "hours",
@@ -53955,7 +53955,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 255,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -53972,7 +53972,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 256,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -53989,7 +53989,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 257,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54006,7 +54006,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 258,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -54023,7 +54023,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 259,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54040,7 +54040,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 260,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -54057,7 +54057,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 261,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -54074,7 +54074,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 262,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -54091,7 +54091,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 263,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -54108,7 +54108,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 264,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54125,7 +54125,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 265,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -54142,7 +54142,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 266,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -54159,7 +54159,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 267,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54176,7 +54176,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 268,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -54193,7 +54193,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 269,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -54210,7 +54210,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 270,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -54227,7 +54227,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 271,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -54244,7 +54244,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 272,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -54261,7 +54261,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 273,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -54278,7 +54278,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 274,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -54295,7 +54295,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 275,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "1.00",
     "units": "none",
@@ -54312,7 +54312,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 276,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "1.00",
     "units": "none",
@@ -54329,7 +54329,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 277,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "1.00",
     "units": "none",
@@ -54346,7 +54346,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 278,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "1.00",
     "units": "none",
@@ -54363,7 +54363,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 279,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 13,
     "qty": "1.00",
     "units": "none",
@@ -54380,7 +54380,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 280,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54397,7 +54397,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 281,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -54414,7 +54414,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 282,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -54431,7 +54431,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 283,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -54448,7 +54448,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 284,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54465,7 +54465,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 285,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -54482,7 +54482,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 286,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -54499,7 +54499,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 287,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -54516,7 +54516,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 288,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "10.00",
     "units": "hours",
@@ -54533,7 +54533,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 289,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -54550,7 +54550,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 290,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -54567,7 +54567,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 291,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54584,7 +54584,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 292,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "4.00",
     "units": "none",
@@ -54601,7 +54601,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 293,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "hours",
@@ -54618,7 +54618,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 294,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "4.00",
     "units": "none",
@@ -54635,7 +54635,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 295,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -54652,7 +54652,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 296,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -54669,7 +54669,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 297,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "60.00",
     "units": "none",
@@ -54686,7 +54686,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 298,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "30.00",
     "units": "none",
@@ -54703,7 +54703,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 299,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "200.00",
     "units": "none",
@@ -54720,7 +54720,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 300,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "3.00",
     "units": "none",
@@ -54737,7 +54737,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 301,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -54754,7 +54754,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 302,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "none",
@@ -54771,7 +54771,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 303,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "2.00",
     "units": "none",
@@ -54788,7 +54788,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 304,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "20.00",
     "units": "none",
@@ -54805,7 +54805,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 305,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "2.00",
     "units": "none",
@@ -54822,7 +54822,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 306,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "2.00",
     "units": "none",
@@ -54839,7 +54839,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 307,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "4.00",
     "units": "none",
@@ -54856,7 +54856,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 308,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "4.00",
     "units": "none",
@@ -54873,7 +54873,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 309,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "4.00",
     "units": "none",
@@ -54890,7 +54890,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 310,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "2.00",
     "units": "none",
@@ -54907,7 +54907,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 311,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "2.00",
     "units": "none",
@@ -54924,7 +54924,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 312,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 13,
     "qty": "2.00",
     "units": "none",
@@ -54941,7 +54941,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 313,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 14,
     "qty": "1.00",
     "units": "none",
@@ -54958,7 +54958,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 314,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 15,
     "qty": "1.00",
     "units": "none",
@@ -54975,7 +54975,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 315,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 16,
     "qty": "1.00",
     "units": "none",
@@ -54992,7 +54992,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 316,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 17,
     "qty": "1.00",
     "units": "none",
@@ -55009,7 +55009,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 317,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 18,
     "qty": "1.00",
     "units": "none",
@@ -55026,7 +55026,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 318,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55043,7 +55043,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 319,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "hours",
@@ -55060,7 +55060,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 320,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "30.00",
     "units": "none",
@@ -55077,7 +55077,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 321,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55094,7 +55094,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 322,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55111,7 +55111,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 323,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -55128,7 +55128,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 324,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55145,7 +55145,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 325,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -55162,7 +55162,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 326,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -55179,7 +55179,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 327,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55196,7 +55196,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 328,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55213,7 +55213,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 329,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -55230,7 +55230,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 330,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "10.00",
     "units": "none",
@@ -55247,7 +55247,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 331,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "15.00",
     "units": "none",
@@ -55264,7 +55264,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 332,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -55281,7 +55281,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 333,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -55298,7 +55298,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 334,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "2.00",
     "units": "none",
@@ -55315,7 +55315,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 335,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "2.00",
     "units": "none",
@@ -55332,7 +55332,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 336,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55349,7 +55349,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 337,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "10.00",
     "units": "none",
@@ -55366,7 +55366,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 338,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "none",
@@ -55383,7 +55383,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 339,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "10.00",
     "units": "none",
@@ -55400,7 +55400,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 340,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -55417,7 +55417,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 341,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55434,7 +55434,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 342,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "3.00",
     "units": "none",
@@ -55451,7 +55451,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 343,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -55468,7 +55468,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 344,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -55485,7 +55485,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 345,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55502,7 +55502,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 346,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55519,7 +55519,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 347,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -55536,7 +55536,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 348,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55553,7 +55553,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 349,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55570,7 +55570,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 350,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "4.00",
     "units": "none",
@@ -55587,7 +55587,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 351,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55604,7 +55604,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 352,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55621,7 +55621,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 353,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55638,7 +55638,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 354,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "50.00",
     "units": "none",
@@ -55655,7 +55655,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 355,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "50.00",
     "units": "none",
@@ -55672,7 +55672,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 356,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55689,7 +55689,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 357,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "6.00",
     "units": "none",
@@ -55706,7 +55706,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 358,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "none",
@@ -55723,7 +55723,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 359,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -55740,7 +55740,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 360,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "6.00",
     "units": "none",
@@ -55757,7 +55757,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 361,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55774,7 +55774,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 362,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "500.00",
     "units": "none",
@@ -55791,7 +55791,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 363,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55808,7 +55808,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 364,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55825,7 +55825,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 365,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55842,7 +55842,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 366,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55859,7 +55859,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 367,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55876,7 +55876,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 368,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55893,7 +55893,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 369,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "6.00",
     "units": "none",
@@ -55910,7 +55910,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 370,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "6.00",
     "units": "none",
@@ -55927,7 +55927,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 371,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -55944,7 +55944,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 372,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "0.00",
     "units": "none",
@@ -55961,7 +55961,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 373,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -55978,7 +55978,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 374,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -55995,7 +55995,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 375,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "6.00",
     "units": "none",
@@ -56012,7 +56012,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 376,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "6.00",
     "units": "none",
@@ -56029,7 +56029,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 377,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -56046,7 +56046,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 378,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56063,7 +56063,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 379,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56080,7 +56080,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 380,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -56097,7 +56097,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 381,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "7.00",
     "units": "none",
@@ -56114,7 +56114,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 382,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56131,7 +56131,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 383,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "20.00",
     "units": "none",
@@ -56148,7 +56148,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 384,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "0.00",
     "units": "none",
@@ -56165,7 +56165,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 385,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "20.00",
     "units": "none",
@@ -56182,7 +56182,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 386,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "8.00",
     "units": "none",
@@ -56199,7 +56199,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 387,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "8.00",
     "units": "none",
@@ -56216,7 +56216,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 388,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56233,7 +56233,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 389,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "20.00",
     "units": "none",
@@ -56250,7 +56250,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 390,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "20.00",
     "units": "none",
@@ -56267,7 +56267,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 391,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "9.00",
     "units": "none",
@@ -56284,7 +56284,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 392,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56301,7 +56301,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 393,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "10.00",
     "units": "none",
@@ -56318,7 +56318,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 394,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "10.00",
     "units": "none",
@@ -56335,7 +56335,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 395,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56352,7 +56352,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 396,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56369,7 +56369,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 397,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56386,7 +56386,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 398,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56403,7 +56403,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 399,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56420,7 +56420,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 400,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56437,7 +56437,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 401,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "0.50",
     "units": "none",
@@ -56454,7 +56454,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 402,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56471,7 +56471,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 403,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56488,7 +56488,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 404,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -56505,7 +56505,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 405,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "100.00",
     "units": "none",
@@ -56522,7 +56522,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 406,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56539,7 +56539,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 407,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56556,7 +56556,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 408,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56573,7 +56573,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 409,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56590,7 +56590,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 410,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -56607,7 +56607,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 411,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -56624,7 +56624,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 412,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -56641,7 +56641,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 413,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56658,7 +56658,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 414,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56675,7 +56675,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 415,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56692,7 +56692,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 416,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56709,7 +56709,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 417,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -56726,7 +56726,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 418,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "4.00",
     "units": "none",
@@ -56743,7 +56743,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 419,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "6.00",
     "units": "none",
@@ -56760,7 +56760,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 420,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -56777,7 +56777,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 421,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -56794,7 +56794,7 @@
   "model": "estimates.estimatelineitem",
   "pk": 422,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -62425,7 +62425,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 1,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "0.50",
     "units": "none",
@@ -62441,7 +62441,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 2,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "2.00",
     "units": "none",
@@ -62457,7 +62457,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 3,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -62473,7 +62473,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 4,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62489,7 +62489,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 5,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -62505,7 +62505,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 6,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62521,7 +62521,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 7,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -62537,7 +62537,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 8,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -62553,7 +62553,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 9,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -62569,7 +62569,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 10,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62585,7 +62585,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 11,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "115.00",
     "units": "none",
@@ -62601,7 +62601,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 12,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "5.00",
     "units": "none",
@@ -62617,7 +62617,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 13,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -62633,7 +62633,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 14,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62649,7 +62649,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 15,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -62665,7 +62665,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 16,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -62681,7 +62681,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 17,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -62697,7 +62697,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 18,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "0.05",
     "units": "none",
@@ -62713,7 +62713,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 19,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62729,7 +62729,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 20,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "226.00",
     "units": "none",
@@ -62745,7 +62745,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 21,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -62761,7 +62761,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 22,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "21.00",
     "units": "none",
@@ -62777,7 +62777,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 23,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -62793,7 +62793,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 24,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62809,7 +62809,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 25,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -62825,7 +62825,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 26,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -62841,7 +62841,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 27,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -62857,7 +62857,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 28,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -62873,7 +62873,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 29,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -62889,7 +62889,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 30,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -62905,7 +62905,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 31,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "26.00",
     "units": "none",
@@ -62921,7 +62921,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 32,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "23.50",
     "units": "none",
@@ -62937,7 +62937,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 33,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -62953,7 +62953,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 34,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -62969,7 +62969,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 35,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -62985,7 +62985,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 36,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -63001,7 +63001,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 37,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -63017,7 +63017,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 38,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63033,7 +63033,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 39,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "11.00",
     "units": "none",
@@ -63049,7 +63049,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 40,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -63065,7 +63065,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 41,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -63081,7 +63081,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 42,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "2.00",
     "units": "none",
@@ -63097,7 +63097,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 43,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "3.00",
     "units": "none",
@@ -63113,7 +63113,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 44,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -63129,7 +63129,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 45,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -63145,7 +63145,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 46,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "1.00",
     "units": "none",
@@ -63161,7 +63161,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 47,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "1.00",
     "units": "none",
@@ -63177,7 +63177,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 48,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "8.00",
     "units": "none",
@@ -63193,7 +63193,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 49,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "1.00",
     "units": "none",
@@ -63209,7 +63209,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 50,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63225,7 +63225,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 51,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -63241,7 +63241,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 52,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63257,7 +63257,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 53,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "12.00",
     "units": "none",
@@ -63273,7 +63273,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 54,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "20.00",
     "units": "none",
@@ -63289,7 +63289,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 55,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "30.00",
     "units": "none",
@@ -63305,7 +63305,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 56,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -63321,7 +63321,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 57,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63337,7 +63337,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 58,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -63353,7 +63353,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 59,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -63369,7 +63369,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 60,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -63385,7 +63385,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 61,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -63401,7 +63401,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 62,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -63417,7 +63417,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 63,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "2.00",
     "units": "none",
@@ -63433,7 +63433,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 64,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "1.00",
     "units": "none",
@@ -63449,7 +63449,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 65,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63465,7 +63465,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 66,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "5.00",
     "units": "none",
@@ -63481,7 +63481,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 67,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -63497,7 +63497,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 68,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "3.00",
     "units": "none",
@@ -63513,7 +63513,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 69,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -63529,7 +63529,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 70,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "1.00",
     "units": "none",
@@ -63545,7 +63545,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 71,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63561,7 +63561,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 72,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "4.00",
     "units": "none",
@@ -63577,7 +63577,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 73,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -63593,7 +63593,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 74,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "9.00",
     "units": "none",
@@ -63609,7 +63609,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 75,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "2.00",
     "units": "none",
@@ -63625,7 +63625,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 76,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "2.00",
     "units": "none",
@@ -63641,7 +63641,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 77,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "8.00",
     "units": "none",
@@ -63657,7 +63657,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 78,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "2.00",
     "units": "none",
@@ -63673,7 +63673,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 79,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 9,
     "qty": "2.00",
     "units": "none",
@@ -63689,7 +63689,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 80,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 10,
     "qty": "1.00",
     "units": "none",
@@ -63705,7 +63705,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 81,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 11,
     "qty": "12.00",
     "units": "none",
@@ -63721,7 +63721,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 82,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 12,
     "qty": "1.00",
     "units": "none",
@@ -63737,7 +63737,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 83,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 13,
     "qty": "4.00",
     "units": "none",
@@ -63753,7 +63753,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 84,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 14,
     "qty": "1.00",
     "units": "none",
@@ -63769,7 +63769,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 85,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 15,
     "qty": "1.00",
     "units": "none",
@@ -63785,7 +63785,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 86,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63801,7 +63801,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 87,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "80.00",
     "units": "none",
@@ -63817,7 +63817,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 88,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "80.00",
     "units": "none",
@@ -63833,7 +63833,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 89,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "18.00",
     "units": "none",
@@ -63849,7 +63849,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 90,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63865,7 +63865,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 91,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -63881,7 +63881,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 92,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -63897,7 +63897,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 93,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -63913,7 +63913,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 94,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63929,7 +63929,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 95,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -63945,7 +63945,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 96,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "4.00",
     "units": "none",
@@ -63961,7 +63961,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 97,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -63977,7 +63977,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 98,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "12.00",
     "units": "none",
@@ -63993,7 +63993,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 99,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "12.00",
     "units": "none",
@@ -64009,7 +64009,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 100,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "12.00",
     "units": "none",
@@ -64025,7 +64025,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 101,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "12.00",
     "units": "none",
@@ -64041,7 +64041,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 102,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "12.00",
     "units": "none",
@@ -64057,7 +64057,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 103,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "4.00",
     "units": "none",
@@ -64073,7 +64073,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 104,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 8,
     "qty": "4.00",
     "units": "none",
@@ -64089,7 +64089,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 105,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64105,7 +64105,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 106,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "6.00",
     "units": "none",
@@ -64121,7 +64121,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 107,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -64137,7 +64137,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 108,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64153,7 +64153,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 109,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "10.00",
     "units": "none",
@@ -64169,7 +64169,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 110,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "none",
@@ -64185,7 +64185,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 111,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "10.00",
     "units": "none",
@@ -64201,7 +64201,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 112,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -64217,7 +64217,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 113,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64233,7 +64233,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 114,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64249,7 +64249,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 115,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64265,7 +64265,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 116,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64281,7 +64281,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 117,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "0.50",
     "units": "none",
@@ -64297,7 +64297,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 118,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64313,7 +64313,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 119,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64329,7 +64329,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 120,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "4.00",
     "units": "none",
@@ -64345,7 +64345,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 121,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "8.00",
     "units": "none",
@@ -64361,7 +64361,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 122,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "4.00",
     "units": "none",
@@ -64377,7 +64377,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 123,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "3.00",
     "units": "none",
@@ -64393,7 +64393,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 124,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -64409,7 +64409,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 125,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "27.00",
     "units": "none",
@@ -64425,7 +64425,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 126,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "27.00",
     "units": "none",
@@ -64441,7 +64441,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 127,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64457,7 +64457,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 128,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64473,7 +64473,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 129,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -64489,7 +64489,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 130,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "31.00",
     "units": "none",
@@ -64505,7 +64505,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 131,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64521,7 +64521,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 132,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64537,7 +64537,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 133,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "3.00",
     "units": "none",
@@ -64553,7 +64553,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 134,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "3.00",
     "units": "none",
@@ -64569,7 +64569,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 135,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -64585,7 +64585,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 136,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64601,7 +64601,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 137,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64617,7 +64617,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 138,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "2.00",
     "units": "none",
@@ -64633,7 +64633,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 139,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "2.00",
     "units": "none",
@@ -64649,7 +64649,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 140,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 5,
     "qty": "1.00",
     "units": "none",
@@ -64665,7 +64665,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 141,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 6,
     "qty": "3.00",
     "units": "none",
@@ -64681,7 +64681,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 142,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 7,
     "qty": "1.00",
     "units": "none",
@@ -64697,7 +64697,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 143,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 1,
     "qty": "1.00",
     "units": "none",
@@ -64713,7 +64713,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 144,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 2,
     "qty": "1.00",
     "units": "none",
@@ -64729,7 +64729,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 145,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 3,
     "qty": "1.00",
     "units": "none",
@@ -64745,7 +64745,7 @@
   "model": "invoicing.invoicelineitem",
   "pk": 146,
   "fields": {
-    "price_list_item": null,
+    "inventory_item": null,
     "line_number": 4,
     "qty": "1.00",
     "units": "none",
@@ -66018,7 +66018,7 @@
   "model": "purchasing.purchaseorderlineitem",
   "pk": 1,
   "fields": {
-    "price_list_item": 25,
+    "inventory_item": 25,
     "line_number": 1,
     "qty": "10.00",
     "units": "none",
@@ -68357,7 +68357,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "78.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 2,
     "est_worksheet": 1
@@ -68372,7 +68372,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "130.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 5,
     "est_worksheet": 4
@@ -68387,7 +68387,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "7.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 5,
     "est_worksheet": 4
@@ -68402,7 +68402,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "60.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 16
@@ -68417,7 +68417,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "88.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 35,
     "est_worksheet": 18
@@ -68432,7 +68432,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "88.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 37,
     "est_worksheet": 19
@@ -68447,7 +68447,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "165.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 39,
     "est_worksheet": 20
@@ -68462,7 +68462,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "520.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 21
@@ -68477,7 +68477,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "159.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 21
@@ -68492,7 +68492,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "324.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 21
@@ -68507,7 +68507,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "1450.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 21
@@ -68522,7 +68522,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "2394.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 21
@@ -68537,7 +68537,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "8.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 22
@@ -68552,7 +68552,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "5000.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 23
@@ -68567,7 +68567,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "152.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 50,
     "est_worksheet": 25
@@ -68582,7 +68582,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 36
@@ -68597,7 +68597,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "88.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 72,
     "est_worksheet": 39
@@ -68612,7 +68612,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "52.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 72,
     "est_worksheet": 39
@@ -68627,7 +68627,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "49.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 76,
     "est_worksheet": 41
@@ -68642,7 +68642,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 79,
     "est_worksheet": 42
@@ -68657,7 +68657,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "104.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": null,
     "est_worksheet": 43
@@ -68672,7 +68672,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "72.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 92,
     "est_worksheet": 46
@@ -68687,7 +68687,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "90.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "plan_task": 92,
     "est_worksheet": 46
@@ -68702,7 +68702,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 14,
     "job": 8,
@@ -68721,7 +68721,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "179.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 14,
     "job": 8,
@@ -68740,7 +68740,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "120.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 28,
     "job": 16,
@@ -68759,7 +68759,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "88.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 53,
     "job": 23,
@@ -68778,7 +68778,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 53,
     "job": 23,
@@ -68797,7 +68797,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "60.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 57,
     "job": 28,
@@ -68816,7 +68816,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "52.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 71,
     "job": 31,
@@ -68835,7 +68835,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "706.80",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 77,
     "job": 32,
@@ -68854,7 +68854,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "1002.31",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 81,
     "job": 37,
@@ -68873,7 +68873,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "72.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 84,
     "job": 39,
@@ -68892,7 +68892,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "300.29",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -68911,7 +68911,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "514.80",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -68930,7 +68930,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "300.29",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -68949,7 +68949,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "514.80",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -68968,7 +68968,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "309.12",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -68987,7 +68987,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "528.60",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69006,7 +69006,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "309.12",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69025,7 +69025,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "528.60",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69044,7 +69044,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "309.12",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69063,7 +69063,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "528.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69082,7 +69082,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "309.12",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69101,7 +69101,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "508.20",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69120,7 +69120,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "400.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69139,7 +69139,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "447.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69158,7 +69158,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "400.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 91,
     "job": 44,
@@ -69177,7 +69177,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "319.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 102,
     "job": 46,
@@ -69196,7 +69196,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "179.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 130,
     "job": 58,
@@ -69215,7 +69215,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 130,
     "job": 58,
@@ -69234,7 +69234,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "120.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 175,
     "job": 68,
@@ -69253,7 +69253,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "549.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 193,
     "job": 69,
@@ -69272,7 +69272,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "562.20",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 193,
     "job": 69,
@@ -69291,7 +69291,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "381.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 193,
     "job": 69,
@@ -69310,7 +69310,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "547.20",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 193,
     "job": 69,
@@ -69329,7 +69329,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "615.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 211,
     "job": 70,
@@ -69348,7 +69348,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "296.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 225,
     "job": 71,
@@ -69367,7 +69367,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "203.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 225,
     "job": 71,
@@ -69386,7 +69386,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "60.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 237,
     "job": 72,
@@ -69405,7 +69405,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "78.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 237,
     "job": 72,
@@ -69424,7 +69424,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "60.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 237,
     "job": 72,
@@ -69443,7 +69443,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "78.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 237,
     "job": 72,
@@ -69462,7 +69462,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "60.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 237,
     "job": 72,
@@ -69481,7 +69481,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "78.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 237,
     "job": 72,
@@ -69500,7 +69500,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 309,
     "job": 73,
@@ -69519,7 +69519,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "114.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 309,
     "job": 73,
@@ -69538,7 +69538,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "152.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 393,
     "job": 81,
@@ -69557,7 +69557,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "87.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 403,
     "job": 82,
@@ -69576,7 +69576,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "90.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 413,
     "job": 84,
@@ -69595,7 +69595,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "2600.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 413,
     "job": 84,
@@ -69614,7 +69614,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "179.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 456,
     "job": 86,
@@ -69633,7 +69633,7 @@
     "units": "none",
     "unit_cost": "0.00",
     "sell_price": "750.00",
-    "price_list_item": null,
+    "inventory_item": null,
     "accounting_category": 2,
     "task": 486,
     "job": 88,

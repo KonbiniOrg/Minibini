@@ -68,13 +68,13 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
     def test_earmarks_created_on_copy_from_worksheet(self):
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
-            price_list_item=self.screws,
+            inventory_item=self.screws,
             quantity=Decimal('2.00'), unit_cost=Decimal('8.00'),
             sell_price=Decimal('12.00'),
         )
@@ -83,11 +83,11 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
 
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 2)
         self.assertEqual(
-            Earmark.objects.get(price_list_item=self.plywood, job=self.job).quantity,
+            Earmark.objects.get(inventory_item=self.plywood, job=self.job).quantity,
             Decimal('5.00'),
         )
         self.assertEqual(
-            Earmark.objects.get(price_list_item=self.screws, job=self.job).quantity,
+            Earmark.objects.get(inventory_item=self.screws, job=self.job).quantity,
             Decimal('2.00'),
         )
 
@@ -99,20 +99,20 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         PlanMaterial.objects.create(
             plan_task=plan_task_b, est_worksheet=self.worksheet,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             quantity=Decimal('3.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
-        earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
+        earmark = Earmark.objects.get(inventory_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('8.00'))
 
     def test_no_earmarks_without_inventoried_materials(self):
@@ -200,7 +200,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
@@ -215,5 +215,5 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         self.estimate.status = Estimate.STATUS_ACCEPTED
         self.estimate.save()
 
-        earmark = Earmark.objects.get(job=self.job, price_list_item=self.plywood)
+        earmark = Earmark.objects.get(job=self.job, inventory_item=self.plywood)
         self.assertEqual(earmark.quantity, Decimal('5.00'))

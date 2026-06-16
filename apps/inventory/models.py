@@ -6,7 +6,7 @@ from apps.core.history import history
 
 class Earmark(models.Model):
     earmark_id = models.AutoField(primary_key=True)
-    price_list_item = models.ForeignKey('InventoryItem', on_delete=models.CASCADE)
+    inventory_item = models.ForeignKey('InventoryItem', on_delete=models.CASCADE)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     created_date = models.DateTimeField(auto_now_add=True)
@@ -14,14 +14,14 @@ class Earmark(models.Model):
 
     class Meta:
         db_table = 'earmarks'
-        unique_together = [('price_list_item', 'job')]
+        unique_together = [('inventory_item', 'job')]
 
     def __str__(self):
-        return f"{self.price_list_item.code} earmarked {self.quantity} for {self.job.job_number}"
+        return f"{self.inventory_item.code} earmarked {self.quantity} for {self.job.job_number}"
 
 
 class InventoryItem(models.Model):
-    price_list_item_id = models.AutoField(primary_key=True)
+    inventory_item_id = models.AutoField(primary_key=True)
     code = models.CharField(max_length=50, unique=True)
     units = models.CharField(max_length=50, default='none')
     description = models.TextField(blank=True)
@@ -41,7 +41,7 @@ class InventoryItem(models.Model):
     accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT,
-        related_name='price_list_items',
+        related_name='inventory_items',
     )
 
     @property
@@ -92,10 +92,10 @@ class InventoryItem(models.Model):
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
         return not (
-            EstimateLineItem.objects.filter(price_list_item=self).exists() or
-            InvoiceLineItem.objects.filter(price_list_item=self).exists() or
-            PurchaseOrderLineItem.objects.filter(price_list_item=self).exists() or
-            BillLineItem.objects.filter(price_list_item=self).exists() or
+            EstimateLineItem.objects.filter(inventory_item=self).exists() or
+            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
+            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
+            BillLineItem.objects.filter(inventory_item=self).exists() or
             self.earmark_set.exists()
         )
 
@@ -107,7 +107,7 @@ class MaterialBase(models.Model):
     units = models.CharField(max_length=50, default='none')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    price_list_item = models.ForeignKey(
+    inventory_item = models.ForeignKey(
         'InventoryItem', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
@@ -121,7 +121,7 @@ class MaterialBase(models.Model):
     def copy_fields(self):
         """Canonical MaterialBase field set for cloning to another container.
 
-        Returns the FKs (price_list_item, accounting_category) as *objects* so
+        Returns the FKs (inventory_item, accounting_category) as *objects* so
         the dict splats straight into ``MaterialService.create_on_job`` (whose
         params are the objects); raw ``.objects.create()`` accepts objects too.
         """
@@ -131,7 +131,7 @@ class MaterialBase(models.Model):
             units=self.units,
             unit_cost=self.unit_cost,
             sell_price=self.sell_price,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             accounting_category=self.accounting_category,
         )
 
@@ -153,17 +153,17 @@ class MaterialBase(models.Model):
 
     def _populate_from_pli(self):
         """Copy description/units/unit_cost/sell_price/accounting_category from linked InventoryItem if not already set."""
-        if self.price_list_item:
+        if self.inventory_item:
             if not self.description:
-                self.description = self.price_list_item.description[:255]
+                self.description = self.inventory_item.description[:255]
             if self.units == 'none' or not self.units:
-                self.units = self.price_list_item.units
+                self.units = self.inventory_item.units
             if self.unit_cost == Decimal('0.00'):
-                self.unit_cost = self.price_list_item.purchase_price
+                self.unit_cost = self.inventory_item.purchase_price
             if self.sell_price == Decimal('0.00'):
-                self.sell_price = self.price_list_item.selling_price
+                self.sell_price = self.inventory_item.selling_price
             if not self.accounting_category_id:
-                self.accounting_category = self.price_list_item.accounting_category
+                self.accounting_category = self.inventory_item.accounting_category
 
 
 class PlanMaterial(MaterialBase):
@@ -217,7 +217,7 @@ class TemplateMaterialAssociation(models.Model):
         'estimates.WorkTemplate', on_delete=models.CASCADE,
         related_name='material_associations',
     )
-    price_list_item = models.ForeignKey(
+    inventory_item = models.ForeignKey(
         'InventoryItem', on_delete=models.PROTECT,
     )
     template_task_association = models.ForeignKey(
@@ -236,7 +236,7 @@ class TemplateMaterialAssociation(models.Model):
         ordering = ['sort_order']
 
     def __str__(self):
-        return f'{self.work_template.template_name} → {self.price_list_item.code} (qty {self.quantity})'
+        return f'{self.work_template.template_name} → {self.inventory_item.code} (qty {self.quantity})'
 
     def clean(self):
         super().clean()

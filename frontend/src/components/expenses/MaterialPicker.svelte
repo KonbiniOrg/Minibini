@@ -39,12 +39,12 @@
     if (!adding || !jobId) { newMaterial = null; return; }
     if (isStock) {
       newMaterial = {
-        price_list_item_id: pli.price_list_item_id,
+        inventory_item_id: pli.inventory_item_id,
         quantity: Number(quantity) || 1,
       };
     } else {
       newMaterial = {
-        price_list_item_id: pli ? pli.price_list_item_id : null,
+        inventory_item_id: pli ? pli.inventory_item_id : null,
         description,
         quantity: Number(quantity) || 1,
         price: unitCost === '' ? null : unitCost,

@@ -22,7 +22,7 @@
   }
   function sourceLabel(li) {
     if (li.sources?.length) return `${li.sources.length} atom${li.sources.length === 1 ? '' : 's'}`;
-    if (li.price_list_item) return `PLI #${li.price_list_item}`;
+    if (li.inventory_item) return `PLI #${li.inventory_item}`;
     return 'No source';
   }
 

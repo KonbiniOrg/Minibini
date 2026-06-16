@@ -62,7 +62,7 @@ class MaterialBaseCopyFieldsTest(TestCase):
         pm = PlanMaterial(
             description='Steel bar', quantity=Decimal('10.00'), units='kg',
             unit_cost=Decimal('1.50'), sell_price=Decimal('3.00'),
-            price_list_item=pli, accounting_category=ac,
+            inventory_item=pli, accounting_category=ac,
         )
         self.assertEqual(pm.copy_fields(), {
             'description': 'Steel bar',
@@ -70,7 +70,7 @@ class MaterialBaseCopyFieldsTest(TestCase):
             'units': 'kg',
             'unit_cost': Decimal('1.50'),
             'sell_price': Decimal('3.00'),
-            'price_list_item': pli,
+            'inventory_item': pli,
             'accounting_category': ac,
         })
 

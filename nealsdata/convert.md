@@ -113,7 +113,7 @@ to a database. Tests load it into the auto-created test DB via
 4. **`build_configuration`**: emits the `core.configuration` entries the
    app needs at runtime (numbering patterns + counters, `units_list`,
    retention windows).
-5. **`build_price_list_items`**: copies the FreeAgent Price List Items
+5. **`build_inventory_items`**: copies the FreeAgent Price List Items
    sheet.
 6. **`build_contacts_and_businesses`**: walks the Contacts sheet and emits
    only the businesses/contacts actually referenced by a spine card.
@@ -142,7 +142,7 @@ to a database. Tests load it into the auto-created test DB via
    PlanTasks + PlanMaterials on it, and an EstimateLineItemSource per
    LI-derived atom); everything else routes to the real side. Deliverables
    stay on the Job either way. Materials get a `unit_cost` and an optional
-   `price_list_item` link via fuzzy matching (§4). This is where most of the
+   `inventory_item` link via fuzzy matching (§4). This is where most of the
    interesting logic lives — see §4.
 9a. **`assign_worker_times`**: gives every Task and PlanTask an invented
     per-task `est_worker_time` — random in `[0.5, 4.0]` hours, 2 sig figs,
@@ -323,7 +323,7 @@ per job).
 
 **Unit cost + PriceListItem link** (`_material_cost_and_pli`): each raw-stock
 Material/PlanMaterial is fuzzy-matched to a PriceListItem by material keyword +
-thickness (`P.match_pli`). On a match the `price_list_item` FK is set and
+thickness (`P.match_pli`). On a match the `inventory_item` FK is set and
 `unit_cost` is the PLI's `purchase_price`; on a miss the FK stays null and
 `unit_cost = sell_price × _COST_RATIO` (0.8333, the same factor PLIs use). The
 match is precision-first — prose with no thickness, or a material family absent

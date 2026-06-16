@@ -8,7 +8,7 @@ def generate_purchase_order_pdf(po):
     Returns bytes containing the PDF.
     """
     line_items = po.purchaseorderlineitem_set.select_related(
-        'accounting_category', 'price_list_item'
+        'accounting_category', 'inventory_item'
     ).order_by('line_number')
 
     total = sum(item.total_amount for item in line_items)

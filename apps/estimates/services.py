@@ -149,7 +149,7 @@ class EstimateService:
         for li in EstimateLineItem.objects.filter(estimate=parent):
             new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
-                price_list_item=li.price_list_item,
+                inventory_item=li.inventory_item,
                 source_template=li.source_template,
                 qty=li.qty,
                 units=li.units,
@@ -315,7 +315,7 @@ class EstimateService:
 
         li = EstimateLineItem.objects.create(
             estimate=estimate,
-            price_list_item=pli,
+            inventory_item=pli,
             description=pli.description,
             qty=qty,
             units=pli.units,
@@ -1075,7 +1075,7 @@ class EstimateWizardService(BaseWizardService):
             })
 
         for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'price_list_item',
+            'accounting_category', 'inventory_item',
         ):
             key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
             state_info = claims.get(key, default_state)
@@ -1148,7 +1148,7 @@ class EstimateWizardService(BaseWizardService):
 
         # PlanMaterials
         for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'price_list_item',
+            'accounting_category', 'inventory_item',
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
                 continue

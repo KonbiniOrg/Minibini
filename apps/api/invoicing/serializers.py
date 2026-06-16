@@ -45,7 +45,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvoiceLineItem
         fields = [
-            'line_item_id', 'line_number', 'price_list_item',
+            'line_item_id', 'line_number', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
             'taxable_override', 'tax_rate_override',

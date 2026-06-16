@@ -42,7 +42,7 @@ class POReceivingTestBase(BaseTestCase):
                 description=f'Item {i + 1}',
                 qty=Decimal('10.00'),
                 price=Decimal('25.00'),
-                price_list_item=pli if (with_pli and i == 0) else None,
+                inventory_item=pli if (with_pli and i == 0) else None,
             )
         return po
 
@@ -180,7 +180,7 @@ class InventoryIntegrationTest(POReceivingTestBase):
         self.assertEqual(pli.qty_on_hand, Decimal('0.00'))
 
         li = PurchaseOrderLineItem.objects.filter(
-            purchase_order=po, price_list_item=pli,
+            purchase_order=po, inventory_item=pli,
         ).first()
         self.client.post(
             f'/api/purchase-orders/{po.po_id}/receive/',
@@ -194,7 +194,7 @@ class InventoryIntegrationTest(POReceivingTestBase):
         po = self._make_issued_po(with_pli=True)
         pli = InventoryItem.objects.get(code='TEST-PLI-RECV')
         li = PurchaseOrderLineItem.objects.filter(
-            purchase_order=po, price_list_item=pli,
+            purchase_order=po, inventory_item=pli,
         ).first()
         self.client.post(
             f'/api/purchase-orders/{po.po_id}/receive/',
@@ -211,7 +211,7 @@ class InventoryIntegrationTest(POReceivingTestBase):
     def test_non_pli_line_does_not_create_adjustment(self):
         po = self._make_issued_po(with_pli=True)
         li_no_pli = PurchaseOrderLineItem.objects.filter(
-            purchase_order=po, price_list_item__isnull=True,
+            purchase_order=po, inventory_item__isnull=True,
         ).first()
         adj_count_before = InventoryHistory.objects.filter(
             entry_type='action').count()
@@ -361,7 +361,7 @@ class ReverseReceiptTest(POReceivingTestBase):
         po = self._make_issued_po(with_pli=True)
         pli = InventoryItem.objects.get(code='TEST-PLI-RECV')
         li = PurchaseOrderLineItem.objects.filter(
-            purchase_order=po, price_list_item=pli,
+            purchase_order=po, inventory_item=pli,
         ).first()
         self.client.post(
             f'/api/purchase-orders/{po.po_id}/receive/',

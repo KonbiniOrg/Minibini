@@ -27,7 +27,7 @@ class SearchService:
     # Mapping from category ID to internal key name
     CATEGORY_ID_TO_KEY = {
         CATEGORY_BUSINESSES: 'businesses',
-        CATEGORY_PRICE_LIST_ITEMS: 'price_list_items',
+        CATEGORY_PRICE_LIST_ITEMS: 'inventory_items',
         CATEGORY_CONTACTS: 'contacts',
         CATEGORY_INVOICES: 'invoices',
         CATEGORY_JOBS: 'jobs',
@@ -55,7 +55,7 @@ class SearchService:
 
     # Legacy support: List of category keys (for backward compatibility)
     AVAILABLE_CATEGORIES = [
-        'businesses', 'price_list_items', 'contacts', 'invoices', 'jobs',
+        'businesses', 'inventory_items', 'contacts', 'invoices', 'jobs',
         'estimates', 'est_worksheets', 'bills', 'purchase_orders'
     ]
 
@@ -161,7 +161,7 @@ class SearchService:
         ).select_related('business')
 
     @staticmethod
-    def search_price_list_items(query):
+    def search_inventory_items(query):
         """Search for price list items matching the query"""
         return InventoryItem.objects.annotate(
             purchase_price_text=Cast('purchase_price', CharField()),
@@ -399,10 +399,10 @@ class SearchService:
             }
 
         # PRICE LIST ITEMS
-        price_list_items = cls.search_price_list_items(query)
-        if price_list_items.exists():
-            categories['price_list_items'] = {
-                'items': list(price_list_items),
+        inventory_items = cls.search_inventory_items(query)
+        if inventory_items.exists():
+            categories['inventory_items'] = {
+                'items': list(inventory_items),
                 'subcategories': {}
             }
 
@@ -600,7 +600,7 @@ class SearchService:
     @classmethod
     def apply_price_filter(cls, categories, price_min, price_max):
         """Filter results by price range.
-        - price_list_items: filters by selling_price.
+        - inventory_items: filters by selling_price.
         - invoices/estimates/bills/purchase_orders: keeps the entity if any matching line item
           is in range; if no matching line items exist (entity matched on header fields), it passes through.
         - All other categories pass through unchanged.
@@ -610,7 +610,7 @@ class SearchService:
 
         filtered = {}
         for key, data in categories.items():
-            if key == 'price_list_items':
+            if key == 'inventory_items':
                 kept = [
                     item for item in data.get('items', [])
                     if cls._price_in_range(item.selling_price, price_min, price_max)
@@ -721,7 +721,7 @@ class SearchService:
             'jobs': 'Job',
             'contacts': 'Contact',
             'businesses': 'Business',
-            'price_list_items': 'InventoryItem',
+            'inventory_items': 'InventoryItem',
             'invoices': 'Invoice',
             'estimates': 'Estimate',
             'bills': 'Bill',
@@ -843,7 +843,7 @@ class SearchService:
 
         # PRICE LIST ITEMS
         if 'InventoryItem' in result_ids and result_ids['InventoryItem']:
-            price_list_items = InventoryItem.objects.filter(
+            inventory_items = InventoryItem.objects.filter(
                 pk__in=result_ids['InventoryItem']
             ).annotate(
                 purchase_price_text=Cast('purchase_price', CharField()),
@@ -855,9 +855,9 @@ class SearchService:
                 Q(purchase_price_text__icontains=within_query) |
                 Q(selling_price_text__icontains=within_query)
             )
-            if price_list_items.exists():
-                categories['price_list_items'] = {
-                    'items': list(price_list_items),
+            if inventory_items.exists():
+                categories['inventory_items'] = {
+                    'items': list(inventory_items),
                     'subcategories': {}
                 }
 

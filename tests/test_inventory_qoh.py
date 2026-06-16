@@ -61,7 +61,7 @@ class ConsumeMaterialTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -76,7 +76,7 @@ class ConsumeMaterialTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -89,30 +89,30 @@ class ConsumeMaterialTest(TestCase):
     def test_consume_reduces_earmark(self):
         """Consuming material reduces the earmark for that job."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job, quantity=Decimal('10.00'),
+            inventory_item=self.plywood, job=self.job, quantity=Decimal('10.00'),
         )
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         MaterialService.consume(material)
-        earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
+        earmark = Earmark.objects.get(inventory_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('5.00'))
 
     def test_consume_clears_earmark_when_fully_consumed(self):
         """Consuming all earmarked material deletes the earmark."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job, quantity=Decimal('5.00'),
         )
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -120,11 +120,11 @@ class ConsumeMaterialTest(TestCase):
         )
         MaterialService.consume(material)
         self.assertEqual(
-            Earmark.objects.filter(price_list_item=self.plywood, job=self.job).count(), 0
+            Earmark.objects.filter(inventory_item=self.plywood, job=self.job).count(), 0
         )
 
-    def test_consume_no_price_list_item_is_noop(self):
-        """Consuming a material without price_list_item does nothing."""
+    def test_consume_no_inventory_item_is_noop(self):
+        """Consuming a material without inventory_item does nothing."""
         material = Material.objects.create(
             job=self.job,
             task=self.task,
@@ -187,7 +187,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -203,7 +203,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -219,7 +219,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -230,8 +230,8 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.assertEqual(self.plywood.qty_on_hand, Decimal('15.00'))
         self.assertEqual(self.plywood.qty_sold, Decimal('5.00'))
 
-    def test_no_price_list_item_is_noop(self):
-        """Adjustment on material without price_list_item does nothing."""
+    def test_no_inventory_item_is_noop(self):
+        """Adjustment on material without inventory_item does nothing."""
         material = Material.objects.create(
             job=self.job,
             task=self.task,

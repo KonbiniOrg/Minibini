@@ -35,8 +35,8 @@ class ExpenseService:
                 if job is None:
                     job = nm_job
                 pli = None
-                if new_material.get('price_list_item_id'):
-                    pli = InventoryItem.objects.get(pk=new_material['price_list_item_id'])
+                if new_material.get('inventory_item_id'):
+                    pli = InventoryItem.objects.get(pk=new_material['inventory_item_id'])
                 qty = new_material.get('quantity') or Decimal('1')
                 if pli and pli.is_catalog:
                     # Inventoried → stock receipt (no consumable material).
@@ -49,7 +49,7 @@ class ExpenseService:
                         job=nm_job, task=None,
                         description=new_material.get('description', description),
                         quantity=qty, unit_cost=price,
-                        price_list_item=pli,
+                        inventory_item=pli,
                         accounting_category=(None if pli else accounting_category),
                         cost_source='document',
                     )
@@ -193,7 +193,7 @@ class ExpenseService:
         from apps.inventory.services import InventoryService
         if material.job_id == new_job.pk:
             return
-        pli = material.price_list_item
+        pli = material.inventory_item
         move_earmark = (
             material.consumption_state == Material.CONSUMPTION_STATE_PENDING
             and pli and pli.is_catalog
@@ -272,7 +272,7 @@ class ExpenseService:
                 # receipt), so there is no ad-hoc receipt to reverse here — stock
                 # receipts are handled separately below.
                 InventoryService._mutate_earmark(
-                    mat.price_list_item, mat.job, -mat.quantity,
+                    mat.inventory_item, mat.job, -mat.quantity,
                 )
                 mat.delete()
                 expense.material = None  # drop the now-deleted FK before save

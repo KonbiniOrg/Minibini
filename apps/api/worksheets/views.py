@@ -186,7 +186,7 @@ class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanT
         serializer = PlanMaterialWriteSerializer(mat, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if mat.price_list_item_id is not None and (
+        if mat.inventory_item_id is not None and (
             'unit_cost' in serializer.validated_data
             or 'sell_price' in serializer.validated_data
         ):

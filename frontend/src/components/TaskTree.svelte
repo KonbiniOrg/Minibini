@@ -239,7 +239,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
@@ -306,7 +306,7 @@
               <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
             {/if}
             <td class="indent-2">
-              {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+              {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
             </td>
             {#if showAssignee}<td></td>{/if}
             <td></td>
@@ -343,7 +343,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.price_list_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>

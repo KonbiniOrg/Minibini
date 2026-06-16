@@ -39,7 +39,7 @@ class MaterialFieldsTest(TestCase):
             description='no-pli', quantity=Decimal('1.00'),
             accounting_category=self.cat,
         )
-        self.assertIsNone(m.price_list_item)
+        self.assertIsNone(m.inventory_item)
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_material_rejects_mismatched_task_job(self):
@@ -151,18 +151,18 @@ class MaterialJobCascadeTest(TestCase):
     def test_delete_job_removes_material_and_earmark(self):
         m = Material.objects.create(
             job=self.job, description='bolt', quantity=Decimal('5.00'),
-            price_list_item=self.pli,
+            inventory_item=self.pli,
             # accounting_category is auto-filled from pli
         )
         Earmark.objects.create(
-            price_list_item=self.pli, job=self.job, quantity=Decimal('5.00'),
+            inventory_item=self.pli, job=self.job, quantity=Decimal('5.00'),
         )
         material_pk = m.pk
         self.job.delete()
         self.assertFalse(Material.objects.filter(pk=material_pk).exists(),
                          'Material should be cascade-deleted with its Job')
         self.assertFalse(Earmark.objects.filter(
-            price_list_item=self.pli).exists(),
+            inventory_item=self.pli).exists(),
             'Earmark should be cascade-deleted with its Job')
 
 

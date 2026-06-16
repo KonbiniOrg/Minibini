@@ -85,7 +85,7 @@ describe('ExpenseForm', () => {
     const [, body] = api.post.mock.calls[0];
     expect(body.new_material).toMatchObject({
       job_id: 7, description: 'bracket', quantity: 3, price: 4.5,
-      price_list_item_id: null,
+      inventory_item_id: null,
     });
   });
 

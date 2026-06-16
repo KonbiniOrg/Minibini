@@ -408,7 +408,7 @@ class WorkTemplate(models.Model):
                     est_worksheet=worksheet,
                     plan_task=paired_pt,
                     quantity=assoc.quantity,
-                    price_list_item=assoc.price_list_item,
+                    inventory_item=assoc.inventory_item,
                 )
 
     def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
@@ -436,7 +436,7 @@ class WorkTemplate(models.Model):
                 MaterialService.create_on_job(
                     job=job, task=paired_t,
                     quantity=assoc.quantity,
-                    price_list_item=assoc.price_list_item,
+                    inventory_item=assoc.inventory_item,
                 )
 
 
@@ -661,7 +661,7 @@ class ChangeOrderLineItem(BaseLineItem):
         on_delete=models.SET_NULL,
         null=True, blank=True,
     )
-    price_list_item = models.ForeignKey(
+    inventory_item = models.ForeignKey(
         'inventory.InventoryItem',
         on_delete=models.SET_NULL,
         null=True, blank=True,

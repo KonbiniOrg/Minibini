@@ -38,7 +38,7 @@ class ConsumeMaterialTest(TestCase):
         """Consuming material decreases QOH and increases qty_sold."""
         material = Material(
             job=self.job,
-            task=self.task, price_list_item=self.pli,
+            task=self.task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
@@ -52,30 +52,30 @@ class ConsumeMaterialTest(TestCase):
     def test_reduces_earmark(self):
         """Consuming material reduces the earmark for the job."""
         Earmark.objects.create(
-            price_list_item=self.pli, job=self.job,
+            inventory_item=self.pli, job=self.job,
             quantity=Decimal('10.00'))
 
         material = Material(
             job=self.job,
-            task=self.task, price_list_item=self.pli,
+            task=self.task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('3.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
         MaterialService.consume(material)
 
-        earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
+        earmark = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('7.00'))
 
     def test_deletes_earmark_when_fully_consumed(self):
         """Earmark is deleted when all earmarked quantity is consumed."""
         Earmark.objects.create(
-            price_list_item=self.pli, job=self.job,
+            inventory_item=self.pli, job=self.job,
             quantity=Decimal('5.00'))
 
         material = Material(
             job=self.job,
-            task=self.task, price_list_item=self.pli,
+            task=self.task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
@@ -83,17 +83,17 @@ class ConsumeMaterialTest(TestCase):
         MaterialService.consume(material)
 
         self.assertFalse(
-            Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
+            Earmark.objects.filter(inventory_item=self.pli, job=self.job).exists())
 
     def test_deletes_earmark_when_over_consumed(self):
         """Earmark is deleted when consumed quantity exceeds earmark."""
         Earmark.objects.create(
-            price_list_item=self.pli, job=self.job,
+            inventory_item=self.pli, job=self.job,
             quantity=Decimal('3.00'))
 
         material = Material(
             job=self.job,
-            task=self.task, price_list_item=self.pli,
+            task=self.task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
@@ -101,13 +101,13 @@ class ConsumeMaterialTest(TestCase):
         MaterialService.consume(material)
 
         self.assertFalse(
-            Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
+            Earmark.objects.filter(inventory_item=self.pli, job=self.job).exists())
 
     def test_no_earmark_no_error(self):
         """Consuming without an earmark does not raise."""
         material = Material(
             job=self.job,
-            task=self.task, price_list_item=self.pli,
+            task=self.task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         material.save()
@@ -140,19 +140,19 @@ class ConsumeMaterialTest(TestCase):
             job=self.job, name='Assemble', sort_order=1, rate_scheme=self.scheme)
 
         Earmark.objects.create(
-            price_list_item=self.pli, job=self.job,
+            inventory_item=self.pli, job=self.job,
             quantity=Decimal('10.00'))
 
         material = Material(
             job=self.job,
-            task=wo_task, price_list_item=self.pli,
+            task=wo_task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('4.00'),
             unit_cost=Decimal('50.00'))
         material.save()
 
         MaterialService.consume(material)
 
-        earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job)
+        earmark = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('6.00'))
 
 
@@ -180,7 +180,7 @@ class CompleteTaskAdjustmentTest(TestCase):
 
         self.material = Material(
             job=self.job,
-            task=self.task, price_list_item=self.pli,
+            task=self.task, inventory_item=self.pli,
             description='Steel plate', quantity=Decimal('5.00'),
             unit_cost=Decimal('50.00'))
         self.material.save()

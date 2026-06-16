@@ -14,7 +14,7 @@ class InventoryItemModelTest(TestCase):
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
-    def test_price_list_item_creation(self):
+    def test_inventory_item_creation(self):
         item = InventoryItem.objects.create(
             code="ITEM001",
             units="ea",
@@ -35,7 +35,7 @@ class InventoryItemModelTest(TestCase):
         self.assertEqual(item.qty_sold, Decimal('25.00'))
         self.assertEqual(item.qty_wasted, Decimal('2.00'))
         
-    def test_price_list_item_str_method(self):
+    def test_inventory_item_str_method(self):
         item = InventoryItem.objects.create(
             code="TEST123",
             description="This is a very long description that should be truncated in the string representation",
@@ -43,7 +43,7 @@ class InventoryItemModelTest(TestCase):
         )
         self.assertEqual(str(item), "TEST123 - This is a very long description that should be tru")
         
-    def test_price_list_item_defaults(self):
+    def test_inventory_item_defaults(self):
         item = InventoryItem.objects.create(
             code="DEFAULT001",
             accounting_category=self.category
@@ -154,7 +154,7 @@ class InvoiceLineItemModelTest(TestCase):
             contact=self.contact,
             vendor_invoice_number="VIN001"
         )
-        self.price_list_item = InventoryItem.objects.create(
+        self.inventory_item = InventoryItem.objects.create(
             code="ITEM001",
             accounting_category=self.category
         )
@@ -162,7 +162,7 @@ class InvoiceLineItemModelTest(TestCase):
     def test_invoice_line_item_creation(self):
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            price_list_item=None,
+            inventory_item=None,
             line_number=1,
             qty=Decimal('5.00'),
             units="hours",
@@ -170,7 +170,7 @@ class InvoiceLineItemModelTest(TestCase):
             price=Decimal('50.00')
         )
         self.assertEqual(line_item.invoice, self.invoice)
-        self.assertIsNone(line_item.price_list_item)
+        self.assertIsNone(line_item.inventory_item)
         self.assertEqual(line_item.line_number, 1)
         self.assertEqual(line_item.qty, Decimal('5.00'))
         self.assertEqual(line_item.units, "hours")
@@ -189,33 +189,33 @@ class InvoiceLineItemModelTest(TestCase):
     def test_invoice_line_item_optional_relationships(self):
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             qty=Decimal('1.00'),
             description="Simple line item"
         )
         self.assertEqual(line_item.invoice, self.invoice)
         self.assertIsNone(line_item.task)
-        self.assertEqual(line_item.price_list_item, self.price_list_item)
+        self.assertEqual(line_item.inventory_item, self.inventory_item)
 
     def test_invoice_line_item_validation_both_null_allowed(self):
-        """Test that validation allows price_list_item to be null (task FK was dropped)."""
+        """Test that validation allows inventory_item to be null (task FK was dropped)."""
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            price_list_item=None,
+            inventory_item=None,
             description="Line item with neither task nor price item"
         )
         # Should not raise any validation errors
         line_item.full_clean()
         self.assertIsNone(line_item.task)
-        self.assertIsNone(line_item.price_list_item)
+        self.assertIsNone(line_item.inventory_item)
 
     def test_invoice_line_item_validation_price_item_only(self):
-        """Test that line item with only price_list_item is valid"""
+        """Test that line item with only inventory_item is valid"""
         line_item = InvoiceLineItem.objects.create(
             invoice=self.invoice,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             description="Price item only line item"
         )
         line_item.full_clean()  # Should not raise
         self.assertIsNone(line_item.task)
-        self.assertEqual(line_item.price_list_item, self.price_list_item)
+        self.assertEqual(line_item.inventory_item, self.inventory_item)

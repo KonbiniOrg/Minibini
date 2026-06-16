@@ -86,7 +86,7 @@ def _material(job, task=None, ac=None, pli=None):
         unit_cost=Decimal('5.00'),
         sell_price=Decimal('10.00'),
         accounting_category=ac,
-        price_list_item=pli,
+        inventory_item=pli,
     )
 
 

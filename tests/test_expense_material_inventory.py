@@ -47,7 +47,7 @@ class AdHocPurchaseTest(TestCase):
     def test_receive_ad_hoc_purchase_bumps_qoh_only(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         InventoryService.receive_ad_hoc_purchase(m)
         self.pli.refresh_from_db()
@@ -56,7 +56,7 @@ class AdHocPurchaseTest(TestCase):
     def test_reverse_ad_hoc_purchase_drops_qoh(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('5'), price_list_item=self.pli,
+            quantity=Decimal('5'), inventory_item=self.pli,
         )
         # Simulate a prior partial restock directly: quantity=5, restocked_qty=2.
         # Invariant: quantity + restocked_qty == original purchase (7).
@@ -78,7 +78,7 @@ class AdHocPurchaseTest(TestCase):
         )
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='y',
-            quantity=Decimal('3'), price_list_item=pli_lot,
+            quantity=Decimal('3'), inventory_item=pli_lot,
         )
         InventoryService.receive_ad_hoc_purchase(m)
         pli_lot.refresh_from_db()
@@ -88,7 +88,7 @@ class AdHocPurchaseTest(TestCase):
         """receive_ad_hoc_purchase on a material with no PLI does nothing."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='z',
-            quantity=Decimal('1'), price_list_item=None,
+            quantity=Decimal('1'), inventory_item=None,
             accounting_category=self.cat,
         )
         # Should not raise
@@ -127,7 +127,7 @@ class ExpenseSubmitPathTest(TestCase):
                 'description': 'bolts',
                 'quantity': Decimal('5'),
                 'price': Decimal('5'),
-                'price_list_item_id': self.pli.pk,
+                'inventory_item_id': self.pli.pk,
             },
         )
         # Inventoried PLI → stock receipt: no consumable material, QOH bumped,
@@ -138,7 +138,7 @@ class ExpenseSubmitPathTest(TestCase):
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('15'))
         self.assertFalse(Earmark.objects.filter(
-            price_list_item=self.pli, job=self.job).exists())
+            inventory_item=self.pli, job=self.job).exists())
 
     def test_submit_does_not_create_placeholder_task(self):
         from apps.jobs.models import Task
@@ -185,7 +185,7 @@ class ExpenseRejectStockReceiptTest(TestCase):
             accounting_category=self.cat,
             new_material={
                 'job_id': self.job.pk, 'description': 'x',
-                'quantity': qty, 'price_list_item_id': self.pli.pk,
+                'quantity': qty, 'inventory_item_id': self.pli.pk,
             },
         )
 
@@ -247,7 +247,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
             new_material={
                 'job_id': self.job.pk, 'description': 'wrench',
                 'quantity': Decimal('1'), 'price': Decimal('10'),
-                'price_list_item_id': self.pli_noninv.pk,
+                'inventory_item_id': self.pli_noninv.pk,
             },
         )
 
@@ -260,7 +260,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
             new_material={
                 'job_id': self.job.pk, 'description': 'miscellaneous',
                 'quantity': Decimal('1'), 'price': Decimal('8'),
-                # no price_list_item_id
+                # no inventory_item_id
             },
         )
 
@@ -271,7 +271,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
         # (submit does not bump QOH for the cost-material path — only stock
         # receipts do — so QOH stays at its starting value throughout.)
         self.assertTrue(Earmark.objects.filter(
-            price_list_item=self.pli_noninv, job=self.job).exists())
+            inventory_item=self.pli_noninv, job=self.job).exists())
         self.pli_noninv.refresh_from_db()
         qoh_before = self.pli_noninv.qty_on_hand
         ExpenseService.reject(expense=exp, actor=self.user)
@@ -281,7 +281,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
         self.assertEqual(self.pli_noninv.qty_on_hand, qoh_before,
                          'QOH unchanged (cost material never bumped it)')
         self.assertFalse(Earmark.objects.filter(
-            price_list_item=self.pli_noninv, job=self.job).exists(),
+            inventory_item=self.pli_noninv, job=self.job).exists(),
             'Earmark released after reject')
 
     def test_reject_freeform_material_deletes_without_qoh_change(self):

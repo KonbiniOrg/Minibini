@@ -45,7 +45,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """A pending task-less inventoried material prevents work_complete."""
         MaterialService.create_on_job(
             job=self.job, task=None, description='pending mat',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         with self.assertRaises(ValidationError):
             JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
@@ -54,7 +54,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """A task-less material with full restock (quantity == 0) does not block."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='restocked mat',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         user = User.objects.create_user(username='wcg_user', password='x')
         Expense.objects.create(
@@ -75,7 +75,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """Consuming a task-less material clears the gate."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='to consume',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         MaterialService.consume(m)
         # Should NOT raise
@@ -91,7 +91,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         )
         MaterialService.create_on_job(
             job=self.job, task=None, description='non-inv pending',
-            quantity=Decimal('1'), price_list_item=non_inv_pli,
+            quantity=Decimal('1'), inventory_item=non_inv_pli,
         )
         with self.assertRaises(ValidationError):
             JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
@@ -102,7 +102,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         cat = AccountingCategory.objects.first()
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='no-item consume',
-            quantity=Decimal('1'), price_list_item=None,
+            quantity=Decimal('1'), inventory_item=None,
             accounting_category=cat,
         )
         MaterialService.consume(m)
@@ -114,7 +114,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """Auto-advance to work_complete does not fire when loose materials are pending."""
         MaterialService.create_on_job(
             job=self.job, task=None, description='blocking mat',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
         # Drive task completion the same way production does.

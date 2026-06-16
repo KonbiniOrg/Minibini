@@ -27,7 +27,7 @@ class POSerializerMaterialTest(TestCase):
     def test_linked_line_exposes_effective_job_and_material(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         data = POLineItemSerializer(line).data
         self.assertEqual(data['effective_job_id'], self.job.pk)
@@ -39,7 +39,7 @@ class POSerializerMaterialTest(TestCase):
     def test_unlinked_line_has_null_material_and_null_effective_job(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk,
         )
         data = POLineItemSerializer(line).data
         self.assertIsNone(data['effective_job_id'])
@@ -48,7 +48,7 @@ class POSerializerMaterialTest(TestCase):
     def test_serializer_does_not_expose_job_field(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk,
         )
         data = POLineItemSerializer(line).data
         self.assertNotIn('job', data)

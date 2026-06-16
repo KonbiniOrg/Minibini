@@ -204,7 +204,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         )[0]
         mat = Material.objects.create(
             job=self.job, task=self.task,
-            price_list_item=None,
+            inventory_item=None,
             accounting_category=cat,
             description='no-item',
             quantity=Decimal('2.00'),
@@ -753,7 +753,7 @@ class StartStopWorkTest(BaseTestCase):
             qty_sold=Decimal('0.00'), accounting_category=cat,
         )
         mat = Material.objects.create(
-            job=self.job, task=self.task, price_list_item=non_inv,
+            job=self.job, task=self.task, inventory_item=non_inv,
             description='non-inv', quantity=Decimal('2.00'),
         )
         # The task was promoted by worker2's start, so its material is consumed.

@@ -207,7 +207,7 @@ class BillFromPurchaseOrderTest(TestCase):
 
         # Create accounting category and price list items for line items
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.price_list_item1 = InventoryItem.objects.create(
+        self.inventory_item1 = InventoryItem.objects.create(
             code="PLI-001",
             description="Test Item 1",
             units="ea",
@@ -215,7 +215,7 @@ class BillFromPurchaseOrderTest(TestCase):
             selling_price=15.00,
             accounting_category=self.category,
         )
-        self.price_list_item2 = InventoryItem.objects.create(
+        self.inventory_item2 = InventoryItem.objects.create(
             code="PLI-002",
             description="Test Item 2",
             units="kg",
@@ -227,7 +227,7 @@ class BillFromPurchaseOrderTest(TestCase):
         # Add line items to PO
         PurchaseOrderLineItem.objects.create(
             purchase_order=self.po,
-            price_list_item=self.price_list_item1,
+            inventory_item=self.inventory_item1,
             description="Test Item 1",
             qty=5,
             units="ea",
@@ -236,7 +236,7 @@ class BillFromPurchaseOrderTest(TestCase):
         )
         PurchaseOrderLineItem.objects.create(
             purchase_order=self.po,
-            price_list_item=self.price_list_item2,
+            inventory_item=self.inventory_item2,
             description="Test Item 2",
             qty=3,
             units="kg",
@@ -287,7 +287,7 @@ class BillFromPurchaseOrderTest(TestCase):
         for po_line_item in po_line_items:
             BillLineItem.objects.create(
                 bill=bill,
-                price_list_item=po_line_item.price_list_item,
+                inventory_item=po_line_item.inventory_item,
                 description=po_line_item.description,
                 qty=po_line_item.qty,
                 units=po_line_item.units,
@@ -322,7 +322,7 @@ class BillFromPurchaseOrderTest(TestCase):
         for po_line_item in po_line_items:
             BillLineItem.objects.create(
                 bill=bill,
-                price_list_item=po_line_item.price_list_item,
+                inventory_item=po_line_item.inventory_item,
                 description=po_line_item.description,
                 qty=po_line_item.qty,
                 units=po_line_item.units,

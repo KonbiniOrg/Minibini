@@ -92,7 +92,7 @@ class InventoryItemAccountingCategoryTest(TestCase):
             accounting_category=self.product_type
         )
 
-        product_items = self.product_type.price_list_items.all()
+        product_items = self.product_type.inventory_items.all()
         self.assertEqual(product_items.count(), 2)
         self.assertIn(item1, product_items)
         self.assertIn(item2, product_items)

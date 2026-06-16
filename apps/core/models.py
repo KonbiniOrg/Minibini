@@ -330,7 +330,7 @@ class BaseLineItem(models.Model):
     # reserved for a future "service PO" feature). EstimateLineItem and
     # InvoiceLineItem do not carry a task FK; they link to their source
     # atoms via EstimateLineItemSource / InvoiceLineItemSource respectively.
-    price_list_item = models.ForeignKey('inventory.InventoryItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
+    inventory_item = models.ForeignKey('inventory.InventoryItem', on_delete=models.PROTECT, null=True, blank=True)  # Changed from CASCADE - protect historical documents
     line_number = models.PositiveIntegerField(blank=True, null=True)
     qty = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, default='none')
@@ -357,7 +357,7 @@ class BaseLineItem(models.Model):
         abstract = True
 
     def clean(self):
-        """Validate that line item cannot have both task and price_list_item.
+        """Validate that line item cannot have both task and inventory_item.
 
         Only applies to subclasses that still carry a task FK (e.g. PurchaseOrderLineItem,
         BillLineItem). EstimateLineItem dropped its task FK in favour of EstimateLineItemSource.
@@ -370,10 +370,10 @@ class BaseLineItem(models.Model):
 
         if task_fk is not None:
             has_task = self.task is not None
-            has_price_item = self.price_list_item is not None
+            has_price_item = self.inventory_item is not None
 
             if has_task and has_price_item:
-                raise ValidationError("LineItem cannot have both task and price_list_item")
+                raise ValidationError("LineItem cannot have both task and inventory_item")
 
     def _populate_from_pli(self):
         """Copy description/units/accounting_category from linked InventoryItem if not already set.
@@ -381,13 +381,13 @@ class BaseLineItem(models.Model):
         Price is NOT populated here because purchase vs selling price is a
         business decision — services set the correct price for each entity type.
         """
-        if self.price_list_item:
+        if self.inventory_item:
             if not self.description:
-                self.description = self.price_list_item.description
+                self.description = self.inventory_item.description
             if self.units == 'none' or not self.units:
-                self.units = self.price_list_item.units
-            if not self.accounting_category and self.price_list_item.accounting_category:
-                self.accounting_category = self.price_list_item.accounting_category
+                self.units = self.inventory_item.units
+            if not self.accounting_category and self.inventory_item.accounting_category:
+                self.accounting_category = self.inventory_item.accounting_category
 
     def save(self, *args, **kwargs):
         """Override save to ensure validation is always run and handle automatic line numbering."""
@@ -432,8 +432,8 @@ class BaseLineItem(models.Model):
         """Get the name of the source (task name or price list item description)."""
         if self.task:
             return self.task.name
-        elif self.price_list_item:
-            return self.price_list_item.description
+        elif self.inventory_item:
+            return self.inventory_item.description
         return "No source"
 
 

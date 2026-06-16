@@ -5,7 +5,7 @@ from apps.jobs.models import Job
 
 class NewMaterialSerializer(serializers.Serializer):
     """Inline new-material descriptor — created atomically with the expense.
-    An inventoried `price_list_item_id` routes to a stock receipt (QOH ↑);
+    An inventoried `inventory_item_id` routes to a stock receipt (QOH ↑);
     otherwise a consumable material is created at `price`."""
     job_id = serializers.IntegerField()
     description = serializers.CharField(required=False, allow_blank=True, default='')
@@ -15,7 +15,7 @@ class NewMaterialSerializer(serializers.Serializer):
     price = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=False, allow_null=True, default=None,
     )
-    price_list_item_id = serializers.IntegerField(
+    inventory_item_id = serializers.IntegerField(
         required=False, allow_null=True, default=None,
     )
 

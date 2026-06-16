@@ -148,7 +148,7 @@ class POLineItemPLIPopulationTest(BaseTestCase):
         )
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/line-items/',
-            {'price_list_item': self.pli.pk, 'qty': 5},
+            {'inventory_item': self.pli.pk, 'qty': 5},
             format='json',
         )
         self.assertIn(response.status_code, [200, 201])
@@ -164,7 +164,7 @@ class POLineItemPLIPopulationTest(BaseTestCase):
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/line-items/',
             {
-                'price_list_item': self.pli.pk,
+                'inventory_item': self.pli.pk,
                 'qty': 5,
                 'description': 'Custom description',
                 'price': '99.99',

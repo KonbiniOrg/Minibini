@@ -19,8 +19,8 @@ beforeEach(() => {
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: CATS });
     return Promise.resolve({ results: [] });
   });
-  api.post.mockResolvedValue({ price_list_item_id: 99 });
-  api.patch.mockResolvedValue({ price_list_item_id: 1 });
+  api.post.mockResolvedValue({ inventory_item_id: 99 });
+  api.patch.mockResolvedValue({ inventory_item_id: 1 });
 });
 
 describe('InventoryItemForm', () => {
@@ -46,7 +46,7 @@ describe('InventoryItemForm', () => {
 
   it('edits via PATCH and can demote to a lot (uncheck catalog)', async () => {
     const item = {
-      price_list_item_id: 5, code: 'OLD', description: 'd', units: 'ea',
+      inventory_item_id: 5, code: 'OLD', description: 'd', units: 'ea',
       purchase_price: '4.00', selling_price: '8.00', is_catalog: true, is_active: true,
       accounting_category: 7,
     };

@@ -93,7 +93,7 @@ class PlanMaterialCRUDTest(TestCase):
         )
         response = self.client.post(
             f'/api/plan-tasks/{self.plan_task.pk}/materials/',
-            {'price_list_item': pli.pk, 'quantity': '3.00'},
+            {'inventory_item': pli.pk, 'quantity': '3.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)

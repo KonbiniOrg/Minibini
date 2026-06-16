@@ -10,7 +10,7 @@ from apps.invoicing.models import InvoiceLineItem
 
 class UnitsDefaultTest(BaseTestCase):
 
-    def test_price_list_item_defaults_to_none(self):
+    def test_inventory_item_defaults_to_none(self):
         category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         pli = InventoryItem.objects.create(code='TEST-UNIT-PLI', accounting_category=category)
         self.assertEqual(pli.units, 'none')

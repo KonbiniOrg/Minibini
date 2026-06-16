@@ -39,26 +39,26 @@ class MergeServiceTest(TestCase):
             accounting_category=self.cat)
         task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
         m = Material.objects.create(
-            job=self.job, task=task, price_list_item=self.discard,
+            job=self.job, task=task, inventory_item=self.discard,
             description='x', quantity=Decimal('1'))
         InventoryService.merge(self.keep.pk, self.discard.pk)
         m.refresh_from_db()
-        self.assertEqual(m.price_list_item_id, self.keep.pk)
+        self.assertEqual(m.inventory_item_id, self.keep.pk)
 
     def test_merge_sum_collapses_colliding_earmarks(self):
-        Earmark.objects.create(price_list_item=self.keep, job=self.job, quantity=Decimal('2'))
-        Earmark.objects.create(price_list_item=self.discard, job=self.job, quantity=Decimal('3'))
+        Earmark.objects.create(inventory_item=self.keep, job=self.job, quantity=Decimal('2'))
+        Earmark.objects.create(inventory_item=self.discard, job=self.job, quantity=Decimal('3'))
         InventoryService.merge(self.keep.pk, self.discard.pk)
-        ems = Earmark.objects.filter(price_list_item=self.keep, job=self.job)
+        ems = Earmark.objects.filter(inventory_item=self.keep, job=self.job)
         self.assertEqual(ems.count(), 1)
         self.assertEqual(ems.first().quantity, Decimal('5'))  # 2 + 3 collapsed
 
     def test_merge_repoints_noncolliding_earmark(self):
         other_job = Job.objects.create(job_number='J-MRG-2', contact=self.contact)
-        Earmark.objects.create(price_list_item=self.discard, job=other_job, quantity=Decimal('3'))
+        Earmark.objects.create(inventory_item=self.discard, job=other_job, quantity=Decimal('3'))
         InventoryService.merge(self.keep.pk, self.discard.pk)
         self.assertTrue(Earmark.objects.filter(
-            price_list_item=self.keep, job=other_job).exists())
+            inventory_item=self.keep, job=other_job).exists())
 
     def test_merge_unit_mismatch_blocked(self):
         self.discard.units = 'foot'
@@ -95,10 +95,10 @@ class MergeServiceTest(TestCase):
             business=biz, po_number='PO-MRG', status=PurchaseOrder.STATUS_DRAFT)
         poli = PurchaseOrderLineItem.objects.create(
             purchase_order=po, description='x', qty=Decimal('1'),
-            price=Decimal('1'), price_list_item=self.discard)
+            price=Decimal('1'), inventory_item=self.discard)
         wt = WorkTemplate.objects.create(template_name='WT-MRG')
         tma = TemplateMaterialAssociation.objects.create(
-            work_template=wt, price_list_item=self.discard, quantity=Decimal('1'))
+            work_template=wt, inventory_item=self.discard, quantity=Decimal('1'))
 
         # Would raise ProtectedError if any PROTECT ref were left dangling.
         InventoryService.merge(self.keep.pk, self.discard.pk)
@@ -106,8 +106,8 @@ class MergeServiceTest(TestCase):
         self.assertFalse(InventoryItem.objects.filter(pk=self.discard.pk).exists())
         poli.refresh_from_db()
         tma.refresh_from_db()
-        self.assertEqual(poli.price_list_item_id, self.keep.pk)
-        self.assertEqual(tma.price_list_item_id, self.keep.pk)
+        self.assertEqual(poli.inventory_item_id, self.keep.pk)
+        self.assertEqual(tma.inventory_item_id, self.keep.pk)
 
     def test_merge_records_both_history_entries(self):
         InventoryService.merge(self.keep.pk, self.discard.pk)

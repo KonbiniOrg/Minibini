@@ -68,7 +68,7 @@
           return;
         }
         await api.post(`${apiBase}/line-items/`, {
-          price_list_item: selectedPLI.price_list_item_id,
+          inventory_item: selectedPLI.inventory_item_id,
           qty: qty || '1',
         });
       } else {
@@ -116,7 +116,7 @@
         <p>
           <label><strong>Price List Item *</strong></label><br>
           <PriceListItemPicker
-            value={selectedPLI?.price_list_item_id}
+            value={selectedPLI?.inventory_item_id}
             selectedItem={selectedPLI}
             onSelect={handlePLISelect}
           />

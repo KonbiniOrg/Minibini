@@ -14,7 +14,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     queryset = InventoryItem.objects.all().order_by('code')
     serializer_class = InventoryItemSerializer
     lookup_field = 'pk'
-    destroy_response_message = 'Price list item deleted.'
+    destroy_response_message = 'Inventory item deleted.'
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -106,7 +106,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
 
 class MaterialViewSet(viewsets.ModelViewSet):
-    queryset = Material.objects.select_related('price_list_item').all()
+    queryset = Material.objects.select_related('inventory_item').all()
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
@@ -125,7 +125,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if instance.price_list_item_id is not None and (
+        if instance.inventory_item_id is not None and (
             'unit_cost' in serializer.validated_data
             or 'sell_price' in serializer.validated_data
         ):

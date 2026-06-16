@@ -333,7 +333,7 @@ class EstimateServiceAddLineItemTest(EstimatesTestBase):
         li = EstimateService.add_line_item_from_pli(
             self.est.pk, pli.pk, qty=Decimal('20.00'),
         )
-        self.assertEqual(li.price_list_item, pli)
+        self.assertEqual(li.inventory_item, pli)
         self.assertEqual(li.price, Decimal('10.00'))
         self.assertEqual(li.description, 'Welding rod')
 
