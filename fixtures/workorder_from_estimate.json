@@ -245,7 +245,7 @@
             "units": "ea",
             "description": "Test Product Bundle - Complete Assembly",
             "price": "540.00",
-            "price_list_item": null,
+            "inventory_item": null,
             "task": 100
         }
     },
@@ -259,7 +259,7 @@
             "units": "hours",
             "description": "Material delivery",
             "price": "80.00",
-            "price_list_item": null,
+            "inventory_item": null,
             "task": 103
         }
     },
@@ -273,7 +273,7 @@
             "units": "hours",
             "description": "Quality check",
             "price": "60.00",
-            "price_list_item": null,
+            "inventory_item": null,
             "task": 104
         }
     }

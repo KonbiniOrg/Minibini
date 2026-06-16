@@ -2,7 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from .models import PurchaseOrder, Bill, PurchaseOrderLineItem
 from apps.contacts.models import Contact, Business
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsFieldMixin, units_choices
 
@@ -74,8 +74,8 @@ class POManualLineItemForm(UnitsFieldMixin, forms.ModelForm):
 
 class POPriceListLineItemForm(forms.Form):
     """Form for creating a PO line item from a Price List Item"""
-    price_list_item = forms.ModelChoiceField(
-        queryset=PriceListItem.objects.all(),
+    inventory_item = forms.ModelChoiceField(
+        queryset=InventoryItem.objects.all(),
         required=True,
         label="Price List Item"
     )
@@ -89,15 +89,15 @@ class POPriceListLineItemForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+        self.fields['inventory_item'].queryset = InventoryItem.objects.filter(is_active=True)
 
 
 
 class BillLineItemForm(forms.Form):
     """Form for creating a Bill line item - either from Price List or manual entry"""
     # Option to select from price list OR enter manually
-    price_list_item = forms.ModelChoiceField(
-        queryset=PriceListItem.objects.all(),
+    inventory_item = forms.ModelChoiceField(
+        queryset=InventoryItem.objects.all(),
         required=False,
         label="Price List Item (optional)",
         help_text="Select a price list item or enter details manually below"
@@ -142,19 +142,19 @@ class BillLineItemForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+        self.fields['inventory_item'].queryset = InventoryItem.objects.filter(is_active=True)
         self.fields['units'].choices = units_choices()
 
     def clean(self):
-        """Validate that either price_list_item is selected OR manual fields are filled"""
+        """Validate that either inventory_item is selected OR manual fields are filled"""
         cleaned_data = super().clean()
-        price_list_item = cleaned_data.get('price_list_item')
+        inventory_item = cleaned_data.get('inventory_item')
         description = cleaned_data.get('description')
         price = cleaned_data.get('price')
         accounting_category = cleaned_data.get('accounting_category')
 
         # If no price list item, description, price, and accounting_category are required
-        if not price_list_item:
+        if not inventory_item:
             if not description:
                 raise forms.ValidationError(
                     'Either select a Price List Item or provide a Description for manual entry'

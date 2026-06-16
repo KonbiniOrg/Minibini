@@ -25,4 +25,18 @@ describe('JobDetail', () => {
     expect(getByText(/JOB #5/)).toBeInTheDocument();
     expect(getByText('Deliverables')).toBeInTheDocument();
   });
+
+  it('counts material-less expenses in the Materials pillar', () => {
+    const job = {
+      job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress',
+      materials: [],
+    };
+    const expenses = { results: [
+      { id: 1, amount: '40.00', material: null, description: 'FedEx',
+        accounting_category_name: 'Freight' },
+    ] };
+    const { getByText } = render(JobDetail, { props: { job, expenses } });
+    // Pillar count (materials 0 + expenses 1) shows 1.
+    expect(getByText('1')).toBeInTheDocument();
+  });
 });

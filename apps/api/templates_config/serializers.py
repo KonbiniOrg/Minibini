@@ -46,7 +46,7 @@ class TemplateMaterialAssociationSerializer(serializers.ModelSerializer):
         model = TemplateMaterialAssociation
         fields = [
             'template_material_association_id', 'work_template',
-            'price_list_item', 'template_task_association',
+            'inventory_item', 'template_task_association',
             'quantity', 'sort_order',
         ]
         read_only_fields = ['template_material_association_id', 'work_template']

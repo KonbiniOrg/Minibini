@@ -94,7 +94,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/work-templates/',
         '/api/task-templates/',
         '/api/accounting-categories/',
-        '/api/price-list-items/',
+        '/api/inventory/',
         '/api/invoices/',
         '/api/purchase-orders/',
         '/api/bills/',
@@ -118,7 +118,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/businesses/1/',
         '/api/businesses/1/history/',
         '/api/payment-terms/1/',
-        '/api/price-list-items/1/',
+        '/api/inventory/1/',
         '/api/invoices/1/',
         '/api/invoices/1/line-items/',
         '/api/purchase-orders/1/',
@@ -162,7 +162,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
             '/api/jobs/',
             '/api/contacts/',
             '/api/estimates/',
-            '/api/price-list-items/',
+            '/api/inventory/',
             '/api/search/?q=test',
         ]
         for url in sample_urls:
@@ -372,9 +372,9 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
     ]
 
     PRICE_LIST_WRITE_ENDPOINTS = [
-        ('post', '/api/price-list-items/', {'code': 'TST', 'description': 'Test'}),
-        ('patch', '/api/price-list-items/1/', {'description': 'Updated'}),
-        ('delete', '/api/price-list-items/1/', None),
+        ('post', '/api/inventory/', {'code': 'TST', 'description': 'Test'}),
+        ('patch', '/api/inventory/1/', {'description': 'Updated'}),
+        ('delete', '/api/inventory/1/', None),
     ]
 
     def _all_manage_financials_endpoints(self):

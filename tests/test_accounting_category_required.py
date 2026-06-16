@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import Job
 
@@ -19,7 +19,7 @@ class _Setup(APITestCase):
         cls.user.user_permissions.add(perm)
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI', units='sheets', description='X',
             purchase_price=Decimal('10'), selling_price=Decimal('20'),
             accounting_category=cls.cat,
@@ -58,7 +58,7 @@ class FreeformMaterialRequiresCategoryTests(_Setup):
         resp = self.client.post(
             f'/api/jobs/{self.job.pk}/materials/',
             {
-                'price_list_item': self.pli.pk,
+                'inventory_item': self.pli.pk,
                 'quantity': '1',
             },
             format='json',

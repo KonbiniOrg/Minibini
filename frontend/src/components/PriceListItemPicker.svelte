@@ -35,7 +35,7 @@
     }
     if (value) {
       if (allItems.length > 0) {
-        const found = allItems.find(i => i.price_list_item_id === value);
+        const found = allItems.find(i => i.inventory_item_id === value);
         if (found) selectedLabel = `${found.code} — ${found.description}`;
       } else {
         fetchAllItems();
@@ -52,7 +52,7 @@
       // Fetch all PLIs without pagination. The catalog is expected to be
       // small (a couple hundred items at most). If it grows very large,
       // this should switch to server-side search with SearchFilter.
-      const resp = await api.get('/api/price-list-items/?page_size=9999&is_active=true');
+      const resp = await api.get('/api/inventory/?page_size=9999&is_active=true');
       allItems = resp.results || resp;
     } catch (e) {
       allItems = [];

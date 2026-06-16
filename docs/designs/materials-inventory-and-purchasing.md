@@ -1,7 +1,7 @@
 # Materials, Inventory & Purchasing
 
 This document is the consolidated reference for the inventory catalog
-(`PriceListItem`), the materials lifecycle (`Material` / `PlanMaterial`,
+(`InventoryItem`), the materials lifecycle (`Material` / `PlanMaterial`,
 earmarks, consumption state), the configurable units system, and purchasing
 (POs, Bills, receiving, PO ↔ Material integration).
 
@@ -30,13 +30,13 @@ The data model splits into three layers:
 
 | Layer | Models | Purpose |
 |---|---|---|
-| Catalog | `PriceListItem` | Reusable items with prices, units, accounting category, optional QOH tracking |
+| Inventory | `InventoryItem` (was `PriceListItem`) | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
 | Plan & instance | `MaterialBase` (abstract) → `PlanMaterial`, `Material`, `TemplateMaterialAssociation` | Materials live on Worksheets (`PlanMaterial`), Jobs (`Material`), or Templates (`TemplateMaterialAssociation`) |
 | Procurement | `PurchaseOrder`, `PurchaseOrderLineItem`, `Bill`, `BillLineItem` | Order goods from vendors, receive them, record vendor invoices |
 
-A `Material` on a Job represents a *commitment*. Inventoried Materials
-hold an `Earmark` against the linked PriceListItem from the moment the
-Material is created. Earmarks are released by Consume (decrements QOH and
+A `Material` on a Job represents a *commitment*. Every item-backed Material
+holds an `Earmark` against the linked InventoryItem from the moment the
+Material is created (universal tracking). Earmarks are released by Consume (decrements QOH and
 shrinks the earmark) or by Restock (shrinks the earmark, leaves QOH
 alone).
 
@@ -56,56 +56,96 @@ Files:
 
 ---
 
-## 2. PriceListItem (catalog)
+## 2. InventoryItem (catalog items & transient lots)
 
-`apps/inventory/models.py` — `PriceListItem`, `db_table='price_list'`.
+`apps/inventory/models.py` — `InventoryItem`, `db_table='inventory_item'`.
 
-Catalog of reusable items that can flow into estimates, invoices, POs,
-bills, and Materials.
+> **2026-06 catalog-vs-lots reframe.** The model was `PriceListItem`
+> (`db_table='price_list'`) and the flag was `is_inventoried`. The reframe
+> renamed both and flipped the model: **quantity tracking is now universal** —
+> every physical thing in the shop is tracked while it's here — and a catalog
+> flag distinguishes *types* you reorder from one-time *lots*. A follow-up
+> completed the rename so nothing says "price_list" anymore: the API route is now
+> `/api/inventory/`, the FK field on Material/Earmark/line items is `inventory_item`,
+> and the PK is `inventory_item_id` (all formerly `price_list_item*`). See
+> `docs/plans/2026-06-14-inventory-catalog-vs-lots-spec.md`.
+
+Every physical item flows through this one table — catalog items that estimates,
+invoices, POs, bills, and Materials reference, and transient lots minted behind
+freeform Materials.
 
 ### Fields
 
 | Field | Type | Notes |
 |---|---|---|
-| `code` | `CharField(50)` unique | Primary user-visible identifier |
+| `code` | `CharField(50)` unique | Primary user-visible identifier (free-text; no enforced supplier-code policy) |
 | `description` | `TextField` | |
 | `units` | `CharField(50)` default `'none'` | Validated against `units_list` Configuration |
 | `purchase_price` | `Decimal(10,2)` | Vendor cost |
-| `selling_price` | `Decimal(10,2)` | What we charge |
-| `qty_on_hand` | `Decimal(10,2)` | Physical stock; only meaningful when `is_inventoried` |
+| `selling_price` | `Decimal(10,2)` | What we charge — defaulted at creation from `purchase_price × default_material_markup_percent` (see Pricing) |
+| `qty_on_hand` | `Decimal(10,2)` | Physical stock (tracked for **all** items now) |
 | `qty_sold` | `Decimal(10,2)` | Lifetime cumulative; bumped on Consume |
-| `qty_wasted` | `Decimal(10,2)` | Bumped by negative `manual_adjustment` |
+| `qty_wasted` | `Decimal(10,2)` | Bumped by negative `manual_adjustment` / write-off |
 | `is_active` | bool | Soft-delete; pickers default to `?is_active=true` |
-| `is_inventoried` | bool | Drives QOH/earmark behavior |
+| `is_catalog` | bool, default **True** | Catalog *type* (reorderable, survives at QOH 0) vs transient *lot* |
 | `accounting_category` | FK PROTECT | Required |
 
 Derived:
 
 - `qty_earmarked` — `Sum(earmark_set.quantity)`
 - `qty_available` — `qty_on_hand - qty_earmarked`
+- `is_finished_lot` — `not is_catalog and qty_on_hand == 0 and no earmarks`
 
-### Inventoried vs non-inventoried
+### Catalog items vs transient lots
 
-- **Inventoried** (`is_inventoried=True`): every unit tracked through
-  QOH, earmarks, Consume/Restock bookkeeping. Receiving a PO line bumps
-  QOH; Consume decrements it; Restock releases the earmark only.
-- **Non-inventoried** (`is_inventoried=False`): no QOH tracking, no
-  earmarks. Materials still exist for billing and AC routing, but the
-  state machine's QOH side effects are no-ops.
+- **Catalog item** (`is_catalog=True`): a reorderable type. Survives at
+  QOH 0, never auto-hidden, allocation uncapped. All pre-reframe rows migrated
+  to catalog. Items created via the inventory/price-list UI default to catalog.
+- **Transient lot** (`is_catalog=False`): one specific batch, minted behind a
+  freeform goods-Material (or a freeform cost-item expense). Tracks QOH/earmarks
+  like any item, but when it becomes a **finished lot** (QOH 0 + no earmarks) it
+  is **hidden** from the active list and allocation pickers (`?include_finished=true`
+  reveals it for merge/write-off). The earmark clause keeps a freshly-minted
+  demand lot (QOH 0 + a live earmark) visible until consumed or released.
+
+### Pricing — markup at creation
+
+`InventoryService.create_item` derives `selling_price` from
+`purchase_price × (1 + default_material_markup_percent/100)` **once at
+creation**, only when no explicit non-zero sell is given. Config default `'0'`
+→ sell == cost; editable in the SPA at **Settings → Catalog** (the
+`MaterialMarkupSetting` component, `PATCH /api/settings/`). `update_item` never
+re-applies it — the stored value is authoritative. Materials copy cost+sell from
+the item at creation (only-if-unset), so they stay self-contained when a lot is
+later hidden.
+
+### Lifecycle: hide-on-spend, write-off, merge
+
+- **Hide-on-spend.** Finished lots are hidden, **not deleted** — line items
+  (`EstimateLineItem`/`InvoiceLineItem`/`PurchaseOrderLineItem`/`BillLineItem`)
+  and `TemplateMaterialAssociation` reference items via **PROTECT**, so physical
+  deletion would raise `ProtectedError`. There is no pruner; the filter is derived.
+- **Write-off** (`InventoryService.write_off`, `POST …/{pk}/write-off/`): zeroes
+  QOH, books the remainder to `qty_wasted` (recording the wastage history entry
+  first), making the lot a finished/hidden lot.
+- **Merge** (`InventoryService.merge`, `POST …/merge/`): the manual dedup tool —
+  folds a discard item into a keep item (QOH + aggregates), repoints every
+  reference, deletes the discard. Hard-blocks unit mismatch and catalog-as-discard.
 
 ### Cascade rules
 
-Line items reference `PriceListItem` with `PROTECT` (preserves
-historical documents). `MaterialBase.price_list_item` uses `SET_NULL`
-so a PLI deletion doesn't destroy in-progress Materials, but in
-practice deletion is gated by `can_be_deleted`:
+Line items and `TemplateMaterialAssociation` reference the item with `PROTECT`
+(preserves historical documents — and is why finished lots are hidden, not
+deleted). `MaterialBase.inventory_item` and `Expense.stock_pli` use `SET_NULL`.
+`can_be_deleted` still gates the (rare) hard delete:
 
 ```python
-PriceListItem.can_be_deleted  # False if any line item, earmark, or adjustment exists
+InventoryItem.can_be_deleted  # False if any line item or earmark references it
 ```
 
-Catalog admins use the `is_active` soft-delete instead of hard
-deletion.
+Catalog admins use the `is_active` soft-delete instead of hard deletion. Write
+access to inventory items requires **either** `can_manage_financials` **or**
+`can_manage_config`.
 
 ---
 
@@ -124,7 +164,7 @@ the template side.
 | `units` | `CharField(50)` default `'none'` | |
 | `unit_cost` | `Decimal(10,2)` default 0 | What we paid (or expect to pay) |
 | `sell_price` | `Decimal(10,2)` default 0 | What we charge |
-| `price_list_item` | FK SET_NULL nullable | Optional PLI link |
+| `inventory_item` | FK SET_NULL nullable | Optional PLI link |
 | `accounting_category` | FK PROTECT | Required |
 
 `_populate_from_pli()` (called from `save()`) copies `description`,
@@ -175,6 +215,31 @@ to dedupe `PlanMaterial → Material` on estimate accept.
 - `task.job_id == job_id` when `task` is set
 - `restocked_qty >= 0`
 
+#### `unit_cost` provenance & expenses (cost-model redesign 2026-06-14)
+
+`Material.unit_cost` comes from: PLI catalog (`_populate_from_pli` / carry-over),
+a PO line (`resolve_or_create_for_line(unit_cost=li.price)`), or — for a
+**cost-expense** — the user-entered `price` at creation (`create_on_job`,
+`cost_source='document'`). A **freeform** (no-PLI) actual Material's cost is still
+document-sourced only (no manual typing): `create_on_job`'s `cost_source` guard +
+`MaterialSerializer.validate` + the material-modal disabling the Unit Cost field
+when freeform. PLI materials and `PlanMaterial` estimates are unaffected.
+
+**Expenses & materials** (driven by `ExpenseService`): expenses **never link an
+existing material** — they only create their own (no recost, no clobber, no
+division; the earlier link/unlink machinery was removed). Two modes:
+
+- **Cost expense** → creates one consumable material at the entered `unit_cost`;
+  `Expense.amount` is the job cost (cost-at-purchase). `Material.expenses` is the
+  reverse of `Expense.material`.
+- **Stock receipt** → an **inventoried** PLI purchase bumps QOH
+  (`InventoryService.receive_stock`); **no material is created**. The cost is
+  recognised at **consumption** (the job's own material), not at purchase — so
+  `_spent` excludes stock-receipt expenses (`stock_pli` set). This is what lets a
+  worker "buy the missing 3 sheets" as an expense without double-counting: the
+  receipt tops up QOH, the existing material consumes once. See
+  `docs/designs/invoicing-and-expenses.md` (Expense).
+
 ### PlanMaterial
 
 `apps/inventory/models.py` — `PlanMaterial`, `db_table='plan_materials'`.
@@ -192,7 +257,7 @@ set.
 
 ### PLI-linked vs freeform: the immutability rule
 
-A `Material` (or `PlanMaterial`) with a non-null `price_list_item` is a
+A `Material` (or `PlanMaterial`) with a non-null `inventory_item` is a
 faithful instance of that PLI. The labelling/categorization fields —
 `description`, `units`, `accounting_category` — are populated from the
 PLI at create time and locked thereafter. To change any of those, the
@@ -300,7 +365,7 @@ through `InventoryService._mutate_earmark`.
 
 | Operation | Effect |
 |---|---|
-| `create_on_job(*, job, task=None, ..., price_list_item=None, ...)` | Creates `Material`, calls `_mutate_earmark(pli, job, +quantity)` |
+| `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`, calls `_mutate_earmark(pli, job, +quantity)` |
 | `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` |
 | `restock(material, qty)` | `quantity -= qty`, earmark `-= qty`; manual-add full-restock deletes row; expense-bound bumps `restocked_qty` |
 | `draw_more(material, qty)` | `quantity += qty`, earmark `+= qty`; rejects if expense-bound |
@@ -323,12 +388,12 @@ test setUp where no inventory side effect is wanted.
 
 | Field | Type | Notes |
 |---|---|---|
-| `price_list_item` | FK CASCADE | |
+| `inventory_item` | FK CASCADE | |
 | `job` | FK CASCADE | |
 | `quantity` | `Decimal(10,2)` | Aggregate per (PLI, Job) |
 | `created_date` | auto_now_add | |
 
-`unique_together = [('price_list_item', 'job')]` — one row per (PLI,
+`unique_together = [('inventory_item', 'job')]` — one row per (PLI,
 Job) pair. Per-PLI-per-Job aggregate, not per-Material.
 
 ### `_mutate_earmark` is the sole writer
@@ -337,7 +402,8 @@ Job) pair. Per-PLI-per-Job aggregate, not per-Material.
 InventoryService._mutate_earmark(pli, job, delta)
 ```
 
-- No-op if `pli is None` or `not pli.is_inventoried`
+- No-op only if `pli is None` (universal tracking — earmarks apply to every
+  item-backed material, catalog or transient lot)
 - Upsert if delta would make the earmark positive
 - Delete the row if delta brings it to zero or below
 
@@ -363,9 +429,10 @@ Receipt only bumps QOH.
 
 ### Earmark lifecycle on a Job
 
-- **Created** when an inventoried Material is added to the Job (any
+- **Created** when an item-backed Material is added to the Job (any
   task or job-scoped path: manual add, template population,
-  worksheet-to-job copy, PO line creation, expense submit).
+  worksheet-to-job copy, PO line creation, expense submit). Under universal
+  tracking this is every goods-Material, not just inventoried ones.
 - **Released** as Materials Consume/Restock through normal flows. The
   `Job → work_complete` transition runs
   `InventoryService.release_earmarks_for_job(job)` to sweep any
@@ -376,21 +443,27 @@ Receipt only bumps QOH.
   current regime where every Material write goes through
   `MaterialService.create_on_job`, this is effectively a no-op.
 
-### InventoryAdjustment trail
+### Inventory history trail (InventoryHistory)
 
-`apps/inventory/models.py` — `InventoryAdjustment`,
-`db_table='inv_adjustments'`. Audit row written by:
+The old write-only `InventoryAdjustment` model (`inv_adjustments`, CASCADE) was
+**retired** in the reframe and replaced by an **`InventoryHistory`** partition on
+the `HistoryEntry` family (`apps/core/models.py`, `db_table='inventory_history'`,
+routed by `object_type='inventoryitem'` in `apps/core/history.py`). Because
+`HistoryEntry` references its target by loose `object_type`+`object_id` (no FK),
+the trail **survives item deletion/hiding**; each entry snapshots the item's
+`code`/`description` in `changes` so a hidden/deleted lot stays legible.
 
-- `InventoryService.manual_adjustment` (positive or negative; tracks
-  waste on negative)
-- `PurchaseOrderReceivingService.receive_items` (bumps QOH for
-  inventoried PO lines)
-- `PurchaseOrderReceivingService.reverse_receipt` (decrements QOH;
-  negative adjustment row)
+Every QOH event records an `action` entry via
+`InventoryService._record_qoh_history` (qty change, resulting QOH, reason,
+job/document, code/description snapshot, user):
 
-`receive_ad_hoc_purchase` and `reverse_ad_hoc_purchase` (the
-expense-bound paths) currently do *not* write `InventoryAdjustment`
-rows.
+- `manual_adjustment` / `write_off` (waste on negative)
+- `receive_ad_hoc_purchase` / `reverse_ad_hoc_purchase`
+- `PurchaseOrderReceivingService.receive_items` / `reverse_receipt`
+- `merge` (two entries: discard "merged into KEEP", keep "merged from DISCARD")
+
+Review lenses: per-item (the item's `InventoryHistory`), per-job (Material's
+existing `@history` → JobHistory), and global/searchable.
 
 ---
 
@@ -481,7 +554,7 @@ attaches to the corresponding generated PlanTask/Task.
 | Field | Type | Notes |
 |---|---|---|
 | `work_template` | FK CASCADE | |
-| `price_list_item` | FK PROTECT | **Required** — no freeform template materials |
+| `inventory_item` | FK PROTECT | **Required** — no freeform template materials |
 | `template_task_association` | FK SET_NULL nullable | Pairs to a template task association for instance pairing |
 | `quantity` | `Decimal(10,2)` | Per-instance quantity at generation time |
 | `sort_order` | int | |
@@ -665,8 +738,8 @@ for any line with a pending linked Material. Preconditions: PO is
 
 `reverse_receipt` is a data-correction op. Resets `qty_received` to 0
 (plus `qty_cancelled = 0`, `received_by = None`, `received_date = None`,
-`receipt_note = ''`). For inventoried PLIs, decrements `qty_on_hand` by
-the reversed quantity and writes a negative `InventoryAdjustment`.
+`receipt_note = ''`). For any item-backed line, decrements `qty_on_hand` by
+the reversed quantity and records a negative `InventoryHistory` action entry.
 
 If the line has a linked Material that is `consumed`, the reversal
 raises `ValidationError("linked Material has been consumed. Restock the
@@ -696,12 +769,12 @@ receipt; receipt is recorded as bookkeeping only.
 ### Three-step resolver
 
 `MaterialService.resolve_or_create_for_line(po_line, *, job=None,
-price_list_item=None, qty, unit_cost, description,
+inventory_item=None, qty, unit_cost, description,
 accounting_category=None, material_id=None)`:
 
 1. **Explicit** — if `material_id` is given, link that Material
    (validates: same job if both supplied, pending, unlinked).
-2. **Claim** — if `job` and `price_list_item` given, look for pending
+2. **Claim** — if `job` and `inventory_item` given, look for pending
    Materials on `(job, pli)` with no `po_line_item`. If exactly one
    matches, link it.
 3. **Create** — otherwise call `MaterialService.create_on_job(...)` and
@@ -988,11 +1061,11 @@ each Material row.
 
 ## 17. UI: Inventory and settings
 
-PriceListItem CRUD UI is part of the settings surface
-(`routes/SettingsPage.svelte`). PLI pickers across the SPA use
-`frontend/src/components/PriceListItemPicker.svelte` (catalog) and
-`frontend/src/components/CatalogPicker.svelte` (when a price-list view
-is needed in-line).
+Inventory-item CRUD + browse UI is the SPA `#/inventory` page
+(`routes/inventory/InventoryListPage.svelte`), plus the markup config under
+Settings → Catalog. Item pickers across the SPA use
+`frontend/src/components/PriceListItemPicker.svelte` (to be renamed
+`InventoryItemPicker`; see the generic-picker LATER note).
 
 `PriceListItemPicker` fetches the full active catalog
 (`?page_size=9999&is_active=true`) and filters client-side per

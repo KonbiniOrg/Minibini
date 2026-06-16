@@ -963,10 +963,11 @@ payload stays cheap; the header falls back to `$—` when a value is `null`.
 - **Estimate** — `compose_agreement(job).grand_total` when the job was ever
   approved (keyed off the immutable `Job.start_date`; see data-constraints §1.8);
   otherwise the highest-version estimate's `Σ qty×price` (0 if none).
-- **Spent** — expenses billed to the job (`Expense.material.job`, excluding
-  `rejected`) + consumed materials with **no** linked expense at cost
-  (`Σ quantity×unit_cost`; materials acquired via an expense are represented by
-  that expense, avoiding double-count) + labor (`Σ blep hours on the job ×
+- **Spent** — all non-rejected expenses attributed to the job (`Expense.job` —
+  the direct cost anchor, covering both material-linked and material-less
+  expenses; overhead `job=null` is excluded) + consumed materials with **no**
+  linked expense at cost (`Σ quantity×unit_cost`; materials acquired via an
+  expense are represented by that expense, avoiding double-count) + labor (`Σ blep hours on the job ×
   Configuration['average_labor_cost']`; every logged hour costs the same,
   regardless of the task's RateScheme — labor cost is about hours worked, not how
   the work is billed; a running blep counts its time so far).
@@ -985,6 +986,26 @@ optionally plus estimate for not-yet-actualed lines) is intentionally not built;
 its definition is unsettled. When chosen it slots into `compute_job_financials`
 as one more function and one header column (between Spent and Invoiced) with no
 rework to the other four.
+
+### 9.4 Expenses on the Job UI
+
+Expenses attached to a job (`Expense.job`) surface in two places, fed by
+`/api/expenses/?job=<id>`:
+
+- **Job overview** (`JobDetail`): the **Materials** pillar becomes "Materials &
+  Expenses". Material-less expenses render as their own rows (description,
+  category, amount); a material-linked expense annotates its material's row
+  ("paid $X") rather than getting a duplicate row — keeping the visual count
+  honest. The pillar count includes material-less expenses.
+- **Full task list** (`JobTaskListPage`): material-less expenses render in an
+  "Expenses (no material)" section below the task tree, mirroring how taskless
+  materials surface.
+
+An expense can be **created in place** from the full task list toolbar: an "Add
+Expense" button (next to "Add Material", shown when the job isn't locked) opens
+`ExpenseModal` (a thin overlay around `ExpenseForm`) pre-anchored to the job via
+the form's `initialJob` prop; on save the list reloads so the new expense
+surfaces. Expense create is open to any authenticated user.
 
 ## 10. UI: Task Detail page
 

@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Earmark, Material, PriceListItem
+from apps.inventory.models import Earmark, Material, InventoryItem
 from apps.inventory.services import MaterialService
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.purchasing.services import PurchaseOrderService, PurchaseOrderReceivingService
@@ -20,14 +20,14 @@ class POSeverOnCancelTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=self.cat, is_inventoried=True,
+            selling_price=Decimal('2.00'), accounting_category=self.cat, is_catalog=True,
         )
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
 
     def test_cancel_line_item_with_linked_pending_requires_sever_decision(self):

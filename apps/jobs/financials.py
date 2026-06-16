@@ -92,21 +92,28 @@ def _labor_cost(job):
 def _spent(job):
     """Cash outlay + approximate labor.
 
-    = expenses billed to the job (excluding rejected)
-    + consumed materials with no linked expense, at cost (quantity × unit_cost)
+    = non-rejected, non-stock-receipt expenses attributed to the job
+      (Expense.job), by amount — covers material-bearing and material-less cost
+      expenses (e.g. a shipping fee); overhead (Expense.job null) is excluded, and
+      **stock-receipt expenses are excluded** (an inventoried-PLI purchase is
+      inventory, costed at consumption, not at purchase)
+    + consumed materials with no linked expense, at cost (quantity × unit_cost) —
+      this is where inventoried stock cost lands
     + labor cost.
 
-    A material acquired via an expense is represented by that expense; counting
-    its cost too would double-count, so consumed materials that have any expense
-    are excluded from the materials term.
+    A material acquired via a cost-expense is represented by that expense;
+    counting its cost too would double-count, so consumed materials that have any
+    expense are excluded from the materials term.
     """
     from apps.expenses.models import Expense
     from apps.inventory.models import Material
 
     expenses_total = Expense.objects.filter(
-        material__job=job,
+        job=job,
     ).exclude(
         status=Expense.STATUS_REJECTED,
+    ).exclude(
+        stock_pli__isnull=False,   # stock receipts cost at consumption, not here
     ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0')
 
     consumed_no_expense = Material.objects.filter(

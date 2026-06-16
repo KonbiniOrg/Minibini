@@ -81,7 +81,7 @@
         }
     },
     {
-        "model": "inventory.pricelistitem",
+        "model": "inventory.inventoryitem",
         "pk": 200,
         "fields": {
             "code": "WOOD001",
@@ -96,7 +96,7 @@
         }
     },
     {
-        "model": "inventory.pricelistitem",
+        "model": "inventory.inventoryitem",
         "pk": 201,
         "fields": {
             "code": "FINISH001",
@@ -176,7 +176,7 @@
         "fields": {
             "estimate": 200,
             "task": 200,
-            "price_list_item": null,
+            "inventory_item": null,
             "line_number": 1,
             "qty": "3.00",
             "units": "hours",
@@ -190,7 +190,7 @@
         "fields": {
             "estimate": 200,
             "task": null,
-            "price_list_item": 200,
+            "inventory_item": 200,
             "line_number": 2,
             "qty": "25.00",
             "units": "bd ft",
@@ -204,7 +204,7 @@
         "fields": {
             "estimate": 200,
             "task": null,
-            "price_list_item": 201,
+            "inventory_item": 201,
             "line_number": 3,
             "qty": "2.00",
             "units": "qt",
@@ -218,7 +218,7 @@
         "fields": {
             "estimate": 200,
             "task": null,
-            "price_list_item": null,
+            "inventory_item": null,
             "line_number": 4,
             "qty": "1.00",
             "units": "ea",
@@ -232,7 +232,7 @@
         "fields": {
             "estimate": 200,
             "task": null,
-            "price_list_item": null,
+            "inventory_item": null,
             "line_number": 5,
             "qty": "1.00",
             "units": "ea",

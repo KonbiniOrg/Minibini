@@ -10,7 +10,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import PlanMaterial, Material, Earmark, PriceListItem
+from apps.inventory.models import PlanMaterial, Material, Earmark, InventoryItem
 from apps.jobs.services import JobService
 
 
@@ -30,8 +30,8 @@ class MaterializeWorksheetTest(TestCase):
             first_name='T', last_name='C', email='mw@test.com')
         self.job = Job.objects.create(job_number='JOB-MW', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.pli = PriceListItem.objects.create(
-            code='MW-PLI', accounting_category=self.ac, is_inventoried=True,
+        self.pli = InventoryItem.objects.create(
+            code='MW-PLI', accounting_category=self.ac, is_catalog=True,
             qty_on_hand=Decimal('100'),
         )
         self.pt = PlanTask.objects.create(
@@ -43,7 +43,7 @@ class MaterializeWorksheetTest(TestCase):
         self.pm_attached = PlanMaterial.objects.create(
             est_worksheet=self.ws, plan_task=self.pt, description='Steel',
             quantity=Decimal('10'), units='kg', accounting_category=self.ac,
-            price_list_item=self.pli,
+            inventory_item=self.pli,
         )
         # Task-less material.
         self.pm_loose = PlanMaterial.objects.create(
@@ -74,7 +74,7 @@ class MaterializeWorksheetTest(TestCase):
 
     def test_creates_earmarks_for_inventoried_materials(self):
         JobService.materialize_worksheet_onto_job(self.job, self.ws)
-        earmark = Earmark.objects.get(job=self.job, price_list_item=self.pli)
+        earmark = Earmark.objects.get(job=self.job, inventory_item=self.pli)
         self.assertEqual(earmark.quantity, Decimal('10'))
 
     def test_returns_counts(self):
@@ -88,7 +88,7 @@ class MaterializeWorksheetTest(TestCase):
         self.assertEqual(Task.objects.filter(job=self.job).count(), 1)
         self.assertEqual(Material.objects.filter(job=self.job).count(), 2)
         self.assertEqual(
-            Earmark.objects.filter(job=self.job, price_list_item=self.pli).count(), 1)
+            Earmark.objects.filter(job=self.job, inventory_item=self.pli).count(), 1)
 
     def test_clones_faithfully_when_scheme_superseded(self):
         self.scheme.supersede(name='S-mw-core v2')

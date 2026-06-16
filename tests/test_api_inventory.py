@@ -1,10 +1,10 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 
-class PriceListItemAPITest(BaseTestCase):
+class InventoryItemAPITest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
@@ -12,12 +12,12 @@ class PriceListItemAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
 
-    def test_list_price_list_items(self):
-        response = self.client.get('/api/price-list-items/')
+    def test_list_inventory_items(self):
+        response = self.client.get('/api/inventory/')
         self.assertEqual(response.status_code, 200)
 
-    def test_create_price_list_item(self):
-        response = self.client.post('/api/price-list-items/', {
+    def test_create_inventory_item(self):
+        response = self.client.post('/api/inventory/', {
             'code': 'API-TEST-001',
             'description': 'API test item',
             'units': 'ea',
@@ -27,16 +27,16 @@ class PriceListItemAPITest(BaseTestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201)
 
-    def test_retrieve_price_list_item(self):
-        pli = PriceListItem.objects.first()
+    def test_retrieve_inventory_item(self):
+        pli = InventoryItem.objects.first()
         if pli:
-            response = self.client.get(f'/api/price-list-items/{pli.pk}/')
+            response = self.client.get(f'/api/inventory/{pli.pk}/')
             self.assertEqual(response.status_code, 200)
 
-    def test_update_price_list_item(self):
-        pli = PriceListItem.objects.first()
+    def test_update_inventory_item(self):
+        pli = InventoryItem.objects.first()
         if pli:
-            response = self.client.patch(f'/api/price-list-items/{pli.pk}/', {
+            response = self.client.patch(f'/api/inventory/{pli.pk}/', {
                 'selling_price': '25.00',
             }, format='json')
             self.assertEqual(response.status_code, 200)

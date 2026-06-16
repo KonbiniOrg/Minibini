@@ -101,7 +101,7 @@ class NealsDataConverter:
         self.spine = self.select_spine()
         build.build_seed(self)
         build.build_configuration(self)
-        build.build_price_list_items(self)
+        build.build_inventory_items(self)
         build.build_contacts_and_businesses(self)
         build.build_jobs(self)
         build.build_estimates(self)

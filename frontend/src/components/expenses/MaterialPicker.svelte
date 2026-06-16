@@ -1,173 +1,96 @@
 <script>
-  import { api } from '../../lib/api.js';
+  // What an expense bought (optional). Inventoried PLI → a stock purchase
+  // (adds to inventory; cost flows at consumption). Freeform / non-inventoried
+  // PLI → a consumable material at the entered unit cost. Expenses never link to
+  // an existing material — this only creates new ones.
+  import PriceListItemPicker from '../PriceListItemPicker.svelte';
 
   let {
-    // Bound to parent — the selected material id, or null
-    materialId = $bindable(null),
-    // Bound to parent — if the user inline-creates, these describe the new material
+    jobId = null,
     newMaterial = $bindable(null),
-    // Auto-populated from the expense form — used when creating a new material
     defaultDescription = '',
     defaultAmount = '',
   } = $props();
 
-  let jobQuery = $state('');
-  let jobResults = $state([]);
-  let selectedJob = $state(null);
-  let materials = $state([]);        // flattened across tasks of selected job
-  let loadingMaterials = $state(false);
-  let materialsError = $state('');
+  let adding = $state(false);
+  let pli = $state(null);          // selected PLI object, or null (freeform)
+  let description = $state('');
+  let quantity = $state(1);
+  let unitCost = $state('');
 
-  let newMatJobId = $state(null); // the selected job id
+  let isStock = $derived(!!(pli && pli.is_inventoried));
 
-  function jobDisplayLabel(j) {
-    let label = j.job_number || '';
-    if (j.name) label += ` — ${j.name}`;
-    if (j.contact_name) label += ` (${j.contact_name})`;
-    return label.trim();
+  function startAdd() {
+    adding = true;
+    description = defaultDescription || '';
+    unitCost = defaultAmount || '';
+  }
+  function removeItem() {
+    adding = false; pli = null; description = ''; quantity = 1; unitCost = '';
+  }
+  function onPli(item) {
+    pli = item;
+    if (item && item.description) description = item.description;
   }
 
-  async function searchJobs(e) {
-    jobQuery = e.target.value;
-    if (jobQuery.length < 2) {
-      jobResults = [];
-      return;
+  // Keep the bound newMaterial in sync while drafting (job_id is injected by the
+  // parent form, which owns the job).
+  $effect(() => {
+    if (!adding || !jobId) { newMaterial = null; return; }
+    if (isStock) {
+      newMaterial = {
+        inventory_item_id: pli.inventory_item_id,
+        quantity: Number(quantity) || 1,
+      };
+    } else {
+      newMaterial = {
+        inventory_item_id: pli ? pli.inventory_item_id : null,
+        description,
+        quantity: Number(quantity) || 1,
+        price: unitCost === '' ? null : unitCost,
+      };
     }
-    const data = await api.get('/api/jobs/?search=' + encodeURIComponent(jobQuery));
-    jobResults = (data.results || data).filter(j =>
-      !['completed', 'rejected', 'cancelled'].includes(j.status)
-    );
-  }
-
-  async function pickJob(job) {
-    selectedJob = job;
-    jobQuery = jobDisplayLabel(job);
-    jobResults = [];
-    materialId = null;
-    newMaterial = null;
-    await loadMaterials(job.job_id || job.id);
-  }
-
-  async function loadMaterials(jobId) {
-    loadingMaterials = true;
-    materialsError = '';
-    try {
-      // Fetch the job with its nested tasks
-      const job = await api.get(`/api/jobs/${jobId}/`);
-      newMatJobId = job.job_id || jobId;
-
-      // Flatten materials across the job's tasks. Task materials aren't embedded
-      // in the job serializer, so fetch them per-task via /api/tasks/{id}/materials/.
-      const flat = [];
-      for (const t of (job.tasks || [])) {
-        const taskId = t.task_id || t.id;
-        const taskName = t.name || t.description || `Task #${taskId}`;
-        try {
-          const mats = await api.get(`/api/tasks/${taskId}/materials/`);
-          const matList = mats.results || mats;
-          for (const m of matList) {
-            flat.push({
-              id: m.material_id || m.id,
-              description: m.description,
-              task_name: taskName,
-              quantity: m.quantity,
-              unit: m.units,
-              job_id: newMatJobId,
-            });
-          }
-        } catch (e) {
-          console.warn(`Could not fetch materials for task ${taskId}:`, e.message);
-        }
-      }
-      materials = flat;
-    } catch (err) {
-      materialsError = err.message || 'Could not load materials.';
-    } finally {
-      loadingMaterials = false;
-    }
-  }
-
-  function pickMaterial(m) {
-    materialId = m.id;
-    newMaterial = null;
-  }
-
-  function addNewMaterial() {
-    materialId = null;
-    newMaterial = {
-      job_id: newMatJobId,
-      description: defaultDescription || '',
-      quantity: 1,
-      price: defaultAmount || '',
-    };
-  }
-
-  function clearNewMaterial() {
-    newMaterial = null;
-  }
-
+  });
 </script>
 
 <fieldset>
-  <legend><strong>Link to job (optional)</strong></legend>
+  <legend><strong>Purchased item (optional)</strong></legend>
 
-  <p>
-    <label for="mp-job">Job</label><br>
-    <input
-      id="mp-job"
-      type="text"
-      bind:value={jobQuery}
-      oninput={searchJobs}
-      placeholder="Type job number or customer name"
-    >
-  </p>
+  {#if !jobId}
+    <p><em>Choose a job above to record what this bought. The expense is recorded
+      against the job either way.</em></p>
+  {:else if !adding}
+    <button type="button" onclick={startAdd}>+ Add a purchased item</button>
+  {:else}
+    <p>
+      <label for="mp-pli">Price list item</label><br>
+      <PriceListItemPicker onSelect={onPli} />
+    </p>
 
-  {#if jobResults.length > 0}
-    <ul>
-      {#each jobResults as j (j.job_id || j.id)}
-        <li><button type="button" onclick={() => pickJob(j)}>
-          {jobDisplayLabel(j)}
-        </button></li>
-      {/each}
-    </ul>
-  {/if}
-
-  {#if selectedJob}
-    <p><strong>Material on this job</strong></p>
-
-    {#if loadingMaterials}
-      <p><em>Loading materials...</em></p>
-    {:else if materialsError}
-      <p><em>{materialsError}</em></p>
-    {:else}
-      <div style="border: 1px solid #999; padding: 6px; max-height: 180px; overflow-y: auto">
-        {#each materials as m (m.id)}
-          <button
-            type="button"
-            style="display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid #ddd; padding: 4px; font: inherit; cursor: pointer; background: {materialId === m.id ? '#e8f0fe' : 'transparent'}"
-            onclick={() => pickMaterial(m)}
-          >
-            <strong>{m.description}</strong> — Task: <em>{m.task_name}</em>
-            {#if m.quantity} — qty {m.quantity}{/if}
-          </button>
-        {/each}
-        {#if !newMaterial}
-          <button
-            type="button"
-            style="display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 4px; font: inherit; color: #1a66ff; cursor: pointer"
-            onclick={addNewMaterial}
-          >
-            + Add new material
-          </button>
-        {/if}
-      </div>
-    {/if}
-
-    {#if newMaterial}
+    {#if isStock}
+      <p><em>Inventoried item — recorded as a <strong>stock purchase</strong>
+        (adds to inventory; its cost is charged when the job consumes it).</em></p>
       <p>
-        <em>New material: {newMaterial.description || '(no description)'}</em>
-        — <button type="button" onclick={clearNewMaterial} style="font-size: 12px">remove</button>
+        <label for="mp-qty">Quantity</label><br>
+        <input id="mp-qty" type="number" min="0" step="0.01" bind:value={quantity}>
+      </p>
+    {:else}
+      {#if !pli}
+        <p>
+          <label for="mp-desc">Item description</label><br>
+          <input id="mp-desc" type="text" bind:value={description}>
+        </p>
+      {/if}
+      <p>
+        <label for="mp-qty">Quantity</label><br>
+        <input id="mp-qty" type="number" min="0" step="0.01" bind:value={quantity}>
+      </p>
+      <p>
+        <label for="mp-cost">Unit cost</label><br>
+        <input id="mp-cost" type="number" min="0" step="0.01" bind:value={unitCost}>
       </p>
     {/if}
+
+    <p><button type="button" onclick={removeItem}>remove item</button></p>
   {/if}
 </fieldset>

@@ -9,7 +9,7 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
-from apps.inventory.models import Earmark, PriceListItem
+from apps.inventory.models import Earmark, InventoryItem
 from apps.inventory.services import MaterialService
 from apps.invoicing.models import Invoice
 from apps.jobs.models import Job
@@ -22,8 +22,8 @@ class ReleaseLooseMaterialsHelperTest(TestCase):
             first_name='T', last_name='C', email='t6@c.com',
         )
         self.cat = AccountingCategory.objects.create(name='B6 Cat', code='B6')
-        self.pli = PriceListItem.objects.create(
-            code='I-B6', accounting_category=self.cat, is_inventoried=True,
+        self.pli = InventoryItem.objects.create(
+            code='I-B6', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('20'),
         )
         self.job = Job.objects.create(
@@ -36,7 +36,7 @@ class ReleaseLooseMaterialsHelperTest(TestCase):
     def test_release_loose_materials_restocks_and_reports(self):
         MaterialService.create_on_job(
             job=self.job, task=None, description='loose mat',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         released = JobService.release_loose_materials(self.job)
         self.assertEqual(len(released), 1)
@@ -55,8 +55,8 @@ class InvoiceCompletionConsolidationTest(TestCase):
             first_name='Inv', last_name='C', email='inv6@c.com',
         )
         self.cat = AccountingCategory.objects.create(name='B6 Inv Cat', code='B6I')
-        self.pli = PriceListItem.objects.create(
-            code='I-B6I', accounting_category=self.cat, is_inventoried=True,
+        self.pli = InventoryItem.objects.create(
+            code='I-B6I', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('20'),
         )
 
@@ -84,7 +84,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
     def test_invoice_completion_releases_earmarks(self):
         job = self._job(Job.STATUS_APPROVED)
         Earmark.objects.create(
-            price_list_item=self.pli, job=job, quantity=Decimal('3'),
+            inventory_item=self.pli, job=job, quantity=Decimal('3'),
         )
         self._pay_invoice(job)
         job.refresh_from_db()
@@ -95,7 +95,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
         job = self._job(Job.STATUS_APPROVED)
         MaterialService.create_on_job(
             job=job, task=None, description='loose-on-invoice',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         self._pay_invoice(job)
         job.refresh_from_db()

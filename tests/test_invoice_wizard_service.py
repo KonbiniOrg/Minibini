@@ -8,7 +8,7 @@ from apps.invoicing.services import InvoiceService, InvoiceWizardService, ClaimC
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory, AppState, User
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 
 
 class OpenForJobTest(TestCase):
@@ -145,7 +145,7 @@ class GetSourcePoolTest(TestCase):
             end_time=None,
         )
 
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLYWOOD', description='Plywood 4x8',
             selling_price=Decimal('25.00'),
             accounting_category=self.category,
@@ -156,7 +156,7 @@ class GetSourcePoolTest(TestCase):
             description='Plywood 4x8',
             quantity=Decimal('1.00'),
             sell_price=Decimal('25.00'),
-            price_list_item=self.pli,
+            inventory_item=self.pli,
             accounting_category=self.category,
         )
 
@@ -320,7 +320,7 @@ class AddAtomsToNewLineItemTest(TestCase):
             start_time=start + timezone.timedelta(hours=5),
             end_time=start + timezone.timedelta(hours=6),
         )
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLY', description='Plywood',
             selling_price=Decimal('25.00'),
             accounting_category=self.cat_materials,
@@ -328,7 +328,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.material = Material.objects.create(
             job=self.job, task=self.task, description='Plywood',
             quantity=Decimal('1.00'), sell_price=Decimal('25.00'),
-            price_list_item=self.pli, accounting_category=self.cat_materials,
+            inventory_item=self.pli, accounting_category=self.cat_materials,
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
@@ -361,7 +361,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.units, 'hours')
 
     def test_single_material_atom_copy_over(self):
-        # material has quantity=1.00, sell_price=25.00, linked to a PriceListItem
+        # material has quantity=1.00, sell_price=25.00, linked to a InventoryItem
         # whose units default to 'none' -> qty=1, price=25, units='none'
         atoms = [{'type': 'material', 'id': self.material.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
@@ -902,24 +902,24 @@ class SourcePoolLooseMaterialsTest(TestCase):
         from apps.jobs.models import Job
         from apps.invoicing.models import Invoice
         from apps.invoicing.services import InvoiceWizardService
-        from apps.inventory.models import PriceListItem
+        from apps.inventory.models import InventoryItem
         from apps.inventory.services import MaterialService
         from apps.expenses.models import Expense
         cat = AccountingCategory.objects.create(name='c', code='IWL1')
-        pli = PriceListItem.objects.create(
-            code='I-IWL', accounting_category=cat, is_inventoried=True,
+        pli = InventoryItem.objects.create(
+            code='I-IWL', accounting_category=cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
         job = Job.objects.create(contact=self.contact, job_number='JOB-IW-1')
         m1 = MaterialService.create_on_job(
             job=job, task=None, description='m1',
             quantity=Decimal('3'), sell_price=Decimal('2'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         m2 = MaterialService.create_on_job(
             job=job, task=None, description='fully restocked',
             quantity=Decimal('2'), sell_price=Decimal('2'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         user = User.objects.create(username='iwl_user')
         Expense.objects.create(
@@ -933,7 +933,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         inv = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
         pool = InvoiceWizardService.get_source_pool(inv)
 
-        loose = [g for g in pool['tasks'] if g['task_id'] is None]
+        loose = [g for g in pool['tasks'] if g['name'] == 'Materials (no task)']
         self.assertEqual(len(loose), 1)
         atoms = loose[0]['atoms']
         self.assertEqual([a['id'] for a in atoms], [m1.pk])
@@ -944,18 +944,18 @@ class SourcePoolLooseMaterialsTest(TestCase):
         from apps.core.models import AccountingCategory
         from apps.jobs.models import Job
         from apps.invoicing.services import InvoiceWizardService
-        from apps.inventory.models import PriceListItem
+        from apps.inventory.models import InventoryItem
         from apps.inventory.services import MaterialService
         cat = AccountingCategory.objects.create(name='c', code='IWL2')
-        pli = PriceListItem.objects.create(
-            code='I-IWL2', accounting_category=cat, is_inventoried=True,
+        pli = InventoryItem.objects.create(
+            code='I-IWL2', accounting_category=cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
         job = Job.objects.create(contact=self.contact, job_number='JOB-IW-2')
         m = MaterialService.create_on_job(
             job=job, task=None, description='m',
             quantity=Decimal('5'), sell_price=Decimal('2'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         MaterialService.restock(m, Decimal('2'))
         amount = InvoiceWizardService._atom_computed_amount(m)
@@ -990,16 +990,16 @@ class TaskAttachedPartialRestockTest(TestCase):
             accounting_category=self.cat,
         )
         task = Task.objects.create(job=job, name='work', rate_scheme=scheme)
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
-            is_inventoried=True, selling_price=Decimal('3.00'),
+            is_catalog=True, selling_price=Decimal('3.00'),
             qty_on_hand=Decimal('20'),
         )
         # qty=5, sell=2 per unit; restock 2 → quantity=3, amount=3*2=6
         m = MaterialService.create_on_job(
             job=job, task=task, description='bolts',
             quantity=Decimal('5'), sell_price=Decimal('2.00'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         MaterialService.restock(m, Decimal('2'))
         invoice = Invoice.objects.create(job=job, status=Invoice.STATUS_DRAFT)
@@ -1072,3 +1072,75 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         ]
         li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(li.description, '')
+
+
+class ExpenseAtomTest(TestCase):
+    """Material-less job expenses are billable atoms in the invoice wizard."""
+
+    def setUp(self):
+        from apps.expenses.models import Expense
+        Configuration.objects.create(key='invoice_number_sequence', value='INV-{counter:04d}')
+        AppState.objects.create(key='invoice_counter', value='0')
+        self.user = User.objects.create_user(username='exp_atom', password='pw')
+        self.cat = AccountingCategory.objects.create(name='Freight', is_active=True)
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@e.com', mobile_number='555')
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-EXA-1')
+
+        self.shipping = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('40.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            description='FedEx shipping', job=self.job,
+        )
+        # Material-linked expense: bills via its material, must NOT be offered.
+        self.material = Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='steel',
+            quantity=Decimal('1.00'), unit_cost=Decimal('5.00'))
+        self.linked = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('5.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            job=self.job, material=self.material)
+        # Overhead (no job) + rejected: never offered.
+        self.overhead = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('9.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=None)
+        self.rejected = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('7.00'),
+            purchased_on='2026-04-01', accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=self.job,
+            status=Expense.STATUS_REJECTED)
+
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def _expense_group(self, pool):
+        return next((g for g in pool['tasks'] if g['name'] == 'Expenses'), None)
+
+    def test_expense_compute_amount(self):
+        self.assertEqual(self.shipping.compute_amount(), Decimal('40.00'))
+
+    def test_source_pool_lists_material_less_expenses(self):
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        grp = self._expense_group(pool)
+        self.assertIsNotNone(grp)
+        ids = {a['id'] for a in grp['atoms']}
+        self.assertEqual(ids, {self.shipping.pk})  # not linked/overhead/rejected
+
+    def test_add_expense_atom_creates_line_item(self):
+        atoms = [{'type': 'expense', 'id': self.shipping.pk}]
+        li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(li.qty, Decimal('1'))
+        self.assertEqual(li.price, Decimal('40.00'))  # pass-through cost
+        self.assertTrue(InvoiceLineItemSource.objects.filter(
+            source_type=InvoiceLineItemSource.SOURCE_EXPENSE,
+            source_pk=self.shipping.pk).exists())
+
+    def test_expense_already_invoiced_marked(self):
+        InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'expense', 'id': self.shipping.pk}])
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        atom = self._expense_group(pool)['atoms'][0]
+        self.assertEqual(atom['state'], 'claimed_by_current')

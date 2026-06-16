@@ -15,7 +15,7 @@ class PlanMaterialSerializer(serializers.ModelSerializer):
         model = PlanMaterial
         fields = [
             'plan_material_id', 'description', 'quantity',
-            'unit_cost', 'sell_price', 'price_list_item',
+            'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category', 'units',
         ]
         read_only_fields = fields
@@ -37,7 +37,7 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
         model = PlanMaterial
         fields = [
             'plan_material_id', 'plan_task', 'description', 'quantity',
-            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['plan_material_id']
@@ -51,7 +51,7 @@ class PlanMaterialWriteSerializer(serializers.ModelSerializer):
         # exclude it from the allowlist check.
         scratch = dict(validated_data)
         scratch.pop('plan_task', None)
-        if instance.price_list_item_id is not None:
+        if instance.inventory_item_id is not None:
             enforce_pli_linked_allowlist(
                 instance, scratch, PLI_LINKED_PRICING_ALLOWED,
             )

@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Earmark, Material, PriceListItem
+from apps.inventory.models import Earmark, Material, InventoryItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.purchasing.services import PurchaseOrderService, PurchaseOrderReceivingService
 from apps.core.models import AccountingCategory, Configuration, User, AppState
@@ -19,15 +19,15 @@ class POReverseReceiptWithMaterialTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=cat, is_inventoried=True,
+            selling_price=Decimal('2.00'), accounting_category=cat, is_catalog=True,
             qty_on_hand=Decimal('0.00'),
         )
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         self.po.status = PurchaseOrder.STATUS_ISSUED
         self.po.save()
@@ -38,12 +38,12 @@ class POReverseReceiptWithMaterialTest(TestCase):
     def test_reverse_receipt_with_pending_material_leaves_it_alone(self):
         mat = self.line.linked_material
         original_qty = mat.quantity
-        original_earmark = Earmark.objects.get(price_list_item=self.pli, job=self.job).quantity
+        original_earmark = Earmark.objects.get(inventory_item=self.pli, job=self.job).quantity
         PurchaseOrderReceivingService.reverse_receipt(self.po, self.line.pk, self.user, note='')
         mat.refresh_from_db()
         self.assertEqual(mat.quantity, original_qty)
         self.assertEqual(
-            Earmark.objects.get(price_list_item=self.pli, job=self.job).quantity,
+            Earmark.objects.get(inventory_item=self.pli, job=self.job).quantity,
             original_earmark,
         )
         self.pli.refresh_from_db()

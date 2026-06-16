@@ -10,7 +10,7 @@
     onCancel,
     defaultJob = null,
     materialId = null,
-    prefillMaterial = null,
+    prefill = null,
   } = $props();
 
   let mode = $state('manual'); // 'manual' or 'pli'
@@ -25,29 +25,30 @@
     accounting_category: '',
   });
 
-  // Pre-populate from a Material when this form was opened via the
-  // "Order this material" flow. PLI-backed materials switch to 'pli' mode
-  // (and fetch the PLI to fill description/units/price); PLI-less materials
-  // stay in manual mode and copy description/qty/unit_cost.
+  // Generic prefill when opened via an "order" flow:
+  //   { inventory_item?, qty?, description?, price?, accounting_category? }
+  // An `inventory_item` switches to 'pli' mode and fills from the item; otherwise
+  // the supplied fields seed manual mode. This form knows nothing about Materials
+  // — callers build the prefill (e.g. PO detail derives it from a Material for the
+  // "order this material" flow, or `{inventory_item}` for the inventory "order").
   $effect(() => {
-    if (!prefillMaterial) return;
-    form.qty = String(prefillMaterial.quantity ?? '');
-    if (prefillMaterial.price_list_item) {
+    if (!prefill) return;
+    if (prefill.qty != null && prefill.qty !== '') form.qty = String(prefill.qty);
+    if (prefill.inventory_item) {
       mode = 'pli';
-      api.get(`/api/price-list-items/${prefillMaterial.price_list_item}/`)
+      api.get(`/api/inventory/${prefill.inventory_item}/`)
         .then(pli => { handlePLISelect(pli); })
         .catch(() => {
-          // Fall back to manual mode if PLI fetch fails
+          // Fall back to manual mode if the item fetch fails
           mode = 'manual';
-          form.description = prefillMaterial.description || '';
-          form.price = String(prefillMaterial.unit_cost ?? '');
+          if (prefill.description != null) form.description = prefill.description;
+          if (prefill.price != null) form.price = String(prefill.price);
+          if (prefill.accounting_category) form.accounting_category = prefill.accounting_category;
         });
     } else {
-      form.description = prefillMaterial.description || '';
-      form.price = String(prefillMaterial.unit_cost ?? '');
-      if (prefillMaterial.accounting_category) {
-        form.accounting_category = prefillMaterial.accounting_category;
-      }
+      if (prefill.description != null) form.description = prefill.description;
+      if (prefill.price != null) form.price = String(prefill.price);
+      if (prefill.accounting_category) form.accounting_category = prefill.accounting_category;
     }
   });
 
@@ -66,7 +67,7 @@
     const data = {};
 
     if (mode === 'pli' && selectedPLI) {
-      data.price_list_item = selectedPLI.price_list_item_id;
+      data.inventory_item = selectedPLI.inventory_item_id;
       data.qty = Number(form.qty);
     } else {
       data.description = form.description;
@@ -106,7 +107,7 @@
       <p>
         <label><strong>Price List Item *</strong></label><br>
         <PriceListItemPicker
-          value={selectedPLI?.price_list_item_id}
+          value={selectedPLI?.inventory_item_id}
           selectedItem={selectedPLI}
           onSelect={handlePLISelect}
         />

@@ -76,7 +76,7 @@ def _in_progress_task(job, scheme):
     )
 
 
-def _material(job, task=None, ac=None):
+def _material(job, task=None, ac=None, pli=None):
     if ac is None:
         ac = AccountingCategory.objects.first()
     return Material.objects.create(
@@ -86,6 +86,7 @@ def _material(job, task=None, ac=None):
         unit_cost=Decimal('5.00'),
         sell_price=Decimal('10.00'),
         accounting_category=ac,
+        inventory_item=pli,
     )
 
 
@@ -371,11 +372,18 @@ class FlatMaterialPatchOnHoldTest(OnHoldAPIGuardBase):
     (which bypasses the guard entirely).
     """
 
-    def _make_on_hold_job_with_material(self):
+    def _make_on_hold_job_with_material(self, with_pli=False):
         job = _make_job(self.contact, [
             Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
         ])
-        mat = _material(job, ac=self.ac)
+        pli = None
+        if with_pli:
+            from apps.inventory.models import InventoryItem
+            pli = InventoryItem.objects.create(
+                code='ONHOLD-PLI', description='guard pli',
+                purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
+                accounting_category=self.ac)
+        mat = _material(job, ac=self.ac, pli=pli)
         job.status = Job.STATUS_ON_HOLD
         job.save()
         job.refresh_from_db()
@@ -383,7 +391,9 @@ class FlatMaterialPatchOnHoldTest(OnHoldAPIGuardBase):
         return job, mat
 
     def test_patch_material_pricing_returns_400_when_job_on_hold(self):
-        job, mat = self._make_on_hold_job_with_material()
+        # PLI-linked so the pricing patch reaches the on-hold guard (a freeform
+        # material would be rejected first by the freeform-cost guard).
+        job, mat = self._make_on_hold_job_with_material(with_pli=True)
         url = f'/api/materials/{mat.pk}/'
         response = self.client.patch(url, {'unit_cost': '9.00'}, format='json')
         self.assert_400_on_hold(response)

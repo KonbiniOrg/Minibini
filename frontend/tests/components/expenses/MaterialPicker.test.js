@@ -8,37 +8,27 @@ import MaterialPicker from '@/components/expenses/MaterialPicker.svelte';
 
 beforeEach(() => {
   api.get.mockReset();
-  api.get.mockImplementation((url) => {
-    if (url.startsWith('/api/jobs/?search=')) {
-      return Promise.resolve({ results: [{ job_id: 1, job_number: 'JOB-1', name: 'Widget', status: 'in_progress' }] });
-    }
-    if (url === '/api/jobs/1/') return Promise.resolve({ job_id: 1, tasks: [{ task_id: 10, name: 'Cut' }] });
-    if (url === '/api/tasks/10/materials/') {
-      return Promise.resolve({ results: [{ material_id: 100, description: 'Steel', quantity: 5, units: 'kg' }] });
-    }
-    return Promise.resolve({ results: [] });
-  });
+  api.get.mockResolvedValue({ results: [] }); // PriceListItemPicker catalog
 });
 
-describe('MaterialPicker', () => {
-  it('searches jobs once the query is long enough', async () => {
-    const { getByLabelText, findByText } = render(MaterialPicker);
-    await fireEvent.input(getByLabelText('Job'), { target: { value: 'wid' } });
-    expect(await findByText('JOB-1 — Widget')).toBeInTheDocument();
+describe('MaterialPicker (expense purchased item)', () => {
+  it('prompts to choose a job when none is selected', async () => {
+    const { findByText } = render(MaterialPicker, { props: { jobId: null } });
+    expect(await findByText(/Choose a job above/)).toBeInTheDocument();
   });
 
-  it('loads the job materials after picking a job', async () => {
-    const { getByLabelText, findByText } = render(MaterialPicker);
-    await fireEvent.input(getByLabelText('Job'), { target: { value: 'wid' } });
-    await fireEvent.click(await findByText('JOB-1 — Widget'));
-    expect(await findByText(/Steel/)).toBeInTheDocument();
+  it('reveals freeform item fields after "Add"', async () => {
+    const { getByText, getByLabelText } = render(MaterialPicker, { props: { jobId: 1 } });
+    await fireEvent.click(getByText('+ Add a purchased item'));
+    expect(getByLabelText('Item description')).toBeInTheDocument();
+    expect(getByLabelText('Quantity')).toBeInTheDocument();
+    expect(getByLabelText('Unit cost')).toBeInTheDocument();
   });
 
-  it('queues a new material', async () => {
-    const { getByLabelText, findByText } = render(MaterialPicker);
-    await fireEvent.input(getByLabelText('Job'), { target: { value: 'wid' } });
-    await fireEvent.click(await findByText('JOB-1 — Widget'));
-    await fireEvent.click(await findByText('+ Add new material'));
-    expect(await findByText(/New material/)).toBeInTheDocument();
+  it('does not offer an existing-material list (no joining)', async () => {
+    const { getByText, queryByText } = render(MaterialPicker, { props: { jobId: 1 } });
+    await fireEvent.click(getByText('+ Add a purchased item'));
+    // The control only creates new items; it never lists existing materials.
+    expect(queryByText(/existing material/i)).toBeNull();
   });
 });

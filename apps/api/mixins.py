@@ -175,7 +175,7 @@ class LineItemMixin:
 
         service = self.line_item_service_class
         data = request.data.copy()
-        pli_id = data.get('price_list_item')
+        pli_id = data.get('inventory_item')
         has_manual_fields = data.get('description') or data.get('price')
 
         try:

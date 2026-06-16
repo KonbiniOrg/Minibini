@@ -11,7 +11,7 @@ from tests.base import BaseTestCase
 from apps.core.models import AccountingCategory, User
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.contacts.models import Business
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.estimates.models import Estimate, EstimateLineItem
 
 
@@ -133,7 +133,7 @@ class POLineItemPLIPopulationTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         self.business = Business.objects.first()
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='TEST-PLI-LI',
             description='Widget from catalog',
             units='ea',
@@ -148,7 +148,7 @@ class POLineItemPLIPopulationTest(BaseTestCase):
         )
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/line-items/',
-            {'price_list_item': self.pli.pk, 'qty': 5},
+            {'inventory_item': self.pli.pk, 'qty': 5},
             format='json',
         )
         self.assertIn(response.status_code, [200, 201])
@@ -164,7 +164,7 @@ class POLineItemPLIPopulationTest(BaseTestCase):
         response = self.client.post(
             f'/api/purchase-orders/{po.po_id}/line-items/',
             {
-                'price_list_item': self.pli.pk,
+                'inventory_item': self.pli.pk,
                 'qty': 5,
                 'description': 'Custom description',
                 'price': '99.99',

@@ -341,7 +341,9 @@ Tracks two kinds of business expenses:
 | `payment_method` | CharField — `'company'` or `'personal'` | Two values, no other options. |
 | `payment_account_id` | CharField(50), blank | References `Configuration['qbo_payment_accounts'][*].qbo_account_id`. **Required for company**, **forbidden for personal** (validated in `clean()`). |
 | `reference_number` | CharField(50), blank | Check number, confirmation number, etc. Always optional. |
-| `material` | FK Material (SET_NULL, nullable, `expenses`) | Optional job-costing link. `SET_NULL` because the expense outlives any particular material link. |
+| `job` | FK Job (SET_NULL, nullable, `expenses`) | **The cost anchor.** `null` = overhead. Job P&L groups expenses by this directly. `SET_NULL` mirrors `material` (the financial record outlives a hard-deleted job, becoming overhead). |
+| `material` | FK Material (SET_NULL, nullable, `expenses`) | The ONE consumable material this expense *created* (cost-expense mode), or null. Expenses never link an existing material. `material.job` must equal `job`. |
+| `stock_pli` / `stock_qty` | FK PriceListItem (inventoried) + Decimal | Stock-receipt mode: an inventoried purchase that bumped QOH. Mutually exclusive with `material`; `amount` is not job-costed (cost-at-consumption). |
 | `status` | CharField — see machine | Default `submitted`. |
 | `qbo_id` | CharField(50), blank | Set when the QBO push succeeds (company-paid only — personal expenses' QBO IDs live on their reimbursement batch). |
 | `qbo_sync_error` | TextField, blank | |
@@ -353,8 +355,76 @@ Tracks two kinds of business expenses:
 `clean()` enforces:
 - Personal: `purchased_by` required, `payment_account_id` must be blank.
 - Company: `payment_account_id` required.
+- If `material` and `job` are both set, `material.job == job` (consistency).
 
 The model is **not** decorated with `@history` — Expense changes do not write to the audit log automatically.
+
+### Job anchor + the two expense modes (cost-model redesign 2026-06-14)
+
+A Job is the cost anchor (`Expense.job`; `null` = overhead). A single `amount`;
+**expenses never link to an existing material** — they only create their own. An
+expense is one of two modes (see `docs/plans/2026-06-14-expenses-cost-model-redesign.md`):
+
+- **Cost expense** — optionally creates ONE consumable **material** (freeform or
+  non-inventoried PLI) at the user-entered `unit_cost` (no division, no recost).
+  The expense `amount` is the job cost (cost-at-purchase).
+- **Stock receipt** — an **inventoried** PLI purchase: `stock_pli` + `stock_qty`
+  bump QOH (`InventoryService.receive_stock`); **no consumable material**. The
+  `amount` is inventory, **not** job-costed — cost flows at **consumption** (the
+  job's own material consuming the stock), same as a PO.
+
+Modes are mutually exclusive (validated). An inventoried `new_material` is routed
+to a stock receipt automatically.
+
+- **Job P&L** (`apps/jobs/financials.py` `_spent`) = non-rejected, **non-stock-
+  receipt** expenses by `amount` (overhead `job=null` excluded) + consumed
+  materials with no expense, at cost (where inventoried stock cost lands) + labor.
+  Money is counted exactly once.
+- **Plywood top-up** (need 10, have 7, buy 3 as a stock-receipt expense): QOH
+  7→10, the 10-sheet material consumes once at cost; overage stays as stock. No
+  double-count. The consume short-stock error suggests reducing the material and
+  splitting the remainder.
+
+Backfill migration `expenses/0002` set `job` from `material.job` for existing
+rows; `expenses/0003` added the stock-receipt fields. (Earlier recost/clobber/
+link-existing machinery was removed in the 2026-06-14 rework.)
+
+### Editability and the invoiced freeze
+
+Expenses are **fully editable after entry** (no reason-gating) — correcting a
+wrong job is the same as any other edit. Moving a material-linked expense to
+another job moves its material too (composing `InventoryService.unconsume` →
+move earmark → re-consume for a consumed inventoried material). The one hard
+lock: an expense is **immutable while it — or its material — is on a
+non-cancelled invoice** (`ExpenseService._assert_not_invoiced`, checked in
+`update`/`delete`). To edit a billed expense, remove it from the invoice first.
+`reject()`'s consumed-material wall still applies to *rejection* (not to editing).
+
+A second money lock covers reimbursement: once an expense is **reimbursed** (in a
+batch — the person has been paid), `_assert_reimbursed_money_unchanged` blocks
+changes to `amount` / `payment_method` / `payment_account_id` / `purchased_by`,
+and `delete()` is refused. Cost-attribution (`job`, `material`) and clerical
+fields stay editable. To change a paid amount, unwind the reimbursement first
+(`ReimbursementService.delete` flips the expenses back to `submitted`).
+
+### Billing: expense as a billable atom
+
+A **material-less** job expense is a first-class `BillableAtom` in the invoice
+wizard, alongside Task charges and Materials (`Expense.compute_amount()` returns
+`amount`). The wizard's source pool exposes an **Expenses** group (material-less,
+non-rejected expenses on the job); `InvoiceWizardService` atom hooks
+(`_resolve_atom`/`_atom_source_type`/`_atom_units`/`_atom_category`/
+`_atom_description`/`_atom_qty_and_price`/`_atom_detail`) handle the `'expense'`
+type, and `InvoiceLineItemSource` gained `SOURCE_EXPENSE`.
+
+- **Pass-through cost:** a line built from an expense atom gets `qty=1`,
+  `price=amount`; the invoicer edits the line to set the actual sell price (mark
+  up / round / zero to absorb). Cost vs. billing stay separate.
+- **No double-billing:** material-*linked* expenses are **not** offered as atoms
+  — they bill through their material. So "material-less" is the precise trigger.
+- **Already-invoiced:** once on a non-cancelled invoice, the expense shows
+  `claimed_by_*` in the pool (not removed) — same as Materials/Tasks. This is
+  also exactly what freezes the expense (see above).
 
 ### Status machine
 
@@ -417,6 +487,8 @@ The previous `can_approve_expenses` permission atom is retired. `apps/api/permis
 
 `entered_by` is always the logged-in user. `purchased_by` is who physically made the purchase. Same person for self-submissions; different when an admin enters expenses on behalf of someone (e.g., from a pile of receipts). There is no `submitted_by` or `approved_by`.
 
+In the UI, `ExpenseForm` shows the **Purchased by** picker (defaulting to the current user) only to `can_manage_financials` holders — entering an expense *for someone else* is a financials capability. Everyone else's expense is implicitly their own (the picker is hidden). The task-list "Expenses (no material)" table shows a Purchased-by column.
+
 ### Reimbursement link
 
 `Expense.reimbursement` is null until the expense is batched. `ReimbursementService.create_batch` flips `submitted` → `reimbursed` and sets the FK. Cascade rules: a Reimbursement cannot be deleted while expenses point at it (PROTECT); the `delete` service path clears the FK first.
@@ -472,8 +544,8 @@ See `docs/designs/quickbooks-integration.md`. One `Purchase` per batch, with one
 
 | Method | Responsibility |
 |---|---|
-| `submit(*, entered_by, payment_method, amount, purchased_on, accounting_category, description='', payment_account_id='', reference_number='', purchased_by=None, material=None, new_material=None) -> Expense` | Atomic create. Inline-creates a Material via `MaterialService.create_on_job` if `new_material` is provided. Calls `_push_and_set_status` for company-paid (sets `synced` or `sync_failed`); leaves personal as `submitted`. |
-| `update(*, expense, actor, **fields) -> Expense` | Whitelist of editable fields: amount, purchased_on, description, accounting_category, payment_method, payment_account_id, reference_number, purchased_by, material. Calls `_resync` if `expense.qbo_id` is set. |
+| `submit(*, entered_by, payment_method, amount, purchased_on, accounting_category, description='', payment_account_id='', reference_number='', purchased_by=None, new_material=None, job=None, stock_pli=None, stock_qty=None) -> Expense` | Atomic create. `new_material` with an inventoried PLI → a stock receipt (QOH ↑, no material); otherwise a consumable material at the entered cost. No existing-material linking. Calls `_push_and_set_status` for company-paid; leaves personal `submitted`. |
+| `update(*, expense, actor, **fields) -> Expense` | Editable fields: amount, purchased_on, description, accounting_category, payment_method, payment_account_id, reference_number, purchased_by, job, **stock_qty** (adjusts the receipt's QOH by the delta). `material` is not editable post-create. Guards: invoiced-freeze + reimbursed-money lock; a linked material follows a job change. Calls `_resync` if `expense.qbo_id`. |
 | `delete(*, expense, actor)` | Voids the QBO Purchase if `qbo_id` and not in a batch. Hard-deletes the row. (Reimbursed expenses' QBO state is owned by the batch, so this path doesn't void QBO for them.) |
 | `reject(*, expense, actor) -> Expense` | Personal + `submitted` only. Unwinds materials (earmark, ad-hoc receipt, delete) — refuses if any material is `consumed`. Sets `STATUS_REJECTED`. |
 | `retry_sync(*, expense, actor) -> Expense` | `sync_failed` only. Re-pushes via `_push_and_set_status`. |

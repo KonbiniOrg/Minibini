@@ -8,7 +8,7 @@ def generate_job_statement_pdf(invoice):
     Returns bytes containing the PDF.
     """
     line_items = invoice.invoicelineitem_set.select_related(
-        'accounting_category', 'price_list_item'
+        'accounting_category', 'inventory_item'
     ).order_by('line_number')
 
     subtotal = sum(item.total_amount for item in line_items)

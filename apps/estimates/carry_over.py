@@ -6,7 +6,7 @@ the Job (Tasks/TaskCharges, Materials). For direct-estimate line items with
 template refs (no worksheet), creates equivalent atoms from the templates.
 Idempotent:
   - Worksheet path: keyed on Task.source_plan_task (OneToOne FK)
-  - Direct line item path: keyed on Task.source_template / Material.price_list_item
+  - Direct line item path: keyed on Task.source_template / Material.inventory_item
 """
 from django.db import transaction
 
@@ -45,7 +45,7 @@ class AtomCarryOverService:
             if li.source_template_id and not li.sources.exists():
                 if AtomCarryOverService._create_task_from_line_item(li, job):
                     tasks_created += 1
-            elif li.price_list_item_id and not li.sources.exists():
+            elif li.inventory_item_id and not li.sources.exists():
                 if AtomCarryOverService._create_material_from_line_item(li, job):
                     materials_created += 1
 
@@ -74,8 +74,8 @@ class AtomCarryOverService:
     @staticmethod
     def _create_material_from_line_item(line_item, job):
         from apps.inventory.models import Material
-        pli = line_item.price_list_item
-        if Material.objects.filter(job=job, price_list_item=pli).exists():
+        pli = line_item.inventory_item
+        if Material.objects.filter(job=job, inventory_item=pli).exists():
             return False
         Material.objects.create(
             job=job,
@@ -83,7 +83,7 @@ class AtomCarryOverService:
             quantity=line_item.qty,
             unit_cost=pli.purchase_price,
             sell_price=pli.selling_price,
-            price_list_item=pli,
+            inventory_item=pli,
             accounting_category=pli.accounting_category,
         )
         return True

@@ -57,7 +57,7 @@ class BillLineItemManualEntryTest(TestCase):
         self.assertEqual(line_item.qty, Decimal('5.00'))
         self.assertEqual(line_item.units, "hours")
         self.assertEqual(line_item.price, Decimal('100.00'))
-        self.assertIsNone(line_item.price_list_item)
+        self.assertIsNone(line_item.inventory_item)
         self.assertIsNone(line_item.task)
 
     def test_manual_line_item_total_amount(self):
@@ -74,7 +74,7 @@ class BillLineItemManualEntryTest(TestCase):
         self.assertEqual(line_item.total_amount, Decimal('255.00'))
 
     def test_bill_line_item_form_allows_manual_entry(self):
-        """Test that BillLineItemForm accepts manual entry without price_list_item."""
+        """Test that BillLineItemForm accepts manual entry without inventory_item."""
         # Get or create a line item type for the test
         service_type, _ = AccountingCategory.objects.get_or_create(
             code='SVC',
@@ -91,12 +91,12 @@ class BillLineItemManualEntryTest(TestCase):
         self.assertTrue(form.is_valid())
 
     def test_bill_line_item_form_requires_description_for_manual_entry(self):
-        """Test that BillLineItemForm requires description when no price_list_item."""
+        """Test that BillLineItemForm requires description when no inventory_item."""
         form = BillLineItemForm(data={
             'qty': '5.00',
             'units': 'ea',
             'price': '10.00'
-            # Missing description and price_list_item
+            # Missing description and inventory_item
         })
 
         self.assertFalse(form.is_valid())

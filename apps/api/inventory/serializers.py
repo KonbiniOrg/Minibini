@@ -1,31 +1,31 @@
 from decimal import Decimal
 from rest_framework import serializers
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.core.units import UnitsField
 
 
-class PriceListItemSerializer(serializers.ModelSerializer):
+class InventoryItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     qty_earmarked = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     qty_available = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
-        model = PriceListItem
+        model = InventoryItem
         fields = [
-            'price_list_item_id', 'code', 'units', 'description',
+            'inventory_item_id', 'code', 'units', 'description',
             'purchase_price', 'selling_price',
             'qty_on_hand', 'qty_sold', 'qty_wasted',
             'qty_earmarked', 'qty_available',
-            'is_active', 'is_inventoried', 'accounting_category',
+            'is_active', 'is_catalog', 'accounting_category',
         ]
         read_only_fields = [
-            'price_list_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',
+            'inventory_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',
         ]
 
 
 class MaterialSerializer(serializers.ModelSerializer):
     is_expense_bound = serializers.BooleanField(read_only=True)
-    price_list_item_is_inventoried = serializers.SerializerMethodField()
+    inventory_item_is_catalog = serializers.SerializerMethodField()
     po_line_item_id = serializers.SerializerMethodField()
     po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
@@ -42,9 +42,9 @@ class MaterialSerializer(serializers.ModelSerializer):
         fields = [
             'material_id', 'job', 'task',
             'description', 'quantity', 'unit_cost', 'sell_price',
-            'price_list_item', 'accounting_category',
+            'inventory_item', 'accounting_category',
             'consumption_state', 'restocked_qty',
-            'is_expense_bound', 'price_list_item_is_inventoried',
+            'is_expense_bound', 'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
@@ -52,13 +52,30 @@ class MaterialSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'material_id', 'job', 'task',
             'consumption_state', 'restocked_qty', 'is_expense_bound',
-            'price_list_item_is_inventoried',
+            'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_order', 'qty_on_hand',
         ]
 
-    def get_price_list_item_is_inventoried(self, obj):
-        return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Freeform (no-PLI) actual materials get their cost from a document
+        # (Expense/PO), never typed manually. (PLI-linked materials are exempt.)
+        instance = getattr(self, 'instance', None)
+        has_pli = attrs.get(
+            'inventory_item', getattr(instance, 'inventory_item', None),
+        ) is not None
+        if 'unit_cost' in attrs and not has_pli:
+            uc = attrs.get('unit_cost')
+            if uc and uc != Decimal('0.00'):
+                raise serializers.ValidationError({
+                    'unit_cost': 'A freeform material’s cost comes from a linked '
+                                 'expense or PO, not manual entry.'
+                })
+        return attrs
+
+    def get_inventory_item_is_catalog(self, obj):
+        return bool(obj.inventory_item and obj.inventory_item.is_catalog)
 
     def get_po_line_item_id(self, obj):
         return obj.po_line_item_id
@@ -90,15 +107,20 @@ class MaterialSerializer(serializers.ModelSerializer):
             return '0'
         if obj.po_line_item_id:
             return str(obj.po_line_item.qty_received)
-        if obj.price_list_item_id and obj.price_list_item.is_inventoried:
-            return str(obj.quantity)
+        if obj.inventory_item_id:
+            # The item's real physical stock — NOT the material's required qty.
+            # Universal tracking: every item-backed material reports its item's
+            # QOH (catalog or transient lot), so the overview's "needs more /
+            # order" check sees a genuine shortfall instead of required==on_hand.
+            # Earmark-aware availability is surfaced separately (qty_available).
+            return str(obj.inventory_item.qty_on_hand)
         return '0'
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (
             enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
         )
-        if instance.price_list_item_id is not None:
+        if instance.inventory_item_id is not None:
             enforce_pli_linked_allowlist(
                 instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
             )

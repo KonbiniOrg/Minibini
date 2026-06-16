@@ -8,7 +8,7 @@ from apps.core.models import Configuration, AccountingCategory, User
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material, PlanMaterial, PriceListItem, Earmark
+from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
 from apps.deliverables.models import Deliverable
 from apps.jobs.services import JobService
 
@@ -46,16 +46,16 @@ class DuplicateJobTestBase(BaseTestCase):
         )
         self.category = AccountingCategory.objects.create(name='Material', code='DUPMAT')
         self.scheme = _make_scheme('a')
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='DUP.PLY', description='Plywood', units='sheets',
             qty_on_hand=Decimal('20.00'), purchase_price=Decimal('45.00'),
-            selling_price=Decimal('90.00'), is_inventoried=True,
+            selling_price=Decimal('90.00'), is_catalog=True,
             accounting_category=self.category,
         )
-        self.screws = PriceListItem.objects.create(
+        self.screws = InventoryItem.objects.create(
             code='DUP.SCR', description='Screws', units='ea',
             qty_on_hand=Decimal('50.00'), purchase_price=Decimal('8.00'),
-            selling_price=Decimal('12.00'), is_inventoried=True,
+            selling_price=Decimal('12.00'), is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -76,12 +76,12 @@ class DuplicateJobTestBase(BaseTestCase):
             parent_task=self.task_a,
         )
         self.material_attached = Material.objects.create(
-            job=self.source, task=self.task_a, price_list_item=self.plywood,
+            job=self.source, task=self.task_a, inventory_item=self.plywood,
             quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         self.material_loose = Material.objects.create(
-            job=self.source, task=None, price_list_item=self.screws,
+            job=self.source, task=None, inventory_item=self.screws,
             quantity=Decimal('2.00'), unit_cost=Decimal('8.00'),
             sell_price=Decimal('12.00'),
         )
@@ -140,8 +140,8 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
             self.source, contact=self.contact, path='approved')
         mats = Material.objects.filter(job=new_job)
         self.assertEqual(mats.count(), 2)
-        attached = mats.get(price_list_item=self.plywood)
-        loose = mats.get(price_list_item=self.screws)
+        attached = mats.get(inventory_item=self.plywood)
+        loose = mats.get(inventory_item=self.screws)
         self.assertIsNotNone(attached.task_id)
         self.assertEqual(attached.task.job_id, new_job.pk)   # points at NEW task
         self.assertIsNone(loose.task_id)
@@ -153,10 +153,10 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='approved')
         self.assertEqual(
-            Earmark.objects.get(price_list_item=self.plywood, job=new_job).quantity,
+            Earmark.objects.get(inventory_item=self.plywood, job=new_job).quantity,
             Decimal('5.00'))
         self.assertEqual(
-            Earmark.objects.get(price_list_item=self.screws, job=new_job).quantity,
+            Earmark.objects.get(inventory_item=self.screws, job=new_job).quantity,
             Decimal('2.00'))
 
     def test_records_action_history_for_each_status_hop(self):
@@ -223,8 +223,8 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
             self.source, contact=self.contact, path='estimate')
         ws = EstWorksheet.objects.get(job=new_job)
         build = PlanTask.objects.get(est_worksheet=ws, name='Build')
-        attached = PlanMaterial.objects.get(est_worksheet=ws, price_list_item=self.plywood)
-        loose = PlanMaterial.objects.get(est_worksheet=ws, price_list_item=self.screws)
+        attached = PlanMaterial.objects.get(est_worksheet=ws, inventory_item=self.plywood)
+        loose = PlanMaterial.objects.get(est_worksheet=ws, inventory_item=self.screws)
         self.assertEqual(attached.plan_task, build)
         self.assertIsNone(loose.plan_task_id)
 

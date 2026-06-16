@@ -6,7 +6,7 @@ from apps.core.history import history
 
 class Earmark(models.Model):
     earmark_id = models.AutoField(primary_key=True)
-    price_list_item = models.ForeignKey('PriceListItem', on_delete=models.CASCADE)
+    inventory_item = models.ForeignKey('InventoryItem', on_delete=models.CASCADE)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     created_date = models.DateTimeField(auto_now_add=True)
@@ -14,28 +14,14 @@ class Earmark(models.Model):
 
     class Meta:
         db_table = 'earmarks'
-        unique_together = [('price_list_item', 'job')]
+        unique_together = [('inventory_item', 'job')]
 
     def __str__(self):
-        return f"{self.price_list_item.code} earmarked {self.quantity} for {self.job.job_number}"
+        return f"{self.inventory_item.code} earmarked {self.quantity} for {self.job.job_number}"
 
 
-class InventoryAdjustment(models.Model):
-    adjustment_id = models.AutoField(primary_key=True)
-    price_list_item = models.ForeignKey('PriceListItem', on_delete=models.CASCADE)
-    quantity_change = models.DecimalField(max_digits=10, decimal_places=2)
-    reason = models.TextField(blank=True, default='')
-    created_date = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'inv_adjustments'
-
-    def __str__(self):
-        return f"{self.price_list_item.code} adjusted by {self.quantity_change}"
-
-
-class PriceListItem(models.Model):
-    price_list_item_id = models.AutoField(primary_key=True)
+class InventoryItem(models.Model):
+    inventory_item_id = models.AutoField(primary_key=True)
     code = models.CharField(max_length=50, unique=True)
     units = models.CharField(max_length=50, default='none')
     description = models.TextField(blank=True)
@@ -45,13 +31,17 @@ class PriceListItem(models.Model):
     qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
-    is_inventoried = models.BooleanField(default=False)
+    # Catalog flag: a catalog item is a reorderable *type* (survives at QOH 0,
+    # allocation uncapped); without it, the row is a transient *lot* (hidden when
+    # finished — QOH 0 + no earmarks). Default True: items created via the
+    # price-list/inventory UI are catalog; transient lots are minted is_catalog=False.
+    is_catalog = models.BooleanField(default=True)
 
     # AccountingCategory for categorization and taxability
     accounting_category = models.ForeignKey(
         'core.AccountingCategory',
         on_delete=models.PROTECT,
-        related_name='price_list_items',
+        related_name='inventory_items',
     )
 
     @property
@@ -67,8 +57,20 @@ class PriceListItem(models.Model):
         """Quantity available (on hand minus earmarked)."""
         return self.qty_on_hand - self.qty_earmarked
 
+    @property
+    def is_finished_lot(self):
+        """A transient lot whose life is over: not a catalog type, nothing on
+        hand, and nothing waiting for it. Hidden from the active inventory list
+        and allocation pickers (catalog items always survive at QOH 0). Not
+        deleted — line items reference items via PROTECT — just filtered out."""
+        return (
+            not self.is_catalog
+            and self.qty_on_hand == Decimal('0.00')
+            and not self.earmark_set.exists()
+        )
+
     class Meta:
-        db_table = 'price_list'
+        db_table = 'inventory_item'
         constraints = [
             models.CheckConstraint(
                 check=models.Q(qty_on_hand__gte=0),
@@ -90,12 +92,11 @@ class PriceListItem(models.Model):
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 
         return not (
-            EstimateLineItem.objects.filter(price_list_item=self).exists() or
-            InvoiceLineItem.objects.filter(price_list_item=self).exists() or
-            PurchaseOrderLineItem.objects.filter(price_list_item=self).exists() or
-            BillLineItem.objects.filter(price_list_item=self).exists() or
-            self.earmark_set.exists() or
-            self.inventoryadjustment_set.exists()
+            EstimateLineItem.objects.filter(inventory_item=self).exists() or
+            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
+            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
+            BillLineItem.objects.filter(inventory_item=self).exists() or
+            self.earmark_set.exists()
         )
 
 
@@ -106,8 +107,8 @@ class MaterialBase(models.Model):
     units = models.CharField(max_length=50, default='none')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     sell_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    price_list_item = models.ForeignKey(
-        'PriceListItem', on_delete=models.SET_NULL,
+    inventory_item = models.ForeignKey(
+        'InventoryItem', on_delete=models.SET_NULL,
         null=True, blank=True,
     )
     accounting_category = models.ForeignKey(
@@ -120,7 +121,7 @@ class MaterialBase(models.Model):
     def copy_fields(self):
         """Canonical MaterialBase field set for cloning to another container.
 
-        Returns the FKs (price_list_item, accounting_category) as *objects* so
+        Returns the FKs (inventory_item, accounting_category) as *objects* so
         the dict splats straight into ``MaterialService.create_on_job`` (whose
         params are the objects); raw ``.objects.create()`` accepts objects too.
         """
@@ -130,7 +131,7 @@ class MaterialBase(models.Model):
             units=self.units,
             unit_cost=self.unit_cost,
             sell_price=self.sell_price,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             accounting_category=self.accounting_category,
         )
 
@@ -151,18 +152,18 @@ class MaterialBase(models.Model):
         return self.quantity * self.sell_price
 
     def _populate_from_pli(self):
-        """Copy description/units/unit_cost/sell_price/accounting_category from linked PriceListItem if not already set."""
-        if self.price_list_item:
+        """Copy description/units/unit_cost/sell_price/accounting_category from linked InventoryItem if not already set."""
+        if self.inventory_item:
             if not self.description:
-                self.description = self.price_list_item.description[:255]
+                self.description = self.inventory_item.description[:255]
             if self.units == 'none' or not self.units:
-                self.units = self.price_list_item.units
+                self.units = self.inventory_item.units
             if self.unit_cost == Decimal('0.00'):
-                self.unit_cost = self.price_list_item.purchase_price
+                self.unit_cost = self.inventory_item.purchase_price
             if self.sell_price == Decimal('0.00'):
-                self.sell_price = self.price_list_item.selling_price
+                self.sell_price = self.inventory_item.selling_price
             if not self.accounting_category_id:
-                self.accounting_category = self.price_list_item.accounting_category
+                self.accounting_category = self.inventory_item.accounting_category
 
 
 class PlanMaterial(MaterialBase):
@@ -198,7 +199,7 @@ class PlanMaterial(MaterialBase):
 
 
 class TemplateMaterialAssociation(models.Model):
-    """A reusable PriceListItem associated with a WorkTemplate.
+    """A reusable InventoryItem associated with a WorkTemplate.
 
     Replaces the old TemplateMaterial model: PLI is already the catalog of
     reusable materials, so a TemplateMaterial-as-separate-catalog was
@@ -216,8 +217,8 @@ class TemplateMaterialAssociation(models.Model):
         'estimates.WorkTemplate', on_delete=models.CASCADE,
         related_name='material_associations',
     )
-    price_list_item = models.ForeignKey(
-        'PriceListItem', on_delete=models.PROTECT,
+    inventory_item = models.ForeignKey(
+        'InventoryItem', on_delete=models.PROTECT,
     )
     template_task_association = models.ForeignKey(
         'estimates.TemplateTaskAssociation',
@@ -235,7 +236,7 @@ class TemplateMaterialAssociation(models.Model):
         ordering = ['sort_order']
 
     def __str__(self):
-        return f'{self.work_template.template_name} → {self.price_list_item.code} (qty {self.quantity})'
+        return f'{self.work_template.template_name} → {self.inventory_item.code} (qty {self.quantity})'
 
     def clean(self):
         super().clean()

@@ -37,7 +37,7 @@
     { key: 'est_worksheets', label: 'Worksheets' },
     { key: 'bills', label: 'Bills' },
     { key: 'purchase_orders', label: 'Purchase Orders' },
-    { key: 'price_list_items', label: 'Price List Items' },
+    { key: 'inventory_items', label: 'Price List Items' },
   ];
 
   const JOB_STATUSES = [
@@ -332,14 +332,14 @@
           </table>
         {/if}
 
-        {#if results.results.price_list_items?.length}
+        {#if results.results.inventory_items?.length}
           <h3>Price List Items</h3>
           <table class="data-table">
             <thead>
               <tr><th>Code</th><th>Description</th><th>Units</th><th>Selling Price</th></tr>
             </thead>
             <tbody>
-              {#each results.results.price_list_items as item}
+              {#each results.results.inventory_items as item}
                 <tr>
                   <td>{@html hl(item.code)}</td>
                   <td>{@html hlt(item.description)}</td>

@@ -8,8 +8,8 @@ from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, PlanTask, Task, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
-from apps.inventory.models import PriceListItem
-from apps.inventory.models import Earmark, InventoryAdjustment
+from apps.inventory.models import InventoryItem
+from apps.inventory.models import Earmark
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.inventory.services import InventoryService, MaterialService
 
@@ -45,14 +45,14 @@ class ConsumeMaterialTest(TestCase):
             sort_order=1,
             rate_scheme=self.scheme,
         )
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -61,7 +61,7 @@ class ConsumeMaterialTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -76,7 +76,7 @@ class ConsumeMaterialTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -89,30 +89,30 @@ class ConsumeMaterialTest(TestCase):
     def test_consume_reduces_earmark(self):
         """Consuming material reduces the earmark for that job."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job, quantity=Decimal('10.00'),
+            inventory_item=self.plywood, job=self.job, quantity=Decimal('10.00'),
         )
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
             sell_price=Decimal('90.00'),
         )
         MaterialService.consume(material)
-        earmark = Earmark.objects.get(price_list_item=self.plywood, job=self.job)
+        earmark = Earmark.objects.get(inventory_item=self.plywood, job=self.job)
         self.assertEqual(earmark.quantity, Decimal('5.00'))
 
     def test_consume_clears_earmark_when_fully_consumed(self):
         """Consuming all earmarked material deletes the earmark."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job, quantity=Decimal('5.00'),
+            inventory_item=self.plywood, job=self.job, quantity=Decimal('5.00'),
         )
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -120,11 +120,11 @@ class ConsumeMaterialTest(TestCase):
         )
         MaterialService.consume(material)
         self.assertEqual(
-            Earmark.objects.filter(price_list_item=self.plywood, job=self.job).count(), 0
+            Earmark.objects.filter(inventory_item=self.plywood, job=self.job).count(), 0
         )
 
-    def test_consume_no_price_list_item_is_noop(self):
-        """Consuming a material without price_list_item does nothing."""
+    def test_consume_no_inventory_item_is_noop(self):
+        """Consuming a material without inventory_item does nothing."""
         material = Material.objects.create(
             job=self.job,
             task=self.task,
@@ -170,7 +170,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             sort_order=1,
             rate_scheme=self.scheme,
         )
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
@@ -178,7 +178,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             qty_sold=Decimal('5.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -187,7 +187,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -203,7 +203,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -219,7 +219,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         material = Material.objects.create(
             job=self.job,
             task=self.task,
-            price_list_item=self.plywood,
+            inventory_item=self.plywood,
             description='Plywood',
             quantity=Decimal('5.00'),
             unit_cost=Decimal('45.00'),
@@ -230,8 +230,8 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.assertEqual(self.plywood.qty_on_hand, Decimal('15.00'))
         self.assertEqual(self.plywood.qty_sold, Decimal('5.00'))
 
-    def test_no_price_list_item_is_noop(self):
-        """Adjustment on material without price_list_item does nothing."""
+    def test_no_inventory_item_is_noop(self):
+        """Adjustment on material without inventory_item does nothing."""
         material = Material.objects.create(
             job=self.job,
             task=self.task,
@@ -251,14 +251,14 @@ class ManualAdjustmentTest(TestCase):
 
     def setUp(self):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.75',
             description='3/4" Baltic Birch Plywood',
             units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_inventoried=True,
+            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -279,13 +279,16 @@ class ManualAdjustmentTest(TestCase):
         self.assertEqual(self.plywood.qty_on_hand, Decimal('25.00'))
 
     def test_adjustment_creates_audit_record(self):
-        """Manual adjustment creates an InventoryAdjustment record."""
+        """Manual adjustment records an InventoryHistory action entry."""
+        from apps.core.models import InventoryHistory
         InventoryService.manual_adjustment(
             self.plywood, Decimal('-2.00'), 'Waste',
         )
-        adj = InventoryAdjustment.objects.get(price_list_item=self.plywood)
-        self.assertEqual(adj.quantity_change, Decimal('-2.00'))
-        self.assertEqual(adj.reason, 'Waste')
+        entry = InventoryHistory.objects.filter(
+            object_type='inventoryitem', object_id=self.plywood.pk,
+            entry_type='action').latest('timestamp')
+        self.assertEqual(entry.changes['qty_change'], '-2.00')
+        self.assertEqual(entry.text, 'Waste')
 
     def test_negative_adjustment_tracks_waste(self):
         """Negative adjustment increases qty_wasted."""

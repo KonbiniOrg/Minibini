@@ -8,7 +8,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
-from apps.inventory.models import PriceListItem, Earmark
+from apps.inventory.models import InventoryItem, Earmark
 
 
 class EarmarkReleaseOnWorkCompleteTest(TestCase):
@@ -29,17 +29,17 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
             code='SVC',
             defaults={'name': 'Service', 'taxable': False},
         )[0]
-        self.plywood = PriceListItem.objects.create(
+        self.plywood = InventoryItem.objects.create(
             code='PLY.REL', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
 
     def test_earmarks_released_on_job_work_complete(self):
         """Remaining earmarks for the job are deleted when job enters work_complete."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
+            inventory_item=self.plywood, job=self.job,
             quantity=Decimal('3.00'),
         )
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 1)
@@ -51,7 +51,7 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
     def test_partial_earmark_released_on_complete(self):
         """Even partially consumed earmarks are cleaned up."""
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
+            inventory_item=self.plywood, job=self.job,
             quantity=Decimal('1.50'),
         )
 
@@ -71,11 +71,11 @@ class EarmarkReleaseOnWorkCompleteTest(TestCase):
             job_number='J-REL-002', contact=self.contact,
         )
         Earmark.objects.create(
-            price_list_item=self.plywood, job=other_job,
+            inventory_item=self.plywood, job=other_job,
             quantity=Decimal('5.00'),
         )
         Earmark.objects.create(
-            price_list_item=self.plywood, job=self.job,
+            inventory_item=self.plywood, job=self.job,
             quantity=Decimal('3.00'),
         )
 
@@ -143,11 +143,11 @@ class EarmarkReleaseOnTerminalStatusesTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='PLY.T5', description='Plywood', units='sheets',
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_inventoried=True, accounting_category=self.category,
+            is_catalog=True, accounting_category=self.category,
         )
 
     def _job(self, *statuses):
@@ -162,7 +162,7 @@ class EarmarkReleaseOnTerminalStatusesTest(TestCase):
 
     def _earmark(self, job, qty='3.00'):
         return Earmark.objects.create(
-            price_list_item=self.pli, job=job, quantity=Decimal(qty),
+            inventory_item=self.pli, job=job, quantity=Decimal(qty),
         )
 
     def test_cancel_releases_earmarks(self):

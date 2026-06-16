@@ -7,7 +7,7 @@ from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.carry_over import AtomCarryOverService
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Earmark, Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Earmark, Material, PlanMaterial, InventoryItem
 from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
 
@@ -99,16 +99,16 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         self.assertEqual(m.units, 'kg')
 
     def test_carry_over_creates_earmarks_for_inventoried_materials(self):
-        pli = PriceListItem.objects.create(
-            code='CO-EARM', accounting_category=self.cat, is_inventoried=True,
+        pli = InventoryItem.objects.create(
+            code='CO-EARM', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('50'),
         )
         PlanMaterial.objects.create(
             est_worksheet=self.ws, description='bar', quantity=Decimal('7'),
-            units='ea', accounting_category=self.cat, price_list_item=pli,
+            units='ea', accounting_category=self.cat, inventory_item=pli,
         )
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
-        earmark = Earmark.objects.get(job=self.job, price_list_item=pli)
+        earmark = Earmark.objects.get(job=self.job, inventory_item=pli)
         self.assertEqual(earmark.quantity, Decimal('7'))
 
 
@@ -136,7 +136,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             template_name='Setup', rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='STEEL', description='steel rod', units='ft',
             purchase_price=Decimal('3'), selling_price=Decimal('5'),
             accounting_category=self.cat,
@@ -159,12 +159,12 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             estimate=self.estimate, qty=Decimal('3'), units='ft',
             price=Decimal('5'), description='steel rod',
             accounting_category=self.cat,
-            price_list_item=self.pli,
+            inventory_item=self.pli,
         )
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         materials = Material.objects.filter(job=self.job)
         self.assertEqual(materials.count(), 1)
-        self.assertEqual(materials.first().price_list_item, self.pli)
+        self.assertEqual(materials.first().inventory_item, self.pli)
 
     def test_skips_purely_manual_line_items(self):
         EstimateLineItem.objects.create(

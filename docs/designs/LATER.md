@@ -502,3 +502,105 @@ IMAP-SMTP machinery and tend to be worked together.
   bypasses Model.save()" rule. _Done when:_ cancel routes through a service method that loads the invoice and
   calls `.save()` (or otherwise invokes the completion gate), with a test that a cancelled last-invoice on an
   all-shipped job completes the job.
+
+- **Reimbursement QBO push fails consistently with an error.** — _added 2026-06-14_
+  Surfaced during Expenses UI testing: creating a `Reimbursement` batch (`ReimbursementService.create_batch`
+  → `QBOExpenseSyncService.push_reimbursement`) fails on the QBO push, leaving the batch in `sync_failed`
+  every time. The DB commit stands (expenses still flip to `reimbursed`), but the QBO sync never succeeds.
+  Error text not yet captured here — paste it in when reproducing. Could be env-only (QBO connection/
+  credentials in this dev env) or a real defect in the reimbursement push payload; needs triage to tell which.
+  _Done when:_ the push succeeds against a connected QBO sandbox, or the failure is root-caused to an env/config
+  issue and documented (with the retry path via `ReimbursementService.retry_sync` confirmed working).
+
+- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
+  An expense is single-mode (cost OR stock receipt) and records one purchased item.
+  Real corner case: on one trip a worker buys 3 sheets of an **inventoried** PLI (the
+  shortfall) **and** a special **non-PLI finish** the job needs. If they record the
+  inventoried item, the expense becomes a stock receipt — its `amount` is treated as
+  inventory (cost-at-consumption, excluded from `_spent`), so the finish's cost is
+  effectively **dropped** (absorbed into the amount as if it were tax/fee). If they
+  record the finish instead, the plywood never hits QOH and the task stays blocked.
+  Today the workaround is to record **two separate expenses** (one stock receipt, one
+  cost), but nothing surfaces that, so the cost can silently vanish. Not super likely,
+  but real. See `docs/plans/2026-06-14-expenses-cost-model-redesign.md` (single-mode
+  decision) and the deferred many-materials/line-item direction.
+  _Done when:_ either an expense supports multiple purchased items with per-item mode
+  handling (inventoried rows → receipts, cost rows → job cost), or the form detects a
+  mixed receipt and prompts the user to split it — so a non-inventory cost can never be
+  silently swallowed by a stock receipt.
+
+- **Write-off → QBO?** — _added 2026-06-15_
+  Inventory write-off (`InventoryService.write_off`) zeroes a lot's QOH and books
+  the remainder to `qty_wasted`, recording an `InventoryHistory` entry. It does
+  **not** push anything to QBO. Decide whether written-off inventory should post
+  to QBO as an expense / COGS / shrinkage adjustment, or stay inventory-only.
+  _Done when:_ a decision is recorded — either a QBO push path for write-offs
+  exists, or it's documented that write-offs are deliberately inventory-only.
+
+- **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
+  Background: the original plan was *delete-on-spend*, but the code review surfaced
+  that line items (estimate/invoice/PO/bill) and `TemplateMaterialAssociation`
+  reference items via **PROTECT**, so unconditional deletion raises
+  `ProtectedError`. The shipped model is **hide-on-spend**: a finished transient
+  lot (not catalog, QOH 0, no earmarks) is hidden by the list filter, not deleted.
+  On top of that, `InventoryService.collect_if_finished` now **deletes a finished
+  lot when it is genuinely reference-free** (`can_be_deleted`), else hides it —
+  but only at **demote** (`update_item`) and **write-off**, the deliberate,
+  non-undoable transitions. It is deliberately **NOT** applied at:
+  - **consume** — reversible via `unconsume()` (blep-cancel undo), which needs the
+    item to restore stock; deleting on consume would break that undo.
+  - **`release_earmarks_for_job`** (job cancel/complete) — a bulk
+    `Earmark.objects.filter(job=job).delete()` that can leave a QOH-0 lot
+    reference-free, but the cleanup hook isn't wired there yet.
+  Also note `can_be_deleted` ignores Materials (SET_NULL) by design, so a
+  consumed lot is "reference-free" even though a Material points at it — fine
+  because Materials are self-contained and history survives, but worth a
+  deliberate decision.
+  To revisit: (a) should consume/job-cancellation also collect, with a
+  reversibility-safe approach (e.g. collect on job close, or on unconsume-window
+  expiry)? (b) a periodic **pruner** for hidden tombstones that have since become
+  reference-free; (c) whether demote-deletes-when-unreferenced is the right UX or
+  should prompt. _Done when:_ a single documented policy covers every finished-lot
+  transition (demote, write-off, consume, job-cancel) and tombstone cleanup.
+
+- **Warn before unchecking Catalog can delete the item.** — _added 2026-06-15_
+  Unchecking "Catalog" on an empty (QOH 0, no earmarks), reference-free item now
+  hard-deletes it (`collect_if_finished` on demote). The InventoryItemForm gives
+  no warning — a user demoting to reorganize can lose the row unexpectedly. Add a
+  confirm/notice on the Catalog checkbox (or on save) when the item would become
+  a deletable finished lot — e.g. "This item has no stock and isn't referenced;
+  unchecking Catalog will remove it." _Done when:_ demoting an item that would be
+  collected prompts the user first (and ideally distinguishes delete vs. hide).
+
+- **Generic server-side search picker (and the picker 100-cap).** — _added 2026-06-15_
+  `PriceListItemPicker` (used in 5 places — MaterialModal, PlanMaterialModal,
+  LineItemModal, expenses/MaterialPicker, PO LineItemForm) loads the catalog and
+  filters **client-side**, but the load request is clamped to 100 by
+  `StandardPagination` (see architecture-and-conventions.md §3.3) — so once the
+  active catalog passes 100 items, the rest can't be selected when adding a
+  material / line item, silently. The Contact/Business picker already does
+  **server-side `?search=`** for *two* models; we'd deferred a generic version
+  because two-model felt like a one-off. We've since hit it again: the now-deleted
+  `CatalogPicker` was a built-but-never-wired two-model (TaskTemplate +
+  InventoryItem) picker — the same shape — and this single-model one is capped.
+  Direction: build a generic **`EntitySearchPicker`** parameterized by *sources*
+  (`{endpoint, kind, render}`) doing server-side `?search=`; migrate
+  `PriceListItemPicker`'s call sites to it (one source) and **rename/retire
+  PriceListItemPicker → InventoryItemPicker**; a multi-source config covers the
+  task-template-or-material "catalog" case if that feature is ever wanted. Fixes
+  the cap for free. Deferred to keep the inventory feature branch scoped.
+  _Done when:_ one server-search picker backs the material/line-item pickers,
+  reaching any active item regardless of catalog size, and PriceListItemPicker is
+  renamed/retired.
+
+- **"Qty on order" column on the inventory list.** — _added 2026-06-15_
+  The inventory list shows on-hand / earmarked / available but not how much is
+  already **on order** (outstanding on open POs). Add a "On order" column: per
+  `InventoryItem`, sum the un-received quantity of `PurchaseOrderLineItem`s
+  referencing it on non-cancelled POs (`qty − qty_received − qty_cancelled`,
+  floored at 0) — the same outstanding calc `MaterialSerializer.get_qty_on_order`
+  already does for a single PO-linked material, but aggregated across all POs for
+  the item. Needs a computed field on the inventory-item serializer (annotate or
+  property) + the column in `InventoryListPage`. Helps decide whether to hit the
+  new per-row "order" button or wait on stock already coming.
+  _Done when:_ the inventory list shows an accurate on-order quantity per item.

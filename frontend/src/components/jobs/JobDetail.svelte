@@ -17,8 +17,25 @@
     invoices = null,
     purchaseOrders = null,
     emails = null,
+    expenses = null,
     onStatusChange = null,
   } = $props();
+
+  // Expenses on this job (list payload may be paginated or a bare array).
+  let jobExpenses = $derived(
+    expenses ? (expenses.results ?? expenses) : []
+  );
+  // Material-less expenses get their own rows; material-linked ones annotate
+  // their material's row (cost lives on the material — avoids double-showing).
+  let looseExpenses = $derived(jobExpenses.filter((e) => !e.material));
+  let expenseByMaterial = $derived(
+    Object.fromEntries(
+      jobExpenses.filter((e) => e.material).map((e) => [e.material, e])
+    )
+  );
+  function money(v) {
+    return v != null && v !== '' ? `$${Number(v).toFixed(2)}` : '—';
+  }
 
   // Permission check
   // Job-scoped management uses the per-object can_manage (atom-holder OR this
@@ -922,13 +939,13 @@
          onclick={() => openSection('materials')}
          onkeydown={(e) => e.key === 'Enter' && openSection('materials')}>
       <span class="label-v">Materials</span>
-      <span class="pillar-count">{jobMaterials.length}</span>
+      <span class="pillar-count">{jobMaterials.length + looseExpenses.length}</span>
     </div>
   {:else}
     <div class="open open-mat">
       <div class="top-bar top-bar-mat">
         <span class="top-bar-title">
-          MATERIALS{#if jobMaterials.length} · {jobMaterials.length} item{jobMaterials.length === 1 ? '' : 's'}{:else} · None{/if}
+          MATERIALS &amp; EXPENSES · {jobMaterials.length} material{jobMaterials.length === 1 ? '' : 's'}, {looseExpenses.length} expense{looseExpenses.length === 1 ? '' : 's'}
         </span>
         <span class="top-bar-actions">
           <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
@@ -967,6 +984,7 @@
                   <td>
                     <span class="preserve-breaks">{mat.description || '(no description)'}</span>
                     {#if consumed}<span class="badge-consumed">consumed</span>{/if}
+                    {#if expenseByMaterial[mat.material_id]}<span class="badge-paid">paid {money(expenseByMaterial[mat.material_id].amount)}</span>{/if}
                     {#if needsMore && canManageFinancials}
                       <a class="add-po" href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}">order</a>
                     {/if}
@@ -993,8 +1011,33 @@
               {/each}
             </tbody>
           </table>
-        {:else}
-          <p class="empty-msg">No materials.</p>
+        {/if}
+
+        {#if looseExpenses.length > 0}
+          <table class="mat-table">
+            <colgroup><col><col class="col-units"><col class="col-money"></colgroup>
+            <thead><tr>
+              <th>Expense</th>
+              <th>Category</th>
+              <th class="text-right">Amount</th>
+            </tr></thead>
+            <tbody>
+              {#each looseExpenses as exp}
+                <tr>
+                  <td>
+                    <span class="preserve-breaks">{exp.description || '(expense)'}</span>
+                    <span class="badge-paid">expense</span>
+                  </td>
+                  <td>{exp.accounting_category_name || '—'}</td>
+                  <td class="text-right">{money(exp.amount)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+
+        {#if jobMaterials.length === 0 && looseExpenses.length === 0}
+          <p class="empty-msg">No materials or expenses.</p>
         {/if}
       </div>
     </div>
@@ -1741,6 +1784,11 @@
     font-size: 10px; color: #555;
     margin-left: 6px; padding: 1px 6px;
     background: #e5e7eb; border-radius: 8px;
+  }
+  .mat-table .badge-paid {
+    font-size: 10px; color: #166534;
+    margin-left: 6px; padding: 1px 6px;
+    background: #dcfce7; border-radius: 8px;
   }
   .mat-table .add-po {
     font-size: 11px; color: #1e40af; margin-left: 8px;

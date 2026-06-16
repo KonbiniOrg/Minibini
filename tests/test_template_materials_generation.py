@@ -3,7 +3,7 @@ from django.test import TestCase
 from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact
 from apps.inventory.models import (
-    Material, PlanMaterial, PriceListItem, TemplateMaterialAssociation,
+    Material, PlanMaterial, InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
@@ -21,7 +21,7 @@ class _Setup(TestCase):
             name='Hourly', rate=Decimal('100'), unit_label='hour',
             accounting_category=cls.cat,
         )
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
@@ -43,7 +43,7 @@ class _Setup(TestCase):
 class WorksheetGenerationTests(_Setup):
     def test_task_less_association_generates_task_less_plan_material(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('5'),
         )
         ws = EstWorksheet.objects.create(job=self.job)
@@ -53,12 +53,12 @@ class WorksheetGenerationTests(_Setup):
         pms = list(PlanMaterial.objects.filter(est_worksheet=ws, plan_task__isnull=True))
         self.assertEqual(len(pms), 1)
         self.assertEqual(pms[0].quantity, Decimal('5'))
-        self.assertEqual(pms[0].price_list_item_id, self.pli.pk)
+        self.assertEqual(pms[0].inventory_item_id, self.pli.pk)
         self.assertEqual(pms[0].units, 'sheets')  # via _populate_from_pli
 
     def test_task_paired_association_attaches_to_matching_plan_task(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             template_task_association=self.tta,
             quantity=Decimal('2'),
         )
@@ -73,7 +73,7 @@ class WorksheetGenerationTests(_Setup):
 
     def test_pli_price_change_after_template_setup_reflected_at_generation(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('5'),
         )
         # PLI price bumped after the template was set up
@@ -91,7 +91,7 @@ class WorksheetGenerationTests(_Setup):
 
     def test_multi_instance_replicates_per_instance_with_pairing(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             template_task_association=self.tta,
             quantity=Decimal('2'),
         )
@@ -112,7 +112,7 @@ class WorksheetGenerationTests(_Setup):
 class JobGenerationTests(_Setup):
     def test_task_less_association_generates_task_less_material(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             quantity=Decimal('5'),
         )
         # Tasks first, then materials
@@ -121,12 +121,12 @@ class JobGenerationTests(_Setup):
 
         ms = list(Material.objects.filter(job=self.job, task__isnull=True))
         self.assertEqual(len(ms), 1)
-        self.assertEqual(ms[0].price_list_item_id, self.pli.pk)
+        self.assertEqual(ms[0].inventory_item_id, self.pli.pk)
         self.assertEqual(ms[0].units, 'sheets')
 
     def test_task_paired_association_attaches_to_matching_task(self):
         TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, price_list_item=self.pli,
+            work_template=self.wt, inventory_item=self.pli,
             template_task_association=self.tta,
             quantity=Decimal('2'),
         )

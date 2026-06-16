@@ -55,7 +55,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrderLineItem
         fields = [
-            'line_item_id', 'line_number', 'task', 'price_list_item',
+            'line_item_id', 'line_number', 'task', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'effective_job_id', 'effective_job_number', 'material',
             'accounting_category', 'taxable_override', 'tax_rate_override',
@@ -128,7 +128,7 @@ class BillLineItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = BillLineItem
         fields = [
-            'line_item_id', 'line_number', 'task', 'price_list_item',
+            'line_item_id', 'line_number', 'task', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
         ]

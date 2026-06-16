@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, User
-from apps.inventory.models import Material, PlanMaterial, PriceListItem
+from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.estimates.models import EstWorksheet
 from apps.jobs.models import Job
 
@@ -27,7 +27,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
     def setUpTestData(cls):
         Configuration.objects.create(key='units_list', value='["none","ea","sheets","lbs","hours"]')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
@@ -37,7 +37,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
 
     def test_material_pulls_units_from_pli(self):
         m = Material(
-            job=self.job, price_list_item=self.pli,
+            job=self.job, inventory_item=self.pli,
             quantity=Decimal('1'),
         )
         m.save()
@@ -46,7 +46,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
     def test_material_keeps_explicit_units_when_set(self):
         # Override case: caller supplies a non-default 'units'; PLI does not overwrite.
         m = Material(
-            job=self.job, price_list_item=self.pli,
+            job=self.job, inventory_item=self.pli,
             quantity=Decimal('1'), units='lbs',
         )
         m.save()
@@ -54,7 +54,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
 
     def test_freeform_material_keeps_default_units(self):
         m = Material(
-            job=self.job, price_list_item=None,
+            job=self.job, inventory_item=None,
             quantity=Decimal('1'), accounting_category=self.cat,
         )
         m.save()
@@ -63,7 +63,7 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
     def test_plan_material_pulls_units_from_pli(self):
         ws = EstWorksheet.objects.create(job=self.job)
         pm = PlanMaterial(
-            est_worksheet=ws, price_list_item=self.pli, quantity=Decimal('1'),
+            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
         )
         pm.save()
         self.assertEqual(pm.units, 'sheets')
@@ -75,7 +75,7 @@ class MaterialSerializerUnitsTests(APITestCase):
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
-        cls.pli = PriceListItem.objects.create(
+        cls.pli = InventoryItem.objects.create(
             code='PLI-1', units='sheets', description='Steel Sheet',
             purchase_price=Decimal('40.00'), selling_price=Decimal('60.00'),
             accounting_category=cls.cat,
@@ -92,7 +92,7 @@ class MaterialSerializerUnitsTests(APITestCase):
         # from its PLI's units. The GET response must reflect the field value,
         # not the PLI's value.
         m = Material.objects.create(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('1'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('1'),
         )
         Material.objects.filter(pk=m.pk).update(units='lbs')
         resp = self.client.get(f'/api/materials/{m.pk}/')
@@ -101,7 +101,7 @@ class MaterialSerializerUnitsTests(APITestCase):
 
     def test_freeform_material_get_returns_units_field(self):
         m = Material.objects.create(
-            job=self.job, price_list_item=None,
+            job=self.job, inventory_item=None,
             description='custom', quantity=Decimal('1'), units='ea',
             accounting_category=self.cat,
         )

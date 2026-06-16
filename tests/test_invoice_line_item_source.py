@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.jobs.models import Job, Task, RateScheme
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import Configuration, AccountingCategory, AppState
 
@@ -71,7 +71,7 @@ class InvoiceLineItemSourceTest(TestCase):
         self.assertEqual(resolved, self.task)
 
     def test_resolve_returns_material_instance(self):
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='MAT-001',
             description='Test Material',
             purchase_price=Decimal('5.00'),
@@ -83,7 +83,7 @@ class InvoiceLineItemSourceTest(TestCase):
             task=self.task,
             quantity=Decimal('3.00'),
             sell_price=Decimal('10.00'),
-            price_list_item=pli,
+            inventory_item=pli,
         )
         source = InvoiceLineItemSource.objects.create(
             invoice_line_item=self.line_item,

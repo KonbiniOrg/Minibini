@@ -617,49 +617,6 @@ class SFMOMAIntegrationTest(TestCase):
         self.assertEqual(exp1.status, Expense.STATUS_SYNCED)
         self.assertEqual(exp2.status, Expense.STATUS_SYNCED)
 
-    @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
-    def test_existing_material_is_reused_not_duplicated(self, mock_push):
-        """Expense linked to a pre-existing Material does not duplicate it."""
-        mock_push.return_value = '9001'
-
-        # Simulate an estimate-side material: real task with a real material
-        existing_task = Task.objects.create(
-            job=self.job,
-            name='Paint main gallery',
-            rate_scheme=self.scheme,
-        )
-        existing_material = Material.objects.create(
-            job=self.job, task=existing_task, description='Acrylic paint 1gal',
-            quantity=2, accounting_category=self.cat,
-        )
-
-        # Submit an expense linked to the existing material
-        exp = ExpenseService.submit(
-            entered_by=self.user,
-            amount=Decimal('218.45'),
-            purchased_on=date(2026, 4, 9),
-            accounting_category=self.cat,
-            payment_method=Expense.PAYMENT_METHOD_COMPANY,
-            payment_account_id='57',
-            material=existing_material,
-        )
-
-        # Assert: no new task created (especially no "Materials" bucket)
-        tasks_on_job = Task.objects.filter(job=self.job)
-        self.assertEqual(tasks_on_job.count(), 1)
-        self.assertEqual(tasks_on_job.first(), existing_task)
-        self.assertFalse(
-            Task.objects.filter(job=self.job, name='Materials').exists()
-        )
-
-        # Assert: no new material created
-        self.assertEqual(existing_task.materials.count(), 1)
-        self.assertEqual(existing_task.materials.first(), existing_material)
-
-        existing_material.refresh_from_db()
-        self.assertEqual(existing_material.quantity, 2)  # qty unchanged
-        self.assertEqual(exp.material, existing_material)
-
     @patch('apps.qbo.services.QBOService.get_client')
     def test_full_company_paid_push_happy_path(self, mock_get_client):
         """The SFMOMA paint story: Dana buys paint on company card, expense pushes."""

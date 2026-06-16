@@ -12,7 +12,8 @@ from .serializers import ExpenseSerializer
 
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all().select_related(
-        'entered_by', 'purchased_by', 'accounting_category', 'material', 'reimbursement',
+        'entered_by', 'purchased_by', 'accounting_category',
+        'job', 'material', 'material__job', 'reimbursement',
     )
     serializer_class = ExpenseSerializer
     lookup_field = 'pk'
@@ -37,6 +38,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(payment_method=params['payment_method'])
         if params.get('accounting_category'):
             qs = qs.filter(accounting_category=params['accounting_category'])
+        if params.get('job'):
+            qs = qs.filter(job=params['job'])
         if params.get('from'):
             qs = qs.filter(purchased_on__gte=params['from'])
         if params.get('to'):
@@ -47,6 +50,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data.copy()
         purchased_by = data.pop('purchased_by', None)
         new_material = data.pop('new_material', None)
+        # Expenses no longer link an existing material; ignore any inbound id.
+        data.pop('material', None)
         try:
             expense = ExpenseService.submit(
                 entered_by=self.request.user,
@@ -59,9 +64,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         serializer.instance = expense
 
     def perform_update(self, serializer):
+        # Mutate serializer.instance (not a fresh get_object()) so the serialized
+        # response reflects the change the service applied.
         try:
             ExpenseService.update(
-                expense=self.get_object(),
+                expense=serializer.instance,
                 actor=self.request.user,
                 **serializer.validated_data,
             )

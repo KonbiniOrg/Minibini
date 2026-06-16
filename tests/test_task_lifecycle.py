@@ -191,26 +191,22 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         TaskLifecycleService.start_work(self.task.pk, self.user)
         mock_consume.assert_called_once_with(mat)
 
-    def test_task_start_consumes_non_inventoried_material_marker(self):
-        """Starting a task flips non-inventoried materials to consumed (marker-only).
-
-        No QOH or earmark side effects should occur for non-inventoried PLIs.
+    def test_task_start_consumes_no_item_material_marker(self):
+        """Starting a task flips a no-inventory-item material to consumed
+        (marker-only). No QOH or earmark side effects — the only no-op path
+        under universal tracking.
         """
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.inventory.models import Earmark, Material, PriceListItem
+        from apps.inventory.models import Earmark, Material
         cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
-        non_inv = PriceListItem.objects.create(
-            code='PLI-NI-ML', description='Labor',
-            is_inventoried=False, qty_on_hand=Decimal('0.00'),
-            qty_sold=Decimal('0.00'), accounting_category=cat,
-        )
         mat = Material.objects.create(
             job=self.job, task=self.task,
-            price_list_item=non_inv,
-            description='non-inv',
+            inventory_item=None,
+            accounting_category=cat,
+            description='no-item',
             quantity=Decimal('2.00'),
         )
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
@@ -219,11 +215,8 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
 
         mat.refresh_from_db()
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
-        non_inv.refresh_from_db()
-        self.assertEqual(non_inv.qty_on_hand, Decimal('0.00'))
-        self.assertEqual(non_inv.qty_sold, Decimal('0.00'))
         self.assertFalse(
-            Earmark.objects.filter(price_list_item=non_inv, job=self.job).exists()
+            Earmark.objects.filter(job=self.job).exists()
         )
 
     def test_start_work_assigns_user_when_no_assignee(self):
@@ -749,18 +742,18 @@ class StartStopWorkTest(BaseTestCase):
         """
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.inventory.models import Material, PriceListItem
+        from apps.inventory.models import Material, InventoryItem
         # Material on the task so we can confirm re-consumption.
         cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False},
         )[0]
-        non_inv = PriceListItem.objects.create(
+        non_inv = InventoryItem.objects.create(
             code='PLI-NI-TKO', description='Labor',
-            is_inventoried=False, qty_on_hand=Decimal('0.00'),
+            is_catalog=False, qty_on_hand=Decimal('0.00'),
             qty_sold=Decimal('0.00'), accounting_category=cat,
         )
         mat = Material.objects.create(
-            job=self.job, task=self.task, price_list_item=non_inv,
+            job=self.job, task=self.task, inventory_item=non_inv,
             description='non-inv', quantity=Decimal('2.00'),
         )
         # The task was promoted by worker2's start, so its material is consumed.

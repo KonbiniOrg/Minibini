@@ -23,7 +23,7 @@ def enforce_pli_linked_allowlist(instance, validated_data, allowed):
     `allowed` is a set of field names. Use PLI_LINKED_PRICING_ALLOWED for
     Material/PlanMaterial.
     """
-    if instance.price_list_item_id is None:
+    if instance.inventory_item_id is None:
         return
     disallowed = set(validated_data.keys()) - allowed
     if disallowed:

@@ -91,6 +91,27 @@ class ExpenseCreateTest(TestCase):
         self.assertEqual(exp.status, Expense.STATUS_SUBMITTED)
         self.assertEqual(exp.entered_by, self.user)
 
+    def test_create_ignores_inbound_existing_material_link(self):
+        """Expenses are create-only: a `material` id in the payload is ignored,
+        never linked (the redesign removed expense->existing-material linking)."""
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.inventory.models import Material
+        contact = Contact.objects.create(first_name='C', last_name='O')
+        job = Job.objects.create(job_number='JOB-CO-1', contact=contact)
+        existing = Material.objects.create(
+            job=job, description='pre-existing', quantity=Decimal('1'),
+            accounting_category=self.cat)
+        payload = {
+            'amount': '47.50', 'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk, 'payment_method': 'personal',
+            'purchased_by': self.user.pk, 'material': existing.pk,
+        }
+        r = self.client_http.post('/api/expenses/', payload, content_type='application/json')
+        self.assertEqual(r.status_code, 201, r.content)
+        exp = Expense.objects.get()
+        self.assertIsNone(exp.material_id)  # the inbound link was ignored
+
     def test_create_personal_without_purchased_by_returns_400(self):
         payload = {
             'amount': '47.50',
@@ -277,3 +298,97 @@ class ExpenseDeleteTest(TestCase):
 # tests in test_expense_service.py. A replacement job-scoped API
 # endpoint for bucket-mode material creation can be added when the
 # frontend requires it.
+
+
+class ExpenseJobFieldTest(TestCase):
+    """Expense.job is read directly and writable via the API."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        Configuration.objects.update_or_create(
+            key='job_number_sequence', defaults={'value': 'JOB-{counter:04d}'})
+        Configuration.objects.update_or_create(key='job_counter', defaults={'value': '0'})
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core')
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
+        self.job = Job.objects.create(job_number='JOB-A3-1', contact=self.contact)
+        self.other_job = Job.objects.create(job_number='JOB-A3-2', contact=self.contact)
+        self.client_http.force_login(self.admin)
+
+    def _post(self, **extra):
+        body = dict(
+            amount='25.00', purchased_on='2026-04-01',
+            accounting_category=self.cat.pk,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            purchased_by=self.admin.pk,
+        )
+        body.update(extra)
+        return self.client_http.post(
+            '/api/expenses/', data=body, content_type='application/json')
+
+    def test_create_with_job_no_material(self):
+        r = self._post(job=self.job.pk)
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()['job_id'], self.job.pk)
+        self.assertEqual(r.json()['job_number'], 'JOB-A3-1')
+
+    def test_overhead_expense_has_null_job(self):
+        r = self._post()
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertIsNone(r.json()['job_id'])
+
+    def test_patch_job(self):
+        r = self._post(job=self.job.pk)
+        eid = r.json()['id']
+        r2 = self.client_http.patch(
+            f'/api/expenses/{eid}/', data={'job': self.other_job.pk},
+            content_type='application/json')
+        self.assertEqual(r2.status_code, 200, r2.content)
+        self.assertEqual(r2.json()['job_id'], self.other_job.pk)
+
+    def test_list_filter_by_job(self):
+        self._post(job=self.job.pk)
+        self._post(job=self.other_job.pk)
+        r = self.client_http.get(f'/api/expenses/?job={self.job.pk}')
+        self.assertEqual(r.status_code, 200)
+        job_ids = {row['job_id'] for row in r.json()['results']}
+        self.assertEqual(job_ids, {self.job.pk})
+
+
+class ExpenseStockReceiptApiTest(TestCase):
+    """POST new_material with an inventoried PLI → a stock receipt (QOH up, no material)."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.inventory.models import InventoryItem
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='SR', name='Stock')
+        self.user = User.objects.create_user(username='w', password='x')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='c@t.com')
+        self.job = Job.objects.create(job_number='JOB-SRA-1', contact=self.contact)
+        self.pli = InventoryItem.objects.create(
+            code='PLY', description='plywood', accounting_category=self.cat,
+            is_catalog=True, qty_on_hand=Decimal('7.00'))
+        self.client_http.force_login(self.user)
+
+    def test_inventoried_new_material_creates_stock_receipt(self):
+        from apps.inventory.models import Material
+        r = self.client_http.post('/api/expenses/', data={
+            'amount': '73.33', 'purchased_on': '2026-04-01',
+            'accounting_category': self.cat.pk,
+            'payment_method': Expense.PAYMENT_METHOD_PERSONAL,
+            'purchased_by': self.user.pk,
+            'new_material': {'job_id': self.job.pk,
+                             'inventory_item_id': self.pli.pk, 'quantity': '3'},
+        }, content_type='application/json')
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertFalse(Material.objects.filter(job=self.job).exists())  # no consumable
+        self.pli.refresh_from_db()
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10.00'))  # 7 + 3

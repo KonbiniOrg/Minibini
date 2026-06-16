@@ -67,7 +67,7 @@ Minibini/
 │   ├── estimates/  # Estimate, EstWorksheet, EstimateLineItem, Templates
 │   ├── contacts/   # Contact, Business, PaymentTerms
 │   ├── invoicing/  # Invoice, InvoiceLineItem
-│   ├── inventory/  # PriceListItem, Material, Earmark, InventoryAdjustment
+│   ├── inventory/  # InventoryItem (catalog/lots), Material, Earmark
 │   ├── purchasing/ # PurchaseOrder, Bill, line items
 │   ├── deliverables/ # Deliverable, Shipment, ShipmentItem
 │   ├── search/     # Cross-entity search service
@@ -104,7 +104,7 @@ Minibini/
 | `architecture-and-conventions.md` | Service layer, mixin catalog, permissions plumbing, line-item pattern, view-mode, history capture, sidebar |
 | `jobs-tasks-and-worksheets.md` | Job, Task, Blep, EstWorksheet, PlanTask, Templates, Job Board, lifecycle service, Deliverables, Shipments |
 | `estimates-and-prices.md` | RateScheme + supersession, billable atoms, Estimate + wizard, atom carry-over, AC pass-through |
-| `materials-inventory-and-purchasing.md` | PriceListItem, Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
+| `materials-inventory-and-purchasing.md` | InventoryItem (catalog/lots), Material, PlanMaterial, Earmarks, units, PurchaseOrder, Bill |
 | `invoicing-and-expenses.md` | Invoice + wizard, send-to-customer flow, Expense + Reimbursement |
 | `quickbooks-integration.md` | QBO models, OAuth, sync services, polling, developer setup appendix |
 | `users-and-permissions.md` | User model, permission atoms, auth, user admin, self-service, login tracking (designed not built) |
@@ -119,7 +119,7 @@ Minibini/
 | `apps.jobs` | Job, Task, PlanTask, Blep, RateScheme | jobs-tasks-and-worksheets (Job/Task/Blep/PlanTask) + estimates-and-prices (RateScheme) |
 | `apps.estimates` | Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation | estimates-and-prices + jobs-tasks-and-worksheets (worksheets, templates) |
 | `apps.contacts` | Contact, Business, PaymentTerms | data-constraints §1.5, §1.4 |
-| `apps.inventory` | PriceListItem, Material, PlanMaterial, Earmark, InventoryAdjustment, TemplateMaterialAssociation | materials-inventory-and-purchasing |
+| `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, PlanMaterial, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |
 | `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |

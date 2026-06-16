@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.purchasing.services import PurchaseOrderService
 from apps.purchasing.models import PurchaseOrder
 from apps.api.purchasing.serializers import POLineItemSerializer
@@ -18,7 +18,7 @@ class POSerializerMaterialTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
             selling_price=Decimal('2.00'), accounting_category=cat,
         )
@@ -27,7 +27,7 @@ class POSerializerMaterialTest(TestCase):
     def test_linked_line_exposes_effective_job_and_material(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk, job=self.job.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk, job=self.job.pk,
         )
         data = POLineItemSerializer(line).data
         self.assertEqual(data['effective_job_id'], self.job.pk)
@@ -39,7 +39,7 @@ class POSerializerMaterialTest(TestCase):
     def test_unlinked_line_has_null_material_and_null_effective_job(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk,
         )
         data = POLineItemSerializer(line).data
         self.assertIsNone(data['effective_job_id'])
@@ -48,7 +48,7 @@ class POSerializerMaterialTest(TestCase):
     def test_serializer_does_not_expose_job_field(self):
         line = PurchaseOrderService.add_line_item(
             self.po.pk, description='x', qty=Decimal('5.00'),
-            price=Decimal('1.00'), price_list_item=self.pli.pk,
+            price=Decimal('1.00'), inventory_item=self.pli.pk,
         )
         data = POLineItemSerializer(line).data
         self.assertNotIn('job', data)

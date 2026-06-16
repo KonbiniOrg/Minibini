@@ -16,7 +16,7 @@ from apps.estimates.models import (
 )
 from apps.core.services import NumberGenerationService, NotFoundError
 from apps.core.wizard import BaseWizardService
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ class EstimateService:
         for li in EstimateLineItem.objects.filter(estimate=parent):
             new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
-                price_list_item=li.price_list_item,
+                inventory_item=li.inventory_item,
                 source_template=li.source_template,
                 qty=li.qty,
                 units=li.units,
@@ -301,7 +301,7 @@ class EstimateService:
 
     @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
-        """Add a line item from a PriceListItem to a draft estimate."""
+        """Add a line item from a InventoryItem to a draft estimate."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -309,13 +309,13 @@ class EstimateService:
         if estimate.status != Estimate.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft estimates.')
         try:
-            pli = PriceListItem.objects.get(pk=pli_pk)
-        except PriceListItem.DoesNotExist:
-            raise NotFoundError(f'PriceListItem {pli_pk} not found')
+            pli = InventoryItem.objects.get(pk=pli_pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pli_pk} not found')
 
         li = EstimateLineItem.objects.create(
             estimate=estimate,
-            price_list_item=pli,
+            inventory_item=pli,
             description=pli.description,
             qty=qty,
             units=pli.units,
@@ -1075,7 +1075,7 @@ class EstimateWizardService(BaseWizardService):
             })
 
         for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'price_list_item',
+            'accounting_category', 'inventory_item',
         ):
             key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
             state_info = claims.get(key, default_state)
@@ -1148,7 +1148,7 @@ class EstimateWizardService(BaseWizardService):
 
         # PlanMaterials
         for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'price_list_item',
+            'accounting_category', 'inventory_item',
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
                 continue

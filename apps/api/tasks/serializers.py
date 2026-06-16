@@ -9,21 +9,21 @@ from apps.core.units import UnitsField
 
 class MaterialSerializer(serializers.ModelSerializer):
     is_expense_bound = serializers.BooleanField(read_only=True)
-    price_list_item_is_inventoried = serializers.SerializerMethodField()
+    inventory_item_is_catalog = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
-            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category',
             'consumption_state', 'restocked_qty',
-            'is_expense_bound', 'price_list_item_is_inventoried',
+            'is_expense_bound', 'inventory_item_is_catalog',
         ]
         read_only_fields = fields
 
-    def get_price_list_item_is_inventoried(self, obj):
-        return bool(obj.price_list_item and obj.price_list_item.is_inventoried)
+    def get_inventory_item_is_catalog(self, obj):
+        return bool(obj.inventory_item and obj.inventory_item.is_catalog)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
@@ -41,7 +41,7 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
-            'units', 'unit_cost', 'sell_price', 'price_list_item',
+            'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category', 'propagate_to_pli',
         ]
         read_only_fields = ['material_id']
@@ -50,7 +50,7 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         from apps.inventory.serializer_helpers import (
             enforce_pli_linked_allowlist, PLI_LINKED_PRICING_ALLOWED, FREEFORM_ALLOWED,
         )
-        if instance.price_list_item_id is not None:
+        if instance.inventory_item_id is not None:
             enforce_pli_linked_allowlist(
                 instance, validated_data, PLI_LINKED_PRICING_ALLOWED,
             )

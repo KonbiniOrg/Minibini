@@ -18,7 +18,7 @@ from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
 )
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.core.models import Configuration
 from apps.core.services import NumberGenerationService, NotFoundError, SELF_EDIT_WINDOW_HOURS
 

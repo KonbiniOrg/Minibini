@@ -94,7 +94,7 @@ class PlanTaskViewSet(JobScopedPermissionMixin,
         serializer = PlanMaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if material.price_list_item_id is not None and (
+        if material.inventory_item_id is not None and (
             'unit_cost' in serializer.validated_data
             or 'sell_price' in serializer.validated_data
         ):

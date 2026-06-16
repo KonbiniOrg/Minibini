@@ -23,6 +23,14 @@ class CanManageTimeOrFinancials(BasePermission):
                 or request.user.has_perm('core.can_manage_financials'))
 
 
+class CanManageFinancialsOrConfig(BasePermission):
+    """Inventory items are owned by both the money role (financials) and the
+    admin role (config) — either atom grants full CRUD + write-off/merge."""
+    def has_permission(self, request, view):
+        return (request.user.has_perm('core.can_manage_financials')
+                or request.user.has_perm('core.can_manage_config'))
+
+
 class CanManageJobOrPM(BasePermission):
     """can_manage_jobs atom OR being the target job's project_manager.
 

@@ -1,19 +1,19 @@
 from decimal import Decimal
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, User
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 
 
-class PriceListItemIsActiveFilterTests(APITestCase):
+class InventoryItemIsActiveFilterTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.user = User.objects.create_user(username='u', password='p')
         cls.cat = AccountingCategory.objects.create(code='C', name='Cat')
-        cls.active = PriceListItem.objects.create(
+        cls.active = InventoryItem.objects.create(
             code='ACT-1', description='active item', accounting_category=cls.cat,
             is_active=True,
         )
-        cls.inactive = PriceListItem.objects.create(
+        cls.inactive = InventoryItem.objects.create(
             code='INACT-1', description='retired item', accounting_category=cls.cat,
             is_active=False,
         )
@@ -25,13 +25,13 @@ class PriceListItemIsActiveFilterTests(APITestCase):
         return sorted(item['code'] for item in response.json()['results'])
 
     def test_no_filter_returns_all(self):
-        resp = self.client.get('/api/price-list-items/')
+        resp = self.client.get('/api/inventory/')
         self.assertEqual(self._codes(resp), ['ACT-1', 'INACT-1'])
 
     def test_is_active_true_excludes_deactivated(self):
-        resp = self.client.get('/api/price-list-items/?is_active=true')
+        resp = self.client.get('/api/inventory/?is_active=true')
         self.assertEqual(self._codes(resp), ['ACT-1'])
 
     def test_is_active_false_returns_only_deactivated(self):
-        resp = self.client.get('/api/price-list-items/?is_active=false')
+        resp = self.client.get('/api/inventory/?is_active=false')
         self.assertEqual(self._codes(resp), ['INACT-1'])

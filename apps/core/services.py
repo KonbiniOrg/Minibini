@@ -908,8 +908,8 @@ class LineItemService:
         """Convert FK fields passed as PKs to _id fields for model constructor.
 
         Allows services to accept either model instances or integer PKs
-        for foreign key fields (e.g., price_list_item=5 becomes
-        price_list_item_id=5).
+        for foreign key fields (e.g., inventory_item=5 becomes
+        inventory_item_id=5).
         """
         cleaned = {}
         fk_fields = {

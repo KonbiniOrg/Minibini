@@ -62,10 +62,10 @@ class ManualLineItemForm(UnitsFieldMixin, forms.ModelForm):
 
 class PriceListLineItemForm(forms.Form):
     """Form for creating a line item from a Price List Item"""
-    from apps.inventory.models import PriceListItem
+    from apps.inventory.models import InventoryItem
 
-    price_list_item = forms.ModelChoiceField(
-        queryset=PriceListItem.objects.all(),
+    inventory_item = forms.ModelChoiceField(
+        queryset=InventoryItem.objects.all(),
         required=True,
         label="Price List Item"
     )
@@ -79,8 +79,8 @@ class PriceListLineItemForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from apps.inventory.models import PriceListItem
-        self.fields['price_list_item'].queryset = PriceListItem.objects.filter(is_active=True)
+        from apps.inventory.models import InventoryItem
+        self.fields['inventory_item'].queryset = InventoryItem.objects.filter(is_active=True)
 
 
 

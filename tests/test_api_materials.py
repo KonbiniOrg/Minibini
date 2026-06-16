@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase, APIClient
 from apps.core.models import AccountingCategory
 from apps.jobs.models import Job, RateScheme
-from apps.inventory.models import PriceListItem, Material
+from apps.inventory.models import InventoryItem, Material
 from apps.contacts.models import Contact, Business
 
 User = get_user_model()
@@ -20,8 +20,8 @@ class MaterialApiTest(APITestCase):
         biz = Business.objects.create(business_name='B', default_contact=contact)
         contact.business = biz; contact.save()
         self.job = Job.objects.create(job_number='JOB-API-1', contact=contact)
-        self.pli = PriceListItem.objects.create(
-            code='I-API', accounting_category=self.cat, is_inventoried=True,
+        self.pli = InventoryItem.objects.create(
+            code='I-API', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
 
@@ -42,7 +42,7 @@ class MaterialApiTest(APITestCase):
         url = f'/api/jobs/{self.job.pk}/materials/'
         resp = self.client.post(url, {
             'description': 'x', 'quantity': '3',
-            'price_list_item': self.pli.pk,
+            'inventory_item': self.pli.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertTrue(Material.objects.filter(job=self.job, task__isnull=True).exists())
@@ -54,7 +54,7 @@ class MaterialApiTest(APITestCase):
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('2'), price_list_item=self.pli,
+            quantity=Decimal('2'), inventory_item=self.pli,
         )
         r1 = self.client.patch(f'/api/materials/{m.pk}/', {'description': 'y'}, format='json')
         self.assertEqual(r1.status_code, 400, r1.content)
@@ -65,7 +65,7 @@ class MaterialApiTest(APITestCase):
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('5'), price_list_item=self.pli,
+            quantity=Decimal('5'), inventory_item=self.pli,
         )
         r = self.client.post(f'/api/materials/{m.pk}/draw-more/', {'quantity': '2'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
@@ -81,7 +81,7 @@ class MaterialApiTest(APITestCase):
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='del-me',
-            quantity=Decimal('1'), price_list_item=None,
+            quantity=Decimal('1'), inventory_item=None,
             accounting_category=self.cat,
         )
         resp = self.client.delete(f'/api/materials/{m.pk}/')
@@ -92,7 +92,7 @@ class MaterialApiTest(APITestCase):
         from apps.expenses.models import Expense
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('1'), price_list_item=self.pli,
+            quantity=Decimal('1'), inventory_item=self.pli,
         )
         Expense.objects.create(
             entered_by=self.user, amount=Decimal('10'),
@@ -105,7 +105,7 @@ class MaterialApiTest(APITestCase):
 
 
 class MaterialInventoriedFlagSerializerTest(APITestCase):
-    """Task 7: `price_list_item_is_inventoried` should appear on serialized materials."""
+    """Task 7: `inventory_item_is_catalog` should appear on serialized materials."""
 
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='c', code='MIVF1')
@@ -116,19 +116,19 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='JOB-MIVF-1', contact=contact)
-        self.pli_inv = PriceListItem.objects.create(
-            code='I-INV', accounting_category=self.cat, is_inventoried=True,
+        self.pli_inv = InventoryItem.objects.create(
+            code='I-INV', accounting_category=self.cat, is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
-        self.pli_free = PriceListItem.objects.create(
-            code='I-FREE', accounting_category=self.cat, is_inventoried=False,
+        self.pli_free = InventoryItem.objects.create(
+            code='I-FREE', accounting_category=self.cat, is_catalog=False,
         )
 
     def _make_material(self, pli):
         from apps.inventory.services import MaterialService
         return MaterialService.create_on_job(
             job=self.job, task=None, description='x',
-            quantity=Decimal('1'), price_list_item=pli,
+            quantity=Decimal('1'), inventory_item=pli,
             accounting_category=self.cat if pli is None else None,
         )
 
@@ -136,20 +136,20 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         m = self._make_material(self.pli_inv)
         resp = self.client.get(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertIn('price_list_item_is_inventoried', resp.data)
-        self.assertTrue(resp.data['price_list_item_is_inventoried'])
+        self.assertIn('inventory_item_is_catalog', resp.data)
+        self.assertTrue(resp.data['inventory_item_is_catalog'])
 
     def test_flag_false_for_non_inventoried_pli(self):
         m = self._make_material(self.pli_free)
         resp = self.client.get(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertFalse(resp.data['price_list_item_is_inventoried'])
+        self.assertFalse(resp.data['inventory_item_is_catalog'])
 
     def test_flag_false_for_freeform_material(self):
         m = self._make_material(None)
         resp = self.client.get(f'/api/materials/{m.pk}/')
         self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertFalse(resp.data['price_list_item_is_inventoried'])
+        self.assertFalse(resp.data['inventory_item_is_catalog'])
 
     def test_flag_on_job_nested_materials(self):
         """The Job serializer's `materials` field should include the flag too."""
@@ -159,9 +159,9 @@ class MaterialInventoriedFlagSerializerTest(APITestCase):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/')
         self.assertEqual(resp.status_code, 200, resp.content)
         mats_by_id = {m['material_id']: m for m in resp.data['materials']}
-        self.assertTrue(mats_by_id[m_inv.pk]['price_list_item_is_inventoried'])
-        self.assertFalse(mats_by_id[m_free.pk]['price_list_item_is_inventoried'])
-        self.assertFalse(mats_by_id[m_none.pk]['price_list_item_is_inventoried'])
+        self.assertTrue(mats_by_id[m_inv.pk]['inventory_item_is_catalog'])
+        self.assertFalse(mats_by_id[m_free.pk]['inventory_item_is_catalog'])
+        self.assertFalse(mats_by_id[m_none.pk]['inventory_item_is_catalog'])
 
 
 class MaterialAssignTaskApiTest(APITestCase):
@@ -190,7 +190,7 @@ class MaterialAssignTaskApiTest(APITestCase):
         from apps.inventory.services import MaterialService
         return MaterialService.create_on_job(
             job=self.job, task=task, description='x',
-            quantity=Decimal('1'), price_list_item=None,
+            quantity=Decimal('1'), inventory_item=None,
             accounting_category=self.cat,
         )
 
@@ -243,8 +243,8 @@ class MaterialApiPermissionTest(APITestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='JOB-PERM-1', contact=contact)
-        self.pli = PriceListItem.objects.create(
-            code='I-PERM', accounting_category=self.cat, is_inventoried=False,
+        self.pli = InventoryItem.objects.create(
+            code='I-PERM', accounting_category=self.cat, is_catalog=False,
         )
 
     def test_worker_with_no_atoms_can_create_material(self):

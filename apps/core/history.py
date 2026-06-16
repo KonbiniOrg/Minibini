@@ -31,13 +31,18 @@ _DOMAIN_MODELS = None
 def _domain_models():
     global _DOMAIN_MODELS
     if _DOMAIN_MODELS is None:
-        from apps.core.models import JobHistory, CrmHistory, PurchasingHistory
-        job, crm, pur = JobHistory, CrmHistory, PurchasingHistory
+        from apps.core.models import (
+            JobHistory, CrmHistory, PurchasingHistory, InventoryHistory,
+        )
+        job, crm, pur, inv = (
+            JobHistory, CrmHistory, PurchasingHistory, InventoryHistory,
+        )
         _DOMAIN_MODELS = {
             'job': job, 'task': job, 'estimate': job, 'changeorder': job,
             'invoice': job, 'material': job, 'deliverable': job, 'shipment': job,
             'contact': crm, 'business': crm,
             'purchaseorder': pur, 'bill': pur,
+            'inventoryitem': inv,
         }
     return _DOMAIN_MODELS
 

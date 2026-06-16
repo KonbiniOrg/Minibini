@@ -474,11 +474,11 @@ def estimate_add_line_item(request, estimate_id):
             # Price list line item form submitted
             pricelist_form = PriceListLineItemForm(request.POST)
             if pricelist_form.is_valid():
-                price_list_item = pricelist_form.cleaned_data['price_list_item']
+                inventory_item = pricelist_form.cleaned_data['inventory_item']
                 qty = pricelist_form.cleaned_data['qty']
 
                 line_item = EstimateService.add_line_item_from_pli(
-                    estimate.pk, price_list_item.pk, qty=qty,
+                    estimate.pk, inventory_item.pk, qty=qty,
                 )
 
                 messages.success(request, f'Line item "{line_item.description}" added from price list')

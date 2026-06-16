@@ -8,7 +8,7 @@ from apps.api.jobs.serializers import JobSummarySerializer, JobSearchSerializer
 from apps.api.invoicing.serializers import InvoiceSerializer
 from apps.api.estimates.serializers import EstimateSerializer
 from apps.api.purchasing.serializers import BillSummarySerializer, PurchaseOrderSummarySerializer
-from apps.api.inventory.serializers import PriceListItemSerializer
+from apps.api.inventory.serializers import InventoryItemSerializer
 from apps.contacts.models import Contact, Business
 
 
@@ -89,9 +89,9 @@ def _serialize_categories(categories):
             result.append(data)
         out['purchase_orders'] = result
 
-    if 'price_list_items' in categories:
-        out['price_list_items'] = PriceListItemSerializer(
-            categories['price_list_items']['items'], many=True
+    if 'inventory_items' in categories:
+        out['inventory_items'] = InventoryItemSerializer(
+            categories['inventory_items']['items'], many=True
         ).data
 
     if 'est_worksheets' in categories:

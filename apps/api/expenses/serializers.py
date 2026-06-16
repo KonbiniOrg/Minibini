@@ -1,14 +1,22 @@
 from rest_framework import serializers
 from apps.expenses.models import Expense
+from apps.jobs.models import Job
 
 
 class NewMaterialSerializer(serializers.Serializer):
-    """Inline new-material descriptor — created atomically with the expense."""
+    """Inline new-material descriptor — created atomically with the expense.
+    An inventoried `inventory_item_id` routes to a stock receipt (QOH ↑);
+    otherwise a consumable material is created at `price`."""
     job_id = serializers.IntegerField()
     description = serializers.CharField(required=False, allow_blank=True, default='')
-    quantity = serializers.IntegerField(required=False, default=1)
+    quantity = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=1,
+    )
     price = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=False, allow_null=True, default=None,
+    )
+    inventory_item_id = serializers.IntegerField(
+        required=False, allow_null=True, default=None,
     )
 
 
@@ -26,6 +34,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
         source='reimbursement.paid_on', read_only=True, default=None,
     )
     new_material = NewMaterialSerializer(required=False, write_only=True)
+    job = serializers.PrimaryKeyRelatedField(
+        queryset=Job.objects.all(), required=False, allow_null=True,
+    )
 
     class Meta:
         model = Expense
@@ -35,7 +46,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'amount', 'purchased_on', 'description',
             'accounting_category', 'accounting_category_name',
             'payment_method', 'payment_account_id', 'reference_number',
-            'material', 'task_name', 'job_id', 'job_number', 'job_name',
+            'job', 'material', 'task_name', 'job_id', 'job_number', 'job_name',
             'status', 'qbo_id', 'qbo_sync_error',
             'reimbursement', 'reimbursement_paid_on',
             'created_at', 'updated_at',
@@ -68,16 +79,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return self._name(obj.purchased_by)
 
     def _job(self, obj):
-        if not obj.material_id:
-            return None
-        mat = obj.material
-        # Task-less material: job is set directly
-        if mat.job_id:
-            return mat.job
-        # Legacy: job via task
-        if mat.task_id and mat.task.job_id:
-            return mat.task.job
-        return None
+        # Job is now the direct cost anchor (no longer derived through material).
+        return obj.job
 
     def get_task_name(self, obj):
         if not obj.material_id:

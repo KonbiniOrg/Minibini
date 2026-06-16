@@ -9,7 +9,7 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import User, AccountingCategory
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.jobs.models import Job, Task
 from apps.search.services import SearchService
 from tests.base import BaseTestCase
@@ -280,20 +280,20 @@ class PriceFilterServiceTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         cat = AccountingCategory.objects.first()
-        self.cheap = PriceListItem.objects.create(
+        self.cheap = InventoryItem.objects.create(
             code='CHEAP', description='price filter cheap item',
             selling_price=Decimal('5.00'), accounting_category=cat
         )
-        self.mid = PriceListItem.objects.create(
+        self.mid = InventoryItem.objects.create(
             code='MID', description='price filter mid item',
             selling_price=Decimal('50.00'), accounting_category=cat
         )
-        self.expensive = PriceListItem.objects.create(
+        self.expensive = InventoryItem.objects.create(
             code='EXP', description='price filter expensive item',
             selling_price=Decimal('500.00'), accounting_category=cat
         )
         self.categories = {
-            'price_list_items': {
+            'inventory_items': {
                 'items': [self.cheap, self.mid, self.expensive],
                 'subcategories': {}
             }
@@ -301,26 +301,26 @@ class PriceFilterServiceTest(BaseTestCase):
 
     def test_price_min_excludes_cheaper(self):
         result = SearchService.apply_price_filter(self.categories, Decimal('10'), None)
-        codes = [i.code for i in result['price_list_items']['items']]
+        codes = [i.code for i in result['inventory_items']['items']]
         self.assertNotIn('CHEAP', codes)
         self.assertIn('MID', codes)
         self.assertIn('EXP', codes)
 
     def test_price_max_excludes_pricier(self):
         result = SearchService.apply_price_filter(self.categories, None, Decimal('100'))
-        codes = [i.code for i in result['price_list_items']['items']]
+        codes = [i.code for i in result['inventory_items']['items']]
         self.assertIn('CHEAP', codes)
         self.assertIn('MID', codes)
         self.assertNotIn('EXP', codes)
 
     def test_price_range(self):
         result = SearchService.apply_price_filter(self.categories, Decimal('10'), Decimal('100'))
-        codes = [i.code for i in result['price_list_items']['items']]
+        codes = [i.code for i in result['inventory_items']['items']]
         self.assertEqual(codes, ['MID'])
 
     def test_no_price_filter_returns_all(self):
         result = SearchService.apply_price_filter(self.categories, None, None)
-        self.assertEqual(len(result['price_list_items']['items']), 3)
+        self.assertEqual(len(result['inventory_items']['items']), 3)
 
     def test_non_price_categories_unchanged(self):
         contact = Contact.objects.create(first_name='Zara', last_name='Price')
@@ -364,27 +364,27 @@ class PriceFilterAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         cat = AccountingCategory.objects.first()
-        PriceListItem.objects.create(
+        InventoryItem.objects.create(
             code='SRCH-CHEAP', description='searchable price item cheap',
             selling_price=Decimal('5.00'), accounting_category=cat
         )
-        PriceListItem.objects.create(
+        InventoryItem.objects.create(
             code='SRCH-EXP', description='searchable price item expensive',
             selling_price=Decimal('999.00'), accounting_category=cat
         )
 
-    def test_price_min_filters_price_list_items(self):
+    def test_price_min_filters_inventory_items(self):
         response = self.client.get('/api/search/', {'q': 'searchable price item', 'price_min': '100'})
         self.assertEqual(response.status_code, 200)
-        items = response.data['results'].get('price_list_items', [])
+        items = response.data['results'].get('inventory_items', [])
         codes = [i['code'] for i in items]
         self.assertIn('SRCH-EXP', codes)
         self.assertNotIn('SRCH-CHEAP', codes)
 
-    def test_price_max_filters_price_list_items(self):
+    def test_price_max_filters_inventory_items(self):
         response = self.client.get('/api/search/', {'q': 'searchable price item', 'price_max': '100'})
         self.assertEqual(response.status_code, 200)
-        items = response.data['results'].get('price_list_items', [])
+        items = response.data['results'].get('inventory_items', [])
         codes = [i['code'] for i in items]
         self.assertIn('SRCH-CHEAP', codes)
         self.assertNotIn('SRCH-EXP', codes)
@@ -392,7 +392,7 @@ class PriceFilterAPITest(BaseTestCase):
     def test_no_price_filter_returns_all(self):
         response = self.client.get('/api/search/', {'q': 'searchable price item'})
         self.assertEqual(response.status_code, 200)
-        items = response.data['results'].get('price_list_items', [])
+        items = response.data['results'].get('inventory_items', [])
         codes = [i['code'] for i in items]
         self.assertIn('SRCH-CHEAP', codes)
         self.assertIn('SRCH-EXP', codes)

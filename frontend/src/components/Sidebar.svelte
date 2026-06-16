@@ -62,6 +62,7 @@
     <a href="/contacts" use:link>Contacts</a>
     <a href="/email" use:link>Email</a>
     <a href="/purchase-orders" use:link>Purchasing</a>
+    <a href="/inventory" use:link>Inventory</a>
     {#if showFinancials}
       <div class="section-label">Financials</div>
       <a href="/invoices" use:link>Invoices</a>

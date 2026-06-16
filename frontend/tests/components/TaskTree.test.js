@@ -86,6 +86,40 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: 'del' })).toBeNull();
   });
 
+  it('nests a cost-item expense under its material and lists loose expenses', () => {
+    const t = task({
+      task_id: 9, name: 'Assemble', materials: [],
+    });
+    const { getByText } = render(TaskTree, {
+      props: {
+        tasks: [t],
+        jobMaterials: [{ material_id: 50, description: 'Bracket', quantity: '1', sell_price: '0', unit_cost: '4', units: 'ea', consumption_state: 'pending' }],
+        expenses: [
+          { id: 1, material: 50, description: 'bracket receipt', amount: '4.40' },
+          { id: 2, material: null, description: 'FedEx shipping', amount: '40.00' },
+        ],
+        canManage: true,
+      },
+    });
+    expect(getByText('bracket receipt')).toBeInTheDocument();   // nested under material
+    expect(getByText('FedEx shipping')).toBeInTheDocument();    // loose, under "Expenses"
+    expect(getByText('Expenses')).toBeInTheDocument();
+  });
+
+  it('fires onEditExpense from an expense row', async () => {
+    const onEditExpense = vi.fn();
+    const { getAllByRole } = render(TaskTree, {
+      props: {
+        tasks: [],
+        expenses: [{ id: 7, material: null, description: 'shipping', amount: '40.00' }],
+        onEditExpense,
+      },
+    });
+    // The only edit button present is the expense's.
+    await fireEvent.click(getAllByRole('button', { name: 'edit' })[0]);
+    expect(onEditExpense).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+  });
+
   it('keeps cancel/assign/reorder hidden when canManage is omitted but edit/del open', () => {
     const { queryByRole } = render(TaskTree, {
       props: { tasks: [task({ status: 'pending', has_bleps: false })] },

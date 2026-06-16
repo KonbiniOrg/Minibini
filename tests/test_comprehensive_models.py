@@ -10,7 +10,7 @@ from apps.core.models import User, Configuration, AccountingCategory
 from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.estimates.models import Estimate, TaskTemplate
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.inventory.models import PriceListItem
+from apps.inventory.models import InventoryItem
 from apps.estimates.models import EstimateLineItem
 from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -96,7 +96,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             invoice_number="INV001"
         )
 
-        price_list_item = PriceListItem.objects.create(
+        inventory_item = InventoryItem.objects.create(
             code="ITEM001",
             description="Test item",
             purchase_price=Decimal('10.00'),
@@ -107,7 +107,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         # Test creating both estimate and invoice line items
         estimate_line_item = EstimateLineItem.objects.create(
             estimate=estimate,
-            price_list_item=price_list_item,
+            inventory_item=inventory_item,
             qty=Decimal('5.00'),
             description="Test estimate line item",
             price=Decimal('75.00')
@@ -115,18 +115,18 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         invoice_line_item = InvoiceLineItem.objects.create(
             invoice=invoice,
-            price_list_item=price_list_item,
+            inventory_item=inventory_item,
             qty=Decimal('5.00'),
             description="Test invoice line item",
             price=Decimal('75.00')
         )
 
         self.assertEqual(estimate_line_item.estimate, estimate)
-        self.assertEqual(estimate_line_item.price_list_item, price_list_item)
+        self.assertEqual(estimate_line_item.inventory_item, inventory_item)
         self.assertEqual(estimate_line_item.qty, Decimal('5.00'))
 
         self.assertEqual(invoice_line_item.invoice, invoice)
-        self.assertEqual(invoice_line_item.price_list_item, price_list_item)
+        self.assertEqual(invoice_line_item.inventory_item, inventory_item)
         self.assertEqual(invoice_line_item.qty, Decimal('5.00'))
 
     def test_purchase_order_workflow(self):
@@ -153,7 +153,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         # Test creating both purchase order and bill line items
         # Create price list item for testing
-        price_item = PriceListItem.objects.create(
+        price_item = InventoryItem.objects.create(
             code="TEST001",
             selling_price=Decimal('25.00'),
             accounting_category=self.category,
@@ -161,7 +161,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         po_line_item = PurchaseOrderLineItem.objects.create(
             purchase_order=purchase_order,
-            price_list_item=price_item,
+            inventory_item=price_item,
             qty=Decimal('2.00'),
             description="Purchase order item",
             price=Decimal('50.00')
@@ -169,7 +169,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         bill_line_item = BillLineItem.objects.create(
             bill=bill,
-            price_list_item=price_item,
+            inventory_item=price_item,
             qty=Decimal('2.00'),
             description="Bill item",
             price=Decimal('50.00')
@@ -290,7 +290,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         self.assertNotIn(new_group, developer_user.groups.all())
 
     def test_price_calculation_accuracy(self):
-        price_list_item = PriceListItem.objects.create(
+        inventory_item = InventoryItem.objects.create(
             code="BOLT001",
             purchase_price=Decimal('1.50'),
             selling_price=Decimal('2.25'),
@@ -304,12 +304,12 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         line_item = InvoiceLineItem.objects.create(
             invoice=invoice,
-            price_list_item=price_list_item,
+            inventory_item=inventory_item,
             qty=Decimal('10.00'),
             price=Decimal('22.50')
         )
 
-        expected_total = line_item.qty * price_list_item.selling_price
+        expected_total = line_item.qty * inventory_item.selling_price
         self.assertEqual(line_item.price, expected_total)
 
     def test_unique_constraints(self):
@@ -411,77 +411,77 @@ class LineItemValidationTest(TestCase):
 
         # Create price list item
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.price_list_item = PriceListItem.objects.create(
+        self.inventory_item = InventoryItem.objects.create(
             code="TEST001",
             selling_price=Decimal('25.00'),
             accounting_category=self.category,
         )
 
     def test_estimate_line_item_validation_both_null_allowed(self):
-        """Test EstimateLineItem allows price_list_item to be null (manual line item)"""
+        """Test EstimateLineItem allows inventory_item to be null (manual line item)"""
         line_item = EstimateLineItem.objects.create(
             estimate=self.estimate,
-            price_list_item=None,
+            inventory_item=None,
             description="Manual line item with no price list item"
         )
         line_item.full_clean()  # Should not raise
-        self.assertIsNone(line_item.price_list_item)
+        self.assertIsNone(line_item.inventory_item)
 
     def test_estimate_line_item_validation_cannot_have_both(self):
         """EstimateLineItem no longer has a task FK; mutual-exclusivity check is skipped.
-        This test verifies that a line item with only price_list_item passes validation."""
+        This test verifies that a line item with only inventory_item passes validation."""
         line_item = EstimateLineItem(
             estimate=self.estimate,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             description="PLI-backed line item"
         )
         # Should NOT raise — ELI dropped its task FK, so no mutual-exclusivity check
         line_item.full_clean()
 
     def test_purchase_order_line_item_validation_both_null_allowed(self):
-        """Test PurchaseOrderLineItem allows both task and price_list_item to be null"""
+        """Test PurchaseOrderLineItem allows both task and inventory_item to be null"""
         line_item = PurchaseOrderLineItem.objects.create(
             purchase_order=self.purchase_order,
             task=None,
-            price_list_item=None,
+            inventory_item=None,
             description="No task or price item"
         )
         line_item.full_clean()  # Should not raise
         self.assertIsNone(line_item.task)
-        self.assertIsNone(line_item.price_list_item)
+        self.assertIsNone(line_item.inventory_item)
 
     def test_purchase_order_line_item_validation_cannot_have_both(self):
-        """Test PurchaseOrderLineItem cannot have both task and price_list_item"""
+        """Test PurchaseOrderLineItem cannot have both task and inventory_item"""
         line_item = PurchaseOrderLineItem(
             purchase_order=self.purchase_order,
             task=self.task,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             description="Invalid - has both"
         )
         with self.assertRaises(ValidationError) as context:
             line_item.full_clean()
-        self.assertIn("cannot have both task and price_list_item", str(context.exception))
+        self.assertIn("cannot have both task and inventory_item", str(context.exception))
 
     def test_bill_line_item_validation_both_null_allowed(self):
-        """Test BillLineItem allows both task and price_list_item to be null"""
+        """Test BillLineItem allows both task and inventory_item to be null"""
         line_item = BillLineItem.objects.create(
             bill=self.bill,
             task=None,
-            price_list_item=None,
+            inventory_item=None,
             description="No task or price item"
         )
         line_item.full_clean()  # Should not raise
         self.assertIsNone(line_item.task)
-        self.assertIsNone(line_item.price_list_item)
+        self.assertIsNone(line_item.inventory_item)
 
     def test_bill_line_item_validation_cannot_have_both(self):
-        """Test BillLineItem cannot have both task and price_list_item"""
+        """Test BillLineItem cannot have both task and inventory_item"""
         line_item = BillLineItem(
             bill=self.bill,
             task=self.task,
-            price_list_item=self.price_list_item,
+            inventory_item=self.inventory_item,
             description="Invalid - has both"
         )
         with self.assertRaises(ValidationError) as context:
             line_item.full_clean()
-        self.assertIn("cannot have both task and price_list_item", str(context.exception))
+        self.assertIn("cannot have both task and inventory_item", str(context.exception))

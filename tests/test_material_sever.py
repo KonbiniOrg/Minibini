@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Business, Contact
 from apps.jobs.models import Job
-from apps.inventory.models import Earmark, Material, PriceListItem
+from apps.inventory.models import Earmark, Material, InventoryItem
 from apps.inventory.services import MaterialService
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.core.models import AccountingCategory, Configuration, AppState
@@ -18,9 +18,9 @@ class MaterialSeverTest(TestCase):
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
         cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
-        self.pli = PriceListItem.objects.create(
+        self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=cat, is_inventoried=True,
+            selling_price=Decimal('2.00'), accounting_category=cat, is_catalog=True,
         )
         po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderLineItem.objects.create(
@@ -28,7 +28,7 @@ class MaterialSeverTest(TestCase):
         )
         # Material created via MaterialService.create_on_job so earmark is set
         self.material = MaterialService.create_on_job(
-            job=self.job, price_list_item=self.pli, quantity=Decimal('5.00'),
+            job=self.job, inventory_item=self.pli, quantity=Decimal('5.00'),
         )
         self.material.po_line_item = self.line
         self.material.save(update_fields=['po_line_item'])
@@ -39,7 +39,7 @@ class MaterialSeverTest(TestCase):
         self.assertIsNone(self.material.po_line_item_id)
         self.assertEqual(self.material.quantity, Decimal('5.00'))
         # Earmark preserved
-        earmark = Earmark.objects.filter(price_list_item=self.pli, job=self.job).first()
+        earmark = Earmark.objects.filter(inventory_item=self.pli, job=self.job).first()
         self.assertIsNotNone(earmark)
         self.assertEqual(earmark.quantity, Decimal('5.00'))
 
@@ -47,7 +47,7 @@ class MaterialSeverTest(TestCase):
         material_id = self.material.pk
         MaterialService.sever(self.material, 'delete')
         self.assertFalse(Material.objects.filter(pk=material_id).exists())
-        self.assertFalse(Earmark.objects.filter(price_list_item=self.pli, job=self.job).exists())
+        self.assertFalse(Earmark.objects.filter(inventory_item=self.pli, job=self.job).exists())
 
     def test_sever_raises_on_consumed_material(self):
         self.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED

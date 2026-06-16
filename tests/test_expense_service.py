@@ -246,3 +246,177 @@ class ExpenseRetrySyncTest(TestCase):
         mock_push.assert_called_once()
 
 
+
+
+class ExpenseJobLinkTest(TestCase):
+    """Job anchor, own-material creation, stock receipts, freeze, move-between-jobs."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.user = User.objects.create_user(username='worker', password='testpass')
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Shop Supplies', qbo_expense_account_id='500',
+        )
+        self.contact = Contact.objects.create(
+            first_name='T', last_name='C', email='c@test.com',
+        )
+        self.job = Job.objects.create(job_number='JOB-L1', contact=self.contact)
+        self.other_job = Job.objects.create(job_number='JOB-L2', contact=self.contact)
+
+    def _expense(self, *, amount=Decimal('10.00'), job=None, new_material=None):
+        return ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user, amount=amount,
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            job=job, new_material=new_material,
+        )
+
+    def test_submit_accepts_job(self):
+        exp = self._expense(job=self.job)
+        self.assertEqual(exp.job_id, self.job.pk)
+
+    def test_update_changes_job_material_less(self):
+        exp = self._expense(job=self.job)
+        ExpenseService.update(expense=exp, actor=self.user, job=self.other_job)
+        exp.refresh_from_db()
+        self.assertEqual(exp.job_id, self.other_job.pk)
+
+    def test_freeform_new_material_uses_entered_cost_no_division(self):
+        # The created material's unit_cost is what the user entered (price),
+        # NOT amount/quantity. Goods = 2 × $30 = $60; amount $66 (incl $6 tax) —
+        # the amount exceeds goods, and unit_cost stays $30 (not $33 = 66/2).
+        exp = self._expense(amount=Decimal('66.00'), new_material={
+            'job_id': self.job.pk, 'description': 'Steel',
+            'quantity': 2, 'price': Decimal('30.00')})
+        self.assertEqual(exp.job_id, self.job.pk)
+        self.assertIsNotNone(exp.material_id)
+        exp.material.refresh_from_db()
+        self.assertEqual(exp.material.unit_cost, Decimal('30.00'))
+
+    def test_inventoried_pli_becomes_stock_receipt(self):
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY', description='plywood', accounting_category=self.cat,
+            is_catalog=True, qty_on_hand=Decimal('7.00'))
+        exp = self._expense(amount=Decimal('73.33'), new_material={
+            'job_id': self.job.pk, 'inventory_item_id': pli.pk, 'quantity': 3})
+        self.assertIsNone(exp.material_id)             # no consumable
+        self.assertEqual(exp.stock_pli_id, pli.pk)
+        self.assertEqual(exp.stock_qty, Decimal('3.00'))
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('10.00'))  # 7 + 3
+
+    def test_stock_receipt_delete_reverses_qoh(self):
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY2', description='p', accounting_category=self.cat,
+            is_catalog=True, qty_on_hand=Decimal('7.00'))
+        exp = self._expense(amount=Decimal('73.33'), new_material={
+            'job_id': self.job.pk, 'inventory_item_id': pli.pk, 'quantity': 3})
+        ExpenseService.delete(expense=exp, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))  # back to 7
+
+    def test_frozen_when_material_on_invoice(self):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        exp = self._expense(amount=Decimal('15.00'), new_material={
+            'job_id': self.job.pk, 'description': 'm', 'quantity': 1, 'price': Decimal('15.00')})
+        inv = Invoice.objects.create(
+            job=self.job, invoice_number='INV-FREEZE-1', status=Invoice.STATUS_OPEN,
+        )
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, line_number=1, description='x',
+            qty=Decimal('1.00'), price=Decimal('15.00'), accounting_category=self.cat,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL, source_pk=exp.material_id,
+        )
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=exp, actor=self.user, amount=Decimal('99.00'))
+
+    def test_move_material_linked_expense_moves_material_job(self):
+        from apps.inventory.models import Material
+        exp = self._expense(amount=Decimal('15.00'), new_material={
+            'job_id': self.job.pk, 'description': 'm', 'quantity': 1, 'price': Decimal('15.00')})
+        ExpenseService.update(expense=exp, actor=self.user, job=self.other_job)
+        exp.refresh_from_db()
+        exp.material.refresh_from_db()
+        self.assertEqual(exp.job_id, self.other_job.pk)
+        self.assertEqual(exp.material.job_id, self.other_job.pk)
+
+
+class ExpenseInvoiceFreezeTest(TestCase):
+    """A material-less expense is frozen while it is itself on an invoice (B2)."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.user = User.objects.create_user(username='frz', password='x')
+        self.cat = AccountingCategory.objects.create(code='FRZ', name='frz')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='f@t.com')
+        self.job = Job.objects.create(job_number='JOB-FRZ-1', contact=self.contact)
+
+    def test_frozen_when_expense_on_invoice(self):
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        exp = ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('40.00'),
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, job=self.job)
+        inv = Invoice.objects.create(
+            job=self.job, invoice_number='INV-FRZ-1', status=Invoice.STATUS_OPEN)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, line_number=1, description='shipping',
+            qty=Decimal('1.00'), price=Decimal('40.00'), accounting_category=self.cat)
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_EXPENSE, source_pk=exp.pk)
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=exp, actor=self.user, amount=Decimal('99.00'))
+
+
+class ExpenseReimbursedFreezeTest(TestCase):
+    """A reimbursed expense's money fields are locked; it can't be deleted."""
+
+    def setUp(self):
+        from apps.expenses.models import Reimbursement
+        self.user = User.objects.create_user(username='rb', password='x')
+        self.other = User.objects.create_user(username='rb2', password='x')
+        self.cat = AccountingCategory.objects.create(code='RB', name='rb')
+        self.exp = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user, amount=Decimal('40.00'),
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL)
+        self.batch = Reimbursement.objects.create(
+            purchased_by=self.user, paid_on=date(2026, 4, 2),
+            payment_account_id='ACC', created_by=self.user)
+        self.exp.reimbursement = self.batch
+        self.exp.status = Expense.STATUS_REIMBURSED
+        self.exp.save(update_fields=['reimbursement', 'status'])
+
+    def test_amount_locked(self):
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=self.exp, actor=self.user, amount=Decimal('99.00'))
+
+    def test_purchased_by_locked(self):
+        with self.assertRaises(ValidationError):
+            ExpenseService.update(expense=self.exp, actor=self.user, purchased_by=self.other)
+
+    def test_nonmoney_field_editable(self):
+        ExpenseService.update(expense=self.exp, actor=self.user, description='clarified')
+        self.exp.refresh_from_db()
+        self.assertEqual(self.exp.description, 'clarified')
+
+    def test_unchanged_money_field_ok(self):
+        # Re-sending the same amount (e.g. full-payload PATCH) is not a change.
+        ExpenseService.update(expense=self.exp, actor=self.user,
+                              amount=Decimal('40.00'), description='note')
+        self.exp.refresh_from_db()
+        self.assertEqual(self.exp.description, 'note')
+
+    def test_delete_blocked(self):
+        with self.assertRaises(ValidationError):
+            ExpenseService.delete(expense=self.exp, actor=self.user)

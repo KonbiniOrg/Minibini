@@ -8,7 +8,7 @@ from apps.core.models import User, AccountingCategory
 from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet, TaskTemplate
-from apps.inventory.models import PlanMaterial, PriceListItem
+from apps.inventory.models import PlanMaterial, InventoryItem
 
 
 class PlanMaterialCRUDTest(TestCase):
@@ -86,14 +86,14 @@ class PlanMaterialCRUDTest(TestCase):
         self.assertEqual(PlanMaterial.objects.filter(plan_task=self.plan_task).count(), 2)
 
     def test_create_material_with_pli(self):
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='EPOXY-01', description='Epoxy 2-part', units='tube',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.category,
         )
         response = self.client.post(
             f'/api/plan-tasks/{self.plan_task.pk}/materials/',
-            {'price_list_item': pli.pk, 'quantity': '3.00'},
+            {'inventory_item': pli.pk, 'quantity': '3.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)

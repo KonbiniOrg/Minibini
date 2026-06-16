@@ -1,8 +1,10 @@
 <script>
   import { api } from '../../lib/api.js';
   import { user as currentUser } from '../../stores/auth.js';
+  import { canManageFinancials } from '../../stores/permissions.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import MaterialPicker from './MaterialPicker.svelte';
+  import JobPicker from '../JobPicker.svelte';
 
   let {
     // Optional: pass an existing expense to edit. If null, it's a create form.
@@ -13,6 +15,9 @@
     // When true, force purchased_by to the logged-in user and hide the picker.
     // Used by the Home-card "My Expenses" surface.
     lockPurchasedByToSelf = false,
+    // Optional { job_id, job_number } to pre-anchor a new expense (e.g. opened
+    // from a Task detail page). Ignored when editing an existing expense.
+    initialJob = null,
   } = $props();
 
   let isEdit = $derived(!!expense);
@@ -26,8 +31,15 @@
   let payment_account_id = $state(expense?.payment_account_id || '');
   let reference_number = $state(expense?.reference_number || '');
   let purchased_by = $state(expense?.purchased_by || $currentUser?.id || null);
-  let material = $state(expense?.material || null);
   let newMaterial = $state(null);
+
+  // Job is the cost anchor. JobPicker emits { job_id, job_number }.
+  let jobSel = $state(
+    expense?.job
+      ? { job_id: expense.job, job_number: expense.job_number }
+      : (initialJob || null)
+  );
+  let jobId = $derived(jobSel?.job_id ?? null);
 
   // Compound "paid by" select value: "personal" or "company:<account_id>"
   let paidByValue = $state(
@@ -89,18 +101,13 @@
         payment_account_id: payment_method === 'company' ? payment_account_id : '',
         reference_number,
         purchased_by: payment_method === 'personal' ? purchased_by : (purchased_by || null),
-        material: material,
+        job: jobId,
       };
 
-      // If the user queued a new material, include it in the expense payload.
-      // The backend creates both atomically.
+      // If the user queued a purchased item, include it. The backend creates a
+      // consumable material, or — for an inventoried PLI — a stock receipt.
       if (newMaterial) {
-        payload.material = null;
-        payload.new_material = {
-          job_id: newMaterial.job_id,
-          description: newMaterial.description || description,
-          price: amount,
-        };
+        payload.new_material = { ...newMaterial, job_id: jobId };
       }
 
       let saved;
@@ -178,7 +185,7 @@
     </p>
   {/if}
 
-  {#if payment_method === 'personal' && !lockPurchasedByToSelf}
+  {#if payment_method === 'personal' && !lockPurchasedByToSelf && $canManageFinancials}
     <p>
       <label for="ef-purchby"><strong>Purchased by *</strong></label><br>
       <select id="ef-purchby" bind:value={purchased_by}>
@@ -190,9 +197,22 @@
     {#each fieldErr('purchased_by') as msg}<p><em>{msg}</em></p>{/each}
   {/if}
 
-  <MaterialPicker bind:materialId={material} bind:newMaterial={newMaterial} defaultDescription={description} defaultAmount={amount} />
+  <p>
+    <label for="ef-job"><strong>Job</strong> (leave blank for overhead)</label><br>
+    <JobPicker bind:value={jobSel} />
+  </p>
+  {#each fieldErr('job') as msg}<p><em>{msg}</em></p>{/each}
 
-  {#each fieldErr('non_field_errors') as msg}<p><em>{msg}</em></p>{/each}
+  <MaterialPicker
+    jobId={jobId}
+    bind:newMaterial={newMaterial}
+    defaultDescription={description}
+    defaultAmount={amount}
+  />
+  {#each fieldErr('material') as msg}<p class="error"><em>{msg}</em></p>{/each}
+
+  {#each fieldErr('non_field_errors') as msg}<p class="error"><em>{msg}</em></p>{/each}
+  {#each fieldErr('detail') as msg}<p class="error"><em>{msg}</em></p>{/each}
 
   <p>
     <button type="submit" disabled={saving}>

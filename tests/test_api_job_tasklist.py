@@ -11,7 +11,7 @@ from django.test import TestCase
 from apps.core.models import User, AccountingCategory
 from apps.jobs.models import Job, Task, RateScheme
 from apps.contacts.models import Contact
-from apps.inventory.models import Material, PriceListItem
+from apps.inventory.models import Material, InventoryItem
 
 
 def _make_scheme(name_suffix=''):
@@ -80,8 +80,10 @@ class MaterialCRUDTest(TestCase):
         response = self.client.post(
             f'/api/tasks/{self.task.pk}/materials/',
             {
+                # Freeform material: no manual unit_cost — cost comes from a
+                # linked expense/PO, and the serializer guard enforces that.
                 'description': 'Epoxy glue', 'quantity': '1.00',
-                'unit_cost': '15.00', 'sell_price': '25.00',
+                'sell_price': '25.00',
                 'accounting_category': self.category.pk,
             },
             format='json',
@@ -97,7 +99,7 @@ class MaterialCRUDTest(TestCase):
             f'/api/tasks/{self.task.pk}/materials/',
             {
                 'description': 'Screws', 'quantity': '10.00',
-                'unit_cost': '0.50', 'sell_price': '1.00',
+                'sell_price': '1.00',
                 'accounting_category': self.category.pk,
             },
             format='json',
@@ -105,14 +107,14 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_create_material_with_pli(self):
-        pli = PriceListItem.objects.create(
+        pli = InventoryItem.objects.create(
             code='EPOXY-01', description='Epoxy 2-part', units='tube',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
             accounting_category=self.category,
         )
         response = self.client.post(
             f'/api/tasks/{self.task.pk}/materials/',
-            {'price_list_item': pli.pk, 'quantity': '3.00'},
+            {'inventory_item': pli.pk, 'quantity': '3.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)

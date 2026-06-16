@@ -4,6 +4,7 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
+  import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
 
@@ -13,6 +14,7 @@
   let contact = $state(null);
   let enrichedTasks = $state([]);
   let jobMaterials = $state([]);
+  let jobExpenses = $state([]);
   let templates = $state([]);
   let categories = $state([]);
   let loading = $state(true);
@@ -24,6 +26,12 @@
   let taskModalTask = $state(null);
 
   let materialModalOpen = $state(false);
+  let expenseModalOpen = $state(false);
+  let editingExpense = $state(null);
+  function openEditExpense(exp) {
+    editingExpense = exp;
+    expenseModalOpen = true;
+  }
   let materialModalMode = $state('create');
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
@@ -50,6 +58,14 @@
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
       jobMaterials = (job.materials || []).filter(m => !m.task);
+      try {
+        const expData = await api.get(`/api/expenses/?job=${params.id}`);
+        // Material-less expenses surface at the job level (material-linked ones
+        // are represented by their material in the tree).
+        jobExpenses = (expData.results ?? expData);
+      } catch (e) {
+        jobExpenses = [];
+      }
       await enrichTasks();
       if (job.contact) {
         try {
@@ -317,6 +333,7 @@
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
       <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
     {#if job?.can_manage}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
@@ -342,6 +359,8 @@
     onAssignTask={(task) => { assignModalTask = task; assignModalOpen = true; }}
     onCancelTask={handleCancelTask}
     onMoveMaterial={handleMoveMaterial}
+    expenses={jobExpenses}
+    onEditExpense={openEditExpense}
     bind:selectedTaskId
   />
 
@@ -367,6 +386,14 @@
     {categories}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
+  />
+
+  <ExpenseModal
+    open={expenseModalOpen}
+    expense={editingExpense}
+    initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
+    onSaved={() => { expenseModalOpen = false; editingExpense = null; loadJob(); }}
+    onClose={() => { expenseModalOpen = false; editingExpense = null; }}
   />
 
   <WorkItemForm

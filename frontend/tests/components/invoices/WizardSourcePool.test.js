@@ -33,4 +33,39 @@ describe('invoices/WizardSourcePool', () => {
     await fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
   });
+
+  it('renders both the materials and expenses groups (no key collision)', () => {
+    const { getByText } = render(WizardSourcePool, {
+      props: {
+        sourcePool: {
+          tasks: [
+            { task_id: null, name: 'Materials (no task)', has_billable_atoms: true,
+              atoms: [{ type: 'material', id: 1, description: 'Steel', qty: 1, rate: '5.00',
+                        amount: '5.00', units: 'none', state: 'available' }] },
+            { task_id: null, name: 'Expenses', has_billable_atoms: true,
+              atoms: [{ type: 'expense', id: 9, description: 'FedEx shipping', qty: 1,
+                        rate: '40.00', amount: '40.00', units: 'none', state: 'available' }] },
+          ],
+        },
+      },
+    });
+    expect(getByText('Materials (no task)')).toBeInTheDocument();
+    expect(getByText('Expenses')).toBeInTheDocument();
+    expect(getByText(/FedEx shipping/)).toBeInTheDocument();
+  });
+
+  it('toggles an expense atom', async () => {
+    const { getByRole } = render(WizardSourcePool, {
+      props: {
+        sourcePool: {
+          tasks: [{ task_id: null, name: 'Expenses', has_billable_atoms: true,
+            atoms: [{ type: 'expense', id: 9, description: 'FedEx', qty: 1, rate: '40.00',
+                      amount: '40.00', units: 'none', state: 'available' }] }],
+        },
+      },
+    });
+    const checkbox = getByRole('checkbox');
+    await fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+  });
 });

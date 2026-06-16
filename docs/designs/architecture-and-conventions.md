@@ -219,6 +219,34 @@ Page-number pagination, default 25, max 100, override per request via
 `?page_size=N`. Set globally as `DEFAULT_PAGINATION_CLASS`. Some
 viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 
+> **⚠️ The 100 cap is silent — this has bitten us repeatedly.** `max_page_size
+> = 100` means **any** larger `?page_size` is silently clamped to 100. A request
+> for `?page_size=9999` returns *at most* 100 rows with no error. A client that
+> reads `data.results` and ignores `data.next` therefore **silently shows only
+> the first 100** — the classic symptom is "a record I know exists doesn't appear
+> in the list / isn't selectable in the picker" once a dataset crosses 100.
+>
+> Whenever a frontend (or any consumer) "just wants all the rows," do **not**
+> assume a big `page_size` works. Notice the cap and pick a fix deliberately —
+> there's no one right answer; it depends on the surface:
+> - **Walk the pages** — loop following `next` (incrementing `page` locally to
+>   stay proxy-relative) and accumulate. Good for a *browse + client-side search*
+>   list where you genuinely want the whole set in memory (e.g.
+>   `InventoryListPage`). Watch the total size.
+> - **Server-side `?search=` / filtering** — for type-aheads and large datasets,
+>   query the API as the user types instead of loading everything. The durable
+>   choice for pickers.
+> - **Disable pagination on the viewset** (`pagination_class = None`) — only when
+>   the result set is *intrinsically bounded* and small (like `UserViewSet`).
+> - **Real pagination UI** — page controls, when the user should page through.
+>
+> The anti-pattern to avoid: bumping `?page_size` to a big number and assuming
+> it's complete. If you bound a result deliberately, say so in the UI; never let
+> it look like "everything" when it's the first 100. Known instances fixed by
+> page-walking: `InventoryListPage` (2026-06). Known still-capped: the inventory
+> item picker (`PriceListItemPicker`) requests `page_size=9999` — slated for a
+> server-side-search rework, see `docs/designs/LATER.md`.
+
 ### 3.4 Mixin catalog
 
 All in `apps/api/mixins.py`.

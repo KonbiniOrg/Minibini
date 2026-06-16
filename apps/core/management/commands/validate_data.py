@@ -35,10 +35,10 @@ Per-model field checks:
   Task             E  must belong to a Job
                    E  valid status value
   PlanTask         E  must belong to an EstWorksheet
-  Material         E  must have description or price_list_item
+  Material         E  must have description or inventory_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
-  LineItems        E  cannot have both task and price_list_item (mutual exclusivity)
+  LineItems        E  cannot have both task and inventory_item (mutual exclusivity)
   (all 4 types)    W  negative price
   PurchaseOrder    E  valid status value
                    E  contact must have a business
@@ -57,7 +57,7 @@ Per-model field checks:
                    W  job has no accepted estimate
   ShipmentItem     E  qty must be positive
                    E  shipped qty per deliverable exceeds qty_ordered
-  PriceListItem    E  missing accounting_category (causes silent tax-exemption)
+  InventoryItem    E  missing accounting_category (causes silent tax-exemption)
                    E  negative purchase_price, selling_price, qty_on_hand, qty_sold, qty_wasted
                    E  duplicate code
                    W  not inventoried but has non-zero quantity values
@@ -132,9 +132,8 @@ class Command(BaseCommand):
         self.check_deliverables()
         self.check_shipments()
         self.check_shipment_items()
-        self.check_price_list_items()
+        self.check_inventory_items()
         self.check_earmarks()
-        self.check_inventory_adjustments()
 
         # Cross-model relationship invariants
         self.check_estimate_versioning()
@@ -345,14 +344,14 @@ class Command(BaseCommand):
     def check_materials(self):
         from apps.inventory.models import Material, PlanMaterial
         # Check PlanMaterials (worksheet-side)
-        for m in PlanMaterial.objects.select_related('price_list_item', 'plan_task').all():
-            if not m.description and not m.price_list_item:
+        for m in PlanMaterial.objects.select_related('inventory_item', 'plan_task').all():
+            if not m.description and not m.inventory_item:
                 self.errors.append(
-                    f'PlanMaterial {m.pk}: no description and no price_list_item (nothing to derive from)'
+                    f'PlanMaterial {m.pk}: no description and no inventory_item (nothing to derive from)'
                 )
-            if m.price_list_item and not m.description:
+            if m.inventory_item and not m.description:
                 if self.fix:
-                    m.description = m.price_list_item.description[:255]
+                    m.description = m.inventory_item.description[:255]
                     m.save()
                     self.fixes.append(f'PlanMaterial {m.pk}: set description from PLI')
                 else:
@@ -361,15 +360,15 @@ class Command(BaseCommand):
                 self.errors.append(f'PlanMaterial {m.pk}: negative quantity {m.quantity}')
 
         # Check Materials (work-order side)
-        for m in Material.objects.select_related('price_list_item', 'task').all():
-            if not m.description and not m.price_list_item:
+        for m in Material.objects.select_related('inventory_item', 'task').all():
+            if not m.description and not m.inventory_item:
                 self.errors.append(
-                    f'Material {m.pk}: no description and no price_list_item (nothing to derive from)'
+                    f'Material {m.pk}: no description and no inventory_item (nothing to derive from)'
                 )
             # Auto-fill check: if PLI linked, description should match or be explicitly set
-            if m.price_list_item and not m.description:
+            if m.inventory_item and not m.description:
                 if self.fix:
-                    m.description = m.price_list_item.description[:255]
+                    m.description = m.inventory_item.description[:255]
                     m.save()
                     self.fixes.append(f'Material {m.pk}: set description from PLI')
                 else:
@@ -397,15 +396,15 @@ class Command(BaseCommand):
 
         for name, model, has_task_fk in line_item_models:
             if has_task_fk:
-                qs = model.objects.select_related('task', 'price_list_item').all()
+                qs = model.objects.select_related('task', 'inventory_item').all()
             else:
-                qs = model.objects.select_related('price_list_item').all()
+                qs = model.objects.select_related('inventory_item').all()
             for li in qs:
-                # Mutual exclusivity: cannot have both task and price_list_item
+                # Mutual exclusivity: cannot have both task and inventory_item
                 # (only applicable to models that still have a task FK)
-                if has_task_fk and li.task and li.price_list_item:
+                if has_task_fk and li.task and li.inventory_item:
                     self.errors.append(
-                        f'{name} {li.pk}: has both task and price_list_item (mutually exclusive)'
+                        f'{name} {li.pk}: has both task and inventory_item (mutually exclusive)'
                     )
                 # Negative price
                 if li.price < 0:
@@ -553,9 +552,9 @@ class Command(BaseCommand):
 
     # ── Price List Items ──────────────────────────────────────
 
-    def check_price_list_items(self):
-        from apps.inventory.models import PriceListItem
-        for pli in PriceListItem.objects.all():
+    def check_inventory_items(self):
+        from apps.inventory.models import InventoryItem
+        for pli in InventoryItem.objects.all():
             if not pli.accounting_category_id:
                 self.errors.append(
                     f'PLI {pli.code}: missing accounting_category '
@@ -571,16 +570,11 @@ class Command(BaseCommand):
                 self.errors.append(f'PLI {pli.code}: negative qty_sold {pli.qty_sold}')
             if pli.qty_wasted < 0:
                 self.errors.append(f'PLI {pli.code}: negative qty_wasted {pli.qty_wasted}')
-            # Non-inventoried items should have zero quantities
-            if not pli.is_inventoried:
-                if pli.qty_on_hand != 0 or pli.qty_sold != 0 or pli.qty_wasted != 0:
-                    self.warnings.append(
-                        f'PLI {pli.code}: not inventoried but has quantity values '
-                        f'(qoh={pli.qty_on_hand}, sold={pli.qty_sold}, wasted={pli.qty_wasted})'
-                    )
+            # (Universal tracking: every item carries quantities — no
+            # "non-inventoried but has quantity" warning anymore.)
             # Duplicate codes
         codes = list(
-            PriceListItem.objects.values_list('code', flat=True)
+            InventoryItem.objects.values_list('code', flat=True)
         )
         seen = set()
         for code in codes:
@@ -592,29 +586,17 @@ class Command(BaseCommand):
 
     def check_earmarks(self):
         from apps.inventory.models import Earmark
-        for em in Earmark.objects.select_related('price_list_item', 'job').all():
+        for em in Earmark.objects.select_related('inventory_item', 'job').all():
             if em.quantity <= 0:
                 self.errors.append(
                     f'Earmark {em.pk}: non-positive quantity {em.quantity}'
                 )
-            if not em.price_list_item.is_inventoried:
-                self.errors.append(
-                    f'Earmark {em.pk}: PLI {em.price_list_item.code} is not inventoried'
-                )
-            if em.quantity > em.price_list_item.qty_on_hand:
+            # (Universal tracking: earmarks apply to every item — no
+            # "earmark on non-inventoried item" error anymore.)
+            if em.quantity > em.inventory_item.qty_on_hand:
                 self.warnings.append(
                     f'Earmark {em.pk}: quantity {em.quantity} exceeds QOH '
-                    f'{em.price_list_item.qty_on_hand} for {em.price_list_item.code}'
-                )
-
-    # ── Inventory Adjustments ─────────────────────────────────
-
-    def check_inventory_adjustments(self):
-        from apps.inventory.models import InventoryAdjustment
-        for adj in InventoryAdjustment.objects.select_related('price_list_item').all():
-            if not adj.price_list_item.is_inventoried:
-                self.warnings.append(
-                    f'InventoryAdjustment {adj.pk}: PLI {adj.price_list_item.code} is not inventoried'
+                    f'{em.inventory_item.qty_on_hand} for {em.inventory_item.code}'
                 )
 
     # ══════════════════════════════════════════════════════════
@@ -798,10 +780,10 @@ class Command(BaseCommand):
         inventory should have been consumed or released."""
         from apps.inventory.models import Earmark
 
-        for em in Earmark.objects.select_related('job', 'price_list_item').all():
+        for em in Earmark.objects.select_related('job', 'inventory_item').all():
             if em.job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
                 self.warnings.append(
-                    f'Earmark {em.pk}: {em.price_list_item.code} earmarked for '
+                    f'Earmark {em.pk}: {em.inventory_item.code} earmarked for '
                     f'job {em.job.job_number} which is "{em.job.status}"'
                 )
 
