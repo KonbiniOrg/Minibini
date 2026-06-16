@@ -120,8 +120,8 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
     const { findAllByRole } = render(InventoryListPage);
     const orderBtns = await findAllByRole('button', { name: 'order' });
     expect(orderBtns.length).toBe(2);  // one per ITEMS row
-    await fireEvent.click(orderBtns[0]);
-    expect(push).toHaveBeenCalledWith('/purchase-orders/new');
+    await fireEvent.click(orderBtns[0]);  // FELT, inventory_item_id 1
+    expect(push).toHaveBeenCalledWith('/purchase-orders/new?inventory_item=1');
   });
 
   it('hides the order button for a config-only user (PO creation is financials)', async () => {

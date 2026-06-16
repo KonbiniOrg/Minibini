@@ -42,4 +42,29 @@ describe('LineItemForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('prefills from an inventory item — fetches it and submits a PLI line', async () => {
+    api.get.mockImplementation((url) =>
+      url.startsWith('/api/inventory/')
+        ? Promise.resolve({ inventory_item_id: 7, code: 'FELT', description: 'grey felt', units: 'sheet', purchase_price: '4.00' })
+        : Promise.resolve([]));
+    const onSubmit = vi.fn();
+    const { getByLabelText, getByRole, findByText } = render(LineItemForm, {
+      props: { onSubmit, onCancel: vi.fn(), prefill: { inventory_item: 7 } },
+    });
+    await findByText(/FELT — grey felt/);  // switched to PLI mode + item selected
+    await fireEvent.input(getByLabelText(/Qty/), { target: { value: '2' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith({ inventory_item: 7, qty: 2 });
+  });
+
+  it('prefills manual fields from a neutral prefill (no inventory item)', async () => {
+    const onSubmit = vi.fn();
+    const { getByLabelText, getByRole } = render(LineItemForm, {
+      props: { onSubmit, onCancel: vi.fn(), prefill: { qty: 5, description: 'misc', price: '3.00' } },
+    });
+    await vi.waitFor(() => expect(getByLabelText(/Description/).value).toBe('misc'));
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ description: 'misc', qty: 5 }));
+  });
 });

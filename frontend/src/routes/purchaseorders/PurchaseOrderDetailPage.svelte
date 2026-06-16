@@ -22,13 +22,16 @@
   let busy = $state(false);
   let severPrompt = $state(null); // { items, onSubmit } when showing
 
-  // Prefill state when navigating in with ?prefill_material=...&default_job=...
+  // Prefill state when navigating in with ?prefill_material / ?prefill_inventory_item
+  // (+ optional ?default_job). The neutral `prefilledLine` is what LineItemForm
+  // consumes; it's derived here from whichever source the URL named.
   const initialQs = new URLSearchParams($querystring);
   const prefillMaterialId = initialQs.get('prefill_material');
+  const prefillInventoryItemId = initialQs.get('prefill_inventory_item');
   const defaultJobId = initialQs.get('default_job');
   let prefilledJob = $state(null);
-  let prefilledMaterial = $state(null);
   let prefilledMaterialIdNum = $state(null);
+  let prefilledLine = $state(null);   // { inventory_item?, qty?, description?, price?, accounting_category? }
   let prefillLoaded = $state(false);
 
   function collectLinkedMaterials(lines) {
@@ -76,16 +79,30 @@
     }
     if (prefillMaterialId) {
       try {
-        prefilledMaterial = await api.get(`/api/materials/${prefillMaterialId}/`);
+        const mat = await api.get(`/api/materials/${prefillMaterialId}/`);
         prefilledMaterialIdNum = Number(prefillMaterialId);
+        // Derive the neutral prefill from the Material here, so LineItemForm
+        // stays model-agnostic. (PLI-backed → inventory_item drives it; freeform
+        // → description/cost.)
+        prefilledLine = {
+          qty: mat.quantity,
+          inventory_item: mat.inventory_item || null,
+          description: mat.description,
+          price: mat.unit_cost,
+          accounting_category: mat.accounting_category,
+        };
       } catch {
-        prefilledMaterial = null;
         prefilledMaterialIdNum = null;
+        prefilledLine = null;
       }
+    } else if (prefillInventoryItemId) {
+      // Inventory "order" flow: just point the line at the item; LineItemForm
+      // fetches it and fills code/description/units/price.
+      prefilledLine = { inventory_item: Number(prefillInventoryItemId) };
     }
     // Auto-open the add-line-item form when we have any prefill context
     // and the PO is still in draft.
-    if ((prefilledJob || prefilledMaterial) && po?.status === 'draft') {
+    if ((prefilledJob || prefilledLine) && po?.status === 'draft') {
       showAddLineItem = true;
     }
   }
@@ -419,7 +436,7 @@
           {categories}
           defaultJob={prefilledJob}
           materialId={prefilledMaterialIdNum}
-          prefillMaterial={prefilledMaterial}
+          prefill={prefilledLine}
           onSubmit={handleAddLineItem}
           onCancel={() => { showAddLineItem = false; }}
         />

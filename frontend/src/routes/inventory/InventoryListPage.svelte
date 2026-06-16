@@ -237,7 +237,7 @@
                 <button type="button" onclick={() => startWriteOff(it)}>write off</button>
               {/if}
               {#if $canManageFinancials}
-                <button type="button" onclick={() => push('/purchase-orders/new')}>order</button>
+                <button type="button" onclick={() => push(`/purchase-orders/new?inventory_item=${it.inventory_item_id}`)}>order</button>
               {/if}
             </td>
           {/if}
