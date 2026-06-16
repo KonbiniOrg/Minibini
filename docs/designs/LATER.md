@@ -562,3 +562,12 @@ IMAP-SMTP machinery and tend to be worked together.
   reference-free; (c) whether demote-deletes-when-unreferenced is the right UX or
   should prompt. _Done when:_ a single documented policy covers every finished-lot
   transition (demote, write-off, consume, job-cancel) and tombstone cleanup.
+
+- **Warn before unchecking Catalog can delete the item.** — _added 2026-06-15_
+  Unchecking "Catalog" on an empty (QOH 0, no earmarks), reference-free item now
+  hard-deletes it (`collect_if_finished` on demote). The InventoryItemForm gives
+  no warning — a user demoting to reorganize can lose the row unexpectedly. Add a
+  confirm/notice on the Catalog checkbox (or on save) when the item would become
+  a deletable finished lot — e.g. "This item has no stock and isn't referenced;
+  unchecking Catalog will remove it." _Done when:_ demoting an item that would be
+  collected prompts the user first (and ideally distinguishes delete vs. hide).
