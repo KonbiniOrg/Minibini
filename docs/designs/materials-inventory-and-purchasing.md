@@ -1061,11 +1061,11 @@ each Material row.
 
 ## 17. UI: Inventory and settings
 
-PriceListItem CRUD UI is part of the settings surface
-(`routes/SettingsPage.svelte`). PLI pickers across the SPA use
-`frontend/src/components/PriceListItemPicker.svelte` (catalog) and
-`frontend/src/components/CatalogPicker.svelte` (when a price-list view
-is needed in-line).
+Inventory-item CRUD + browse UI is the SPA `#/inventory` page
+(`routes/inventory/InventoryListPage.svelte`), plus the markup config under
+Settings → Catalog. Item pickers across the SPA use
+`frontend/src/components/PriceListItemPicker.svelte` (to be renamed
+`InventoryItemPicker`; see the generic-picker LATER note).
 
 `PriceListItemPicker` fetches the full active catalog
 (`?page_size=9999&is_active=true`) and filters client-side per

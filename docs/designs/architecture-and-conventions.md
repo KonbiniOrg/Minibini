@@ -244,8 +244,8 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > it's complete. If you bound a result deliberately, say so in the UI; never let
 > it look like "everything" when it's the first 100. Known instances fixed by
 > page-walking: `InventoryListPage` (2026-06). Known still-capped: the inventory
-> item pickers (`PriceListItemPicker`, `CatalogPicker`) request `page_size=9999`
-> — see `docs/designs/LATER.md`.
+> item picker (`PriceListItemPicker`) requests `page_size=9999` — slated for a
+> server-side-search rework, see `docs/designs/LATER.md`.
 
 ### 3.4 Mixin catalog
 

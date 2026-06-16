@@ -572,12 +572,23 @@ IMAP-SMTP machinery and tend to be worked together.
   unchecking Catalog will remove it." _Done when:_ demoting an item that would be
   collected prompts the user first (and ideally distinguishes delete vs. hide).
 
-- **Inventory item pickers are capped at 100 (pagination).** — _added 2026-06-15_
-  `PriceListItemPicker` and `CatalogPicker` request `/api/inventory/?page_size=9999`,
-  but `StandardPagination` clamps to 100 (see architecture-and-conventions.md §3.3),
-  so once the active catalog exceeds 100 items, items past the first 100 can't be
-  selected when adding a material / line item — with no error. `InventoryListPage`
-  was fixed by page-walking; the pickers are type-aheads, so the better fix is
-  **server-side `?search=`** (query as the user types) rather than loading all.
-  _Done when:_ the pickers can reach any active item regardless of catalog size
-  (server-side search, or page-walk as a stopgap).
+- **Generic server-side search picker (and the picker 100-cap).** — _added 2026-06-15_
+  `PriceListItemPicker` (used in 5 places — MaterialModal, PlanMaterialModal,
+  LineItemModal, expenses/MaterialPicker, PO LineItemForm) loads the catalog and
+  filters **client-side**, but the load request is clamped to 100 by
+  `StandardPagination` (see architecture-and-conventions.md §3.3) — so once the
+  active catalog passes 100 items, the rest can't be selected when adding a
+  material / line item, silently. The Contact/Business picker already does
+  **server-side `?search=`** for *two* models; we'd deferred a generic version
+  because two-model felt like a one-off. We've since hit it again: the now-deleted
+  `CatalogPicker` was a built-but-never-wired two-model (TaskTemplate +
+  InventoryItem) picker — the same shape — and this single-model one is capped.
+  Direction: build a generic **`EntitySearchPicker`** parameterized by *sources*
+  (`{endpoint, kind, render}`) doing server-side `?search=`; migrate
+  `PriceListItemPicker`'s call sites to it (one source) and **rename/retire
+  PriceListItemPicker → InventoryItemPicker**; a multi-source config covers the
+  task-template-or-material "catalog" case if that feature is ever wanted. Fixes
+  the cap for free. Deferred to keep the inventory feature branch scoped.
+  _Done when:_ one server-search picker backs the material/line-item pickers,
+  reaching any active item regardless of catalog size, and PriceListItemPicker is
+  renamed/retired.
