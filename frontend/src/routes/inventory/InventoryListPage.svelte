@@ -19,18 +19,35 @@
   function onSaved() { showForm = false; editingItem = null; load(); }
   function onCancel() { showForm = false; editingItem = null; }
 
-  // Write-off (irreversible → confirm)
-  async function writeOff(it) {
-    if (!confirm(
-      `Write off all ${it.qty_on_hand} ${it.units} of ${it.code} as wasted? `
-      + `This can't be undone.`
-    )) return;
-    error = '';
+  // Write-off (irreversible). Opens a small panel to enter how much to waste
+  // (defaults to the full on-hand; the Confirm button is the explicit gesture).
+  let writeOffItem = $state(null);
+  let writeOffQty = $state('');
+  let writeOffReason = $state('');
+  let writeOffError = $state('');
+
+  function startWriteOff(it) {
+    writeOffItem = it;
+    writeOffQty = it.qty_on_hand;   // default: whole balance
+    writeOffReason = '';
+    writeOffError = '';
+  }
+  function cancelWriteOff() { writeOffItem = null; }
+
+  async function doWriteOff() {
+    writeOffError = '';
+    const qty = Number(writeOffQty);
+    const onHand = Number(writeOffItem.qty_on_hand);
+    if (!(qty > 0)) { writeOffError = 'Enter a quantity greater than 0.'; return; }
+    if (qty > onHand) { writeOffError = `Only ${writeOffItem.qty_on_hand} on hand.`; return; }
     try {
-      await api.post(`/api/inventory/${it.inventory_item_id}/write-off/`);
+      await api.post(`/api/inventory/${writeOffItem.inventory_item_id}/write-off/`, {
+        qty: writeOffQty, reason: writeOffReason,
+      });
+      writeOffItem = null;
       load();
     } catch (err) {
-      error = err.message || 'Write-off failed.';
+      writeOffError = err.message || 'Write-off failed.';
     }
   }
 
@@ -136,6 +153,23 @@
       <p><button type="button" onclick={doMerge}>Merge</button></p>
     </div>
   {/if}
+  {#if writeOffItem}
+    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
+      <h3>Write off — {writeOffItem.code}</h3>
+      <p>{writeOffItem.qty_on_hand} {writeOffItem.units} on hand. How many are
+        wasted (damaged, mis-cut)? This can't be undone.</p>
+      {#if writeOffError}<p style="color:#c00">{writeOffError}</p>{/if}
+      <p><label>Quantity to write off:
+        <input type="number" step="0.01" min="0" max={writeOffItem.qty_on_hand}
+          bind:value={writeOffQty}></label></p>
+      <p><label>Reason (optional):
+        <input type="text" bind:value={writeOffReason} placeholder="e.g. damaged in storage"></label></p>
+      <p>
+        <button type="button" onclick={doWriteOff}>Confirm write-off</button>
+        <button type="button" onclick={cancelWriteOff}>Cancel</button>
+      </p>
+    </div>
+  {/if}
 {/if}
 
 <fieldset style="margin-bottom: 10px">
@@ -183,7 +217,7 @@
             <td>
               <button type="button" onclick={() => editItem(it)}>edit</button>
               {#if Number(it.qty_on_hand) > 0}
-                <button type="button" onclick={() => writeOff(it)}>write off</button>
+                <button type="button" onclick={() => startWriteOff(it)}>write off</button>
               {/if}
             </td>
           {/if}

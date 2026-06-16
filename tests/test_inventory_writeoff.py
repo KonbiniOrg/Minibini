@@ -64,6 +64,22 @@ class WriteOffServiceTest(TestCase):
         with self.assertRaises(ValidationError):
             InventoryService.write_off(empty)
 
+    def test_partial_write_off_leaves_balance(self):
+        InventoryService.write_off(self.lot, Decimal('1.00'), reason='one mis-cut')
+        self.lot.refresh_from_db()
+        self.assertEqual(self.lot.qty_on_hand, Decimal('3.00'))  # 4 - 1
+        self.assertEqual(self.lot.qty_wasted, Decimal('1.00'))
+
+    def test_write_off_more_than_on_hand_raises(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            InventoryService.write_off(self.lot, Decimal('99.00'))
+
+    def test_write_off_non_positive_raises(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            InventoryService.write_off(self.lot, Decimal('0.00'))
+
 
 class WriteOffEndpointTest(TestCase):
     def setUp(self):

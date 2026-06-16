@@ -79,14 +79,27 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('writes off an item with stock', async () => {
-    const { findAllByRole } = render(InventoryListPage);
+  it('writes off a partial quantity via the panel', async () => {
+    const { findAllByRole, getByText, getByLabelText } = render(InventoryListPage);
+    const writeOffBtns = await findAllByRole('button', { name: 'write off' });
+    await fireEvent.click(writeOffBtns[0]);  // FELT (5 on hand)
+    // Panel opens; qty defaults to the full balance — override to a partial.
+    await getByText(/Write off — FELT/);
+    await fireEvent.input(getByLabelText(/Quantity to write off/), { target: { value: '2' } });
+    await fireEvent.click(getByText('Confirm write-off'));
+    await vi.waitFor(() => {
+      const call = api.post.mock.calls.find((c) => c[0].includes('/write-off/'));
+      expect(call).toBeTruthy();
+      expect(String(call[1].qty)).toBe('2');
+    });
+  });
+
+  it('clicking write off opens a panel and does not post immediately', async () => {
+    const { findAllByRole, getByText } = render(InventoryListPage);
     const writeOffBtns = await findAllByRole('button', { name: 'write off' });
     await fireEvent.click(writeOffBtns[0]);
-    await vi.waitFor(() => {
-      const urls = api.post.mock.calls.map((c) => c[0]);
-      expect(urls.some((u) => u.includes('/write-off/'))).toBe(true);
-    });
+    getByText(/Write off — FELT/);  // panel shown
+    expect(api.post).not.toHaveBeenCalled();  // no POST until Confirm
   });
 
   it('merges a discard lot into a keep item', async () => {

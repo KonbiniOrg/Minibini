@@ -209,22 +209,38 @@ class InventoryService:
         return keep
 
     @staticmethod
-    def write_off(item, *, user=None, reason=''):
-        """Write off a lot's remaining on-hand stock as wasted.
+    def write_off(item, qty=None, *, user=None, reason=''):
+        """Write off some on-hand stock as wasted.
 
-        Zeroes QOH and books the remainder to qty_wasted, recording the wastage
-        history entry (via manual_adjustment) BEFORE any further state change so
-        the wastage is never lost. Afterward the lot becomes a finished lot
-        (hidden) unless it still has earmarks. Catalog items can be written off
-        too (they survive at QOH 0 by the catalog flag, just emptied)."""
+        `qty` is how much to waste (e.g. one damaged sheet); omit it to write off
+        the whole on-hand balance. Decrements QOH and books `qty` to qty_wasted,
+        recording the wastage history entry (via manual_adjustment) BEFORE any
+        further state change so the wastage is never lost. If that empties the
+        lot it becomes a finished lot (hidden, or collected if reference-free);
+        a partial write-off just leaves a smaller balance. Catalog items survive
+        at QOH 0 (just emptied)."""
+        from decimal import InvalidOperation
         from django.core.exceptions import ValidationError
         remaining = item.qty_on_hand
         if remaining <= Decimal('0.00'):
             raise ValidationError('Nothing on hand to write off.')
+        if qty is None or qty == '':
+            qty = remaining
+        else:
+            try:
+                qty = Decimal(str(qty))
+            except (InvalidOperation, TypeError):
+                raise ValidationError('Invalid write-off quantity.')
+        if qty <= Decimal('0.00'):
+            raise ValidationError('Write-off quantity must be positive.')
+        if qty > remaining:
+            raise ValidationError(
+                f'Cannot write off {qty}; only {remaining} on hand.')
         InventoryService.manual_adjustment(
-            item, -remaining, reason=reason or 'Write-off', user=user,
+            item, -qty, reason=reason or 'Write-off', user=user,
         )
-        # A written-off lot with no references is collected; otherwise hidden.
+        # If that emptied an unreferenced lot, collect it; otherwise it stays
+        # (partial write-off) or is hidden (full write-off of a referenced lot).
         InventoryService.collect_if_finished(item)
         return item
 

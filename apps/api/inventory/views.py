@@ -67,7 +67,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         item = self.get_object()
         try:
             InventoryService.write_off(
-                item, user=request.user,
+                item, qty=request.data.get('qty'), user=request.user,
                 reason=request.data.get('reason', '') or 'Write-off',
             )
         except DjangoValidationError as e:

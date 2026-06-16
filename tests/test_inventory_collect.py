@@ -64,6 +64,13 @@ class CollectIfFinishedTest(TestCase):
         InventoryService.write_off(it)
         self.assertTrue(InventoryItem.objects.filter(pk=it.pk).exists())
 
+    def test_partial_writeoff_unreferenced_lot_is_not_collected(self):
+        it = self._item(code='W4', is_catalog=False, qty_on_hand=Decimal('3.00'))
+        InventoryService.write_off(it, Decimal('1.00'))  # 3 -> 2, still has stock
+        self.assertTrue(InventoryItem.objects.filter(pk=it.pk).exists())
+        it.refresh_from_db()
+        self.assertEqual(it.qty_on_hand, Decimal('2.00'))
+
     def test_writeoff_catalog_survives(self):
         it = self._item(code='W3', is_catalog=True, qty_on_hand=Decimal('3.00'))
         InventoryService.write_off(it)
