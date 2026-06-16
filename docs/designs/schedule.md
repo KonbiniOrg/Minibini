@@ -79,7 +79,9 @@ tasks still render their past time.
 
 **Jobs (chip strip).** The `jobs` payload that feeds the top `JobChipStrip`
 mirrors the job board's **In Progress** column exactly — only jobs with
-`status == in_progress`. This is deliberately narrower than the worker/lane
+`status == in_progress`, ordered by `due_date`. (Both the board's
+`ApprovedArea` and the schedule render the *same* `JobChipStrip` component,
+which sorts nothing — so the payload order must match the board's.) This is deliberately narrower than the worker/lane
 queries: a job that has just gone `work_complete` drops off the strip, but the
 completed work it holds **still renders as `actual` bars** in the worker lanes
 (and survives scrolling back through blep history). The lane bars don't depend

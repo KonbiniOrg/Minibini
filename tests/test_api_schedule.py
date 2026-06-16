@@ -299,6 +299,51 @@ class ScheduleForecastScopeTest(BaseTestCase):
         self.assertNotIn('forecast', kinds)
 
 
+class ScheduleChipOrderTest(BaseTestCase):
+    """The jobs payload (chip strip) is ordered by due_date, matching the
+    board's In Progress column — the two reuse the same JobChipStrip and
+    must present chips in the same order."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Job.objects.first().contact
+        self.worker = User.objects.create_user(
+            username='chip_order_w', password='pass',
+            first_name='Chip', last_name='Order',
+        )
+
+    def _in_progress_job_with_task(self, due_date):
+        job = Job.objects.create(
+            job_number=f'JOB-SCHED-ORD-{timezone.now().timestamp()}',
+            name='Order Job',
+            contact=self.contact,
+            due_date=due_date,
+            status=Job.STATUS_DRAFT,
+        )
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_IN_PROGRESS):
+            job.status = s
+            job.save()
+        Task.objects.create(
+            name='Order task', job=job, assignee=self.worker,
+            status=Task.STATUS_PENDING, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
+        )
+        return job
+
+    def test_jobs_payload_ordered_by_due_date(self):
+        now = timezone.now()
+        # Create the later-due job FIRST so it has the lower pk; without an
+        # explicit order_by it would sort ahead of the earlier-due job.
+        later = self._in_progress_job_with_task(now + timedelta(days=10))
+        earlier = self._in_progress_job_with_task(now + timedelta(days=1))
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        ordered_ids = [j['job_id'] for j in result['jobs']
+                       if j['job_id'] in (earlier.pk, later.pk)]
+        self.assertEqual(ordered_ids, [earlier.pk, later.pk])
+
+
 class ScheduleJobsPMNameTest(BaseTestCase):
     """jobs_payload must include project_manager_name."""
 

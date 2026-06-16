@@ -214,7 +214,10 @@ class ScheduleService:
             Q(blep__end_time__isnull=True) |
             Q(blep__end_time__gte=today_start_local, blep__end_time__lt=today_end_local)
         ).values_list('job_id', flat=True))
-        jobs = Job.objects.filter(pk__in=job_ids).select_related('contact', 'project_manager')
+        # Ordered by due_date to match the board's In Progress column — both
+        # feed the same JobChipStrip, so the chips must appear in the same order.
+        jobs = Job.objects.filter(pk__in=job_ids).select_related(
+            'contact', 'project_manager').order_by('due_date')
         jobs_payload = []
         for j in jobs:
             contact_name = ''
