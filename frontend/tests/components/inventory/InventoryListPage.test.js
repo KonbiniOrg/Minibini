@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 
 import { api } from '@/lib/api.js';
+import { push } from 'svelte-spa-router';
 import { user } from '@/stores/auth.js';
 import InventoryListPage from '@/routes/inventory/InventoryListPage.svelte';
 
@@ -113,18 +115,20 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('shows an order link on every row, pointing at a new PO', async () => {
+  it('shows an order button on every row that navigates to a new PO', async () => {
+    push.mockClear();
     const { findAllByRole } = render(InventoryListPage);
-    const orderLinks = await findAllByRole('link', { name: 'order' });
-    expect(orderLinks.length).toBe(2);  // one per ITEMS row
-    expect(orderLinks[0].getAttribute('href')).toContain('purchase-orders/new');
+    const orderBtns = await findAllByRole('button', { name: 'order' });
+    expect(orderBtns.length).toBe(2);  // one per ITEMS row
+    await fireEvent.click(orderBtns[0]);
+    expect(push).toHaveBeenCalledWith('/purchase-orders/new');
   });
 
-  it('hides the order link for a config-only user (PO creation is financials)', async () => {
+  it('hides the order button for a config-only user (PO creation is financials)', async () => {
     user.set({ username: 'cfg', permissions: ['can_manage_config'] });
     const { findAllByRole, queryByRole } = render(InventoryListPage);
     await findAllByRole('button', { name: 'edit' });  // config still manages items
-    expect(queryByRole('link', { name: 'order' })).toBeNull();
+    expect(queryByRole('button', { name: 'order' })).toBeNull();
   });
 
   it('writes off a partial quantity via the panel', async () => {
