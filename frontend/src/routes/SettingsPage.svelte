@@ -8,6 +8,7 @@
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
   import GeneralSettings from '../components/settings/GeneralSettings.svelte';
+  import MaterialMarkupSetting from '../components/settings/MaterialMarkupSetting.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -114,6 +115,8 @@
   <RateSchemeManager />
 
 {:else if tab === 'catalog'}
+  <MaterialMarkupSetting />
+
   <TaskTemplateManager />
 
   <h3>Work templates</h3>

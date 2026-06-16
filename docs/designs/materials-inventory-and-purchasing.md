@@ -113,9 +113,11 @@ Derived:
 `InventoryService.create_item` derives `selling_price` from
 `purchase_price × (1 + default_material_markup_percent/100)` **once at
 creation**, only when no explicit non-zero sell is given. Config default `'0'`
-→ sell == cost. `update_item` never re-applies it — the stored value is
-authoritative. Materials copy cost+sell from the item at creation (only-if-unset),
-so they stay self-contained when a lot is later hidden.
+→ sell == cost; editable in the SPA at **Settings → Catalog** (the
+`MaterialMarkupSetting` component, `PATCH /api/settings/`). `update_item` never
+re-applies it — the stored value is authoritative. Materials copy cost+sell from
+the item at creation (only-if-unset), so they stay self-contained when a lot is
+later hidden.
 
 ### Lifecycle: hide-on-spend, write-off, merge
 
