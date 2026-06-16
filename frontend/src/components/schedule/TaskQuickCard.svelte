@@ -10,14 +10,18 @@
   import AssignModal from '../AssignModal.svelte';
 
   let {
-    bar,                 // schedule bar: task_id, name, status, accent_color, est_minutes, elapsed_minutes, is_running, job_id
+    bar,                 // schedule bar: task_id, name, status, accent_color, est_minutes, elapsed_minutes, is_running, job_id, job_number, job_name
     assigneeName = '',
     laneWorkerId = null, // user id of the lane this card was opened from (the on-behalf target)
-    jobNumber = '',
-    jobName = '',
     onClose = () => {},
     onChanged = () => {},
   } = $props();
+
+  // The bar is self-describing: it carries its own job number/name, so the
+  // card renders the job header without needing the job in the chip strip
+  // (work_complete jobs are dropped from the strip but keep their bars).
+  let jobNumber = $derived(bar?.job_number || '');
+  let jobName = $derived(bar?.job_name || '');
 
   let task = $state(null);   // full task fetched from /api/tasks/{id}/
   let loading = $state(true);

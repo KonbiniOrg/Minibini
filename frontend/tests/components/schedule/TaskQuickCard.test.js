@@ -28,6 +28,15 @@ describe('TaskQuickCard', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('shows the job number and name from the bar itself', async () => {
+    const { getByText, getByRole } = render(TaskQuickCard, {
+      props: { bar: bar({ job_number: 'JOB-2025-0007', job_name: 'Widget Run' }), onClose: vi.fn() },
+    });
+    const link = getByRole('link', { name: 'JOB-2025-0007' });
+    expect(link).toHaveAttribute('href', '#/jobs/3');
+    expect(getByText(/Widget Run/)).toBeInTheDocument();
+  });
+
   it('starts work on behalf of the lane worker', async () => {
     user.set({ id: 1, permissions: ['can_manage_time'] });
     const onClose = vi.fn();

@@ -135,14 +135,20 @@ class ScheduleService:
         today_start_local = horizon_start
         today_end_local = horizon_end
 
-        # Active workers: anyone with at least one relevant task.
+        # Planned-work statuses. Blocked is intentionally excluded — a blocked
+        # task can't be worked now and has no ETA, so it never forecasts (its
+        # past actuals still surface via the blep-history path). Planned work
+        # and worker selection are scoped to in_progress jobs, matching the
+        # board's In Progress column and the chip strip; the history paths
+        # (completed-with-blep, open/in-window bleps) stay broader.
         relevant_statuses = [
-            Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED,
+            Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS,
         ]
         worker_ids = set(Task.objects.filter(
             assignee__isnull=False,
             status__in=relevant_statuses,
-        ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('assignee_id', flat=True))
+            job__status=Job.STATUS_IN_PROGRESS,
+        ).values_list('assignee_id', flat=True))
         # Plus workers with completed tasks blepped today (local).
         completed_today_worker_ids = set(Task.objects.filter(
             assignee__isnull=False,
@@ -188,19 +194,26 @@ class ScheduleService:
             shape, window_bleps, local_now,
         )
 
-        # Jobs in play (for the JobChipStrip at top)
+        # Jobs in play (for the JobChipStrip at top). The chip strip mirrors
+        # the job board's In Progress column exactly: only jobs whose status is
+        # in_progress. Completed work on a now-finished (work_complete) job
+        # still renders in the worker lanes below — its bars are self-describing
+        # (they carry job_number/job_name) — but the job drops off the strip,
+        # so the strip stays in sync with the board.
         job_ids = set(Task.objects.filter(
             assignee_id__in=worker_ids,
             status__in=relevant_statuses + [Task.STATUS_COMPLETE],
-        ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('job_id', flat=True))
-        # Include jobs of tasks worked in the window (covers tasks a worker
-        # blepped on but isn't assigned to).
+            job__status=Job.STATUS_IN_PROGRESS,
+        ).values_list('job_id', flat=True))
+        # Include in_progress jobs of tasks worked in the window (covers tasks a
+        # worker blepped on but isn't assigned to).
         job_ids |= set(Task.objects.filter(
             blep__user__isnull=False,
+            job__status=Job.STATUS_IN_PROGRESS,
         ).filter(
             Q(blep__end_time__isnull=True) |
             Q(blep__end_time__gte=today_start_local, blep__end_time__lt=today_end_local)
-        ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('job_id', flat=True))
+        ).values_list('job_id', flat=True))
         jobs = Job.objects.filter(pk__in=job_ids).select_related('contact', 'project_manager')
         jobs_payload = []
         for j in jobs:
@@ -367,27 +380,35 @@ class ScheduleService:
         from apps.jobs.models import Task, Job, Blep
 
         relevant_statuses = [
-            Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED,
+            Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS,
         ]
 
-        # The worker's lane covers two task sets:
-        #  - tasks ASSIGNED to them (their queue): relevant statuses, plus
-        #    completed tasks with a blep ending in the window.
-        #  - tasks they have a BLEP on (open, or ending in the window) even
-        #    if they're not the assignee — concurrent/joined/taken-over work.
-        assigned_ids = set(Task.objects.filter(
+        # The worker's lane covers three task sets:
+        #  - PLANNED: tasks assigned to them in a planned status (pending/
+        #    in_progress) on an in_progress job — these forecast forward, so
+        #    they're scoped exactly like the chip strip / board In Progress.
+        #  - HISTORY: completed tasks assigned to them with a blep ending in
+        #    the window — past work on any non-on-hold job (incl. work_complete),
+        #    so finished and scrolled-back history survives.
+        #  - BLEPPED: tasks they have a blep on (open, or ending in the window)
+        #    even if they're not the assignee — concurrent/joined/taken-over
+        #    work (and a worked-then-blocked task's past actuals land here).
+        planned_ids = set(Task.objects.filter(
             assignee=worker,
-        ).filter(
-            Q(status__in=relevant_statuses) |
-            Q(status=Task.STATUS_COMPLETE,
-              blep__end_time__gte=window_start,
-              blep__end_time__lt=window_end)
+            status__in=relevant_statuses,
+            job__status=Job.STATUS_IN_PROGRESS,
+        ).values_list('pk', flat=True))
+        history_ids = set(Task.objects.filter(
+            assignee=worker,
+            status=Task.STATUS_COMPLETE,
+            blep__end_time__gte=window_start,
+            blep__end_time__lt=window_end,
         ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('pk', flat=True))
         blepped_ids = set(Blep.objects.filter(user=worker).filter(
             Q(end_time__isnull=True) |
             Q(end_time__gte=window_start, end_time__lt=window_end)
         ).values_list('task_id', flat=True))
-        task_ids = assigned_ids | blepped_ids
+        task_ids = planned_ids | history_ids | blepped_ids
 
         tasks_qs = Task.objects.filter(
             pk__in=task_ids,
@@ -442,7 +463,10 @@ class ScheduleService:
 
             # Future: the assignee's own remaining estimate, floored so an
             # overrun-but-open or tiny task still holds a slot in the queue.
-            if is_assignee and task.status != Task.STATUS_COMPLETE:
+            # Only planned statuses forecast forward — a blocked task (reached
+            # here via the blep-history path) shows its actuals but never a
+            # forecast, and a completed task emits actuals only.
+            if is_assignee and task.status in relevant_statuses:
                 worked = ScheduleService._elapsed_worktime(bleps, local_now, shape)
                 remaining = (task.est_worker_time or timedelta(0)) - worked
                 forecast_bars, cursor = ScheduleService._emit_forecast(
@@ -526,6 +550,11 @@ class ScheduleService:
         return {
             'task_id': task.pk,
             'job_id': task.job_id,
+            # Job number/name travel on the bar so a completed bar can show its
+            # job in the quick card without the job being in the chip strip
+            # (work_complete jobs are dropped from the strip but keep their bars).
+            'job_number': getattr(task.job, 'job_number', '') or '',
+            'job_name': getattr(task.job, 'name', '') or '',
             'name': task.name,
             'status': task.status,
             'blocked_reason': task.blocked_reason or '',

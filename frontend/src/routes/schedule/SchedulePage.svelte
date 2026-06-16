@@ -30,12 +30,6 @@
     selectedAssignee = '';
     selectedWorkerId = null;
   }
-  // Job lookup for the card header (job_number / name).
-  let selectedJob = $derived(
-    selectedBar && $schedule
-      ? $schedule.jobs.find(j => j.job_id === selectedBar.job_id)
-      : null
-  );
   let resizeObserver = null;
   let tickInterval = null;
 
@@ -320,8 +314,6 @@
       bar={selectedBar}
       assigneeName={selectedAssignee}
       laneWorkerId={selectedWorkerId}
-      jobNumber={selectedJob?.job_number || ''}
-      jobName={selectedJob?.name || ''}
       onClose={closeCard}
       onChanged={() => loadSchedule()} />
   {/if}

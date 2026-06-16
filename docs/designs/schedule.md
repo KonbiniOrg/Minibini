@@ -61,9 +61,30 @@ working days from today (`offset` drives past/future scrolling); the window
 spans `horizon_days`. Each `days[]` entry carries `date`, `label`,
 `is_working`.
 
-**Workers.** Every active `User` with at least one task assigned to them that
-is `pending`/`in_progress`/`blocked`, or `complete` with a blep ending today.
-Ordered by name.
+**Workers.** Every active `User` with at least one of: a **planned** task
+assigned to them (`pending`/`in_progress`) on an **in_progress** job; a
+`complete` task with a blep ending in the window; or an open / in-window blep.
+The planned set is scoped to in_progress jobs (matching the chip strip and the
+board's In Progress column); the two history conditions are broader so finished
+and scrolled-back work still pulls a worker's lane. Ordered by name.
+
+**Planned vs. history scope.** "Planned" work — what cascades into forecast
+bars — is `pending`/`in_progress` tasks on `in_progress` jobs only. `blocked`
+is **not** planned (a blocked task has no ETA, so it never forecasts) and
+neither are tasks on non-in_progress jobs (an `approved` job's assigned tasks
+don't forecast until the job is released to the floor). History — `actual`
+bars from logged bleps — is unrestricted by job/task status (excludes only
+on_hold), so a worked-then-blocked task or a `work_complete` job's finished
+tasks still render their past time.
+
+**Jobs (chip strip).** The `jobs` payload that feeds the top `JobChipStrip`
+mirrors the job board's **In Progress** column exactly — only jobs with
+`status == in_progress`. This is deliberately narrower than the worker/lane
+queries: a job that has just gone `work_complete` drops off the strip, but the
+completed work it holds **still renders as `actual` bars** in the worker lanes
+(and survives scrolling back through blep history). The lane bars don't depend
+on the strip — each bar carries its own `job_number`/`job_name`/`accent_color`,
+so the quick card shows the job header even when the job isn't on the strip.
 
 **Per-worker walk.** Tasks are walked in pure `(worker_queue, pk)` order —
 exactly the job board's order. Each task emits **two kinds of bar**, divided by
@@ -72,14 +93,16 @@ the live now-line:
 | `kind` | Source | Colour |
 |---|---|---|
 | `actual` | one per contiguous blep session (immutable past); the session holding an open blep ends at `now` and is flagged `is_running` | dark (darkened accent) |
-| `forecast` | the assignee's remaining estimate of unfinished work — full estimate if unstarted, `est − logged` otherwise, floored at `MIN_FORECAST` (10 min) so an overrun-but-open or tiny task never vanishes | light (accent); blocked adds a red diagonal hatch + ring |
+| `forecast` | the assignee's remaining estimate of unfinished **planned** work (`pending`/`in_progress` on an in_progress job) — full estimate if unstarted, `est − logged` otherwise, floored at `MIN_FORECAST` (10 min) so an overrun-but-open or tiny task never vanishes | light (accent) |
 
 Actual pieces are wall-clock-anchored and `<= now`; forecasts cascade from a
 `cursor` (queue order, floored at `now`) and are `>= now`. So the cursor only
 positions forecasts, and **no two bars in a lane can overlap** — a worker's own
 sessions never overlap in time, and past/future are separated by the now-line
-(this is why no phase grouping is needed). A completed task emits only actuals;
-a non-assignee blepper shows only their own sessions, never a forecast.
+(this is why no phase grouping is needed). Only planned tasks forecast; a
+`complete` or `blocked` task emits only `actual` bars (a blocked task reaches a
+lane solely through its past bleps); a non-assignee blepper shows only their own
+sessions, never a forecast.
 
 A bar is a single solid colour (no estimate-vs-actual layers — plan-vs-actual
 lives on the task page). Its `segments` split the wall-clock interval at every

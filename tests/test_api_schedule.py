@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.core.models import User
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Blep, Job, Task
 from apps.schedule.services import ScheduleService
 from tests.base import BaseTestCase
 
@@ -119,6 +119,184 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
         result = ScheduleService.get_schedule(now=timezone.now())
         worker_ids = [w['user']['id'] for w in result['workers']]
         self.assertIn(worker2.pk, worker_ids)
+
+
+class ScheduleWorkCompleteHistoryTest(BaseTestCase):
+    """A work_complete job must drop off the chip strip, but the completed
+    work it holds must still render in the worker's lane (so blep history
+    survives, including when scrolling back). The chip strip mirrors the
+    board's In Progress column (Job.status == in_progress); the lane shows
+    all completed work regardless of job status."""
+
+    def setUp(self):
+        super().setUp()
+        contact = Job.objects.first().contact
+        self.worker = User.objects.create_user(
+            username='worker_wc_test',
+            password='pass',
+            first_name='Done',
+            last_name='Worker',
+        )
+        self.job = Job.objects.create(
+            job_number=f'JOB-SCHED-WC-{timezone.now().timestamp()}',
+            name='Finished Job',
+            contact=contact,
+            status=Job.STATUS_DRAFT,
+        )
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE):
+            self.job.status = s
+            self.job.save()
+        self.task = Task.objects.create(
+            name='Finished task',
+            job=self.job,
+            assignee=self.worker,
+            status=Task.STATUS_COMPLETE,
+            rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
+        )
+        now = timezone.now()
+        Blep.objects.create(
+            user=self.worker,
+            task=self.task,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+
+    def test_work_complete_job_absent_from_chip_strip(self):
+        result = ScheduleService.get_schedule(now=timezone.now())
+        job_ids = [j['job_id'] for j in result['jobs']]
+        self.assertNotIn(self.job.pk, job_ids)
+
+    def test_work_complete_task_present_in_worker_lane(self):
+        result = ScheduleService.get_schedule(now=timezone.now())
+        lane = next(
+            (w for w in result['workers'] if w['user']['id'] == self.worker.pk),
+            None,
+        )
+        self.assertIsNotNone(lane, 'worker lane should be present')
+        bar_task_ids = [b['task_id'] for b in lane['bars']]
+        self.assertIn(self.task.pk, bar_task_ids)
+
+    def test_lane_bar_carries_job_number_and_name(self):
+        """The bar is self-describing so the quick card doesn't need the job
+        in the chip strip to show its number/name."""
+        result = ScheduleService.get_schedule(now=timezone.now())
+        lane = next(
+            w for w in result['workers'] if w['user']['id'] == self.worker.pk
+        )
+        bar = next(b for b in lane['bars'] if b['task_id'] == self.task.pk)
+        self.assertEqual(bar['job_number'], self.job.job_number)
+        self.assertEqual(bar['job_name'], self.job.name)
+
+
+class ScheduleForecastScopeTest(BaseTestCase):
+    """Planned (forecast) work is scoped to in_progress jobs only — matching
+    the board's In Progress column — and blocked tasks never forecast. Past
+    work (actual bars) survives regardless of task/job status."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Job.objects.first().contact
+
+    def _job(self, *statuses):
+        job = Job.objects.create(
+            job_number=f'JOB-SCHED-FS-{timezone.now().timestamp()}',
+            name='Scope Job',
+            contact=self.contact,
+            status=Job.STATUS_DRAFT,
+        )
+        for s in statuses:
+            job.status = s
+            job.save()
+        return job
+
+    def _worker(self, username):
+        return User.objects.create_user(
+            username=username, password='pass',
+            first_name=username, last_name='W',
+        )
+
+    def _task(self, job, worker, status, **extra):
+        return Task.objects.create(
+            name=f'{status} task',
+            job=job,
+            assignee=worker,
+            status=status,
+            rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
+            **extra,
+        )
+
+    def _forecast_bars(self, result, worker, task):
+        lane = next(
+            (w for w in result['workers'] if w['user']['id'] == worker.pk), None
+        )
+        if lane is None:
+            return []
+        return [b for b in lane['bars']
+                if b['task_id'] == task.pk and b['kind'] == 'forecast']
+
+    def test_pending_task_on_approved_job_not_scheduled(self):
+        """A pending task on an approved (not in_progress) job must not pull
+        the worker onto the schedule nor the job into the chip strip."""
+        worker = self._worker('fs_approved')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
+        task = self._task(job, worker, Task.STATUS_PENDING)
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        worker_ids = [w['user']['id'] for w in result['workers']]
+        job_ids = [j['job_id'] for j in result['jobs']]
+        self.assertNotIn(worker.pk, worker_ids)
+        self.assertNotIn(job.pk, job_ids)
+
+    def test_pending_task_on_in_progress_job_forecasts(self):
+        """Sanity: a pending task on an in_progress job still forecasts."""
+        worker = self._worker('fs_inprog')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        task = self._task(job, worker, Task.STATUS_PENDING)
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        job_ids = [j['job_id'] for j in result['jobs']]
+        self.assertIn(job.pk, job_ids)
+        self.assertEqual(len(self._forecast_bars(result, worker, task)), 1)
+
+    def test_blocked_task_alone_not_scheduled(self):
+        """A blocked task with no logged time must not pull the worker onto
+        the schedule — blocked work has no place on the time axis."""
+        worker = self._worker('fs_blocked')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        self._task(job, worker, Task.STATUS_BLOCKED, blocked_reason='waiting')
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        worker_ids = [w['user']['id'] for w in result['workers']]
+        self.assertNotIn(worker.pk, worker_ids)
+
+    def test_blocked_task_with_history_shows_actual_not_forecast(self):
+        """A task worked then blocked keeps its past actual bars (history) but
+        does not forecast forward."""
+        worker = self._worker('fs_blocked_hist')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        task = self._task(job, worker, Task.STATUS_BLOCKED,
+                          blocked_reason='stuck')
+        now = timezone.now()
+        Blep.objects.create(
+            user=worker, task=task,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        lane = next(
+            (w for w in result['workers'] if w['user']['id'] == worker.pk), None
+        )
+        self.assertIsNotNone(lane, 'worker with past work should have a lane')
+        kinds = {b['kind'] for b in lane['bars'] if b['task_id'] == task.pk}
+        self.assertIn('actual', kinds)
+        self.assertNotIn('forecast', kinds)
 
 
 class ScheduleJobsPMNameTest(BaseTestCase):
