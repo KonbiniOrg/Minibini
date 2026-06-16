@@ -171,8 +171,13 @@ to a database. Tests load it into the auto-created test DB via
     status). Assigns a random `project_manager` from the seed rotation pool to
     every Job beyond `draft`; draft jobs keep a null PM.
 14. **`build_bleps_and_shifts`**: runs *after* reconcile (needs final task
-    statuses + job dates). Emits one Blep per complete Task, the Shifts that
-    enclose them, and `actual_qty` for complete `entered_qty` tasks (§4).
+    statuses + job dates). Emits one Blep per complete Task **within a three-week
+    horizon**, the Shifts that enclose them, and `actual_qty` for complete
+    `entered_qty` tasks (§4).
+14a. **`assign_current_work`**: runs *after* `build_bleps_and_shifts`. Gives each
+    rotation worker up to three random **pending** Tasks drawn from
+    **in_progress** Jobs (assignee + `worker_queue`), so the board and schedule
+    show current work (§4).
 15. **`build_history`**: last — emits a created/transition entry per tracked
     object.
 
@@ -284,15 +289,20 @@ PlanTasks keep the `est_qty` they were built with.
 
 `build_bleps_and_shifts` (after reconcile) gives the dataset time-tracking data:
 
-- **One Blep per complete Task** (real-side only). Length =
+- **One Blep per complete Task** (real-side only), **within a three-week
+  horizon** — `horizon = newest completed work − 3 weeks`; complete Tasks whose
+  job activity ended before that get no blep, keeping the dataset's time-tracking
+  recent. The horizon anchors to the newest *work* (max blep window upper bound),
+  **not** `_dataset_now` — a freshly-created job with no work can sit weeks ahead
+  and would otherwise wipe every blep. Length =
   `est_worker_time × {1.0, 1.10, 0.95}` on a deterministic ⅓-rotation index
   (`P.thirds_factor`), floored to whole minutes. The task's **`assignee`** is set
   to the blep's user (the worker who logged the time).
 - **Placement** satisfies two invariants at once: each blep falls inside its
   **job's active window** `[start_date or created_date → completed_date or
   latest-invoice-date]`, clamped to ≤ the newest real date in the dataset
-  (`_dataset_now`, so in-progress jobs get no future bleps); and **no user's
-  bleps overlap**. A blep sits in an 08:00–16:00 UTC workday (weekends allowed),
+  (`_dataset_now`, so in-progress jobs get no future bleps) and to ≥ the horizon;
+  and **no user's bleps overlap**. A blep sits in an 08:00–16:00 UTC workday (weekends allowed),
   packed back-to-back. Users are taken round-robin from `c.rotation_user_pks`;
   if every existing user is booked across a job's window, a new worker is
   **minted** (`_mint_user`) as the pressure valve.
@@ -303,8 +313,19 @@ PlanTasks keep the `est_qty` they were built with.
   the minute.
 - **entered_qty actuals**: a complete task on an `entered_qty` scheme gets an
   `actual_qty = est_qty × {thirds}` (fallback base `1` when `est_qty` is null)
-  so it doesn't invoice at zero. `elapsed_time` tasks derive qty from their
-  bleps; `flat_fee` uses `est_qty`/1 — neither needs an explicit actual.
+  so it doesn't invoice at zero. This is set for **every** complete task — even
+  ones too old for a blep under the horizon — so historical work never invoices
+  at zero. `elapsed_time` tasks derive qty from their bleps; `flat_fee` uses
+  `est_qty`/1 — neither needs an explicit actual.
+
+`assign_current_work` (after `build_bleps_and_shifts`) then populates **current**
+work: each rotation worker (excludes `system` + minted users) gets up to three
+random **pending** Tasks drawn from **in_progress** Jobs, with `assignee` and a
+per-worker `worker_queue` (0,1,2). The Tasks stay `pending` — assigned, not yet
+started — so they appear as forecast bars on the schedule (ScheduleService
+includes pending assigned tasks) and as queued cards on the job board. Only Tasks
+with an `est_worker_time` are eligible (`Task.clean()` requires it on an assigned
+Task). Deterministic given the seeded RNG.
 
 ### Materials
 

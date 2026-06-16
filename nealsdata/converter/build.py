@@ -1841,21 +1841,49 @@ def build_bleps_and_shifts(c):
     rot_idx = [0]
     schedules = defaultdict(list)          # user_pk -> [(start, end), ...]
 
-    for counter, tf in enumerate(complete):
-        fields = tf['fields']
-        job = job_by_pk.get(fields['job'], {})
-
+    def _window(tf):
+        """A complete task's blep window [lower, eff_upper] from its job's dates,
+        clamped to `now`. eff_upper is the newest the work could have ended."""
+        job = job_by_pk.get(tf['fields']['job'], {})
         lower = (_aware(job.get('start_date'))
                  or _aware(job.get('created_date'))
                  or now - timedelta(days=1))
         upper = (_aware(job.get('completed_date'))
-                 or latest_inv.get(fields['job'])
+                 or latest_inv.get(tf['fields']['job'])
                  or lower)
         lower = min(lower, now)
         # Window must allow at least one workday; expand a collapsed window to the
         # lower day's workday end, then clamp to now.
         day_end = datetime.combine(lower.date(), _WORKDAY_END, tzinfo=timezone.utc)
-        eff_upper = min(now, max(upper, day_end))
+        return lower, min(now, max(upper, day_end))
+
+    # Three-week horizon: keep the dataset's time-tracking recent. Anchored to the
+    # newest *actual* completed work — NOT _dataset_now, which can sit weeks ahead
+    # on a freshly-created job that has no work yet (that would wipe every blep).
+    newest_work = max((_window(tf)[1] for tf in complete), default=now)
+    horizon = newest_work - timedelta(weeks=3)
+
+    for counter, tf in enumerate(complete):
+        fields = tf['fields']
+
+        # entered_qty complete tasks bill on actual_qty (no bleps drive it), so
+        # invent one with the thirds rule vs est_qty (fallback base 1). Set for
+        # EVERY complete task — even ones too old to get a blep (the horizon skip
+        # below) — so nothing can invoice at zero.
+        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
+            base = (Decimal(fields['est_qty'])
+                    if fields.get('est_qty') not in (None, '') else Decimal('1'))
+            actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))
+            fields['actual_qty'] = f'{actual:.2f}'
+
+        lower, eff_upper = _window(tf)
+
+        # A job whose activity ended more than three weeks before the newest work
+        # gets no blep at all; a survivor that *started* before the horizon is
+        # clamped so its bleps land inside the window.
+        if eff_upper < horizon:
+            continue
+        lower = max(lower, horizon)
 
         # Blep length: est_worker_time × thirds factor, floored to whole minutes
         # (≥ 1 minute).
@@ -1878,14 +1906,6 @@ def build_bleps_and_shifts(c):
             'end_time':   end.strftime('%Y-%m-%dT%H:%M:00+00:00'),
         })
 
-        # entered_qty complete tasks bill on actual_qty (no bleps drive it), so
-        # invent one with the thirds rule vs est_qty (fallback base 1).
-        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
-            base = (Decimal(fields['est_qty'])
-                    if fields.get('est_qty') not in (None, '') else Decimal('1'))
-            actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))
-            fields['actual_qty'] = f'{actual:.2f}'
-
     # One Shift per (user, calendar day), tightly enclosing that day's bleps.
     for user_pk, intervals in schedules.items():
         by_day = defaultdict(list)
@@ -1899,6 +1919,60 @@ def build_bleps_and_shifts(c):
                 'start_time': min(s for s, _ in ivs).strftime('%Y-%m-%dT%H:%M:00+00:00'),
                 'end_time':   max(e for _, e in ivs).strftime('%Y-%m-%dT%H:%M:00+00:00'),
             })
+
+
+# Up to this many assigned-but-unstarted Tasks per worker (assign_current_work).
+_MAX_QUEUED_TASKS_PER_WORKER = 3
+
+
+def assign_current_work(c):
+    """Give each worker a few assigned-but-unstarted Tasks so the job board and
+    schedule show current work.
+
+    build_bleps_and_shifts only assigns the worker who logged time on a
+    *complete* Task, so pending work carries no assignee and never reaches a
+    worker's queue. This pass hands each rotation worker up to
+    `_MAX_QUEUED_TASKS_PER_WORKER` random **pending** Tasks drawn from
+    **in_progress** Jobs (the current work), setting `assignee` and a per-worker
+    `worker_queue` position. Tasks stay pending — assigned, not yet started — so
+    they render as forecast bars on the schedule (ScheduleService includes
+    pending assigned tasks) and as queued cards on the board.
+
+    Only Tasks with an `est_worker_time` are eligible (Task.clean() requires it
+    on an assigned Task). Workers come from `c.rotation_user_pks` (excludes
+    `system` and minted blep-overflow users). Deterministic given the seeded RNG;
+    runs after reconcile (needs final job/task status) and after
+    build_bleps_and_shifts (so completed work is already assigned).
+    """
+    pool = list(c.rotation_user_pks)
+    if not pool:
+        return
+
+    in_progress_jobs = {
+        f['pk'] for f in c.fixture_data
+        if f['model'] == 'jobs.job' and f['fields'].get('status') == 'in_progress'
+    }
+    candidates = sorted(
+        (f for f in c.fixture_data
+         if f['model'] == 'jobs.task'
+         and f['fields'].get('job') in in_progress_jobs
+         and f['fields'].get('status') == 'pending'
+         and f['fields'].get('assignee') is None
+         and f['fields'].get('est_worker_time')),
+        key=lambda f: f['pk'],
+    )
+    random.shuffle(candidates)
+
+    # Round-robin so the queue spreads across workers before any one fills up.
+    idx = 0
+    for position in range(_MAX_QUEUED_TASKS_PER_WORKER):
+        for worker_pk in pool:
+            if idx >= len(candidates):
+                return
+            fields = candidates[idx]['fields']
+            fields['assignee'] = worker_pk
+            fields['worker_queue'] = position
+            idx += 1
 
 
 # Models the @history decorator tracks AND that this converter emits. The value

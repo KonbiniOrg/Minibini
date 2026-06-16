@@ -780,6 +780,175 @@ class DowngradeCompletedJobsWithUnpaidInvoicesTest(unittest.TestCase):
         self.assertEqual(job_fields['status'], 'in_progress')
 
 
+class BlepHorizonTest(unittest.TestCase):
+    """build_bleps_and_shifts only emits bleps within three weeks of the
+    dataset's "now"; jobs whose activity ended before that get none. Synthetic
+    fixture data so we control the exact scenario."""
+
+    def _make_converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.rotation_user_pks = [self._user(c), self._user(c)]
+        return c
+
+    def _user(self, c):
+        pk = c.next_pk('core.user')
+        c.add_fixture('core.user', pk, {'username': f'w{pk}', 'is_active': True})
+        return pk
+
+    def _job(self, c, status, start, completed=None):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'J{pk}', 'status': status,
+            'created_date': start, 'start_date': start,
+            'due_date': None, 'completed_date': completed,
+        })
+        return pk
+
+    def _task(self, c, job_pk, status='complete', ewt='02:00:00'):
+        pk = c.next_pk('jobs.task')
+        c.add_fixture('jobs.task', pk, {
+            'job': job_pk, 'name': f't{pk}', 'status': status,
+            'est_worker_time': ewt, 'est_qty': None, 'rate_scheme': None,
+            'assignee': None, 'worker_queue': None, 'sort_order': pk,
+        })
+        return pk
+
+    def _bleps(self, c):
+        return [f for f in c.fixture_data if f['model'] == 'jobs.blep']
+
+    def test_old_job_gets_no_blep_recent_one_does(self):
+        c = self._make_converter()
+        # Newest work = 2026-06-10 → horizon = 2026-05-20.
+        recent = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
+                           '2026-06-10T00:00:00+00:00')
+        rt = self._task(c, recent)
+        old = self._job(c, 'completed', '2026-03-01T00:00:00+00:00',
+                        '2026-03-15T00:00:00+00:00')
+        ot = self._task(c, old)
+        build.build_bleps_and_shifts(c)
+        task_pks = {b['fields']['task'] for b in self._bleps(c)}
+        self.assertIn(rt, task_pks)
+        self.assertNotIn(ot, task_pks)
+
+    def test_no_blep_starts_before_the_horizon(self):
+        c = self._make_converter()
+        # Newest work = 2026-06-10 (horizon 2026-05-20). A job that started long
+        # ago but completed inside the window is clamped, not skipped.
+        recent = self._job(c, 'completed', '2026-06-09T00:00:00+00:00',
+                           '2026-06-10T00:00:00+00:00')
+        self._task(c, recent)
+        straddle = self._job(c, 'completed', '2026-01-01T00:00:00+00:00',
+                             '2026-06-05T00:00:00+00:00')
+        self._task(c, straddle)
+        build.build_bleps_and_shifts(c)
+        bleps = self._bleps(c)
+        self.assertTrue(bleps)
+        for b in bleps:
+            self.assertGreaterEqual(b['fields']['start_time'][:10], '2026-05-20')
+
+    def test_workless_recent_job_does_not_wipe_older_work(self):
+        # The horizon anchors to the newest *work*, not the newest job date: a
+        # freshly-created job with no completed task must not push the window
+        # forward and delete real recent work. (Regression: anchoring to
+        # _dataset_now wiped every blep.)
+        c = self._make_converter()
+        self._job(c, 'in_progress', '2026-06-14T00:00:00+00:00')  # no complete task
+        done = self._job(c, 'completed', '2026-05-10T00:00:00+00:00',
+                         '2026-05-20T00:00:00+00:00')
+        dt = self._task(c, done)
+        build.build_bleps_and_shifts(c)
+        task_pks = {b['fields']['task'] for b in self._bleps(c)}
+        self.assertIn(dt, task_pks)
+
+
+class AssignCurrentWorkTest(unittest.TestCase):
+    """assign_current_work hands rotation workers up to three random pending
+    Tasks drawn from in_progress Jobs, leaving status pending."""
+
+    def _make_converter(self):
+        return NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+
+    def _user(self, c):
+        pk = c.next_pk('core.user')
+        c.add_fixture('core.user', pk, {'username': f'w{pk}', 'is_active': True})
+        return pk
+
+    def _job(self, c, status):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {'job_number': f'J{pk}', 'status': status})
+        return pk
+
+    def _task(self, c, job_pk, status='pending', ewt='01:00:00'):
+        pk = c.next_pk('jobs.task')
+        c.add_fixture('jobs.task', pk, {
+            'job': job_pk, 'name': f't{pk}', 'status': status,
+            'est_worker_time': ewt, 'assignee': None, 'worker_queue': None,
+        })
+        return pk
+
+    def _task_fields(self, c, pk):
+        return next(f['fields'] for f in c.fixture_data
+                    if f['model'] == 'jobs.task' and f['pk'] == pk)
+
+    def test_assigns_pending_in_progress_tasks_only(self):
+        import random as _random
+        c = self._make_converter()
+        c.rotation_user_pks = [self._user(c), self._user(c)]
+        ip = self._job(c, 'in_progress')
+        pend = [self._task(c, ip, 'pending') for _ in range(5)]
+        comp = self._task(c, ip, 'complete')
+        no_ewt = self._task(c, ip, 'pending', ewt=None)
+        other = self._task(c, self._job(c, 'work_complete'), 'pending')
+
+        _random.seed(1)
+        build.assign_current_work(c)
+
+        # Pending in_progress tasks get assignees from the rotation pool.
+        assigned = [p for p in pend
+                    if self._task_fields(c, p)['assignee'] in c.rotation_user_pks]
+        self.assertEqual(len(assigned), 5)
+        # Complete task, estimate-less task, and other-job task are untouched.
+        self.assertIsNone(self._task_fields(c, comp)['assignee'])
+        self.assertIsNone(self._task_fields(c, no_ewt)['assignee'])
+        self.assertIsNone(self._task_fields(c, other)['assignee'])
+        # Tasks stay pending (assigned, not started) and get a worker_queue.
+        for p in assigned:
+            self.assertEqual(self._task_fields(c, p)['status'], 'pending')
+            self.assertIsNotNone(self._task_fields(c, p)['worker_queue'])
+
+    def test_at_most_three_tasks_per_worker(self):
+        import random as _random
+        c = self._make_converter()
+        c.rotation_user_pks = [self._user(c)]
+        ip = self._job(c, 'in_progress')
+        pend = [self._task(c, ip, 'pending') for _ in range(10)]
+
+        _random.seed(2)
+        build.assign_current_work(c)
+
+        worker = c.rotation_user_pks[0]
+        mine = [p for p in pend if self._task_fields(c, p)['assignee'] == worker]
+        self.assertEqual(len(mine), 3)
+        self.assertEqual(
+            sorted(self._task_fields(c, p)['worker_queue'] for p in mine),
+            [0, 1, 2],
+        )
+
+    def test_deterministic_for_fixed_seed(self):
+        import random as _random
+
+        def run():
+            c = self._make_converter()
+            c.rotation_user_pks = [self._user(c), self._user(c)]
+            ip = self._job(c, 'in_progress')
+            tasks = [self._task(c, ip, 'pending') for _ in range(6)]
+            _random.seed(42)
+            build.assign_current_work(c)
+            return {p: self._task_fields(c, p)['assignee'] for p in tasks}
+
+        self.assertEqual(run(), run())
+
+
 class FakeShipmentSynthesisTest(unittest.TestCase):
     """Focused tests for the build_shipments synthesis branch — for completed
     Jobs whose Kanban card has no checked Picked up/Delivered marker, emit a
