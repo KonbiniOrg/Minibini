@@ -194,30 +194,24 @@ class ScheduleService:
             shape, window_bleps, local_now,
         )
 
-        # Jobs in play (for the JobChipStrip at top). The chip strip mirrors
-        # the job board's In Progress column exactly: only jobs whose status is
-        # in_progress. Completed work on a now-finished (work_complete) job
-        # still renders in the worker lanes below — its bars are self-describing
-        # (they carry job_number/job_name) — but the job drops off the strip,
-        # so the strip stays in sync with the board.
-        job_ids = set(Task.objects.filter(
-            assignee_id__in=worker_ids,
-            status__in=relevant_statuses + [Task.STATUS_COMPLETE],
-            job__status=Job.STATUS_IN_PROGRESS,
-        ).values_list('job_id', flat=True))
-        # Include in_progress jobs of tasks worked in the window (covers tasks a
-        # worker blepped on but isn't assigned to).
-        job_ids |= set(Task.objects.filter(
-            blep__user__isnull=False,
-            job__status=Job.STATUS_IN_PROGRESS,
-        ).filter(
-            Q(blep__end_time__isnull=True) |
-            Q(blep__end_time__gte=today_start_local, blep__end_time__lt=today_end_local)
-        ).values_list('job_id', flat=True))
-        # Ordered by due_date to match the board's In Progress column — both
-        # feed the same JobChipStrip, so the chips must appear in the same order.
-        jobs = Job.objects.filter(pk__in=job_ids).select_related(
-            'contact', 'project_manager').order_by('due_date')
+        # Jobs for the JobChipStrip at top = the job board's In Progress column:
+        # every in_progress job, even ones with no assigned work (or no tasks at
+        # all — the board shows those with a 'needs-tasks' sub-status). This is
+        # deliberately broader than the lane bars: a job appears as a chip even
+        # if it has nothing to draw, mirroring the board. Completed work on a
+        # now-finished (work_complete) job still renders in the lanes below — its
+        # bars are self-describing (they carry job_number/job_name) — but that
+        # job is not in_progress, so it drops off the strip.
+        #
+        # (The board's In Progress column is get_approved_data, which filters
+        # out UNPAID_SUB_STATUSES; those never occur on a status=in_progress job
+        # — they live on work_complete — so "every in_progress job" matches it.)
+        #
+        # Ordered by due_date to match the board — both feed the same
+        # JobChipStrip, which sorts nothing, so the payload order must match.
+        jobs = Job.objects.filter(
+            status=Job.STATUS_IN_PROGRESS,
+        ).select_related('contact', 'project_manager').order_by('due_date')
         jobs_payload = []
         for j in jobs:
             contact_name = ''

@@ -299,6 +299,47 @@ class ScheduleForecastScopeTest(BaseTestCase):
         self.assertNotIn('forecast', kinds)
 
 
+class ScheduleAllInProgressChipsTest(BaseTestCase):
+    """The chip strip shows every in_progress job — matching the board's In
+    Progress column — even ones with no assigned work (or no tasks at all).
+    Lanes still only draw bars for jobs with actual/forecast work; a chip
+    without bars is fine and mirrors the board."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Job.objects.first().contact
+
+    def _in_progress_job(self):
+        job = Job.objects.create(
+            job_number=f'JOB-SCHED-ALL-{timezone.now().timestamp()}',
+            name='Taskless Job',
+            contact=self.contact,
+            status=Job.STATUS_DRAFT,
+        )
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                  Job.STATUS_IN_PROGRESS):
+            job.status = s
+            job.save()
+        return job
+
+    def test_in_progress_job_with_no_tasks_appears_in_chip_strip(self):
+        job = self._in_progress_job()
+        result = ScheduleService.get_schedule(now=timezone.now())
+        job_ids = [j['job_id'] for j in result['jobs']]
+        self.assertIn(job.pk, job_ids)
+
+    def test_in_progress_job_with_only_unassigned_task_appears(self):
+        job = self._in_progress_job()
+        Task.objects.create(
+            name='Unassigned', job=job, assignee=None,
+            status=Task.STATUS_PENDING, rate_scheme_id=1,
+            est_worker_time=timedelta(hours=1),
+        )
+        result = ScheduleService.get_schedule(now=timezone.now())
+        job_ids = [j['job_id'] for j in result['jobs']]
+        self.assertIn(job.pk, job_ids)
+
+
 class ScheduleChipOrderTest(BaseTestCase):
     """The jobs payload (chip strip) is ordered by due_date, matching the
     board's In Progress column — the two reuse the same JobChipStrip and

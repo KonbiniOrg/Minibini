@@ -78,14 +78,21 @@ on_hold), so a worked-then-blocked task or a `work_complete` job's finished
 tasks still render their past time.
 
 **Jobs (chip strip).** The `jobs` payload that feeds the top `JobChipStrip`
-mirrors the job board's **In Progress** column exactly — only jobs with
-`status == in_progress`, ordered by `due_date`. (Both the board's
-`ApprovedArea` and the schedule render the *same* `JobChipStrip` component,
-which sorts nothing — so the payload order must match the board's.) This is deliberately narrower than the worker/lane
-queries: a job that has just gone `work_complete` drops off the strip, but the
-completed work it holds **still renders as `actual` bars** in the worker lanes
-(and survives scrolling back through blep history). The lane bars don't depend
-on the strip — each bar carries its own `job_number`/`job_name`/`accent_color`,
+is **every `in_progress` job**, ordered by `due_date` — exactly the job board's
+**In Progress** column (`Job.objects.filter(status=in_progress)`), including
+jobs with no assigned work or no tasks at all (the board shows those with a
+`needs-tasks` sub-status). The board's column is `get_approved_data`, which
+filters out `UNPAID_SUB_STATUSES`; those never occur on a `status=in_progress`
+job (they live on `work_complete`), so "every in_progress job" matches it.
+(Both the board's `ApprovedArea` and the schedule render the *same*
+`JobChipStrip` component, which sorts nothing — so the payload order must match
+the board's.) The strip is deliberately **broader** than the lane bars in one
+direction and **narrower** in another: a chip can have no bars (an in_progress
+job with nothing scheduled still shows, mirroring the board), while a job that
+has gone `work_complete` drops off the strip even though the completed work it
+holds **still renders as `actual` bars** in the worker lanes (and survives
+scrolling back through blep history). The lane bars don't depend on the strip —
+each bar carries its own `job_number`/`job_name`/`accent_color`,
 so the quick card shows the job header even when the job isn't on the strip.
 
 **Per-worker walk.** Tasks are walked in pure `(worker_queue, pk)` order —
