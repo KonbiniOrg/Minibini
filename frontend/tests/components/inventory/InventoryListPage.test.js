@@ -82,6 +82,23 @@ describe('InventoryListPage', () => {
     expect(queryByText('leftover ply')).toBeInTheDocument();
   });
 
+  it('flags a row whose available count is negative', async () => {
+    api.get.mockResolvedValue({ results: [{
+      inventory_item_id: 9, code: 'OVER', description: 'oversubscribed', units: 'ea',
+      qty_on_hand: '1.00', qty_earmarked: '3.00', qty_available: '-2.00',
+      is_catalog: true, is_active: true, purchase_price: '0.00', selling_price: '0.00',
+    }] });
+    const { findByText } = render(InventoryListPage);
+    const row = (await findByText('OVER')).closest('tr');
+    expect(row.classList.contains('short')).toBe(true);
+  });
+
+  it('does not flag a row with non-negative available', async () => {
+    const { findByText } = render(InventoryListPage);  // ITEMS: FELT available 3.00
+    const row = (await findByText('FELT')).closest('tr');
+    expect(row.classList.contains('short')).toBe(false);
+  });
+
   it('hides manage actions without an atom', async () => {
     const { findByText, queryByRole } = render(InventoryListPage);
     await findByText('FELT');

@@ -216,7 +216,10 @@
     </thead>
     <tbody>
       {#each shown as it (it.inventory_item_id)}
-        <tr class:finished={!it.is_catalog && Number(it.qty_on_hand) === 0 && Number(it.qty_earmarked) === 0}>
+        <tr
+          class:finished={!it.is_catalog && Number(it.qty_on_hand) === 0 && Number(it.qty_earmarked) === 0}
+          class:short={Number(it.qty_available) < 0}
+        >
           <td>{it.code}</td>
           <td class="preserve-breaks">{it.description || '—'}</td>
           <td>{it.units}</td>
@@ -244,5 +247,9 @@
   .finished {
     color: #888;
     font-style: italic;
+  }
+  /* Available < 0: earmarked exceeds on-hand — oversubscribed / shortfall. */
+  .short td {
+    background: #fff1f0;
   }
 </style>
