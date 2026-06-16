@@ -571,3 +571,13 @@ IMAP-SMTP machinery and tend to be worked together.
   a deletable finished lot — e.g. "This item has no stock and isn't referenced;
   unchecking Catalog will remove it." _Done when:_ demoting an item that would be
   collected prompts the user first (and ideally distinguishes delete vs. hide).
+
+- **Inventory item pickers are capped at 100 (pagination).** — _added 2026-06-15_
+  `PriceListItemPicker` and `CatalogPicker` request `/api/inventory/?page_size=9999`,
+  but `StandardPagination` clamps to 100 (see architecture-and-conventions.md §3.3),
+  so once the active catalog exceeds 100 items, items past the first 100 can't be
+  selected when adding a material / line item — with no error. `InventoryListPage`
+  was fixed by page-walking; the pickers are type-aheads, so the better fix is
+  **server-side `?search=`** (query as the user types) rather than loading all.
+  _Done when:_ the pickers can reach any active item regardless of catalog size
+  (server-side search, or page-walk as a stopgap).
