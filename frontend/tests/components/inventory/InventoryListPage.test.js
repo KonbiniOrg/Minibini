@@ -47,6 +47,23 @@ describe('InventoryListPage', () => {
     expect(url).not.toContain('include_finished');
   });
 
+  it('walks all pages instead of truncating at the 100-item cap', async () => {
+    const mk = (id, code) => ({
+      inventory_item_id: id, code, description: '', units: 'ea',
+      qty_on_hand: '0.00', qty_earmarked: '0.00', qty_available: '0.00',
+      is_catalog: true, is_active: true, purchase_price: '0.00', selling_price: '0.00',
+    });
+    const page1 = Array.from({ length: 100 }, (_, i) => mk(i + 1, `I${i + 1}`));
+    const page2 = [mk(101, 'LAST')];
+    api.get.mockImplementation((url) =>
+      url.includes('page=2')
+        ? Promise.resolve({ results: page2, next: null })
+        : Promise.resolve({ results: page1, next: 'http://x/api/inventory/?page=2' }));
+    const { findByText } = render(InventoryListPage);
+    // The 101st item (only on page 2) must appear → both pages were fetched.
+    expect(await findByText('LAST')).toBeInTheDocument();
+  });
+
   it('requests finished lots when the toggle is checked', async () => {
     const { getByLabelText } = render(InventoryListPage);
     await vi.waitFor(() => expect(api.get).toHaveBeenCalled());

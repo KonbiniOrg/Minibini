@@ -83,12 +83,25 @@
     loading = true;
     error = '';
     try {
+      // Walk every page so the client-side search/filters see the whole catalog.
+      // (StandardPagination caps page_size at 100, so a single big request would
+      // silently truncate.) We follow `next` by incrementing `page` locally to
+      // keep requests proxy-relative.
       const params = new URLSearchParams();
-      params.set('page_size', '200');
+      params.set('page_size', '100');  // the server's max
       if (activeOnly) params.set('is_active', 'true');
       if (includeFinished) params.set('include_finished', 'true');
-      const data = await api.get('/api/inventory/?' + params.toString());
-      items = data.results || data;
+      const all = [];
+      let page = 1;
+      while (page <= 200) {  // safety cap (20k items)
+        params.set('page', String(page));
+        const data = await api.get('/api/inventory/?' + params.toString());
+        if (Array.isArray(data)) { all.push(...data); break; }  // unpaginated fallback
+        all.push(...(data.results || []));
+        if (!data.next) break;
+        page += 1;
+      }
+      items = all;
     } catch (err) {
       error = err.message || 'Could not load inventory.';
     } finally {
