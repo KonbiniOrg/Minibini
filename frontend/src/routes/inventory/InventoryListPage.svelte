@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { link } from 'svelte-spa-router';
   import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
   import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
 
@@ -234,6 +235,9 @@
               <button type="button" onclick={() => editItem(it)}>edit</button>
               {#if Number(it.qty_on_hand) > 0}
                 <button type="button" onclick={() => startWriteOff(it)}>write off</button>
+              {/if}
+              {#if $canManageFinancials}
+                <a use:link href="/purchase-orders/new">order</a>
               {/if}
             </td>
           {/if}

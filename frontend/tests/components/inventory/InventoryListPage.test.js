@@ -113,6 +113,20 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
+  it('shows an order link on every row, pointing at a new PO', async () => {
+    const { findAllByRole } = render(InventoryListPage);
+    const orderLinks = await findAllByRole('link', { name: 'order' });
+    expect(orderLinks.length).toBe(2);  // one per ITEMS row
+    expect(orderLinks[0].getAttribute('href')).toContain('purchase-orders/new');
+  });
+
+  it('hides the order link for a config-only user (PO creation is financials)', async () => {
+    user.set({ username: 'cfg', permissions: ['can_manage_config'] });
+    const { findAllByRole, queryByRole } = render(InventoryListPage);
+    await findAllByRole('button', { name: 'edit' });  // config still manages items
+    expect(queryByRole('link', { name: 'order' })).toBeNull();
+  });
+
   it('writes off a partial quantity via the panel', async () => {
     const { findAllByRole, getByText, getByLabelText } = render(InventoryListPage);
     const writeOffBtns = await findAllByRole('button', { name: 'write off' });
