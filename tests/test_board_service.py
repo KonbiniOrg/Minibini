@@ -262,6 +262,40 @@ class WorkCompleteSubStatusTest(FixtureTestCase):
         )
 
 
+class InProgressColumnJobsHelperTest(FixtureTestCase):
+    """The shared helper defining the board's In Progress column job set,
+    reused by both get_approved_data and the schedule chip strip so the two
+    never drift."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+
+    def test_returns_in_progress_jobs_ordered_by_due_date(self):
+        from apps.jobs.services import BoardService
+        later = Job.objects.create(
+            job_number='JOB-HELP-LATE', name='Late', status='in_progress',
+            contact=self.contact, due_date=timezone.now() + timedelta(days=10),
+        )
+        earlier = Job.objects.create(
+            job_number='JOB-HELP-EARLY', name='Early', status='in_progress',
+            contact=self.contact, due_date=timezone.now() + timedelta(days=1),
+        )
+        pks = [j.pk for j in BoardService.in_progress_column_jobs()]
+        self.assertIn(earlier.pk, pks)
+        self.assertIn(later.pk, pks)
+        self.assertLess(pks.index(earlier.pk), pks.index(later.pk))
+
+    def test_excludes_non_in_progress_jobs(self):
+        from apps.jobs.services import BoardService
+        wc = Job.objects.create(
+            job_number='JOB-HELP-WC', name='Done', status='work_complete',
+            contact=self.contact,
+        )
+        pks = [j.pk for j in BoardService.in_progress_column_jobs()]
+        self.assertNotIn(wc.pk, pks)
+
+
 class BoardDataAssemblyTest(FixtureTestCase):
     """Test the full board data assembly."""
 

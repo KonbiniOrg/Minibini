@@ -194,24 +194,18 @@ class ScheduleService:
             shape, window_bleps, local_now,
         )
 
-        # Jobs for the JobChipStrip at top = the job board's In Progress column:
-        # every in_progress job, even ones with no assigned work (or no tasks at
-        # all — the board shows those with a 'needs-tasks' sub-status). This is
-        # deliberately broader than the lane bars: a job appears as a chip even
-        # if it has nothing to draw, mirroring the board. Completed work on a
-        # now-finished (work_complete) job still renders in the lanes below — its
-        # bars are self-describing (they carry job_number/job_name) — but that
-        # job is not in_progress, so it drops off the strip.
-        #
-        # (The board's In Progress column is get_approved_data, which filters
-        # out UNPAID_SUB_STATUSES; those never occur on a status=in_progress job
-        # — they live on work_complete — so "every in_progress job" matches it.)
-        #
-        # Ordered by due_date to match the board — both feed the same
-        # JobChipStrip, which sorts nothing, so the payload order must match.
-        jobs = Job.objects.filter(
-            status=Job.STATUS_IN_PROGRESS,
-        ).select_related('contact', 'project_manager').order_by('due_date')
+        # Jobs for the JobChipStrip at top = the job board's In Progress column.
+        # Reuse the board's own definition of that set so the two can never
+        # drift: every in_progress job (minus unpaid sub-statuses), in due_date
+        # order. This is deliberately broader than the lane bars — a job appears
+        # as a chip even with no assigned work or no tasks at all (the board
+        # shows those with a 'needs-tasks' sub-status). Completed work on a
+        # now-finished (work_complete) job still renders in the lanes below (its
+        # bars are self-describing), but that job is not in_progress, so it's not
+        # on the strip. Both the board's ApprovedArea and the schedule render the
+        # same JobChipStrip, which sorts nothing, so the order must match too.
+        from apps.jobs.services import BoardService
+        jobs = BoardService.in_progress_column_jobs()
         jobs_payload = []
         for j in jobs:
             contact_name = ''

@@ -1399,6 +1399,30 @@ class BoardService:
         }
 
     @staticmethod
+    def in_progress_column_jobs():
+        """Job instances in the board's In Progress column, in display order:
+        `in_progress` jobs ordered by `due_date`, minus any whose sub-status
+        routes them to the Unpaid column.
+
+        This is the single definition of "the In Progress column job set",
+        shared by the board column (`get_approved_data`) and the schedule chip
+        strip (`ScheduleService.get_schedule`) so the two never drift. No
+        `status=in_progress` job currently lands in `UNPAID_SUB_STATUSES`
+        (those arise on `work_complete`), so the exclusion is a structural
+        guard rather than a live filter. `select_related` covers the related
+        fields both callers serialize.
+        """
+        from apps.jobs.models import Job
+        jobs = Job.objects.filter(
+            status=Job.STATUS_IN_PROGRESS,
+        ).select_related('contact', 'project_manager').order_by('due_date')
+        return [
+            job for job in jobs
+            if BoardService.compute_sub_status(job)
+            not in BoardService.UNPAID_SUB_STATUSES
+        ]
+
+    @staticmethod
     def get_approved_data():
         """Return in_progress jobs where work is still active (not unpaid).
 
@@ -1410,15 +1434,10 @@ class BoardService:
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        approved_jobs = Job.objects.filter(
-            status='in_progress'
-        ).select_related('contact', 'project_manager').order_by('due_date')
+        approved_jobs = BoardService.in_progress_column_jobs()
 
         approved_list = []
         for i, job in enumerate(approved_jobs):
-            sub_status = BoardService.compute_sub_status(job)
-            if sub_status in BoardService.UNPAID_SUB_STATUSES:
-                continue
             job_data = BoardService._serialize_job(job)
             job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
                 i % len(BoardService.ACCENT_COLORS)

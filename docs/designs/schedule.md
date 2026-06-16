@@ -79,14 +79,16 @@ tasks still render their past time.
 
 **Jobs (chip strip).** The `jobs` payload that feeds the top `JobChipStrip`
 is **every `in_progress` job**, ordered by `due_date` — exactly the job board's
-**In Progress** column (`Job.objects.filter(status=in_progress)`), including
-jobs with no assigned work or no tasks at all (the board shows those with a
-`needs-tasks` sub-status). The board's column is `get_approved_data`, which
-filters out `UNPAID_SUB_STATUSES`; those never occur on a `status=in_progress`
-job (they live on `work_complete`), so "every in_progress job" matches it.
-(Both the board's `ApprovedArea` and the schedule render the *same*
-`JobChipStrip` component, which sorts nothing — so the payload order must match
-the board's.) The strip is deliberately **broader** than the lane bars in one
+**In Progress** column, including jobs with no assigned work or no tasks at all
+(the board shows those with a `needs-tasks` sub-status). The schedule and the
+board derive this set through the *same* helper —
+`BoardService.in_progress_column_jobs()` — so the two can't drift; both
+`get_approved_data` (the board column) and `ScheduleService.get_schedule` call
+it. The helper is `in_progress` jobs by `due_date` minus `UNPAID_SUB_STATUSES`
+(a structural guard — unpaid sub-statuses only occur on `work_complete`, never
+on `in_progress`). Both the board's `ApprovedArea` and the schedule render the
+*same* `JobChipStrip` component, which sorts nothing — so the payload order must
+match the board's. The strip is deliberately **broader** than the lane bars in one
 direction and **narrower** in another: a chip can have no bars (an in_progress
 job with nothing scheduled still shows, mirroring the board), while a job that
 has gone `work_complete` drops off the strip even though the completed work it
