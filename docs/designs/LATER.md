@@ -592,3 +592,15 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ one server-search picker backs the material/line-item pickers,
   reaching any active item regardless of catalog size, and PriceListItemPicker is
   renamed/retired.
+
+- **"Qty on order" column on the inventory list.** — _added 2026-06-15_
+  The inventory list shows on-hand / earmarked / available but not how much is
+  already **on order** (outstanding on open POs). Add a "On order" column: per
+  `InventoryItem`, sum the un-received quantity of `PurchaseOrderLineItem`s
+  referencing it on non-cancelled POs (`qty − qty_received − qty_cancelled`,
+  floored at 0) — the same outstanding calc `MaterialSerializer.get_qty_on_order`
+  already does for a single PO-linked material, but aggregated across all POs for
+  the item. Needs a computed field on the inventory-item serializer (annotate or
+  property) + the column in `InventoryListPage`. Helps decide whether to hit the
+  new per-row "order" button or wait on stock already coming.
+  _Done when:_ the inventory list shows an accurate on-order quantity per item.
