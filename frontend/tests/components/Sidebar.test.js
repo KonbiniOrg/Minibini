@@ -41,18 +41,8 @@ describe('Sidebar', () => {
     expect(getByText('Expenses')).toBeInTheDocument();
   });
 
-  it('hides Inventory without either atom', () => {
+  it('shows Inventory to any authenticated user (read access, no atom needed)', () => {
     user.set({ username: 'w', permissions: [] });
-    expect(render(Sidebar).queryByText('Inventory')).toBeNull();
-  });
-
-  it('shows Inventory with can_manage_financials', () => {
-    user.set({ username: 'f', permissions: ['can_manage_financials'] });
-    expect(render(Sidebar).getByText('Inventory')).toBeInTheDocument();
-  });
-
-  it('shows Inventory with can_manage_config', () => {
-    user.set({ username: 'c', permissions: ['can_manage_config'] });
     expect(render(Sidebar).getByText('Inventory')).toBeInTheDocument();
   });
 
