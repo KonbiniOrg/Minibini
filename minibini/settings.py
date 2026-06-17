@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'apps.purchasing',
     'apps.search',
     'apps.schedule',
+    'apps.activity',
     'apps.inventory',
     'apps.qbo',
     'rest_framework',

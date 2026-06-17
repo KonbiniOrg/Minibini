@@ -220,3 +220,22 @@ auto-refresh + reorder). The Board's `JobChipStrip` is reused at the top.
 - **User-pickable job colors** (currently admin-editable only).
 - **Cross-lane drag (reassignment)** and **pin-to-specific-time drag**.
 - **"+N more" off-horizon indicator** when a queue extends past the horizon.
+
+---
+
+## 7. Activity page (sibling service)
+
+`apps.activity` is a second model-less, service-only app (same shape as
+`apps.schedule` / `apps.search`). `ActivityService` (`apps/activity/services.py`)
+builds the `#/activity` dashboard payload — who's currently on shift (with their
+running blep), plus recent completed bleps and recent job / PO / invoice
+transition events. It's read-only over existing models; the HTTP layer is
+`apps/api/activity/views.py` serving `GET /api/activity/` (`IsAuthenticated`).
+
+Unlike the schedule's *forward* horizon, the Activity page uses a single
+*backward* look-back window, the `activity_recent_days` Configuration key
+(integer ≥ 1, default 5; see `data-constraints.md` §1.1). `load_recent_days()`
+reads it (read-only, never writes a default back), clamps to ≥ 1, and falls
+back to 5 when missing/unparseable. The settings API rejects non-int and `< 1`.
+Completed bleps reuse `BlepSerializer` so their shape matches `/api/bleps/`.
+Full design lives in `docs/plans/2026-06-16-activity-page-design.md`.

@@ -15,6 +15,7 @@ from apps.api.plan_tasks.views import PlanTaskViewSet
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
 from apps.api.schedule.views import schedule_view
+from apps.api.activity.views import activity_view
 from apps.api.jobs.board_views import (
     board_view, pipeline_view, approved_view, unpaid_view, closed_view,
     task_reorder_view, task_assign_view,
@@ -49,6 +50,7 @@ def api_root(request):
         'inventory': '/api/inventory/',
         'search': '/api/search/',
         'schedule': '/api/schedule/',
+        'activity': '/api/activity/',
         'plan-tasks': '/api/plan-tasks/',
         'emails': '/api/emails/',
         'work-templates': '/api/work-templates/',
@@ -93,6 +95,7 @@ urlpatterns = [
     path('emails/', include('apps.api.email.urls')),
     path('search/', search_view, name='api-search'),
     path('schedule/', schedule_view, name='api-schedule'),
+    path('activity/', activity_view, name='api-activity'),
     path('settings/units/', units_view, name='api-settings-units'),
     path('settings/', settings_view, name='api-settings'),
     path('shifts/', include('apps.api.time_tracking.urls')),
