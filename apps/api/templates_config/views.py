@@ -234,6 +234,15 @@ def settings_view(request):
                 {'blep_minimum_minutes': 'must be a non-negative integer'},
                 status=400,
             )
+    if 'activity_recent_days' in request.data:
+        try:
+            if int(request.data['activity_recent_days']) < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            return Response(
+                {'activity_recent_days': 'must be an integer >= 1'},
+                status=400,
+            )
     if 'average_labor_cost' in request.data:
         from decimal import Decimal, InvalidOperation
         raw = request.data['average_labor_cost']
