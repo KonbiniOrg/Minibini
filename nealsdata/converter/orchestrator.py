@@ -114,6 +114,7 @@ class NealsDataConverter:
         build.assign_project_managers(self)  # after reconcile: needs final job status
         build.build_shipments(self)   # after reconcile: needs final job dates
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
+        build.assign_current_work(self)  # after bleps: assign pending in_progress tasks
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:
