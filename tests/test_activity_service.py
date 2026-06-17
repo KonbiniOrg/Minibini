@@ -27,10 +27,9 @@ class ActivityServiceTest(BaseTestCase):
         self.job = Job.objects.get(pk=1)
         self.task = Task.objects.get(pk=1)
         self.business = Business.objects.get(pk=1)
-        # Default window of 5 days unless a test overrides it.
-        Configuration.objects.update_or_create(
-            key='activity_recent_days', defaults={'value': '5'},
-        )
+        # Default window of 5 days comes from the unit_test_data fixture
+        # (core.configuration activity_recent_days=5); tests override it
+        # explicitly where they need a different window.
 
     # ---- on_shift / current blep -------------------------------------
 
@@ -61,6 +60,28 @@ class ActivityServiceTest(BaseTestCase):
         data = ActivityService.get_activity()
         self.assertEqual(len(data['on_shift']), 1)
         self.assertIsNone(data['on_shift'][0]['current_blep'])
+
+    def test_multiple_open_bleps_surfaces_most_recent(self):
+        # A user with two open bleps: current_blep must be the most recently
+        # started one (locks the -start_time dedup in _on_shift).
+        Shift.objects.create(
+            user=self.user, start_time=self.now - timedelta(hours=4),
+        )
+        task2 = Task.objects.get(pk=2)
+        Blep.objects.create(
+            user=self.user, task=self.task,
+            start_time=self.now - timedelta(hours=3), end_time=None,
+        )
+        newer = Blep.objects.create(
+            user=self.user, task=task2,
+            start_time=self.now - timedelta(minutes=10), end_time=None,
+        )
+        data = ActivityService.get_activity()
+        self.assertEqual(len(data['on_shift']), 1)
+        cb = data['on_shift'][0]['current_blep']
+        self.assertIsNotNone(cb)
+        self.assertEqual(cb['task_id'], newer.task_id)
+        self.assertEqual(cb['blep_start'], newer.start_time.isoformat())
 
     def test_closed_shift_does_not_appear_on_shift(self):
         Shift.objects.create(

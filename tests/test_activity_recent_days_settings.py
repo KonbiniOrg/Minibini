@@ -29,6 +29,8 @@ class ActivityRecentDaysSettingsTest(BaseTestCase):
         )
 
     def test_non_int_rejected(self):
+        # Key is absent here so we can assert nothing was persisted.
+        Configuration.objects.filter(key='activity_recent_days').delete()
         response = self.client.patch('/api/settings/', {
             'activity_recent_days': 'abc',
         }, format='json')
@@ -39,8 +41,13 @@ class ActivityRecentDaysSettingsTest(BaseTestCase):
         )
 
     def test_less_than_one_rejected(self):
+        # Key is absent here so we can assert nothing was persisted.
+        Configuration.objects.filter(key='activity_recent_days').delete()
         response = self.client.patch('/api/settings/', {
             'activity_recent_days': '0',
         }, format='json')
         self.assertEqual(response.status_code, 400)
         self.assertIn('activity_recent_days', response.json())
+        self.assertFalse(
+            Configuration.objects.filter(key='activity_recent_days').exists(),
+        )

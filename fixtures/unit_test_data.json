@@ -258,6 +258,13 @@
     },
     {
         "model": "core.configuration",
+        "pk": "activity_recent_days",
+        "fields": {
+            "value": "5"
+        }
+    },
+    {
+        "model": "core.configuration",
         "pk": "average_labor_cost",
         "fields": {
             "value": "0"

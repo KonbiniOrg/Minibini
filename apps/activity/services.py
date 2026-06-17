@@ -13,6 +13,7 @@ from apps.jobs.models import Blep, Job
 from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder
 from apps.invoicing.models import Invoice
+from apps.api.bleps.serializers import BlepSerializer
 
 
 DEFAULT_RECENT_DAYS = 5
@@ -46,24 +47,6 @@ def _user_name(user):
     if user is None:
         return None
     return user.get_full_name() or user.username
-
-
-def _blep_payload(blep):
-    """Serialize a Blep the same way BlepSerializer does (field shape match)."""
-    task = blep.task
-    job = task.job
-    return {
-        'blep_id': blep.blep_id,
-        'user': blep.user_id,
-        'user_name': _user_name(blep.user),
-        'task': blep.task_id,
-        'task_name': task.name,
-        'job_id': job.pk,
-        'job_number': job.job_number,
-        'job_name': job.name,
-        'start_time': _iso(blep.start_time),
-        'end_time': _iso(blep.end_time),
-    }
 
 
 class ActivityService:
@@ -138,7 +121,9 @@ class ActivityService:
             .select_related('task', 'task__job', 'user')
             .order_by('-end_time')
         )
-        return [_blep_payload(b) for b in bleps]
+        # Reuse BlepSerializer so the payload shape stays identical to the
+        # /api/bleps/ endpoint by construction.
+        return BlepSerializer(bleps, many=True).data
 
     # ---- job events (estimate sent + job approved) -------------------
 
