@@ -5,6 +5,7 @@
   let workday_end = $state('17:00');
   let task_buffer_minutes = $state('10');
   let horizon_days = $state('3');
+  let activity_recent_days = $state('5');
   let blep_minimum_minutes = $state('1');
   let saveMessage = $state('');
   let errors = $state({});
@@ -16,6 +17,7 @@
       workday_end = data.schedule_workday_end ?? '17:00';
       task_buffer_minutes = data.schedule_task_buffer_minutes ?? '10';
       horizon_days = data.schedule_horizon_days ?? '3';
+      activity_recent_days = data.activity_recent_days ?? '5';
       blep_minimum_minutes = data.blep_minimum_minutes ?? '1';
     } catch (_) {}
   }
@@ -29,6 +31,7 @@
         schedule_workday_end: workday_end,
         schedule_task_buffer_minutes: task_buffer_minutes,
         schedule_horizon_days: horizon_days,
+        activity_recent_days: activity_recent_days,
         blep_minimum_minutes: blep_minimum_minutes,
       });
       saveMessage = 'Schedule settings saved.';
@@ -70,6 +73,12 @@ tasks, and the default rolling-day horizon.</p>
     <input type="number" min="1" max="14" bind:value={horizon_days}>
     {#if errors.schedule_horizon_days}<em class="err">{errors.schedule_horizon_days}</em>{/if}
   </p>
+  <p><label><strong>Recent activity (days)</strong></label><br>
+    <input type="number" min="1" bind:value={activity_recent_days}>
+    {#if errors.activity_recent_days}<em class="err">{errors.activity_recent_days}</em>{/if}
+  </p>
+  <p class="hint">Look-back window for the Activity page (a backward window,
+  separate from the forward schedule horizon above).</p>
 </fieldset>
 
 <fieldset>

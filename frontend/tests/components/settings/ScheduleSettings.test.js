@@ -35,4 +35,29 @@ describe('ScheduleSettings', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(await findByText('Must be at most 14')).toBeInTheDocument();
   });
+
+  it('loads activity_recent_days and includes it in the save payload', async () => {
+    api.get.mockResolvedValue({ activity_recent_days: '7' });
+    const { getByRole, findByDisplayValue } = render(ScheduleSettings);
+    expect(await findByDisplayValue('7')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
+      activity_recent_days: '7',
+    }));
+  });
+
+  it('defaults activity_recent_days to 5 when absent', async () => {
+    const { getByRole } = render(ScheduleSettings);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
+      activity_recent_days: '5',
+    }));
+  });
+
+  it('surfaces a field error for activity_recent_days', async () => {
+    api.patch.mockRejectedValue({ data: { activity_recent_days: 'Must be at least 1' } });
+    const { getByRole, findByText } = render(ScheduleSettings);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('Must be at least 1')).toBeInTheDocument();
+  });
 });
