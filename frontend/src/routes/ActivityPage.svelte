@@ -127,23 +127,23 @@
         </ul>
       {/if}
     </section>
-  </div>
 
-  <section class="events">
-    <h3>Invoices</h3>
-    {#if data.invoice_events.length === 0}
-      <p class="empty">No invoice activity in the last {data.recent_days} days.</p>
-    {:else}
-      <ul>
-        {#each data.invoice_events as e (e.kind + '-' + e.invoice_id + '-' + e.date)}
-          <li>
-            <a href={`/invoices/${e.invoice_id}`} use:link>{e.invoice_number}</a>
-            — {e.kind} · {fmtDate(e.date)}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
+    <section class="events">
+      <h3>Invoices</h3>
+      {#if data.invoice_events.length === 0}
+        <p class="empty">No invoice activity in the last {data.recent_days} days.</p>
+      {:else}
+        <ul>
+          {#each data.invoice_events as e (e.kind + '-' + e.invoice_id + '-' + e.date)}
+            <li>
+              <a href={`/invoices/${e.invoice_id}`} use:link>{e.invoice_number}</a>
+              — {e.kind} · {fmtDate(e.date)}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  </div>
 
   <section class="completed">
     <h3>Recently completed work</h3>
@@ -176,8 +176,15 @@
   .job { font-size: 13px; }
   .idle { margin-top: 0.4rem; color: #999; font-style: italic; }
 
-  .event-columns { display: flex; flex-wrap: wrap; gap: 1.5rem; }
-  .event-columns .events { flex: 1 1 18rem; }
+  .event-columns { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+  .event-columns .events {
+    flex: 1 1 18rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem 0.75rem;
+    margin-bottom: 0;
+  }
+  .events h3 { margin-top: 0.25rem; }
   .events ul { list-style: none; padding: 0; margin: 0; }
   .events li { padding: 0.2rem 0; border-bottom: 1px solid #eee; font-size: 14px; }
 </style>
