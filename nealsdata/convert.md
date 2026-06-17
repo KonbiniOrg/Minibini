@@ -290,19 +290,22 @@ PlanTasks keep the `est_qty` they were built with.
 `build_bleps_and_shifts` (after reconcile) gives the dataset time-tracking data:
 
 - **One Blep per complete Task** (real-side only), **within a three-week
-  horizon** — `horizon = newest completed work − 3 weeks`; complete Tasks whose
-  job activity ended before that get no blep, keeping the dataset's time-tracking
-  recent. The horizon anchors to the newest *work* (max blep window upper bound),
-  **not** `_dataset_now` — a freshly-created job with no work can sit weeks ahead
-  and would otherwise wipe every blep. Length =
+  horizon** — `horizon = _dataset_now − 3 weeks`. Length =
   `est_worker_time × {1.0, 1.10, 0.95}` on a deterministic ⅓-rotation index
   (`P.thirds_factor`), floored to whole minutes. The task's **`assignee`** is set
   to the blep's user (the worker who logged the time).
+- **Scope invariant**: every complete Task on a **current** job — *unfinished*
+  (no `completed_date`: in_progress / work_complete / on_hold) **or** *finished
+  within the horizon* (`completed_date ≥ horizon`) — always gets a blep. Only a
+  **finished** job whose `completed_date` is older than the horizon is dropped (it
+  is out of scope; its complete Tasks may be blep-less). This is enforced by the
+  window's upper bound (next bullet): an unfinished job's window runs to
+  `_dataset_now`, so it can never fall before the horizon.
 - **Placement** satisfies two invariants at once: each blep falls inside its
-  **job's active window** `[start_date or created_date → completed_date or
-  latest-invoice-date]`, clamped to ≤ the newest real date in the dataset
-  (`_dataset_now`, so in-progress jobs get no future bleps) and to ≥ the horizon;
-  and **no user's bleps overlap**. A blep sits in an 08:00–16:00 UTC workday (weekends allowed),
+  **job's active window** `[start_date or created_date → completed_date (finished)
+  or _dataset_now (unfinished)]`, clamped to ≤ `_dataset_now` (no future bleps)
+  and to ≥ the horizon; and **no user's bleps overlap**. A blep sits in an
+  08:00–16:00 UTC workday (weekends allowed),
   packed back-to-back. Users are taken round-robin from `c.rotation_user_pks`;
   if every existing user is booked across a job's window, a new worker is
   **minted** (`_mint_user`) as the pressure valve.

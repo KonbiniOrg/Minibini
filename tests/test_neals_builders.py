@@ -782,8 +782,9 @@ class DowngradeCompletedJobsWithUnpaidInvoicesTest(unittest.TestCase):
 
 class BlepHorizonTest(unittest.TestCase):
     """build_bleps_and_shifts only emits bleps within three weeks of the
-    dataset's "now"; jobs whose activity ended before that get none. Synthetic
-    fixture data so we control the exact scenario."""
+    dataset's "now". A FINISHED job (has completed_date) older than that is
+    dropped; an UNFINISHED/current job always bleps its complete Tasks because its
+    window runs to `now`. Synthetic fixture data for exact scenarios."""
 
     def _make_converter(self):
         c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
@@ -816,9 +817,9 @@ class BlepHorizonTest(unittest.TestCase):
     def _bleps(self, c):
         return [f for f in c.fixture_data if f['model'] == 'jobs.blep']
 
-    def test_old_job_gets_no_blep_recent_one_does(self):
+    def test_old_finished_job_gets_no_blep_recent_one_does(self):
         c = self._make_converter()
-        # Newest work = 2026-06-10 → horizon = 2026-05-20.
+        # now = 2026-06-10 → horizon = 2026-05-20.
         recent = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
                            '2026-06-10T00:00:00+00:00')
         rt = self._task(c, recent)
@@ -832,8 +833,8 @@ class BlepHorizonTest(unittest.TestCase):
 
     def test_no_blep_starts_before_the_horizon(self):
         c = self._make_converter()
-        # Newest work = 2026-06-10 (horizon 2026-05-20). A job that started long
-        # ago but completed inside the window is clamped, not skipped.
+        # now = 2026-06-10 (horizon 2026-05-20). A job that started long ago but
+        # completed inside the window is clamped, not skipped.
         recent = self._job(c, 'completed', '2026-06-09T00:00:00+00:00',
                            '2026-06-10T00:00:00+00:00')
         self._task(c, recent)
@@ -846,19 +847,36 @@ class BlepHorizonTest(unittest.TestCase):
         for b in bleps:
             self.assertGreaterEqual(b['fields']['start_time'][:10], '2026-05-20')
 
-    def test_workless_recent_job_does_not_wipe_older_work(self):
-        # The horizon anchors to the newest *work*, not the newest job date: a
-        # freshly-created job with no completed task must not push the window
-        # forward and delete real recent work. (Regression: anchoring to
-        # _dataset_now wiped every blep.)
+    def test_unfinished_job_started_long_ago_still_bleps(self):
+        # The core fix: a long-running in_progress job (started well before the
+        # horizon, no completed_date) must still blep its complete Tasks — its
+        # window runs to `now`, so the horizon never skips it.
         c = self._make_converter()
-        self._job(c, 'in_progress', '2026-06-14T00:00:00+00:00')  # no complete task
-        done = self._job(c, 'completed', '2026-05-10T00:00:00+00:00',
-                         '2026-05-20T00:00:00+00:00')
-        dt = self._task(c, done)
+        anchor = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
+                           '2026-06-10T00:00:00+00:00')  # now = 2026-06-10
+        self._task(c, anchor)
+        ip = self._job(c, 'in_progress', '2026-01-01T00:00:00+00:00')  # >3wk before
+        t = self._task(c, ip)
+        build.build_bleps_and_shifts(c)
+        self.assertIn(t, {b['fields']['task'] for b in self._bleps(c)})
+
+    def test_in_scope_complete_tasks_always_blepped(self):
+        # Every complete Task on a current (unfinished) job or a job finished
+        # within the horizon gets a blep; only an old finished job may be skipped.
+        c = self._make_converter()
+        ip = self._job(c, 'in_progress', '2026-01-01T00:00:00+00:00')
+        wc = self._job(c, 'work_complete', '2026-02-01T00:00:00+00:00')
+        recent = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
+                           '2026-06-08T00:00:00+00:00')  # now = 2026-06-08
+        old = self._job(c, 'completed', '2026-03-01T00:00:00+00:00',
+                        '2026-03-15T00:00:00+00:00')
+        in_scope = [self._task(c, ip), self._task(c, wc), self._task(c, recent)]
+        old_task = self._task(c, old)
         build.build_bleps_and_shifts(c)
         task_pks = {b['fields']['task'] for b in self._bleps(c)}
-        self.assertIn(dt, task_pks)
+        for t in in_scope:
+            self.assertIn(t, task_pks)
+        self.assertNotIn(old_task, task_pks)  # out of scope: finished long ago
 
 
 class AssignCurrentWorkTest(unittest.TestCase):

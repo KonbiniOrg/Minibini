@@ -1819,16 +1819,6 @@ def build_bleps_and_shifts(c):
     job_by_pk = {f['pk']: f['fields']
                  for f in c.fixture_data if f['model'] == 'jobs.job'}
 
-    # Latest invoice created_date per job — the window upper bound when a job has
-    # no completed_date.
-    latest_inv = {}
-    for f in c.fixture_data:
-        if f['model'] == 'invoicing.invoice':
-            d = _aware(f['fields'].get('created_date'))
-            jp = f['fields']['job']
-            if d is not None and (jp not in latest_inv or d > latest_inv[jp]):
-                latest_inv[jp] = d
-
     complete = [f for f in c.fixture_data
                 if f['model'] == 'jobs.task'
                 and f['fields'].get('status') == 'complete']
@@ -1842,34 +1832,38 @@ def build_bleps_and_shifts(c):
     schedules = defaultdict(list)          # user_pk -> [(start, end), ...]
 
     def _window(tf):
-        """A complete task's blep window [lower, eff_upper] from its job's dates,
-        clamped to `now`. eff_upper is the newest the work could have ended."""
+        """A complete task's blep window [lower, eff_upper], clamped to `now`.
+
+        A finished job (has a completed_date) ends when it completed. An
+        unfinished/current job (no completed_date — in_progress, work_complete,
+        on_hold) has ongoing work, so its window runs to `now`. That keeps
+        eff_upper >= horizon, so a complete Task on a current job is never skipped
+        by the horizon below — it always gets a supporting blep."""
         job = job_by_pk.get(tf['fields']['job'], {})
         lower = (_aware(job.get('start_date'))
                  or _aware(job.get('created_date'))
                  or now - timedelta(days=1))
-        upper = (_aware(job.get('completed_date'))
-                 or latest_inv.get(tf['fields']['job'])
-                 or lower)
+        completed = _aware(job.get('completed_date'))
+        upper = completed if completed is not None else now
         lower = min(lower, now)
         # Window must allow at least one workday; expand a collapsed window to the
         # lower day's workday end, then clamp to now.
         day_end = datetime.combine(lower.date(), _WORKDAY_END, tzinfo=timezone.utc)
         return lower, min(now, max(upper, day_end))
 
-    # Three-week horizon: keep the dataset's time-tracking recent. Anchored to the
-    # newest *actual* completed work — NOT _dataset_now, which can sit weeks ahead
-    # on a freshly-created job that has no work yet (that would wipe every blep).
-    newest_work = max((_window(tf)[1] for tf in complete), default=now)
-    horizon = newest_work - timedelta(weeks=3)
+    # Three-week horizon: keep the dataset's time-tracking recent, anchored to the
+    # dataset's "now". Finished work older than this is dropped (those jobs are out
+    # of scope). Unfinished jobs always fall inside the window because their window
+    # upper is `now` (see _window) — so their complete Tasks are never orphaned.
+    horizon = now - timedelta(weeks=3)
 
     for counter, tf in enumerate(complete):
         fields = tf['fields']
 
         # entered_qty complete tasks bill on actual_qty (no bleps drive it), so
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
-        # EVERY complete task — even ones too old to get a blep (the horizon skip
-        # below) — so nothing can invoice at zero.
+        # EVERY complete task — even an old finished one too old to get a blep
+        # (the horizon skip below) — so nothing can invoice at zero.
         if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
@@ -1878,9 +1872,9 @@ def build_bleps_and_shifts(c):
 
         lower, eff_upper = _window(tf)
 
-        # A job whose activity ended more than three weeks before the newest work
-        # gets no blep at all; a survivor that *started* before the horizon is
-        # clamped so its bleps land inside the window.
+        # A FINISHED job whose work ended more than three weeks ago gets no blep
+        # (out of scope). Unfinished jobs never hit this (eff_upper == now). A
+        # survivor that *started* before the horizon is clamped into the window.
         if eff_upper < horizon:
             continue
         lower = max(lower, horizon)
