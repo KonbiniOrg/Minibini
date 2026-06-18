@@ -269,6 +269,11 @@ class BlepService:
              Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED),
             'log time',
         )
+        if task.status == Task.STATUS_COMPLETE:
+            raise ValidationError(
+                "Cannot log time on a complete task. Create a new task for "
+                "additional work."
+            )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if end_time > timezone.now() + BlepService._CLOCK_SKEW_BUFFER:
