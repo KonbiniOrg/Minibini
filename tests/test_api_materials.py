@@ -357,3 +357,19 @@ class MaterialInvoicedFreezeTest(APITestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 400)
+
+    def test_patch_sell_price_blocked_on_invoiced_pli_material(self):
+        """API-level coverage for the PLI-linked branch in MaterialViewSet.partial_update.
+
+        The view routes PLI-linked pricing PATCHes through MaterialService.update_pricing
+        (apps/api/inventory/views.py ~135-148) and converts the resulting
+        ValidationError to 400.  Without that guard, the PATCH would succeed (200)
+        because the PLI branch skips the freeform sell_price check entirely.
+        """
+        mat = self._make_consumed_material()
+        self._invoice_material(mat)
+        resp = self.client.patch(
+            f'/api/materials/{mat.pk}/', {'sell_price': '99.00'},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400)

@@ -154,7 +154,6 @@ class MaterialViewSet(viewsets.ModelViewSet):
             if 'sell_price' in serializer.validated_data and (
                 serializer.validated_data['sell_price'] != instance.sell_price
             ):
-                from apps.inventory.services import MaterialService
                 MaterialService._assert_not_invoiced(instance)
         except DjangoValidationError as e:
             detail = e.message_dict if hasattr(e, 'message_dict') else (
