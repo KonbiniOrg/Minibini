@@ -82,6 +82,23 @@ class BaseBuildersTest(unittest.TestCase):
                  'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft']
         self.assertEqual(value, canon)
 
+    def test_ratescheme_unit_labels_within_canon(self):
+        # Every emitted RateScheme.unit_label must be a value in the
+        # converter's units_list. The seed historically used the singular
+        # 'hour', which is not in DEFAULT_UNITS ('hours') — a mismatch that
+        # makes the seeded schemes fail unit validation in the running app.
+        build.build_seed(self.c)
+        build.build_configuration(self.c)
+        cfg = next(f for f in self._models('core.configuration')
+                   if f['pk'] == 'units_list')
+        units = set(json.loads(cfg['fields']['value']))
+        for f in self._models('jobs.ratescheme'):
+            label = f['fields']['unit_label']
+            self.assertIn(
+                label, units,
+                f"RateScheme {f['fields']['name']!r} unit_label {label!r} "
+                f"is not in units_list {sorted(units)}")
+
     def test_build_inventory_items(self):
         build.build_seed(self.c)
         build.build_inventory_items(self.c)
