@@ -46,6 +46,28 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(purchased_on__lte=params['to'])
         return qs
 
+    def _claims_context_for(self, expenses):
+        from apps.invoicing.claims import InvoiceClaimService
+        pks = [e.pk for e in expenses]
+        return InvoiceClaimService.claims_for_atoms('expense', pks)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        objs = page if page is not None else list(queryset)
+        ctx = {**self.get_serializer_context(),
+               'invoice_claims': self._claims_context_for(objs)}
+        serializer = self.get_serializer(objs, many=True, context=ctx)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        ctx = {**self.get_serializer_context(),
+               'invoice_claims': self._claims_context_for([instance])}
+        return Response(self.get_serializer(instance, context=ctx).data)
+
     def perform_create(self, serializer):
         data = serializer.validated_data.copy()
         purchased_by = data.pop('purchased_by', None)

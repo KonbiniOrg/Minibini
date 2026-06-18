@@ -27,6 +27,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
     job_id = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
     accounting_category_name = serializers.CharField(
         source='accounting_category.name', read_only=True, default=None,
     )
@@ -51,6 +52,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'reimbursement', 'reimbursement_paid_on',
             'created_at', 'updated_at',
             'new_material',
+            'invoice',
         ]
         read_only_fields = [
             'id', 'entered_by', 'entered_by_name', 'purchased_by_name',
@@ -58,6 +60,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'accounting_category_name',
             'status', 'qbo_id', 'qbo_sync_error', 'reimbursement',
             'created_at', 'updated_at',
+            'invoice',
         ]
         extra_kwargs = {
             'purchased_by': {'required': False, 'allow_null': True},
@@ -66,6 +69,15 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'description': {'required': False, 'allow_blank': True},
             'material': {'required': False, 'allow_null': True},
         }
+
+    def get_invoice(self, obj):
+        claims = self.context.get('invoice_claims')
+        if not claims:
+            return None
+        ref = claims.get(('expense', obj.pk))
+        if not ref:
+            return None
+        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
 
     def _name(self, user):
         if not user:
