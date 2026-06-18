@@ -139,20 +139,15 @@ class ExpenseService:
         """Raise if the expense — or its linked material — is on a non-cancelled
         invoice. An expense is immutable while billed (remove it from the invoice
         first)."""
-        from django.db.models import Q
-        from apps.invoicing.models import InvoiceLineItemSource, Invoice
-        live = InvoiceLineItemSource.objects.exclude(
-            invoice_line_item__invoice__status=Invoice.STATUS_CANCELLED
-        )
-        cond = Q(
-            source_type=InvoiceLineItemSource.SOURCE_EXPENSE, source_pk=expense.pk,
-        )
-        if expense.material_id:
-            cond |= Q(
-                source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
-                source_pk=expense.material_id,
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+        if InvoiceClaimService.is_invoiced(
+            InvoiceLineItemSource.SOURCE_EXPENSE, expense.pk,
+        ) or (
+            expense.material_id and InvoiceClaimService.is_invoiced(
+                InvoiceLineItemSource.SOURCE_MATERIAL, expense.material_id,
             )
-        if live.filter(cond).exists():
+        ):
             raise ValidationError(
                 'Cannot edit an expense that is on an invoice; '
                 'remove it from the invoice first.'
