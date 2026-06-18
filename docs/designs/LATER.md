@@ -364,19 +364,35 @@ page stays whole.
   _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
   test), or a recorded decision says it must be added before start.
 
-- **Grouped atoms with matching units don't propagate units to the line item.** — _added 2026-06-17_
-  In the invoice/estimate wizard, grouping several atoms into one line item only carries the
-  shared **units** onto the line when the bundle is a *uniform same-scheme task* bundle
-  (`BaseWizardService._uniform_scheme_bundle` in `apps/core/wizard.py`: all atoms are Tasks with
-  one RateScheme + identical `active_modifiers`, units taken from the scheme). Every other group
-  that *does* share a unit — e.g. several materials with the same units, or tasks with the same
-  units but different schemes — falls through to `units='none'` even though a common unit exists.
-  Price still comes out right (the fallback sums to the correct total), so the symptom is
-  "pricing copied but units blank." Fix direction: in the multi-atom fallback (and the parallel
-  `_resync_in_sync_line_item`), if `_atom_units(...)` is identical across all grouped atoms, set
-  the line item's units to that shared value instead of `'none'`; keep qty/price behavior as-is.
-  _Done when:_ grouping atoms that all share a unit yields a line item carrying that unit (with a
-  test for the same-units-non-uniform-scheme and same-units-materials cases).
+- **Grouped same-scheme (hourly) tasks: rate copies but units don't.** — _added 2026-06-17_
+  In the invoice wizard, grouping several Tasks that share one (hourly) RateScheme into a line
+  item copies the **rate** correctly but leaves the line item's **units** blank. Because the rate
+  comes through right, `_uniform_scheme_bundle` (`apps/core/wizard.py`) *did* run — and its return
+  `(scheme.unit_label, qty, price)` is also what sets the line item's `units`. So the leading
+  suspect is that the hourly scheme's `RateScheme.unit_label` is empty (elapsed/hourly schemes may
+  never populate it, since qty is time), whereas the user-entered scheme in the sibling report has
+  a unit_label (units copied there). Needs reproduction to confirm data (empty `unit_label` on the
+  scheme) vs. code (a path that drops it), and to check whether the group went through
+  `add_atoms_to_new_line_item` or the add-to-existing `_resync_in_sync_line_item`.
+  **Also reproduces on the estimate wizard** (qty and price copy correctly, units don't) — same
+  shared `BaseWizardService` machinery, with `plan_task`/`plan_material` sources — so this is a
+  shared wizard-path / unit_label issue, not invoice-specific. _Done when:_ grouping same-scheme
+  atoms (invoice and estimate) yields a line item with the scheme's unit (and, if hourly schemes
+  are meant to read "hours", that `unit_label` is populated/derived), with a test.
+
+- **Single task on an entered-qty scheme collapses to qty 1 / price = total.** — _added 2026-06-17_
+  Sending ONE Task atom with a user-entered-quantity scheme to a new line item shows qty 1 and
+  price = the full amount (observed: entered qty 2.2 × rate 22 → line item qty 1, price 48.40),
+  instead of qty 2.2 / price 22 with the total computed from them. Units copy fine here. Root
+  cause: `InvoiceWizardService._task_qty_and_price` (`apps/invoicing/services.py`) returns
+  `(Decimal('1'), total_price)` for *every* single task ("no single qty/price is meaningful across
+  all algorithms"). But for entered-qty (and flat) schemes a real qty×rate *does* exist —
+  `_atom_detail` already computes `qty = _task_actual_qty(task)` and `rate = effective_rate()` for
+  the source-pool display. Fix direction: for single-task lines, use the scheme's actual qty and
+  effective rate when the algorithm has a meaningful per-unit qty (entered/flat), falling back to
+  qty 1 / total only where it genuinely doesn't (e.g. elapsed bleps, if that's still desired).
+  _Done when:_ a single entered-qty task lands on the line item as qty=actual / price=rate with
+  the total derived, with a test; revisit the elapsed-scheme case deliberately.
 
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
