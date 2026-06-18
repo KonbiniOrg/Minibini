@@ -526,3 +526,17 @@ class TaskListInvoiceFieldTest(TestCase):
         resp = self.client.get(f'/api/tasks/{self.task.pk}/subtasks/')
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(resp.data[0]['invoice'])
+
+    def test_task_retrieve_carries_invoice_ref(self):
+        from apps.invoicing.models import InvoiceLineItemSource
+        inv = self._invoice_atom(InvoiceLineItemSource.SOURCE_TASK, self.task.pk)
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNotNone(resp.data['invoice'])
+        self.assertEqual(set(resp.data['invoice'].keys()), {'id', 'number'})
+        self.assertEqual(resp.data['invoice']['id'], inv.pk)
+
+    def test_task_retrieve_invoice_null_when_not_invoiced(self):
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.data['invoice'])

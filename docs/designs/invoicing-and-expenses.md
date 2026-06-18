@@ -187,6 +187,12 @@ The field is populated without N+1:
   status column: for an invoiced task/subtask it **replaces** the activity/status
   indicator (an invoiced task is necessarily `complete`), and for an invoiced
   material it fills the otherwise-empty status cell. Both link to the invoice.
+- `TaskDetailPage.svelte` (the single-task view) shows the **"INVOICED"** link on
+  the Status row (replacing the activity indicator) and beside each invoiced
+  material in its inline materials table; its subtasks render via `TaskTree`, so
+  they inherit the indicator. The task's own `invoice` field is populated by a
+  `retrieve` override on `TaskViewSet` that passes the `claims_for_job` map as
+  context.
 
 ### Per-source stacked list on line items
 
