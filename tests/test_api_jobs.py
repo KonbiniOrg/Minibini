@@ -846,3 +846,14 @@ class JobDetailInvoiceFieldTest(TestCase):
             f'Query count grew when a second invoiced atom was added: '
             f'1 atom → {count_one} queries, 2 atoms → {count_two} queries',
         )
+
+        # Absolute pin: guard against flat per-request regressions that the
+        # comparative assertion above cannot catch.  N=13 was derived empirically
+        # (run with N=1, read the failure message).  If the jobs viewset gains new
+        # prefetches/annotations this number may need updating — update it together
+        # with a comment explaining why the count changed.
+        self.assertEqual(
+            count_one, 13,
+            f'Absolute query count for job-detail changed: expected 13, got {count_one}. '
+            f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
+        )
