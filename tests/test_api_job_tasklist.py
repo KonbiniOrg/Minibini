@@ -7,9 +7,11 @@ Reorder and add-from-template are tested in test_api_jobs.py against
 
 from decimal import Decimal
 from rest_framework.test import APIClient
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
 from apps.jobs.models import Job, Task, RateScheme
+from apps.jobs.services import TaskService
 from apps.contacts.models import Contact
 from apps.inventory.models import Material, InventoryItem
 
@@ -354,6 +356,18 @@ class TerminalTaskGuardTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
+
+    def test_update_task_rejects_edit_on_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        with self.assertRaises(ValidationError):
+            TaskService.update_task(task.pk, name='renamed')
+
+    def test_update_task_allows_sort_order_on_complete_task(self):
+        task = self._make_task(Task.STATUS_COMPLETE)
+        # sort_order is cosmetic; must remain editable
+        TaskService.update_task(task.pk, sort_order=5)
+        task.refresh_from_db()
+        self.assertEqual(task.sort_order, 5)
 
 
 class TaskSerializerFlattenTest(TestCase):
