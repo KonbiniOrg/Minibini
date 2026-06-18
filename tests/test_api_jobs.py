@@ -5,14 +5,14 @@ from rest_framework import status
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from tests.base import BaseTestCase
-from apps.core.models import User, AccountingCategory
+from apps.core.models import User, AccountingCategory, Configuration, AppState
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate,
     TemplateTaskAssociation,
 )
-from apps.inventory.models import PlanMaterial
+from apps.inventory.models import PlanMaterial, Material
 
 
 def _make_admin(username='admin_jobapi'):
@@ -708,3 +708,141 @@ class JobAddFromTemplateTest(TestCase):
         )
         self.assertIn(response.status_code, [401, 403])
 
+
+class JobDetailInvoiceFieldTest(TestCase):
+    """Task/material atoms nested in GET /api/jobs/{id}/ carry an 'invoice' field."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = _make_admin('invfld_admin')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='T', last_name='C')
+        self.job = Job.objects.create(
+            job_number='INV-F-001', name='Invoice Field Job', contact=self.contact,
+        )
+        ac = AccountingCategory.objects.create(code='INVF-AC', name='invf-ac')
+        # Required for Invoice.save() to generate invoice numbers
+        Configuration.objects.get_or_create(
+            key='invoice_number_sequence',
+            defaults={'value': 'INV-{year}-{counter:04d}'},
+        )
+        AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
+        self.scheme = RateScheme.objects.create(
+            name='S-invf', algorithm=RateScheme.FLAT_FEE,
+            rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
+        )
+        self.task = Task.objects.create(
+            job=self.job, name='Invoiceable Task', rate_scheme=self.scheme,
+        )
+        self.material = Material.objects.create(
+            job=self.job,
+            description='Test Material',
+            quantity=Decimal('2.00'),
+            sell_price=Decimal('5.00'),
+            accounting_category=ac,
+        )
+
+    def _invoice_task(self, task):
+        """Create a draft Invoice with a line item sourced from a task."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(job=task.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='t', qty=Decimal('1'),
+            units='none', price=Decimal('10.00'),
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+        return inv
+
+    def _invoice_material(self, material):
+        """Create a draft Invoice with a line item sourced from a material."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(job=material.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='m', qty=material.quantity,
+            units='none', price=material.sell_price,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
+        )
+        return inv
+
+    def _get_job_detail(self):
+        resp = self.client.get(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        return resp.json()
+
+    def test_job_detail_marks_invoiced_task(self):
+        inv = self._invoice_task(self.task)
+        data = self._get_job_detail()
+        task_row = next(t for t in data['tasks'] if t['task_id'] == self.task.pk)
+        self.assertIsNotNone(task_row['invoice'])
+        self.assertEqual(set(task_row['invoice'].keys()), {'id', 'number'})
+        self.assertEqual(task_row['invoice']['id'], inv.pk)
+
+    def test_job_detail_uninvoiced_task_has_null_invoice(self):
+        data = self._get_job_detail()
+        task_row = next(t for t in data['tasks'] if t['task_id'] == self.task.pk)
+        self.assertIsNone(task_row['invoice'])
+
+    def test_job_detail_marks_invoiced_material(self):
+        inv = self._invoice_material(self.material)
+        data = self._get_job_detail()
+        mat_row = next(m for m in data['materials'] if m['material_id'] == self.material.pk)
+        self.assertIsNotNone(mat_row['invoice'])
+        self.assertEqual(set(mat_row['invoice'].keys()), {'id', 'number'})
+        self.assertEqual(mat_row['invoice']['id'], inv.pk)
+
+    def test_job_detail_uninvoiced_material_has_null_invoice(self):
+        data = self._get_job_detail()
+        mat_row = next(m for m in data['materials'] if m['material_id'] == self.material.pk)
+        self.assertIsNone(mat_row['invoice'])
+
+    def test_job_detail_invoice_claims_single_query(self):
+        """Claims are built in one query regardless of how many invoiced atoms the job has.
+
+        Empirically derived: run once without the second atom to pin the baseline,
+        then assert adding a second invoiced atom does NOT increase the count.
+        """
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        # Create one invoice with a task source (one invoiced atom)
+        inv = self._invoice_task(self.task)
+
+        # Measure baseline with one invoiced task
+        with CaptureQueriesContext(connection) as ctx_one:
+            resp = self.client.get(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        count_one = len(ctx_one.captured_queries)
+
+        # Add a second invoiced atom to the same invoice (material) — same job,
+        # same invoice avoids the one-draft-per-job constraint.
+        li2 = InvoiceLineItem.objects.create(
+            invoice=inv, description='m2', qty=self.material.quantity,
+            units='none', price=self.material.sell_price,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li2,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.material.pk,
+        )
+
+        with CaptureQueriesContext(connection) as ctx_two:
+            resp = self.client.get(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        count_two = len(ctx_two.captured_queries)
+
+        # The claim map is built once per job — adding a second invoiced atom
+        # must not fire an extra query.
+        self.assertEqual(
+            count_one, count_two,
+            f'Query count grew when a second invoiced atom was added: '
+            f'1 atom → {count_one} queries, 2 atoms → {count_two} queries',
+        )

@@ -77,6 +77,7 @@ class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     has_active_blep = serializers.SerializerMethodField()
     active_worker_count = serializers.SerializerMethodField()
     has_bleps = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -91,6 +92,7 @@ class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
             'can_manage',
+            'invoice',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -127,6 +129,15 @@ class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_has_bleps(self, obj):
         return len(obj.blep_set.all()) > 0
+
+    def get_invoice(self, obj):
+        claims = self.context.get('invoice_claims')
+        if not claims:
+            return None
+        ref = claims.get(('task', obj.pk))
+        if not ref:
+            return None
+        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
 
 
 class TaskDetailSerializer(TaskSerializer):

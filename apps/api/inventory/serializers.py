@@ -36,6 +36,7 @@ class MaterialSerializer(serializers.ModelSerializer):
     propagate_to_pli = serializers.BooleanField(
         write_only=True, required=False,
     )
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -48,6 +49,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
+            'invoice',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
@@ -115,6 +117,15 @@ class MaterialSerializer(serializers.ModelSerializer):
             # Earmark-aware availability is surfaced separately (qty_available).
             return str(obj.inventory_item.qty_on_hand)
         return '0'
+
+    def get_invoice(self, obj):
+        claims = self.context.get('invoice_claims')
+        if not claims:
+            return None
+        ref = claims.get(('material', obj.pk))
+        if not ref:
+            return None
+        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (
