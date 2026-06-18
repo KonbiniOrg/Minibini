@@ -151,6 +151,11 @@ class MaterialViewSet(viewsets.ModelViewSet):
         from apps.jobs.services import _assert_job_not_on_hold
         try:
             _assert_job_not_on_hold(instance.job, 'edit this material')
+            if 'sell_price' in serializer.validated_data and (
+                serializer.validated_data['sell_price'] != instance.sell_price
+            ):
+                from apps.inventory.services import MaterialService
+                MaterialService._assert_not_invoiced(instance)
         except DjangoValidationError as e:
             detail = e.message_dict if hasattr(e, 'message_dict') else (
                 e.message if hasattr(e, 'message') else str(e)

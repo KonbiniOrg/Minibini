@@ -561,6 +561,19 @@ class MaterialService:
     All earmark mutations go through InventoryService._mutate_earmark."""
 
     @staticmethod
+    def _assert_not_invoiced(material):
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+        if InvoiceClaimService.is_invoiced(
+            InvoiceLineItemSource.SOURCE_MATERIAL, material.pk,
+        ):
+            raise ValidationError(
+                'Cannot change a material that is on an invoice; '
+                'remove it from the invoice first.'
+            )
+
+    @staticmethod
     def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False,
                        cost_source='manual'):
         """Update unit_cost and/or sell_price on a Material. If propagate_to_pli is
@@ -576,6 +589,8 @@ class MaterialService:
         """
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(material.job, 'edit this material')
+        if sell_price is not None and sell_price != material.sell_price:
+            MaterialService._assert_not_invoiced(material)
         from django.db import transaction
         with transaction.atomic():
             update_fields = []
@@ -678,6 +693,7 @@ class MaterialService:
             raise ValidationError(
                 f'unconsume requires consumed state; got {material.consumption_state}'
             )
+        MaterialService._assert_not_invoiced(material)
         qty = material.quantity
         with transaction.atomic():
             pli = material.inventory_item

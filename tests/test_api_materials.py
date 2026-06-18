@@ -271,3 +271,89 @@ class MaterialApiPermissionTest(APITestCase):
         }, format='json')
         self.assertIn(resp.status_code, [401, 403],
                       f'Expected 401 or 403, got {resp.status_code}')
+
+
+class MaterialInvoicedFreezeTest(APITestCase):
+    """Task 4: sell_price and unconsume are blocked on an invoiced material."""
+
+    def setUp(self):
+        from apps.core.models import Configuration, AppState
+        # NumberGenerationService needs these to auto-generate invoice_number.
+        Configuration.objects.get_or_create(
+            key='invoice_number_sequence',
+            defaults={'value': 'INV-{year}-{counter:04d}'},
+        )
+        AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
+
+        self.cat = AccountingCategory.objects.create(name='c', code='MFRZ1')
+        self.user = User.objects.create_user('mfrz_u', password='p')
+        self.client.force_login(self.user)
+        contact = Contact.objects.create(first_name='C', last_name='T')
+        biz = Business.objects.create(business_name='B', default_contact=contact)
+        contact.business = biz
+        contact.save()
+        self.job = Job.objects.create(job_number='JOB-FRZ-1', contact=contact)
+        self.pli = InventoryItem.objects.create(
+            code='I-FRZ', accounting_category=self.cat, is_catalog=True,
+            qty_on_hand=Decimal('10'),
+        )
+
+    def _make_consumed_material(self):
+        """PLI-linked consumed material."""
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='pli mat',
+            quantity=Decimal('2'), inventory_item=self.pli,
+        )
+        MaterialService.consume(m)
+        return m
+
+    def _make_consumed_freeform_material(self):
+        """Freeform (no inventory_item) consumed material."""
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='freeform mat',
+            quantity=Decimal('1'), inventory_item=None,
+            accounting_category=self.cat,
+        )
+        MaterialService.consume(m)
+        return m
+
+    def _invoice_material(self, material):
+        """Create a draft Invoice with a line item sourced from material."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(job=material.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='m', qty=material.quantity,
+            units='none', price=material.sell_price,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
+        )
+
+    def test_update_pricing_blocks_sell_price_when_invoiced(self):
+        from django.core.exceptions import ValidationError
+        from apps.inventory.services import MaterialService
+        mat = self._make_consumed_material()
+        self._invoice_material(mat)
+        with self.assertRaises(ValidationError):
+            MaterialService.update_pricing(mat, sell_price=Decimal('99.00'))
+
+    def test_unconsume_blocked_when_invoiced(self):
+        from django.core.exceptions import ValidationError
+        from apps.inventory.services import MaterialService
+        mat = self._make_consumed_material()
+        self._invoice_material(mat)
+        with self.assertRaises(ValidationError):
+            MaterialService.unconsume(mat)
+
+    def test_patch_sell_price_blocked_on_invoiced_freeform_material(self):
+        mat = self._make_consumed_freeform_material()
+        self._invoice_material(mat)
+        resp = self.client.patch(
+            f'/api/materials/{mat.pk}/', {'sell_price': '77.00'},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 400)
