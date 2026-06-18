@@ -350,6 +350,20 @@ page stays whole.
   confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
   whether on the detail page or in the wizard.
 
+- **Material added to an already-started Task is never consumed.** — _added 2026-06-17_
+  Adding a Material to a Task *after* the Task has started is allowed (correct), but the
+  newly-added material stays `pending` forever — continued work on the task doesn't consume
+  it. Consumption of a task's materials is a one-shot side effect triggered when the task is
+  *promoted* from `pending → in_progress` (the first blep: `start_work` /
+  `_promote_pending_task` → `MaterialService.consume` over `task.materials.all()`,
+  `apps/jobs/services.py`). A material attached later misses that already-fired trigger, so it
+  never consumes (no QOH/earmark decrement, never billable since billable ⟺ consumed). Decide
+  the intended behavior: e.g. consume a material on add when its task is already `in_progress`
+  (and only then), or re-run the consume sweep on subsequent bleps for not-yet-consumed
+  materials. Watch the `unconsume`/blep-cancel-undo interaction either way.
+  _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
+  test), or a recorded decision says it must be added before start.
+
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
   its "View Full Estimate" link correctly points to the old one. Open question: should clicking
