@@ -364,6 +364,20 @@ page stays whole.
   _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
   test), or a recorded decision says it must be added before start.
 
+- **Grouped atoms with matching units don't propagate units to the line item.** — _added 2026-06-17_
+  In the invoice/estimate wizard, grouping several atoms into one line item only carries the
+  shared **units** onto the line when the bundle is a *uniform same-scheme task* bundle
+  (`BaseWizardService._uniform_scheme_bundle` in `apps/core/wizard.py`: all atoms are Tasks with
+  one RateScheme + identical `active_modifiers`, units taken from the scheme). Every other group
+  that *does* share a unit — e.g. several materials with the same units, or tasks with the same
+  units but different schemes — falls through to `units='none'` even though a common unit exists.
+  Price still comes out right (the fallback sums to the correct total), so the symptom is
+  "pricing copied but units blank." Fix direction: in the multi-atom fallback (and the parallel
+  `_resync_in_sync_line_item`), if `_atom_units(...)` is identical across all grouped atoms, set
+  the line item's units to that shared value instead of `'none'`; keep qty/price behavior as-is.
+  _Done when:_ grouping atoms that all share a unit yields a line item carrying that unit (with a
+  test for the same-units-non-uniform-scheme and same-units-materials cases).
+
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
   its "View Full Estimate" link correctly points to the old one. Open question: should clicking
