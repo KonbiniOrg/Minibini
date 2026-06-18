@@ -364,22 +364,6 @@ page stays whole.
   _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
   test), or a recorded decision says it must be added before start.
 
-- **Grouped same-scheme (hourly) tasks: rate copies but units don't.** — _added 2026-06-17_
-  In the invoice wizard, grouping several Tasks that share one (hourly) RateScheme into a line
-  item copies the **rate** correctly but leaves the line item's **units** blank. Because the rate
-  comes through right, `_uniform_scheme_bundle` (`apps/core/wizard.py`) *did* run — and its return
-  `(scheme.unit_label, qty, price)` is also what sets the line item's `units`. So the leading
-  suspect is that the hourly scheme's `RateScheme.unit_label` is empty (elapsed/hourly schemes may
-  never populate it, since qty is time), whereas the user-entered scheme in the sibling report has
-  a unit_label (units copied there). Needs reproduction to confirm data (empty `unit_label` on the
-  scheme) vs. code (a path that drops it), and to check whether the group went through
-  `add_atoms_to_new_line_item` or the add-to-existing `_resync_in_sync_line_item`.
-  **Also reproduces on the estimate wizard** (qty and price copy correctly, units don't) — same
-  shared `BaseWizardService` machinery, with `plan_task`/`plan_material` sources — so this is a
-  shared wizard-path / unit_label issue, not invoice-specific. _Done when:_ grouping same-scheme
-  atoms (invoice and estimate) yields a line item with the scheme's unit (and, if hourly schemes
-  are meant to read "hours", that `unit_label` is populated/derived), with a test.
-
 - **Single task on an entered-qty scheme collapses to qty 1 / price = total.** — _added 2026-06-17_
   Sending ONE Task atom with a user-entered-quantity scheme to a new line item shows qty 1 and
   price = the full amount (observed: entered qty 2.2 × rate 22 → line item qty 1, price 48.40),
