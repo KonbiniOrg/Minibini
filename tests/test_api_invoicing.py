@@ -384,9 +384,63 @@ class BillabilityGateTest(BaseTestCase):
         self.assertIn('not_billable_reason', complete_atom)
         self.assertIsNone(complete_atom['not_billable_reason'])
 
-    def test_incomplete_task_child_material_is_not_billable(self):
-        """Material on an incomplete task is not_billable (unconsumed)."""
+    def test_unconsumed_material_not_billable_regardless_of_parent_task(self):
+        """Material is not_billable because it is unconsumed — not because of
+        the parent task's status.  The pending_material is attached to the
+        incomplete_task, but the gate keys only on its own consumption_state."""
         from apps.invoicing.services import InvoiceWizardService
         pool = InvoiceWizardService.get_source_pool(self.invoice)
         mat_atom = self._find_atom(pool, 'material', self.pending_material.pk)
         self.assertEqual(mat_atom['state'], 'not_billable')
+
+    def test_consumed_material_on_incomplete_task_is_available(self):
+        """Key invariant: a CONSUMED material on an INCOMPLETE task must be
+        'available' in the source pool — the material gate never looks at the
+        parent task's status, only at the material's own consumption_state."""
+        from apps.inventory.models import InventoryItem
+        from apps.invoicing.services import InvoiceWizardService
+
+        pli = InventoryItem.objects.filter(
+            accounting_category=self.cat,
+        ).first()
+        consumed_on_incomplete = Material.objects.create(
+            job=self.job, task=self.incomplete_task,
+            description='Consumed-on-incomplete Ply', quantity=Decimal('3.00'),
+            sell_price=Decimal('10.00'), inventory_item=pli,
+            accounting_category=self.cat,
+        )
+        consumed_on_incomplete.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        consumed_on_incomplete.save(update_fields=['consumption_state'])
+
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        mat_atom = self._find_atom(pool, 'material', consumed_on_incomplete.pk)
+        self.assertIsNotNone(mat_atom, 'consumed material must appear in pool')
+        self.assertEqual(mat_atom['state'], 'available')
+
+    def test_append_atoms_rejects_incomplete_task(self):
+        """add_atoms_to_line_item (append path) must also reject a non-complete task."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService
+
+        # Build an existing draft line item by adding a legitimately-billable atom.
+        existing_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'task', 'id': self.complete_task.pk}],
+        )
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_line_item(
+                existing_li, [{'type': 'task', 'id': self.incomplete_task.pk}],
+            )
+
+    def test_append_atoms_rejects_unconsumed_material(self):
+        """add_atoms_to_line_item (append path) must also reject an unconsumed material."""
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService
+
+        # Build an existing draft line item by adding a legitimately-billable atom.
+        existing_li = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'material', 'id': self.consumed_material.pk}],
+        )
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_line_item(
+                existing_li, [{'type': 'material', 'id': self.pending_material.pk}],
+            )
