@@ -64,8 +64,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
         task = self.get_object()
         if request.method == 'GET':
+            from apps.invoicing.claims import InvoiceClaimService
             materials = Material.objects.filter(task=task).select_related('inventory_item')
-            serializer = MaterialSerializer(materials, many=True)
+            serializer = MaterialSerializer(
+                materials, many=True,
+                context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+            )
             return Response(serializer.data)
 
         err = self._check_task_mutable(task)
@@ -169,8 +173,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.api.tasks.serializers import TaskSerializer
         task = self.get_object()
         if request.method == 'GET':
+            from apps.invoicing.claims import InvoiceClaimService
             children = Task.objects.filter(parent_task=task).order_by('sort_order')
-            serializer = TaskSerializer(children, many=True)
+            serializer = TaskSerializer(
+                children, many=True,
+                context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+            )
             return Response(serializer.data)
 
         err = self._check_task_mutable(task)

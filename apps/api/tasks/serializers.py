@@ -7,9 +7,11 @@ from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
 
 
-class MaterialSerializer(serializers.ModelSerializer):
+class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+    invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -19,6 +21,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
+            'invoice',
         ]
         read_only_fields = fields
 

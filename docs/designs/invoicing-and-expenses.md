@@ -167,15 +167,26 @@ The field is populated without N+1:
   dict as `invoice_claims` context to `TaskSerializer` and `MaterialSerializer`.
   In list contexts (where `view.action == 'list'`), the claims map is skipped
   and `invoice` returns `null` to avoid the per-job overhead.
+- **Task-list page atoms** (the `tasklist` view re-fetches per-task children):
+  the flat `TaskViewSet.materials` and `subtasks` GET actions each build
+  `InvoiceClaimService.claims_for_job(task.job)` and pass it as `invoice_claims`
+  context to the tasks-app `MaterialSerializer` / `TaskSerializer`, so materials
+  and subtasks fetched there also carry `invoice`. (The tasks-app
+  `MaterialSerializer` gained the `invoice` field via `InvoiceRefMixin` too.)
 - **Expenses** (via `ExpenseViewSet`): `ExpenseViewSet._claims_context_for`
   calls `InvoiceClaimService.claims_for_atoms('expense', pks)` once per list/
   retrieve response and passes the dict as `invoice_claims` context.
 
-**UI:** `JobDetail.svelte` renders an `invoicedLink` snippet next to each task
-row, material row, and loose-expense row in the job overview. When a task's,
-material's, or expense's `invoice` field is non-null, a small **"Invoiced ·
-INV-xxxx"** badge appears, linking to that invoice's detail page. The badge is
-absent when the atom is unclaimed.
+**UI:**
+- `JobDetail.svelte` renders an `invoicedLink` snippet next to each task row,
+  material row, and loose-expense row in the job overview. When a task's,
+  material's, or expense's `invoice` field is non-null, a small **"Invoiced ·
+  INV-xxxx"** badge appears, linking to that invoice's detail page. The badge is
+  absent when the atom is unclaimed.
+- `TaskTree.svelte` (the task-list page) shows an **"INVOICED"** link in the
+  status column: for an invoiced task/subtask it **replaces** the activity/status
+  indicator (an invoiced task is necessarily `complete`), and for an invoiced
+  material it fills the otherwise-empty status cell. Both link to the invoice.
 
 ### Per-source stacked list on line items
 

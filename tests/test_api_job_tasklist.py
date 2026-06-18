@@ -447,3 +447,82 @@ class TaskSerializerFlattenTest(TestCase):
         self.assertEqual(task.est_qty, Decimal('5.00'))
         self.assertIsNotNone(task.est_worker_time)
         self.assertIsNone(task.actual_qty)
+
+
+class TaskListInvoiceFieldTest(TestCase):
+    """The task-list endpoints (/api/tasks/{id}/materials/ and /subtasks/) must
+    carry the per-atom `invoice` ref so the task-list page can show INVOICED."""
+
+    def setUp(self):
+        from apps.core.models import Configuration, AppState
+        # NumberGenerationService needs these to auto-generate invoice_number.
+        Configuration.objects.get_or_create(
+            key='invoice_number_sequence',
+            defaults={'value': 'INV-{counter:04d}'},
+        )
+        AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
+
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='tliuser', password='pw')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='T', last_name='L')
+        self.job = Job.objects.create(
+            job_number='TLI-001', name='TLI Job', contact=self.contact,
+        )
+        self.scheme = _make_scheme('tli')
+        self.category = AccountingCategory.objects.create(name='G', code='GTLI')
+        self.task = Task.objects.create(
+            job=self.job, name='Parent', rate_scheme=self.scheme,
+        )
+        self.material = Material.objects.create(
+            job=self.job, task=self.task, description='Slab',
+            quantity=2, unit_cost=Decimal('5.00'), sell_price=Decimal('10.00'),
+            accounting_category=self.category,
+        )
+        self.subtask = Task.objects.create(
+            job=self.job, name='Child', rate_scheme=self.scheme,
+            parent_task=self.task,
+        )
+
+    def _invoice_atom(self, source_type, source_pk):
+        from apps.invoicing.models import (
+            Invoice, InvoiceLineItem, InvoiceLineItemSource,
+        )
+        inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+        li = InvoiceLineItem.objects.create(
+            invoice=inv, description='x', qty=Decimal('1'),
+            units='none', price=Decimal('10.00'),
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li, source_type=source_type, source_pk=source_pk,
+        )
+        return inv
+
+    def test_materials_endpoint_carries_invoice_ref(self):
+        from apps.invoicing.models import InvoiceLineItemSource
+        inv = self._invoice_atom(InvoiceLineItemSource.SOURCE_MATERIAL, self.material.pk)
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
+        self.assertEqual(resp.status_code, 200)
+        row = resp.data[0]
+        self.assertIsNotNone(row['invoice'])
+        self.assertEqual(set(row['invoice'].keys()), {'id', 'number'})
+        self.assertEqual(row['invoice']['id'], inv.pk)
+
+    def test_materials_endpoint_invoice_null_when_not_invoiced(self):
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.data[0]['invoice'])
+
+    def test_subtasks_endpoint_carries_invoice_ref(self):
+        from apps.invoicing.models import InvoiceLineItemSource
+        inv = self._invoice_atom(InvoiceLineItemSource.SOURCE_TASK, self.subtask.pk)
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/subtasks/')
+        self.assertEqual(resp.status_code, 200)
+        row = resp.data[0]
+        self.assertIsNotNone(row['invoice'])
+        self.assertEqual(row['invoice']['id'], inv.pk)
+
+    def test_subtasks_endpoint_invoice_null_when_not_invoiced(self):
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/subtasks/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.data[0]['invoice'])
