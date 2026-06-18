@@ -68,4 +68,40 @@ describe('invoices/WizardSourcePool', () => {
     await fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
   });
+
+  it('shows a non-selectable reason label for a not_billable task atom (task_incomplete)', () => {
+    const { getByText, container } = render(WizardSourcePool, {
+      props: {
+        sourcePool: {
+          tasks: [{
+            task_id: 1, name: 'Cut', has_billable_atoms: true,
+            atoms: [{ type: 'task', id: 1, description: 'Cut (Hourly)',
+                      qty: 0, rate: '0.00', amount: '0.00', units: 'none',
+                      state: 'not_billable', not_billable_reason: 'task_incomplete' }],
+          }],
+        },
+      },
+    });
+    expect(getByText(/not complete/i)).toBeTruthy();
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    expect(checkbox === null || checkbox.disabled).toBe(true);
+  });
+
+  it('shows a non-selectable reason label for a not_billable material atom (material_unconsumed)', () => {
+    const { getByText, container } = render(WizardSourcePool, {
+      props: {
+        sourcePool: {
+          tasks: [{
+            task_id: 2, name: 'Prep', has_billable_atoms: true,
+            atoms: [{ type: 'material', id: 7, description: 'Steel rod',
+                      qty: 0, rate: '0.00', amount: '0.00', units: 'none',
+                      state: 'not_billable', not_billable_reason: 'material_unconsumed' }],
+          }],
+        },
+      },
+    });
+    expect(getByText(/not consumed/i)).toBeTruthy();
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    expect(checkbox === null || checkbox.disabled).toBe(true);
+  });
 });
