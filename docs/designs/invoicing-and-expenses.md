@@ -193,6 +193,12 @@ The field is populated without N+1:
   they inherit the indicator. The task's own `invoice` field is populated by a
   `retrieve` override on `TaskViewSet` that passes the `claims_for_job` map as
   context.
+- `ExpenseListPage.svelte` shows an **"INVOICED · INV-xxxx"** badge in the Status
+  cell of any billed (loose) expense, and **hides the mutating actions** (edit /
+  reject / delete) for it — replacing them with a "billed — locked" note — since
+  `ExpenseService.update` and `delete` both reject an invoiced expense
+  server-side (`_assert_not_invoiced`). Material-bound expenses bill via their
+  material, so only loose expenses ever show the badge.
 
 ### Per-source stacked list on line items
 
