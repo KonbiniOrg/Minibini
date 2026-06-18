@@ -604,3 +604,11 @@ IMAP-SMTP machinery and tend to be worked together.
   property) + the column in `InventoryListPage`. Helps decide whether to hit the
   new per-row "order" button or wait on stock already coming.
   _Done when:_ the inventory list shows an accurate on-order quantity per item.
+
+- **Expense invoice-freeze has no billability-readiness gate, by design.** — _added 2026-06-17_
+  Expense atoms have an invoice-freeze (`ExpenseService._assert_not_invoiced`)
+  but no separate billability-readiness gate — they appear as selectable in the
+  wizard pool from the moment they are submitted (unlike Tasks, which require
+  `complete`, and Materials, which require `consumed`). This is deliberate: an
+  expense is ready to bill as soon as it exists. Revisit only if a
+  "not ready to bill" expense state is ever needed.

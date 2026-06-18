@@ -72,6 +72,31 @@ Guaranteed by the application-level get-or-create in `InvoiceWizardService.open_
 
 ---
 
+## InvoiceClaimService — centralized invoiced-atom predicate
+
+`InvoiceClaimService` (`apps/invoicing/claims.py`) is the **single source of
+truth** for "is this atom on a live (non-cancelled) invoice." All service-layer
+code that needs to answer that question uses this class — no inline filter
+duplication.
+
+```python
+InvoiceClaimService.is_invoiced(source_type, source_pk) → bool
+    # True if the atom is referenced by any non-cancelled InvoiceLineItemSource.
+
+InvoiceClaimService.claims_for_job(job) → dict
+    # {(source_type, source_pk): {'invoice_id': N, 'invoice_number': '…'}, …}
+    # Used by JobSerializer to populate the per-atom `invoice` field
+    # in one query per job (no N+1).
+
+InvoiceClaimService.claims_for_atoms(source_type, pks) → dict
+    # Same shape, scoped to a specific list of PKs of one type.
+```
+
+`_live_sources()` excludes sources whose invoice is `cancelled` — a
+cancelled invoice frees its claimed atoms back to the pool.
+
+---
+
 ## InvoiceLineItem and InvoiceLineItemSource
 
 `apps/invoicing/models.py`.
@@ -124,6 +149,61 @@ When the wizard hits a race, `InvoiceWizardService` catches `IntegrityError` and
 - Deleting an `InvoiceLineItem` deletes its `InvoiceLineItemSource` rows (CASCADE).
 - Deleting an `Invoice` cascades to its line items, then to their sources. All claimed atoms become available again.
 - Deleting a `Task` or `Material` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
+
+### Per-atom `invoice` field (API) and "Invoiced" indicator (UI)
+
+**API:** `TaskSerializer`, `MaterialSerializer`, and `ExpenseSerializer` all
+expose a top-level `invoice` field:
+
+```json
+"invoice": {"id": 42, "number": "INV-2026-0003"}
+// or null when the atom is unclaimed / claimed only by a cancelled invoice
+```
+
+The field is populated without N+1:
+
+- **Tasks and Materials** (nested under the job): `JobSerializer._invoice_claims(job)`
+  calls `InvoiceClaimService.claims_for_job(job)` once and passes the resulting
+  dict as `invoice_claims` context to `TaskSerializer` and `MaterialSerializer`.
+  In list contexts (where `view.action == 'list'`), the claims map is skipped
+  and `invoice` returns `null` to avoid the per-job overhead.
+- **Expenses** (via `ExpenseViewSet`): `ExpenseViewSet._claims_context_for`
+  calls `InvoiceClaimService.claims_for_atoms('expense', pks)` once per list/
+  retrieve response and passes the dict as `invoice_claims` context.
+
+**UI:** `JobDetail.svelte` renders an `invoicedLink` snippet next to each task
+row, material row, and loose-expense row in the job overview. When a task's,
+material's, or expense's `invoice` field is non-null, a small **"Invoiced ·
+INV-xxxx"** badge appears, linking to that invoice's detail page. The badge is
+absent when the atom is unclaimed.
+
+### Per-source stacked list on line items
+
+`InvoiceLineItemSerializer` includes a nested `sources` array
+(via `InvoiceLineItemSourceSerializer`):
+
+```json
+"sources": [
+    {"source_id": 11, "source_type": "task", "source_pk": 5,
+     "description": "CNC Router (setup)", "computed_amount": "120.00"},
+    {"source_id": 12, "source_type": "material", "source_pk": 3,
+     "description": "Plywood — 4×8 (2 sheets)", "computed_amount": "48.00"}
+]
+```
+
+`InvoiceLineItemSourceSerializer.get_description` resolves the atom via
+`obj.resolve()` and delegates to `InvoiceWizardService._atom_description`.
+`get_computed_amount` calls `InvoiceWizardService._atom_computed_amount`.
+
+`WizardLineItemCard.svelte` renders these as a stacked `↳ description ✕` list
+below the line item's price row, with per-source remove buttons. This replaces
+the old "N atoms" count.
+
+The **estimate** side has a parallel implementation: `EstimateLineItemSerializer`
+includes `EstimateLineItemSourceSerializer` with the same `description` +
+`computed_amount` fields (resolved via `EstimateWizardService._atom_description`
+/ `_atom_computed_amount`), shown in the same stacked layout on
+`WizardLineItemCard` for estimate line items.
 
 ---
 
@@ -396,8 +476,10 @@ wrong job is the same as any other edit. Moving a material-linked expense to
 another job moves its material too (composing `InventoryService.unconsume` →
 move earmark → re-consume for a consumed inventoried material). The one hard
 lock: an expense is **immutable while it — or its material — is on a
-non-cancelled invoice** (`ExpenseService._assert_not_invoiced`, checked in
-`update`/`delete`). To edit a billed expense, remove it from the invoice first.
+non-cancelled invoice** (`ExpenseService._assert_not_invoiced`, which delegates
+to `InvoiceClaimService.is_invoiced` — the same centralized predicate used by
+`MaterialService._assert_not_invoiced`; checked in `update`/`delete`). To edit
+a billed expense, remove it from the invoice first.
 `reject()`'s consumed-material wall still applies to *rejection* (not to editing).
 
 A second money lock covers reimbursement: once an expense is **reimbursed** (in a
@@ -425,6 +507,11 @@ type, and `InvoiceLineItemSource` gained `SOURCE_EXPENSE`.
 - **Already-invoiced:** once on a non-cancelled invoice, the expense shows
   `claimed_by_*` in the pool (not removed) — same as Materials/Tasks. This is
   also exactly what freezes the expense (see above).
+- **Billability gate:** expenses have **no readiness gate** in the wizard pool —
+  they are always selectable as long as they are not already claimed. (Tasks
+  require `complete`; Materials require `consumed`; Expenses are billable from
+  the moment they are submitted.) See `docs/designs/estimates-and-prices.md` §7
+  for the wizard-pool billability rules.
 
 ### Status machine
 
