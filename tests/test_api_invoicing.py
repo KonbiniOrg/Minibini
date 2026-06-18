@@ -1,10 +1,12 @@
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from apps.core.models import JobHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, EmailRecord
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.jobs.models import Job
+from apps.jobs.models import Job, RateScheme
+from apps.inventory.models import Material
 
 
 class InvoiceAPITest(BaseTestCase):
@@ -234,3 +236,157 @@ class InvoiceSendTest(BaseTestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 400)
+
+
+class BillabilityGateTest(BaseTestCase):
+    """Task 5: incomplete tasks and unconsumed materials are not billable."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Task
+        from apps.inventory.models import InventoryItem
+
+        super().setUp()
+
+        self.contact = Contact.objects.create(
+            first_name='Bill', last_name='Test',
+            email='bill@test.com', mobile_number='555-9999',
+        )
+        self.cat = AccountingCategory.objects.create(name='BillCat', code='BCAT')
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-bill', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50.00'), unit_label='hours',
+            accounting_category=self.cat,
+        )
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-BILL-001',
+        )
+
+        # An incomplete (pending) task — must appear as not_billable
+        self.incomplete_task = Task.objects.create(
+            job=self.job, name='Pending Work', rate_scheme=self.scheme,
+        )
+        # Status is STATUS_PENDING by default — don't change it.
+
+        # A complete task — for contrast
+        self.complete_task = Task.objects.create(
+            job=self.job, name='Done Work', rate_scheme=self.scheme,
+        )
+        self.complete_task.status = Task.STATUS_COMPLETE
+        self.complete_task.save()
+
+        pli = InventoryItem.objects.create(
+            code='BCAT-PLY', description='Plywood',
+            selling_price=Decimal('10.00'),
+            accounting_category=self.cat,
+        )
+
+        # A pending (unconsumed) material on the incomplete task
+        self.pending_material = Material.objects.create(
+            job=self.job, task=self.incomplete_task,
+            description='Pending Ply', quantity=Decimal('2.00'),
+            sell_price=Decimal('10.00'), inventory_item=pli,
+            accounting_category=self.cat,
+        )
+        # consumption_state is PENDING by default — don't change it.
+
+        # A consumed material (on the complete task) — for contrast.
+        # Set consumption_state directly via update_fields to bypass inventory
+        # on-hand checks in MaterialService.consume (test fixture only).
+        self.consumed_material = Material.objects.create(
+            job=self.job, task=self.complete_task,
+            description='Used Ply', quantity=Decimal('1.00'),
+            sell_price=Decimal('10.00'), inventory_item=pli,
+            accounting_category=self.cat,
+        )
+        self.consumed_material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        self.consumed_material.save(update_fields=['consumption_state'])
+
+        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
+
+    def _find_atom(self, pool, atom_type, atom_id):
+        """Walk pool['tasks'][*]['atoms'] for a matching type+id."""
+        for group in pool['tasks']:
+            for atom in group['atoms']:
+                if atom['type'] == atom_type and atom['id'] == atom_id:
+                    return atom
+        return None
+
+    def test_source_pool_marks_incomplete_task_not_billable(self):
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        task_atom = self._find_atom(pool, 'task', self.incomplete_task.pk)
+        self.assertIsNotNone(task_atom, 'incomplete task must appear in pool')
+        self.assertEqual(task_atom['state'], 'not_billable')
+        self.assertEqual(task_atom['not_billable_reason'], 'task_incomplete')
+
+    def test_source_pool_marks_pending_material_not_billable(self):
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        mat_atom = self._find_atom(pool, 'material', self.pending_material.pk)
+        self.assertIsNotNone(mat_atom, 'pending material must appear in pool')
+        self.assertEqual(mat_atom['state'], 'not_billable')
+        self.assertEqual(mat_atom['not_billable_reason'], 'material_unconsumed')
+
+    def test_source_pool_complete_task_available(self):
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        task_atom = self._find_atom(pool, 'task', self.complete_task.pk)
+        self.assertIsNotNone(task_atom, 'complete task must appear in pool')
+        self.assertEqual(task_atom['state'], 'available')
+
+    def test_source_pool_consumed_material_available(self):
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        mat_atom = self._find_atom(pool, 'material', self.consumed_material.pk)
+        self.assertIsNotNone(mat_atom, 'consumed material must appear in pool')
+        self.assertEqual(mat_atom['state'], 'available')
+
+    def test_add_atoms_rejects_incomplete_task(self):
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_new_line_item(
+                self.invoice, [{'type': 'task', 'id': self.incomplete_task.pk}],
+            )
+
+    def test_add_atoms_rejects_unconsumed_material(self):
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceWizardService
+        with self.assertRaises(ValidationError):
+            InvoiceWizardService.add_atoms_to_new_line_item(
+                self.invoice, [{'type': 'material', 'id': self.pending_material.pk}],
+            )
+
+    def test_add_atoms_accepts_complete_task(self):
+        from apps.invoicing.services import InvoiceWizardService
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'task', 'id': self.complete_task.pk}],
+        )
+        self.assertIsNotNone(li)
+        self.assertEqual(li.sources.count(), 1)
+
+    def test_add_atoms_accepts_consumed_material(self):
+        from apps.invoicing.services import InvoiceWizardService
+        li = InvoiceWizardService.add_atoms_to_new_line_item(
+            self.invoice, [{'type': 'material', 'id': self.consumed_material.pk}],
+        )
+        self.assertIsNotNone(li)
+        self.assertEqual(li.sources.count(), 1)
+
+    def test_not_billable_atom_dict_has_not_billable_reason_key(self):
+        """Every atom dict carries not_billable_reason — None for available atoms."""
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        complete_atom = self._find_atom(pool, 'task', self.complete_task.pk)
+        self.assertIn('not_billable_reason', complete_atom)
+        self.assertIsNone(complete_atom['not_billable_reason'])
+
+    def test_incomplete_task_child_material_is_not_billable(self):
+        """Material on an incomplete task is not_billable (unconsumed)."""
+        from apps.invoicing.services import InvoiceWizardService
+        pool = InvoiceWizardService.get_source_pool(self.invoice)
+        mat_atom = self._find_atom(pool, 'material', self.pending_material.pk)
+        self.assertEqual(mat_atom['state'], 'not_billable')

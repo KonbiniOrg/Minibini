@@ -119,10 +119,16 @@ class GetSourcePoolTest(TestCase):
         self.task_billable = Task.objects.create(
             job=self.job, name='Site demo', rate_scheme=self.scheme,
         )
+        # Complete the task so it is billable (Task 5: only complete tasks are billable).
+        self.task_billable.status = Task.STATUS_COMPLETE
+        self.task_billable.save()
 
         self.task_empty = Task.objects.create(
             job=self.job, name='Inspection', rate_scheme=self.scheme,
         )
+        # Complete the task so it is billable.
+        self.task_empty.status = Task.STATUS_COMPLETE
+        self.task_empty.save()
 
         self.task_cancelled = Task.objects.create(
             job=self.job, name='Cancelled work', rate_scheme=self.scheme,
@@ -159,6 +165,9 @@ class GetSourcePoolTest(TestCase):
             inventory_item=self.pli,
             accounting_category=self.category,
         )
+        # Consume the material so it is billable (Task 5: only consumed materials are billable).
+        self.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        self.material.save(update_fields=['consumption_state'])
 
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
@@ -320,6 +329,12 @@ class AddAtomsToNewLineItemTest(TestCase):
             start_time=start + timezone.timedelta(hours=5),
             end_time=start + timezone.timedelta(hours=6),
         )
+        # Complete tasks so they are billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
+        self.task2.status = Task.STATUS_COMPLETE
+        self.task2.save()
+
         self.pli = InventoryItem.objects.create(
             code='PLY', description='Plywood',
             selling_price=Decimal('25.00'),
@@ -330,6 +345,10 @@ class AddAtomsToNewLineItemTest(TestCase):
             quantity=Decimal('1.00'), sell_price=Decimal('25.00'),
             inventory_item=self.pli, accounting_category=self.cat_materials,
         )
+        # Consume the material so it is billable (Task 5: only consumed materials are billable).
+        self.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        self.material.save(update_fields=['consumption_state'])
+
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
     def test_creates_line_item_and_sources(self):
@@ -376,6 +395,9 @@ class AddAtomsToNewLineItemTest(TestCase):
             quantity=Decimal('3.00'), sell_price=Decimal('5.00'),
             accounting_category=self.cat_materials,
         )
+        # Consume the material so it is billable (Task 5: only consumed materials are billable).
+        mat3.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        mat3.save(update_fields=['consumption_state'])
         atoms = [{'type': 'material', 'id': mat3.pk}]
         line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(line_item.qty, Decimal('3.00'))
@@ -521,6 +543,12 @@ class AddAtomsToExistingLineItemTest(TestCase):
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
+        # Complete tasks so they are billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
+        self.task2.status = Task.STATUS_COMPLETE
+        self.task2.save()
+
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
         # Start with one atom on the line item — task atom for task1.
@@ -641,6 +669,11 @@ class RemoveAtomsFromLineItemTest(TestCase):
             start_time=start + timezone.timedelta(hours=4, minutes=30),
             end_time=start + timezone.timedelta(hours=6),
         )
+        # Complete all tasks so they are billable (Task 5: only complete tasks are billable).
+        for t in (self.task1, self.task2, self.task3):
+            t.status = Task.STATUS_COMPLETE
+            t.save()
+
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
         self.line_item = InvoiceWizardService.add_atoms_to_new_line_item(
@@ -782,6 +815,11 @@ class RemoveAtomsFromLineItemTest(TestCase):
             start_time=start + timezone.timedelta(hours=2),
             end_time=start + timezone.timedelta(hours=3),
         )
+        # Complete tasks so they are billable (Task 5: only complete tasks are billable).
+        task4.status = Task.STATUS_COMPLETE
+        task4.save()
+        task5.status = Task.STATUS_COMPLETE
+        task5.save()
         li2 = InvoiceWizardService.add_atoms_to_new_line_item(
             self.invoice, [{'type': 'task', 'id': task4.pk}],
         )
@@ -831,6 +869,9 @@ class DiscardDraftTest(TestCase):
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
+        # Complete the task so it is billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
         # Claim the per-task atom directly (atom helper migration is A17)
         self.line_item = InvoiceLineItem.objects.create(
@@ -1049,11 +1090,17 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
             start_time=now - timezone.timedelta(hours=1),
             end_time=now,
         )
+        # Complete the task so it is billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
         self.material = Material.objects.create(
             job=self.job, description='Acrylic 1/4"',
             quantity=Decimal('1'), unit_cost=Decimal('20'),
             sell_price=Decimal('40'), accounting_category=self.cat,
         )
+        # Consume the material so it is billable (Task 5: only consumed materials are billable).
+        self.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        self.material.save(update_fields=['consumption_state'])
 
     def test_single_task_atom_seeds_description_from_name(self):
         atoms = [{'type': 'task', 'id': self.task.pk}]

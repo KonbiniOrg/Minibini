@@ -52,11 +52,15 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         )
 
     def _task(self, scheme, actual_qty, modifiers=None):
-        return Task.objects.create(
+        t = Task.objects.create(
             job=self.job, name='T', rate_scheme=scheme,
             actual_qty=Decimal(str(actual_qty)),
             active_modifiers=modifiers or [],
         )
+        # Complete the task so it is billable (Task 5: only complete tasks are billable).
+        t.status = Task.STATUS_COMPLETE
+        t.save()
+        return t
 
     def _bundle(self, *tasks):
         atoms = [{'type': 'task', 'id': t.pk} for t in tasks]
@@ -92,6 +96,11 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         start = timezone.now()
         Blep.objects.create(task=a, user=self.user, start_time=start, end_time=start + timedelta(hours=2))
         Blep.objects.create(task=b, user=self.user, start_time=start, end_time=start + timedelta(hours=3))
+        # Complete tasks so they are billable (Task 5: only complete tasks are billable).
+        a.status = Task.STATUS_COMPLETE
+        a.save()
+        b.status = Task.STATUS_COMPLETE
+        b.save()
         li = self._bundle(a, b)
         self.assertEqual(li.units, 'hours')
         self.assertEqual(li.qty, Decimal('5.00'))  # 2h + 3h from Bleps, not 1
@@ -120,6 +129,9 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             quantity=Decimal('1.00'), sell_price=Decimal('5.00'),
             accounting_category=self.cat_mat,
         )
+        # Consume the material so it is billable (Task 5: only consumed materials are billable).
+        mat.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        mat.save(update_fields=['consumption_state'])
         atoms = [{'type': 'task', 'id': a.pk}, {'type': 'material', 'id': mat.pk}]
         li = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
         self.assertEqual(li.units, 'none')
@@ -142,6 +154,9 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             quantity=Decimal('1'), sell_price=Decimal('5.00'),
             accounting_category=self.cat_mat,
         )
+        # Consume the material so it is billable (Task 5: only consumed materials are billable).
+        mat.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        mat.save(update_fields=['consumption_state'])
         InvoiceWizardService.add_atoms_to_line_item(
             li, [{'type': 'material', 'id': mat.pk}],
         )

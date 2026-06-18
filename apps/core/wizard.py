@@ -72,6 +72,11 @@ class BaseWizardService:
         """Raise ValidationError unless the container is editable (draft)."""
         raise NotImplementedError
 
+    @classmethod
+    def _assert_atom_billable(cls, instance):
+        """Override to reject atoms that aren't in a billable lifecycle state."""
+        return None
+
     # ── shared atom helpers ────────────────────────────────────────────
     @classmethod
     def _atom_computed_amount(cls, atom_instance):
@@ -213,6 +218,8 @@ class BaseWizardService:
         cls._validate_draft(container)
 
         instances = [cls._resolve_atom(a) for a in atoms]
+        for inst in instances:
+            cls._assert_atom_billable(inst)
         total_price = sum(
             (cls._atom_computed_amount(i) for i in instances),
             Decimal('0.00'),
@@ -263,6 +270,8 @@ class BaseWizardService:
         old_sum = cls._sum_sources(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)
         instances = [cls._resolve_atom(a) for a in atoms]
+        for inst in instances:
+            cls._assert_atom_billable(inst)
 
         try:
             with transaction.atomic():
