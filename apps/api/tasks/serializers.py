@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.api.mixins import JobScopedCanManageMixin
+from apps.api.mixins import JobScopedCanManageMixin, InvoiceRefMixin
 from apps.jobs.models import Task
 from apps.inventory.models import Material
 from apps.core.models import AccountingCategory
@@ -64,9 +64,10 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     can_manage_job_path = 'job'
+    invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
     scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
@@ -129,15 +130,6 @@ class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_has_bleps(self, obj):
         return len(obj.blep_set.all()) > 0
-
-    def get_invoice(self, obj):
-        claims = self.context.get('invoice_claims')
-        if not claims:
-            return None
-        ref = claims.get(('task', obj.pk))
-        if not ref:
-            return None
-        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
 
 
 class TaskDetailSerializer(TaskSerializer):

@@ -2,6 +2,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from apps.inventory.models import InventoryItem, Material
 from apps.core.units import UnitsField
+from apps.api.mixins import InvoiceRefMixin
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):
@@ -23,7 +24,8 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         ]
 
 
-class MaterialSerializer(serializers.ModelSerializer):
+class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+    invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
     po_line_item_id = serializers.SerializerMethodField()
@@ -117,15 +119,6 @@ class MaterialSerializer(serializers.ModelSerializer):
             # Earmark-aware availability is surfaced separately (qty_available).
             return str(obj.inventory_item.qty_on_hand)
         return '0'
-
-    def get_invoice(self, obj):
-        claims = self.context.get('invoice_claims')
-        if not claims:
-            return None
-        ref = claims.get(('material', obj.pk))
-        if not ref:
-            return None
-        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (

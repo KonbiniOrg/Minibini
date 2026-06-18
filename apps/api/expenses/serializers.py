@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.expenses.models import Expense
 from apps.jobs.models import Job
+from apps.api.mixins import InvoiceRefMixin
 
 
 class NewMaterialSerializer(serializers.Serializer):
@@ -20,14 +21,15 @@ class NewMaterialSerializer(serializers.Serializer):
     )
 
 
-class ExpenseSerializer(serializers.ModelSerializer):
+class ExpenseSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+    invoice_source_type = 'expense'
+    invoice = serializers.SerializerMethodField()
     entered_by_name = serializers.SerializerMethodField()
     purchased_by_name = serializers.SerializerMethodField()
     task_name = serializers.SerializerMethodField()
     job_id = serializers.SerializerMethodField()
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
-    invoice = serializers.SerializerMethodField()
     accounting_category_name = serializers.CharField(
         source='accounting_category.name', read_only=True, default=None,
     )
@@ -69,15 +71,6 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'description': {'required': False, 'allow_blank': True},
             'material': {'required': False, 'allow_null': True},
         }
-
-    def get_invoice(self, obj):
-        claims = self.context.get('invoice_claims')
-        if not claims:
-            return None
-        ref = claims.get(('expense', obj.pk))
-        if not ref:
-            return None
-        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
 
     def _name(self, user):
         if not user:
