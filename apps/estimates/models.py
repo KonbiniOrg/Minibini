@@ -196,6 +196,20 @@ class Estimate(models.Model):
                 new_job_status=Job.STATUS_REJECTED,
             )
 
+    def is_amended(self):
+        """True when this estimate is the accepted agreement-of-record AND at
+        least one ACCEPTED change order amends it. Purely derived — the stored
+        `status` stays `accepted`; the UI renders "amended" off this flag. Only
+        accepted COs count (they're the only ones in the agreement-of-record),
+        and the accepted-status short-circuit keeps non-accepted estimates
+        query-free. Single source of truth for the EstimateSerializer and the
+        board pipeline payload."""
+        if self.status != Estimate.STATUS_ACCEPTED:
+            return False
+        return self.change_orders.filter(
+            status=ChangeOrder.STATUS_ACCEPTED,
+        ).exists()
+
     def __str__(self):
         return f"Estimate {self.estimate_number}"
 

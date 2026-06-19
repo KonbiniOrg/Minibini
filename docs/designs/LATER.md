@@ -208,15 +208,6 @@ page stays whole.
   _Done when:_ the shared paths live in one place (or we record why the duplication
   is acceptable).
 
-- **`is_amended` is an N+1 / duplicated derivation.** — _added 2026-06-08_
-  `EstimateSerializer.get_is_amended` runs `ChangeOrder.objects.filter(estimate=...,
-  status=accepted).exists()` per serialized estimate (bounded to accepted estimates
-  by a short-circuit), and `BoardService._serialize_pipeline_job` repeats the same
-  rule inline. Fine at current scale (mirrors the existing per-row `get_worksheet`
-  query) but worth folding into one place — e.g. an `Exists()` annotation on the
-  estimate queryset, or an `Estimate.is_amended()` method both call sites share.
-  _Done when:_ the rule lives once and list endpoints don't pay a per-row query.
-
 - **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
   An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a
   CO and the CO's state (none / draft / open / accepted-awaiting-release). May only matter

@@ -26,6 +26,41 @@ def _advance_job_to_on_hold(job):
     job.refresh_from_db()
 
 
+class EstimateIsAmendedModelTest(FixtureTestCase):
+    """The amended rule lives once on Estimate.is_amended(); the serializer and
+    the board pipeline both call it."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.create(
+            first_name='Mo', last_name='D', email='mo@acme.com')
+        self.job = JobService.create_job(name='Model Amend Job', contact=self.contact)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-MAMEND-1', version=1,
+            status=Estimate.STATUS_ACCEPTED)
+
+    def _co(self, status):
+        return ChangeOrder.objects.create(
+            job=self.job, estimate=self.est, status=status)
+
+    def test_accepted_estimate_no_co_is_not_amended(self):
+        self.assertFalse(self.est.is_amended())
+
+    def test_accepted_estimate_with_only_draft_co_is_not_amended(self):
+        self._co(ChangeOrder.STATUS_DRAFT)
+        self.assertFalse(self.est.is_amended())
+
+    def test_accepted_estimate_with_accepted_co_is_amended(self):
+        self._co(ChangeOrder.STATUS_ACCEPTED)
+        self.assertTrue(self.est.is_amended())
+
+    def test_non_accepted_estimate_short_circuits(self):
+        self.est.status = Estimate.STATUS_OPEN
+        # Even with an accepted CO present, a non-accepted estimate is not amended.
+        self._co(ChangeOrder.STATUS_ACCEPTED)
+        self.assertFalse(self.est.is_amended())
+
+
 class EstimateIsAmendedSerializerTest(FixtureTestCase):
     def setUp(self):
         super().setUp()

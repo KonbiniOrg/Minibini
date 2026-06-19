@@ -1228,9 +1228,12 @@ line-items sections.
 change order amends keeps its stored `status = accepted` — it is still
 the base of the agreement-of-record — but the UI relabels it **amended**
 so the human sees that the agreement has moved. This is derived, never
-stored: `EstimateSerializer.is_amended` (and the board pipeline payload's
-per-estimate `is_amended`) returns true when the estimate is `accepted`
-and at least one **accepted** CO references it. The frontend renders
+stored: the rule lives once on the model as `Estimate.is_amended()` —
+true when the estimate is `accepted` and at least one **accepted** CO
+references it (a non-accepted estimate short-circuits to `False`). Both
+read paths call it: `EstimateSerializer.get_is_amended` and the board
+pipeline payload's per-estimate `is_amended` (`BoardService.
+_serialize_pipeline_job`). The frontend renders
 `is_amended ? 'amended' : status` (`JobDetail`, `EstimateDetailPage`, the
 board `PipelineColumn`); there is no client-side re-derivation. Only
 accepted COs flip it — a draft/open CO does not, matching

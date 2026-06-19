@@ -64,17 +64,9 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         ]
 
     def get_is_amended(self, obj):
-        """True when this estimate is the accepted base AND at least one
-        ACCEPTED change order amends it. Purely derived — the stored `status`
-        stays `accepted`; the UI renders "amended" off this flag. Only accepted
-        COs count (they're the only ones in the agreement-of-record), and the
-        accepted-status short-circuit keeps non-accepted estimates query-free."""
-        from apps.estimates.models import ChangeOrder
-        if obj.status != Estimate.STATUS_ACCEPTED:
-            return False
-        return ChangeOrder.objects.filter(
-            estimate=obj, status=ChangeOrder.STATUS_ACCEPTED,
-        ).exists()
+        # Derived "amended" flag — see Estimate.is_amended() for the rule (the
+        # single source of truth shared with the board pipeline payload).
+        return obj.is_amended()
 
     def get_job_number(self, obj):
         return obj.job.job_number if obj.job_id else None
