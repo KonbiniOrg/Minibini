@@ -47,7 +47,7 @@ class BillPaymentPollingTest(TestCase):
     def test_skips_already_cleared_payments(self, mock_get_client):
         from django.utils import timezone
         mock_get_client.return_value = MagicMock()
-        self._create_bill_payment(qbo_payment_id='qbp-1', cleared_date=timezone.now().date())
+        self._create_bill_payment(qbo_payment_id='qbp-1', cleared_date=timezone.now())
         stats = QBOBillPaymentPollingService.poll_all()
         self.assertEqual(stats['checked'], 0)
 

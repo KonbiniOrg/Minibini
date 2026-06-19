@@ -1027,11 +1027,6 @@ class QBOBillPaymentPollingService:
             # QBO reconciliation fetch + cleared_date set lands in the QBO session.
         return stats
 
-    @staticmethod
-    def _fetch_qbo_bill(client, qbo_id):
-        from quickbooks.objects.bill import Bill as QBOBill
-        return QBOBill.get(qbo_id, qb=client)
-
 
 class QBOInboundPollingService:
     """Single entry point for all QBO -> Minibini polling. Sweeps every inbound

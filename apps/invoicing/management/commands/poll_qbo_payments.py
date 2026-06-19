@@ -18,4 +18,5 @@ class Command(ScheduledProcessCommand):
             'errors': inv['errors'],
             'bills_checked': stats['bills'].get('checked', 0),
             'bills_cleared': stats['bills'].get('cleared', 0),
+            'bills_errors': stats['bills'].get('errors', []),
         }
