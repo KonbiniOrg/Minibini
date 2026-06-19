@@ -190,8 +190,8 @@ auto-refresh + reorder). The Board's `JobChipStrip` is reused at the top.
 - **Now line** seeds from the payload `now` and ticks client-side each minute;
   hidden when "now" is off the scrolled window. The header's ‹/› and Today
   drive `offset`; the working-days control drives `?days=N`.
-- **Drag-to-reorder**: `forecast` bars are draggable (this includes blocked
-  tasks, which are now forecast bars); a 3px grey drop indicator snaps to
+- **Drag-to-reorder**: `forecast` bars are draggable (blocked tasks have no
+  forecast bar, so they don't participate); a 3px grey drop indicator snaps to
   buffer midpoints and hides on a no-op move. Reorder writes `worker_queue`
   via `POST /api/tasks/reorder/`, so the order matches the job board. No
   cross-lane drag (reassignment is out of scope).
