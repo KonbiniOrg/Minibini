@@ -1,8 +1,0 @@
-{{ object.get_status_display }}
-{% if status_form %}
-    <form method="post" style="display: inline; margin-left: 20px;">
-        {% csrf_token %}
-        {{ status_form.status }}
-        <button type="submit" name="update_status">Update Status</button>
-    </form>
-{% endif %}

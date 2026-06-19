@@ -32,13 +32,23 @@ def local_dt(d, hh, mm):
 
 def _seed_user_with_pending_task(est_minutes=120, name='J-101 fab',
                                   username='ws_user'):
-    """Create (or get) a user and a pending task assigned to them."""
+    """Create (or get) a user and a pending task assigned to them on an
+    in_progress job.
+
+    Planned work only forecasts (and its worker only appears) for tasks on
+    in_progress jobs — the schedule scopes planned work to the board's In
+    Progress column. So walk the freshly-created job
+    draft → submitted → approved → in_progress before assigning the task.
+    """
     user, _ = User.objects.get_or_create(
         username=username,
         defaults={'first_name': 'Wendy', 'last_name': 'Smith'},
     )
     contact = Contact.objects.first()
     job = JobService.create_job(contact=contact, description='Test job')
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+        job.status = s
+        job.save()
     rs = RateScheme.objects.first()
     task = Task.objects.create(
         job=job, assignee=user, rate_scheme=rs,
@@ -355,12 +365,12 @@ class CompletedEarlyTest(BaseTestCase):
 
 
 class BlockedTaskTest(BaseTestCase):
-    """A blocked task is scheduled like any other workable task: a forecast
-    bar sized by its estimate, in worker_queue order, consuming cursor time.
-    The old 'parked' strip is gone — blocked is styled distinct, not set
-    apart in the layout (mirrors the job board)."""
+    """A blocked task is NOT planned work: it has no ETA, so it never
+    forecasts and consumes no cursor time. Its past actuals still surface
+    via the blep-history path. The old 'parked' strip is gone — blocked is
+    styled distinct, not set apart in the layout (mirrors the job board)."""
 
-    def test_blocked_no_bleps_forecasts_and_consumes_cursor(self):
+    def test_blocked_no_bleps_emits_no_bar_and_does_not_consume_cursor(self):
         user, blocked = _seed_user_with_pending_task(
             est_minutes=60, name='Blocked', username='blk_user',
         )
@@ -377,25 +387,25 @@ class BlockedTaskTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bars_by = {(b['task_id'], b['kind']): b for b in worker['bars']}
-        # Blocked renders as a forecast bar, never a parked marker.
-        self.assertIn((blocked.pk, 'forecast'), bars_by)
+        # A blocked task with no bleps never forecasts and emits no bar.
+        self.assertFalse(
+            any(tid == blocked.pk for (tid, _k) in bars_by),
+            'a blocked task with no bleps should emit no bar',
+        )
         self.assertFalse(
             any(k == 'parked' for (_id, k) in bars_by),
             'no parked bars should exist anymore',
         )
-        # It consumes cursor time: the following pending task starts after it.
-        blocked_end = max(
-            datetime.fromisoformat(s['end'])
-            for s in bars_by[(blocked.pk, 'forecast')]['segments']
-        )
+        # Blocked consumes no cursor time: the following pending task starts
+        # at now, not pushed back behind the blocked task's estimate.
         after_start = datetime.fromisoformat(
             bars_by[(after.pk, 'forecast')]['segments'][0]['start']
         )
-        self.assertGreaterEqual(after_start, blocked_end)
+        self.assertEqual(after_start, now)
 
-    def test_blocked_with_prior_bleps_shows_actual_plus_remainder(self):
-        # Worked 20 of 60 min, then blocked → a dark actual piece plus a
-        # forecast of the remaining time, exactly like a paused task.
+    def test_blocked_with_prior_bleps_shows_actual_only(self):
+        # Worked 20 of 60 min, then blocked → a dark actual piece only. A
+        # blocked task has no ETA, so there is no forecast of the remainder.
         user, blocked = _seed_user_with_pending_task(
             est_minutes=60, name='BlockedWorked', username='blkw_user',
         )
@@ -412,7 +422,7 @@ class BlockedTaskTest(BaseTestCase):
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         kinds = {b['kind'] for b in worker['bars'] if b['task_id'] == blocked.pk}
         self.assertIn('actual', kinds)
-        self.assertIn('forecast', kinds)
+        self.assertNotIn('forecast', kinds)
         self.assertNotIn('parked', kinds)
 
 
@@ -457,11 +467,8 @@ class OnBehalfApearsOnScheduleTest(BaseTestCase):
         worker, task = _seed_user_with_pending_task(
             est_minutes=120, name='OBsched', username='ob_sched_worker',
         )
-        # Approve the job so start_work is allowed.
-        job = task.job
-        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
-            job.status = s
-            job.save()
+        # The seed helper already leaves the job in_progress, so start_work
+        # is allowed without an extra status walk.
         manager = self._grant_manage_time(
             User.objects.create_user(username='ob_sched_mgr', password='x')
         )

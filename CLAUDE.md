@@ -73,7 +73,7 @@ Minibini/
 │   ├── search/     # Cross-entity search service
 │   └── schedule/   # ScheduleService — per-worker time-axis layout (model-less)
 ├── frontend/       # Svelte 5 SPA (Vite, svelte-spa-router)
-├── templates/      # Django HTML templates (server-rendered views)
+├── templates/      # PDF templates only (estimate/change-order/PO/job-statement) rendered by the API via WeasyPrint
 ├── fixtures/       # Test data fixtures (JSON)
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
@@ -84,7 +84,7 @@ Minibini/
 ```
 
 **Key Patterns:**
-- HTML views: function-based views only (no CBVs); deprecated, being decommissioned opportunistically
+- The Svelte SPA + REST API is the only UI. The deprecated Django HTML view layer (`apps/*/views.py` + `templates/*.html`) has been fully removed; the only server-rendered templates left are the four PDF templates (see Template/PDF section below)
 - API views: DRF ModelViewSets with reusable mixins (`StatusTransitionMixin`, `LineItemMixin`, `JobTaskMixin`, `PlanTaskMixin`) — see `docs/designs/architecture-and-conventions.md`
 - Service classes in `apps/*/services.py` contain business logic — viewsets are thin wrappers
 - Job status side effects live in `apps/jobs/services.py` (`apps/jobs/signals.py` is empty). Estimate-driven cross-model side effects live in `apps/estimates/signals.py`
@@ -156,14 +156,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 
 ## URL Structure
 
-### Django HTML Views
-- `/` - Home | `/admin/` - Django admin | `/settings/` - Settings
-- `/jobs/` - Jobs (list, create, detail)
-- `/estimates/` - Estimates, worksheets, templates, task-templates
-- `/contacts/` - Contacts (add, confirm-create-business)
-- `/core/` - Core (inbox, email detail, create-job-from-email)
-- `/purchasing/` - Purchasing | `/invoicing/` - Invoicing
-- `/search/` - Search | `/inventory/` - Inventory
+Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (the REST API). The old server-rendered HTML routes (`/jobs/`, `/estimates/`, `/contacts/`, `/core/`, `/purchasing/`, `/invoicing/`, `/search/`, `/inventory/`, `/settings/`, and the `/` home page) have been removed — the SPA is the UI. QBO OAuth redirect views live under `/api/qbo/` (browser redirects, not the deleted HTML layer).
 
 ### REST API (`/api/`)
 - `/api/auth/` — login, logout, me, me/password, refresh stub, lightweight users dropdown
@@ -179,7 +172,7 @@ Pattern placeholders: `{year}`, `{month:02d}`, `{day:02d}`, `{counter:04d}`. Use
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the primary UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. Some legacy Django HTML views still exist for opportunistic decommissioning.
+Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
 
 ## Frontend (Svelte SPA)
 
@@ -215,39 +208,24 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 
 501 stub list and viewset compliance details are in `docs/designs/architecture-and-conventions.md` §3.6 and §3.8.
 
-## Template/HTML Conventions
+## UI Conventions
 
-**Scope:** this section applies to the deprecated Django HTML view layer (`apps/*/views.py` + `templates/`), still present and edited opportunistically. The SPA uses its own conventions — semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green borders) for user feedback, owned by `frontend/src/lib/api.js`. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns.
-
-- **No CSS frameworks, no JavaScript** (except datetime-local inputs)
-- **Semantic HTML only:** `<p>`, `<strong>`, `<fieldset>`, `<table border="1">`
-- **Django messages:** Use `messages.success()`/`error()` in HTML views; NEVER duplicate message display in templates (base.html handles it). The SPA does NOT use Django messages — it uses `lib/api.js` overlays instead
-- **Form pattern:** `<p><label><strong>Label</strong></label><br><input></p>`
-- **Buttons:** Plain `<button>`, simple `<a>` links (no styling)
-- **No inline styles** except for critical readability (e.g., borders on email content)
-
-**Correct template pattern:**
-```html
-{% extends 'base.html' %}
-{% block content %}
-<h2>Title</h2>
-<form method="post">
-    {% csrf_token %}
-    <p><label for="name"><strong>Name *</strong></label><br>
-        <input type="text" id="name" name="name" required></p>
-    <fieldset>
-        <legend><strong>Optional Group</strong></legend>
-        <p><label for="field"><strong>Field</strong></label><br>
-            <select id="field" name="field"><option value="">-- None --</option></select></p>
-    </fieldset>
-    <p><button type="submit">Save</button> <a href="{% url 'list' %}">Cancel</a></p>
-</form>
-{% endblock %}
-```
-
-**Anti-patterns:** Inline styled divs, styled buttons, links styled as buttons, duplicate message handling blocks.
+The UI is the Svelte SPA. It uses semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green borders) for user feedback, owned by `frontend/src/lib/api.js`. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns. (The Django HTML view layer and its template conventions were removed; only the PDF templates below remain.)
 
 **Table markup:** Always wrap `<tr>` rows in `<tbody>` (or `<thead>`/`<tfoot>`). Svelte 5 strict mode rejects `<tr>` as a direct child of `<table>` and the build will fail.
+
+## PDF Templates
+
+The only server-rendered Django templates left live in `templates/` and are rendered by the API via WeasyPrint to produce PDF attachments for outbound email (the SPA "send" buttons hit the API, which generates the PDF in memory):
+
+| Template | Generator | Endpoint |
+|---|---|---|
+| `templates/estimates/estimate_pdf.html` | `apps/estimates/pdf.py` | `POST /api/estimates/{id}/send` |
+| `templates/estimates/change_order_pdf.html` | `apps/estimates/pdf.py` | `POST /api/change-orders/{id}/send` |
+| `templates/purchasing/purchase_order_pdf.html` | `apps/purchasing/pdf.py` | `POST /api/purchase-orders/{id}/send` |
+| `templates/invoicing/job_statement.html` | `apps/invoicing/pdf.py` | `POST /api/invoices/{id}/send` |
+
+These are self-contained (no `{% extends %}`/`{% include %}`). Email subject/body templates are NOT files — they live in `Configuration` rows and render via `apps/core/email_templates.py`.
 
 ## Code Conventions
 
@@ -294,7 +272,6 @@ with transaction.atomic():
 **Permissions:** Always check permissions in views:
 - API viewsets: override `get_permissions()` returning `[IsAuthenticated(), CanXxx()]`
 - API function views: `@permission_classes([IsAuthenticated, CanXxx])`
-- HTML views: `@login_required` + `@permission_required('core.can_xxx', raise_exception=True)`
 - Notes (HistoryEntry) and adding/editing/deleting/completing tasks on a Job are `IsAuthenticated` only; cancelling a task, reordering, and marking all work complete use `CanManageJobOrPM` (atom or the job's PM)
 - `CanManageJobOrPM` (`apps/api/permissions.py`) gates job-owned writes so a Job's `project_manager` gets atom-equivalent access to that one job; viewsets mix in `JobScopedPermissionMixin` and serializers expose a `can_manage` flag via `JobScopedCanManageMixin`
 - Email *reads* (`/api/emails/`, detail) are `IsAuthenticated`; email-to-job actions (link, unlink, create-job-from-email) require `CanManageJobs`
@@ -329,7 +306,7 @@ Job → EstWorksheet (optionally from template) → Estimate → Tasks on Job �
 3. If contact exists → redirect to job creation with contact pre-selected
 4. If not → session-based flow: create contact → optionally create/associate business (4 scenarios via dropdown) → create job → link EmailRecord to job
 
-Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, `apps/core/views.py`, `apps/contacts/views.py`, `apps/jobs/views.py`
+Key files: `apps/core/services.py` (EmailService), `apps/core/email_utils.py`, and the API viewsets/actions under `apps/api/` (emails, contacts, businesses, jobs). The email-to-job flow is now fully SPA + API driven — the SPA's `EmailCreateJobPage.svelte` calls `POST /api/emails/{id}/create-job/` plus `/api/contacts/` and `/api/businesses/`.
 
 ### Revision Workflow
 Estimates/worksheets support versioning via parent-child relationships. Old versions marked superseded.
@@ -381,10 +358,10 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 
 ## Key File Locations
 
-- Models: `apps/*/models.py` | Views: `apps/*/views.py` | URLs: `apps/*/urls.py`
-- Forms: `apps/*/forms.py` | Templates: `templates/` and `apps/*/templates/`
-- Services: `apps/*/services.py` | Settings: `minibini/settings.py`
-- API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py`
+- Models: `apps/*/models.py` | Services: `apps/*/services.py` | Settings: `minibini/settings.py`
+- API: `apps/api/*/views.py` (viewsets), `apps/api/*/serializers.py`, `apps/api/mixins.py`, `apps/api/permissions.py` | URLs: `apps/api/urls.py`, `apps/qbo/urls.py`
+- PDF generation: `apps/{estimates,purchasing,invoicing}/pdf.py` + the four `templates/**/*_pdf.html` / `job_statement.html`
+- QBO OAuth (browser redirects, not the deleted HTML layer): `apps/qbo/views.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
 - Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)
 - Implementation plans (temporary working files): `docs/plans/` (currently empty)

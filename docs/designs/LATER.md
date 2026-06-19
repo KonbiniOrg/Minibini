@@ -278,6 +278,25 @@ page stays whole.
   _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
   directly from the review flow.
 
+- **Live blep timer can start at a high seconds value (minute-flooring artifact).** — _added 2026-06-18_
+  The active-blep timer in `CurrentBlepBand.svelte` counts seconds (`elapsedSeconds`/
+  `elapsedText`, ticks every 1s) as `now − start_time`, but `start_time` is the server's
+  **minute-floored** value (`Blep.save` → `floor_to_minute`, `apps/jobs/models.py:462`):
+  start a blep at 10:23:45 and it persists as 10:23:00, so the timer immediately reads ~45s
+  instead of climbing from 0/1. Correct for billing (minute granularity is the point), but a
+  jarring effect for the worker who just hit Start. Mitigation options to weigh:
+  (a) drive the *display* from the true click instant captured client-side (store the
+  unfloored wall-clock start in the `currentBlep` store / localStorage), independent of the
+  floored persisted value, falling back to `start_time` on reload/other device;
+  (b) show the live timer at **minute resolution** (e.g. "0 min" → "1 min", no seconds) so
+  the sub-minute artifact never shows and the display matches how time is actually
+  counted — the shift band (`ClockBand.svelte`) already effectively does this (ticks 30s,
+  shows minutes), so only the blep band exhibits the seconds jump;
+  (c) floor `now` to the same minute when computing elapsed so it ticks 0,1,2… whole minutes.
+  _Done when:_ the live blep timer no longer appears to start mid-minute (by hiding seconds,
+  or by timing the display off the real start instant), with the billed/floored value
+  unchanged.
+
 - **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
   Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
   finalized and bills the actuals of Task A, then Task A gets more work logged, and later
@@ -400,6 +419,58 @@ page stays whole.
   one? Unsure which is less confusing. _Done when:_ the superseded-tab click behavior is decided
   and consistent.
 
+- **Neal's-data conversion emits some timestamps in the future.** — _added 2026-06-18_
+  Generated (Neal's-dataset) data contains timestamps that fall **after now**, which should
+  never happen for recorded activity. The converter anchors time to `_dataset_now(c)`
+  (`nealsdata/converter/build.py:1687`) and `convert.md:306` says bleps are "clamped to ≤
+  `_dataset_now` (no future bleps)" — so the leak is one of: (a) `_dataset_now` itself sits
+  ahead of the real load date (it's derived from the dataset's latest activity, so loading an
+  already-future-anchored dataset, or a stale `latest-time.json`, plants everything near a
+  future "now"); or (b) timestamp generators **other than** bleps aren't clamped — candidates
+  to chase: the per-task/schedule stamps built as `base_dt + timedelta(days=ordinal,
+  minutes=intra)` (`build.py:~2204`), forecast/scheduled/due dates, and any `created_date`
+  derivations — none of which obviously share the blep clamp. Pin down which field(s) and
+  which path produce the future values, capture an example row + its source field, then either
+  clamp those generators to `_dataset_now` too or re-anchor `_dataset_now` to the real load
+  time. _Done when:_ a freshly converted/loaded Neal's dataset contains no timestamps after
+  the load moment (with a check/test asserting it), or the future-dating is shown to be
+  intended and documented.
+
+- **Neal's-data generator: one blep per day, shift coterminal — want longer shifts with multiple bleps.** — _added 2026-06-18_
+  `build_bleps_and_shifts` (`nealsdata/converter/build.py:1809`) emits **one Blep per complete
+  Task** and then gives each (user, calendar day) **one Shift tightly enclosing that day's
+  bleps** (~lines 1903-1911), so in practice each worker-day shows a single blep with a shift
+  hugging its exact start/end. Unrealistic — a real workday is one longer shift containing
+  several bleps (different tasks/jobs) with gaps between them and slack at the ends. Make the
+  generated data look like that: (a) pack **multiple bleps per (user, day)** — let several
+  tasks' bleps land in the same day within the synthetic workday (`build.py:24`), via
+  `_place_blep`/`_earliest_slot` (~1750-1809) rather than spreading one-per-day; and (b) make
+  the enclosing Shift a **realistic workday span** (e.g. fixed start-to-end, or bleps + slack)
+  instead of coterminal with the bleps, so shift > sum-of-bleps and the shift↔blep enclosure
+  has breathing room. Keep the existing invariants (blep inside its job window, no per-user
+  overlap, shift encloses its bleps, `_dataset_now` upper clamp). _Done when:_ a generated
+  dataset shows workers with multi-blep days inside longer, non-coterminal shifts (with the
+  enclosure/overlap invariants still holding).
+
+- **Pipeline job card hardcodes worksheet status to "Draft" (contradicts the estimate).** — _added 2026-06-18_
+  On the job board's Pipeline cards, a worksheet chip shows **"Draft"** even when the job's
+  estimate is **"Sent"** — and the worksheet page itself correctly shows **"Frozen"**. The
+  card is wrong: `PipelineColumn.svelte` (the `worksheets` loop, ~lines 21-23) pushes a chip
+  with a **hardcoded** `status: 'draft', statusLabel: 'Draft'` for every worksheet, while the
+  estimate chip beside it renders the estimate's real status. Worksheets no longer have an
+  independent status of their own — their editable-vs-**frozen** state is **derived** from the
+  job's live estimate ("editable while the estimate is draft/absent, frozen once sent" —
+  `apps/api/worksheets/serializers.py:101`; the worksheet page badge at
+  `WorksheetDetailPage.svelte:274`), and the pipeline payload
+  (`JobService._serialize_pipeline_job`, `apps/jobs/services.py:~1594`) emits only
+  `est_worksheet_id`/name, no status — so the card has nothing real to show and fakes "Draft".
+  Fix direction: either drop the worksheet status chip on the card entirely (worksheets have no
+  standalone status), or surface the **derived** state — add the same `editable`/frozen flag the
+  worksheet serializer computes to the pipeline payload and render "Frozen"/"Editable" — so the
+  card can never contradict the estimate.
+  _Done when:_ the pipeline card's worksheet indicator reflects the worksheet's real (derived)
+  state and never shows "Draft" against a sent/frozen estimate.
+
 ---
 
 ## Email
@@ -407,6 +478,24 @@ page stays whole.
 Outbound sending, inbound correlation, the reply/forward composer, threading, and the
 email-association pickers. Grouped here because they share the EmailRecord / TempEmail /
 IMAP-SMTP machinery and tend to be worked together.
+
+- **IMAP fetch crashes a message on naive-vs-aware datetime compare.** — _added 2026-06-18_
+  Seen in fetch stats: `Error processing <…@…ip6.arpa>: can't compare offset-naive and
+  offset-aware datetimes` (the weird `ip6.arpa` Message-ID is incidental — any message can
+  trip it). In `EmailService.fetch_emails_by_date_range` the cursor `date_threshold` is read
+  back via `datetime.fromisoformat(latest_email_date)` (`apps/core/services.py:449`) and
+  compared against the IMAP `msg.date` at `msg.date > most_recent_email_date`
+  (`apps/core/services.py:485`, again at ~529). `msg.date` is usually tz-**aware** (parsed
+  from the Date header's offset) but is **naive** for messages with a missing/malformed Date
+  header, and the persisted cursor's awareness depends on what last wrote it
+  (`timezone.now()` is aware, but a naive `most_recent_email_date.isoformat()` round-trips
+  back naive) — so a mismatch on either side raises. It's caught per-message (appended to
+  `stats['errors']`), so it doesn't crash the run, but that email is **skipped** and the
+  cursor may not advance past it. Fix: normalize both operands to tz-aware before comparing
+  (coerce naive ones via `timezone.make_aware`, default UTC) at both compare sites, and store
+  the cursor aware so the `fromisoformat` round-trip stays aware.
+  _Done when:_ a message with a naive/missing Date header fetches without error (with a test
+  covering a naive `msg.date` against the stored cursor), and the cursor advances correctly.
 
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
@@ -475,8 +564,8 @@ IMAP-SMTP machinery and tend to be worked together.
   least one thread-level bulk action wired up.
 
 - **Email attachments aren't downloadable.** — _added 2026-05-28_
-  `EmailContent.svelte` and the deprecated `email_detail.html` template both render
-  attachments as `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
+  `EmailContent.svelte` renders attachments as
+  `<strong>{filename}</strong> ({content_type}, {size} bytes)` — no
   download link. The IMAP service used to ship the raw `payload` bytes inside the JSON
   response, which 500'd for any non-UTF-8 attachment (commit `<this-one>` strips
   `payload` from the service contract); the SPA never used the bytes anyway. _Done
@@ -503,6 +592,18 @@ IMAP-SMTP machinery and tend to be worked together.
   - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
     `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
     with prefill-by-id — the shape these capped pickers should move to.
+
+- **Link-email Job picker is an oversized `<select>` — swap to the existing `JobPicker`.** — _added 2026-06-18_
+  The "Associate Email with Existing Job" page (`EmailAssociatePage.svelte`) populates a
+  plain `<select>` of every job via `api.get('/api/jobs/?page_size=500')` (lines ~22/88-95)
+  — both unwieldy to scroll and silently capped at 100 by `StandardPagination`, so older jobs
+  aren't reachable. The inline-search component already exists: `components/JobPicker.svelte`
+  does server-side `?search=` typeahead (`/api/jobs/?search=…&page_size=10`) and is already
+  used by `ExpenseForm` and the PO forms. Just replace the `<select>` with `<JobPicker>`
+  (bind the chosen `job_id` into `selectedJobId`, keep the existing required-field guard).
+  This is the concrete fix for the job case of "Email-association pickers cap the dropdown at
+  100 entries" (above). _Done when:_ the link-email page selects the job via the typeahead
+  picker, reaching any job regardless of count, and the bulk `?page_size=500` load is gone.
 
 - **Track bill partial-payment amounts (add `Bill.qbo_amount_paid`).** — _added 2026-06-12_
   `Bill` records only `qbo_payment_status` (a string), not an amount paid, so a
@@ -648,6 +749,53 @@ IMAP-SMTP machinery and tend to be worked together.
   new per-row "order" button or wait on stock already coming.
   _Done when:_ the inventory list shows an accurate on-order quantity per item.
 
+- **Material "order" link should default the qty, not just the inventory data.** — _added 2026-06-18_
+  Clicking **order** on a material in the job view (`JobDetail.svelte:997`,
+  `#/purchase-orders/new?job={job_id}&material={material_id}`) opens the PO line-item form
+  with the material's inventory data (item/description/price) prefilled, but **qty is left
+  blank** — the link passes only `job` + `material`, no quantity. The plumbing to carry it
+  already exists: `PurchaseOrderFormPage.svelte` forwards `prefill_material=…` to the PO
+  detail page (~lines 63-66), and `LineItemForm.svelte` already applies `prefill.qty` when
+  present (`if (prefill.qty != null && prefill.qty !== '') form.qty = …`, ~line 36). The gap
+  is the step that derives the prefill **from the Material** — it sets the inventory fields
+  but not qty. Fix: include a default qty in that material-derived prefill. Decide the default:
+  the material's full needed `quantity`, or the **outstanding shortfall** (needed − on-hand/
+  earmarked − already on order) which is the more useful "how much to actually buy" number and
+  ties into the "Qty on order" / earmark data above. _Done when:_ ordering from a material
+  pre-fills the PO line with both the inventory data and a sensible default qty (with the
+  full-vs-shortfall default decided).
+
+- **Inventory add/edit form opens at the top of the page — make it a modal.** — _added 2026-06-18_
+  `InventoryListPage.svelte` shows the create/edit form **inline at the top of the page**
+  (`{#if showForm}` block, ~lines 138-143; `editItem` just flips `showForm = true`). On a
+  catalog that can run **hundreds of rows long**, clicking "edit" on a row far down the list
+  pops the form up top — off-screen — so the user has to scroll up to use it and loses their
+  place in the list, and the row being edited isn't visible next to the form. Move the form
+  into a **modal/overlay** (or an in-row expander / side panel) so editing happens in place
+  without scrolling away. There's already an established modal pattern in the SPA to follow
+  (`MaterialModal`, `LineItemModal`, `PlanMaterialModal`). Keep the existing `{#key
+  editingItem}` re-seed behavior when switching rows. _Done when:_ adding/editing an inventory
+  item no longer jumps the user to a top-of-page form — the form appears in place (modal or
+  equivalent) and the list keeps its scroll position.
+
+- **Inventory merge is still awkward — rework the keep/discard selection + add a preview.** — _added 2026-06-18_
+  The merge UI in `InventoryListPage.svelte` (the `{#if showMerge}` panel, ~lines 147-167) is
+  a top-of-page block with two raw `<select>` dropdowns — "keep" and "discard" (`mergeKeep`/
+  `mergeDiscard`, discard limited to non-catalog `lotOptions`) — disconnected from the table
+  the user is looking at. On a long catalog you re-hunt both items by name in unsearchable
+  selects (same picker problem as elsewhere), the merge is **irreversible** (line ~55) yet
+  there's **no preview** of what will move (QOH, earmarks, line-item/template references) or
+  which item wins, and it shares the top-of-page scroll problem. Directions to make it less
+  awkward: drive selection **from the rows** (e.g. pick a discard row's "merge into…" action,
+  or select two rows in the table) so you act on what you see; use the search/typeahead picker
+  the other notes call for (the planned `EntitySearchPicker`) instead of raw `<select>`s; show
+  a **confirmation preview** of the resulting merged item (combined QOH, moved references,
+  which id survives) before committing; and put it in a modal/in-place surface rather than a
+  top-of-page panel. Related: the inventory-edit-modal note above and the generic
+  server-side search picker note. _Done when:_ merging is driven from the list rows with a
+  searchable picker and an explicit before-commit preview of the outcome, no top-of-page
+  dropdown hunting.
+
 - **Expense invoice-freeze has no billability-readiness gate, by design.** — _added 2026-06-17_
   Expense atoms have an invoice-freeze (`ExpenseService._assert_not_invoiced`)
   but no separate billability-readiness gate — they appear as selectable in the
@@ -655,3 +803,23 @@ IMAP-SMTP machinery and tend to be worked together.
   `complete`, and Materials, which require `consumed`). This is deliberate: an
   expense is ready to bill as soon as it exists. Revisit only if a
   "not ready to bill" expense state is ever needed.
+
+- **Expense didn't count as a cost in the job overview — and NO catalog item was picked. Investigate.** — _added 2026-06-18_
+  Observed: an expense didn't show up as an expense/cost in the job overview. The obvious
+  suspect is the single-mode classification — `ExpenseService.create`
+  (`apps/expenses/services.py:38-42`) silently treats a purchase as a **stock receipt**
+  (sets `stock_pli`/`stock_qty`, no consumable `Material`, `amount` excluded from `_spent`
+  / not job-costed) whenever the selected item resolves to an *inventoried* (catalog)
+  `InventoryItem`. BUT the user reports **no catalog item was selected at all**, so that
+  path shouldn't have fired — which means the real cause is unknown and needs digging.
+  Lines to chase: how did the expense get classified / what `stock_pli` vs `material` vs
+  neither did it end up with; whether a non-catalog expense can still land as a stock
+  receipt (e.g. `new_material` resolving to an inventoried item unexpectedly, or a default);
+  whether `material`/`job` even got linked; and what the overview's "spent" actually sums
+  (does it require a linked `Material`/`job`, so a cost expense with no material or a
+  detached `job` FK silently drops out?). Capture the actual row (`stock_pli_id`,
+  `material_id`, `job_id`, `amount`) when reproducing. Related: "Mixed-receipt expense
+  loses the non-inventory cost" (above) and
+  `docs/plans/2026-06-14-expenses-cost-model-redesign.md`.
+  _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
+  root-caused and fixed (or shown to be expected), with a test.

@@ -29,58 +29,6 @@ class PurchaseOrderModelTest(TestCase):
             PurchaseOrder.objects.create(business=self.business, po_number="UNIQUE001")
 
 
-class PurchaseOrderFormTest(TestCase):
-    """Test PurchaseOrderForm behavior."""
-
-    def setUp(self):
-        from apps.core.models import Configuration, AppState
-        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
-        AppState.objects.create(key='po_counter', value='0')
-
-        self.default_contact = Contact.objects.create(
-            first_name='Default Contact', last_name='', email='default.contact@test.com'
-        )
-        self.business = Business.objects.create(
-            business_name="Test Business", default_contact=self.default_contact
-        )
-        self.default_contact.business = self.business
-        self.default_contact.save()
-
-    def test_form_preserves_po_number_on_edit(self):
-        """Editing an existing PO should not regenerate the PO number.
-
-        This is a critical bug fix - previously the form's save() method would
-        always generate a new PO number, even when editing.
-        """
-        from apps.purchasing.forms import PurchaseOrderForm
-
-        # Create a PO with a specific number
-        existing_po = PurchaseOrder.objects.create(
-            business=self.business,
-            po_number="PO-PRESERVE-001",
-            status=PurchaseOrder.STATUS_DRAFT
-        )
-        PurchaseOrderLineItem.objects.create(purchase_order=existing_po, description='Test item', price=Decimal('100.00'))
-        original_po_number = existing_po.po_number
-
-        # Use the form to edit it
-        form = PurchaseOrderForm(
-            data={
-                'business': self.business.business_id,
-                'contact': self.default_contact.contact_id,
-                'status': PurchaseOrder.STATUS_ISSUED
-            },
-            instance=existing_po
-        )
-
-        if form.is_valid():
-            updated_po = form.save()
-            # PO number should be preserved
-            self.assertEqual(updated_po.po_number, original_po_number)
-        else:
-            self.fail(f"Form should be valid: {form.errors}")
-
-
 class BillModelTest(TestCase):
     def setUp(self):
         self.default_contact = Contact.objects.create(first_name='Default Contact', last_name='', email='default.contact@test.com')

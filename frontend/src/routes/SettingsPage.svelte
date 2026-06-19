@@ -120,10 +120,10 @@
   <TaskTemplateManager />
 
   <h3>Work templates</h3>
-  <p><em>Not yet implemented in Svelte. <a href="/estimates/templates/">Work templates (legacy)</a></em></p>
+  <p><em>Not yet implemented in Svelte.</em></p>
 
   <h3>Price list items</h3>
-  <p><em>Not yet implemented in Svelte. <a href="/inventory/price-list-items/">Price list items (legacy)</a></em></p>
+  <p><em>Managed on the <a href="#/inventory">Inventory</a> page.</em></p>
 
 {:else if tab === 'schedule'}
   <ScheduleSettings />

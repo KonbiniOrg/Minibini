@@ -16,20 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.views.generic import TemplateView
-from apps.core.views import settings_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', TemplateView.as_view(template_name='home.html'), name='home'),
-    path('settings/', settings_view, name='settings'),
-    path('jobs/', include('apps.jobs.urls')),
-    path('estimates/', include('apps.estimates.urls')),
-    path('contacts/', include('apps.contacts.urls')),
-    path('core/', include('apps.core.urls')),
-    path('purchasing/', include('apps.purchasing.urls')),
-    path('invoicing/', include('apps.invoicing.urls')),
-    path('search/', include('apps.search.urls')),
-    path('inventory/', include('apps.inventory.urls')),
     path('api/', include('apps.api.urls')),
 ]

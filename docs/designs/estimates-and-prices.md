@@ -908,9 +908,6 @@ TaskTemplate-based catalog adds are not wired on the estimate detail
 page (PLI only). Template-driven atoms are added through the
 worksheet/wizard path.
 
-The legacy HTML view at `/estimates/` still exists in
-`apps/estimates/views.py` but is deprecated.
-
 ### 11.4 Job overview — Create/View model
 
 The Job overview page (job detail, estimate pillar) follows a
@@ -1322,7 +1319,7 @@ login.
 
 `EstimateEmailService.send_estimate` (`apps/estimates/services.py`)
 is the entry point. The SPA route `/estimates/:id/send` mounts
-`DocumentSendForm.svelte` over a server-rendered template via
+`DocumentSendForm.svelte`, populated by
 `GET /api/estimates/{id}/send-defaults/`; submit POSTs
 multipart to `/api/estimates/{id}/send/`.
 

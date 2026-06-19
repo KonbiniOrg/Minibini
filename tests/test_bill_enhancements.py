@@ -1,10 +1,7 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.purchasing.models import Bill, BillLineItem, PurchaseOrder
-from apps.purchasing.forms import BillForm, BillLineItemForm
+from apps.purchasing.models import Bill, BillLineItem
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration, AccountingCategory
-from apps.core.services import NumberGenerationService
 from decimal import Decimal
 
 
@@ -34,12 +31,11 @@ class BillLineItemManualEntryTest(TestCase):
         # Create business, contact and bill
         self.business = Business.objects.create(business_name="Test Vendor Business", default_contact=self.default_contact)
         self.contact = Contact.objects.create(first_name='Test Vendor', last_name='', email='test.vendor@test.com', business=self.business)
-        form = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN001',
-        })
-        self.bill = form.save()
+        self.bill = Bill.objects.create(
+            business=self.business,
+            contact=self.contact,
+            vendor_invoice_number='VIN001',
+        )
 
     def test_create_line_item_with_manual_entry(self):
         """Test creating a bill line item with manual entry (no price list item)."""
@@ -73,35 +69,6 @@ class BillLineItemManualEntryTest(TestCase):
         # Verify total_amount calculation
         self.assertEqual(line_item.total_amount, Decimal('255.00'))
 
-    def test_bill_line_item_form_allows_manual_entry(self):
-        """Test that BillLineItemForm accepts manual entry without inventory_item."""
-        # Get or create a line item type for the test
-        service_type, _ = AccountingCategory.objects.get_or_create(
-            code='SVC',
-            defaults={'name': 'Service', 'taxable': False, 'is_active': True}
-        )
-        form = BillLineItemForm(data={
-            'description': 'Manual labor',
-            'qty': '8.00',
-            'units': 'hours',
-            'price': '75.00',
-            'accounting_category': service_type.pk
-        })
-
-        self.assertTrue(form.is_valid())
-
-    def test_bill_line_item_form_requires_description_for_manual_entry(self):
-        """Test that BillLineItemForm requires description when no inventory_item."""
-        form = BillLineItemForm(data={
-            'qty': '5.00',
-            'units': 'ea',
-            'price': '10.00'
-            # Missing description and inventory_item
-        })
-
-        self.assertFalse(form.is_valid())
-        self.assertIn('Either select a Price List Item or provide a Description', str(form.errors))
-
     def test_multiple_manual_line_items_on_same_bill(self):
         """Test that multiple manual line items can be added to the same bill."""
         line_item1 = BillLineItem.objects.create(
@@ -134,12 +101,11 @@ class BillDraftStateValidationTest(TestCase):
         # Create business, contact and bill
         self.business = Business.objects.create(business_name="Test Vendor Business", default_contact=self.default_contact)
         self.contact = Contact.objects.create(first_name='Test Vendor', last_name='', email='test.vendor@test.com', business=self.business)
-        form = BillForm(data={
-            'business': self.business.business_id,
-            'contact': self.contact.contact_id,
-            'vendor_invoice_number': 'VIN001',
-        })
-        self.bill = form.save()
+        self.bill = Bill.objects.create(
+            business=self.business,
+            contact=self.contact,
+            vendor_invoice_number='VIN001',
+        )
 
     def test_cannot_transition_from_draft_without_line_items(self):
         """Test that Bill cannot transition from draft to received without line items."""
