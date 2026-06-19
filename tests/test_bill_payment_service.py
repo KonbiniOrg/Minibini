@@ -64,3 +64,30 @@ class BillPaymentServiceTest(TestCase):
         BillPaymentService.delete_payment(p.pk)
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
+
+    def test_update_payment_raises_on_cancelled_bill(self):
+        """Gate: update_payment must reject payments on a cancelled bill."""
+        # Create a payment directly so we can put the bill into cancelled state
+        payment = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('50.00'),
+            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+        )
+        self.bill.status = Bill.STATUS_CANCELLED
+        self.bill.save()
+        with self.assertRaises(ValidationError):
+            BillPaymentService.update_payment(payment.pk, amount=Decimal('75.00'))
+
+    def test_update_payment_partial_to_full(self):
+        """Happy path: updating a partial payment to the full amount recomputes to paid_in_full."""
+        # Bill total = 2 * 100.00 = 200.00
+        p = BillPaymentService.record_payment(
+            self.bill, amount=Decimal('100.00'),
+            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+        )
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)
+        BillPaymentService.update_payment(p.pk, amount=Decimal('200.00'))
+        p.refresh_from_db()
+        self.assertEqual(p.amount, Decimal('200.00'))
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)

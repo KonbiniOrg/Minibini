@@ -964,6 +964,10 @@ class BillPaymentService:
             payment = BillPayment.objects.get(pk=payment_id)
         except BillPayment.DoesNotExist:
             raise NotFoundError(f'BillPayment {payment_id} not found')
+        if payment.bill.status in (Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED):
+            raise ValidationError(
+                'Cannot edit a payment on a cancelled or refunded bill.'
+            )
         allowed = {'amount', 'payment_date', 'method', 'reference'}
         for field, value in out_fields.items():
             if field in allowed:
