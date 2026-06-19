@@ -359,7 +359,20 @@ class Bill(models.Model):
 
     def recompute_payment_status(self):
         """Derive status from BillPayment totals. Payment-driven: bypasses the
-        forward-only transition guard and date protection in clean()."""
+        forward-only transition guard and date protection in clean().
+
+        Only acts on payment-related statuses (received, partly_paid,
+        paid_in_full). Returns immediately for draft, cancelled, and refunded
+        bills to avoid silently overwriting a terminal or pre-payment status.
+        """
+        PAYMENT_STATUSES = {
+            Bill.STATUS_RECEIVED,
+            Bill.STATUS_PARTLY_PAID,
+            Bill.STATUS_PAID_IN_FULL,
+        }
+        if self.status not in PAYMENT_STATUSES:
+            return
+
         paid = self.amount_paid
         total = self.total
         if paid <= 0:
@@ -418,6 +431,7 @@ class BillPayment(models.Model):
 
     class Meta:
         db_table = 'bill_payments'
+        ordering = ['payment_date']
 
     def clean(self):
         super().clean()

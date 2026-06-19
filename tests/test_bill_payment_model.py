@@ -55,3 +55,20 @@ class BillPaymentModelTest(TestCase):
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
         self.assertIsNone(self.bill.paid_date)
+
+    def test_recompute_payment_status_no_op_on_non_payment_statuses(self):
+        """recompute_payment_status() must not alter status on draft/cancelled/refunded bills."""
+        contact = Contact.objects.create(
+            first_name='Bolt', last_name='Supplier', email='bolt@sup.com'
+        )
+        business = Business.objects.create(
+            business_name='Bolt Supplier', default_contact=contact
+        )
+        # Create a bill directly in cancelled status (no status-machine path needed).
+        cancelled_bill = Bill.objects.create(
+            business=business, vendor_invoice_number='INV-CANCEL',
+            status=Bill.STATUS_CANCELLED,
+        )
+        cancelled_bill.recompute_payment_status()
+        cancelled_bill.refresh_from_db()
+        self.assertEqual(cancelled_bill.status, Bill.STATUS_CANCELLED)
