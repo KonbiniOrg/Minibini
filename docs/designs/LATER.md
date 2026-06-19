@@ -350,6 +350,49 @@ page stays whole.
   confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
   whether on the detail page or in the wizard.
 
+- **Material added to an already-started Task is never consumed.** — _added 2026-06-17_
+  Adding a Material to a Task *after* the Task has started is allowed (correct), but the
+  newly-added material stays `pending` forever — continued work on the task doesn't consume
+  it. Consumption of a task's materials is a one-shot side effect triggered when the task is
+  *promoted* from `pending → in_progress` (the first blep: `start_work` /
+  `_promote_pending_task` → `MaterialService.consume` over `task.materials.all()`,
+  `apps/jobs/services.py`). A material attached later misses that already-fired trigger, so it
+  never consumes (no QOH/earmark decrement, never billable since billable ⟺ consumed). Decide
+  the intended behavior: e.g. consume a material on add when its task is already `in_progress`
+  (and only then), or re-run the consume sweep on subsequent bleps for not-yet-consumed
+  materials. Watch the `unconsume`/blep-cancel-undo interaction either way.
+  _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
+  test), or a recorded decision says it must be added before start.
+
+- **Single task on an entered-qty scheme collapses to qty 1 / price = total.** — _added 2026-06-17_
+  Sending ONE Task atom with a user-entered-quantity scheme to a new line item shows qty 1 and
+  price = the full amount (observed: entered qty 2.2 × rate 22 → line item qty 1, price 48.40),
+  instead of qty 2.2 / price 22 with the total computed from them. Units copy fine here. Root
+  cause: `InvoiceWizardService._task_qty_and_price` (`apps/invoicing/services.py`) returns
+  `(Decimal('1'), total_price)` for *every* single task ("no single qty/price is meaningful across
+  all algorithms"). But for entered-qty (and flat) schemes a real qty×rate *does* exist —
+  `_atom_detail` already computes `qty = _task_actual_qty(task)` and `rate = effective_rate()` for
+  the source-pool display. Fix direction: for single-task lines, use the scheme's actual qty and
+  effective rate when the algorithm has a meaningful per-unit qty (entered/flat), falling back to
+  qty 1 / total only where it genuinely doesn't (e.g. elapsed bleps, if that's still desired).
+  _Done when:_ a single entered-qty task lands on the line item as qty=actual / price=rate with
+  the total derived, with a test; revisit the elapsed-scheme case deliberately.
+
+- **Adding a Task to a `work_complete` job doesn't reopen the job.** — _added 2026-06-17_
+  A new Task can be added to a Job that's already at `work_complete`, and the job stays
+  `work_complete` — even though it now has unfinished work, which contradicts what that status
+  means (all tasks done). Task creation (`TaskCreationService.create_direct` /
+  `create_from_template`, `apps/jobs/services.py`) only gates on `_assert_job_not_on_hold`, and
+  the only auto-advance is `JobService.mark_work_started`, which fires `approved → in_progress`
+  on a blep/complete — never on task creation, and a no-op for `work_complete`. The transition
+  map *does* allow `work_complete → in_progress`, so the fix is to pull the job back to
+  `in_progress` when an incomplete task is added (or its work begins) on a `work_complete` job.
+  Related, decide the harder case: task creation is also allowed on a **terminal `completed`**
+  job (only `on_hold` is blocked), which has no outgoing transition to reopen — so either block
+  adding tasks there or define a reopen path. _Done when:_ adding an incomplete task to a
+  `work_complete` job returns it to `in_progress` (with a test), and the `completed`-job case is
+  decided (blocked or reopenable).
+
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
   its "View Full Estimate" link correctly points to the old one. Open question: should clicking
@@ -604,3 +647,11 @@ IMAP-SMTP machinery and tend to be worked together.
   property) + the column in `InventoryListPage`. Helps decide whether to hit the
   new per-row "order" button or wait on stock already coming.
   _Done when:_ the inventory list shows an accurate on-order quantity per item.
+
+- **Expense invoice-freeze has no billability-readiness gate, by design.** — _added 2026-06-17_
+  Expense atoms have an invoice-freeze (`ExpenseService._assert_not_invoiced`)
+  but no separate billability-readiness gate — they appear as selectable in the
+  wizard pool from the moment they are submitted (unlike Tasks, which require
+  `complete`, and Materials, which require `consumed`). This is deliberate: an
+  expense is ready to bill as soon as it exists. Revisit only if a
+  "not ready to bill" expense state is ever needed.

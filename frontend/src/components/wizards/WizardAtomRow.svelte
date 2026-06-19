@@ -12,7 +12,11 @@
   }
 </script>
 
-{#if atom.state === 'available'}
+{#if atom.state === 'not_billable'}
+  <span class="atom-not-billable">
+    {atom.description} — {atom.not_billable_reason === 'task_incomplete' ? 'task not complete' : 'not consumed'}
+  </span>
+{:else if atom.state === 'available'}
   <label>
     <input type="checkbox" checked={selected} onchange={onToggle}>
     <small>[{atom.type === 'task' || atom.type === 'plan_task' ? 'task' : atom.type === 'expense' ? 'expense' : 'material'}]</small>
@@ -37,3 +41,12 @@
     {/if}
   </span>
 {/if}
+
+<style>
+  .atom-not-billable {
+    color: #aaa;
+    font-style: italic;
+    cursor: default;
+    user-select: none;
+  }
+</style>

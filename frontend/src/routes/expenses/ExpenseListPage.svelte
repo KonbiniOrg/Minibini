@@ -85,6 +85,11 @@
 
 <h2>Expenses</h2>
 
+{#snippet invoicedLink(inv)}
+  <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
+     title="Billed on this invoice">INVOICED · {inv.number}</a>
+{/snippet}
+
 {#if outstanding.length > 0}
   <section style="border: 1px solid #4a90e2; padding: 10px; margin-bottom: 12px">
     <h3 style="margin-top: 0">Outstanding reimbursements</h3>
@@ -195,16 +200,30 @@
             {#if e.status === 'sync_failed'}
               <button type="button" onclick={() => retryPush(e)}>retry</button>
             {/if}
+            {#if e.invoice}<br>{@render invoicedLink(e.invoice)}{/if}
           </td>
           <td>
-            <button type="button" onclick={() => editExpense(e)}>edit</button>
-            {#if e.payment_method === 'personal' && e.status === 'submitted'}
-              <button type="button" onclick={() => rejectExpense(e)}>reject</button>
+            {#if e.invoice}
+              <span class="locked-note">billed — locked</span>
+            {:else}
+              <button type="button" onclick={() => editExpense(e)}>edit</button>
+              {#if e.payment_method === 'personal' && e.status === 'submitted'}
+                <button type="button" onclick={() => rejectExpense(e)}>reject</button>
+              {/if}
+              <button type="button" onclick={() => deleteExpense(e)}>delete</button>
             {/if}
-            <button type="button" onclick={() => deleteExpense(e)}>delete</button>
           </td>
         </tr>
       {/each}
     </tbody>
   </table>
 {/if}
+
+<style>
+  .badge-invoiced {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.3px; color: #047857; text-decoration: none;
+  }
+  .badge-invoiced:hover { text-decoration: underline; }
+  .locked-note { font-size: 11px; color: #888; font-style: italic; }
+</style>

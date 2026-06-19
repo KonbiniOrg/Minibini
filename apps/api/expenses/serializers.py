@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.expenses.models import Expense
 from apps.jobs.models import Job
+from apps.api.mixins import InvoiceRefMixin
 
 
 class NewMaterialSerializer(serializers.Serializer):
@@ -20,7 +21,9 @@ class NewMaterialSerializer(serializers.Serializer):
     )
 
 
-class ExpenseSerializer(serializers.ModelSerializer):
+class ExpenseSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+    invoice_source_type = 'expense'
+    invoice = serializers.SerializerMethodField()
     entered_by_name = serializers.SerializerMethodField()
     purchased_by_name = serializers.SerializerMethodField()
     task_name = serializers.SerializerMethodField()
@@ -51,6 +54,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'reimbursement', 'reimbursement_paid_on',
             'created_at', 'updated_at',
             'new_material',
+            'invoice',
         ]
         read_only_fields = [
             'id', 'entered_by', 'entered_by_name', 'purchased_by_name',
@@ -58,6 +62,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'accounting_category_name',
             'status', 'qbo_id', 'qbo_sync_error', 'reimbursement',
             'created_at', 'updated_at',
+            'invoice',
         ]
         extra_kwargs = {
             'purchased_by': {'required': False, 'allow_null': True},

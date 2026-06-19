@@ -20,11 +20,6 @@
     if (!c) return '—';
     return c.taxable ? 'Yes' : 'No';
   }
-  function sourceLabel(li) {
-    if (li.sources?.length) return `${li.sources.length} atom${li.sources.length === 1 ? '' : 's'}`;
-    if (li.inventory_item) return `PLI #${li.inventory_item}`;
-    return 'No source';
-  }
 
   let subtotal = $derived(
     (lineItems || []).reduce((s, li) => s + lineTotal(li), 0)
@@ -58,7 +53,21 @@
           <td>{categoryName(li.accounting_category)}</td>
           <td>{categoryTaxable(li.accounting_category)}</td>
           <td class="preserve-breaks"><LinkifiedText text={li.description || 'No description'} /></td>
-          {#if showSource}<td>{sourceLabel(li)}</td>{/if}
+          {#if showSource}
+            <td>
+              {#if li.sources?.length}
+                <ul class="source-list">
+                  {#each li.sources as s (s.source_type + ':' + s.source_pk)}
+                    <li>{s.description} <span class="src-amt">{fmtMoney(s.computed_amount)}</span></li>
+                  {/each}
+                </ul>
+              {:else if li.inventory_item}
+                PLI #{li.inventory_item}
+              {:else}
+                No source
+              {/if}
+            </td>
+          {/if}
           <td>{li.qty}</td>
           <td>{li.units || '—'}</td>
           <td>{fmtMoney(li.price)}</td>
@@ -89,4 +98,7 @@
   .line-items-table th, .line-items-table td { padding: 6px 10px; }
   .subtotal-row { background-color: #f5f5f5; }
   .total-row { background-color: #e8e8e8; }
+  .source-list { margin: 0; padding-left: 1em; list-style: disc; }
+  .source-list li { font-size: 0.9em; }
+  .src-amt { color: #555; }
 </style>

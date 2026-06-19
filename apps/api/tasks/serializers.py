@@ -1,15 +1,17 @@
 from rest_framework import serializers
 
-from apps.api.mixins import JobScopedCanManageMixin
+from apps.api.mixins import JobScopedCanManageMixin, InvoiceRefMixin
 from apps.jobs.models import Task
 from apps.inventory.models import Material
 from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
 
 
-class MaterialSerializer(serializers.ModelSerializer):
+class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+    invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -19,6 +21,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
+            'invoice',
         ]
         read_only_fields = fields
 
@@ -64,9 +67,10 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
+class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.ModelSerializer):
     """Serializer for tasks nested under /api/jobs/{id}/tasks/."""
     can_manage_job_path = 'job'
+    invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
     scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
@@ -77,6 +81,7 @@ class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     has_active_blep = serializers.SerializerMethodField()
     active_worker_count = serializers.SerializerMethodField()
     has_bleps = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -91,6 +96,7 @@ class TaskSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
             'can_manage',
+            'invoice',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 

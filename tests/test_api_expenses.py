@@ -392,3 +392,86 @@ class ExpenseStockReceiptApiTest(TestCase):
         self.assertFalse(Material.objects.filter(job=self.job).exists())  # no consumable
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('10.00'))  # 7 + 3
+
+
+class ExpenseInvoiceClaimTest(TestCase):
+    """invoice field on expense list/retrieve rows (Task 7)."""
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        from apps.core.models import AppState
+        # Seed number generation for Invoice.save() auto-number.
+        Configuration.objects.get_or_create(
+            key='invoice_number_sequence',
+            defaults={'value': 'INV-{year}-{counter:04d}'},
+        )
+        AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
+        self.client = Client()
+        self.cat = AccountingCategory.objects.create(code='INV', name='Invoiceable')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.user = User.objects.create_user(username='fin', password='x')
+        self.user.user_permissions.add(perm)
+        self.user = User.objects.get(pk=self.user.pk)
+        self.contact = Contact.objects.create(first_name='T', last_name='C')
+        self.job = Job.objects.create(job_number='JOB-CLAIM-1', contact=self.contact)
+
+    def _make_loose_expense(self, job):
+        """Create a material-less (loose) expense linked to job."""
+        return Expense.objects.create(
+            entered_by=self.user,
+            purchased_by=self.user,
+            amount=Decimal('50.00'),
+            purchased_on=date(2026, 6, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            job=job,
+        )
+
+    def _invoice_expense(self, exp):
+        """Create an Invoice + InvoiceLineItem + InvoiceLineItemSource for exp."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
+        inv = Invoice.objects.create(
+            job=exp.job,
+            status=Invoice.STATUS_DRAFT,
+        )
+        li = InvoiceLineItem.objects.create(
+            invoice=inv,
+            description='Expense charge',
+            qty=Decimal('1'),
+            units='none',
+            price=exp.amount,
+        )
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=li,
+            source_type=InvoiceLineItemSource.SOURCE_EXPENSE,
+            source_pk=exp.pk,
+        )
+        return inv
+
+    def test_expense_list_marks_invoiced_expense(self):
+        exp = self._make_loose_expense(self.job)
+        self._invoice_expense(exp)
+        self.client.force_login(self.user)
+        resp = self.client.get(f'/api/expenses/?job={self.job.pk}')
+        self.assertEqual(resp.status_code, 200)
+        row = next(r for r in resp.json()['results'] if r['id'] == exp.pk)
+        self.assertEqual(set(row['invoice'].keys()), {'id', 'number'})
+
+    def test_expense_list_uninvoiced_has_null_invoice(self):
+        exp = self._make_loose_expense(self.job)
+        self.client.force_login(self.user)
+        resp = self.client.get(f'/api/expenses/?job={self.job.pk}')
+        self.assertEqual(resp.status_code, 200)
+        row = next(r for r in resp.json()['results'] if r['id'] == exp.pk)
+        self.assertIsNone(row['invoice'])
+
+    def test_expense_retrieve_marks_invoiced_expense(self):
+        exp = self._make_loose_expense(self.job)
+        self._invoice_expense(exp)
+        self.client.force_login(self.user)
+        resp = self.client.get(f'/api/expenses/{exp.pk}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(set(resp.json()['invoice'].keys()), {'id', 'number'})

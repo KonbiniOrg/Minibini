@@ -124,6 +124,9 @@ class SourcePoolEndpointTest(TestCase):
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
+        # Complete the task so it is billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
     def test_returns_tree_shape(self):
@@ -186,6 +189,9 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
+        # Complete the task so it is billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
     def test_creates_line_item_with_sources(self):
@@ -280,6 +286,11 @@ class AddAtomsEndpointTest(TestCase):
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
+        # Complete tasks so they are billable (Task 5: only complete tasks are billable).
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save()
+        self.task2.status = Task.STATUS_COMPLETE
+        self.task2.save()
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
         from apps.invoicing.services import InvoiceWizardService
@@ -357,6 +368,11 @@ class RemoveAtomsEndpointTest(TestCase):
             start_time=start + timezone.timedelta(hours=3),
             end_time=start + timezone.timedelta(hours=4),
         )
+        # Complete tasks so they are billable (Task 5: only complete tasks are billable).
+        self.task1.status = Task.STATUS_COMPLETE
+        self.task1.save()
+        self.task2.status = Task.STATUS_COMPLETE
+        self.task2.save()
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
 
         from apps.invoicing.services import InvoiceWizardService

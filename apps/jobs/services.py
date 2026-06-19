@@ -269,6 +269,11 @@ class BlepService:
              Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED),
             'log time',
         )
+        if task.status == Task.STATUS_COMPLETE:
+            raise ValidationError(
+                "Cannot log time on a complete task. Create a new task for "
+                "additional work."
+            )
         if end_time < start_time:
             raise ValidationError("end_time must be >= start_time.")
         if end_time > timezone.now() + BlepService._CLOCK_SKEW_BUFFER:
@@ -887,6 +892,14 @@ class TaskService:
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
         _assert_job_not_on_hold(task.job, 'edit this task')
+        # A complete task is terminal and frozen: its work and billing inputs are
+        # settled. sort_order is cosmetic (list position) and stays editable so a
+        # list containing a complete task can still be reordered.
+        if task.status == Task.STATUS_COMPLETE and set(kwargs) - {'sort_order'}:
+            raise ValidationError(
+                'Cannot edit a complete task. Its work and billing are settled; '
+                'corrections belong on the invoice.'
+            )
         for field, value in kwargs.items():
             setattr(task, field, value)
         task.full_clean()

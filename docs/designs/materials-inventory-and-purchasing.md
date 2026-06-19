@@ -279,6 +279,26 @@ transaction. The propagate action is open to any authenticated user
 (deliberate carve-out from `can_manage_financials`). See
 `MaterialService.update_pricing` and `InventoryService.update_plan_material_pricing`.
 
+**Invoice freeze on `sell_price` and `unconsume`.** Once a Material is on a
+non-cancelled invoice (i.e. `InvoiceClaimService.is_invoiced('material', pk)`
+returns True), two operations are hard-blocked by
+`MaterialService._assert_not_invoiced`:
+
+- **`sell_price` edits** — `MaterialService.update_pricing` raises
+  `ValidationError` if `sell_price` is being changed while the material is
+  claimed. (`unit_cost` edits are still allowed — cost is internal data,
+  not the invoiced price.)
+- **`unconsume`** — `MaterialService.unconsume` raises `ValidationError`
+  before reversing consumption. Moving a material back to `pending` while it
+  is on an invoice would change the invoiced amount and remove it from the
+  wizard pool incorrectly.
+
+`quantity` is already locked by the consumed state (all user ops require
+`pending`), so no additional invoice-freeze is needed for quantity.
+
+To edit a billed material's sell price or unconsume it, remove it from the
+invoice first.
+
 Enforcement lives in `apps/inventory/serializer_helpers.py`
 (`enforce_pli_linked_allowlist`, `PLI_LINKED_PRICING_ALLOWED`,
 `FREEFORM_ALLOWED`) and is invoked from `MaterialSerializer.update`.

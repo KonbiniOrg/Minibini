@@ -125,7 +125,11 @@
     }
     for (const task of sourcePool.tasks) {
       for (const atom of task.atoms) {
-        if (atom.state === 'claimed_by_other') continue;
+        // Both claimed_by_other (another invoice) and not_billable (task not
+        // complete / material not consumed) are properties the backend decides
+        // independently of THIS invoice's line items — never reconcile them to
+        // 'available', or the wizard would offer un-billable atoms.
+        if (atom.state === 'claimed_by_other' || atom.state === 'not_billable') continue;
         const key = `${atom.type}:${atom.id}`;
         if (claimMap.has(key)) {
           const claim = claimMap.get(key);

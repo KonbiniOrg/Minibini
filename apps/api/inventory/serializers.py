@@ -2,6 +2,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from apps.inventory.models import InventoryItem, Material
 from apps.core.units import UnitsField
+from apps.api.mixins import InvoiceRefMixin
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):
@@ -23,7 +24,8 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         ]
 
 
-class MaterialSerializer(serializers.ModelSerializer):
+class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+    invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
     po_line_item_id = serializers.SerializerMethodField()
@@ -36,6 +38,7 @@ class MaterialSerializer(serializers.ModelSerializer):
     propagate_to_pli = serializers.BooleanField(
         write_only=True, required=False,
     )
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -48,6 +51,7 @@ class MaterialSerializer(serializers.ModelSerializer):
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
+            'invoice',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',

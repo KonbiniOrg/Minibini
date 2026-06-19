@@ -517,6 +517,13 @@
 
 <div class="job-detail-page">
 
+{#snippet invoicedLink(inv)}
+  {#if inv}
+    <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
+       title="Billed on this invoice">Invoiced · {inv.number}</a>
+  {/if}
+{/snippet}
+
 <JobHeader {job} {contact} {onStatusChange} />
 
 {#if job.status === 'draft' && job.latest_change_request}
@@ -871,7 +878,7 @@
             <tbody>
               {#each jobTasks as task}
                 <tr class:row-active={task.status === 'in_progress'}>
-                  <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a></td>
+                  <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a>{@render invoicedLink(task.invoice)}</td>
                   <td class="assigned">{task.assignee_name || '—'}</td>
                   <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
                   <td class="time-cell">
@@ -985,6 +992,7 @@
                     <span class="preserve-breaks">{mat.description || '(no description)'}</span>
                     {#if consumed}<span class="badge-consumed">consumed</span>{/if}
                     {#if expenseByMaterial[mat.material_id]}<span class="badge-paid">paid {money(expenseByMaterial[mat.material_id].amount)}</span>{/if}
+                    {@render invoicedLink(mat.invoice)}
                     {#if needsMore && canManageFinancials}
                       <a class="add-po" href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}">order</a>
                     {/if}
@@ -1027,6 +1035,7 @@
                   <td>
                     <span class="preserve-breaks">{exp.description || '(expense)'}</span>
                     <span class="badge-paid">expense</span>
+                    {@render invoicedLink(exp.invoice)}
                   </td>
                   <td>{exp.accounting_category_name || '—'}</td>
                   <td class="text-right">{money(exp.amount)}</td>
@@ -1789,6 +1798,11 @@
     font-size: 10px; color: #166534;
     margin-left: 6px; padding: 1px 6px;
     background: #dcfce7; border-radius: 8px;
+  }
+  .badge-invoiced {
+    font-size: 0.85em; text-decoration: none;
+    border: 1px solid #888; border-radius: 3px;
+    padding: 0 4px; margin-left: 6px;
   }
   .mat-table .add-po {
     font-size: 11px; color: #1e40af; margin-left: 8px;

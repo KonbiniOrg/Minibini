@@ -40,6 +40,18 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.api.tasks.serializers import TaskDetailSerializer
         return TaskDetailSerializer
 
+    def retrieve(self, request, *args, **kwargs):
+        # Pass the job's invoice-claim map so the task's `invoice` field
+        # populates (the task view page shows an INVOICED indicator).
+        from apps.invoicing.claims import InvoiceClaimService
+        task = self.get_object()
+        serializer = self.get_serializer(
+            task,
+            context={**self.get_serializer_context(),
+                     'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+        )
+        return Response(serializer.data)
+
     TERMINAL_STATUSES = (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
 
     def _get_task_or_404(self, pk):
@@ -64,8 +76,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.api.tasks.serializers import MaterialSerializer, MaterialWriteSerializer
         task = self.get_object()
         if request.method == 'GET':
+            from apps.invoicing.claims import InvoiceClaimService
             materials = Material.objects.filter(task=task).select_related('inventory_item')
-            serializer = MaterialSerializer(materials, many=True)
+            serializer = MaterialSerializer(
+                materials, many=True,
+                context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+            )
             return Response(serializer.data)
 
         err = self._check_task_mutable(task)
@@ -169,8 +185,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.api.tasks.serializers import TaskSerializer
         task = self.get_object()
         if request.method == 'GET':
+            from apps.invoicing.claims import InvoiceClaimService
             children = Task.objects.filter(parent_task=task).order_by('sort_order')
-            serializer = TaskSerializer(children, many=True)
+            serializer = TaskSerializer(
+                children, many=True,
+                context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+            )
             return Response(serializer.data)
 
         err = self._check_task_mutable(task)

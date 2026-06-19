@@ -585,6 +585,7 @@ Atom families:
 |---|---|---|
 | `PlanTask` | `Task` | this doc / jobs-tasks |
 | `PlanMaterial` | `Material` | materials doc |
+| _(no plan-side)_ | `Expense` (material-less) | invoicing-and-expenses doc |
 
 Bleps are read-only detail under their task's atom; they are never
 claimed as atoms themselves. **Whole-task billing**: there is no
@@ -597,6 +598,28 @@ Atom claim semantics:
 - An atom is **claimed** if a source row exists pointing at it.
 - The DB-level unique on `(source_type, source_pk)` makes
   double-claim impossible.
+
+### Wizard-pool billability gates (invoice side)
+
+The invoice wizard's source pool (`InvoiceWizardService.get_source_pool`)
+distinguishes between atoms that are available to bill and those that are not
+yet ready:
+
+| Atom type | Billable when |
+|---|---|
+| `Task` | `status == complete` |
+| `Material` | `consumption_state == consumed` |
+| `Expense` (material-less) | always (submitted is sufficient; no readiness gate) |
+
+Non-billable atoms appear in the pool with `state='not_billable'` and a
+`not_billable_reason` (`'task_incomplete'` or `'material_unconsumed'`). They
+are rendered greyed-out and non-selectable in `WizardSourcePool.svelte` so
+the invoicer can see what is pending without being able to add it yet.
+
+`InvoiceWizardService._assert_atom_billable` is the service-side enforcement
+point: it re-checks readiness when atoms are actually submitted to the wizard
+(i.e. when `add_atoms_to_new_line_item` / `add_atoms_to_line_item` resolve
+each atom), raising `ValidationError` if the readiness condition is not met.
 
 A worksheet exposes two top-level operations on its atoms:
 

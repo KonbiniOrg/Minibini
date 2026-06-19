@@ -334,9 +334,14 @@
     onCancel={handleCancel}
   />
 
+  {#snippet invoicedLink(inv)}
+    <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
+       title="Billed on this invoice">INVOICED</a>
+  {/snippet}
+
   <table class="data-table">
     <tbody>
-      <tr><td>Status</td><td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}</td></tr>
+      <tr><td>Status</td><td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}{/if}</td></tr>
       <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
       <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} {#if task?.can_manage}<button type="button" onclick={() => { assignModalOpen = true; }}>assign</button>{/if}</td></tr>
       <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
@@ -398,7 +403,7 @@
       <tbody>
         {#each materials as mat}
           <tr>
-            <td class="preserve-breaks">{mat.description || '(no description)'}</td>
+            <td class="preserve-breaks">{mat.description || '(no description)'}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>
             <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
@@ -526,4 +531,9 @@
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .materials-table button:hover { background: #f0f0f0; }
+  .badge-invoiced {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.3px; color: #047857; text-decoration: none;
+  }
+  .badge-invoiced:hover { text-decoration: underline; }
 </style>

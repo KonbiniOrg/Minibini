@@ -497,6 +497,35 @@ pending→in_progress promotion, not of every clock-in.
 `reorder_tasks`. Deletion is rejected for `in_progress` / `complete`
 tasks and for any task with at least one Blep — cancel instead.
 
+#### Task freeze on `complete`
+
+`complete` is a **terminal** state: once a task is complete, its work and
+billing inputs are settled.
+
+- **All fields are frozen** except `sort_order`. `TaskService.update_task`
+  raises `ValidationError` if any field other than `sort_order` is included
+  in an update for a complete task:
+
+  ```
+  "Cannot edit a complete task. Its work and billing are settled;
+  corrections belong on the invoice."
+  ```
+
+- **No new Bleps**: `BlepService.create_historical` (and `start_work`)
+  reject new time entries against a complete task:
+
+  ```
+  "Cannot log time on a complete task. Create a new task for additional work."
+  ```
+
+- **`sort_order` exemption**: list position is cosmetic. A complete task
+  embedded in a mixed list can still be reordered without touching any
+  billing data.
+
+- **No reopen**: there is no `complete → pending/in_progress` transition.
+  A task that needs more work after being marked complete gets a new
+  sibling task.
+
 ### 4.6 Conflict resolution: join vs takeover
 
 When `start_work` is called on a Task that's already `in_progress` and

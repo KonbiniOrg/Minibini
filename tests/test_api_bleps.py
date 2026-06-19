@@ -172,6 +172,43 @@ class BlepCreateAPITest(BaseTestCase):
 
 
 from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError
+from apps.jobs.services import BlepService
+
+
+class BlepCreateHistoricalCompleteTaskTest(BaseTestCase):
+    """BlepService.create_historical must reject tasks that are already complete."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(username='worker_hist_complete', password='x')
+        self.job = Job.objects.first()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
+        self.task = Task.objects.create(name='T_hist', job=self.job, rate_scheme_id=1)
+        # Wide closed shift so historical bleps have an enclosing shift.
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=3),
+            end_time=now + timedelta(hours=1),
+        )
+
+    def _recent_start_end(self, hours_ago=2, duration_hours=1):
+        now = timezone.now()
+        start = now - timedelta(hours=hours_ago)
+        end = start + timedelta(hours=duration_hours)
+        return start, end
+
+    def test_create_historical_rejects_complete_task(self):
+        self.task.status = Task.STATUS_COMPLETE
+        self.task.save(update_fields=['status'])
+        start, end = self._recent_start_end()
+        with self.assertRaises(ValidationError):
+            BlepService.create_historical(
+                actor=self.user, task=self.task, start_time=start, end_time=end,
+            )
 
 
 class BlepUpdateAPITest(BaseTestCase):

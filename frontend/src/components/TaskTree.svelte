@@ -1,4 +1,5 @@
 <script>
+  import { link } from 'svelte-spa-router';
   import { formatQtyUnits } from '../lib/format.js';
   import TaskActivityIndicator from './tasks/TaskActivityIndicator.svelte';
 
@@ -175,6 +176,11 @@
   </tr>
 {/snippet}
 
+{#snippet invoicedLink(inv)}
+  <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
+     title="Billed on this invoice">INVOICED</a>
+{/snippet}
+
 <table class="data-table task-tree-table">
   <thead>
     <tr>
@@ -204,7 +210,7 @@
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
-        {#if showStatus}<td><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}</td>{/if}
+        {#if showStatus}<td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
         <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{taskActual(task) ?? '-'}</td>
@@ -243,7 +249,7 @@
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
-          {#if showStatus}<td></td>{/if}
+          {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
           <td class="text-right">-</td>
           <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
           <td class="text-right">-</td>
@@ -276,7 +282,7 @@
           </td>
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
-          {#if showStatus}<td><TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}</td>{/if}
+          {#if showStatus}<td>{#if sub.invoice}{@render invoicedLink(sub.invoice)}{:else}<TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}{/if}</td>{/if}
           <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">{taskActual(sub) ?? '-'}</td>
@@ -310,7 +316,7 @@
             </td>
             {#if showAssignee}<td></td>{/if}
             <td></td>
-            {#if showStatus}<td></td>{/if}
+            {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
             <td class="text-right">-</td>
             <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">-</td>
@@ -347,7 +353,7 @@
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
-          {#if showStatus}<td></td>{/if}
+          {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
           <td class="text-right">-</td>
           <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
           <td class="text-right">-</td>
@@ -403,6 +409,11 @@
   .move-cell { text-align: center; width: 40px; }
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
   .inv-badge { margin-left: 6px; font-size: 11px; }
+  .badge-invoiced {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.3px; color: #047857; text-decoration: none;
+  }
+  .badge-invoiced:hover { text-decoration: underline; }
 
   /* Top-level task rows use the shared .data-table zebra stripe. */
   .subtask-row { background: #f0f9ff; }

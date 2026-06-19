@@ -110,6 +110,24 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             return None
         return {'text': entry.text, 'timestamp': entry.timestamp.isoformat()}
 
+    def _invoice_claims(self, obj):
+        """Build the per-job claim map once, memoized. Skipped in list context.
+
+        Returns {} in list context (mirrors the _financials/latest_change_request
+        list-skip pattern) so atom serializers safely receive an empty map.
+        """
+        view = self.context.get('view')
+        if view is not None and getattr(view, 'action', None) == 'list':
+            return {}
+        cache = getattr(self, '_claims_cache', None)
+        if cache is None:
+            cache = {}
+            self._claims_cache = cache
+        if obj.pk not in cache:
+            from apps.invoicing.claims import InvoiceClaimService
+            cache[obj.pk] = InvoiceClaimService.claims_for_job(obj)
+        return cache[obj.pk]
+
     def get_tasks(self, obj):
         from apps.api.tasks.serializers import TaskSerializer
         # Use .all() so prefetch_related cache is hit when configured.
@@ -117,11 +135,17 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         tasks = obj.tasks.all()
         if not hasattr(obj, '_prefetched_objects_cache') or 'tasks' not in obj._prefetched_objects_cache:
             tasks = tasks.order_by('sort_order')
-        return TaskSerializer(tasks, many=True).data
+        return TaskSerializer(
+            tasks, many=True,
+            context={**self.context, 'invoice_claims': self._invoice_claims(obj)},
+        ).data
 
     def get_materials(self, obj):
         from apps.api.inventory.serializers import MaterialSerializer
         materials = obj.materials.all()
         if not hasattr(obj, '_prefetched_objects_cache') or 'materials' not in obj._prefetched_objects_cache:
             materials = materials.order_by('pk')
-        return MaterialSerializer(materials, many=True).data
+        return MaterialSerializer(
+            materials, many=True,
+            context={**self.context, 'invoice_claims': self._invoice_claims(obj)},
+        ).data

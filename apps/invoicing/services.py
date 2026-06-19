@@ -416,6 +416,7 @@ class InvoiceWizardService(BaseWizardService):
                     'claiming_line_number': li.line_number,
                     'claiming_invoice_id': None,
                     'claiming_invoice_number': None,
+                    'not_billable_reason': None,
                 }
             else:
                 claims[key] = {
@@ -424,6 +425,7 @@ class InvoiceWizardService(BaseWizardService):
                     'claiming_line_number': None,
                     'claiming_invoice_id': inv.pk,
                     'claiming_invoice_number': inv.invoice_number,
+                    'not_billable_reason': None,
                 }
 
         default_state = {
@@ -432,7 +434,21 @@ class InvoiceWizardService(BaseWizardService):
             'claiming_line_number': None,
             'claiming_invoice_id': None,
             'claiming_invoice_number': None,
+            'not_billable_reason': None,
         }
+
+        def billability(atom_type, instance):
+            if atom_type == 'task' and instance.status != Task.STATUS_COMPLETE:
+                return {'state': 'not_billable', 'not_billable_reason': 'task_incomplete',
+                        'claiming_line_item_id': None, 'claiming_line_number': None,
+                        'claiming_invoice_id': None, 'claiming_invoice_number': None}
+            if atom_type == 'material' and (
+                instance.consumption_state != Material.CONSUMPTION_STATE_CONSUMED
+            ):
+                return {'state': 'not_billable', 'not_billable_reason': 'material_unconsumed',
+                        'claiming_line_item_id': None, 'claiming_line_number': None,
+                        'claiming_invoice_id': None, 'claiming_invoice_number': None}
+            return None
 
         tasks = (
             Task.objects.filter(job=job)
@@ -446,7 +462,7 @@ class InvoiceWizardService(BaseWizardService):
 
             detail = InvoiceWizardService._atom_detail(task)
             key = (InvoiceLineItemSource.SOURCE_TASK, task.pk)
-            state_info = claims.get(key, default_state)
+            state_info = claims.get(key) or billability('task', task) or default_state
             atoms.append({
                 'type': 'task',
                 'id': task.pk,
@@ -467,7 +483,7 @@ class InvoiceWizardService(BaseWizardService):
             for mat in materials:
                 detail = InvoiceWizardService._atom_detail(mat)
                 key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
-                state_info = claims.get(key, default_state)
+                state_info = claims.get(key) or billability('material', mat) or default_state
                 atoms.append({
                     'type': 'material',
                     'id': mat.pk,
@@ -496,7 +512,7 @@ class InvoiceWizardService(BaseWizardService):
         for mat in loose:
             detail = InvoiceWizardService._atom_detail(mat)
             key = (InvoiceLineItemSource.SOURCE_MATERIAL, mat.pk)
-            state_info = claims.get(key, default_state)
+            state_info = claims.get(key) or billability('material', mat) or default_state
             loose_atoms.append({
                 'type': 'material',
                 'id': mat.pk,
@@ -574,6 +590,17 @@ class InvoiceWizardService(BaseWizardService):
     def _validate_draft(cls, container):
         if container.status != Invoice.STATUS_DRAFT:
             raise ValidationError('Wizard can only modify draft invoices.')
+
+    @classmethod
+    def _assert_atom_billable(cls, instance):
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+        if isinstance(instance, Task) and instance.status != Task.STATUS_COMPLETE:
+            raise ValidationError('Cannot bill a task that is not complete.')
+        if isinstance(instance, Material) and (
+            instance.consumption_state != Material.CONSUMPTION_STATE_CONSUMED
+        ):
+            raise ValidationError('Cannot bill a material that is not consumed.')
 
     @classmethod
     def _expense_model(cls):

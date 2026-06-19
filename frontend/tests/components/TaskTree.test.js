@@ -129,4 +129,32 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
     expect(queryByRole('button', { name: 'cancel' })).toBeNull();
   });
+
+  it('shows an INVOICED link instead of the status indicator on an invoiced task', () => {
+    const t = task({ status: 'complete', invoice: { id: 7, number: 'INV-7' } });
+    const { getByRole, queryByText } = render(TaskTree, { props: { tasks: [t] } });
+    const link = getByRole('link', { name: 'INVOICED' });
+    expect(link.getAttribute('href')).toBe('#/invoices/7');
+    // The normal status label ("Complete") is replaced, not shown alongside.
+    expect(queryByText('Complete')).toBeNull();
+  });
+
+  it('shows the status indicator (no INVOICED link) on an uninvoiced complete task', () => {
+    const t = task({ status: 'complete', invoice: null });
+    const { queryByRole, getByText } = render(TaskTree, { props: { tasks: [t] } });
+    expect(queryByRole('link', { name: 'INVOICED' })).toBeNull();
+    expect(getByText('Complete')).toBeInTheDocument();
+  });
+
+  it('shows an INVOICED link in the status column of an invoiced material', () => {
+    const t = task({
+      materials: [{
+        material_id: 9, description: 'Steel', quantity: '3', sell_price: '5',
+        units: 'kg', consumption_state: 'consumed', invoice: { id: 4, number: 'INV-4' },
+      }],
+    });
+    const { getByRole } = render(TaskTree, { props: { tasks: [t] } });
+    const link = getByRole('link', { name: 'INVOICED' });
+    expect(link.getAttribute('href')).toBe('#/invoices/4');
+  });
 });

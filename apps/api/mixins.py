@@ -6,6 +6,28 @@ from rest_framework.response import Response
 from apps.core.services import ServiceError, NotFoundError
 
 
+class InvoiceRefMixin:
+    """Adds a read-only ``invoice`` field — ``{'id', 'number'}`` or ``None`` — to
+    an atom serializer (Task / Material / Expense).
+
+    The single definition of "which invoice is this atom on" for the API layer.
+    The claim map is supplied via serializer context under ``invoice_claims``,
+    keyed by ``(source_type, pk)`` and built once per job/page upstream so there
+    is no N+1. Subclasses set ``invoice_source_type``, declare
+    ``invoice = serializers.SerializerMethodField()`` (DRF's metaclass only
+    collects field declarations from the concrete serializer class, not a plain
+    mixin), and include ``'invoice'`` in ``Meta.fields``.
+    """
+    invoice_source_type = None
+
+    def get_invoice(self, obj):
+        claims = self.context.get('invoice_claims') or {}
+        ref = claims.get((self.invoice_source_type, obj.pk))
+        if ref is None:
+            return None
+        return {'id': ref['invoice_id'], 'number': ref['invoice_number']}
+
+
 class JSONDestroyMixin:
     """
     Override DRF's default destroy() to return 200 with a JSON body instead of
