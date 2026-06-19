@@ -1,14 +1,12 @@
-from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
-from apps.purchasing.models import Bill
+from apps.purchasing.models import Bill, BillPayment
 from apps.contacts.models import Contact, Business
-from apps.core.models import Configuration
 from apps.qbo.services import QBOBillPaymentPollingService
 
 
 class BillPaymentPollingTest(TestCase):
-    """Test QBO payment status polling for bills."""
+    """Test QBO clearance polling for BillPayments (per-payment, not per-bill)."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -18,55 +16,47 @@ class BillPaymentPollingTest(TestCase):
         self.business = Business.objects.create(
             business_name='Supply Co', default_contact=self.contact,
         )
-
-    def _create_synced_bill(self, qbo_id='200'):
-        bill = Bill.objects.create(
+        self.bill = Bill.objects.create(
             business=self.business, vendor_invoice_number='V-001',
         )
-        bill.qbo_id = qbo_id
-        bill.save()
-        return bill
+
+    def _create_bill_payment(self, qbo_payment_id='', cleared_date=None):
+        from django.utils import timezone
+        return BillPayment.objects.create(
+            bill=self.bill,
+            amount='100.00',
+            payment_date=timezone.now(),
+            qbo_payment_id=qbo_payment_id,
+            cleared_date=cleared_date,
+        )
+
+    def test_returns_error_without_connection(self):
+        self._create_bill_payment(qbo_payment_id='qbp-1')
+        stats = QBOBillPaymentPollingService.poll_all()
+        self.assertIn('error', stats)
+        self.assertEqual(stats['error'], 'No active QBO connection')
 
     @patch('apps.qbo.services.QBOService.get_client')
-    def test_polls_unpaid_bills(self, mock_get_client):
-        bill = self._create_synced_bill()
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-        mock_qbo_bill = MagicMock()
-        mock_qbo_bill.Balance = 0
-        mock_qbo_bill.TotalAmt = 250.00
-        with patch('apps.qbo.services.QBOBillPaymentPollingService._fetch_qbo_bill',
-                   return_value=mock_qbo_bill):
-            stats = QBOBillPaymentPollingService.poll_all()
-        bill.refresh_from_db()
-        self.assertEqual(bill.qbo_payment_status, 'Paid')
-        self.assertEqual(stats['updated'], 1)
-
-    @patch('apps.qbo.services.QBOService.get_client')
-    def test_skips_already_paid(self, mock_get_client):
-        bill = self._create_synced_bill()
-        bill.qbo_payment_status = 'Paid'
-        bill.save()
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+    def test_skips_payments_without_qbo_payment_id(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        self._create_bill_payment(qbo_payment_id='')
         stats = QBOBillPaymentPollingService.poll_all()
         self.assertEqual(stats['checked'], 0)
 
     @patch('apps.qbo.services.QBOService.get_client')
-    def test_marks_unpaid_when_balance_remains(self, mock_get_client):
-        bill = self._create_synced_bill()
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-        mock_qbo_bill = MagicMock()
-        mock_qbo_bill.Balance = 100.00
-        mock_qbo_bill.TotalAmt = 250.00
-        with patch('apps.qbo.services.QBOBillPaymentPollingService._fetch_qbo_bill',
-                   return_value=mock_qbo_bill):
-            stats = QBOBillPaymentPollingService.poll_all()
-        bill.refresh_from_db()
-        self.assertEqual(bill.qbo_payment_status, 'Unpaid')
-
-    def test_returns_error_without_connection(self):
-        self._create_synced_bill()
+    def test_skips_already_cleared_payments(self, mock_get_client):
+        from django.utils import timezone
+        mock_get_client.return_value = MagicMock()
+        self._create_bill_payment(qbo_payment_id='qbp-1', cleared_date=timezone.now().date())
         stats = QBOBillPaymentPollingService.poll_all()
-        self.assertIn('error', stats)
+        self.assertEqual(stats['checked'], 0)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_checks_pending_payments_with_qbo_id(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        self._create_bill_payment(qbo_payment_id='qbp-1')
+        self._create_bill_payment(qbo_payment_id='qbp-2')
+        stats = QBOBillPaymentPollingService.poll_all()
+        self.assertEqual(stats['checked'], 2)
+        self.assertEqual(stats['cleared'], 0)
+        self.assertEqual(stats['errors'], [])

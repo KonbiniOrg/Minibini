@@ -1010,34 +1010,36 @@ class QBOBillPaymentPollingService:
 
     @staticmethod
     def poll_all():
-        from apps.purchasing.models import Bill
-        stats = {'checked': 0, 'updated': 0, 'errors': []}
+        """Clear per-BillPayment from QBO reconciliation. STUBBED: the QBO fetch
+        is wired in the upcoming QBO session. Today, no connection is reported as
+        an error and (when connected) there is nothing to clear because payment
+        push is itself stubbed (no qbo_payment_id is ever set yet)."""
+        from apps.purchasing.models import BillPayment
+        stats = {'checked': 0, 'cleared': 0, 'errors': []}
         client = QBOService.get_client()
         if not client:
             stats['error'] = 'No active QBO connection'
             return stats
-        bills = Bill.objects.filter(qbo_id__isnull=False).exclude(qbo_payment_status='Paid')
-        for bill in bills:
+        pending = BillPayment.objects.filter(
+            cleared_date__isnull=True).exclude(qbo_payment_id='')
+        for payment in pending:
             stats['checked'] += 1
-            try:
-                qbo_bill = QBOBillPaymentPollingService._fetch_qbo_bill(client, bill.qbo_id)
-                if qbo_bill is None:
-                    stats['errors'].append(f'Bill {bill.pk}: not found in QBO')
-                    continue
-                balance = Decimal(str(qbo_bill.Balance))
-                if balance == 0:
-                    payment_status = 'Paid'
-                else:
-                    payment_status = 'Unpaid'
-                if bill.qbo_payment_status != payment_status:
-                    bill.qbo_payment_status = payment_status
-                    bill.save(update_fields=['qbo_payment_status'])
-                    stats['updated'] += 1
-            except Exception as e:
-                stats['errors'].append(f'Bill {bill.pk}: {str(e)}')
+            # QBO reconciliation fetch + cleared_date set lands in the QBO session.
         return stats
 
     @staticmethod
     def _fetch_qbo_bill(client, qbo_id):
         from quickbooks.objects.bill import Bill as QBOBill
         return QBOBill.get(qbo_id, qb=client)
+
+
+class QBOInboundPollingService:
+    """Single entry point for all QBO -> Minibini polling. Sweeps every inbound
+    type (invoice payments, bill clearance; future: Job-P&L actuals, CDC)."""
+
+    @staticmethod
+    def poll_all():
+        return {
+            'invoices': QBOPaymentPollingService.poll_all(),
+            'bills': QBOBillPaymentPollingService.poll_all(),
+        }
