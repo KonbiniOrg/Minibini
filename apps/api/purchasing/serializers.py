@@ -1,6 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
-from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem
+from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem, BillPayment
 from apps.core.units import UnitsField
 
 
@@ -133,6 +133,15 @@ class BillLineItemSerializer(serializers.ModelSerializer):
             'accounting_category', 'taxable_override', 'tax_rate_override',
         ]
         read_only_fields = ['line_item_id']
+
+
+class BillPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BillPayment
+        fields = ['payment_id', 'amount', 'payment_date', 'method', 'reference',
+                  'created_by', 'created_date', 'qbo_payment_id', 'cleared_date']
+        read_only_fields = ['payment_id', 'created_by', 'created_date',
+                            'qbo_payment_id', 'cleared_date']
 
 
 class BillSerializer(serializers.ModelSerializer):

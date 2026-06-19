@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import (
     PurchaseOrderService, PurchaseOrderEmailService,
-    PurchaseOrderReceivingService, BillService,
+    PurchaseOrderReceivingService, BillService, BillPaymentService,
 )
 from apps.core.services import ServiceError, NotFoundError
 from apps.core.models import PurchasingHistory
@@ -22,6 +22,7 @@ from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
     BillSerializer, BillSummarySerializer, BillLineItemSerializer,
+    BillPaymentSerializer,
 )
 
 _BILL_MONEY = DecimalField(max_digits=12, decimal_places=2)
@@ -494,10 +495,6 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             'service': lambda pk, reason=None: BillService.update_status(
                 pk, Bill.STATUS_RECEIVED),
         },
-        'mark_paid': {
-            'service': lambda pk, reason=None: BillService.update_status(
-                pk, Bill.STATUS_PAID_IN_FULL),
-        },
         'cancel': {
             'service': lambda pk, reason=None: BillService.update_status(
                 pk, Bill.STATUS_CANCELLED),
@@ -524,6 +521,41 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         else:
             bill = BillService.create_bill(**data)
         serializer.instance = bill
+
+    @action(detail=True, methods=['post'], url_path='payments', url_name='payments')
+    def payments(self, request, pk=None):
+        bill = self.get_object()
+        data = request.data
+        try:
+            payment = BillPaymentService.record_payment(
+                bill,
+                amount=data.get('amount'),
+                payment_date=data.get('payment_date'),
+                method=data.get('method'),
+                reference=data.get('reference', ''),
+                user=request.user,
+            )
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response(BillPaymentSerializer(payment).data,
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path='payments/(?P<payment_id>[0-9]+)', url_name='payment-detail')
+    def payment_detail(self, request, pk=None, payment_id=None):
+        self.get_object()  # permission + existence check on the bill
+        try:
+            if request.method == 'DELETE':
+                BillPaymentService.delete_payment(int(payment_id))
+                return Response({'message': 'Payment deleted.'})
+            payment = BillPaymentService.update_payment(int(payment_id), **request.data)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(BillPaymentSerializer(payment).data)
 
     @action(detail=True, methods=['post'], url_path='send-to-qbo')
     def send_to_qbo(self, request, pk=None):
