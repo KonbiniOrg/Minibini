@@ -1,17 +1,19 @@
-# Bill Lifecycle — Payments & Auto-Draft-from-PO (Design)
+# Bill Lifecycle — Payments & PO Linking (Design)
 
 **Date:** 2026-06-19
-**Status:** Design approved; email-flow section deferred (see §8)
-**Owning docs to update on implementation:** `docs/designs/materials-inventory-and-purchasing.md` (§13 Bill), `docs/designs/quickbooks-integration.md` (push/poll), `docs/designs/invoicing-and-expenses.md` (Bill payment lifecycle pointer)
+**Status:** Design approved.
+**Owning docs to update on implementation:** `docs/designs/materials-inventory-and-purchasing.md` (§13 Bill, §9–11 PO↔Bill), `docs/designs/quickbooks-integration.md` (push/poll), `docs/designs/invoicing-and-expenses.md` (Bill payment lifecycle pointer)
 
 ## 1. Goal
 
 Two related improvements to the Bill lifecycle:
 
 1. **Distinguish "we sent a payment" from "the payment cleared."** Capture payment-OUT details we record ourselves (check number, CC receipt, method, amount, date) separately from bank-clearance-IN data that QBO reconciliation reports back later. The Bill's *lifecycle standing* does not wait on clearance — clearance is confirmation metadata, not a gating state.
-2. **Auto-generate a draft Bill with every issued PO**, pre-filled from the PO, so Bills rarely need to be added by hand. The draft Bill is editable until the real vendor invoice arrives and it is marked `received`.
+2. **Make linking a Bill to its PO low-friction and safe.** Keep Bill creation manual, but turn "create/link a Bill from an existing PO" into a first-class action (incl. the email-to-Bill flow finding the right PO), with derived guardrails against accidental double-billing. No bill-ahead, no PO↔Bill schema change.
 
 ## 2. Key decisions (resolved in brainstorming)
+
+**Payments**
 
 - **One "paid" lifecycle, not two states.** A sent-but-uncleared payment does *not* hold the Bill in a separate status. (Chosen over a distinct "Payment Sent" state — no realistic workflow needs to act on the gap.)
 - **Payments are child records (`BillPayment`), not fields on the Bill.** Installments happen; each check/charge is its own row and clears independently.
@@ -19,7 +21,14 @@ Two related improvements to the Bill lifecycle:
 - **Payment recording happens in Minibini** (hybrid model) and pushes to QBO immediately. **Clearance comes back via polling.**
 - **QBO architecture: push distributed per-action, poll unified.** Push stays on each action (`push_invoice`/`push_bill`/`push_bill_payment`). Polling consolidates into one inbound service that sweeps all types.
 - **The entire QBO side is stubbed today** — Minibini-native pieces built for real and fully testable without live Intuit; QBO push + poll behind seams to be wired in the upcoming QBO session.
-- **Auto-draft Bill is created on PO issue, deleted on PO cancel** (only while still draft). It is a user convenience, not a historical artifact.
+
+**PO ↔ Bill**
+
+- **No auto-draft Bill ("bill-ahead").** Rejected: it materializes a guessed PO→Bill mapping before the real invoice arrives and adds lifecycle-coupling machinery (auto-delete-on-cancel, re-issue idempotency) for little gain.
+- **Keep the existing single FK `Bill.purchase_order`. No many-to-many.** The common direction — *several Bills against one PO* (partial deliveries / backorders) — is already what the single FK supports. The rare reverse direction (one Bill spanning multiple POs) is explicitly out of scope; if it ever lands it's a separate change.
+- **The PO gets no payment/billing status field.** Receiving and billing are independent axes. "How much of this PO is billed" is **derived**, never stored.
+- **Double-billing is surfaced, not blocked.** The only hard refusal is the pre-existing one: you cannot bill a `draft` PO. Beyond that, two derived tiers of *surfacing* (see §11), no lock.
+- **The email-to-Bill flow finds the PO** rather than creating/matching a placeholder Bill (see §8).
 
 ## 3. `BillPayment` model
 
@@ -61,7 +70,7 @@ A new `BillPaymentService` (`apps/purchasing/services.py`) is the sole writer of
 
 Status is only derived once a Bill is past `draft` (a draft Bill has no payments). `receive` and `cancel` remain explicit user actions. The old manual **`mark_paid`** status action is **removed** — recording a payment is the only path to `partly_paid` / `paid_in_full`.
 
-**Status-machine change required.** The current machine is forward-only; derived status must move **backward** when payments are deleted/edited (`partly_paid → received`, `paid_in_full → partly_paid`). Implementation: the payment-driven recompute sets `Bill.status` through a path that permits these reversals (either add the reverse transitions to `VALID_TRANSITIONS`, or have `BillPaymentService` set status via a dedicated recompute that bypasses the forward-only guard). `refunded` stays a manual terminal action out of `paid_in_full`.
+**Status-machine change required.** The current machine is forward-only; derived status must move **backward** when payments are deleted/edited (`partly_paid → received`, `paid_in_full → partly_paid`). Implementation: the payment-driven recompute sets `Bill.status` through a dedicated path that permits these reversals (lean: a `BillPaymentService` recompute that bypasses the forward-only guard, keeping the user-facing transition machine otherwise honest). `refunded` stays a manual terminal action out of `paid_in_full`.
 
 **Balance fix (free win):** balance is now exactly `total − amount_paid`. The "coarse balance" wart noted in `materials-inventory-and-purchasing.md` §13/§15 and the planned `qbo_amount_paid`-on-Bill cache are both obsoleted — real per-payment amounts replace them.
 
@@ -80,46 +89,60 @@ A **"Pay in full"** affordance on the Bill detail that opens the same `RecordPay
 
 ## 7. Unified inbound polling (bill branch stubbed)
 
-Consolidate inbound QBO polling into **one** service that sweeps all inbound types, per the "push distributed, poll unified" architecture. Concretely:
+Consolidate inbound QBO polling into **one** service that sweeps all inbound types, per the "push distributed, poll unified" architecture:
 
 - The existing live invoice branch (`QBOPaymentPollingService.poll_all`) is unchanged in behavior.
 - The parked `QBOBillPaymentPollingService` is folded in as the **bill-clearance branch**, reframed to write per-`BillPayment` `cleared_date` / `qbo_payment_id` from QBO reconciliation data (not the old `Bill.qbo_payment_status` cache).
 - The bill branch is **stubbed today** (interface present, guarded no-op without live QBO); the single `poll_qbo_payments` command drives the unified service.
 - Future inbound types already noted (Job-P&L actuals, CDC reverse-sync) are meant to live under this same umbrella.
 
-## 8. Email → Bill reframe — **DEFERRED, NEEDS MORE THOUGHT**
+## 8. Email → Bill: find the PO
 
-> This section is intentionally unresolved. Revisit with the user before implementing.
+With no auto-draft Bill and no M2M, the email-to-Bill job is simply: **create a Bill, find and link the right (single) PO if one exists.** A three-tier fallback:
 
-With auto-draft Bills, the vendor-invoice email almost always corresponds to a Bill that **already exists** (created when the PO was issued). The email-to-bill flow should therefore **match and update the existing draft Bill** — fill in the real `vendor_invoice_number`, due date, confirm amounts, and mark `received` — rather than minting a second Bill (today's `EmailCreateBill` create-new behavior, the `?email=&vendor=` flow, and the email-associate-bill picker).
+1. **Reply-correlated (best case).** A PO sent to a vendor carries a Message-ID; an inbound reply whose `In-Reply-To` matches auto-links to that PO (existing reply-correlation machinery, `architecture-and-conventions.md` §7.11). If the vendor's invoice email is a reply to the PO email, that PO is **pre-selected** — no guessing.
+2. **Vendor-scoped pick.** No thread correlation, but the sender resolves to a known vendor → present that vendor's billable POs (`issued` / `partly_received` / `received_in_full`, cancelled excluded by default), annotated with their derived billed status (§11), for the user to pick.
+3. **No PO.** No match → create a PO-less Bill (the rare legitimate hand-add).
 
-**Open sub-questions to work through:**
-- How does the flow pick *which* draft Bill to match — by the PO the email thread correlates to (via reply correlation / `In-Reply-To`), by vendor, or by presenting a picker?
-- Behavior when several draft Bills exist for one vendor.
-- The rare genuinely-no-PO case where create-new is still correct must survive.
-- Interaction with the existing email↔PO reply-correlation machinery.
-
-No implementation of this section until it is designed.
+This enhances the existing create-Bill-from-email flow (`?email=&vendor=`) to additionally find/pre-select a PO. The §11 double-bill surfacing applies once a PO is chosen.
 
 ## 9. UI surfaces
 
-- **Bill detail (`BillDetailPage.svelte`):** new **Payments** section listing each `BillPayment` — OUT details (method, reference, amount, date) plus a clearance badge (`pending` / `cleared <date>`). **Record Payment** and **Pay in full** buttons (gated `can_manage_financials`, shown when Bill is `received` / `partly_paid`). New `RecordPaymentModal`. Remove the old "Mark Paid in Full" button.
+- **Bill detail (`BillDetailPage.svelte`):**
+  - New **Payments** section listing each `BillPayment` — OUT details (method, reference, amount, date) plus a clearance badge (`pending` / `cleared <date>`). **Record Payment** and **Pay in full** buttons (gated `can_manage_financials`, shown when Bill is `received` / `partly_paid`). New `RecordPaymentModal`. Remove the old "Mark Paid in Full" button.
+  - **Linked-PO area:** the linked PO (if any), plus the §11 surfacing — an informational "this PO already has Bill(s): [links]" notice and, when the value test trips, the fully-billed warning banner. Both persist on the Bill, not just at create time.
+- **Bill form (`BillFormPage.svelte`):** a **PO picker** (vendor-filtered, `issued`+ POs) as a first-class control, replacing reliance on the `?po=` URL param alone (which still works). Selecting a PO auto-fills the vendor and offers to copy the PO's line items as a starting point. The §11 surfacing renders inline as soon as a PO is chosen.
 - **Bill list (`BillListPage.svelte`):** Balance column becomes exact (`total − amount_paid`); drop the coarse-balance caveat.
-- **PO detail:** no new control needed — the draft Bill simply appears in the vendor's/PO's Bill surfaces after issue.
+- **PO detail (`PurchaseOrderDetail.svelte`):** show the PO's Bills and its derived billed status (e.g. "Billed $1,240 / $1,240 — fully billed", or "Billed $0 / $1,240").
 
 ## 10. API
 
+**Payments**
 - `POST /api/bills/{id}/payments/` — record a payment (`BillPaymentService.record_payment`). `can_manage_financials`.
 - `PATCH /api/bills/{id}/payments/{pid}/` — edit OUT fields.
 - `DELETE /api/bills/{id}/payments/{pid}/` — delete a payment (200 + JSON body per the all-DELETEs-return-200 convention).
 - Remove the `mark_paid` status action from `BillViewSet`. Keep `receive`, `cancel`.
-- `BillSerializer` / `BillSummarySerializer` expose `amount_paid`, exact `balance`, and nested payments (with clearance fields read-only).
+- `BillSerializer` / `BillSummarySerializer` expose `amount_paid`, exact `balance`, and nested payments (clearance fields read-only).
 
-## 11. Auto-draft Bill from PO
+**PO linking / billed status**
+- PO picker uses the existing PO list filtered by vendor + billable statuses (e.g. `GET /api/purchase-orders/?business=<id>&billable=true`).
+- `PurchaseOrderSerializer` exposes derived `billed_total`, `is_fully_billed`, and a lightweight `bills` list (id / number / status / total) for the PO-detail and the surfacing notices.
+- `BillSerializer` exposes the linked PO plus a derived `po_billing` hint block (`other_bills`: existing non-cancelled Bills on the same PO with links; `po_fully_billed`: bool) so the Bill detail/form can render the two-tier surfacing without extra round-trips.
 
-- **On PO `draft → issued`** (side-effect in the PO issue path / `PurchaseOrderService`): create one draft Bill via `BillService.create_bill_from_po(po)` (copies vendor + line items). **Idempotency guard:** skip if a Bill already references this PO (so reverse→re-issue doesn't duplicate).
-- **On PO `→ cancelled`:** delete the linked Bill **iff it is still `draft`** (placeholder, safe to delete). A Bill that already advanced to `received`/paid is left untouched.
-- One auto Bill per PO; additional hand-added Bills for the same PO remain possible (rare — e.g. multiple vendor invoices against one PO).
+## 11. PO ↔ Bill linking, derived billing, and double-bill surfacing
+
+**Link model (unchanged schema).** `Bill.purchase_order` stays a nullable FK (`PROTECT`). Linking is setting that FK — via create-from-PO, the PO picker, or the email flow. Existing `Bill.clean()` rule kept: a linked PO must be `issued` or later (never `draft`). This is the **only hard refusal.** (PROTECT is effectively moot — a PO is deletable only while `draft`, and a draft PO can't carry a Bill.)
+
+**Derived PO billing (no stored status).** On `PurchaseOrder`:
+- `billed_total` — `Sum` of `total` over non-cancelled Bills linked to this PO.
+- `po_total` — `Sum` of its line items.
+- `is_fully_billed` — `billed_total >= po_total` (and `po_total > 0`).
+- `bills` reverse accessor (`related_name='bills'` on the FK) for the surfacing queries.
+
+**Two-tier surfacing at create/link time and persistently on the Bill** (neither blocks):
+
+1. **Informational — any prior Bill.** Whenever a Bill is added to (or linked to) a PO that already has ≥1 non-cancelled Bill, show "This PO already has Bill(s): [INV-… link, …]". Always shown, regardless of value — so the user can spot a duplicate even before the PO is fully billed.
+2. **Warning banner — value test.** When `is_fully_billed` is true, escalate to a prominent ⚠ banner: "PO-… is already fully billed (Bill INV-…, $… — fully received). Add another Bill anyway?" Receipt status is shown as supporting context; the **trigger is value coverage**, not receipt. Still non-blocking, consistent with the "don't hard-confirm reversible actions" UI convention (a draft Bill is deletable).
 
 ## 12. Testing (TDD)
 
@@ -127,25 +150,30 @@ Backend (Django `TestCase`, separate test DB — never touch dev DB):
 - `BillPayment` validation (amount > 0; rejected on draft/terminal Bill).
 - Status derivation across add/edit/delete, including backward transitions (`partly_paid → received`, `paid_in_full → partly_paid`).
 - Exact balance computation.
-- Auto-draft Bill created on PO issue; idempotent on re-issue; deleted on cancel only while draft; untouched when received/paid.
 - `push_bill_payment` stub invoked on `record_payment` and logs to `QBOSyncLog` without live calls.
 - Unified poller bill branch is a guarded no-op without live QBO; invoice branch unchanged.
+- Derived PO billing: `billed_total` excludes cancelled Bills; `is_fully_billed` boundary (`==`, just-under, over); `po_total == 0` guard.
+- Linking a Bill to a `draft` PO is rejected; to `issued`+ accepted.
+- Surfacing data: `other_bills` populated when prior Bills exist; `po_fully_billed` flips exactly at value coverage.
 
 Frontend (Vitest, `frontend/tests/`):
 - `RecordPaymentModal` validation and submit.
 - Pay-in-full pre-fills balance but still requires method/reference/date.
 - Bill detail payments list renders OUT details + clearance badge.
 - Exact balance in list.
+- PO picker filters to vendor + billable; informational notice renders when prior Bills exist; warning banner renders only when fully billed.
 
 ## 13. Out of scope / deferred
 
-- Email → Bill matching flow (§8) — explicitly deferred.
+- **One Bill spanning multiple POs (M2M).** Rejected for now; revisit as a separate change if real demand appears.
+- **Auto-draft / bill-ahead.** Rejected.
 - Live QBO bill-payment push and clearance polling — stubbed; wired in the upcoming QBO session.
 - Refund modeling beyond the existing manual `paid_in_full → refunded` transition.
+- Line-item-level Bill↔PO reconciliation — the link is header-level only.
 - Employee-as-Vendor and other unrelated QBO unfinished-work items.
 
 ## 14. Open questions
 
-1. **§8 email flow** — the whole matching design.
-2. Backward-status mechanism — reverse transitions in `VALID_TRANSITIONS` vs. a dedicated bypass in `BillPaymentService` (lean: dedicated recompute, keeps the user-facing machine honest).
-3. Whether editing/deleting a *cleared* payment should be blocked (a cleared payment reflects real bank movement) — probably yes once polling is live; not enforced while QBO is stubbed.
+1. Backward-status mechanism — dedicated bypass recompute in `BillPaymentService` (lean) vs. adding reverse transitions to `VALID_TRANSITIONS`.
+2. Whether editing/deleting a *cleared* payment should be blocked once polling is live (a cleared payment reflects real bank movement) — probably yes; not enforced while QBO is stubbed.
+3. Vendor-scoped PO picker default filter — exclude cancelled/fully-billed POs entirely, or show them de-emphasized for the occasional legitimate late invoice.
