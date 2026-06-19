@@ -1,0 +1,57 @@
+from decimal import Decimal
+from django.test import TestCase
+from django.utils import timezone
+from django.core.exceptions import ValidationError
+from apps.contacts.models import Business, Contact
+from apps.core.models import AccountingCategory
+from apps.purchasing.models import Bill, BillLineItem, BillPayment
+
+
+class BillPaymentModelTest(TestCase):
+    def setUp(self):
+        self.contact = Contact.objects.create(
+            first_name='Acme', last_name='Steel', email='contact@acme.com'
+        )
+        self.business = Business.objects.create(
+            business_name='Acme Steel', default_contact=self.contact
+        )
+        self.ac = AccountingCategory.objects.create(code='MAT', name='Materials')
+        self.bill = Bill.objects.create(
+            business=self.business, vendor_invoice_number='INV-1',
+            status=Bill.STATUS_RECEIVED,
+        )
+        BillLineItem.objects.create(
+            bill=self.bill, line_number=1, description='Steel',
+            qty=Decimal('2'), price=Decimal('100.00'),
+            units='none', accounting_category=self.ac,
+        )
+
+    def test_total_amount_paid_balance(self):
+        self.assertEqual(self.bill.total, Decimal('200.00'))
+        self.assertEqual(self.bill.amount_paid, Decimal('0.00'))
+        self.assertEqual(self.bill.balance, Decimal('200.00'))
+
+    def test_payment_drives_status(self):
+        BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('200.00'),
+            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            reference='4471',
+        )
+        self.bill.recompute_payment_status()
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
+        self.assertIsNotNone(self.bill.paid_date)
+
+    def test_partial_then_reversal_moves_status_backward(self):
+        p = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('50.00'),
+            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+        )
+        self.bill.recompute_payment_status()
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)
+        p.delete()
+        self.bill.recompute_payment_status()
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
+        self.assertIsNone(self.bill.paid_date)

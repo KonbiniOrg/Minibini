@@ -252,6 +252,11 @@ class Bill(models.Model):
                 old_bill = Bill.objects.get(pk=self.pk)
                 old_status = old_bill.status
 
+                # Payment-driven recompute bypasses the forward-only guard and
+                # date protection (status moves backward when payments are removed).
+                if getattr(self, '_payment_driven', False):
+                    return
+
                 # Protect immutable date fields
                 if old_bill.created_date and self.created_date != old_bill.created_date:
                     self.created_date = old_bill.created_date
@@ -338,11 +343,89 @@ class Bill(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    @property
+    def total(self):
+        return sum((li.total_amount for li in self.billlineitem_set.all()),
+                   Decimal('0.00'))
+
+    @property
+    def amount_paid(self):
+        return sum((p.amount for p in self.billpayment_set.all()),
+                   Decimal('0.00'))
+
+    @property
+    def balance(self):
+        return self.total - self.amount_paid
+
+    def recompute_payment_status(self):
+        """Derive status from BillPayment totals. Payment-driven: bypasses the
+        forward-only transition guard and date protection in clean()."""
+        paid = self.amount_paid
+        total = self.total
+        if paid <= 0:
+            new_status = Bill.STATUS_RECEIVED
+        elif paid < total:
+            new_status = Bill.STATUS_PARTLY_PAID
+        else:
+            new_status = Bill.STATUS_PAID_IN_FULL
+        self._payment_driven = True
+        self.status = new_status
+        if new_status == Bill.STATUS_PAID_IN_FULL and not self.paid_date:
+            self.paid_date = timezone.now()
+        elif new_status != Bill.STATUS_PAID_IN_FULL and self.paid_date:
+            self.paid_date = None
+        try:
+            self.save()
+        finally:
+            self._payment_driven = False
+
     class Meta:
         db_table = 'bills'
 
     def __str__(self):
         return f"Bill {self.vendor_invoice_number or self.pk}"
+
+
+class BillPayment(models.Model):
+    METHOD_CHECK = 'check'
+    METHOD_CREDIT_CARD = 'credit_card'
+    METHOD_ACH = 'ach'
+    METHOD_CASH = 'cash'
+    METHOD_OTHER = 'other'
+    METHOD_CHOICES = [
+        (METHOD_CHECK, 'Check'),
+        (METHOD_CREDIT_CARD, 'Credit Card'),
+        (METHOD_ACH, 'ACH'),
+        (METHOD_CASH, 'Cash'),
+        (METHOD_OTHER, 'Other'),
+    ]
+
+    payment_id = models.AutoField(primary_key=True)
+    bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
+    # Payment OUT — entered in Minibini
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_date = models.DateTimeField()
+    method = models.CharField(max_length=20, choices=METHOD_CHOICES)
+    reference = models.CharField(max_length=100, blank=True, default='')
+    created_by = models.ForeignKey(
+        'core.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recorded_bill_payments',
+    )
+    created_date = models.DateTimeField(default=timezone.now)
+    # Clearance IN — written only by the polling service
+    qbo_payment_id = models.CharField(max_length=50, blank=True, default='')
+    cleared_date = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'bill_payments'
+
+    def clean(self):
+        super().clean()
+        if self.amount is not None and self.amount <= 0:
+            raise ValidationError('Payment amount must be greater than zero.')
+
+    def __str__(self):
+        return f"Payment {self.amount} on Bill {self.bill_id}"
 
 
 class PurchaseOrderLineItem(BaseLineItem):
