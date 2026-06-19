@@ -3,6 +3,7 @@
 Each builder function takes a NealsDataConverter instance as its first
 argument and appends fixture records to c.fixture_data via c.add_fixture().
 """
+import difflib
 import json
 import random
 import re
@@ -149,6 +150,10 @@ def build_configuration(c):
         ('email_retention_days',        '30'),
         ('board_closed_retention_days', '5'),
         ('average_labor_cost',          '50'),
+        # Default material markup: InventoryService.create_item derives an
+        # item's selling_price from purchase_price × (1 + this/100). 20 => a
+        # 20% markup over cost.
+        ('default_material_markup_percent', '20'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
         # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
@@ -197,155 +202,366 @@ def _scrub_text(text):
     return text
 
 
-def build_contacts_and_businesses(c):
-    """Emit contacts.contact and contacts.business fixtures for orgs referenced
-    by the spine's estimate rows and bills.
+# Normalized source keys that must NOT fuzzy-merge onto a FreeAgent org. The
+# one confirmed false positive in the near-miss survey: 'BWC Architects' is a
+# distinct firm from 'HMC Architects' (0.86 similar). Extend as more surface.
+_FORCE_DISTINCT = {P.normalize_name('BWC Architects')}
 
-    Only builds one Contact + one Business per referenced org (non-interactive;
-    name mismatches between sources are ignored — the Contacts-sheet record is
-    used as-is).
+# Org fuzzy-match acceptance threshold. The near-miss survey confirmed every
+# org pair at/above this is a real match (the only exception is force-distinct
+# above); below it, names are treated as absent.
+_ORG_FUZZY_THRESHOLD = 0.82
 
-    Sets c.org_map (org_name -> {'business': pk, 'contact': pk}) for use by
-    downstream builders.
+
+def _build_fa_indexes(c):
+    """Index the FreeAgent Contacts sheet for resolve_contact.
+
+    Businesses key off the `Organisation` column; individuals are Contacts-sheet
+    rows with a *blank* Organisation (a person with no business — e.g. James
+    Sandersfeld). Sets c.fa_org_by_norm / c.fa_org_display / c.fa_org_norms and
+    c.fa_person_by_norm (all keyed by normalize_name; first row wins per key).
     """
-    # --- 1. Collect referenced org names -----------------------------------
-    # Index Projects sheet by base_ref of the project Name
+    c.fa_org_by_norm = {}
+    c.fa_org_display = {}
+    c.fa_person_by_norm = {}
+    for row in c.loader.sheets_data.get('Contacts', []):
+        org = str(row.get('Organisation') or '').strip()
+        if org:
+            key = P.normalize_name(org)
+            if key and key not in c.fa_org_by_norm:
+                c.fa_org_by_norm[key] = row
+                c.fa_org_display[key] = org
+        else:
+            full = (f"{str(row.get('First Name') or '').strip()} "
+                    f"{str(row.get('Last Name') or '').strip()}").strip()
+            key = P.normalize_name(full)
+            if key and key not in c.fa_person_by_norm:
+                c.fa_person_by_norm[key] = row
+    c.fa_org_norms = sorted(c.fa_org_by_norm)
+
+
+def resolve_contact(c, raw_name):
+    """Resolve a noisy kanban/Bills org-or-person name to a canonical entity.
+
+    Returns {'kind', 'key', 'display', 'fa_row'} or None for an empty name:
+      kind    'business' | 'individual'
+      key     dedup key — normalized canonical org, or 'person:<norm>'
+      display business_name (org) or person full name
+      fa_row  the matching Contacts-sheet row (real details) or None
+
+    Order: exact/normalized org -> fuzzy org (>=threshold, unless force-distinct)
+    -> exact/normalized person -> heuristic (person-shape => individual, else a
+    new business). Persons match exactly only (no fuzzy) so two different people
+    never merge.
+    """
+    name = str(raw_name or '').strip()
+    nkey = P.normalize_name(name)
+    if not nkey:
+        return None
+
+    # 1. org exact / normalized
+    if nkey in c.fa_org_by_norm:
+        return {'kind': 'business', 'key': nkey,
+                'display': P.clean_display_name(c.fa_org_display[nkey]),
+                'fa_row': c.fa_org_by_norm[nkey]}
+
+    # 2. org fuzzy (skip confirmed false-positive sources)
+    if nkey not in _FORCE_DISTINCT and c.fa_org_norms:
+        best = max(c.fa_org_norms,
+                   key=lambda k: difflib.SequenceMatcher(None, nkey, k).ratio())
+        if (difflib.SequenceMatcher(None, nkey, best).ratio()
+                >= _ORG_FUZZY_THRESHOLD):
+            return {'kind': 'business', 'key': best,
+                    'display': P.clean_display_name(c.fa_org_display[best]),
+                    'fa_row': c.fa_org_by_norm[best]}
+
+    # 3. person exact / normalized (blank-org FreeAgent individuals)
+    if nkey in c.fa_person_by_norm:
+        return {'kind': 'individual', 'key': f'person:{nkey}',
+                'display': name, 'fa_row': c.fa_person_by_norm[nkey]}
+
+    # 4. absent -> heuristic
+    if P.looks_like_person(name):
+        return {'kind': 'individual', 'key': f'person:{nkey}',
+                'display': name, 'fa_row': None}
+    return {'kind': 'business', 'key': nkey,
+            'display': P.clean_display_name(name), 'fa_row': None}
+
+
+def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
+    """Emit one contacts.contact (business_pk may be None for an individual) and
+    return its pk. Details come from a Contacts-sheet row when given, else the
+    person name is synthesized from fallback_name. Emails/phones are anonymized."""
+    if fa_row is not None:
+        first = str(fa_row.get('First Name') or '').strip()
+        last = str(fa_row.get('Last Name') or '').strip()
+        email = str(fa_row.get('Email') or '').strip()
+        work = str(fa_row.get('Phone Number') or '').strip()
+        mobile = str(fa_row.get('Mobile Phone Number') or '').strip()
+    else:
+        first, last = P.split_name(fallback_name or '')
+        email = work = mobile = ''
+    if not first:
+        first = '(unknown)'
+    if not last:
+        last = '(unknown)'
+
+    contact_pk = c.next_pk('contacts.contact')
+    email = (_anonymize_email(email) if email
+             else f'noreply+{contact_pk}@example.com')
+    work = _anonymize_phone(work) if work else ''
+    mobile = _anonymize_phone(mobile) if mobile else ''
+    if not work and not mobile:
+        work = '555-555-5555'
+
+    c.add_fixture('contacts.contact', contact_pk, {
+        'first_name': first,
+        'middle_initial': '',
+        'last_name': last,
+        'email': email,
+        'addr1': '', 'addr2': '', 'addr3': '',
+        'city': '', 'municipality': '', 'postal_code': '', 'country_code': '',
+        'mobile_number': mobile[:20],
+        'work_number': work[:20],
+        'home_number': '',
+        'business': business_pk,
+        'qbo_customer_id': None,
+    })
+    return contact_pk
+
+
+def _emit_individual(c, key, info):
+    """Emit a standalone Contact (business=None) for an individual and register
+    it in c.entity_map."""
+    contact_pk = _emit_contact(c, None, fa_row=info['fa_row'],
+                               fallback_name=info['display'])
+    c.entity_map[key] = {'kind': 'individual', 'business': None,
+                         'contact': contact_pk}
+    return contact_pk
+
+
+def _emit_business(c, key, info):
+    """Emit a Business plus its Contacts and register it in c.entity_map.
+
+    `info['persons']` maps normalized person name -> display name (the distinct
+    kanban/Bills contact people named for this business). FreeAgent allows one
+    contact per business but Minibini allows many, so every distinct person is
+    attached as a Contact. default_contact is the FreeAgent representative when
+    matched, else the first person, else synthesized from the business name.
+    """
+    business_pk = c.next_pk('contacts.business')
+    contacts = {}            # normalized person name -> contact pk
+    default_pk = None
+
+    fa_row = info['fa_row']
+    if fa_row is not None:
+        default_pk = _emit_contact(c, business_pk, fa_row=fa_row)
+        fa_full = (f"{str(fa_row.get('First Name') or '').strip()} "
+                   f"{str(fa_row.get('Last Name') or '').strip()}").strip()
+        fk = P.normalize_name(fa_full)
+        if fk:
+            contacts[fk] = default_pk
+
+    for pnorm in sorted(info['persons']):
+        if pnorm in contacts:
+            continue
+        pk = _emit_contact(c, business_pk, fallback_name=info['persons'][pnorm])
+        contacts[pnorm] = pk
+        if default_pk is None:
+            default_pk = pk
+
+    if default_pk is None:
+        # No FreeAgent row and no named person — synthesize from the org name.
+        default_pk = _emit_contact(c, business_pk, fallback_name=info['display'])
+
+    c.add_fixture('contacts.business', business_pk, {
+        'business_name': info['display'],
+        'our_reference_code': f'BUS-{business_pk:04d}',
+        'default_contact': default_pk,
+        'business_address': '',
+        'business_phone': '',
+        'tax_exemption_number': '',
+        'website': '',
+        'terms': None,
+        'tax_multiplier': None,
+        'qbo_customer_id': None,
+        'qbo_vendor_id': None,
+    })
+    c.entity_map[key] = {'kind': 'business', 'business': business_pk,
+                         'default_contact': default_pk, 'contacts': contacts}
+    return business_pk
+
+
+def _customer_ref_for_entry(c, entry, projects_by_base, bill_orgs_by_base):
+    """Return (org_name, person) for a spine entry: the customer org via
+    Projects ('Client Organisation') -> Bills ('Contact Organisation') -> the
+    parsed card Name, and the contact person from the card Name's parenthetical
+    ('Business (Person)')."""
+    base = entry['base_ref']
+    card_name = entry['card'].get('Name', '')
+    _biz, person = P.parse_kanban_name(card_name)
+
+    proj_row = projects_by_base.get(base)
+    if proj_row:
+        org = (proj_row.get('Client Organisation') or '').strip()
+        if org:
+            return org, person
+    bset = bill_orgs_by_base.get(base)
+    if bset:
+        return sorted(bset)[0], person          # deterministic pick
+    biz, _ = P.parse_kanban_name(card_name)
+    return (biz or '').strip(), person
+
+
+def build_contacts_and_businesses(c):
+    """Emit contacts.contact / contacts.business for the customers referenced by
+    spine cards, matched against the canonical FreeAgent Contacts sheet.
+
+    Each spine entry's customer org (Projects -> Bills -> card name) is resolved
+    via resolve_contact, which folds noisy kanban spellings onto one canonical
+    FreeAgent record (normalization + fuzzy) and tells individuals (blank-org
+    persons) from businesses. Multiple kanban spellings of one org collapse to a
+    single Business (Class B merge); the distinct contact-persons named across
+    those cards all attach to it (Q1). Individuals become a Contact with no
+    Business. Sets c.entity_map (key -> entity) and c.entry_contact (base_ref ->
+    (key, person_norm)) so build_jobs links each Job to the right Contact.
+    """
+    _build_fa_indexes(c)
+
     projects_by_base = {}
     for row in c.loader.sheets_data.get('Projects', []):
         name = (row.get('Name') or '').strip()
         if name:
-            base = P.base_reference(name)
-            projects_by_base[base] = row
-
-    # Index Bills sheet by base_ref of the bill's Project column
+            projects_by_base[P.base_reference(name)] = row
     bill_orgs_by_base = {}
     for row in c.loader.sheets_data.get('Bills', []):
         proj = (row.get('Project') or '').strip()
         org = (row.get('Contact Organisation') or '').strip()
         if proj and org:
-            base = P.base_reference(proj)
-            bill_orgs_by_base.setdefault(base, set()).add(org)
+            bill_orgs_by_base.setdefault(P.base_reference(proj), set()).add(org)
 
-    # Gather referenced org names for each spine entry.
-    # Priority: Projects sheet -> Bills -> card name parsed with parse_kanban_name
-    referenced_orgs = set()
+    businesses = {}      # key -> {'display','fa_row','persons': {pnorm: display}}
+    individuals = {}     # key -> {'display','fa_row'}
+    c.entry_contact = {}
+
     for entry in c.spine:
         base = entry['base_ref']
-
-        # From Projects sheet
-        proj_row = projects_by_base.get(base)
-        if proj_row:
-            org = (proj_row.get('Client Organisation') or '').strip()
-            if org:
-                referenced_orgs.add(org)
-                continue  # found it
-
-        # From Bills sheet
-        bill_org_set = bill_orgs_by_base.get(base, set())
-        if bill_org_set:
-            referenced_orgs.update(bill_org_set)
+        org_name, person = _customer_ref_for_entry(
+            c, entry, projects_by_base, bill_orgs_by_base)
+        res = resolve_contact(c, org_name)
+        if res is None:
+            c.entry_contact[base] = None
             continue
-
-        # Fall back to card name
-        card_name = entry['card'].get('Name', '')
-        biz, _person = P.parse_kanban_name(card_name)
-        if biz:
-            referenced_orgs.add(biz)
-
-    # --- 2. Index Contacts sheet by Organisation ---------------------------
-    contacts_by_org = {}
-    for row in c.loader.sheets_data.get('Contacts', []):
-        org = (row.get('Organisation') or '').strip()
-        if org and org not in contacts_by_org:
-            contacts_by_org[org] = row
-
-    # --- 3. Emit one Contact + one Business per referenced org -------------
-    c.org_map = {}
-
-    for org in sorted(referenced_orgs):  # deterministic order
-        contact_row = contacts_by_org.get(org)
-
-        # Determine Contact field values
-        if contact_row:
-            first_name = str(contact_row.get('First Name') or '').strip()
-            last_name = str(contact_row.get('Last Name') or '').strip()
-            email = str(contact_row.get('Email') or '').strip()
-            work_number = str(contact_row.get('Phone Number') or '').strip()
-            mobile_number = str(contact_row.get('Mobile Phone Number') or '').strip()
+        pnorm = P.normalize_name(person) if person else None
+        c.entry_contact[base] = (res['key'], pnorm)
+        if res['kind'] == 'individual':
+            individuals.setdefault(res['key'],
+                                   {'display': res['display'],
+                                    'fa_row': res['fa_row']})
         else:
-            # Synthesize from org name
-            first_name, last_name = P.split_name(org)
-            email = ''
-            work_number = ''
-            mobile_number = ''
+            b = businesses.setdefault(
+                res['key'], {'display': res['display'],
+                             'fa_row': res['fa_row'], 'persons': {}})
+            if person and pnorm:
+                b['persons'].setdefault(pnorm, person.strip())
 
-        # Enforce non-empty first_name / last_name
-        if not first_name:
-            first_name = '(unknown)'
-        if not last_name:
-            last_name = '(unknown)'
+    c.entity_map = {}
+    for key in sorted(individuals):
+        _emit_individual(c, key, individuals[key])
+    for key in sorted(businesses):
+        _emit_business(c, key, businesses[key])
 
-        # Allocate PKs
-        contact_pk = c.next_pk('contacts.contact')
-        business_pk = c.next_pk('contacts.business')
 
-        # Anonymize contact details: real email domains -> example.com,
-        # phone-number prefixes -> 555.
-        email = (_anonymize_email(email) if email
-                 else f'noreply+{contact_pk}@example.com')
-        work_number = _anonymize_phone(work_number) if work_number else ''
-        mobile_number = _anonymize_phone(mobile_number) if mobile_number else ''
-        if not work_number and not mobile_number:
-            work_number = '555-555-5555'
+def build_vendors(c):
+    """Emit Businesses/Contacts for the most recent vendors in the FreeAgent
+    Bills sheet, capped at c.limit, reusing existing entities on canonical match.
 
-        # Clamp phone numbers to the model field length (max_length=20).
-        work_number = work_number[:20]
-        mobile_number = mobile_number[:20]
+    Vendors come *wholly* from the FreeAgent Bills sheet — the Kanban source has
+    no concept of bills or vendors. Bill container rows carry a non-empty
+    'Contact Organisation'; line-item rows (org blank) and name-only one-offs
+    (Contact Name but no org) are skipped (count on c.vendor_skipped_name_only).
+    Vendors rank by most recent bill 'Date' (newest first; undated last, ties by
+    name); the first c.limit distinct orgs are selected (c.vendor_selected_orgs).
 
-        # Emit Contact fixture
-        c.add_fixture('contacts.contact', contact_pk, {
-            'first_name': first_name,
-            'middle_initial': '',
-            'last_name': last_name,
-            'email': email,
-            'addr1': '',
-            'addr2': '',
-            'addr3': '',
-            'city': '',
-            'municipality': '',
-            'postal_code': '',
-            'country_code': '',
-            'mobile_number': mobile_number,
-            'work_number': work_number,
-            'home_number': '',
-            'business': business_pk,
-            'qbo_customer_id': None,
-        })
+    Each selected org is resolved through resolve_contact (same canonicalization
+    as customers). A vendor that resolves to an existing entity is reused; for an
+    existing Business the bill's Contact Name is attached as another Contact if
+    new. Runs after build_jobs so a vendor org can't be taken for a job's client.
+    """
+    latest_by_org = {}      # org -> most recent bill datetime (or None if undated)
+    name_by_org = {}        # org -> first-seen bill Contact Name
+    skipped_name_only = set()
 
-        # Emit Business fixture
-        c.add_fixture('contacts.business', business_pk, {
-            'business_name': org,
-            'our_reference_code': f'BUS-{business_pk:04d}',
-            'default_contact': contact_pk,
-            'business_address': '',
-            'business_phone': '',
-            'tax_exemption_number': '',
-            'website': '',
-            'terms': None,
-            'tax_multiplier': None,
-            'qbo_customer_id': None,
-            'qbo_vendor_id': None,
-        })
+    for row in c.loader.sheets_data.get('Bills', []):
+        org = (row.get('Contact Organisation') or '').strip()
+        if not org:
+            name = (row.get('Contact Name') or '').strip()
+            if name:
+                skipped_name_only.add(name)
+            continue
+        dt = P.to_datetime(row.get('Date'))
+        if org not in latest_by_org:
+            latest_by_org[org] = dt
+        elif dt is not None and (latest_by_org[org] is None
+                                 or dt > latest_by_org[org]):
+            latest_by_org[org] = dt
+        if org not in name_by_org:
+            cn = (row.get('Contact Name') or '').strip()
+            if cn:
+                name_by_org[org] = cn
 
-        c.org_map[org] = {'business': business_pk, 'contact': contact_pk}
+    orgs = sorted(
+        latest_by_org,
+        key=lambda o: (latest_by_org[o] is None,
+                       -latest_by_org[o].timestamp() if latest_by_org[o] else 0.0,
+                       o))
+    selected = orgs[:c.limit]
+    c.vendor_selected_orgs = selected
+    c.vendor_skipped_name_only = len(skipped_name_only)
+
+    created = reused = 0
+    for org in selected:
+        res = resolve_contact(c, org)
+        if res is None:
+            continue
+        key = res['key']
+        person = name_by_org.get(org)
+        ent = c.entity_map.get(key)
+        if ent is None:
+            if res['kind'] == 'individual':
+                _emit_individual(c, key, {'display': res['display'],
+                                          'fa_row': res['fa_row']})
+            else:
+                persons = {}
+                if person:
+                    persons[P.normalize_name(person)] = person.strip()
+                _emit_business(c, key, {'display': res['display'],
+                                        'fa_row': res['fa_row'],
+                                        'persons': persons})
+            created += 1
+        else:
+            reused += 1
+            if ent['kind'] == 'business' and person:
+                pnorm = P.normalize_name(person)
+                if pnorm and pnorm not in ent['contacts']:
+                    pk = _emit_contact(c, ent['business'],
+                                       fallback_name=person.strip())
+                    ent['contacts'][pnorm] = pk
+
+    if c.verbose:
+        print(f'  vendors: {len(selected)} selected (cap {c.limit}), '
+              f'{created} new, {reused} reused; '
+              f'{len(skipped_name_only)} name-only bill orgs skipped')
 
 
 def build_jobs(c):
     """Emit jobs.job fixtures — one per spine entry.
 
     Sources:
-    - Client org: parsed from card['Name'] via parse_kanban_name, resolved
-      through c.org_map (built by build_contacts_and_businesses).
+    - Contact: the per-entry resolution recorded on c.entry_contact by
+      build_contacts_and_businesses (canonical entity + named person). A Job for
+      a business links to the Contact matching its card's named person, falling
+      back to the business default_contact; an individual links to its Contact.
     - Primary estimate: highest-revision container row from estimate_rows.
     - Name: the Kanban card Description (FreeAgent has no job names).
     - Status: mapped from the Kanban card 'Stage' column.
@@ -364,14 +580,22 @@ def build_jobs(c):
         base_ref = entry['base_ref']
         estimate_rows = entry['estimate_rows']
 
-        # --- 1. Resolve contact from card name ----------------------------
-        org, _person = P.parse_kanban_name(card.get('Name', ''))
-        if not org or org not in c.org_map:
+        # --- 1. Resolve contact from the per-entry resolution -------------
+        resolved = c.entry_contact.get(base_ref)
+        if not resolved:
             c.discarded_cards.append(
-                f'{base_ref}: org "{org}" not in org_map — skipped'
-            )
+                f'{base_ref}: no resolvable customer org — skipped')
             continue
-        contact_pk = c.org_map[org]['contact']
+        key, person_norm = resolved
+        ent = c.entity_map.get(key)
+        if ent is None:
+            c.discarded_cards.append(
+                f'{base_ref}: entity {key!r} missing — skipped')
+            continue
+        if ent['kind'] == 'individual':
+            contact_pk = ent['contact']
+        else:
+            contact_pk = ent['contacts'].get(person_norm) or ent['default_contact']
 
         # --- 2. Select the primary estimate container row -----------------
         # Container rows have a non-empty Reference value.
@@ -807,6 +1031,35 @@ def _material_cost_and_pli(c, description, sell_price):
             return purchase, pli_pk
     unit_cost = (sell_price * _COST_RATIO).quantize(Decimal('0.01'))
     return f'{unit_cost:.2f}', None
+
+
+# Mirrors the converter's default_material_markup_percent config (20%): a minted
+# transient lot's selling_price = purchase_price × this factor.
+_MATERIAL_MARKUP_FACTOR = Decimal('1.20')
+
+
+def _mint_transient_lot(c, description, units, purchase_cost):
+    """Create a transient-lot InventoryItem (is_catalog=False) to back a Material
+    that matched no catalog item, and return its pk. Selling price derives from
+    the purchase cost via the configured material markup. QOH starts at 0 and is
+    reconciled later by build_purchasing."""
+    pk = c.next_pk('inventory.inventoryitem')
+    purchase = Decimal(purchase_cost)
+    selling = (purchase * _MATERIAL_MARKUP_FACTOR).quantize(Decimal('0.01'))
+    c.add_fixture('inventory.inventoryitem', pk, {
+        'code': f'LOT-{pk:05d}',
+        'description': (description or 'Material')[:255],
+        'units': units or 'none',
+        'selling_price': f'{selling:.2f}',
+        'purchase_price': f'{purchase:.2f}',
+        'qty_on_hand': '0.00',
+        'qty_sold': '0.00',
+        'qty_wasted': '0.00',
+        'is_active': True,
+        'is_catalog': False,
+        'accounting_category': c.ac_mat_pk,
+    })
+    return pk
 
 
 def _material_line_kind(description):
@@ -1279,6 +1532,11 @@ def derive_atoms(c):
         for li in raw_lines:
             mat_pk = c.next_pk('inventory.material')
             unit_cost, pli_pk = _material_cost_and_pli(c, li['description'] or '', li['price'])
+            if pli_pk is None:
+                # No catalog match — mint a transient lot so every Material is
+                # item-backed (uniform earmark/QOH/consumption handling).
+                pli_pk = _mint_transient_lot(
+                    c, li['description'] or '', li['units'] or 'none', unit_cost)
             c.add_fixture('inventory.material', mat_pk, {
                 'job':                 job_pk,
                 'task':                c.cut_task.get(base_ref),
@@ -2135,6 +2393,220 @@ def _job_timeline(job_pk, job_fields, related):
             {'status': {'old': 'work_complete', 'new': 'completed'}, '_action': 'Job closed out'})
 
     return ev
+
+
+# Job statuses that hold no inventory reservation (earmarks released) and,
+# for task-less materials, imply the work happened (consumed).
+_TERMINAL_JOB_STATUSES = {'work_complete', 'completed', 'cancelled', 'rejected'}
+_WORKED_JOB_STATUSES = {'in_progress', 'work_complete', 'completed'}
+
+
+def build_purchasing(c):
+    """Reconcile material consumption + inventory state and synthesize POs/Bills.
+
+    Runs after reconcile (needs FINAL job/task statuses) and before build_history
+    (which narrates consumption from each Material's consumption_state). Three
+    coordinated effects on the real (Material) side — PlanMaterials are untouched:
+
+    1. **Consumption** (task-driven, universal): a Material is consumed iff its
+       work happened — a task-attached Material when its Task is complete, a
+       task-less Material when its Job reached in_progress/work_complete/completed.
+       Consumed Materials are assumed acquired: net-zero QOH, qty_sold += qty,
+       whether or not a Bill is found.
+    2. **Earmarks + QOH**: a pending Material holds an Earmark (per item+job) while
+       the Job is active (none on terminal jobs / on consume). A pending Material
+       on a bill-matched Job is treated as received (qty_on_hand += qty).
+    3. **PO/Bill synthesis**: a Job whose estimate base appears in a Bill's
+       Comments (precision-biased: Comments only, job must exist and have
+       Materials) gets a received_in_full PO to that Bill's vendor carrying all
+       the Job's Materials (Material.po_line_item set) plus the linked Bill.
+       First matched bill/vendor wins per Job; the vendor business is created if
+       it wasn't among the imported vendors.
+    """
+    job_status = {f['pk']: f['fields']['status']
+                  for f in c.fixture_data if f['model'] == 'jobs.job'}
+    job_created = {f['pk']: f['fields'].get('created_date')
+                   for f in c.fixture_data if f['model'] == 'jobs.job'}
+    task_status = {f['pk']: f['fields']['status']
+                   for f in c.fixture_data if f['model'] == 'jobs.task'}
+    items = {f['pk']: f['fields']
+             for f in c.fixture_data if f['model'] == 'inventory.inventoryitem'}
+
+    materials_by_job = defaultdict(list)
+    for f in c.fixture_data:
+        if f['model'] == 'inventory.material':
+            materials_by_job[f['fields']['job']].append(f['fields'])
+
+    base_by_jobpk = {jp: base for base, jp in c.job_map.items()}
+
+    # --- bill matching (Comments only, precision-biased) -------------------
+    bases_with_materials = {base_by_jobpk[jp] for jp in materials_by_job
+                            if jp in base_by_jobpk}
+    bill_for_base = {}        # base -> {'org','date','ref'}; first match wins
+    for row in c.loader.sheets_data.get('Bills', []):
+        org = (row.get('Contact Organisation') or '').strip()
+        if not org:
+            continue
+        cands = set()
+        for m in re.findall(r'\d{4,5}', str(row.get('Comments') or '')):
+            cands |= {m, m.zfill(5), m.lstrip('0')}
+        hit = cands & bases_with_materials
+        if not hit:
+            continue
+        base = sorted(hit)[0]
+        if base not in bill_for_base:
+            bill_for_base[base] = {
+                'org': org,
+                'date': P.to_datetime(row.get('Date')),
+                'ref': str(row.get('Reference') or '').strip(),
+            }
+
+    # --- consumption + earmark/QOH accumulation ----------------------------
+    def _consumed(mf):
+        tpk = mf.get('task')
+        if tpk is not None:
+            return task_status.get(tpk) == 'complete'
+        return job_status.get(mf['job']) in _WORKED_JOB_STATUSES
+
+    qoh_delta = defaultdict(lambda: Decimal('0'))
+    sold_delta = defaultdict(lambda: Decimal('0'))
+    earmarks = defaultdict(lambda: Decimal('0'))   # (item_pk, job_pk) -> qty
+
+    for job_pk, mats in materials_by_job.items():
+        base = base_by_jobpk.get(job_pk)
+        received_job = base in bill_for_base
+        active = job_status.get(job_pk) not in _TERMINAL_JOB_STATUSES
+        for mf in mats:
+            item_pk = mf['inventory_item']
+            qty = Decimal(mf['quantity'])
+            if _consumed(mf):
+                mf['consumption_state'] = 'consumed'
+                sold_delta[item_pk] += qty          # assumed acquired: net-0 QOH
+            else:
+                mf['consumption_state'] = 'pending'
+                if received_job:
+                    qoh_delta[item_pk] += qty        # received into stock
+                if active:
+                    earmarks[(item_pk, job_pk)] += qty
+
+    for item_pk, d in qoh_delta.items():
+        items[item_pk]['qty_on_hand'] = f"{Decimal(items[item_pk]['qty_on_hand']) + d:.2f}"
+    for item_pk, d in sold_delta.items():
+        items[item_pk]['qty_sold'] = f"{Decimal(items[item_pk]['qty_sold']) + d:.2f}"
+
+    for (item_pk, job_pk), qty in earmarks.items():
+        if qty <= 0:
+            continue
+        c.add_fixture('inventory.earmark', c.next_pk('inventory.earmark'), {
+            'inventory_item': item_pk,
+            'job': job_pk,
+            'quantity': f'{qty:.2f}',
+            'created_date': job_created.get(job_pk) or _HISTORY_FALLBACK_DATE,
+        })
+
+    # --- PO + Bill synthesis ----------------------------------------------
+    po_count = 0
+    for base, bill in sorted(bill_for_base.items()):
+        job_pk = c.job_map[base]
+        mats = materials_by_job.get(job_pk, [])
+        if not mats:
+            continue
+        res = resolve_contact(c, bill['org'])
+        if res is None:
+            continue
+        ent = c.entity_map.get(res['key'])
+        if ent is None:                       # vendor not imported — create it now
+            if res['kind'] == 'individual':
+                _emit_individual(c, res['key'],
+                                 {'display': res['display'], 'fa_row': res['fa_row']})
+            else:
+                _emit_business(c, res['key'],
+                               {'display': res['display'], 'fa_row': res['fa_row'],
+                                'persons': {}})
+            ent = c.entity_map[res['key']]
+        if ent['kind'] != 'business':         # a PO needs a Business vendor
+            continue
+
+        dt = bill['date']
+        dstr = (dt.strftime('%Y-%m-%dT00:00:00+00:00') if dt
+                else _HISTORY_FALLBACK_DATE)
+        po_count += 1
+        po_pk = c.next_pk('purchasing.purchaseorder')
+        c.add_fixture('purchasing.purchaseorder', po_pk, {
+            'po_number': f'PO{po_count:04d}',
+            'business': ent['business'],
+            'contact': ent.get('default_contact'),
+            'status': 'received_in_full',
+            'created_date': dstr,
+            'requested_date': None,
+            'issued_date': dstr,
+            'received_date': dstr,
+            'cancel_date': None,
+        })
+        bill_pk = c.next_pk('purchasing.bill')
+        line_no = 0
+        for mf in mats:
+            line_no += 1
+            poli_pk = c.next_pk('purchasing.purchaseorderlineitem')
+            c.add_fixture('purchasing.purchaseorderlineitem', poli_pk, {
+                'purchase_order': po_pk,
+                'task': None,
+                'inventory_item': mf['inventory_item'],
+                'line_number': line_no,
+                'qty': mf['quantity'],
+                'units': mf['units'],
+                'description': mf['description'],
+                'price': mf['unit_cost'],
+                'accounting_category': mf['accounting_category'],
+                'taxable_override': None,
+                'tax_rate_override': None,
+                'qty_received': mf['quantity'],
+                'received_by': None,
+                'received_date': dstr,
+                'receipt_note': '',
+                'qty_cancelled': '0.00',
+            })
+            mf['po_line_item'] = poli_pk
+            c.add_fixture('purchasing.billlineitem',
+                          c.next_pk('purchasing.billlineitem'), {
+                'bill': bill_pk,
+                'task': None,
+                'inventory_item': mf['inventory_item'],
+                'line_number': line_no,
+                'qty': mf['quantity'],
+                'units': mf['units'],
+                'description': mf['description'],
+                'price': mf['unit_cost'],
+                'accounting_category': mf['accounting_category'],
+                'taxable_override': None,
+                'tax_rate_override': None,
+            })
+        c.add_fixture('purchasing.bill', bill_pk, {
+            'purchase_order': po_pk,
+            'business': ent['business'],
+            'contact': ent.get('default_contact'),
+            'vendor_invoice_number': (bill['ref'] or f'BILL-{bill_pk:04d}')[:50],
+            'status': 'received',
+            'created_date': dstr,
+            'due_date': None,
+            'received_date': dstr,
+            'paid_date': None,
+            'cancelled_date': None,
+            'qbo_id': None,
+            'qbo_payment_status': '',
+        })
+
+    # Advance the po_counter AppState past the generated POs.
+    for f in c.fixture_data:
+        if f['model'] == 'core.appstate' and f['pk'] == 'po_counter':
+            f['fields']['value'] = str(po_count)
+            break
+
+    if c.verbose:
+        consumed = sum(1 for mats in materials_by_job.values()
+                       for mf in mats if mf['consumption_state'] == 'consumed')
+        print(f'  purchasing: {po_count} POs+Bills from matched bills; '
+              f'{consumed} materials consumed; {len(earmarks)} earmarks')
 
 
 def build_history(c):

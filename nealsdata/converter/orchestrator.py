@@ -37,7 +37,8 @@ class NealsDataConverter:
         self.pli_map = {}
         self.pli_index = []             # [{'code','description'}] for material matching
         self.pli_purchase_by_code = {}  # code -> purchase_price string
-        self.org_map = {}
+        self.entity_map = {}        # canonical key -> resolved entity (build_contacts)
+        self.entry_contact = {}     # base_ref -> (entity key, person_norm|None)
         self.job_map = {}
         self.jobs = {}
         self.discarded_cards = []
@@ -104,6 +105,7 @@ class NealsDataConverter:
         build.build_inventory_items(self)
         build.build_contacts_and_businesses(self)
         build.build_jobs(self)
+        build.build_vendors(self)  # after jobs: vendor org != a job's client org
         build.build_estimates(self)
         build.derive_atoms(self)
         build.assign_worker_times(self)  # per-task random est_worker_time
@@ -115,6 +117,7 @@ class NealsDataConverter:
         build.build_shipments(self)   # after reconcile: needs final job dates
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
         build.assign_current_work(self)  # after bleps: assign pending in_progress tasks
+        build.build_purchasing(self)  # after reconcile: consumption, earmarks, QOH, POs/Bills
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:

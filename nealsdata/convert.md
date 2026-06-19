@@ -112,14 +112,46 @@ to a database. Tests load it into the auto-created test DB via
    for minting extra users (§4).
 4. **`build_configuration`**: emits the `core.configuration` entries the
    app needs at runtime (numbering patterns + counters, `units_list`,
-   retention windows).
+   retention windows, `default_material_markup_percent` = `20`).
 5. **`build_inventory_items`**: copies the FreeAgent Price List Items
-   sheet.
-6. **`build_contacts_and_businesses`**: walks the Contacts sheet and emits
-   only the businesses/contacts actually referenced by a spine card.
-   Anonymizes emails + phones (see §6).
+   sheet (catalog items, `is_catalog=True`). Materials that match no catalog
+   item later mint a **transient lot** (`is_catalog=False`) in `derive_atoms`
+   via `_mint_transient_lot`, so every Material ends up item-backed.
+6. **`build_contacts_and_businesses`**: emits the **customers** referenced by
+   spine cards, reconciled against the canonical FreeAgent Contacts sheet. Each
+   card's customer org (priority Projects `Client Organisation` → Bills
+   `Contact Organisation` → parsed card `Name`) is run through
+   **`resolve_contact`**, which:
+   - **canonicalizes** noisy kanban spellings onto one FreeAgent record —
+     exact → normalized (case/punctuation/company-suffix/parenthetical, via
+     `parsing.normalize_name`) → fuzzy (`difflib` ≥ `_ORG_FUZZY_THRESHOLD`,
+     0.82). `_FORCE_DISTINCT` blocks the one confirmed false positive
+     (`BWC Architects` ≠ `HMC Architects`). So `Boxbot`/`BoxBot` and
+     `Apple`/`Apple Inc.` fold to one Business (a "Class B" merge).
+   - splits **individuals from businesses**: a Contacts-sheet row with a blank
+     `Organisation` (e.g. James Sandersfeld) is a person → emitted as a
+     **Contact with `business=None`**, no Business manufactured. Absent names
+     use `parsing.looks_like_person` (2–3 alphabetic tokens, no business
+     tokens) to guess individual vs business.
+   - collects **multiple contacts per Business**: FreeAgent has one contact per
+     org, but kanban `Business (Person)` cards name different people across
+     jobs; every distinct person attaches to the one Business (Minibini allows
+     many), `default_contact` = the FreeAgent representative (else the first
+     person, else synthesized).
+
+   Emission goes through `_emit_business` / `_emit_individual` / `_emit_contact`
+   (emails + phones anonymized, §6). Sets `c.entity_map` (canonical key →
+   resolved entity) and `c.entry_contact` (base_ref → (key, person_norm)) so
+   `build_jobs` links each Job to the exact Contact. Only entities referenced by
+   a spine job (or, later, a Bill) are created — the Contacts sheet at large is
+   never imported wholesale.
 7. **`build_jobs`**: one Job per spine entry, named from the card
-   Description, status from Stage + Swimlane. Job number is the FreeAgent
+   Description, status from Stage + Swimlane. The Job's **contact** comes from
+   `c.entry_contact[base_ref]` (set in step 6): a business Job links to the
+   Contact matching its card's named person, falling back to the Business
+   `default_contact`; an individual Job links to its standalone Contact. (This
+   single shared resolution removes the old "discard wrinkle" where customers
+   and jobs resolved the org differently.) Job number is the FreeAgent
    estimate base reference (the digit run, e.g. `03024`) — the same
    identifier used to join Kanban cards to Estimates rows. **`created_date` is
    the earliest container estimate's `Date` minus one day** (the job object
@@ -128,6 +160,20 @@ to a database. Tests load it into the auto-created test DB via
    Accent color is round-robined through `JOB_ACCENT_COLOR_PALETTE` (mirrored
    from `apps.jobs.models`) so loaddata-emitted jobs render with the colored
    bars the SPA board expects.
+7a. **`build_vendors`**: emits Businesses/Contacts for **vendors**, drawn
+    *wholly* from the FreeAgent `Bills` sheet (the Kanban source has no
+    concept of bills or vendors). Groups bill container rows by
+    `Contact Organisation` (rows with a blank organisation — line items and
+    name-only one-offs — are skipped; the skipped name-only count lands on
+    `c.vendor_skipped_name_only`), ranks orgs by their most recent bill
+    `Date` newest-first, and imports the first `--limit` distinct orgs
+    (recorded on `c.vendor_selected_orgs`). Each selected org goes through the
+    same **`resolve_contact`** as customers, so vendors canonicalize the same
+    way. Runs **after `build_jobs`** so a vendor org can never be mistaken for a
+    job's client; a vendor that resolves to an entity already in `c.entity_map`
+    (an existing customer) is **reused**, and for an existing Business the
+    bill's `Contact Name` is attached as another Contact if new. (No `Bill`/`PO`
+    records are emitted — vendors only.)
 8. **`build_estimates`**: emits the Estimate + its line items for every
    revision in the chain. Estimate number is `{job_number}-{version}` — the
    canon form `EstimateService.create_estimate` would have produced. Each
@@ -178,8 +224,12 @@ to a database. Tests load it into the auto-created test DB via
     rotation worker up to three random **pending** Tasks drawn from
     **in_progress** Jobs (assignee + `worker_queue`), so the board and schedule
     show current work (§4).
+14b. **`build_purchasing`**: runs *after* reconcile (needs final job/task status)
+    and *before* `build_history`. Reconciles the **inventory side of Materials**
+    and synthesizes **POs/Bills** — see §4a.
 15. **`build_history`**: last — emits a created/transition entry per tracked
-    object.
+    object. (Reads each Material's `consumption_state`, set in 14b, to narrate
+    the consume event.)
 
 The RNG is seeded with a fixed constant at the top of `convert()` so the
 invented worker times and blep placement are byte-stable across regenerations
@@ -330,6 +380,45 @@ includes pending assigned tasks) and as queued cards on the job board. Only Task
 with an `est_worker_time` are eligible (`Task.clean()` requires it on an assigned
 Task). Deterministic given the seeded RNG.
 
+### Purchasing & inventory state (`build_purchasing`)
+
+Runs after reconcile (final job/task status) and before `build_history`. It makes
+the **real** Materials (PlanMaterials untouched) consistent with the inventory
+model and synthesizes Purchase Orders + Bills. See
+`docs/designs/materials-inventory-and-purchasing.md` for the model it mirrors.
+
+- **Consumption is task-driven and universal.** A Material is `consumed` iff its
+  work happened — a task-attached Material when its Task is `complete`, a
+  task-less Material when its Job reached `in_progress`/`work_complete`/
+  `completed`. There are no completed tasks with unconsumed materials.
+- **Consumed ⇒ assumed acquired.** Since the source data is incomplete (many real
+  purchases have no surviving Bill), a consumed Material is modelled as having
+  come in and gone out: **net-zero `qty_on_hand`, `qty_sold += quantity`** —
+  whether or not a Bill is found. A Bill, when found, only adds the paper trail;
+  it never changes the inventory end-state.
+- **Earmarks + QOH for pending Materials.** A pending Material holds an
+  `Earmark` (one row per `(inventory_item, job)`, summed) while its Job is
+  **active** (none on terminal jobs `work_complete`/`completed`/`cancelled`/
+  `rejected`, none for consumed Materials — matching the app's
+  `release_earmarks_for_job` + consume behavior). A pending Material on a
+  bill-matched Job is treated as **received** (`qty_on_hand += quantity`).
+- **PO/Bill synthesis (best-effort).** A Job is matched to a Bill when an
+  estimate base appears in the Bill's **Comments** (Comments only — the `Project`
+  column is too sparse; precision-biased: the Job must exist and have Materials).
+  First matched bill/vendor wins per Job. The match emits a `received_in_full`
+  `PurchaseOrder` to that Bill's vendor carrying **all** the Job's Materials
+  (`PurchaseOrderLineItem` per Material, `qty_received = quantity`,
+  `Material.po_line_item` set), plus a `received` `Bill` linked to the PO (with
+  copied `BillLineItem`s). The vendor business is created on the spot if it
+  wasn't among the imported top-N vendors. PO numbers are `PO{n:04d}` and the
+  `po_counter` AppState is advanced past them. Coverage is partial by design —
+  most Materials have no surviving purchase record, which is expected.
+
+Unmatched Materials (no catalog PLI) get a **transient lot** InventoryItem
+(`is_catalog=False`) at creation (`_mint_transient_lot`), priced from cost via
+`default_material_markup_percent`, so the earmark/QOH/consumption rules above
+apply uniformly to every Material.
+
 ### Materials
 
 `_material_line_kind` splits material-classified estimate line items three
@@ -469,15 +558,20 @@ nealsdata/
 
 The state container (`NealsDataConverter` instance, conventionally `c`)
 carries everything between phases: `c.fixture_data` (the output list),
-`c.org_map`, `c.job_map`, `c.jobs` (with `'status'` for plan/real
+`c.entity_map` (canonical key → resolved customer/vendor entity) and
+`c.entry_contact` (base_ref → (entity key, person_norm)) from the contact
+resolver, the FreeAgent Contacts indexes it builds (`c.fa_org_by_norm` /
+`c.fa_org_display` / `c.fa_org_norms` / `c.fa_person_by_norm`),
+`c.job_map`, `c.jobs` (with `'status'` for plan/real
 branching in `derive_atoms`), `c.estimates`, `c.line_items`, `c.cut_task`
 and `c.cut_plan_task` (the real/plan-side first-cut-task index for
 material attach), `c.scheme_by_name`, `c.scheme_algorithm_by_pk` (for
 entered_qty actuals), `c.user_by_username` / `c.rotation_user_pks` (blep
 rotation), `c.pli_index` / `c.pli_purchase_by_code` (material→PLI matching),
 `c.invoice_line_kinds` (per-line classifications used by
-`build_invoice_line_item_sources`), the pk counters, and a diagnostic
-(`c.discarded_cards`, `c.fake_deliverable_count`).
+`build_invoice_line_item_sources`), the pk counters, and diagnostics
+(`c.discarded_cards`, `c.fake_deliverable_count`, `c.vendor_selected_orgs`,
+`c.vendor_skipped_name_only`).
 
 ## 8. Common updates you'll likely need
 
@@ -550,7 +644,18 @@ The pipeline is covered by:
   invoice dates) are covered by dedicated `*SynthesisTest` / `*WiringTest` /
   `*SwapTest` / `Downgrade*Test` classes that build minimal synthetic state and
   assert the new behaviour directly — they don't depend on the real data
-  exercising the case.
+  exercising the case. `VendorBuildersTest` covers the Bills-sheet vendor
+  import (cap, most-recent-first ordering, reuse on canonical org match,
+  name-only skip). `ContactResolutionTest` is a dataset-free synthetic test of
+  `resolve_contact` — canonicalization/fuzzy folding, the individual-vs-business
+  split, multi-contact businesses, and `_FORCE_DISTINCT`. The name-matching
+  primitives (`normalize_name`, `clean_display_name`, `name_similarity`,
+  `looks_like_person`) have unit tests in `test_neals_parsing.py`.
+  `PurchasingBuilderTest` runs the whole pipeline once (`convert()`) and asserts
+  `build_purchasing`'s invariants: every Material item-backed, transient lots
+  priced via the markup, no negative QOH, consumption-by-task, earmarks only on
+  pending Materials of active jobs, `received_in_full` POs linking Materials, and
+  Bills linked to those POs.
 - `tests/test_neals_fixture.py` — loads the generated `converted.json`
   into the test database and runs `validate_data` over it. This is the
   end-to-end safety net; it also asserts bleps/shifts load and that the

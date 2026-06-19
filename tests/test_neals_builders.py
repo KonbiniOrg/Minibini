@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from decimal import Decimal
 from nealsdata.converter import build
+from nealsdata.converter import parsing as P
 from nealsdata.converter import reconcile
 from nealsdata.converter.loaders import discover_datasets
 from nealsdata.converter.orchestrator import NealsDataConverter
@@ -129,13 +130,113 @@ class ContactBuildersTest(unittest.TestCase):
         businesses = self._models('contacts.business')
         self.assertGreater(len(contacts), 0)
         contact_pks = {f['pk'] for f in contacts}
+        # Every Business.default_contact resolves to a real Contact.
         for b in businesses:
             self.assertIn(b['fields']['default_contact'], contact_pks)
+        # Every contact has an email and at least one phone.
         for ct in contacts:
             self.assertTrue(ct['fields']['email'])
             self.assertTrue(ct['fields']['work_number'] or
                             ct['fields']['mobile_number'] or
                             ct['fields']['home_number'])
+        # Each entity in the map is consistent: individuals carry a null-business
+        # Contact; businesses carry a Business whose contacts all FK to it.
+        by_pk = {ct['pk']: ct['fields'] for ct in contacts}
+        biz_pks = {b['pk'] for b in businesses}
+        for ent in self.c.entity_map.values():
+            if ent['kind'] == 'individual':
+                self.assertIsNone(by_pk[ent['contact']]['business'])
+            else:
+                self.assertIn(ent['business'], biz_pks)
+                for cpk in ent['contacts'].values():
+                    self.assertEqual(by_pk[cpk]['business'], ent['business'])
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class VendorBuildersTest(unittest.TestCase):
+    """Vendors are imported wholly from the FreeAgent Bills sheet (the Kanban
+    source has no concept of bills/vendors), capped at --limit, newest first,
+    reusing existing businesses on exact org-name match."""
+
+    def setUp(self):
+        self.limit = 10
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json',
+                                    limit=self.limit)
+        self.c.loader.load()
+        self.c.csv_cards = self.c.csv_loader.load()
+        self.c.spine = self.c.select_spine()
+        # Full prefix so entity_map holds the customer entities before vendors.
+        build.build_contacts_and_businesses(self.c)
+        build.build_jobs(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def _bills_latest_by_org(self):
+        from nealsdata.converter import parsing as P
+        latest = {}
+        for row in self.c.loader.sheets_data.get('Bills', []):
+            org = (row.get('Contact Organisation') or '').strip()
+            if not org:
+                continue
+            dt = P.to_datetime(row.get('Date'))
+            prev = latest.get(org, ('absent',))
+            if prev == ('absent',) or (dt is not None and
+                                       (prev is None or dt > prev)):
+                latest[org] = dt
+        return latest
+
+    def test_vendors_built_from_bills(self):
+        before = len(self._models('contacts.business'))
+        build.build_vendors(self.c)
+        after = len(self._models('contacts.business'))
+        self.assertGreater(after, before)
+        # Every selected vendor org comes from the Bills sheet and resolves to
+        # a registered entity (a new vendor business or a reused customer).
+        bill_orgs = set(self._bills_latest_by_org())
+        for org in self.c.vendor_selected_orgs:
+            self.assertIn(org, bill_orgs)
+            res = build.resolve_contact(self.c, org)
+            self.assertIsNotNone(res)
+            self.assertIn(res['key'], self.c.entity_map)
+
+    def test_vendor_selection_capped_at_limit(self):
+        build.build_vendors(self.c)
+        self.assertLessEqual(len(self.c.vendor_selected_orgs), self.limit)
+
+    def test_vendors_selected_most_recent_first(self):
+        build.build_vendors(self.c)
+        latest = self._bills_latest_by_org()
+        selected = self.c.vendor_selected_orgs
+        # Selected dates are non-increasing (newest first).
+        sel_dts = [latest[o] for o in selected if latest[o] is not None]
+        self.assertEqual(sel_dts, sorted(sel_dts, reverse=True))
+        # Nothing excluded is strictly newer than anything included: every
+        # non-selected dated org is no newer than the oldest selected one. (Tie
+        # ordering at the boundary is deterministic but not asserted here.)
+        if len(selected) == self.limit and sel_dts:
+            boundary = min(sel_dts)
+            excluded = set(latest) - set(selected)
+            for org in excluded:
+                if latest[org] is not None:
+                    self.assertLessEqual(latest[org], boundary)
+
+    def test_vendor_reuses_existing_business_on_exact_match(self):
+        # No duplicate business_name anywhere: a vendor org that already exists
+        # as a customer is reused, never re-created.
+        build.build_vendors(self.c)
+        names = [b['fields']['business_name']
+                 for b in self._models('contacts.business')]
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_vendor_rows_with_no_org_are_skipped(self):
+        build.build_vendors(self.c)
+        # Name-only bill rows (blank Contact Organisation) are not imported and
+        # never produce an empty-named business.
+        self.assertGreater(self.c.vendor_skipped_name_only, 0)
+        for b in self._models('contacts.business'):
+            self.assertTrue(b['fields']['business_name'].strip())
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -1659,3 +1760,180 @@ class InvoiceDatesAndPaidAmountTest(unittest.TestCase):
                     tot[inv['pk']].quantize(D('0.01')))
             else:
                 self.assertIsNone(f['qbo_amount_paid'])
+
+
+class ContactResolutionTest(unittest.TestCase):
+    """Synthetic (dataset-free) tests for the name-resolution rewrite:
+    canonicalization against the FreeAgent Contacts sheet, the
+    individual-vs-business split, multi-contact businesses, and force-distinct."""
+
+    class _Stub:
+        def __init__(self, contacts_rows, spine):
+            from types import SimpleNamespace
+            self.loader = SimpleNamespace(sheets_data={
+                'Contacts': contacts_rows, 'Projects': [], 'Bills': []})
+            self.spine = spine
+            self.fixture_data = []
+            self._pk = {}
+            self.entity_map = {}
+            self.entry_contact = {}
+
+        def next_pk(self, model):
+            self._pk[model] = self._pk.get(model, 0) + 1
+            return self._pk[model]
+
+        def add_fixture(self, model, pk, fields):
+            self.fixture_data.append(
+                {'model': model, 'pk': pk, 'fields': fields})
+
+    @staticmethod
+    def _card(name):
+        return {'card': {'Name': name}, 'base_ref': name, 'estimate_rows': []}
+
+    def setUp(self):
+        contacts = [
+            {'Organisation': 'Acme Inc.', 'First Name': 'Jane',
+             'Last Name': 'Doe', 'Email': 'jane@acme.example'},
+            {'Organisation': 'HMC Architects', 'First Name': 'Hank',
+             'Last Name': 'M', 'Email': 'h@hmc.example'},
+            {'Organisation': 'Waveworks', 'First Name': 'Wendy',
+             'Last Name': 'W', 'Email': 'w@wave.example'},
+            {'Organisation': '', 'First Name': 'James',
+             'Last Name': 'Sandersfeld', 'Email': 'js@x.example'},
+        ]
+        spine = [
+            self._card('Acme (Bob Smith)'),     # business + person
+            self._card('acme (Carol King)'),    # same business (norm) + person
+            self._card('James Sandersfeld'),    # individual (blank-org person)
+            self._card('Wave Works'),           # fuzzy -> Waveworks
+        ]
+        self.c = self._Stub(contacts, spine)
+        build.build_contacts_and_businesses(self.c)
+
+    def _models(self, m):
+        return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_canonical_merge_and_multicontact(self):
+        biz = self._models('contacts.business')
+        names = [b['fields']['business_name'] for b in biz]
+        # 'Acme (Bob Smith)' and 'acme (Carol King)' collapse to one Business
+        # with the canonical FreeAgent display name.
+        self.assertIn('Acme Inc.', names)
+        acme = next(b for b in biz if b['fields']['business_name'] == 'Acme Inc.')
+        contacts = [ct for ct in self._models('contacts.contact')
+                    if ct['fields']['business'] == acme['pk']]
+        firsts = {ct['fields']['first_name'] for ct in contacts}
+        # FreeAgent default (Jane) + both kanban people (Bob, Carol)
+        self.assertEqual(firsts, {'Jane', 'Bob', 'Carol'})
+
+    def test_individual_has_no_business(self):
+        js = next(ct for ct in self._models('contacts.contact')
+                  if ct['fields']['last_name'] == 'Sandersfeld')
+        self.assertIsNone(js['fields']['business'])
+        key = next(k for k, e in self.c.entity_map.items()
+                   if e['kind'] == 'individual')
+        self.assertTrue(key.startswith('person:'))
+
+    def test_fuzzy_folds_onto_canonical(self):
+        res = build.resolve_contact(self.c, 'Wave Works')
+        self.assertEqual(res['kind'], 'business')
+        self.assertEqual(res['display'], 'Waveworks')
+
+    def test_force_distinct_blocks_false_positive(self):
+        # BWC must not fuzzy-merge onto HMC Architects.
+        res = build.resolve_contact(self.c, 'BWC Architects')
+        self.assertEqual(res['kind'], 'business')
+        self.assertIsNone(res['fa_row'])
+        self.assertNotEqual(res['key'],
+                            P.normalize_name('HMC Architects'))
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class PurchasingBuilderTest(unittest.TestCase):
+    """build_purchasing: transient lots, consumption-by-task, earmarks/QOH, and
+    PO/Bill synthesis. Runs the whole pipeline once via convert()."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/po_test.json',
+                                   limit=80)
+        cls.c.convert()
+        cls.f = cls.c.fixture_data
+
+    def _m(self, model):
+        return [r for r in self.f if r['model'] == model]
+
+    def test_every_material_is_item_backed(self):
+        for m in self._m('inventory.material'):
+            self.assertIsNotNone(m['fields']['inventory_item'])
+
+    def test_unmatched_materials_get_markup_priced_transient_lots(self):
+        lots = [i for i in self._m('inventory.inventoryitem')
+                if not i['fields']['is_catalog']]
+        self.assertGreater(len(lots), 0)
+        for lot in lots:
+            p = Decimal(lot['fields']['purchase_price'])
+            s = Decimal(lot['fields']['selling_price'])
+            self.assertEqual(s, (p * Decimal('1.20')).quantize(Decimal('0.01')))
+
+    def test_no_negative_qoh(self):
+        for i in self._m('inventory.inventoryitem'):
+            self.assertGreaterEqual(Decimal(i['fields']['qty_on_hand']),
+                                    Decimal('0'))
+
+    def test_consumption_follows_task_then_job_state(self):
+        tstat = {t['pk']: t['fields']['status'] for t in self._m('jobs.task')}
+        jstat = {j['pk']: j['fields']['status'] for j in self._m('jobs.job')}
+        worked = {'in_progress', 'work_complete', 'completed'}
+        for m in self._m('inventory.material'):
+            f = m['fields']
+            tpk = f['task']
+            expect = (tstat.get(tpk) == 'complete' if tpk is not None
+                      else jstat.get(f['job']) in worked)
+            self.assertEqual(f['consumption_state'] == 'consumed', expect)
+
+    def test_earmarks_are_pending_materials_on_active_jobs(self):
+        jstat = {j['pk']: j['fields']['status'] for j in self._m('jobs.job')}
+        terminal = {'work_complete', 'completed', 'cancelled', 'rejected'}
+        pending_pairs = set()
+        for m in self._m('inventory.material'):
+            f = m['fields']
+            if f['consumption_state'] == 'pending':
+                pending_pairs.add((f['inventory_item'], f['job']))
+        for e in self._m('inventory.earmark'):
+            ef = e['fields']
+            self.assertNotIn(jstat.get(ef['job']), terminal)
+            self.assertIn((ef['inventory_item'], ef['job']), pending_pairs)
+            self.assertGreater(Decimal(ef['quantity']), Decimal('0'))
+
+    def test_pos_received_in_full_and_link_materials(self):
+        pos = self._m('purchasing.purchaseorder')
+        self.assertGreater(len(pos), 0)
+        for p in pos:
+            self.assertEqual(p['fields']['status'], 'received_in_full')
+        poli = {l['pk']: l['fields']
+                for l in self._m('purchasing.purchaseorderlineitem')}
+        linked = 0
+        for m in self._m('inventory.material'):
+            lp = m['fields']['po_line_item']
+            if lp is not None:
+                linked += 1
+                self.assertIn(lp, poli)
+                self.assertEqual(poli[lp]['qty_received'], m['fields']['quantity'])
+        self.assertGreater(linked, 0)
+
+    def test_bills_link_to_received_pos(self):
+        po_pks = {p['pk'] for p in self._m('purchasing.purchaseorder')}
+        biz_pks = {b['pk'] for b in self._m('contacts.business')}
+        bills = self._m('purchasing.bill')
+        self.assertGreater(len(bills), 0)
+        for b in bills:
+            self.assertIn(b['fields']['purchase_order'], po_pks)
+            self.assertIn(b['fields']['business'], biz_pks)
+            self.assertEqual(b['fields']['status'], 'received')
+
+    def test_markup_config_emitted(self):
+        cfg = {r['pk']: r['fields']['value']
+               for r in self._m('core.configuration')}
+        self.assertEqual(cfg.get('default_material_markup_percent'), '20')

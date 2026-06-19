@@ -1,8 +1,80 @@
 """Pure parsing/normalisation helpers for the Neal's data converter."""
+import difflib
 import math
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+
+
+# --- Org/person name matching -------------------------------------------------
+# Used to reconcile the noisy kanban/Bills org names against the canonical
+# FreeAgent Contacts sheet (see convert.md §3 / build.resolve_contact). The
+# kanban source is hand-typed, so the same real-world business shows up under
+# many spellings ('Boxbot'/'BoxBot', 'Apple'/'Apple Inc.'); normalization plus
+# fuzzy matching folds them onto one canonical record.
+
+_ORG_SUFFIX_RE = re.compile(
+    r'\b(inc|llc|ltd|corp|co|company|corporation|llp|the)\b')
+
+# Tokens that mark a name as a business rather than an individual.
+_BUSINESS_TOKENS = {
+    'inc', 'llc', 'ltd', 'corp', 'co', 'company', 'corporation', 'llp',
+    'studio', 'studios', 'design', 'designs', 'works', 'work', 'lab', 'labs',
+    'group', 'services', 'service', 'sign', 'signs', 'signworks', 'fab',
+    'fabrication', 'industries', 'productions', 'production', 'machine',
+    'machining', 'technology', 'technologies', 'builders', 'building',
+    'construction', 'contractors', 'contractor', 'supply', 'architects',
+    'architecture', 'metalworks', 'metal', 'woodworks', 'shop', 'systems',
+    'solutions', 'enterprises', 'associates', 'assoc', 'partners', 'school',
+    'museum', 'dept', 'department', 'university', 'college', 'church', 'fire',
+    'city', 'institute', 'foundation', 'council', 'center', 'centre',
+    'manufacturing', 'robotics', 'automation', 'electric', 'plastics',
+}
+
+
+def normalize_name(value):
+    """Aggressive normalization for matching: lowercase, drop parentheticals,
+    strip punctuation, drop common company suffixes, collapse whitespace.
+    'Apple Inc.' and 'apple' both -> 'apple'."""
+    s = str(value or '').lower().strip()
+    s = re.sub(r'\(.*?\)', ' ', s)
+    s = re.sub(r'[^a-z0-9 ]', ' ', s)
+    s = _ORG_SUFFIX_RE.sub(' ', s)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def clean_display_name(value):
+    """Strip a trailing parenthetical annotation from a display name:
+    'Creator, Inc. (previously Momentum Machines)' -> 'Creator, Inc.';
+    'Milano Technical Group (blacklisted)' -> 'Milano Technical Group'."""
+    return re.sub(r'\s*\([^)]*\)\s*$', '', str(value or '').strip()).strip()
+
+
+def name_similarity(a, b):
+    """SequenceMatcher ratio of two names after normalization (0.0-1.0)."""
+    return difflib.SequenceMatcher(None, normalize_name(a),
+                                   normalize_name(b)).ratio()
+
+
+def looks_like_person(name):
+    """Heuristic: does this name look like an individual, not a business?
+
+    True only for 2-3 alphabetic tokens with no business-y token, no digits,
+    and no '&'/'/'/'.com'. 'Alex Tyler' / 'Nicholas R Johnson' -> True;
+    'Bridge Design' / 'BWC Architects' / 'B+N Industries' / 'Apple.com' -> False.
+    Single-word brand-like names ('Archer') stay False (ambiguous -> business).
+    """
+    raw = str(name or '').strip()
+    if not raw or any(ch.isdigit() for ch in raw):
+        return False
+    if '&' in raw or '/' in raw or '.com' in raw.lower():
+        return False
+    toks = re.sub(r"[^A-Za-z .'-]", ' ', raw).split()
+    if not (2 <= len(toks) <= 3):
+        return False
+    if any(t.strip(".'-").lower() in _BUSINESS_TOKENS for t in toks):
+        return False
+    return all(re.fullmatch(r"[A-Za-z.'-]+", t) for t in toks)
 
 
 def parse_decimal(value):

@@ -32,6 +32,44 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(P.split_name(''), ('(unknown)', '(unknown)'))
         self.assertEqual(P.split_name('Cher'), ('Cher', '(unknown)'))
 
+    def test_normalize_name(self):
+        # case, suffix, punctuation, parentheticals all fold away
+        self.assertEqual(P.normalize_name('Apple Inc.'), 'apple')
+        self.assertEqual(P.normalize_name('apple'), 'apple')
+        self.assertEqual(P.normalize_name('BoxBot'), 'boxbot')
+        self.assertEqual(P.normalize_name('Flow Control / TMMI'),
+                         P.normalize_name('Flow Control/TMMI'))
+        self.assertEqual(
+            P.normalize_name('Creator, Inc. (previously Momentum Machines)'),
+            'creator')
+
+    def test_clean_display_name(self):
+        self.assertEqual(
+            P.clean_display_name('Creator, Inc. (previously Momentum Machines)'),
+            'Creator, Inc.')
+        self.assertEqual(
+            P.clean_display_name('Milano Technical Group (blacklisted)'),
+            'Milano Technical Group')
+        self.assertEqual(P.clean_display_name('Apple Inc.'), 'Apple Inc.')
+
+    def test_name_similarity(self):
+        self.assertEqual(P.name_similarity('Apple Inc.', 'apple'), 1.0)
+        self.assertGreaterEqual(P.name_similarity('Wave Works', 'Waveworks'), 0.9)
+        # different firms stay low
+        self.assertLess(P.name_similarity('BWC Architects', 'XYZ Plumbing'), 0.5)
+
+    def test_looks_like_person(self):
+        self.assertTrue(P.looks_like_person('Alex Tyler'))
+        self.assertTrue(P.looks_like_person('Nicholas R Johnson'))
+        self.assertTrue(P.looks_like_person("James O'Brien"))
+        # business-y or non-person shapes
+        self.assertFalse(P.looks_like_person('Bridge Design'))
+        self.assertFalse(P.looks_like_person('BWC Architects'))
+        self.assertFalse(P.looks_like_person('B+N Industries'))
+        self.assertFalse(P.looks_like_person('Apple.com'))
+        self.assertFalse(P.looks_like_person('Archer'))          # single token
+        self.assertFalse(P.looks_like_person('Volley Automation 05896'))  # digits
+
     def test_resolve_li_units_and_qty(self):
         # 'Days' → 'hours' with qty × 8 (one workday). 'Hours' stays. Anything
         # else lands on the canon default 'none' without touching qty.
