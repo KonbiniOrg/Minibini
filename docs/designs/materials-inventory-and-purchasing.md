@@ -963,12 +963,25 @@ QBO sync: pointer to `docs/designs/quickbooks-integration.md`
 `POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill`
 (endpoint exists; not yet wired in the UI).
 
+**Coarse balance — single source of truth.** The balance rule lives once, on
+the model: `Bill.balance` returns `0.00` when the status is in
+`Bill.ZERO_BALANCE_STATUSES` (`paid_in_full`/`cancelled`/`refunded`), otherwise
+`Bill.total` (sum of line-item `qty × price`). Both read paths reference it:
+`BillSerializer.get_balance` (detail) returns `str(obj.balance)`, and the A/P
+list's SQL `balance_anno` annotation (which exists so the list can sort by
+balance in the DB) is a `Case/When` keyed off the same `ZERO_BALANCE_STATUSES`
+constant, with `BillSummarySerializer.get_balance` falling back to `obj.balance`
+when the annotation is absent. Changing the rule in one place (the constant or
+the property) keeps detail and summary in lock-step.
+
 **Needed when bill payment sync lands:** `Bill` has no amount-paid field
 (only `qbo_payment_status`), so a `partly_paid` bill's outstanding balance is
 unknown. Add `qbo_amount_paid` to `Bill` (mirroring `Invoice.qbo_amount_paid`)
 and have the forthcoming bill payment polling populate it. Until then, the
-Financials Bill list reports a coarse balance — full total for any non-fully-paid
-status — which overstates `partly_paid` bills.
+coarse balance above reports the full total for any non-fully-paid status —
+which overstates `partly_paid` bills. When that lands, `Bill.balance` becomes
+the place to fold in `total − qbo_amount_paid` for `partly_paid`, and the
+annotation mirrors it.
 
 ---
 

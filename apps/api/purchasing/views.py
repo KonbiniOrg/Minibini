@@ -460,9 +460,8 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
                 Value(0), output_field=_BILL_MONEY),
         ).annotate(
             balance_anno=Case(
-                When(status__in=[Bill.STATUS_PAID_IN_FULL,
-                                 Bill.STATUS_CANCELLED,
-                                 Bill.STATUS_REFUNDED],
+                # Same coarse-balance rule as Bill.balance / the serializers.
+                When(status__in=list(Bill.ZERO_BALANCE_STATUSES),
                      then=Value(0, output_field=_BILL_MONEY)),
                 default=F('total_anno'),
                 output_field=_BILL_MONEY),

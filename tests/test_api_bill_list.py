@@ -45,6 +45,23 @@ class BillListAPITest(BaseTestCase):
         row = next(r for r in resp.data['results'] if r['bill_id'] == bill.bill_id)
         self.assertEqual(row['balance'], '0.00')
 
+    def test_detail_and_summary_balance_agree(self):
+        """The detail (BillSerializer, Python) and summary (annotation) paths
+        share one coarse-balance rule and must never report different numbers
+        for the same bill — including resolved statuses like refunded."""
+        for status, expected in (
+            (Bill.STATUS_RECEIVED, '50.00'),
+            (Bill.STATUS_REFUNDED, '0.00'),
+        ):
+            bill = self._bill(status=status, number=f'V-AGREE-{status}')
+            detail = self.client.get(f'/api/bills/{bill.bill_id}/')
+            summary = self.client.get('/api/bills/?summary=true&status=all')
+            srow = next(r for r in summary.data['results']
+                        if r['bill_id'] == bill.bill_id)
+            self.assertEqual(detail.data['balance'], expected)
+            self.assertEqual(srow['balance'], expected)
+            self.assertEqual(detail.data['balance'], srow['balance'])
+
     def test_default_filter_is_open(self):
         received = self._bill(status=Bill.STATUS_RECEIVED, number='V-OPEN')
         draft = self._bill(status=Bill.STATUS_DRAFT, number='V-DRAFT')

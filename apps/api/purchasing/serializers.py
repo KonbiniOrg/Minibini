@@ -33,10 +33,13 @@ class BillSummarySerializer(serializers.ModelSerializer):
         return '0.00'
 
     def get_balance(self, obj):
+        # Prefer the SQL annotation (it backs DB-side sorting by balance); the
+        # annotation is built from Bill.ZERO_BALANCE_STATUSES, the same rule as
+        # the model's balance property used as a fallback here.
         val = getattr(obj, 'balance_anno', None)
         if val is not None:
             return str(Decimal(val).quantize(Decimal('0.01')))
-        return '0.00'
+        return str(obj.balance)
 
     class Meta:
         model = Bill
@@ -164,9 +167,4 @@ class BillSerializer(serializers.ModelSerializer):
         return obj.business.business_name if obj.business else None
 
     def get_balance(self, obj):
-        if obj.status in (Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED,
-                          Bill.STATUS_REFUNDED):
-            return '0.00'
-        total = sum((li.qty * li.price for li in obj.billlineitem_set.all()),
-                    Decimal('0'))
-        return str(total.quantize(Decimal('0.01')))
+        return str(obj.balance)

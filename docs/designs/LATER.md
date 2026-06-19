@@ -627,16 +627,6 @@ IMAP-SMTP machinery and tend to be worked together.
   separate. Don't churn working code without a reason; this is a consolidation pass,
   not a mandate to merge everything.
 
-- **Consolidate `BillSerializer.get_balance` and `BillSummarySerializer.get_balance` into a shared helper.** — _added 2026-06-13_
-  The two serializers duplicate the coarse-balance definition: 0 for `paid_in_full`/`cancelled`/`refunded`,
-  otherwise the line-item sum. `BillSerializer.get_balance` computes it in Python (looping over
-  line items); `BillSummarySerializer.get_balance` reads a DB annotation (`balance_anno`).
-  If the balance definition changes — e.g. when bill partial-payment tracking lands and
-  `partly_paid` bills need an exact `total − qbo_amount_paid` figure — both must be updated
-  in sync. A shared helper (or a model method) would consolidate the rule.
-  See `docs/plans/2026-06-12-financials-list-views-design.md`.
-  _Done when:_ the balance logic lives once and both serializers reference it.
-
 - **Reimbursement QBO push fails consistently with an error.** — _added 2026-06-14_
   Surfaced during Expenses UI testing: creating a `Reimbursement` batch (`ReimbursementService.create_batch`
   → `QBOExpenseSyncService.push_reimbursement`) fails on the QBO push, leaving the batch in `sync_failed`

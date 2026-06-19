@@ -188,6 +188,12 @@ class Bill(models.Model):
         (STATUS_REFUNDED, 'Refunded'),
     ]
 
+    # Statuses for which the bill carries no outstanding balance. Single source
+    # of truth for the coarse-balance rule: the `balance` property below, the
+    # detail serializer, and the A/P list's SQL `balance_anno` annotation all
+    # key off this set so they can never drift apart.
+    ZERO_BALANCE_STATUSES = (STATUS_PAID_IN_FULL, STATUS_CANCELLED, STATUS_REFUNDED)
+
     bill_id = models.AutoField(primary_key=True)
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
     # Business is required; Contact is optional but if provided, must have a Business
@@ -337,6 +343,22 @@ class Bill(models.Model):
                 'Only Bills in Draft status can be deleted.'
             )
         return super().delete(*args, **kwargs)
+
+    @property
+    def total(self):
+        """Sum of line items (qty * price), quantized to cents."""
+        total = sum((li.qty * li.price for li in self.billlineitem_set.all()),
+                    Decimal('0'))
+        return total.quantize(Decimal('0.01'))
+
+    @property
+    def balance(self):
+        """Outstanding balance: zero once the bill is resolved
+        (paid/cancelled/refunded), otherwise the full line-item total. This is
+        the one definition of the coarse-balance rule — see ZERO_BALANCE_STATUSES."""
+        if self.status in Bill.ZERO_BALANCE_STATUSES:
+            return Decimal('0.00')
+        return self.total
 
     class Meta:
         db_table = 'bills'
