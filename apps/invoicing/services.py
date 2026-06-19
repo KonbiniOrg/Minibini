@@ -106,6 +106,27 @@ class InvoiceService:
         return LineItemService.reorder_line_item(line_item, direction)
 
     @staticmethod
+    def cancel(invoice_pk, reason=None):
+        """Cancel an invoice, routing through Invoice.save() so the job
+        completion gate fires.
+
+        A cancelled invoice counts as resolved
+        (JobService.maybe_complete_if_resolved), so cancelling the last
+        unresolved invoice on an all-shipped job must be able to complete
+        the job. Going through save() (rather than a QuerySet.update()) is
+        what invokes that gate. The audit ``reason`` is recorded by the
+        StatusTransitionMixin, so it is accepted here but not persisted on
+        the invoice itself.
+        """
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        invoice.status = Invoice.STATUS_CANCELLED
+        invoice.save()
+        return invoice
+
+    @staticmethod
     def discard_draft(invoice):
         """Hard-delete a draft invoice; cascades to line items and sources."""
         InvoiceService._validate_draft(invoice)

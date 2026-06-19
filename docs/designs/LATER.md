@@ -637,16 +637,6 @@ IMAP-SMTP machinery and tend to be worked together.
   See `docs/plans/2026-06-12-financials-list-views-design.md`.
   _Done when:_ the balance logic lives once and both serializers reference it.
 
-- **Invoice `cancel` action bypasses `Invoice.save()` (no job auto-complete).** — _added 2026-06-13_
-  `InvoiceViewSet.status_actions['cancel']` does `Invoice.objects.filter(pk=pk).update(status=STATUS_CANCELLED)`,
-  which skips `Invoice.save()` → `_maybe_complete_job()`. `JobService.maybe_complete_if_resolved` counts
-  `cancelled` invoices as resolved, so cancelling the last unresolved invoice on an all-shipped job will NOT
-  auto-complete the job (it stays in its prior status until some other trigger). Pre-existing (predates the
-  2026-06 financials-list work; surfaced during that review). Also conflicts with the CLAUDE.md "QuerySet.update()
-  bypasses Model.save()" rule. _Done when:_ cancel routes through a service method that loads the invoice and
-  calls `.save()` (or otherwise invokes the completion gate), with a test that a cancelled last-invoice on an
-  all-shipped job completes the job.
-
 - **Reimbursement QBO push fails consistently with an error.** — _added 2026-06-14_
   Surfaced during Expenses UI testing: creating a `Reimbursement` batch (`ReimbursementService.create_batch`
   → `QBOExpenseSyncService.push_reimbursement`) fails on the QBO push, leaving the batch in `sync_failed`

@@ -240,10 +240,16 @@ Entry to `work_complete`, `cancelled`, or `rejected` triggers
 those transitions.
 
 **To `completed`:** `JobService.maybe_complete_if_resolved(job)` is the
-single completion gate, called from both the invoice-paid path
-(`Invoice._maybe_complete_job` delegates to it) and
-`ShipmentService.mark_picked_up` — whichever lands last completes the
-job. It requires **both** all invoices resolved (`paid` or `cancelled`)
+single completion gate, called from both the invoice-resolved path
+(`Invoice._maybe_complete_job` delegates to it on entry to `paid` **or**
+`cancelled`) and `ShipmentService.mark_picked_up` — whichever lands last
+completes the job. It first requires the job to be in `work_complete` —
+the only state meaning the work itself is done (all tasks complete). On a
+job in any other state it is a no-op: an `in_progress` job may still have
+open tasks, a deposit invoice may be paid before work starts, and
+`draft`/`submitted`/`on_hold` jobs have no finished work (this also never
+forces an invalid transition like `on_hold → completed`). It then
+requires **both** all invoices resolved (`paid` or `cancelled`)
 **and** all deliverables shipped
 (`DeliverableService.all_deliverables_shipped(job)` returns True only
 when every Deliverable's `qty_picked_up == qty_ordered`; prepared-but-

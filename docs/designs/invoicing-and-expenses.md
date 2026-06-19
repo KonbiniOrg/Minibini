@@ -50,13 +50,13 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 |---|---|
 | `draft` | Editable. Wizard works against this state. Default on create. |
 | `open` | Sent to customer; awaiting payment. Set by the send-to-customer flow (`InvoiceEmailService.send_invoice` flips `draft → open` on send success, stamping `sent_date`). Payment polling treats `open` (and `partly-paid`) as its input states and promotes `open → paid` / `partly-paid` automatically. |
-| `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). |
+| `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). Set via `InvoiceService.cancel` (API: `InvoiceViewSet.cancel`), which loads the invoice and calls `.save()` so the completion gate fires — a cancelled invoice counts as resolved, so cancelling the last unresolved invoice on a `work_complete`, all-shipped job auto-completes it. |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Set by `QBOPaymentPollingService.poll_all` when QBO reports a partial payment (some balance paid, some outstanding). |
-| `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()`, which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate walks the job through `approved → in_progress → work_complete → completed` (each step via `JobService.update_job`) only if **both** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials` restocks them and a `HistoryEntry` logs it — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
+| `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()` (also fired on entry to `cancelled`), which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate moves the job `work_complete → completed` (via `JobService.update_job`) only if the job is already in `work_complete` **and** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. A job in any earlier state (including a deposit-invoiced `in_progress` job) is left untouched. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials` restocks them and a `HistoryEntry` logs it — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
 | `defaulted` | Defined in choices, no current transition. |
 
-`InvoiceViewSet.status_actions` registers only `cancel` (writes `STATUS_CANCELLED` directly via a queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
+`InvoiceViewSet.status_actions` registers only `cancel`, which delegates to `InvoiceService.cancel` (loads the invoice and calls `.save()` so the completion gate runs — not a bypassing queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
 
 `Invoice.clean()` blocks transitioning out of `draft` if there are zero `InvoiceLineItem` rows.
 
@@ -405,11 +405,12 @@ customer-sync flow, and connection lifecycle, see
 
 `JobService.maybe_complete_if_resolved(job)` (in `apps/jobs/services.py`) is the single auto-completion gate. It runs from two triggers:
 
-- `Invoice._maybe_complete_job` (on entry to `paid` / `cancelled`) — delegates to it.
+- `Invoice._maybe_complete_job` (on entry to `paid` / `cancelled`) — delegates to it. `Invoice.save()` fires it whenever the status transitions **into** `paid` or `cancelled`; the API cancel action (`InvoiceViewSet.cancel`) routes through `InvoiceService.cancel`, which loads the invoice and calls `.save()` so the gate runs (it does **not** use a bypassing `QuerySet.update()`).
 - `ShipmentService.mark_picked_up` — calls it at the end of every shipment pickup.
 
-Whichever lands last — the final payment or the final shipment — completes the job, provided **both** of these hold:
+Whichever lands last — the final payment or the final shipment — completes the job, provided **all** of these hold:
 
+- **Job is `work_complete`.** This is the only state that means the work itself is finished — a job reaches it only once all of its tasks are complete. Resolving an invoice (or shipping the last deliverable) on a job in any other state is a no-op: an `in_progress` job may still have open tasks (a follow-up to send plans/photos, a post-job meeting), a deposit invoice may be paid before any work starts, and `draft`/`submitted`/`on_hold` jobs have no finished work at all. The job completes later, once it legitimately reaches `work_complete` and an invoice/shipment trigger fires. (This also avoids forcing a transition the state machine forbids, e.g. `on_hold → completed`.)
 - **All invoices resolved.** Every `Invoice` for the job is `paid` or `cancelled`.
 - **All deliverables shipped.** `DeliverableService.all_deliverables_shipped(job)` returns True only when every `Deliverable` on the job has `qty_picked_up == qty_ordered`. Prepared-but-not-picked-up does not count; a job with zero deliverables is vacuously shipped.
 

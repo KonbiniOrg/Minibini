@@ -25,6 +25,7 @@ from apps.deliverables.models import Deliverable, Shipment
 from apps.deliverables.services import ShipmentService
 from apps.estimates.models import Estimate
 from apps.invoicing.models import Invoice
+from apps.invoicing.services import InvoiceService
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
 
@@ -93,6 +94,16 @@ def _pay_invoice(job):
     inv.status = Invoice.STATUS_PAID
     inv.save()
     return inv
+
+
+def _open_invoice(job):
+    """Create an open (unresolved) invoice — does not fire the completion gate."""
+    idx = Invoice.objects.count()
+    return Invoice.objects.create(
+        job=job,
+        invoice_number=f'INV-CG-{idx}',
+        status=Invoice.STATUS_OPEN,
+    )
 
 
 def _make_shipment_picked_up(job, deliverable, qty):
@@ -234,6 +245,94 @@ class CancelledJobNotAutoCompleted(CompletionGateSetUp):
             Job.STATUS_CANCELLED,
             'A cancelled job must not be auto-completed by invoice payment.',
         )
+
+
+class InvoiceCancelCompletesJob(CompletionGateSetUp):
+    """Cancelling the last unresolved invoice should fire the completion gate.
+
+    A cancelled invoice counts as resolved (JobService.maybe_complete_if_resolved),
+    so cancelling the only open invoice on an all-shipped job must complete it.
+    This exercises the cancel path routing through Invoice.save() rather than a
+    bypassing QuerySet.update().
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.job = _make_job(self.contact)
+        self.invoice = _open_invoice(self.job)
+        # No deliverables -> all_deliverables_shipped is trivially True.
+
+    def test_cancelling_last_invoice_completes_job(self):
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
+        InvoiceService.cancel(self.invoice.pk, reason='Customer withdrew')
+        self.job.refresh_from_db()
+        self.assertEqual(
+            self.job.status,
+            Job.STATUS_COMPLETED,
+            'Cancelling the last unresolved invoice should complete an all-shipped job.',
+        )
+
+    def test_cancel_does_not_complete_when_another_invoice_open(self):
+        other = _open_invoice(self.job)
+        InvoiceService.cancel(self.invoice.pk, reason='Replaced')
+        self.job.refresh_from_db()
+        self.assertEqual(
+            self.job.status,
+            Job.STATUS_WORK_COMPLETE,
+            'Job must stay work_complete while another invoice is still open.',
+        )
+        # Resolving the remaining invoice then completes the job.
+        other.status = Invoice.STATUS_PAID
+        other.save()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+
+
+class InProgressJobNotAutoCompleted(CompletionGateSetUp):
+    """A job whose work isn't finished must not auto-complete on invoice resolution.
+
+    Only ``work_complete`` means the work is done. An ``in_progress`` job may
+    still have open tasks (a follow-up to send plans, a post-job meeting), so
+    paying its invoice — even with every deliverable shipped — must leave it
+    in_progress. Same reasoning covers a deposit invoice paid before any work.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.job = _make_job(self.contact, status=Job.STATUS_IN_PROGRESS)
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_in_progress_job_stays_open_when_invoice_paid(self):
+        # No deliverables -> all_deliverables_shipped is trivially True, so only
+        # the work-stage guard stands between this and an (incorrect) completion.
+        _pay_invoice(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(
+            self.job.status,
+            Job.STATUS_IN_PROGRESS,
+            'An in_progress job must not auto-complete on a paid invoice.',
+        )
+
+    def test_deposit_invoice_paid_before_work_does_not_complete(self):
+        """A deposit paid up front (job in_progress) must not close the job."""
+        deposit = _open_invoice(self.job)
+        deposit.status = Invoice.STATUS_PAID
+        deposit.save()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_completes_only_once_work_complete(self):
+        """Once the job legitimately reaches work_complete, resolving the
+        invoice completes it (confirms the guard isn't over-blocking)."""
+        inv = _open_invoice(self.job)
+        # Work finishes -> job reaches work_complete (no auto-complete fires here).
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save()
+        inv.status = Invoice.STATUS_PAID
+        inv.save()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
 
 
 class NoDeliverableJobCompletesOnPayment(CompletionGateSetUp):

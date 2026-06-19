@@ -534,18 +534,30 @@ class JobService:
 
         Behaviour:
           - Refreshes the job from the DB (callers may hold a stale instance).
-          - No-ops if the job is already completed or cancelled.
+          - No-ops unless the job is in ``work_complete`` (the only state that
+            means the work itself is finished — see below).
           - No-ops if any invoice is still unresolved (not paid/cancelled).
           - No-ops if any deliverable is not yet fully picked up.
           - Releases loose (task-less, pending) materials, records a system
-            HistoryEntry for the release, then walks the job to ``completed``.
+            HistoryEntry for the release, then moves the job to ``completed``.
         """
         from apps.core.models import User
         from apps.deliverables.services import DeliverableService
         from apps.invoicing.models import Invoice
 
         job.refresh_from_db()
-        if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
+
+        # Only a ``work_complete`` job can auto-complete. That status is the
+        # signal that the work itself is done — a job only reaches it once all
+        # of its tasks are complete. Resolving an invoice (or shipping the last
+        # deliverable) must NOT close a job whose work is still open: an
+        # ``in_progress`` job may still have outstanding tasks (a follow-up to
+        # send plans/photos, a post-job meeting), and ``draft``/``submitted``/
+        # ``on_hold`` jobs have no finished work at all. For all of those this
+        # is a no-op; the job completes later once it legitimately reaches
+        # ``work_complete``. (This also avoids forcing a transition the state
+        # machine forbids, e.g. on_hold -> completed.)
+        if job.status != Job.STATUS_WORK_COMPLETE:
             return
 
         # All invoices must be resolved (paid or cancelled).
@@ -585,11 +597,7 @@ class JobService:
                 },
             )
 
-        # Walk through intermediate statuses when coming from early states.
-        if job.status == Job.STATUS_APPROVED:
-            job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
-        if job.status == Job.STATUS_IN_PROGRESS:
-            job = JobService.update_job(job.pk, status=Job.STATUS_WORK_COMPLETE)
+        # The job is in work_complete (guarded above); complete it directly.
         job = JobService.update_job(job.pk, status=Job.STATUS_COMPLETED)
 
         record_history(
