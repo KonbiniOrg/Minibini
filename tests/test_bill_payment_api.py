@@ -46,3 +46,26 @@ class BillPaymentApiTest(TestCase):
         d = self.client.delete(f'/api/bills/{self.bill.pk}/payments/{pid}/')
         self.assertEqual(d.status_code, 200)
         self.assertIn('message', d.data)
+
+    def test_patch_payment_updates_reference_and_recomputes_status(self):
+        # Record a partial payment (40 of 100) — bill should be partly_paid
+        resp = self.client.post(
+            f'/api/bills/{self.bill.pk}/payments/',
+            {'amount': '100.00', 'payment_date': '2026-06-19T12:00:00Z',
+             'method': 'check', 'reference': 'CHK-001'}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        pid = resp.data['payment_id']
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
+
+        # PATCH: change reference and reduce amount so bill is no longer fully paid
+        patch_resp = self.client.patch(
+            f'/api/bills/{self.bill.pk}/payments/{pid}/',
+            {'reference': 'CHK-002', 'amount': '40.00'}, format='json')
+        self.assertEqual(patch_resp.status_code, 200)
+        self.assertEqual(patch_resp.data['reference'], 'CHK-002')
+        self.assertEqual(patch_resp.data['amount'], '40.00')
+
+        # Bill status should have recomputed to partly_paid
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)

@@ -181,9 +181,6 @@
       </p>
     {:else if isReceived}
       <p>
-        <button type="button" onclick={() => doAction('mark_paid')}>Mark Paid in Full</button>
-      </p>
-      <p>
         <label>
           Reason for cancel (required):<br>
           <input type="text" bind:value={cancelReason} placeholder="Enter reason…">

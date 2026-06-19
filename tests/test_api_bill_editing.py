@@ -99,16 +99,21 @@ class BillEditingAPITest(BaseTestCase):
                                 format='json')
         self.assertEqual(resp.status_code, 400)
 
-    def test_receive_then_mark_paid(self):
+    def test_receive_then_record_full_payment(self):
         bill = self._draft_with_line('V-PAY')
         r1 = self.client.post(f'/api/bills/{bill.bill_id}/receive/',
                               format='json')
         self.assertEqual(r1.status_code, 200, r1.data)
         bill.refresh_from_db()
         self.assertEqual(bill.status, Bill.STATUS_RECEIVED)
-        r2 = self.client.post(f'/api/bills/{bill.bill_id}/mark_paid/',
-                              format='json')
-        self.assertEqual(r2.status_code, 200, r2.data)
+        # _draft_with_line creates one line: qty=1, price=5.00 → total=5.00
+        r2 = self.client.post(
+            f'/api/bills/{bill.bill_id}/payments/',
+            {'amount': '5.00', 'payment_date': '2026-06-19T12:00:00Z',
+             'method': 'check'},
+            format='json',
+        )
+        self.assertEqual(r2.status_code, 201, r2.data)
         bill.refresh_from_db()
         self.assertEqual(bill.status, Bill.STATUS_PAID_IN_FULL)
         self.assertIsNotNone(bill.paid_date)
