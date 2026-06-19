@@ -1122,8 +1122,3 @@ settings UI for editing the `units_list` Configuration value.
 - **Server-side `?search=` filtering on `PriceListItemPicker`** once the
   catalog grows.
 - **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.
-- **Legacy TaskTemplate Django HTML forms** (`add_task_template_standalone.html`,
-  `task_template_edit.html`) still bind to fields removed by the
-  RateScheme refactor (`form.units`, `form.rate`,
-  `form.accounting_category`). Display-only templates were patched;
-  form-driven templates need a RateScheme picker rewrite.

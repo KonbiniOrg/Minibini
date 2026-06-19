@@ -12,17 +12,18 @@ does not repeat that material.
 ## 1. Overview
 
 Minibini is a Django 5 + DRF backend with a Svelte 5 SPA frontend. One
-Django project, one HTTP origin, two consumers:
+Django project, one HTTP origin:
 
 - The SPA at `frontend/` (Vite, served on `:9000` in dev, built to
-  `dist/` for nginx in prod) is the primary UI for new work.
-- A set of legacy server-rendered HTML views still live under `apps/*/views.py`
-  and `templates/`. They are deprecated; new features are SPA-only.
+  `dist/` for nginx in prod) is the UI.
+- It calls the REST API at `/api/`, whose viewsets call the Django
+  service layer. No business logic lives in the view layer.
 
-Both call the same Django service layer through different transports:
-HTML views call services directly; the SPA calls the REST API at `/api/`,
-whose viewsets call the same services. No business logic lives in either
-view layer.
+Django itself serves only `/admin/` and `/api/`. The deprecated
+server-rendered HTML view layer (`apps/*/views.py` + `templates/*.html`)
+has been removed; the only non-API server endpoints left are the QBO
+OAuth redirect views under `/api/qbo/` and WeasyPrint PDF rendering of
+the four document templates in `templates/` for outbound email.
 
 ---
 
@@ -37,19 +38,17 @@ core) plus a single `apps/api/` app that owns the REST layer.
 ### 2.2 Service layer
 
 Every model write goes through a service method in `apps/<app>/services.py`.
-Views (HTML or API) never call `.save()` or `.delete()` on a tracked
-model directly.
+API viewsets never call `.save()` or `.delete()` on a tracked model directly.
 
 **Rules:**
 
-- Services own business logic. Viewsets and HTML views are thin —
+- Services own business logic. Viewsets are thin —
   parse input, call a service, render a response.
 - Services accept primitives and IDs, return model instances
-  ("primitives in, models out"). Views never load a model just to
+  ("primitives in, models out"). Viewsets never load a model just to
   hand it to a service; the service does its own lookups.
-- No forms or serializers cross the service boundary. Views extract
-  `form.cleaned_data` or `serializer.validated_data` and pass plain
-  kwargs.
+- No serializers cross the service boundary. Viewsets extract
+  `serializer.validated_data` and pass plain kwargs.
 - Services raise domain exceptions (`ServiceError`, `NotFoundError`,
   `SchemeSupersededError`). Views translate those into HTTP responses
   or Django messages.
@@ -541,9 +540,9 @@ defined once per stack so both share the same mechanism:
 
 - `frontend/src/css/app.css` — SPA (global, reaches every component;
   not subject to the §5.5 scoping gotcha).
-- `templates/base.html` — Django HTML views.
 - `templates/purchasing/purchase_order_pdf.html` — standalone PDF
-  template with its own `<style>`, so it carries its own copy.
+  template with its own `<style>`, so it carries its own copy (the
+  other three document PDF templates do likewise).
 
 `pre-wrap` is preferred over swapping `\n` for `<br>` via `{@html}`:
 the text stays auto-escaped (no XSS), long lines still wrap, and it's
@@ -1207,9 +1206,6 @@ LITE | FULL        (view-mode toggle)
 Logout
 ```
 
-Django server-rendered pages (`templates/base.html`) keep their own nav
-and are unchanged.
-
 ---
 
 ## 9. Scheduled processes
@@ -1333,9 +1329,3 @@ Concrete items, smallest first:
   One project-wide migration across all four subclasses — the change
   lives in `apps/core/models.py` (`BaseLineItem`) plus a backfill step
   per subclass.
-
-- **Decommission deprecated HTML views opportunistically.** Full
-  CRUD HTML views still live in `apps/contacts/views.py`,
-  `apps/estimates/views.py`, `apps/jobs/views.py`, and
-  `apps/invoicing/views.py`. They overlap with SPA routes that
-  already cover the same entities and can drift from them.
