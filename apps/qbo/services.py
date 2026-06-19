@@ -420,6 +420,28 @@ class QBOBillSyncService:
             raise
 
     @staticmethod
+    def push_bill_payment(payment):
+        """Push a Minibini BillPayment to QBO. STUBBED for now — the live QBO
+        BillPayment object is built in the upcoming QBO session. Today this
+        establishes the seam: no live connection is a clean no-op; with a
+        connection it ensures the bill exists in QBO and logs the attempt."""
+        client = QBOService.get_client()
+        if not client:
+            return None
+        bill = payment.bill
+        if not bill.qbo_id:
+            QBOBillSyncService.push_bill(bill)
+        QBOService.log_sync(
+            entity_type='bill_payment',
+            entity_id=payment.pk,
+            qbo_entity_type='BillPayment',
+            qbo_entity_id=payment.qbo_payment_id or '',
+            action='create',
+            status='success',
+        )
+        return payment.qbo_payment_id or None
+
+    @staticmethod
     def _build_qbo_bill(bill):
         from quickbooks.objects.bill import Bill as QBOBill
         from quickbooks.objects.detailline import AccountBasedExpenseLine, AccountBasedExpenseLineDetail
