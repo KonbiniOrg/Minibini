@@ -796,6 +796,29 @@ IMAP-SMTP machinery and tend to be worked together.
   searchable picker and an explicit before-commit preview of the outcome, no top-of-page
   dropdown hunting.
 
+- **Inventory merge should probably accept an incoming `'none'` unit.** — _added 2026-06-19_
+  `InventoryService.merge` hard-blocks when `keep.units != discard.units`
+  (`apps/inventory/services.py:151`) — the QOH addition is nonsense across real
+  unit mismatches (sheets into lbs). But `'none'` means *unknown*, not a real
+  unit, so blocking a `'none'` discard from merging into a `'sheets'` keep is
+  over-strict. Consider: when the discard's unit is `'none'`, allow the merge and
+  adopt the keep's unit (and symmetrically, a `'none'` keep adopts the discard's).
+  Surfaced by the Neal's converter: the minted transient lots (`LOT-xxxx`,
+  `is_catalog=False`, from `build._mint_transient_lot`) all carry `units='none'`,
+  so deduping one into its real `'sheets'` catalog item is currently blocked.
+  Note this is *also* a data-gen roughness, not purely a model gap: in the
+  converter **every** Material (and therefore every minted lot) comes out
+  `units='none'` because FreeAgent estimate/invoice line items carry no unit
+  signal — `parsing.resolve_li_units_and_qty` only ever returns `'hours'`/`'none'`
+  — whereas catalog items get `'sheets'` from their description
+  (`_unit_from_description`). So the cleaner converter-side fix may be to infer
+  raw-stock Material units from the description the same way catalog items do (or
+  default sheet-stock to `'sheets'`), which would also shrink how often the merge
+  ever sees a `'none'`. Decide whether the fix belongs in merge, the converter, or
+  both. _Done when:_ merge handles a `'none'`-unit incoming sensibly (with a test),
+  and the converter's blanket `'none'` material units are either justified or
+  fixed.
+
 - **Expense invoice-freeze has no billability-readiness gate, by design.** — _added 2026-06-17_
   Expense atoms have an invoice-freeze (`ExpenseService._assert_not_invoiced`)
   but no separate billability-readiness gate — they appear as selectable in the
