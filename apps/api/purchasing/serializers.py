@@ -148,8 +148,12 @@ class BillSerializer(serializers.ModelSerializer):
     line_items = BillLineItemSerializer(
         source='billlineitem_set', many=True, read_only=True
     )
+    payments = BillPaymentSerializer(
+        source='billpayment_set', many=True, read_only=True
+    )
     po_number = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
+    amount_paid = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
 
     class Meta:
@@ -158,8 +162,8 @@ class BillSerializer(serializers.ModelSerializer):
             'bill_id', 'purchase_order', 'po_number',
             'vendor_invoice_number', 'business', 'vendor_name', 'contact',
             'status', 'created_date', 'due_date', 'received_date',
-            'paid_date', 'cancelled_date', 'line_items', 'balance',
-            'qbo_id', 'qbo_payment_status',
+            'paid_date', 'cancelled_date', 'line_items', 'payments',
+            'amount_paid', 'balance', 'qbo_id', 'qbo_payment_status',
         ]
         read_only_fields = [
             'bill_id', 'status', 'created_date', 'received_date',
@@ -172,10 +176,8 @@ class BillSerializer(serializers.ModelSerializer):
     def get_vendor_name(self, obj):
         return obj.business.business_name if obj.business else None
 
+    def get_amount_paid(self, obj):
+        return str(obj.amount_paid.quantize(Decimal('0.01')))
+
     def get_balance(self, obj):
-        if obj.status in (Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED,
-                          Bill.STATUS_REFUNDED):
-            return '0.00'
-        total = sum((li.qty * li.price for li in obj.billlineitem_set.all()),
-                    Decimal('0'))
-        return str(total.quantize(Decimal('0.01')))
+        return str(obj.balance.quantize(Decimal('0.01')))

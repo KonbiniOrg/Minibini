@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import (
     F, Sum, Value, Case, When, DecimalField, ExpressionWrapper,
+    OuterRef, Subquery,
 )
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
@@ -452,21 +453,31 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         # BillSummarySerializer
         qs = qs.select_related('business', 'contact', 'purchase_order')
 
-        # List-only: annotations, status presets, due-date range, ordering
+        # List-only: annotations, status presets, due-date range, ordering.
+        # Use a subquery for paid_anno to avoid fan-out when a bill has both
+        # multiple line items and multiple payments (two different reverse
+        # relations in the same queryset multiply rows in MySQL).
+        from apps.purchasing.models import BillPayment
+        paid_subquery = Coalesce(
+            Subquery(
+                BillPayment.objects.filter(bill=OuterRef('pk'))
+                .values('bill')
+                .annotate(s=Sum('amount'))
+                .values('s')[:1],
+                output_field=_BILL_MONEY,
+            ),
+            Value(0), output_field=_BILL_MONEY,
+        )
         qs = qs.annotate(
             total_anno=Coalesce(
                 Sum(ExpressionWrapper(
                     F('billlineitem__qty') * F('billlineitem__price'),
                     output_field=_BILL_MONEY)),
                 Value(0), output_field=_BILL_MONEY),
+            paid_anno=paid_subquery,
         ).annotate(
-            balance_anno=Case(
-                When(status__in=[Bill.STATUS_PAID_IN_FULL,
-                                 Bill.STATUS_CANCELLED,
-                                 Bill.STATUS_REFUNDED],
-                     then=Value(0, output_field=_BILL_MONEY)),
-                default=F('total_anno'),
-                output_field=_BILL_MONEY),
+            balance_anno=ExpressionWrapper(
+                F('total_anno') - F('paid_anno'), output_field=_BILL_MONEY),
         )
 
         status_param = self.request.query_params.get('status', 'open')
