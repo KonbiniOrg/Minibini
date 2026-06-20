@@ -193,6 +193,12 @@ Flow:
 
 Bills do not push attachments, do not mark-as-sent, and do not send emails. The push is one-way and silent.
 
+### `QBOBillSyncService.push_bill_payment` (stubbed seam)
+
+`BillPaymentService.record_payment` calls `QBOBillSyncService.push_bill_payment(payment)` immediately after recording a `BillPayment`. This is a **push-on-action seam** — any QBO failures are swallowed-and-logged so they never block the local recording.
+
+Today `push_bill_payment` is **stubbed**: when there is no active QBO connection it returns `None` immediately. When a connection exists it ensures the parent Bill is pushed to QBO first (`push_bill`), then logs the attempt, but does not yet construct or send a QBO `BillPayment` object (the live QBO call lands in the upcoming QBO session). No `qbo_payment_id` is ever written yet. The `entity_type` logged is `'bill_payment'`.
+
 ## Expense push — `QBOExpenseSyncService`
 
 The Minibini-side workflow (entering expenses, batching reimbursements, voiding) is described in `invoicing-and-expenses.md`. This section covers the QBO mechanics.
@@ -268,13 +274,26 @@ Walks every `Invoice` where `qbo_id` is set and the Minibini status is still `op
 
 **First-run healing:** an invoice left at `open` with a stale cached `qbo_payment_status='Paid'` (from the old cache-only polling) will transition to `paid` — and complete its job — on the first run under the status-driving code. See `invoicing-and-expenses.md` for the full status-machine view.
 
-### Bill polling — `QBOBillPaymentPollingService.poll_all()` (parked)
+### Bill clearance polling — `QBOBillPaymentPollingService.poll_all()` (stubbed)
 
-Same shape, against `Bill` where `qbo_id` is set and `qbo_payment_status != 'Paid'`. Only writes `qbo_payment_status` (`'Paid'` if balance is zero, else `'Unpaid'` — no `'Partial'` because the bill model doesn't currently track partial-paid amounts). **This service is parked** — the `poll_qbo_payments` command no longer calls it. It's retained for a future `poll_qbo_bills` command that would drive bill payment state the same way invoice polling now drives invoices.
+Walks every `BillPayment` where `cleared_date` is null and `qbo_payment_id` is non-empty (i.e. payments that have been pushed to QBO but not yet confirmed as cleared). When the live QBO fetch lands (in the upcoming QBO session), this service will write `cleared_date` and confirm `qbo_payment_id` per `BillPayment`. **Today the inner loop body is a stub** — no actual QBO fetch or `cleared_date` write occurs. Because payment push is itself stubbed (`push_bill_payment` never sets `qbo_payment_id`), no rows match the filter yet, so the stub produces no visible effect.
+
+### Unified inbound orchestrator — `QBOInboundPollingService`
+
+`QBOInboundPollingService.poll_all()` is the single entry point for all QBO → Minibini polling:
+
+```python
+{
+    'invoices': QBOPaymentPollingService.poll_all(),
+    'bills': QBOBillPaymentPollingService.poll_all(),
+}
+```
+
+Both sub-pollers run in the same call; the invoice branch is live, the bill branch is stubbed.
 
 ### Management command
 
-`python manage.py poll_qbo_payments` (`apps/invoicing/management/commands/poll_qbo_payments.py`) wraps `QBOPaymentPollingService.poll_all()` — **invoice-only**, no bills. It is a `ScheduledProcessCommand` (`architecture-and-conventions.md` §9), so each run records a `ScheduledProcessRun` row (`ok` / `failed` / `skipped`). The scheduler **is** wired: the docker-compose `cron` service runs it every 15 minutes.
+`python manage.py poll_qbo_payments` (`apps/invoicing/management/commands/poll_qbo_payments.py`) drives `QBOInboundPollingService.poll_all()` — **both invoice and bill polling** (bill branch currently stubbed). It is a `ScheduledProcessCommand` (`architecture-and-conventions.md` §9), so each run records a `ScheduledProcessRun` row (`ok` / `failed` / `skipped`). The scheduler **is** wired: the docker-compose `cron` service runs it every 15 minutes.
 
 **Operational note — credentials and timezone.** The cron service runs in its own container; the committed `docker-compose.yml` mirrors only the `DATABASE_*` env onto it. QBO OAuth credentials and the email/IMAP credentials are injected at deploy time and **must reach the cron container too** — otherwise `poll_qbo_payments` records `skipped` runs (no QBO connection) and the email-related jobs `failed` runs. The cron schedules are evaluated in the **container timezone (UTC by default)**; set `TZ` on the cron service to schedule in local time.
 
@@ -318,7 +337,8 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 
 ## Unfinished work
 
-- **Bill payment polling.** `QBOBillPaymentPollingService` exists but is parked — no command drives it. A future `poll_qbo_bills` would run it on the same cron pattern as `poll_qbo_payments`.
+- **Bill payment push (live QBO call).** `push_bill_payment` is wired as a seam but is stubbed — the actual QBO `BillPayment` object construction and API call land in the upcoming QBO session. Once live, `qbo_payment_id` will be written back to `BillPayment` and the inbound clearance poller can confirm cleared payments.
+- **Bill clearance polling.** `QBOBillPaymentPollingService` is folded into `QBOInboundPollingService` and called by `poll_qbo_payments`, but the inner loop body (QBO fetch + `cleared_date` write) is stubbed pending the live QBO session.
 - **Sync log UI.** No `/api/qbo/sync-log/` endpoint or settings panel showing recent push attempts; failures are visible only via the Django admin.
 - **Employee-as-Vendor sync for personal reimbursements** — tracked in `invoicing-and-expenses.md`.
 - **Job P&L view.** Phase 5 of the original plan — pull QBO-reported actuals back into Minibini for a per-job profit & loss view. Tracked in `invoicing-and-expenses.md`.
