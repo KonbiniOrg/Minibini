@@ -20,6 +20,7 @@
 
   // PO picker selection (create mode)
   let selectedPoId = $state(null);
+  let selectedPoNumber = $state(null);
 
   // po_billing context fetched after PO is chosen
   let poBilling = $state(null);
@@ -84,7 +85,7 @@
           bill_id: b.bill_id,
           vendor_invoice_number: b.vendor_invoice_number,
           status: b.status,
-          total: b.balance,
+          total: b.total,
         })),
         po_fully_billed: poData.is_fully_billed,
       };
@@ -184,11 +185,11 @@
       <PurchaseOrderPicker
         businessId={form.business || null}
         value={null}
-        onSelect={(po) => { selectedPoId = po.po_id; fetchPoBilling(po.po_id); }}
+        onSelect={(po) => { selectedPoId = po.po_id; selectedPoNumber = po.po_number; fetchPoBilling(po.po_id); }}
       />
     </p>
     {#if poBilling?.po_fully_billed}
-      <p class="warn">⚠ This PO is already fully billed. Check for a duplicate before paying.</p>
+      <p class="warn">⚠ {selectedPoNumber} is already fully billed. Check for a duplicate before paying.</p>
     {/if}
     {#if poBilling?.other_bills?.length}
       <p class="info">This PO already has {poBilling.other_bills.length} other bill(s):
