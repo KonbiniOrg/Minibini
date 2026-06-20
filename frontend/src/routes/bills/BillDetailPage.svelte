@@ -129,7 +129,7 @@
   </table>
 
   {#if bill.po_billing?.po_fully_billed}
-    <p class="warn">⚠ {bill.po_number} is already fully billed. Check for a duplicate before paying.</p>
+    <p class="warn">⚠ {bill.po_number} is fully billed</p>
   {/if}
   {#if bill.po_billing?.other_bills?.length}
     <p class="info">This PO already has {bill.po_billing.other_bills.length} other bill(s):

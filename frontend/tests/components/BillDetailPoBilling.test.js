@@ -18,7 +18,7 @@ describe('Bill detail double-bill surfacing', () => {
       po_billing: { other_bills: [{ bill_id: 1, vendor_invoice_number: 'A', status: 'received', total: '100.00' }], po_fully_billed: true },
     });
     const { container } = render(BillDetailPage, { props: { params: { id: '2' } } });
-    expect(await findByText(container, /already fully billed/i)).toBeInTheDocument();
+    expect(await findByText(container, /is fully billed/i)).toBeInTheDocument();
     expect(await findByText(container, /PO already has/i)).toBeInTheDocument();
   });
 });

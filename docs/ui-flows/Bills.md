@@ -160,9 +160,8 @@ detail**:
   PO that already has a non-cancelled bill → an info line **"This PO already has N
   other bill(s):"** with each prior bill as a **link** to its detail.
 - [ ] **Warning banner (fully billed):** when existing non-cancelled bills already
-  cover the PO's full total → a prominent **"⚠ {po_number} is already fully
-  billed. Check for a duplicate before paying."** banner. It does **not** block —
-  you can still proceed.
+  cover the PO's full total → a prominent **"⚠ {po_number} is fully billed"**
+  banner. It does **not** block — you can still proceed.
 - [ ] **Multiple bills allowed:** confirm a second bill against one PO actually
   saves (the partial-delivery case) — the surfacing is advisory only.
 - [ ] **Cancelled bills don't count:** a cancelled bill on the PO is **not**
