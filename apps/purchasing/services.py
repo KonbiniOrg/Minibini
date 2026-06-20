@@ -922,6 +922,19 @@ class BillPaymentService:
     _PAYABLE = (Bill.STATUS_RECEIVED, Bill.STATUS_PARTLY_PAID)
 
     @staticmethod
+    def _normalize_amount(value):
+        """Convert an incoming amount to an exact Decimal. A JSON number arrives
+        as a Python float whose binary value (e.g. 33.33 -> 33.32999...) would
+        trip the DecimalField's decimal_places=2 validator. ``str()`` yields the
+        shortest round-trip decimal, so 33.33 stays 33.33; genuine over-precision
+        (e.g. 33.333) survives and is still rejected by ``full_clean``."""
+        from decimal import Decimal, InvalidOperation
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValidationError('Invalid payment amount.')
+
+    @staticmethod
     @transaction.atomic
     def record_payment(bill, *, amount, payment_date, method, reference='', user=None):
         from apps.purchasing.models import BillPayment
@@ -930,6 +943,7 @@ class BillPaymentService:
                 f'Cannot record a payment on a bill in status "{bill.status}". '
                 'The bill must be received or partly paid.'
             )
+        amount = BillPaymentService._normalize_amount(amount)
         payment = BillPayment(
             bill=bill, amount=amount, payment_date=payment_date,
             method=method, reference=reference, created_by=user,
@@ -971,6 +985,8 @@ class BillPaymentService:
         allowed = {'amount', 'payment_date', 'method', 'reference'}
         for field, value in out_fields.items():
             if field in allowed:
+                if field == 'amount':
+                    value = BillPaymentService._normalize_amount(value)
                 setattr(payment, field, value)
         payment.full_clean()
         payment.save()

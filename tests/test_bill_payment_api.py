@@ -37,6 +37,28 @@ class BillPaymentApiTest(TestCase):
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
 
+    def test_record_payment_accepts_json_float_amount(self):
+        # A `type=number` input sends the amount as a JSON float; a non-binary-
+        # representable value like 33.33 becomes 33.3299... when Django converts
+        # the float to Decimal, which used to trip the decimal_places=2 validator.
+        # The endpoint must normalize it and accept the exact 2-decimal value.
+        resp = self.client.post(
+            f'/api/bills/{self.bill.pk}/payments/',
+            {'amount': 33.33, 'payment_date': '2026-06-19T12:00:00Z',
+             'method': 'check'}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['amount'], '33.33')
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)
+
+    def test_record_payment_rejects_over_precise_amount(self):
+        # Genuine >2-decimal input must still be rejected (validation preserved).
+        resp = self.client.post(
+            f'/api/bills/{self.bill.pk}/payments/',
+            {'amount': '33.333', 'payment_date': '2026-06-19T12:00:00Z',
+             'method': 'check'}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
     def test_delete_payment_returns_200_json(self):
         resp = self.client.post(
             f'/api/bills/{self.bill.pk}/payments/',

@@ -30,7 +30,7 @@
   <div class="modal">
     <h3>Record Payment</h3>
     {#if error}<p class="error">{error}</p>{/if}
-    <label>Amount<input bind:value={amount} type="number" step="0.01" /></label>
+    <label>Amount<input bind:value={amount} type="text" inputmode="decimal" /></label>
     <label>Method
       <select bind:value={method}>
         <option value="check">Check</option>

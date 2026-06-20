@@ -20,6 +20,21 @@ describe('RecordPaymentModal', () => {
     }));
   });
 
+  it('sends the typed amount as an exact string (no float coercion)', async () => {
+    // A non-binary-representable value like 33.33 must reach the API as the
+    // string "33.33", not a JS number — a number serializes to a float that
+    // Django converts to 33.3299... and rejects as >2 decimal places.
+    api.post.mockResolvedValue({ payment_id: 2 });
+    const { getByLabelText, getByText } = render(RecordPaymentModal, {
+      props: { open: true, billId: 7, defaultAmount: '', onSaved: () => {}, onClose: () => {} },
+    });
+    await fireEvent.input(getByLabelText(/amount/i), { target: { value: '33.33' } });
+    await fireEvent.click(getByText(/save/i));
+    const [, body] = api.post.mock.calls[0];
+    expect(body.amount).toBe('33.33');
+    expect(typeof body.amount).toBe('string');
+  });
+
   it('blocks save and shows error when amount is empty or zero', async () => {
     const onSaved = vi.fn();
     const { getByText } = render(RecordPaymentModal, {
