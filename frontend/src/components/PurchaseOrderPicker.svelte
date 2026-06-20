@@ -1,6 +1,6 @@
 <script>
   import { api } from '@/lib/api.js';
-  let { businessId = null, value = null, onSelect = () => {} } = $props();
+  let { businessId = null, value = $bindable(null), onSelect = () => {} } = $props();
   let term = $state('');
   let results = $state([]);
 
