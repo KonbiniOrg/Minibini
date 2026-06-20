@@ -570,7 +570,12 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         data = serializer.validated_data
         po = data.get('purchase_order')
         if po:
-            bill = BillService.create_bill_from_po(po.pk if hasattr(po, 'pk') else po)
+            po_pk = po.pk if hasattr(po, 'pk') else po
+            # Carry the user-entered header fields through; business/contact come
+            # from the PO inside create_bill_from_po, so exclude them.
+            passthrough = {k: v for k, v in data.items()
+                           if k in ('vendor_invoice_number', 'due_date')}
+            bill = BillService.create_bill_from_po(po_pk, **passthrough)
         else:
             bill = BillService.create_bill(**data)
         serializer.instance = bill

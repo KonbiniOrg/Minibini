@@ -116,6 +116,20 @@
             await fetchContactsAndAutoSelect(form.business, false);
           }
         }
+      } else if (contextPoId) {
+        // Arrived via "Create Bill" from a PO: pre-fill the vendor from the PO
+        // and pull in the double-bill surfacing. Line items are copied
+        // server-side on save (create_bill_from_po).
+        const po = await api.get(`/api/purchase-orders/${contextPoId}/`);
+        selectedPoId = po.po_id;
+        selectedPoNumber = po.po_number;
+        if (po.business) {
+          form.business = po.business;
+          lastFetchedBusiness = po.business;
+          await fetchContactsAndAutoSelect(po.business, false);
+          form.contact = po.contact || '';
+        }
+        await fetchPoBilling(contextPoId);
       }
     } catch (e) {
       errors = e.message;
@@ -171,15 +185,19 @@
   <form onsubmit={handleSubmit}>
     <p>
       <label for="business"><strong>Vendor (Business) *</strong></label><br>
-      <select id="business" bind:value={form.business} required>
+      <select id="business" bind:value={form.business} required disabled={!!contextPoId}>
         <option value="">-- Select Business --</option>
         {#each businesses as biz (biz.business_id)}
           <option value={biz.business_id}>{biz.business_name}</option>
         {/each}
       </select>
+      {#if contextPoId}<br><small>Vendor comes from the purchase order.</small>{/if}
     </p>
 
     {#if !isEdit}
+    {#if contextPoId}
+    <p><strong>Purchase Order:</strong> {selectedPoNumber || contextPoId}</p>
+    {:else}
     <p>
       <strong>Purchase Order</strong><br>
       <PurchaseOrderPicker
@@ -188,6 +206,7 @@
         onSelect={(po) => { selectedPoId = po.po_id; selectedPoNumber = po.po_number; fetchPoBilling(po.po_id); }}
       />
     </p>
+    {/if}
     {#if poBilling?.po_fully_billed}
       <p class="warn">⚠ {selectedPoNumber} is fully billed</p>
     {/if}

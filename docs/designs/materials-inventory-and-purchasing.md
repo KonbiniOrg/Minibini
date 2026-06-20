@@ -947,7 +947,7 @@ page's Send button navigates to this route instead.
 | `purchase_order` | FK PROTECT nullable (`related_name='bills'`) | PO must be in `issued` or later (not `draft`) |
 | `business` | FK PROTECT | Required |
 | `contact` | FK PROTECT nullable | If set, must belong to `business` |
-| `vendor_invoice_number` | `CharField(50)` | Vendor's own invoice number; primary human-facing identifier for the Bill (no Minibini-side auto-number) |
+| `vendor_invoice_number` | `CharField(50)` `blank` | Vendor's own invoice number; primary human-facing identifier (no Minibini-side auto-number). Optional — a draft Bill created from a PO has none until the real invoice arrives. |
 | `status` | choices | **Derived** from payments via `recompute_payment_status()` for the payment statuses; see state machine |
 | `due_date`, `received_date`, `paid_date`, `cancelled_date` | datetime nullable | `paid_date` managed by `recompute_payment_status()` |
 | `qbo_id`, `qbo_payment_status` | char | QBO sync state |

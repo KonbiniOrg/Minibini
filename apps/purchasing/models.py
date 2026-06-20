@@ -213,7 +213,9 @@ class Bill(models.Model):
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
-    vendor_invoice_number = models.CharField(max_length=50)
+    # Blank-able: a draft Bill created from a PO exists before the real vendor
+    # invoice arrives; the number is filled in when the invoice is matched.
+    vendor_invoice_number = models.CharField(max_length=50, blank=True, default='')
     status = models.CharField(max_length=20, choices=BILL_STATUS_CHOICES, default=STATUS_DRAFT)
 
     # Date fields

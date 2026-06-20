@@ -1038,9 +1038,12 @@ Valid transitions:
 - **business** (required FK → Business, PROTECT)
 - **contact** (optional FK → Contact, PROTECT): same rules as PurchaseOrder
   (must have business, must match on creation)
-- **vendor_invoice_number**: required, max 50 chars. The vendor's own
-  number from the invoice; serves as the primary human-facing identifier
-  for the Bill (no Minibini-side auto-generated number).
+- **vendor_invoice_number**: optional (`blank=True`), max 50 chars. The
+  vendor's own number from the invoice; serves as the primary human-facing
+  identifier for the Bill (no Minibini-side auto-generated number). Blank is
+  allowed because a draft Bill created from a PO exists before the real vendor
+  invoice arrives; the number is filled in when the invoice is matched
+  (`__str__` falls back to the bill pk when blank).
 - **purchase_order** (optional FK → PurchaseOrder, PROTECT): if set, PO must
   NOT be in `draft` status. PO's business must match bill's business.
 - If contact is provided on creation and business is not explicitly set,

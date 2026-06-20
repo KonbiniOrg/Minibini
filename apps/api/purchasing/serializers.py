@@ -1,6 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem, BillPayment
+from apps.contacts.models import Business
 from apps.core.units import UnitsField
 
 
@@ -170,11 +171,22 @@ class BillSerializer(serializers.ModelSerializer):
     payments = BillPaymentSerializer(
         source='billpayment_set', many=True, read_only=True
     )
+    # Vendor is optional at the API layer: when a purchase_order is supplied the
+    # vendor is derived from it (create_bill_from_po). validate() enforces that a
+    # create has one source or the other.
+    business = serializers.PrimaryKeyRelatedField(
+        queryset=Business.objects.all(), required=False, allow_null=True)
     po_number = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
     amount_paid = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
     po_billing = serializers.SerializerMethodField()
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get('purchase_order') and not attrs.get('business'):
+            raise serializers.ValidationError(
+                {'business': 'A vendor business or a purchase order is required.'})
+        return attrs
 
     class Meta:
         model = Bill
