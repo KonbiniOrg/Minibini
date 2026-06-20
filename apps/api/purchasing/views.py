@@ -446,8 +446,35 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         if contact:
             qs = qs.filter(contact_id=contact)
 
-        if not (self.action == 'list' and self._summary_mode()):
-            return qs
+        if self.action == 'list' and not self._summary_mode():
+            # Non-summary list: BillSerializer reads obj.purchase_order,
+            # obj.purchase_order.bills (sibling bills) and each sibling's
+            # billlineitem_set (for bill.total), obj.purchase_order's own line
+            # items (for po_total / is_fully_billed), plus the bill's own
+            # payments and line items.  Prefetch all of these so serializing N
+            # bills does not fire per-row queries.
+            #
+            # Important: billpayment_set / billlineitem_set are only prefetched
+            # for the list action because prefetch caches become stale when the
+            # payment or line-item actions mutate those relations on the same
+            # in-memory Bill instance (causing recompute_payment_status to read
+            # the pre-mutation cached set and produce a wrong status).
+            return qs.select_related('purchase_order', 'business', 'contact').prefetch_related(
+                'purchase_order__bills__billlineitem_set',
+                'purchase_order__purchaseorderlineitem_set',
+                'billpayment_set',
+                'billlineitem_set',
+            )
+
+        if not self._summary_mode():
+            # Non-list, non-summary (retrieve, payments, line_items, etc.):
+            # apply select_related for the PO / billing hints but do NOT
+            # prefetch billpayment_set / billlineitem_set so that mutation
+            # actions always read fresh data from the DB.
+            return qs.select_related('purchase_order', 'business', 'contact').prefetch_related(
+                'purchase_order__bills__billlineitem_set',
+                'purchase_order__purchaseorderlineitem_set',
+            )
 
         # Summary (financials A/P) mode only: select_related to avoid N+1 from
         # BillSummarySerializer

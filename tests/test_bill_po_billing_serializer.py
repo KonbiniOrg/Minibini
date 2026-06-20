@@ -1,8 +1,11 @@
 from decimal import Decimal
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
+from django.utils import timezone
 from apps.contacts.models import Business, Contact
 from apps.core.models import AccountingCategory, AppState, Configuration
-from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem
+from apps.purchasing.models import PurchaseOrder, Bill, BillLineItem, BillPayment
 from apps.api.purchasing.serializers import BillSerializer, PurchaseOrderSerializer
 
 
@@ -91,11 +94,13 @@ class PurchaseOrderBilledFieldsTest(TestCase):
             qty=Decimal('2'), price=Decimal('100.00'), units='none',
             accounting_category=self.ac,
         )
+        self._bill_counter = 0
 
     def _bill(self, total, status=Bill.STATUS_RECEIVED):
+        self._bill_counter += 1
         bill = Bill.objects.create(
             business=self.b, purchase_order=self.po,
-            vendor_invoice_number='INV', status=status,
+            vendor_invoice_number=f'INV-{self._bill_counter:04d}', status=status,
         )
         BillLineItem.objects.create(
             bill=bill, line_number=1, description='y',
@@ -122,3 +127,85 @@ class PurchaseOrderBilledFieldsTest(TestCase):
         self._bill('100.00')
         data = PurchaseOrderSerializer(self.po).data
         self.assertFalse(data['is_fully_billed'])
+
+
+class BillSerializerPrefetchQueryCountTest(TestCase):
+    """Assert that serializing a list of bills via the viewset's prefetching
+    queryset does not trigger per-row queries for PO, sibling bills, line
+    items, or payments."""
+
+    def setUp(self):
+        Configuration.objects.create(key='po_number_sequence', value='PO-{year}-{counter:04d}')
+        AppState.objects.create(key='po_counter', value='0')
+        self.contact = Contact.objects.create(first_name='Q', last_name='Co', email='q@co.com')
+        self.b = Business.objects.create(business_name='Q Supplier', default_contact=self.contact)
+        self.ac = AccountingCategory.objects.create(code='QRY', name='Query')
+        self.po = PurchaseOrder.objects.create(business=self.b, status=PurchaseOrder.STATUS_ISSUED)
+
+    def _make_bill(self, inv, total):
+        bill = Bill.objects.create(
+            business=self.b,
+            purchase_order=self.po,
+            vendor_invoice_number=inv,
+            status=Bill.STATUS_RECEIVED,
+        )
+        BillLineItem.objects.create(
+            bill=bill, line_number=1, description='item',
+            qty=Decimal('1'), price=Decimal(str(total)),
+            units='none', accounting_category=self.ac,
+        )
+        BillPayment.objects.create(
+            bill=bill,
+            amount=Decimal('10.00'),
+            payment_date=timezone.now(),
+            method=BillPayment.METHOD_CHECK,
+        )
+        return bill
+
+    def _prefetched_qs(self, bill_ids):
+        """Mirror the prefetch added by BillViewSet.get_queryset for non-summary mode."""
+        return (
+            Bill.objects.filter(pk__in=bill_ids)
+            .select_related('purchase_order', 'business', 'contact')
+            .prefetch_related(
+                'purchase_order__bills__billlineitem_set',
+                'purchase_order__purchaseorderlineitem_set',
+                'billpayment_set',
+                'billlineitem_set',
+            )
+        )
+
+    def test_query_count_does_not_scale_with_bill_count(self):
+        """Serializing 2 bills should need significantly fewer queries than
+        2 * (queries per bill without prefetch).  Without prefetch each bill
+        fires ~4 extra queries (PO, sibling-bills, sibling-bill-lines, own
+        payments).  With prefetch the whole batch should stay under 10."""
+        bill1 = self._make_bill('QRY-001', '100.00')
+        bill2 = self._make_bill('QRY-002', '200.00')
+
+        qs = self._prefetched_qs([bill1.pk, bill2.pk])
+
+        # Force evaluation of the queryset (including prefetches) and then
+        # serialize — all subsequent attribute accesses should hit the cache.
+        with CaptureQueriesContext(connection) as ctx:
+            data = BillSerializer(list(qs), many=True).data
+
+        query_count = len(ctx.captured_queries)
+        # Without prefetch: 1 (bills) + 2*4 (PO, sibling bills, sibling
+        # bill lines, payments per bill) = ~9 just for the relation traversals,
+        # plus serializer helpers.  With prefetch the total should be well
+        # under 2 * 4 = 8 (i.e. clearly not scaling per-row).
+        self.assertLess(
+            query_count, 8,
+            msg=(
+                f"Expected <8 queries for serializing 2 bills with prefetch, "
+                f"got {query_count}. Queries:\n"
+                + "\n".join(q['sql'] for q in ctx.captured_queries)
+            ),
+        )
+
+        # Also verify correctness: both bills appear, values look right.
+        self.assertEqual(len(data), 2)
+        totals = {d['vendor_invoice_number']: d['balance'] for d in data}
+        self.assertEqual(totals['QRY-001'], '90.00')   # 100 - 10
+        self.assertEqual(totals['QRY-002'], '190.00')  # 200 - 10
