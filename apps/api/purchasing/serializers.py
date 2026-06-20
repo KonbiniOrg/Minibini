@@ -203,11 +203,11 @@ class BillSerializer(serializers.ModelSerializer):
         # prefetched purchase_order__bills__billlineitem_set data rather than
         # firing per-row DB queries.
         all_bills = list(po.bills.all())
-        active_bills = [
+        other_bills = [
             b for b in all_bills
             if b.status != Bill.STATUS_CANCELLED and b.pk != obj.pk
         ]
-        active_non_self = [
+        active_bills = [
             b for b in all_bills
             if b.status != Bill.STATUS_CANCELLED
         ]
@@ -215,7 +215,7 @@ class BillSerializer(serializers.ModelSerializer):
         # (purchaseorderlineitem_set prefetched by the viewset).
         po_line_items = list(po.purchaseorderlineitem_set.all())
         po_total = sum((li.total_amount for li in po_line_items), Decimal('0.00'))
-        billed_total = sum((b.total for b in active_non_self), Decimal('0.00'))
+        billed_total = sum((b.total for b in active_bills), Decimal('0.00'))
         po_fully_billed = po_total > 0 and billed_total >= po_total
         return {
             'other_bills': [
@@ -225,7 +225,7 @@ class BillSerializer(serializers.ModelSerializer):
                     'status': b.status,
                     'total': str(b.total.quantize(Decimal('0.01'))),
                 }
-                for b in active_bills
+                for b in other_bills
             ],
             'po_fully_billed': po_fully_billed,
         }
