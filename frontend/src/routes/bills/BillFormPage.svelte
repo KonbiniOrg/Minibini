@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push, querystring } from 'svelte-spa-router';
+  import PurchaseOrderPicker from '@/components/PurchaseOrderPicker.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -16,6 +17,9 @@
   // Query param: ?po=ID pre-links a PO on create
   const initialParams = new URLSearchParams($querystring);
   const contextPoId = initialParams.get('po');
+
+  // PO picker selection (create mode)
+  let selectedPoId = $state(null);
 
   let form = $state({
     business: '',
@@ -110,6 +114,7 @@
         push(`/bills/${params.id}`);
       } else {
         if (contextPoId) body.purchase_order = Number(contextPoId);
+        if (selectedPoId) body.purchase_order = Number(selectedPoId);
         const created = await api.post('/api/bills/', body);
         push(`/bills/${created.bill_id}`);
       }
@@ -147,6 +152,17 @@
         {/each}
       </select>
     </p>
+
+    {#if !isEdit}
+    <p>
+      <strong>Purchase Order</strong><br>
+      <PurchaseOrderPicker
+        businessId={form.business || null}
+        value={null}
+        onSelect={(po) => { selectedPoId = po.po_id; }}
+      />
+    </p>
+    {/if}
 
     <p>
       <label for="contact"><strong>Contact</strong></label><br>
