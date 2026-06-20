@@ -19,4 +19,14 @@ describe('RecordPaymentModal', () => {
       amount: '100.00', method: 'check', reference: '4471',
     }));
   });
+
+  it('blocks save and shows error when amount is empty or zero', async () => {
+    const onSaved = vi.fn();
+    const { getByText } = render(RecordPaymentModal, {
+      props: { open: true, billId: 7, defaultAmount: '', onSaved, onClose: () => {} },
+    });
+    await fireEvent.click(getByText(/save/i));
+    expect(api.post).not.toHaveBeenCalled();
+    expect(getByText(/amount must be greater than zero/i)).toBeTruthy();
+  });
 });

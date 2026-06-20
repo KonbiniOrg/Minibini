@@ -203,7 +203,7 @@
         </button>
       </p>
     {/if}
-    {#if isPayable}
+    {#if isPayable && $canManageFinancials}
       <p>
         <button type="button" onclick={() => { payDefault = ''; showPayment = true; }}>Record Payment</button>
         <button type="button" onclick={() => { payDefault = bill.balance; showPayment = true; }}>Pay in full</button>
