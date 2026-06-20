@@ -49,6 +49,7 @@ BILL_ORDERING = {
 class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all().prefetch_related(
         'purchaseorderlineitem_set__task__job',
+        'bills',
     ).order_by('-created_date')
     serializer_class = PurchaseOrderSerializer
     lookup_field = 'pk'

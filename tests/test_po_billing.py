@@ -39,3 +39,16 @@ class PoBillingTest(TestCase):
     def test_is_fully_billed_at_coverage(self):
         self._bill('200.00')
         self.assertTrue(self.po.is_fully_billed)
+
+    def test_serializer_exposes_linked_bills(self):
+        from apps.api.purchasing.serializers import PurchaseOrderSerializer
+        bill = self._bill('120.00')
+        data = PurchaseOrderSerializer(self.po).data
+        self.assertEqual(len(data['bills']), 1)
+        self.assertEqual(data['bills'][0]['bill_id'], bill.bill_id)
+        self.assertEqual(data['bills'][0]['vendor_invoice_number'], 'I')
+
+    def test_serializer_bills_empty_when_none(self):
+        from apps.api.purchasing.serializers import PurchaseOrderSerializer
+        data = PurchaseOrderSerializer(self.po).data
+        self.assertEqual(data['bills'], [])

@@ -108,6 +108,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     billed_total = serializers.SerializerMethodField()
     po_total = serializers.SerializerMethodField()
     is_fully_billed = serializers.ReadOnlyField()
+    bills = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrder
@@ -116,7 +117,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             'po_number', 'status',
             'created_date', 'requested_date', 'issued_date',
             'received_date', 'cancel_date', 'line_items',
-            'billed_total', 'po_total', 'is_fully_billed',
+            'billed_total', 'po_total', 'is_fully_billed', 'bills',
         ]
         read_only_fields = ['po_id', 'po_number', 'created_date']
 
@@ -124,6 +125,14 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         if obj.contact:
             return f"{obj.contact.first_name} {obj.contact.last_name}"
         return None
+
+    def get_bills(self, obj):
+        return [
+            {'bill_id': b.bill_id,
+             'vendor_invoice_number': b.vendor_invoice_number,
+             'status': b.status}
+            for b in obj.bills.all()
+        ]
 
     def get_billed_total(self, obj):
         return str(obj.billed_total.quantize(Decimal('0.01')))

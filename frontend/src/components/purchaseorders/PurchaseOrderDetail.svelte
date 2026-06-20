@@ -317,6 +317,18 @@
     {#if po.is_fully_billed}<strong>— fully billed</strong>{/if}</p>
 {/if}
 
+{#if po.bills?.length}
+  <p>Bills:
+    {#each po.bills as b}
+      <a href={`#/bills/${b.bill_id}`}>{b.vendor_invoice_number || `#${b.bill_id}`}</a>{' '}
+    {/each}
+  </p>
+{/if}
+
+{#if canManageFinancials && ['issued', 'partly_received', 'received_in_full'].includes(po.status)}
+  <p><a href={`#/bills/new?po=${po.po_id}`}>Create Bill</a></p>
+{/if}
+
 {#if changeJobLine}
   <div class="overlay">
     <div class="dialog">

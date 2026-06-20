@@ -71,14 +71,21 @@ Routes: list `#/bills`; create `#/bills/new`; detail `#/bills/{id}`; edit
 
 - [ ] **New Bill button (persona):** on `#/bills`, **New Bill** is visible to
   **Financials** only; absent for a **Viewer**.
-- [ ] **From a PO (the common path):** `#/bills/new` → use the **Purchase
-  order…** picker (typeahead). It lists only that **vendor's** `issued` /
-  `partly_received` / `received_in_full` POs — **draft and cancelled POs are
-  excluded**. Pick one → the vendor is filled in and the PO's line items are
-  copied onto the new bill as a starting point.
-- [ ] **From scratch (rare):** `#/bills/new` → pick a Vendor (Business),
-  optionally a Contact, enter Vendor Invoice #, Due Date; leave the PO picker
-  empty → save. A PO-less bill is created.
+- [ ] **From the PO page (the common path):** on `#/purchase-orders/{id}`, a
+  **Create Bill** link is shown to **Financials** for billable POs (`issued` /
+  `partly_received` / `received_in_full`) — absent for a Viewer and on draft /
+  cancelled POs. Click it → opens `#/bills/new?po={id}` pre-linked to that PO,
+  vendor filled, line items copied as a starting point.
+- [ ] **From a PO via the picker:** `#/bills/new` → the **Purchase order…**
+  picker (typeahead) lists only that **vendor's** `issued` / `partly_received` /
+  `received_in_full` POs — **draft and cancelled excluded**. Pick one → vendor
+  filled, line items copied.
+- [ ] **From scratch (rare — typically PO-less bills):** `#/bills/new` → pick a
+  Vendor (Business), optionally a Contact, enter Vendor Invoice #, Due Date;
+  leave the PO picker empty → save. A PO-less bill is created.
+- [ ] **PO list shows associated bills:** on `#/purchase-orders`, the **Bill**
+  column links each PO's bill(s) (`vendor_invoice_number` → its detail), or
+  shows **—** when none.
 - [ ] **Guard — can't bill a draft PO:** if you reach the form with a draft PO
   (e.g. a hand-typed `?po=<draftPoId>`), saving is **refused** with a validation
   error. Only `issued`-or-later POs can carry a bill.

@@ -1075,7 +1075,7 @@ Routes (`#/`-prefixed hash routes):
 | `#/purchase-orders/:id` | `routes/purchaseorders/PurchaseOrderDetailPage.svelte` → `PurchaseOrderDetail.svelte` |
 | `#/purchase-orders/:id/edit` | `PurchaseOrderFormPage.svelte` (edit mode, draft only) |
 
-The PO detail page (`PurchaseOrderDetail.svelte`) shows `billed_total`, `po_total`, and an `is_fully_billed` badge sourced from `PurchaseOrderSerializer`. A Bills panel lists linked Bills (via `?purchase_order=<id>`).
+The PO detail page (`PurchaseOrderDetail.svelte`) shows `billed_total`, `po_total`, and an `is_fully_billed` marker sourced from `PurchaseOrderSerializer`. It lists the PO's linked Bills (from the serializer's `bills` field — `[{bill_id, vendor_invoice_number, status}]`, prefetched on the viewset to avoid N+1) and, for users with `can_manage_financials` on a billable PO (`issued` / `partly_received` / `received_in_full`), a **Create Bill** link to `#/bills/new?po=<id>`. The PO **list** (`PurchaseOrderList.svelte`) shows a **Bill** column linking each PO's bill(s).
 
 ### Bill surfaces
 
