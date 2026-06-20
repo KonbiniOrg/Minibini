@@ -823,3 +823,20 @@ IMAP-SMTP machinery and tend to be worked together.
   `docs/plans/2026-06-14-expenses-cost-model-redesign.md`.
   _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
   root-caused and fixed (or shown to be expected), with a test.
+
+- **Money inputs send floats → "no more than 2 decimal places" on non-round values.** — _added 2026-06-20_
+  Class bug. `<input type="number" bind:value={x}>` coerces the value to a JS float,
+  sent as a JSON number; Django converts a float to `Decimal` via its binary value
+  (e.g. `33.33` → `33.3299...`), tripping a `DecimalField(decimal_places=2)` validator.
+  Exactly-representable values (`50`, `12.5`) slip through, so it looks intermittent.
+  Fixed for the bill-payment path on `feature/bills` (commit `3c931e3`): the Record
+  Payment modal amount input is now `type=text`/`inputmode=decimal` (sends the exact
+  string) and `BillPaymentService` normalizes via `Decimal(str(value))` server-side.
+  **The same pattern remains in other money inputs** — notably
+  `frontend/src/components/LineItemModal.svelte` (qty/price on PO/Bill/Invoice/Estimate
+  line items), and likely other `type="number"` money/qty fields. Do a sweep:
+  switch money inputs to string-valued (`type=text`/`inputmode=decimal`) and/or add a
+  shared server-side `Decimal(str(...))` normalize on the line-item/qty write paths,
+  keeping the real >2-decimal validation intact.
+  _Done when:_ entering a non-round amount (e.g. `19.99`) in any money field saves
+  cleanly, with regression tests, and no `type="number"` money input sends a raw float.
