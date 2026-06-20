@@ -312,6 +312,11 @@
   </table>
 {/if}
 
+{#if po.po_total}
+  <p>Billed: ${Number(po.billed_total).toFixed(2)} / ${Number(po.po_total).toFixed(2)}
+    {#if po.is_fully_billed}<strong>— fully billed</strong>{/if}</p>
+{/if}
+
 {#if changeJobLine}
   <div class="overlay">
     <div class="dialog">
