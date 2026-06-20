@@ -10,6 +10,16 @@ import BillListPage from '@/routes/bills/BillListPage.svelte';
 
 beforeEach(() => { api.get.mockReset(); });
 
+describe('BillListPage balance', () => {
+  it('renders the API balance verbatim', async () => {
+    api.get.mockResolvedValue({ results: [
+      { bill_id: 1, status: 'partly_paid', vendor_name: 'Acme', balance: '70.00', total: '100.00' },
+    ], count: 1 });
+    const { container } = render(BillListPage);
+    expect(await findByText(container, /70\.00/)).toBeInTheDocument();
+  });
+});
+
 describe('BillListPage', () => {
   it('renders bill rows from the API', async () => {
     user.set({ username: 'fin', permissions: ['can_manage_financials'] });
