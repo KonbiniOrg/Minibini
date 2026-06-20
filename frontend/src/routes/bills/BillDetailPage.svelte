@@ -114,7 +114,7 @@
       <tr><td><strong>PO</strong></td>
         <td>
           {#if bill.po_number}
-            <a href={`#/purchase-orders/${bill.purchase_order}`}>{bill.po_number}</a>
+            <a href={`#/purchase-orders/${bill.purchase_order}`}>{bill.po_number}</a>{#if bill.po_billing?.po_fully_billed} - fully billed{/if}
           {:else}
             —
           {/if}
@@ -128,9 +128,6 @@
     </tbody>
   </table>
 
-  {#if bill.po_billing?.po_fully_billed}
-    <p class="warn">⚠ {bill.po_number} is fully billed</p>
-  {/if}
   {#if bill.po_billing?.other_bills?.length}
     <p class="info">This PO already has {bill.po_billing.other_bills.length} other bill(s):
       {#each bill.po_billing.other_bills as ob}
@@ -262,6 +259,5 @@
   .metadata-table td { padding: 4px 12px 4px 0; vertical-align: top; }
   .metadata-table td:first-child { white-space: nowrap; }
   h3 { margin-top: 24px; margin-bottom: 8px; }
-  .warn { background: #fff3cd; border: 1px solid #e0a800; padding: 8px; border-radius: 4px; }
   .info { color: #555; }
 </style>

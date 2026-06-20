@@ -159,9 +159,11 @@ detail**:
 - [ ] **Informational notice (any prior bill):** create/link a second bill to a
   PO that already has a non-cancelled bill → an info line **"This PO already has N
   other bill(s):"** with each prior bill as a **link** to its detail.
-- [ ] **Warning banner (fully billed):** when existing non-cancelled bills already
-  cover the PO's full total → a prominent **"⚠ {po_number} is fully billed"**
-  banner. It does **not** block — you can still proceed.
+- [ ] **Fully-billed marker:** when existing non-cancelled bills already cover the
+  PO's full total → on the **bill detail** the PO row reads **"{po_number} - fully
+  billed"** inline next to the PO link; on the **create form** a **"⚠ {po_number}
+  is fully billed"** banner shows once a PO is picked. Neither **blocks** — you can
+  still proceed.
 - [ ] **Multiple bills allowed:** confirm a second bill against one PO actually
   saves (the partial-delivery case) — the surfacing is advisory only.
 - [ ] **Cancelled bills don't count:** a cancelled bill on the PO is **not**
