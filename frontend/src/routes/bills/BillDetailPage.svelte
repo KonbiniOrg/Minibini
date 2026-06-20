@@ -4,6 +4,7 @@
   import { api } from '../../lib/api.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
+  import RecordPaymentModal from '../../components/RecordPaymentModal.svelte';
 
   let { params = {} } = $props();
   let billId = $derived(params.id);
@@ -21,6 +22,11 @@
 
   let isDraft = $derived(bill?.status === 'draft');
   let isReceived = $derived(bill?.status === 'received');
+  let isPayable = $derived(bill?.status === 'received' || bill?.status === 'partly_paid');
+
+  // RecordPaymentModal state
+  let showPayment = $state(false);
+  let payDefault = $state('');
   let lineItems = $derived(
     (bill?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
@@ -76,6 +82,11 @@
     } catch (e) {
       alert(e.message || `Could not perform action: ${action}`);
     }
+  }
+
+  async function deletePayment(pid) {
+    await api.delete(`/api/bills/${bill.bill_id}/payments/${pid}/`);
+    load();
   }
 
   async function deleteBill() {
@@ -192,6 +203,28 @@
         </button>
       </p>
     {/if}
+    {#if isPayable}
+      <p>
+        <button type="button" onclick={() => { payDefault = ''; showPayment = true; }}>Record Payment</button>
+        <button type="button" onclick={() => { payDefault = bill.balance; showPayment = true; }}>Pay in full</button>
+      </p>
+    {/if}
+  {/if}
+
+  {#if bill.payments?.length}
+    <h3>Payments</h3>
+    <table><tbody>
+      {#each bill.payments as p}
+        <tr>
+          <td>{p.method}</td><td>{p.reference}</td>
+          <td>${Number(p.amount).toFixed(2)}</td>
+          <td>{p.cleared_date ? `cleared ${p.cleared_date.slice(0,10)}` : 'pending'}</td>
+          {#if $canManageFinancials}
+            <td><button type="button" onclick={() => deletePayment(p.payment_id)}>Delete</button></td>
+          {/if}
+        </tr>
+      {/each}
+    </tbody></table>
   {/if}
 
   <LineItemModal
@@ -202,6 +235,13 @@
     {categories}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
+  />
+  <RecordPaymentModal
+    open={showPayment}
+    billId={bill.bill_id}
+    defaultAmount={payDefault}
+    onSaved={() => { showPayment = false; load(); }}
+    onClose={() => { showPayment = false; }}
   />
 {/if}
 
