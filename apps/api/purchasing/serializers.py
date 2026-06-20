@@ -105,6 +105,9 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     )
     business_name = serializers.CharField(source='business.business_name', read_only=True)
     contact_name = serializers.SerializerMethodField()
+    billed_total = serializers.SerializerMethodField()
+    po_total = serializers.SerializerMethodField()
+    is_fully_billed = serializers.ReadOnlyField()
 
     class Meta:
         model = PurchaseOrder
@@ -113,6 +116,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             'po_number', 'status',
             'created_date', 'requested_date', 'issued_date',
             'received_date', 'cancel_date', 'line_items',
+            'billed_total', 'po_total', 'is_fully_billed',
         ]
         read_only_fields = ['po_id', 'po_number', 'created_date']
 
@@ -120,6 +124,12 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         if obj.contact:
             return f"{obj.contact.first_name} {obj.contact.last_name}"
         return None
+
+    def get_billed_total(self, obj):
+        return str(obj.billed_total.quantize(Decimal('0.01')))
+
+    def get_po_total(self, obj):
+        return str(obj.po_total.quantize(Decimal('0.01')))
 
 
 class BillLineItemSerializer(serializers.ModelSerializer):
@@ -155,6 +165,7 @@ class BillSerializer(serializers.ModelSerializer):
     vendor_name = serializers.SerializerMethodField()
     amount_paid = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
+    po_billing = serializers.SerializerMethodField()
 
     class Meta:
         model = Bill
@@ -164,6 +175,7 @@ class BillSerializer(serializers.ModelSerializer):
             'status', 'created_date', 'due_date', 'received_date',
             'paid_date', 'cancelled_date', 'line_items', 'payments',
             'amount_paid', 'balance', 'qbo_id', 'qbo_payment_status',
+            'po_billing',
         ]
         read_only_fields = [
             'bill_id', 'status', 'created_date', 'received_date',
@@ -181,3 +193,21 @@ class BillSerializer(serializers.ModelSerializer):
 
     def get_balance(self, obj):
         return str(obj.balance.quantize(Decimal('0.01')))
+
+    def get_po_billing(self, obj):
+        if not obj.purchase_order_id:
+            return None
+        others = obj.purchase_order.bills.exclude(
+            status=Bill.STATUS_CANCELLED).exclude(pk=obj.pk)
+        return {
+            'other_bills': [
+                {
+                    'bill_id': b.pk,
+                    'vendor_invoice_number': b.vendor_invoice_number,
+                    'status': b.status,
+                    'total': str(b.total.quantize(Decimal('0.01'))),
+                }
+                for b in others
+            ],
+            'po_fully_billed': obj.purchase_order.is_fully_billed,
+        }
