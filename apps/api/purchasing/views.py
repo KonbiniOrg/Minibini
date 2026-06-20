@@ -506,8 +506,19 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
                 Value(0), output_field=_BILL_MONEY),
             paid_anno=paid_subquery,
         ).annotate(
-            balance_anno=ExpressionWrapper(
-                F('total_anno') - F('paid_anno'), output_field=_BILL_MONEY),
+            balance_anno=Case(
+                When(
+                    status__in=[
+                        Bill.STATUS_PAID_IN_FULL,
+                        Bill.STATUS_CANCELLED,
+                        Bill.STATUS_REFUNDED,
+                    ],
+                    then=Value(0, output_field=_BILL_MONEY),
+                ),
+                default=ExpressionWrapper(
+                    F('total_anno') - F('paid_anno'), output_field=_BILL_MONEY),
+                output_field=_BILL_MONEY,
+            ),
         )
 
         status_param = self.request.query_params.get('status', 'open')

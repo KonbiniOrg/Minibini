@@ -25,6 +25,21 @@ class BillSerializerBalanceTest(TestCase):
         self.assertEqual(data['balance'], '70.00')
         self.assertEqual(len(data['payments']), 1)
 
+    def test_cancelled_bill_balance_is_zero_via_serializer(self):
+        """A cancelled bill with line items and no payments must report balance 0.00 via BillSerializer."""
+        contact = Contact.objects.create(first_name='Zed', last_name='Corp', email='z@zed.com')
+        b = Business.objects.create(business_name='Zed Corp', default_contact=contact)
+        ac = AccountingCategory.objects.create(code='ZED', name='Zed')
+        bill = Bill.objects.create(business=b, vendor_invoice_number='INV-C1',
+                                   status=Bill.STATUS_CANCELLED)
+        BillLineItem.objects.create(bill=bill, line_number=1, description='thing',
+                                    qty=Decimal('2'), price=Decimal('25.00'),
+                                    units='none', accounting_category=ac)
+        # No payments — total is 50.00, but bill is cancelled → balance must be 0.00
+        data = BillSerializer(bill).data
+        self.assertEqual(data['balance'], '0.00',
+                         f"Expected balance 0.00 for cancelled bill, got {data['balance']}")
+
     def test_no_fan_out_with_multiple_line_items_and_payments(self):
         """Regression: summary-mode annotations must not multiply rows when a bill
         has both multiple line items AND multiple payments (fan-out join)."""

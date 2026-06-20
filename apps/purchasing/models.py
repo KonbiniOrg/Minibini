@@ -375,6 +375,13 @@ class Bill(models.Model):
 
     @property
     def balance(self):
+        TERMINAL_STATUSES = {
+            Bill.STATUS_PAID_IN_FULL,
+            Bill.STATUS_CANCELLED,
+            Bill.STATUS_REFUNDED,
+        }
+        if self.status in TERMINAL_STATUSES:
+            return Decimal('0.00')
         return self.total - self.amount_paid
 
     def recompute_payment_status(self):
