@@ -163,6 +163,23 @@ class PurchaseOrder(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    @property
+    def po_total(self):
+        return sum((li.total_amount
+                    for li in self.purchaseorderlineitem_set.all()),
+                   Decimal('0.00'))
+
+    @property
+    def billed_total(self):
+        return sum(
+            (bill.total for bill in self.bills.exclude(status=Bill.STATUS_CANCELLED)),
+            Decimal('0.00'))
+
+    @property
+    def is_fully_billed(self):
+        total = self.po_total
+        return total > 0 and self.billed_total >= total
+
     class Meta:
         db_table = 'pos'
 
@@ -189,7 +206,10 @@ class Bill(models.Model):
     ]
 
     bill_id = models.AutoField(primary_key=True)
-    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
+    purchase_order = models.ForeignKey(
+        PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='bills',
+    )
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
