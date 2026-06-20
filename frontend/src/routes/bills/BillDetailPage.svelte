@@ -128,6 +128,17 @@
     </tbody>
   </table>
 
+  {#if bill.po_billing?.po_fully_billed}
+    <p class="warn">⚠ {bill.po_number} is already fully billed. Check for a duplicate before paying.</p>
+  {/if}
+  {#if bill.po_billing?.other_bills?.length}
+    <p class="info">This PO already has {bill.po_billing.other_bills.length} other bill(s):
+      {#each bill.po_billing.other_bills as ob}
+        <a href={`#/bills/${ob.bill_id}`}>{ob.vendor_invoice_number}</a>{' '}
+      {/each}
+    </p>
+  {/if}
+
   {#if $canManageFinancials && isDraft}
     <p><a href={`#/bills/${bill.bill_id}/edit`}>Edit header</a></p>
   {/if}
@@ -251,4 +262,6 @@
   .metadata-table td { padding: 4px 12px 4px 0; vertical-align: top; }
   .metadata-table td:first-child { white-space: nowrap; }
   h3 { margin-top: 24px; margin-bottom: 8px; }
+  .warn { background: #fff3cd; border: 1px solid #e0a800; padding: 8px; border-radius: 4px; }
+  .info { color: #555; }
 </style>

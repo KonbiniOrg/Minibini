@@ -21,6 +21,9 @@
   // PO picker selection (create mode)
   let selectedPoId = $state(null);
 
+  // po_billing context fetched after PO is chosen
+  let poBilling = $state(null);
+
   let form = $state({
     business: '',
     contact: '',
@@ -68,6 +71,28 @@
     lastFetchedBusiness = biz;
     fetchContactsAndAutoSelect(biz, true);
   });
+
+  async function fetchPoBilling(poId) {
+    if (!poId) { poBilling = null; return; }
+    try {
+      const data = await api.get(`/api/bills/?purchase_order=${poId}&page_size=100`);
+      const bills = data.results || data;
+      const active = bills.filter(b => b.status !== 'cancelled');
+      const poData = await api.get(`/api/purchase-orders/${poId}/`);
+      poBilling = {
+        other_bills: active.map(b => ({
+          bill_id: b.bill_id,
+          vendor_invoice_number: b.vendor_invoice_number,
+          status: b.status,
+          total: b.balance,
+        })),
+        po_fully_billed: poData.is_fully_billed,
+      };
+    } catch (e) {
+      console.error('Failed to fetch PO billing context', e);
+      poBilling = null;
+    }
+  }
 
   async function load() {
     loading = true;
@@ -159,9 +184,19 @@
       <PurchaseOrderPicker
         businessId={form.business || null}
         value={null}
-        onSelect={(po) => { selectedPoId = po.po_id; }}
+        onSelect={(po) => { selectedPoId = po.po_id; fetchPoBilling(po.po_id); }}
       />
     </p>
+    {#if poBilling?.po_fully_billed}
+      <p class="warn">⚠ This PO is already fully billed. Check for a duplicate before paying.</p>
+    {/if}
+    {#if poBilling?.other_bills?.length}
+      <p class="info">This PO already has {poBilling.other_bills.length} other bill(s):
+        {#each poBilling.other_bills as ob}
+          <a href={`#/bills/${ob.bill_id}`}>{ob.vendor_invoice_number}</a>{' '}
+        {/each}
+      </p>
+    {/if}
     {/if}
 
     <p>
@@ -196,3 +231,8 @@
     </p>
   </form>
 {/if}
+
+<style>
+  .warn { background: #fff3cd; border: 1px solid #e0a800; padding: 8px; border-radius: 4px; }
+  .info { color: #555; }
+</style>
