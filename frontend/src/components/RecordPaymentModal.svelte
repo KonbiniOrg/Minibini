@@ -1,5 +1,5 @@
 <script>
-  import { api } from '@/lib/api.js';
+  import { api } from '../lib/api.js';
   let { open = false, billId, defaultAmount = '', onSaved = () => {}, onClose = () => {} } = $props();
 
   let amount = $state('');

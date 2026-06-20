@@ -1,7 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push, querystring } from 'svelte-spa-router';
-  import PurchaseOrderPicker from '@/components/PurchaseOrderPicker.svelte';
+  import PurchaseOrderPicker from '../../components/PurchaseOrderPicker.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
