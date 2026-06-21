@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import (
     F, Sum, Value, Case, When, DecimalField, ExpressionWrapper,
-    OuterRef, Subquery,
+    OuterRef, Subquery, Q,
 )
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
@@ -92,6 +92,12 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         po_status = self.request.query_params.get('status')
         if po_status:
             qs = qs.filter(status=po_status)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(po_number__icontains=search)
+                | Q(business__business_name__icontains=search)
+            )
         return qs
 
     line_item_serializer_class = POLineItemSerializer
