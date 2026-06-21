@@ -840,3 +840,21 @@ IMAP-SMTP machinery and tend to be worked together.
   keeping the real >2-decimal validation intact.
   _Done when:_ entering a non-round amount (e.g. `19.99`) in any money field saves
   cleanly, with regression tests, and no `type="number"` money input sends a raw float.
+
+- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
+  When adding a PO line for a job that already has materials, there's no way to
+  deterministically attach the line to a *specific* existing pending material.
+  Today the backend resolver (`MaterialService.resolve_or_create_for_line`,
+  three steps: explicit `material_id` → claim → create) only auto-links
+  ("claim") when job + inventory_item match *exactly one* pending, unlinked
+  material on that (job, item); otherwise it **creates a new material** —
+  silently producing a duplicate for freeform materials, item mismatches, or
+  multiple candidates. The "order this material" flow sets `material_id` for the
+  *first* line only (one-shot prefill, cleared after add — see commit f3440447).
+  Fix: on the PO line form (`LineItemForm` via `PurchaseOrderDetailPage`), once a
+  Job is selected, surface that job's pending **unlinked** materials and let the
+  user pick "attach to this one" (sends `material_id`, routing through the
+  resolver's explicit path) or "create new". Removes the guessing and makes
+  second-line-to-second-material deterministic.
+  _Done when:_ a user can add a PO line for a job and explicitly choose which
+  existing pending material it links to (or opt to create a new one), with tests.
