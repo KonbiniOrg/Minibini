@@ -141,12 +141,16 @@ Illustrative `JobPicker` (the shape they all take):
   {disabled} placeholder="Search jobs…" />
 ```
 
-**`InventoryItemPicker` specifics:** kept as its own picker (consumers read
-`description`, `units`, `selling_price`/`price`, `accounting_category`,
-`is_inventoried`, on-hand/earmark). Switch from the client-side `page_size=9999`
-load to server `/api/inventory/?search=` (fulfilling its own TODO). Add a general
-`params` prop (extra fixed query filters). Keep the freeform option via the base
-`header` snippet. No merge-specific behavior.
+**`InventoryItemPicker` specifics:** rides the `SearchPicker` base like every
+other entity picker — it is "its own picker" only in the same sense `JobPicker`
+is (one thin wrapper per entity), **not** a standalone component outside the
+shared base. What stays local to its wrapper: its consumers read the full row
+(`description`, `units`, `selling_price`/`price`, `accounting_category`,
+`is_inventoried`, on-hand/earmark), and it offers a "None (freeform)" option via
+the base `header` snippet. The behavior is shared. Switch from the client-side
+`page_size=9999` load to server `/api/inventory/?search=` (fulfilling its own
+TODO), and add a general `params` prop (extra fixed query filters). No
+merge-specific behavior.
 
 **Retired:** the old `PurchaseOrderPicker` body (vendor-scoped client-filter) is
 replaced by the global one above.
