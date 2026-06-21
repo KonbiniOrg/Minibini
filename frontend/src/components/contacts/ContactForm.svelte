@@ -25,7 +25,7 @@
     municipality: contact?.municipality || '',
     postal_code: contact?.postal_code || '',
     country_code: contact?.country_code || '',
-    business: contact?.business ?? null,
+    business: contact?.business?.business_id ?? null,
   });
 
   function handleSubmit(e) {
@@ -110,7 +110,7 @@
 
   <p>
     <label><strong>Business</strong></label><br>
-    <BusinessPicker bind:value={form.business} selectedItem={contact?.business_detail ?? null} />
+    <BusinessPicker bind:value={form.business} selectedItem={contact?.business ?? null} />
   </p>
 
   <p>

@@ -6,7 +6,7 @@
   const { params = {} } = $props();
 
   let email = $state(null);
-  let selectedBillId = $state('');
+  let selectedBillId = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let submitting = $state(false);

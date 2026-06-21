@@ -98,8 +98,9 @@
 
   <p>
     <label><strong>Vendor (Business) *</strong></label><br>
+    <!-- business is a numeric id on the PO; label resolves via id fetch (no nested object to pass) -->
     <BusinessPicker bind:value={form.business}
-      selectedItem={po?.business_detail ?? null}
+      selectedItem={null}
       onSelect={(b) => { pickedBusiness = b; }} />
   </p>
 

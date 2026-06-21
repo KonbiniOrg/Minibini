@@ -6,7 +6,7 @@
   const { params = {} } = $props();
 
   let email = $state(null);
-  let selectedJobId = $state('');
+  let selectedJobId = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let submitting = $state(false);
