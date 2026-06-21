@@ -1,12 +1,11 @@
 <script>
-  import { api } from '../../lib/api.js';
   import { emailApi } from '../../lib/email.js';
   import { push } from 'svelte-spa-router';
+  import BillPicker from '../../components/BillPicker.svelte';
 
   const { params = {} } = $props();
 
   let email = $state(null);
-  let bills = $state([]);
   let selectedBillId = $state('');
   let loading = $state(true);
   let loadError = $state(null);
@@ -17,12 +16,7 @@
     loading = true;
     loadError = null;
     try {
-      const [emailData, billsData] = await Promise.all([
-        emailApi.get(params.id),
-        api.get('/api/bills/?page_size=100'),
-      ]);
-      email = emailData;
-      bills = billsData.results || [];
+      email = await emailApi.get(params.id);
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -78,15 +72,8 @@
 
   <form onsubmit={handleSubmit}>
     <p>
-      <label for="bill_id"><strong>Bill *</strong></label><br>
-      <select id="bill_id" bind:value={selectedBillId} required>
-        <option value="">-- Select a Bill --</option>
-        {#each bills as bill}
-          <option value={bill.bill_id}>
-            {bill.vendor_invoice_number || `(Bill #${bill.bill_id})`} — {bill.status}
-          </option>
-        {/each}
-      </select>
+      <label><strong>Bill *</strong></label><br>
+      <BillPicker bind:value={selectedBillId} />
     </p>
 
     <p>
