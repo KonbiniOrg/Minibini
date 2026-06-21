@@ -45,6 +45,10 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             qs = qs.annotate(_em_count=Count('earmark')).exclude(
                 is_catalog=False, qty_on_hand=Decimal('0.00'), _em_count=0,
             )
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(Q(code__icontains=search) | Q(description__icontains=search))
         return qs
 
     def get_permissions(self):
