@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push, querystring } from 'svelte-spa-router';
+  import PurchaseOrderPicker from '../../components/PurchaseOrderPicker.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -16,6 +17,13 @@
   // Query param: ?po=ID pre-links a PO on create
   const initialParams = new URLSearchParams($querystring);
   const contextPoId = initialParams.get('po');
+
+  // PO picker selection (create mode)
+  let selectedPoId = $state(null);
+  let selectedPoNumber = $state(null);
+
+  // po_billing context fetched after PO is chosen
+  let poBilling = $state(null);
 
   let form = $state({
     business: '',
@@ -65,6 +73,28 @@
     fetchContactsAndAutoSelect(biz, true);
   });
 
+  async function fetchPoBilling(poId) {
+    if (!poId) { poBilling = null; return; }
+    try {
+      const data = await api.get(`/api/bills/?purchase_order=${poId}&page_size=100`);
+      const bills = data.results || data;
+      const active = bills.filter(b => b.status !== 'cancelled');
+      const poData = await api.get(`/api/purchase-orders/${poId}/`);
+      poBilling = {
+        other_bills: active.map(b => ({
+          bill_id: b.bill_id,
+          vendor_invoice_number: b.vendor_invoice_number,
+          status: b.status,
+          total: b.total,
+        })),
+        po_fully_billed: poData.is_fully_billed,
+      };
+    } catch (e) {
+      console.error('Failed to fetch PO billing context', e);
+      poBilling = null;
+    }
+  }
+
   async function load() {
     loading = true;
     errors = null;
@@ -86,6 +116,20 @@
             await fetchContactsAndAutoSelect(form.business, false);
           }
         }
+      } else if (contextPoId) {
+        // Arrived via "Create Bill" from a PO: pre-fill the vendor from the PO
+        // and pull in the double-bill surfacing. Line items are copied
+        // server-side on save (create_bill_from_po).
+        const po = await api.get(`/api/purchase-orders/${contextPoId}/`);
+        selectedPoId = po.po_id;
+        selectedPoNumber = po.po_number;
+        if (po.business) {
+          form.business = po.business;
+          lastFetchedBusiness = po.business;
+          await fetchContactsAndAutoSelect(po.business, false);
+          form.contact = po.contact || '';
+        }
+        await fetchPoBilling(contextPoId);
       }
     } catch (e) {
       errors = e.message;
@@ -110,6 +154,7 @@
         push(`/bills/${params.id}`);
       } else {
         if (contextPoId) body.purchase_order = Number(contextPoId);
+        if (selectedPoId) body.purchase_order = Number(selectedPoId);
         const created = await api.post('/api/bills/', body);
         push(`/bills/${created.bill_id}`);
       }
@@ -140,13 +185,39 @@
   <form onsubmit={handleSubmit}>
     <p>
       <label for="business"><strong>Vendor (Business) *</strong></label><br>
-      <select id="business" bind:value={form.business} required>
+      <select id="business" bind:value={form.business} required disabled={!!contextPoId}>
         <option value="">-- Select Business --</option>
         {#each businesses as biz (biz.business_id)}
           <option value={biz.business_id}>{biz.business_name}</option>
         {/each}
       </select>
+      {#if contextPoId}<br><small>Vendor comes from the purchase order.</small>{/if}
     </p>
+
+    {#if !isEdit}
+    {#if contextPoId}
+    <p><strong>Purchase Order:</strong> {selectedPoNumber || contextPoId}</p>
+    {:else}
+    <p>
+      <strong>Purchase Order</strong><br>
+      <PurchaseOrderPicker
+        businessId={form.business || null}
+        value={null}
+        onSelect={(po) => { selectedPoId = po.po_id; selectedPoNumber = po.po_number; fetchPoBilling(po.po_id); }}
+      />
+    </p>
+    {/if}
+    {#if poBilling?.po_fully_billed}
+      <p class="warn">⚠ {selectedPoNumber} is fully billed</p>
+    {/if}
+    {#if poBilling?.other_bills?.length}
+      <p class="info">This PO already has {poBilling.other_bills.length} other bill(s):
+        {#each poBilling.other_bills as ob}
+          <a href={`#/bills/${ob.bill_id}`}>{ob.vendor_invoice_number}</a>{' '}
+        {/each}
+      </p>
+    {/if}
+    {/if}
 
     <p>
       <label for="contact"><strong>Contact</strong></label><br>
@@ -180,3 +251,8 @@
     </p>
   </form>
 {/if}
+
+<style>
+  .warn { background: #fff3cd; border: 1px solid #e0a800; padding: 8px; border-radius: 4px; }
+  .info { color: #555; }
+</style>

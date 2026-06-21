@@ -75,13 +75,13 @@ describe('BillDetailPage', () => {
     expect(await findByText(container, 'Mark Received')).toBeInTheDocument();
   });
 
-  it('shows Mark Paid in Full on a received bill', async () => {
+  it('shows Cancel Bill on a received bill', async () => {
     api.get.mockImplementation((url) => {
       if (url.includes('/api/accounting-categories/')) return Promise.resolve({ results: [] });
       return Promise.resolve(RECEIVED_BILL);
     });
     const { container } = render(BillDetailPage, { props: { params: { id: '2' } } });
-    expect(await findByText(container, 'Mark Paid in Full')).toBeInTheDocument();
+    expect(await findByText(container, 'Cancel Bill')).toBeInTheDocument();
   });
 
   it('Mark Received is disabled when no line items', async () => {

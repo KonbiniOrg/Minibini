@@ -40,10 +40,13 @@
       if (!vendorBusinessId) {
         throw new Error('A vendor Business is required to create a Bill. Pick or create one for this contact.');
       }
-      // The Bill creation page itself is future work — we hand it the email
-      // context + the vendor we just resolved and let it own the actual
-      // create-and-link.
-      push(`/bills/new?email=${params.id}&vendor=${vendorBusinessId}`);
+      // Tier 1: if this email was a vendor reply to a PO (reply-correlated),
+      // the EmailRecord already carries purchase_order. Fetch it and pre-select
+      // the PO on the bill form so the user doesn't have to pick it manually.
+      const emailRecord = await emailApi.get(params.id);
+      const poId = emailRecord?.purchase_order;
+      const poParam = poId ? `&po=${poId}` : '';
+      push(`/bills/new?email=${params.id}&vendor=${vendorBusinessId}${poParam}`);
     } catch (err) {
       submitError = err.message;
       submitting = false;

@@ -605,15 +605,6 @@ IMAP-SMTP machinery and tend to be worked together.
   100 entries" (above). _Done when:_ the link-email page selects the job via the typeahead
   picker, reaching any job regardless of count, and the bulk `?page_size=500` load is gone.
 
-- **Track bill partial-payment amounts (add `Bill.qbo_amount_paid`).** — _added 2026-06-12_
-  `Bill` records only `qbo_payment_status` (a string), not an amount paid, so a
-  `partly_paid` bill's outstanding balance can't be computed. The Financials Bill
-  list (shipped 2026-06) shows a coarse balance — full total for any non-fully-paid
-  status — which overstates `partly_paid` bills (footnoted in the UI). _Done when:_
-  `Bill` grows a `qbo_amount_paid` field (mirroring `Invoice.qbo_amount_paid`), the
-  forthcoming bill QBO payment polling populates it, and the Bill list/detail balance
-  becomes exact. See `docs/plans/2026-06-12-financials-list-views-design.md`.
-
 - **Consolidate the customer/contact pickers around `CustomerPicker`.** — _added 2026-06-12_
   Once the new `CustomerPicker` (dual-source contact+business typeahead, emits
   `{type, id}`; from `docs/plans/2026-06-12-financials-list-views-design.md`) ships,
@@ -846,3 +837,38 @@ IMAP-SMTP machinery and tend to be worked together.
   `docs/plans/2026-06-14-expenses-cost-model-redesign.md`.
   _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
   root-caused and fixed (or shown to be expected), with a test.
+
+- **Money inputs send floats → "no more than 2 decimal places" on non-round values.** — _added 2026-06-20_
+  Class bug. `<input type="number" bind:value={x}>` coerces the value to a JS float,
+  sent as a JSON number; Django converts a float to `Decimal` via its binary value
+  (e.g. `33.33` → `33.3299...`), tripping a `DecimalField(decimal_places=2)` validator.
+  Exactly-representable values (`50`, `12.5`) slip through, so it looks intermittent.
+  Fixed for the bill-payment path on `feature/bills` (commit `3c931e3`): the Record
+  Payment modal amount input is now `type=text`/`inputmode=decimal` (sends the exact
+  string) and `BillPaymentService` normalizes via `Decimal(str(value))` server-side.
+  **The same pattern remains in other money inputs** — notably
+  `frontend/src/components/LineItemModal.svelte` (qty/price on PO/Bill/Invoice/Estimate
+  line items), and likely other `type="number"` money/qty fields. Do a sweep:
+  switch money inputs to string-valued (`type=text`/`inputmode=decimal`) and/or add a
+  shared server-side `Decimal(str(...))` normalize on the line-item/qty write paths,
+  keeping the real >2-decimal validation intact.
+  _Done when:_ entering a non-round amount (e.g. `19.99`) in any money field saves
+  cleanly, with regression tests, and no `type="number"` money input sends a raw float.
+
+- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
+  When adding a PO line for a job that already has materials, there's no way to
+  deterministically attach the line to a *specific* existing pending material.
+  Today the backend resolver (`MaterialService.resolve_or_create_for_line`,
+  three steps: explicit `material_id` → claim → create) only auto-links
+  ("claim") when job + inventory_item match *exactly one* pending, unlinked
+  material on that (job, item); otherwise it **creates a new material** —
+  silently producing a duplicate for freeform materials, item mismatches, or
+  multiple candidates. The "order this material" flow sets `material_id` for the
+  *first* line only (one-shot prefill, cleared after add — see commit f3440447).
+  Fix: on the PO line form (`LineItemForm` via `PurchaseOrderDetailPage`), once a
+  Job is selected, surface that job's pending **unlinked** materials and let the
+  user pick "attach to this one" (sends `material_id`, routing through the
+  resolver's explicit path) or "create new". Removes the guessing and makes
+  second-line-to-second-material deterministic.
+  _Done when:_ a user can add a PO line for a job and explicitly choose which
+  existing pending material it links to (or opt to create a new one), with tests.

@@ -120,7 +120,7 @@ Minibini/
 | `apps.estimates` | Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation | estimates-and-prices + jobs-tasks-and-worksheets (worksheets, templates) |
 | `apps.contacts` | Contact, Business, PaymentTerms | data-constraints §1.5, §1.4 |
 | `apps.inventory` | InventoryItem (was PriceListItem; `is_catalog` flag), Material, PlanMaterial, Earmark, TemplateMaterialAssociation | materials-inventory-and-purchasing |
-| `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem | materials-inventory-and-purchasing |
+| `apps.purchasing` | PurchaseOrder, PurchaseOrderLineItem, Bill, BillLineItem, BillPayment | materials-inventory-and-purchasing |
 | `apps.invoicing` | Invoice, InvoiceLineItem, InvoiceLineItemSource | invoicing-and-expenses |
 | `apps.expenses` | Expense, Reimbursement | invoicing-and-expenses |
 | `apps.deliverables` | Deliverable, Shipment, ShipmentItem | jobs-tasks-and-worksheets §12 |

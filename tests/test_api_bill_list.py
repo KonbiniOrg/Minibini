@@ -70,6 +70,15 @@ class BillListAPITest(BaseTestCase):
         ids = {r['bill_id'] for r in resp.data['results']}
         self.assertIn(bill.bill_id, ids)
 
+    def test_cancelled_bill_balance_is_zero(self):
+        """A cancelled bill with line items and no payments must report balance 0.00 via summary list."""
+        bill = self._bill(status=Bill.STATUS_CANCELLED, number='V-CANCEL')
+        resp = self.client.get('/api/bills/?summary=true&status=all')
+        self.assertEqual(resp.status_code, 200)
+        row = next(r for r in resp.data['results'] if r['bill_id'] == bill.bill_id)
+        self.assertEqual(row['balance'], '0.00',
+                         f"Expected balance 0.00 for cancelled bill, got {row['balance']}")
+
     def test_status_draft_preset(self):
         draft = self._bill(status=Bill.STATUS_DRAFT, number='V-DRAFT2')
         received = self._bill(status=Bill.STATUS_RECEIVED, number='V-RECV2')

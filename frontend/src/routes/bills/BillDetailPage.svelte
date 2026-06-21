@@ -4,6 +4,7 @@
   import { api } from '../../lib/api.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
+  import RecordPaymentModal from '../../components/RecordPaymentModal.svelte';
 
   let { params = {} } = $props();
   let billId = $derived(params.id);
@@ -21,6 +22,11 @@
 
   let isDraft = $derived(bill?.status === 'draft');
   let isReceived = $derived(bill?.status === 'received');
+  let isPayable = $derived(bill?.status === 'received' || bill?.status === 'partly_paid');
+
+  // RecordPaymentModal state
+  let showPayment = $state(false);
+  let payDefault = $state('');
   let lineItems = $derived(
     (bill?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
@@ -78,6 +84,11 @@
     }
   }
 
+  async function deletePayment(pid) {
+    await api.delete(`/api/bills/${bill.bill_id}/payments/${pid}/`);
+    load();
+  }
+
   async function deleteBill() {
     if (!confirm('Delete this draft bill? This cannot be undone.')) return;
     try {
@@ -103,7 +114,7 @@
       <tr><td><strong>PO</strong></td>
         <td>
           {#if bill.po_number}
-            <a href={`#/purchase-orders/${bill.purchase_order}`}>{bill.po_number}</a>
+            <a href={`#/purchase-orders/${bill.purchase_order}`}>{bill.po_number}</a>{#if bill.po_billing?.po_fully_billed} - fully billed{/if}
           {:else}
             —
           {/if}
@@ -116,6 +127,14 @@
       <tr><td><strong>Balance</strong></td><td>${Number(bill.balance).toFixed(2)}</td></tr>
     </tbody>
   </table>
+
+  {#if bill.po_billing?.other_bills?.length}
+    <p class="info">This PO already has {bill.po_billing.other_bills.length} other bill(s):
+      {#each bill.po_billing.other_bills as ob}
+        <a href={`#/bills/${ob.bill_id}`}>{ob.vendor_invoice_number}</a>{' '}
+      {/each}
+    </p>
+  {/if}
 
   {#if $canManageFinancials && isDraft}
     <p><a href={`#/bills/${bill.bill_id}/edit`}>Edit header</a></p>
@@ -181,9 +200,6 @@
       </p>
     {:else if isReceived}
       <p>
-        <button type="button" onclick={() => doAction('mark_paid')}>Mark Paid in Full</button>
-      </p>
-      <p>
         <label>
           Reason for cancel (required):<br>
           <input type="text" bind:value={cancelReason} placeholder="Enter reason…">
@@ -195,6 +211,28 @@
         </button>
       </p>
     {/if}
+    {#if isPayable && $canManageFinancials}
+      <p>
+        <button type="button" onclick={() => { payDefault = ''; showPayment = true; }}>Record Payment</button>
+        <button type="button" onclick={() => { payDefault = bill.balance; showPayment = true; }}>Pay in full</button>
+      </p>
+    {/if}
+  {/if}
+
+  {#if bill.payments?.length}
+    <h3>Payments</h3>
+    <table><tbody>
+      {#each bill.payments as p}
+        <tr>
+          <td>{p.method}</td><td>{p.reference}</td>
+          <td>${Number(p.amount).toFixed(2)}</td>
+          <td>{p.cleared_date ? `cleared ${p.cleared_date.slice(0,10)}` : 'pending'}</td>
+          {#if $canManageFinancials}
+            <td><button type="button" onclick={() => deletePayment(p.payment_id)}>Delete</button></td>
+          {/if}
+        </tr>
+      {/each}
+    </tbody></table>
   {/if}
 
   <LineItemModal
@@ -206,6 +244,13 @@
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
   />
+  <RecordPaymentModal
+    open={showPayment}
+    billId={bill.bill_id}
+    defaultAmount={payDefault}
+    onSaved={() => { showPayment = false; load(); }}
+    onClose={() => { showPayment = false; }}
+  />
 {/if}
 
 <style>
@@ -214,4 +259,5 @@
   .metadata-table td { padding: 4px 12px 4px 0; vertical-align: top; }
   .metadata-table td:first-child { white-space: nowrap; }
   h3 { margin-top: 24px; margin-bottom: 8px; }
+  .info { color: #555; }
 </style>

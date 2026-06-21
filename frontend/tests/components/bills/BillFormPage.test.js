@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, findByText, findByRole, queryByRole } from '@testing-library/svelte';
 
+const { qsRef } = vi.hoisted(() => ({ qsRef: { value: '' } }));
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
-vi.mock('svelte-spa-router', () => ({ push: vi.fn(), querystring: { subscribe: vi.fn((fn) => { fn(''); return () => {}; }) }, link: () => {} }));
+vi.mock('svelte-spa-router', () => ({ push: vi.fn(), querystring: { subscribe: (fn) => { fn(qsRef.value); return () => {}; } }, link: () => {} }));
 
 import { api } from '@/lib/api.js';
 import BillFormPage from '@/routes/bills/BillFormPage.svelte';
@@ -34,6 +35,7 @@ const RECEIVED_BILL = {
 };
 
 beforeEach(() => {
+  qsRef.value = '';
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
@@ -61,6 +63,28 @@ describe('BillFormPage', () => {
     // Should not call the bills endpoint in new mode
     const callUrls = api.get.mock.calls.map(c => c[0]);
     expect(callUrls.every(url => !url.includes('/api/bills/'))).toBe(true);
+  });
+
+  it('new mode with ?po= pre-fills the vendor from the PO and shows the PO', async () => {
+    qsRef.value = 'po=5';
+    api.get.mockImplementation((url) => {
+      if (url.includes('/api/businesses/')) return Promise.resolve({ results: BUSINESSES });
+      if (url.includes('/api/contacts/')) return Promise.resolve({ results: [] });
+      if (url.includes('/api/purchase-orders/5/')) return Promise.resolve({
+        po_id: 5, po_number: 'PO-1', business: 1, contact: null,
+        is_fully_billed: false, bills: [], line_items: [],
+      });
+      if (url.includes('/api/bills/')) return Promise.resolve({ results: [] });
+      return Promise.resolve({ results: [] });
+    });
+
+    const { container } = render(BillFormPage, { props: { params: {} } });
+
+    // PO is shown read-only and the vendor is pre-filled + locked
+    expect(await findByText(container, /PO-1/)).toBeInTheDocument();
+    const businessSelect = container.querySelector('#business');
+    expect(businessSelect.value).toBe('1');
+    expect(businessSelect.disabled).toBe(true);
   });
 
   it('edit mode on a non-draft bill shows the read-only notice instead of the form', async () => {
