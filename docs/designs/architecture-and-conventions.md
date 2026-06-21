@@ -242,9 +242,37 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > The anti-pattern to avoid: bumping `?page_size` to a big number and assuming
 > it's complete. If you bound a result deliberately, say so in the UI; never let
 > it look like "everything" when it's the first 100. Known instances fixed by
-> page-walking: `InventoryListPage` (2026-06). Known still-capped: the inventory
-> item picker (`PriceListItemPicker`) requests `page_size=9999` — slated for a
-> server-side-search rework, see `docs/designs/LATER.md`.
+> page-walking: `InventoryListPage` (2026-06). Fixed by server-side-search
+> rework (2026-06): `InventoryItemPicker` (formerly `PriceListItemPicker`),
+> email-association pickers (jobs/POs/bills).
+
+#### Type-ahead pickers: `SearchPicker` + per-entity wrappers
+
+All searchable entity pickers in the SPA are built on a shared behavior core,
+`frontend/src/components/SearchPicker.svelte`, which owns: debounced search
+(via a `search(query)` callback), focus/blur-managed results dropdown,
+prefill-by-id label resolution with a race guard (via `resolveLabel(value,
+selectedItem?)`), and selected/clear state. Callers supply row rendering and
+interaction through named snippets (`row`, `selected`, `header`) and callbacks
+(`onPick`, `onClear`). Props: `value` (bindable, opaque), `selectedItem`
+(optional prefill object), `disabled`, `placeholder`, `rowLabel(row)`.
+
+Per-entity pickers thin-wrap `SearchPicker` and own their API endpoint, search
+params, and row/selected rendering:
+
+| Component | Search endpoint | Notes |
+|---|---|---|
+| `BusinessPicker` | `/api/businesses/?search=` | |
+| `JobPicker` | `/api/jobs/?search=` | |
+| `ContactPicker` | `/api/contacts/?search=` | |
+| `PurchaseOrderPicker` | `/api/purchase-orders/?search=` | Global (po_number, vendor name) |
+| `BillPicker` | `/api/bills/?search=` | vendor_invoice_number, PO number, vendor name |
+| `InventoryItemPicker` | `/api/price-list-items/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
+| `CustomerPicker` | dual-source contacts + businesses | Emits `{type, id}` (not a plain id) |
+
+**Shared single-model picker contract:** `value` (bindable entity id), `onSelect(fullRow|null)`, optional `selectedItem` for id-based prefill. `CustomerPicker` deviates: its `value` is `{type, id}`.
+
+**Backend `?search=`** is hand-rolled in `get_queryset` for purchase-orders (po_number, vendor name), bills (vendor_invoice_number, PO number, vendor name), and inventory items (code, description) — the same pattern as contacts/jobs. DRF `SearchFilter` is not used.
 
 ### 3.4 Mixin catalog
 

@@ -1127,7 +1127,8 @@ Components in `frontend/src/components/purchaseorders/`:
   actions, history; per-line "Change Job" action; consolidated sever
   modal on cancel-PO / cancel-line / delete-PO / line-job-change
 - `LineItemForm.svelte` — line entry; includes `JobPicker` (typeahead
-  against active jobs) and `PriceListItemPicker`
+  against active jobs, built on `SearchPicker`) and `InventoryItemPicker`
+  (server-side `?search=`, also built on `SearchPicker`)
 - `MaterialSeverDialog.svelte` — keep/delete decisions for affected
   Materials. Reused by all sever paths
 - `ReceiveItemsForm.svelte` — line-by-line receipt entry
@@ -1167,13 +1168,13 @@ each Material row.
 Inventory-item CRUD + browse UI is the SPA `#/inventory` page
 (`routes/inventory/InventoryListPage.svelte`), plus the markup config under
 Settings → Catalog. Item pickers across the SPA use
-`frontend/src/components/PriceListItemPicker.svelte` (to be renamed
-`InventoryItemPicker`; see the generic-picker LATER note).
+`frontend/src/components/InventoryItemPicker.svelte` (renamed from
+`PriceListItemPicker`), built on `SearchPicker`.
 
-`PriceListItemPicker` fetches the full active catalog
-(`?page_size=9999&is_active=true`) and filters client-side per
-keystroke. Server-side `?search=` filtering is unfinished work for when
-the catalog grows.
+`InventoryItemPicker` queries server-side `?search=` (`code` and
+`description`) as the user types. Accepts a `params` prop for additional
+filters (e.g. `is_active=true`); offers a "None (freeform)" escape via the
+`header` snippet.
 
 `UnitsManager` (`frontend/src/components/UnitsManager.svelte`) is the
 settings UI for editing the `units_list` Configuration value.
@@ -1202,6 +1203,4 @@ settings UI for editing the `units_list` Configuration value.
   enforce it pre-submit. Worth a separate investigation.
 - **`PurchaseOrderLineItem.task` reserved for future "service PO"
   feature.** Field exists on the model, untouched by current flows.
-- **Server-side `?search=` filtering on `PriceListItemPicker`** once the
-  catalog grows.
 - **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.

@@ -291,8 +291,8 @@ navigates to an intermediate page (`#/jobs/:id/duplicate`,
 (pre-filled from the source job's contact, editable) and a **path**
 (`approved` or `estimate`), then submits.
 
-The Customer field is a searchable picker (`ContactPicker.svelte`), not a
-dropdown — the contacts table is large, so it queries
+The Customer field is a searchable picker (`ContactPicker.svelte`, built on
+`SearchPicker`), not a dropdown — the contacts table is large, so it queries
 `/api/contacts/?search=` (which matches first/last name, business name,
 email, or phone) rather than listing every contact. It pre-fills the
 source job's contact and offers a Cancel-able "Change" action.
@@ -1120,7 +1120,7 @@ Route: `#/worksheets/:id` → `WorksheetDetailPage.svelte`.
 | `WorksheetTaskTable.svelte` | Main table — PlanTasks with PlanMaterials nested as sub-rows; grand total footer |
 | `WorkItemForm.svelte` | Modal for creating / editing PlanTasks (freeform or from template). The single modal that replaced the old PlanTaskModal / TaskModal / SubtaskModal — same component is reused on the Job/Task side for subtasks |
 | `PlanMaterialModal.svelte` | Modal for creating / editing PlanMaterials; auto-fills and disables price fields when a PriceListItem is picked |
-| `PriceListItemPicker.svelte` | Reusable searchable dropdown for picking a `PriceListItem`. Filters the dropdown client-side on each keystroke; reused on the Materials side. (A code comment notes server-side `?search=` filtering is a future option once the catalog grows.) |
+| `InventoryItemPicker.svelte` | Reusable type-ahead picker for picking an `InventoryItem`. Built on `SearchPicker`; uses server-side `?search=` (code, description). Accepts a `params` prop for additional filters; "None (freeform)" option via the `header` snippet. Reused on the Materials side and PO line-item form. |
 
 Editing is gated to `can_manage_jobs` and **editable** worksheets — the
 detail page reads the serializer's computed `editable` flag (the worksheet

@@ -575,48 +575,11 @@ IMAP-SMTP machinery and tend to be worked together.
   filename in an `<a href>` to it. Decide at that time whether to cache attachment
   bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
 
-- **Email-association pickers cap the dropdown at 100 entries and sort poorly.** — _added 2026-05-28_
-  `EmailAssociatePage.svelte` (jobs) and, once they land, the equivalent PO and Bill
-  pickers all request `?page_size=500` to populate a `<select>`, but
-  `StandardPagination.max_page_size = 100` silently caps it. Fine while each table is
-  under 100 rows; once any of them crosses that, only the most recently-created entries
-  are reachable. The pickers also lean on each list endpoint's default ordering, which
-  isn't always what a human would call "most recent" — `Job` sorts by `-created_date`
-  (fine), but PO/Bill defaults need a deliberate decision (a job's `start_date` or last
-  status change is arguably more relevant than its creation; a PO's issue/sent date
-  beats its created_at; a Bill's bill_date or due_date may matter more than its
-  created_at). _Done when:_ each picker either paginates / searches server-side
-  (typeahead against `?search=`) or filters to "active" statuses only AND sorts by a
-  human-meaningful lifecycle date per entity (decide which per entity at that time),
-  whichever is cheaper than scrolling a long `<select>`.
-  - _Pattern to copy (added 2026-06-01):_ `ContactPicker.svelte` (used by
-    `DuplicateJobPage`) does server-side `?search=` typeahead against `/api/contacts/`
-    with prefill-by-id — the shape these capped pickers should move to.
+- ~~**Email-association pickers cap the dropdown at 100 entries and sort poorly.**~~ — _delivered 2026-06-21_ All three email-association pickers (jobs, POs, bills) now use `SearchPicker`-based type-ahead against their respective `?search=` endpoints; the bulk `?page_size=500` loads are gone.
 
-- **Link-email Job picker is an oversized `<select>` — swap to the existing `JobPicker`.** — _added 2026-06-18_
-  The "Associate Email with Existing Job" page (`EmailAssociatePage.svelte`) populates a
-  plain `<select>` of every job via `api.get('/api/jobs/?page_size=500')` (lines ~22/88-95)
-  — both unwieldy to scroll and silently capped at 100 by `StandardPagination`, so older jobs
-  aren't reachable. The inline-search component already exists: `components/JobPicker.svelte`
-  does server-side `?search=` typeahead (`/api/jobs/?search=…&page_size=10`) and is already
-  used by `ExpenseForm` and the PO forms. Just replace the `<select>` with `<JobPicker>`
-  (bind the chosen `job_id` into `selectedJobId`, keep the existing required-field guard).
-  This is the concrete fix for the job case of "Email-association pickers cap the dropdown at
-  100 entries" (above). _Done when:_ the link-email page selects the job via the typeahead
-  picker, reaching any job regardless of count, and the bulk `?page_size=500` load is gone.
+- ~~**Link-email Job picker is an oversized `<select>`.**~~ — _delivered 2026-06-21_ Replaced with `JobPicker` (itself built on `SearchPicker`).
 
-- **Consolidate the customer/contact pickers around `CustomerPicker`.** — _added 2026-06-12_
-  Once the new `CustomerPicker` (dual-source contact+business typeahead, emits
-  `{type, id}`; from `docs/plans/2026-06-12-financials-list-views-design.md`) ships,
-  revisit the existing single-source pickers. `ContactPicker.svelte` is currently used
-  only by `DuplicateJobPage.svelte`; in places that conceptually pick "a customer" we
-  may actually want `CustomerPicker` (which can surface a standalone business, not just
-  a contact). Audit each `ContactPicker` site (and consider whether `JobPicker` shares
-  enough shape to fold into a generic typeahead too). _Done when:_ each picker site has
-  been deliberately assigned to the right component, and any genuinely-duplicated
-  picker bodies are collapsed into a shared base — or a note records why they stay
-  separate. Don't churn working code without a reason; this is a consolidation pass,
-  not a mandate to merge everything.
+- ~~**Consolidate the customer/contact pickers around `CustomerPicker`.**~~ — _superseded 2026-06-21_ The `SearchPicker` consolidation landed instead: a shared behavior core (`SearchPicker.svelte`) backs all per-entity pickers (`JobPicker`, `ContactPicker`, `BusinessPicker`, `PurchaseOrderPicker`, `BillPicker`, `InventoryItemPicker`, `CustomerPicker`). Each picker site was deliberately assigned; no audit of `CustomerPicker` reassignments is outstanding.
 
 - **Consolidate `BillSerializer.get_balance` and `BillSummarySerializer.get_balance` into a shared helper.** — _added 2026-06-13_
   The two serializers duplicate the coarse-balance definition: 0 for `paid_in_full`/`cancelled`/`refunded`,
@@ -707,26 +670,7 @@ IMAP-SMTP machinery and tend to be worked together.
   unchecking Catalog will remove it." _Done when:_ demoting an item that would be
   collected prompts the user first (and ideally distinguishes delete vs. hide).
 
-- **Generic server-side search picker (and the picker 100-cap).** — _added 2026-06-15_
-  `PriceListItemPicker` (used in 5 places — MaterialModal, PlanMaterialModal,
-  LineItemModal, expenses/MaterialPicker, PO LineItemForm) loads the catalog and
-  filters **client-side**, but the load request is clamped to 100 by
-  `StandardPagination` (see architecture-and-conventions.md §3.3) — so once the
-  active catalog passes 100 items, the rest can't be selected when adding a
-  material / line item, silently. The Contact/Business picker already does
-  **server-side `?search=`** for *two* models; we'd deferred a generic version
-  because two-model felt like a one-off. We've since hit it again: the now-deleted
-  `CatalogPicker` was a built-but-never-wired two-model (TaskTemplate +
-  InventoryItem) picker — the same shape — and this single-model one is capped.
-  Direction: build a generic **`EntitySearchPicker`** parameterized by *sources*
-  (`{endpoint, kind, render}`) doing server-side `?search=`; migrate
-  `PriceListItemPicker`'s call sites to it (one source) and **rename/retire
-  PriceListItemPicker → InventoryItemPicker**; a multi-source config covers the
-  task-template-or-material "catalog" case if that feature is ever wanted. Fixes
-  the cap for free. Deferred to keep the inventory feature branch scoped.
-  _Done when:_ one server-search picker backs the material/line-item pickers,
-  reaching any active item regardless of catalog size, and PriceListItemPicker is
-  renamed/retired.
+- ~~**Generic server-side search picker (and the picker 100-cap).**~~ — _delivered 2026-06-21_ `SearchPicker.svelte` is the generic behavior core; `InventoryItemPicker` (renamed from `PriceListItemPicker`) uses server-side `?search=` and is the picker at all material/line-item call sites.
 
 - **"Qty on order" column on the inventory list.** — _added 2026-06-15_
   The inventory list shows on-hand / earmarked / available but not how much is
@@ -774,18 +718,16 @@ IMAP-SMTP machinery and tend to be worked together.
   a top-of-page block with two raw `<select>` dropdowns — "keep" and "discard" (`mergeKeep`/
   `mergeDiscard`, discard limited to non-catalog `lotOptions`) — disconnected from the table
   the user is looking at. On a long catalog you re-hunt both items by name in unsearchable
-  selects (same picker problem as elsewhere), the merge is **irreversible** (line ~55) yet
-  there's **no preview** of what will move (QOH, earmarks, line-item/template references) or
-  which item wins, and it shares the top-of-page scroll problem. Directions to make it less
-  awkward: drive selection **from the rows** (e.g. pick a discard row's "merge into…" action,
-  or select two rows in the table) so you act on what you see; use the search/typeahead picker
-  the other notes call for (the planned `EntitySearchPicker`) instead of raw `<select>`s; show
-  a **confirmation preview** of the resulting merged item (combined QOH, moved references,
-  which id survives) before committing; and put it in a modal/in-place surface rather than a
-  top-of-page panel. Related: the inventory-edit-modal note above and the generic
-  server-side search picker note. _Done when:_ merging is driven from the list rows with a
-  searchable picker and an explicit before-commit preview of the outcome, no top-of-page
-  dropdown hunting.
+  selects, the merge is **irreversible** (line ~55) yet there's **no preview** of what will
+  move (QOH, earmarks, line-item/template references) or which item wins, and it shares the
+  top-of-page scroll problem. Directions to make it less awkward: drive selection **from the
+  rows** (e.g. pick a discard row's "merge into…" action, or select two rows in the table)
+  so you act on what you see; use `InventoryItemPicker` (server-side `?search=`) instead of
+  raw `<select>`s; show a **confirmation preview** of the resulting merged item (combined QOH,
+  moved references, which id survives) before committing; and put it in a modal/in-place
+  surface rather than a top-of-page panel. Related: the inventory-edit-modal note above.
+  _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
+  before-commit preview of the outcome, no top-of-page dropdown hunting.
 
 - **Inventory merge should probably accept an incoming `'none'` unit.** — _added 2026-06-19_
   `InventoryService.merge` hard-blocks when `keep.units != discard.units`
