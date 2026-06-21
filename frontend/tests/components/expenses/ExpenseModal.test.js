@@ -29,11 +29,12 @@ describe('ExpenseModal', () => {
     expect(getByLabelText(/Amount/)).toBeInTheDocument();
   });
 
-  it('pre-anchors the job from initialJob', () => {
-    const { getByText } = render(ExpenseModal, {
+  it('pre-anchors the job from initialJob', async () => {
+    const { findByText } = render(ExpenseModal, {
       props: { open: true, initialJob: { job_id: 7, job_number: 'JOB-7' } },
     });
-    // JobPicker renders the chosen job number with a Clear control when set.
-    expect(getByText('JOB-7')).toBeInTheDocument();
+    // JobPicker renders the chosen job number (via selectedItem) with a Clear
+    // control once the async label resolves.
+    expect(await findByText(/JOB-7/, { exact: false })).toBeInTheDocument();
   });
 });

@@ -15,7 +15,8 @@
 
   let mode = $state('manual'); // 'manual' or 'pli'
   let selectedPLI = $state(null);
-  let selectedJob = $state(defaultJob);
+  let jobId = $state(defaultJob?.job_id ?? null);
+  let jobRow = $state(defaultJob ?? null);
 
   let form = $state({
     description: '',
@@ -79,8 +80,8 @@
       }
     }
 
-    if (selectedJob?.job_id) {
-      data.job = selectedJob.job_id;
+    if (jobId) {
+      data.job = jobId;
     }
     if (materialId) {
       data.material_id = materialId;
@@ -146,7 +147,7 @@
 
     <p>
       <label><strong>Job (optional)</strong></label><br>
-      <JobPicker bind:value={selectedJob} />
+      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
     </p>
 
     <p>

@@ -33,13 +33,14 @@
   let purchased_by = $state(expense?.purchased_by || $currentUser?.id || null);
   let newMaterial = $state(null);
 
-  // Job is the cost anchor. JobPicker emits { job_id, job_number }.
-  let jobSel = $state(
+  // Job is the cost anchor. jobId is the numeric id; jobRow is the full job
+  // object fed as selectedItem to JobPicker for edit-mode / initialJob prefill.
+  let jobId = $state(expense?.job ?? initialJob?.job_id ?? null);
+  let jobRow = $state(
     expense?.job
-      ? { job_id: expense.job, job_number: expense.job_number }
+      ? { job_id: expense.job, job_number: expense.job_number, name: expense?.job_name }
       : (initialJob || null)
   );
-  let jobId = $derived(jobSel?.job_id ?? null);
 
   // Compound "paid by" select value: "personal" or "company:<account_id>"
   let paidByValue = $state(
@@ -199,7 +200,7 @@
 
   <p>
     <label for="ef-job"><strong>Job</strong> (leave blank for overhead)</label><br>
-    <JobPicker bind:value={jobSel} />
+    <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
   </p>
   {#each fieldErr('job') as msg}<p><em>{msg}</em></p>{/each}
 
