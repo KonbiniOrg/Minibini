@@ -11,118 +11,145 @@ forms** (every contact/business listed) and the three **email-association pages*
 (`?page_size=500` silently capped at 100 by `StandardPagination`, so older rows
 are unreachable).
 
-Where type-aheads *do* exist they were each built at a different time with no
-shared contract:
+Where type-aheads *do* exist they were each built at a different time and each
+re-implements the same interaction behavior with subtly different bugs:
 
-- `ContactPicker` — `value` is a bare id; has prefill-by-id + a Change/Cancel flow.
-- `JobPicker` — `value` is a partial object `{job_id, job_number}`; Clear only.
-- `CustomerPicker` — dual contact+business, `value` is `{type, id}`.
-- `PriceListItemPicker` — full-row "fill-in" picker; client-side filtering over the
-  whole catalog (`page_size=9999`).
+- `ContactPicker` — bare-id value; prefill-by-id with a `if (value === id)` race guard; Change/Cancel.
+- `JobPicker` — partial-object value `{job_id, job_number}`; Clear only; no prefill resolve.
+- `CustomerPicker` — dual contact+business; `{type, id}` value.
+- `PriceListItemPicker` — full-row "fill-in"; client-side filtering over the whole catalog (`page_size=9999`); focus/blur dropdown with a `setTimeout(200)` blur delay; "None (freeform)" option.
 - `PurchaseOrderPicker` — fetches one vendor's POs, then client-side filters.
 
-This spec standardizes the **single-model "reference" pickers** onto one generic
-component, upgrades inventory selection to server-side search, and adds the missing
-`?search=` API endpoints.
+## The seam
 
-## Scope decisions (settled during brainstorming)
+The duplication that matters is **not** the markup (an `<input>` + a `<ul>`) and
+**not** an excuse to fuse every entity into one `model="…"`-parameterized
+component (which only drags each entity's *disparate* needs — inventory's full row,
+a contact's nested business, a PO's vendor label, a job's number-and-name — into one
+body where they curdle into `if (model === …)` branches).
 
-- **Two intents, kept as two components.** Most consumers only need an **id + a
-  display label** ("reference"). One — `PriceListItemPicker` — needs the **whole
-  row** to auto-fill a form ("fill-in"). Both are satisfied by the same output
-  contract, but the fill-in picker stays a **separate component** rather than being
-  folded into the generic one.
-- **`CustomerPicker` is out of scope** — it searches two models and emits
-  `{type, id}`; left untouched.
-- **Business-scoped sub-lists stay plain `<select>` pulldowns.** A set already
-  narrowed to one business (a business's contacts; a vendor's POs) is never large
-  enough to need search. This *removes* one existing type-ahead: BillFormPage's
-  vendor-scoped PO field reverts to a pulldown and `PurchaseOrderPicker` is retired.
-- **The generic picker needs no scoping prop.** After the rule above, every
-  generic-picker site is a **global** search (business, job, contact, PO, bill).
-- **Inventory merge conversion is out of scope.** The `InventoryListPage` merge
-  keep/discard selects are left to the dedicated merge-UX-rework note in
-  `LATER.md` (row-driven selection + before-commit preview). This spec only makes
-  the inventory picker *capable* (server search + a general `params` filter) so the
-  future rework can drop it in cleanly; it does not touch `InventoryListPage`.
-- **No shared inner widget.** `EntityPicker` and `InventoryItemPicker` will
-  duplicate ~30 lines of dropdown markup. That duplication is acceptable; do not
-  extract a shared presentational component for it now.
+The real duplication is the **interaction behavior**: debounce the query, fire the
+search, hold results, open/close on focus/blur (including the blur delay so a click
+registers), resolve-by-id for prefill (with the race guard), and the
+selected/clear transitions. That is ~60–90 lines of logic copy-pasted across the
+pickers today, and it is where the bugs live.
 
-## Output contract (shared by EntityPicker + InventoryItemPicker)
+So the consolidation is: a **`SearchPicker` base component that owns the
+behavior** and takes **snippets** for the per-entity display, plus **thin
+per-entity pickers** that supply the search call, the row rendering, and the emit
+shape. Everything that genuinely differs stays in the per-entity picker.
 
-- `value` — **bindable id** (number) or `null`. This is what forms submit.
-- `selectedItem` — optional **full object** the parent already has, used to render
-  the selected label on edit **without** a resolve fetch.
-- `onSelect(fullRow | null)` — fires on every selection change, handing back the
-  **whole row** (or `null` on clear). Fill-in consumers read everything off this;
-  reference consumers can ignore it.
+Snippets (`{#snippet}` / `{@render}`) are already idiomatic in this codebase
+(~10 components use them); no new `.svelte.js`/composable pattern is introduced.
 
-Reference consumers bind `value`; if they also display a number/name they read it
-from `selectedItem`/`onSelect`. The fill-in consumer ignores `value` and reads
-`onSelect(fullRow)`.
+## Output contract
 
-## Components after the reorg
+For the **single-model** pickers (Business, Job, Contact, PurchaseOrder, Bill,
+InventoryItem):
 
-### 1. `EntityPicker.svelte` (new — generic single-model reference picker)
+- `value` — **bindable id** (number) or `null`. What forms submit.
+- `selectedItem` — optional **full object** the parent already has, so an edit
+  screen renders the selected label with **no resolve fetch**.
+- `onSelect(row | null)` — fires on selection change, handing back the **whole
+  row**. Every picker emits the full row (not just a label): consumers routinely
+  want more than the id — a job's number *and* name, a contact *and* its nested
+  business. "Fill-in" consumers (inventory) just read more fields off the same row
+  everyone gets.
+
+`CustomerPicker` keeps its own shape — `value` = `{type, id}`, `onSelect({type,id})`
+— because it searches two models. It rides the same base; only its search and
+emit differ.
+
+## Architecture
+
+### `SearchPicker.svelte` (new — behavior core)
+
+Owns all interaction; treats `value` **opaquely** (only "null vs set", and watches
+it to trigger prefill). Knows nothing about endpoints or entity shapes.
 
 **Props**
 
 | Prop | Type | Notes |
 |---|---|---|
-| `model` | required string | one of `'business' \| 'job' \| 'contact' \| 'purchase_order' \| 'bill'` |
-| `value` | bindable number \| null | the selected id |
-| `selectedItem` | object \| null | optional prefill object (skip resolve fetch) |
-| `onSelect` | `(row \| null) => void` | optional |
+| `value` | bindable, any | selection token; opaque to the base |
+| `selectedItem` | object \| null | optional prefill object, forwarded to `resolveLabel` |
+| `search` | `(query) => Promise<row[]>` | entity search (per-picker) |
+| `resolveLabel` | `(value, selectedItem?) => Promise<string \| null>` | produce the label for the current selection; base owns the `$effect` + race guard that calls it |
+| `rowLabel` | `(row) => string` | default row rendering (or use the `row` snippet) |
+| `onPick` | `(row) => void` | user chose a result |
+| `onClear` | `() => void` | user cleared |
 | `disabled` | boolean | |
-| `placeholder` | string | optional override |
+| `placeholder` | string | |
 
-**Internal registry** maps each `model` to its endpoint, id field, and label
-function:
+**Snippets**
 
-| model | endpoint | idField | label(row) |
-|---|---|---|---|
-| `business` | `/api/businesses/` | `business_id` | `business_name` |
-| `contact` | `/api/contacts/` | `contact_id` | `name` (+ ` — {business.business_name}` when present) |
-| `job` | `/api/jobs/` | `job_id` | `{job_number} — {name/description}` |
-| `purchase_order` | `/api/purchase-orders/` | `po_id` | `{po_number} — {business.business_name}` |
-| `bill` | `/api/bills/` | `bill_id` | `{vendor_invoice_number or PO#} — {business.business_name}` |
+- `row(item)` — optional; richer per-result rendering (falls back to `rowLabel`).
+- `selected(label)` — optional; richer selected-state rendering (falls back to the
+  label text + Change/Clear).
+- `header()` — optional; rendered atop the results list (InventoryItemPicker uses
+  it for its "None (freeform)" row).
 
-**Behavior**
+**Behavior owned by the base**
 
-- On input (debounced ~250 ms), `GET <endpoint>?search=<q>&page_size=10`; render
-  results in a focus/blur dropdown listbox (the UI pattern from the current
-  `PriceListItemPicker` — it is the most complete).
-- When `value` is set with no matching `selectedItem`, resolve the label via
-  `GET <endpoint><id>/` (mirrors `ContactPicker`'s prefill-by-id `$effect`).
-- Selected state shows the label + a **Change/Clear** affordance.
-- `pick()` sets `value = row[idField]`, calls `onSelect(row)`.
+- Debounced (~250 ms) invocation of `search` on input — an improvement; today's
+  pickers fire on every keystroke.
+- Results dropdown with focus/blur open/close, including the blur delay so a
+  result click registers.
+- Selected state: shows the label (via `resolveLabel` / `rowLabel`) with a
+  Change/Clear affordance.
+- Prefill: a single `$effect` watching `value`; when it changes and no label is
+  cached, calls `resolveLabel(value, selectedItem)` with the `if (value === token)`
+  race guard — the bug-prone bit, now written once.
+- Click selection only (parity with today). Arrow-key navigation is **out of
+  scope** (note for a later pass).
 
-**Retires:** `ContactPicker.svelte`, `JobPicker.svelte`, `PurchaseOrderPicker.svelte`.
+### Per-entity pickers (thin — ~20–40 lines each)
 
-### 2. `InventoryItemPicker.svelte` (renamed from `PriceListItemPicker.svelte`)
+Each imports `SearchPicker`, supplies `search` (its endpoint + any fixed params),
+`resolveLabel`/`rowLabel`, and maps `onPick`/`onClear` to its `value`/`onSelect`.
 
-Kept separate — its consumers need the full row (`description`, `units`,
-`selling_price`/`price`, `accounting_category`, `is_inventoried`, on-hand/earmark
-fields).
+| Picker | Status | Endpoint | value | Notes |
+|---|---|---|---|---|
+| `BusinessPicker` | **new** | `/api/businesses/` | `business_id` | label `business_name` |
+| `JobPicker` | rewritten on base | `/api/jobs/` | `job_id` | label `{job_number} — {name}` |
+| `ContactPicker` | rewritten on base | `/api/contacts/` | `contact_id` | label `name` + nested `business`; emits full contact |
+| `PurchaseOrderPicker` | rewritten on base, **global** | `/api/purchase-orders/` | `po_id` | label `{po_number} — {business_name}`; replaces the retired vendor-scoped client-filter version |
+| `BillPicker` | **new**, global | `/api/bills/` | `bill_id` | label `{vendor_invoice_number or PO#} — {business_name}` |
+| `InventoryItemPicker` | **renamed** from `PriceListItemPicker`, on base | `/api/inventory/` | `inventory_item_id` | full-row consumers; `params` prop for fixed filters (e.g. `is_active=true`); keeps the "None (freeform)" `header` snippet |
+| `CustomerPicker` | rewritten on base | businesses + contacts | `{type, id}` | dual-source `search`; own emit shape |
 
-**Changes**
+Illustrative `JobPicker` (the shape they all take):
 
-- **Rename** the component (model was renamed `PriceListItem` → `InventoryItem`;
-  the component name never followed). Update all five imports.
-- **Server-side search:** replace the client-side filter over
-  `GET /api/inventory/?page_size=9999&is_active=true` with
-  `GET /api/inventory/?search=<q>` (debounced), fulfilling the existing TODO in the
-  file. Keep the focus/blur dropdown UI, the `selectedItem` prefill, the
-  `onSelect(fullRow)` callback, and the existing "None (freeform)" option.
-- **New `params` prop** — extra query filters merged into the search call (e.g.
-  `is_active=true`, or `is_catalog=false`). General capability, not merge-specific.
+```svelte
+<script>
+  import SearchPicker from './SearchPicker.svelte';
+  import { api } from '../lib/api.js';
+  let { value = $bindable(null), selectedItem = null,
+        onSelect = () => {}, disabled = false } = $props();
+  const label = (j) => `${j.job_number} — ${j.name ?? ''}`;
+  const search = (q) =>
+    api.get(`/api/jobs/?search=${encodeURIComponent(q)}&page_size=10`)
+       .then((d) => d.results || d);
+  const resolveLabel = (id, item) =>
+    item ? Promise.resolve(label(item))
+    : id == null ? Promise.resolve(null)
+    : api.get(`/api/jobs/${id}/`).then(label).catch(() => null);
+</script>
+<SearchPicker bind:value {selectedItem} {search} {resolveLabel} rowLabel={label}
+  onPick={(row) => { value = row.job_id; onSelect(row); }}
+  onClear={() => { value = null; onSelect(null); }}
+  {disabled} placeholder="Search jobs…" />
+```
 
-> Note: this picker is left functionally as-is apart from rename + server search +
-> `params`. No merge-specific changes (no `allowFreeform` prop). The merge keep/
-> discard selects are **not** converted in this spec.
+**`InventoryItemPicker` specifics:** kept as its own picker (consumers read
+`description`, `units`, `selling_price`/`price`, `accounting_category`,
+`is_inventoried`, on-hand/earmark). Switch from the client-side `page_size=9999`
+load to server `/api/inventory/?search=` (fulfilling its own TODO). Add a general
+`params` prop (extra fixed query filters). Keep the freeform option via the base
+`header` snippet. No merge-specific behavior.
 
-### 3. `CustomerPicker.svelte` — unchanged.
+**Retired:** the old `PurchaseOrderPicker` body (vendor-scoped client-filter) is
+replaced by the global one above.
 
 ## Backend: add `?search=`
 
@@ -130,13 +157,14 @@ fields).
 `get_queryset` (no DRF `SearchFilter`). Mirror that pattern — do **not** introduce
 `SearchFilter` — in:
 
-| Viewset | File | Search fields (case-insensitive `icontains`, OR'd) |
+| Viewset | File | Search fields (`icontains`, OR'd) |
 |---|---|---|
 | `PurchaseOrderViewSet` | `apps/api/purchasing/views.py` | `po_number`, `business__business_name` |
 | `BillViewSet` | `apps/api/purchasing/views.py` | `vendor_invoice_number`, `purchase_order__po_number`, `business__business_name` |
 | `InventoryItemViewSet` | `apps/api/inventory/views.py` (`/api/inventory/`) | `code`, `description` |
 
-Each adds, inside the existing `get_queryset`:
+Each adds, inside the existing `get_queryset` (PO and Bill already read a
+`business` query param there, so it slots alongside):
 
 ```python
 search = self.request.query_params.get('search', '').strip()
@@ -144,38 +172,36 @@ if search:
     qs = qs.filter(Q(<field1>__icontains=search) | Q(<field2>__icontains=search) | ...)
 ```
 
-Both PO and Bill viewsets already read a `business` query param in `get_queryset`,
-so the `search` block slots in alongside it.
-
 ## Call-site migration
 
 | Site | Today | After |
 |---|---|---|
-| `PurchaseOrderForm` business | raw `<select>` | `EntityPicker model="business"` |
+| `PurchaseOrderForm` business | raw `<select>` | `BusinessPicker` |
 | `PurchaseOrderForm` contact | raw `<select>` (business-scoped) | **stays pulldown** |
-| `BillFormPage` business | raw `<select>` | `EntityPicker model="business"` |
+| `BillFormPage` business | raw `<select>` | `BusinessPicker` |
 | `BillFormPage` contact | raw `<select>` (scoped) | **stays pulldown** |
-| `BillFormPage` PO | `PurchaseOrderPicker` (vendor-scoped typeahead) | **plain pulldown** of vendor POs |
-| `ContactForm` business | raw `<select>` | `EntityPicker model="business"` |
-| `EmailAssociatePage` job | raw `<select>` (`page_size=500`, capped) | `EntityPicker model="job"` |
-| `EmailAssociatePOPage` PO | raw `<select>` | `EntityPicker model="purchase_order"` |
-| `EmailAssociateBillPage` bill | raw `<select>` | `EntityPicker model="bill"` |
-| `DuplicateJobPage` contact | `ContactPicker` | `EntityPicker model="contact"` |
-| `ExpenseForm` job | `JobPicker` | `EntityPicker model="job"` |
-| `LineItemForm` (PO) job | `JobPicker` | `EntityPicker model="job"` |
-| `PurchaseOrderDetail` job ×2 | `JobPicker` | `EntityPicker model="job"` |
-| `LineItemModal`, `MaterialModal`, `PlanMaterialModal`, `MaterialPicker`, `LineItemForm` material | `PriceListItemPicker` | `InventoryItemPicker` (rename only) |
+| `BillFormPage` PO | old `PurchaseOrderPicker` (vendor-scoped) | **plain pulldown** of vendor POs |
+| `ContactForm` business | raw `<select>` | `BusinessPicker` |
+| `EmailAssociatePage` job | raw `<select>` (`page_size=500`, capped) | `JobPicker` |
+| `EmailAssociatePOPage` PO | raw `<select>` | `PurchaseOrderPicker` (global) |
+| `EmailAssociateBillPage` bill | raw `<select>` | `BillPicker` |
+| `DuplicateJobPage` contact | old `ContactPicker` | `ContactPicker` (on base) |
+| `ExpenseForm` job | old `JobPicker` | `JobPicker` (on base) |
+| `LineItemForm` (PO) job | old `JobPicker` | `JobPicker` (on base) |
+| `PurchaseOrderDetail` job ×2 | old `JobPicker` | `JobPicker` (on base) |
+| `InvoiceListPage` / `BillListPage` customer filter | old `CustomerPicker` | `CustomerPicker` (on base) |
+| `LineItemModal`, `MaterialModal`, `PlanMaterialModal`, `MaterialPicker`, `LineItemForm` material | `PriceListItemPicker` | `InventoryItemPicker` |
 
-**`JobPicker`-consumer refactor.** The three job sites currently round-trip
-`value = {job_id, job_number}` (so they can redisplay the number on edit without a
-fetch). They switch to `value = <id>` and pass the existing record as `selectedItem`
-for edit-mode prefill. Touches `ExpenseForm.svelte`, PO `LineItemForm.svelte`,
-`PurchaseOrderDetail.svelte` — including the spots that reconstruct
+**`JobPicker`-consumer refactor.** The three job sites round-trip
+`value = {job_id, job_number}` today. They switch to `value = <id>` and pass the
+existing record as `selectedItem` for edit-mode prefill (or let `resolveLabel`
+fetch). Touches `ExpenseForm.svelte`, PO `LineItemForm.svelte`,
+`PurchaseOrderDetail.svelte`, including the spots reconstructing
 `{job_id, job_number}` from `expense.job` / `li.effective_job_id`.
 
 **Removing the `page_size=500` loads.** The three email-associate pages stop
-bulk-loading their lists; the picker fetches on demand. The bug where older rows are
-unreachable past 100 is fixed as a side effect.
+bulk-loading their lists; the pickers fetch on demand. The "older rows unreachable
+past 100" bug is fixed as a side effect.
 
 ## Out of scope (unchanged)
 
@@ -183,45 +209,53 @@ unreachable past 100 is fixed as a side effect.
   category, templates, rate schemes, user lists (Assign / TimeEdit / Expense
   purchased-by / JobEdit PM — bounded by worker count), list-page status/ordering
   filters.
-- `CustomerPicker`.
-- `InventoryListPage` merge keep/discard — deferred to the merge-UX-rework note.
+- Business-scoped sub-lists stay plain pulldowns (a business's contacts; a
+  vendor's POs).
+- `InventoryListPage` merge keep/discard — deferred to the merge-UX-rework note;
+  this spec only makes `InventoryItemPicker` capable (server search + `params`) so
+  that rework can drop it in.
 - The future job-scoped "attach to existing material" picker — will be a pulldown.
+- Arrow-key navigation in the dropdown.
 
 ## Testing
 
 **Backend (TDD).** A test per new `?search=` endpoint: a matching query returns the
 row, a non-matching query excludes it, and each declared search field matches
-(e.g. a PO by `po_number` and by vendor name; a Bill by vendor invoice number, PO
-number, and vendor name; an inventory item by `code` and `description`).
+(a PO by `po_number` and vendor name; a Bill by vendor invoice number, PO number,
+and vendor name; an inventory item by `code` and `description`).
 
 **Frontend (Vitest, `frontend/tests/`).** Per `docs/designs/frontend-testing.md`:
 
-- New `EntityPicker` tests, parametrized across models: typing triggers a debounced
-  `?search=` call, results render, `pick()` sets `value` and calls `onSelect(row)`,
-  `selectedItem` renders the label with no resolve fetch, `value`-without-
-  `selectedItem` triggers the resolve fetch, Clear resets.
-- Updated `InventoryItemPicker` tests: server `?search=` (not the old bulk load),
-  the `params` filter is forwarded, prefill + `onSelect(fullRow)` still hold.
-- Delete/redirect the obsolete `ContactPicker` / `JobPicker` / `PurchaseOrderPicker`
-  tests; retarget any that asserted the `{job_id, job_number}` shape.
+- `SearchPicker` base — the behavior, tested once with a stub `search`/`resolveLabel`:
+  typing fires a debounced `search`, results render via `rowLabel`/`row`, `onPick`
+  fires with the row, `value`-without-`selectedItem` triggers `resolveLabel`,
+  `selectedItem` short-circuits it, Clear fires `onClear`, the focus/blur dropdown
+  opens/closes.
+- Thin pickers — a light test each that the right endpoint/params are called and the
+  right `value`/`onSelect` shape is emitted (especially `CustomerPicker`'s
+  `{type,id}` and `InventoryItemPicker`'s full row + `params` + freeform header).
+- Delete/retarget obsolete tests that asserted the old `{job_id, job_number}` shape
+  or the old client-filter inventory load.
 
 ## Docs to update on completion
 
-- `docs/designs/jobs-tasks-and-worksheets.md` and
-  `materials-inventory-and-purchasing.md` — picker references (`ContactPicker`,
-  `JobPicker`, `PriceListItemPicker`) → new component names/contract.
-- `docs/designs/architecture-and-conventions.md` — note the standard `EntityPicker`
-  contract under the server-side `?search=` / type-ahead convention.
+- `docs/designs/jobs-tasks-and-worksheets.md`, `materials-inventory-and-purchasing.md`
+  — picker references → `SearchPicker` + the per-entity pickers and the contract.
+- `docs/designs/architecture-and-conventions.md` — document `SearchPicker` (behavior
+  core + snippets) and the picker contract under the `?search=` / type-ahead
+  convention.
 - `LATER.md` — close the parts these deliver in the four picker notes
   (email-association cap; customer/contact-picker consolidation; the search-picker
   portions of the inventory-merge note), leaving the merge-UX-rework remainder.
 
 ## Implementation order
 
-1. Backend `?search=` for PO, Bill, inventory (+ tests). _(Unblocks the pickers.)_
-2. `EntityPicker.svelte` + tests.
-3. `InventoryItemPicker` rename + server search + `params` (+ tests); update 5 imports.
-4. Migrate reference call sites (incl. `JobPicker`-consumer refactor); retire the
-   three old pickers.
-5. Revert BillFormPage PO field to a pulldown.
-6. Docs + `LATER.md`.
+1. Backend `?search=` for PO, Bill, inventory (+ tests). _Unblocks the pickers._
+2. `SearchPicker.svelte` base + tests.
+3. Per-entity pickers on the base: `BusinessPicker`, `BillPicker` (new); rewrite
+   `JobPicker`, `ContactPicker`, `PurchaseOrderPicker` (global), `CustomerPicker`;
+   rename `PriceListItemPicker` → `InventoryItemPicker` (server search + `params`).
+   Update the five inventory-picker imports.
+4. Migrate call sites (incl. the `JobPicker`-consumer refactor); revert BillFormPage
+   PO field to a pulldown.
+5. Docs + `LATER.md`.
