@@ -13,9 +13,10 @@
   const { items = [], onSubmit, onCancel } = $props();
   let decisions = $state({});
 
-  // Default every row to 'delete'
+  // Default every row to 'keep' — the non-destructive choice (the Material
+  // stays planned on its Job; the user opts in to deleting it).
   for (const it of items) {
-    decisions[it.line_item_id] = 'delete';
+    decisions[it.line_item_id] = 'keep';
   }
 
   function submit() {
