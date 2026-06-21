@@ -15,7 +15,7 @@ describe('JobPicker', () => {
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'wid' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/jobs/?search=wid&page_size=10');
-    await fireEvent.click(await findByRole('button', { name: /JOB-1/ }));
+    await fireEvent.mouseDown(await findByRole('button', { name: /JOB-1/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ job_id: 1 }));
   });
 

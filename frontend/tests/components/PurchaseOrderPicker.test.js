@@ -17,7 +17,7 @@ describe('PurchaseOrderPicker', () => {
     await fireEvent.input(getByPlaceholderText(/purchase order/i), { target: { value: 'po-7' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/purchase-orders/?search=po-7&page_size=10');
-    await fireEvent.click(await findByRole('button', { name: /PO-7/ }));
+    await fireEvent.mouseDown(await findByRole('button', { name: /PO-7/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ po_id: 7 }));
   });
 });

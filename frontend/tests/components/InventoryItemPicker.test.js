@@ -20,7 +20,7 @@ describe('InventoryItemPicker', () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/api/inventory/?search=bolt'));
     expect(api.get).toHaveBeenCalledWith(expect.stringContaining('is_active=true'));
-    await fireEvent.click(await findByRole('button', { name: /BOLT-14/ }));
+    await fireEvent.mouseDown(await findByRole('button', { name: /BOLT-14/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ inventory_item_id: 2, units: 'each' }));
   });
 

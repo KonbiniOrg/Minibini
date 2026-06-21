@@ -96,7 +96,7 @@
       {#if results.length}
         {#each results as r}
           <li>
-            <button type="button" onclick={() => pick(r)}>
+            <button type="button" onmousedown={() => pick(r)}>
               {#if row}{@render row(r)}{:else}{rowLabel(r)}{/if}
             </button>
           </li>

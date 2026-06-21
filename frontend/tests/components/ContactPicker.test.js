@@ -17,7 +17,7 @@ describe('ContactPicker', () => {
     await fireEvent.input(getByPlaceholderText(/contact/i), { target: { value: 'pat' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/contacts/?search=pat&page_size=10');
-    await fireEvent.click(await findByRole('button', { name: /Pat Quinn/ }));
+    await fireEvent.mouseDown(await findByRole('button', { name: /Pat Quinn/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ contact_id: 3 }));
   });
 });

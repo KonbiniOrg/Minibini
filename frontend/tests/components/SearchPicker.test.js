@@ -20,7 +20,7 @@ describe('SearchPicker', () => {
     await fireEvent.input(getByPlaceholderText('Search…'), { target: { value: 'ac' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(search).toHaveBeenCalledWith('ac');
-    await fireEvent.click(await findByRole('button', { name: 'Acme' }));
+    await fireEvent.mouseDown(await findByRole('button', { name: 'Acme' }));
     expect(onPick).toHaveBeenCalledWith({ id: 1, name: 'Acme' });
   });
 

@@ -17,7 +17,7 @@ describe('BillPicker', () => {
     await fireEvent.input(getByPlaceholderText(/bill/i), { target: { value: '7788' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/bills/?search=7788&page_size=10');
-    await fireEvent.click(await findByRole('button', { name: /INV-7788/ }));
+    await fireEvent.mouseDown(await findByRole('button', { name: /INV-7788/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ bill_id: 4 }));
   });
 });
