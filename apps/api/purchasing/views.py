@@ -474,6 +474,13 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         purchase_order = self.request.query_params.get('purchase_order')
         if purchase_order:
             qs = qs.filter(purchase_order_id=purchase_order)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(vendor_invoice_number__icontains=search)
+                | Q(purchase_order__po_number__icontains=search)
+                | Q(business__business_name__icontains=search)
+            )
 
         if self.action == 'list' and not self._summary_mode():
             # Non-summary list: BillSerializer reads obj.purchase_order,
