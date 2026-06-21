@@ -100,7 +100,7 @@
     <label><strong>Vendor (Business) *</strong></label><br>
     <BusinessPicker bind:value={form.business}
       selectedItem={po?.business_detail ?? null}
-      onSelect={(b) => { pickedBusiness = b; fetchContactsAndAutoSelect(form.business, true); }} />
+      onSelect={(b) => { pickedBusiness = b; }} />
   </p>
 
   <p>

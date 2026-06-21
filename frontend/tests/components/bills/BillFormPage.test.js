@@ -82,12 +82,10 @@ describe('BillFormPage', () => {
 
     // PO is shown read-only and the vendor is pre-filled + locked
     expect(await findByText(container, /PO-1/)).toBeInTheDocument();
-    // BusinessPicker is disabled when contextPoId is set
-    const pickerInput = container.querySelector('input[placeholder="Search business…"]');
-    // The picker resolves the label for business 1 and shows the selected state (no input visible)
-    // OR the input is disabled — either way the vendor is locked
-    // Check that the "Vendor comes from the purchase order" note is shown
+    // "Vendor comes from the purchase order" note confirms the lock
     expect(await findByText(container, /Vendor comes from the purchase order/)).toBeInTheDocument();
+    // BusinessPicker is disabled: it renders only the selected-label span, not the search input
+    expect(container.querySelector('input[placeholder="Search business…"]')).toBeNull();
   });
 
   it('edit mode on a non-draft bill shows the read-only notice instead of the form', async () => {

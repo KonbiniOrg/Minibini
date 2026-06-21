@@ -205,7 +205,9 @@
   <form onsubmit={handleSubmit}>
     <p>
       <label><strong>Vendor (Business) *</strong></label><br>
+      <!-- selectedItem: neither bill nor po expose business_detail on this page; picker resolves by id as fallback -->
       <BusinessPicker bind:value={form.business} disabled={!!contextPoId}
+        selectedItem={null}
         onSelect={(b) => { pickedBusiness = b; }} />
       {#if contextPoId}<br><small>Vendor comes from the purchase order.</small>{/if}
     </p>
