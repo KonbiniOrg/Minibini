@@ -1,13 +1,13 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push, querystring } from 'svelte-spa-router';
-  import PurchaseOrderPicker from '../../components/PurchaseOrderPicker.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
 
   let businesses = $state([]);
   let contactsForBusiness = $state([]);
+  let vendorPos = $state([]);
   let loadingContacts = $state(false);
   let loading = $state(true);
   let errors = $state(null);
@@ -66,11 +66,26 @@
     }
   }
 
+  async function fetchVendorPos(businessId) {
+    if (!businessId) { vendorPos = []; return; }
+    try {
+      const data = await api.get(`/api/purchase-orders/?business=${businessId}&page_size=100`);
+      vendorPos = data.results || [];
+    } catch (e) {
+      console.error('Failed to fetch POs for business', businessId, e);
+      vendorPos = [];
+    }
+  }
+
   $effect(() => {
     const biz = form.business;
     if (biz === lastFetchedBusiness) return;
     lastFetchedBusiness = biz;
     fetchContactsAndAutoSelect(biz, true);
+    selectedPoId = null;
+    selectedPoNumber = null;
+    poBilling = null;
+    fetchVendorPos(biz);
   });
 
   async function fetchPoBilling(poId) {
@@ -199,12 +214,14 @@
     <p><strong>Purchase Order:</strong> {selectedPoNumber || contextPoId}</p>
     {:else}
     <p>
-      <strong>Purchase Order</strong><br>
-      <PurchaseOrderPicker
-        businessId={form.business || null}
-        value={null}
-        onSelect={(po) => { selectedPoId = po.po_id; selectedPoNumber = po.po_number; fetchPoBilling(po.po_id); }}
-      />
+      <label for="purchase_order"><strong>Purchase Order</strong></label><br>
+      <select id="purchase_order" bind:value={selectedPoId}
+        onchange={() => { const po = vendorPos.find(p => p.po_id === selectedPoId); selectedPoNumber = po?.po_number ?? null; fetchPoBilling(selectedPoId); }}>
+        <option value={null}>-- None --</option>
+        {#each vendorPos as po (po.po_id)}
+          <option value={po.po_id}>{po.po_number}</option>
+        {/each}
+      </select>
     </p>
     {/if}
     {#if poBilling?.po_fully_billed}

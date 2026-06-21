@@ -1,21 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, findByText } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
+
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
 import { api } from '@/lib/api.js';
 import PurchaseOrderPicker from '@/components/PurchaseOrderPicker.svelte';
 
-beforeEach(() => api.get.mockReset());
+beforeEach(() => { api.get.mockReset(); });
 
 describe('PurchaseOrderPicker', () => {
-  it('lists the vendor POs and emits selection', async () => {
-    api.get.mockResolvedValue({ results: [{ po_id: 5, po_number: 'PO-1', status: 'issued' }] });
+  it('searches all POs globally and emits the picked PO', async () => {
+    api.get.mockResolvedValue({ results: [
+      { po_id: 7, po_number: 'PO-7', business: { business_name: 'Acme' } },
+    ] });
     const onSelect = vi.fn();
-    const { container, getByPlaceholderText } = render(PurchaseOrderPicker, {
-      props: { businessId: 9, value: null, onSelect },
-    });
-    await fireEvent.input(getByPlaceholderText(/purchase order/i), { target: { value: 'PO' } });
-    const opt = await findByText(container, /PO-1/);
-    await fireEvent.click(opt);
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ po_id: 5, po_number: 'PO-1' }));
+    const { getByPlaceholderText, findByRole } = render(PurchaseOrderPicker, { props: { onSelect } });
+    await fireEvent.input(getByPlaceholderText(/purchase order/i), { target: { value: 'po-7' } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(api.get).toHaveBeenCalledWith('/api/purchase-orders/?search=po-7&page_size=10');
+    await fireEvent.click(await findByRole('button', { name: /PO-7/ }));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ po_id: 7 }));
   });
 });
