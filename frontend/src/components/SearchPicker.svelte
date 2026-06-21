@@ -44,29 +44,39 @@
   function onBlur() { setTimeout(() => { showResults = false; }, 200); }
   function close() { showResults = false; query = ''; results = []; }
 
+  let pendingLabel = null; // label captured at pick time, applied when value updates
+
   function pick(r) {
     close();
-    onPick(r);              // parent assigns `value` synchronously
-    selectedLabel = rowLabel(r);
-    labelForValue = value;  // now matches the just-assigned value
+    pendingLabel = rowLabel(r);
+    onPick(r); // parent updates `value` (synchronously or batched)
   }
 
   function clear() {
     close();
+    pendingLabel = null;
     selectedLabel = '';
     labelForValue = null;
-    onClear();              // parent sets value = null
+    onClear(); // parent sets value = null
   }
 
-  // Prefill / external value changes: resolve a display label once per value.
+  // Apply the picked/prefilled label once `value` settles.
   $effect(() => {
     const v = value;
-    if (v == null) { selectedLabel = ''; labelForValue = null; return; }
+    if (v == null) { selectedLabel = ''; labelForValue = null; pendingLabel = null; return; }
     if (v === labelForValue) return; // already labelled (race guard)
+    if (pendingLabel != null) {      // just picked locally — no fetch needed
+      selectedLabel = pendingLabel;
+      labelForValue = v;
+      pendingLabel = null;
+      return;
+    }
     Promise.resolve(resolveLabel(v, selectedItem))
       .then((lbl) => { if (value === v) { selectedLabel = lbl || ''; labelForValue = v; } })
       .catch(() => {});
   });
+
+  $effect(() => () => clearTimeout(timer));
 </script>
 
 {#if value != null && labelForValue === value}
