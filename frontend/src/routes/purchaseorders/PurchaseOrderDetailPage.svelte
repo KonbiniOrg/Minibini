@@ -142,13 +142,13 @@
     const reason = prompt('Reason for cancellation:');
     if (!reason) return;
     const linkedMaterials = collectLinkedMaterials(po.line_items);
-    const runCancel = async (severDecision) => {
+    const runCancel = async (severDecisions) => {
       busy = true;
       error = null;
       success = null;
       try {
         const payload = { reason };
-        if (severDecision) payload.sever_decision = severDecision;
+        if (severDecisions) payload.sever_decisions = severDecisions;
         await api.post(`/api/purchase-orders/${po.po_id}/cancel/`, payload);
         await reload();
         success = 'Purchase order cancelled.';
@@ -172,11 +172,11 @@
   async function handleDelete() {
     if (!confirm('Delete this purchase order? This cannot be undone.')) return;
     const linkedMaterials = collectLinkedMaterials(po.line_items);
-    const runDelete = async (severDecision) => {
+    const runDelete = async (severDecisions) => {
       busy = true;
       error = null;
       try {
-        const payload = severDecision ? { sever_decision: severDecision } : null;
+        const payload = severDecisions ? { sever_decisions: severDecisions } : null;
         await api.delete(`/api/purchase-orders/${po.po_id}/?confirm=true`, payload);
         severPrompt = null;
         push('/purchase-orders');

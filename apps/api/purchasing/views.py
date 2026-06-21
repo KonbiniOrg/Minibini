@@ -28,6 +28,16 @@ from .serializers import (
 
 _BILL_MONEY = DecimalField(max_digits=12, decimal_places=2)
 
+
+def _coerce_sever_decisions(raw):
+    """Normalize a sever-decisions map from the request body. JSON object keys
+    arrive as strings ({"42": "keep"}), but the service looks up line items by
+    int pk, so coerce keys to int. Returns None when nothing was supplied.
+    Raises ValueError on a non-int key."""
+    if not raw:
+        return None
+    return {int(k): v for k, v in raw.items()}
+
 BILL_STATUS_PRESETS = {
     'open': [Bill.STATUS_RECEIVED, Bill.STATUS_PARTLY_PAID],
     'paid': [Bill.STATUS_PAID_IN_FULL],
@@ -109,7 +119,12 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         """Delete a draft PO. Accepts `sever_decisions` in body for lines
         with pending linked Materials."""
         po = self.get_object()
-        sever_decisions = request.data.get('sever_decisions') if request.data else None
+        try:
+            sever_decisions = _coerce_sever_decisions(
+                request.data.get('sever_decisions') if request.data else None)
+        except (ValueError, AttributeError):
+            return Response({'detail': 'Invalid sever_decisions.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         try:
             PurchaseOrderService.delete_po(po.pk, sever_decisions=sever_decisions)
         except DjangoValidationError as e:
@@ -200,7 +215,11 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 {'reason': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        sever_decisions = request.data.get('sever_decisions')
+        try:
+            sever_decisions = _coerce_sever_decisions(request.data.get('sever_decisions'))
+        except (ValueError, AttributeError):
+            return Response({'detail': 'Invalid sever_decisions.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         try:
             po = PurchaseOrderService.cancel_po(pk, sever_decisions=sever_decisions)
         except DjangoValidationError as e:
