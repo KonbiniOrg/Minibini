@@ -63,7 +63,7 @@
     try {
       if (mode === 'create' && entryMode === 'pli') {
         if (!selectedPLI) {
-          error = 'Select a price list item.';
+          error = 'Select an inventory item.';
           busy = false;
           return;
         }
@@ -108,13 +108,13 @@
       {#if mode === 'create'}
         <p>
           <label><input type="radio" bind:group={entryMode} value="manual"> Manual</label>
-          <label><input type="radio" bind:group={entryMode} value="pli"> From Price List</label>
+          <label><input type="radio" bind:group={entryMode} value="pli"> From Inventory</label>
         </p>
       {/if}
 
       {#if mode === 'create' && entryMode === 'pli'}
         <p>
-          <label><strong>Price List Item *</strong></label><br>
+          <label><strong>Inventory Item *</strong></label><br>
           <InventoryItemPicker
             value={selectedPLI?.inventory_item_id}
             selectedItem={selectedPLI}

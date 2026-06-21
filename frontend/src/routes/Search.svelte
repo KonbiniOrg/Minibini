@@ -37,7 +37,7 @@
     { key: 'est_worksheets', label: 'Worksheets' },
     { key: 'bills', label: 'Bills' },
     { key: 'purchase_orders', label: 'Purchase Orders' },
-    { key: 'inventory_items', label: 'Price List Items' },
+    { key: 'inventory_items', label: 'Inventory Items' },
   ];
 
   const JOB_STATUSES = [
@@ -333,7 +333,7 @@
         {/if}
 
         {#if results.results.inventory_items?.length}
-          <h3>Price List Items</h3>
+          <h3>Inventory Items</h3>
           <table class="data-table">
             <thead>
               <tr><th>Code</th><th>Description</th><th>Units</th><th>Selling Price</th></tr>
@@ -444,7 +444,7 @@
             </button>
           </legend>
           {#if sectionPrice}
-            <p><small>Applies to invoices, estimates, bills, POs, and price list items.</small></p>
+            <p><small>Applies to invoices, estimates, bills, POs, and inventory items.</small></p>
             <p>
               <label for="price-min"><strong>Min ($)</strong></label><br>
               <input type="number" id="price-min" min="0" step="0.01" bind:value={priceMin}>

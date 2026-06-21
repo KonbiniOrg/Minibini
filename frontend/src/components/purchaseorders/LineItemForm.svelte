@@ -99,14 +99,14 @@
       <input type="radio" bind:group={mode} value="manual"> Manual
     </label>
     <label>
-      <input type="radio" bind:group={mode} value="pli"> From Price List
+      <input type="radio" bind:group={mode} value="pli"> From Inventory
     </label>
   </p>
 
   <form onsubmit={handleSubmit}>
     {#if mode === 'pli'}
       <p>
-        <label><strong>Price List Item *</strong></label><br>
+        <label><strong>Inventory Item *</strong></label><br>
         <InventoryItemPicker
           value={selectedPLI?.inventory_item_id}
           selectedItem={selectedPLI}

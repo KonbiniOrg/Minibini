@@ -200,14 +200,14 @@
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 
       <p>
-        <label><strong>Price List Item</strong><br>
+        <label><strong>Inventory Item</strong><br>
           <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
         </label>
       </p>
 
       {#if pliLocked}
         <p style="background:#fff7e6;border:1px solid #ffc53d;padding:8px;">
-          Linked to a price list item. Delete and re-add as freeform to change description, units, or category.
+          Linked to an inventory item. Delete and re-add as freeform to change description, units, or category.
         </p>
       {/if}
 

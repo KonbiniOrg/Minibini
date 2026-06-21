@@ -47,14 +47,14 @@ describe('LineItemModal', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it('requires a price list item before saving in catalog mode', async () => {
+  it('requires an inventory item before saving in catalog mode', async () => {
     const { getByLabelText, getByRole, findByText } = render(LineItemModal, {
       props: { open: true, mode: 'create', apiBase: '/api/estimates/7' },
     });
-    await fireEvent.click(getByLabelText(/From Price List/));
+    await fireEvent.click(getByLabelText(/From Inventory/));
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
-    expect(await findByText('Select a price list item.')).toBeInTheDocument();
+    expect(await findByText('Select an inventory item.')).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
   });
 
