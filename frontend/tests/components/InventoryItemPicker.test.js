@@ -16,7 +16,7 @@ describe('InventoryItemPicker', () => {
     const { getByPlaceholderText, findByRole } = render(InventoryItemPicker, {
       props: { onSelect, params: { is_active: true } },
     });
-    await fireEvent.input(getByPlaceholderText(/price list|inventory/i), { target: { value: 'bolt' } });
+    await fireEvent.input(getByPlaceholderText(/inventory/i), { target: { value: 'bolt' } });
     await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/api/inventory/?search=bolt'));
     expect(api.get).toHaveBeenCalledWith(expect.stringContaining('is_active=true'));
@@ -28,7 +28,7 @@ describe('InventoryItemPicker', () => {
     api.get.mockResolvedValue({ results: [] }); // dropdown opens even with no matches
     const onSelect = vi.fn();
     const { getByPlaceholderText, findByRole } = render(InventoryItemPicker, { props: { onSelect } });
-    await fireEvent.input(getByPlaceholderText(/price list|inventory/i), { target: { value: 'x' } });
+    await fireEvent.input(getByPlaceholderText(/inventory/i), { target: { value: 'x' } });
     await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByRole('button', { name: /freeform/i }));
     expect(onSelect).toHaveBeenCalledWith(null);

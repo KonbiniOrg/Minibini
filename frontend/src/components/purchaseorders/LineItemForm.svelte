@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import PriceListItemPicker from '../PriceListItemPicker.svelte';
+  import InventoryItemPicker from '../InventoryItemPicker.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
   import JobPicker from '../JobPicker.svelte';
 
@@ -107,10 +107,11 @@
     {#if mode === 'pli'}
       <p>
         <label><strong>Price List Item *</strong></label><br>
-        <PriceListItemPicker
+        <InventoryItemPicker
           value={selectedPLI?.inventory_item_id}
           selectedItem={selectedPLI}
           onSelect={handlePLISelect}
+          params={{ is_active: true }}
         />
       </p>
       <p>

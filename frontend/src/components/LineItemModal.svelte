@@ -1,7 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import UnitsSelect from './UnitsSelect.svelte';
-  import PriceListItemPicker from './PriceListItemPicker.svelte';
+  import InventoryItemPicker from './InventoryItemPicker.svelte';
   import { modalKeys } from '../lib/modalKeys.js';
 
   let {
@@ -115,10 +115,11 @@
       {#if mode === 'create' && entryMode === 'pli'}
         <p>
           <label><strong>Price List Item *</strong></label><br>
-          <PriceListItemPicker
+          <InventoryItemPicker
             value={selectedPLI?.inventory_item_id}
             selectedItem={selectedPLI}
             onSelect={handlePLISelect}
+            params={{ is_active: true }}
           />
         </p>
         <p>

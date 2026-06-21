@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
-  import PriceListItemPicker from './PriceListItemPicker.svelte';
+  import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
   import { modalKeys } from '../lib/modalKeys.js';
 
@@ -173,7 +173,7 @@
 
       <p>
         <label><strong>Price List Item</strong><br>
-          <PriceListItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} />
+          <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
         </label>
       </p>
 

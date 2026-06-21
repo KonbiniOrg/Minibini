@@ -10,7 +10,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
-  api.get.mockResolvedValue([]); // UnitsSelect (/api/settings/units/) + PriceListItemPicker
+  api.get.mockResolvedValue([]); // UnitsSelect (/api/settings/units/) + InventoryItemPicker
   api.post.mockResolvedValue({});
   api.patch.mockResolvedValue({});
 });

@@ -10,7 +10,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
-  api.get.mockResolvedValue([]); // UnitsSelect / PLI picker
+  api.get.mockResolvedValue([]); // UnitsSelect / InventoryItemPicker
   api.post.mockResolvedValue({});
   api.patch.mockResolvedValue({});
 });
@@ -79,7 +79,8 @@ describe('MaterialModal', () => {
     const { getByPlaceholderText, findByText } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10 },
     });
-    await fireEvent.focus(getByPlaceholderText('Search price list items...'));
+    await fireEvent.input(getByPlaceholderText('Search inventory items…'), { target: { value: 'felt' } });
+    await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByText(/grey felt/));
     expect(await findByText(/earmarked for other jobs/)).toBeInTheDocument();
   });
@@ -89,7 +90,8 @@ describe('MaterialModal', () => {
     const { getByPlaceholderText, findByText, getByLabelText } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10 },
     });
-    await fireEvent.focus(getByPlaceholderText('Search price list items...'));
+    await fireEvent.input(getByPlaceholderText('Search inventory items…'), { target: { value: 'felt' } });
+    await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByText(/grey felt/));
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '4' } });
     expect(await findByText(/Only 3.00 of 5.00/)).toBeInTheDocument();

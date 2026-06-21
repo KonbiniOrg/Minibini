@@ -8,7 +8,7 @@ import MaterialPicker from '@/components/expenses/MaterialPicker.svelte';
 
 beforeEach(() => {
   api.get.mockReset();
-  api.get.mockResolvedValue({ results: [] }); // PriceListItemPicker catalog
+  api.get.mockResolvedValue({ results: [] }); // InventoryItemPicker search
 });
 
 describe('MaterialPicker (expense purchased item)', () => {

@@ -3,7 +3,7 @@
   // (adds to inventory; cost flows at consumption). Freeform / non-inventoried
   // PLI → a consumable material at the entered unit cost. Expenses never link to
   // an existing material — this only creates new ones.
-  import PriceListItemPicker from '../PriceListItemPicker.svelte';
+  import InventoryItemPicker from '../InventoryItemPicker.svelte';
 
   let {
     jobId = null,
@@ -64,7 +64,7 @@
   {:else}
     <p>
       <label for="mp-pli">Price list item</label><br>
-      <PriceListItemPicker onSelect={onPli} />
+      <InventoryItemPicker onSelect={onPli} params={{ is_active: true }} />
     </p>
 
     {#if isStock}

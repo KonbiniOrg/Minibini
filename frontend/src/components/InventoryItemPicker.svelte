@@ -21,7 +21,7 @@
 <SearchPicker bind:value {selectedItem} {search} {resolveLabel} rowLabel={label}
   onPick={(i) => { value = i.inventory_item_id; onSelect(i); }}
   onClear={() => { value = null; onSelect(null); }}
-  {disabled} placeholder="Search price list items…">
+  {disabled} placeholder="Search inventory items…">
   {#snippet header(close)}
     <li><button type="button" onmousedown={() => freeform(close)}>None (freeform)</button></li>
   {/snippet}
