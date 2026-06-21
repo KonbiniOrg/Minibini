@@ -267,7 +267,7 @@ params, and row/selected rendering:
 | `ContactPicker` | `/api/contacts/?search=` | |
 | `PurchaseOrderPicker` | `/api/purchase-orders/?search=` | Global (po_number, vendor name) |
 | `BillPicker` | `/api/bills/?search=` | vendor_invoice_number, PO number, vendor name |
-| `InventoryItemPicker` | `/api/price-list-items/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
+| `InventoryItemPicker` | `/api/inventory/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
 | `CustomerPicker` | dual-source contacts + businesses | Emits `{type, id}` (not a plain id) |
 
 **Shared single-model picker contract:** `value` (bindable entity id), `onSelect(fullRow|null)`, optional `selectedItem` for id-based prefill. `CustomerPicker` deviates: its `value` is `{type, id}`.
