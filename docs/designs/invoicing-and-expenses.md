@@ -17,7 +17,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 - The estimate wizard (`EstimateLineItemSource`, plan-side atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
 - `Material` shape, `MaterialService.consume`, `is_expense_bound`, the "Materials (no task)" bucket. See `docs/designs/materials-inventory-and-purchasing.md`.
 - `Bill` (vendor-side AP, lives next to `PurchaseOrder`). See `docs/designs/materials-inventory-and-purchasing.md`.
-- OAuth, `QBOSyncLog`, payment polling, sync-failure plumbing. See `docs/designs/quickbooks-integration.md` (forthcoming). This doc references the push points but does not describe their internals.
+- OAuth, `QBOSyncLog`, payment polling, sync-failure plumbing. See `docs/designs/quickbooks-integration.md`. This doc references the push points but does not describe their internals.
 
 ---
 

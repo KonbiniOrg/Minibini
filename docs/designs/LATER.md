@@ -605,15 +605,6 @@ IMAP-SMTP machinery and tend to be worked together.
   100 entries" (above). _Done when:_ the link-email page selects the job via the typeahead
   picker, reaching any job regardless of count, and the bulk `?page_size=500` load is gone.
 
-- **Track bill partial-payment amounts (add `Bill.qbo_amount_paid`).** — _added 2026-06-12_
-  `Bill` records only `qbo_payment_status` (a string), not an amount paid, so a
-  `partly_paid` bill's outstanding balance can't be computed. The Financials Bill
-  list (shipped 2026-06) shows a coarse balance — full total for any non-fully-paid
-  status — which overstates `partly_paid` bills (footnoted in the UI). _Done when:_
-  `Bill` grows a `qbo_amount_paid` field (mirroring `Invoice.qbo_amount_paid`), the
-  forthcoming bill QBO payment polling populates it, and the Bill list/detail balance
-  becomes exact. See `docs/plans/2026-06-12-financials-list-views-design.md`.
-
 - **Consolidate the customer/contact pickers around `CustomerPicker`.** — _added 2026-06-12_
   Once the new `CustomerPicker` (dual-source contact+business typeahead, emits
   `{type, id}`; from `docs/plans/2026-06-12-financials-list-views-design.md`) ships,

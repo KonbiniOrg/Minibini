@@ -26,8 +26,7 @@ Status moves **backward** automatically when payments are removed
 (`paid_in_full → partly_paid → received`). **Balance is exact**: `total −
 amount_paid` for active bills, and **$0.00** for `paid_in_full` / `cancelled` /
 `refunded` (you owe nothing on a terminal bill). See
-`docs/designs/materials-inventory-and-purchasing.md` §13 and
-`docs/plans/2026-06-19-bill-lifecycle-design.md`.
+`docs/designs/materials-inventory-and-purchasing.md` §13.
 
 ## Personas
 

@@ -16,9 +16,9 @@ Sibling docs:
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
   (Materials are atoms), atom carry-over (`PlanMaterial → Material` on
   estimate accept), AccountingCategory pass-through.
-- `docs/designs/invoicing-and-expenses.md` (forthcoming) — `Invoice` /
-  `InvoiceLineItem`, `Bill` payment lifecycle, expense-bound Materials.
-- `docs/designs/quickbooks-integration.md` (forthcoming) — Bill QBO sync.
+- `docs/designs/invoicing-and-expenses.md` — `Invoice` /
+  `InvoiceLineItem`, expense-bound Materials.
+- `docs/designs/quickbooks-integration.md` — Bill QBO sync.
 - `CLAUDE.md` — line-item delete rule, document numbering, `Configuration`
   key-value store, terminal-DB-write rules.
 
