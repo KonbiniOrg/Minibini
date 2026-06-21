@@ -2,43 +2,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
-
 import { api } from '@/lib/api.js';
 import JobPicker from '@/components/JobPicker.svelte';
 
-beforeEach(() => {
-  api.get.mockReset();
-});
+beforeEach(() => { api.get.mockReset(); });
 
 describe('JobPicker', () => {
-  it('searches and selects a job', async () => {
-    api.get.mockResolvedValue({
-      results: [{ job_id: 1, job_number: 'JOB-1', description: 'widget run' }],
-    });
-    const { getByPlaceholderText, findByRole, getByRole } = render(JobPicker);
-
+  it('searches and emits the full job; value is the id', async () => {
+    api.get.mockResolvedValue({ results: [{ job_id: 1, job_number: 'JOB-1', name: 'widget run' }] });
+    const onSelect = vi.fn();
+    const { getByPlaceholderText, findByRole } = render(JobPicker, { props: { onSelect } });
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'wid' } });
+    await new Promise((r) => setTimeout(r, 300));
     expect(api.get).toHaveBeenCalledWith('/api/jobs/?search=wid&page_size=10');
-
     await fireEvent.click(await findByRole('button', { name: /JOB-1/ }));
-    expect(getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ job_id: 1 }));
   });
 
-  it('does not search for a blank query', async () => {
-    const { getByPlaceholderText } = render(JobPicker);
-    await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: '   ' } });
-    expect(api.get).not.toHaveBeenCalled();
-  });
-
-  it('clears the selection back to the search input', async () => {
-    api.get.mockResolvedValue({
-      results: [{ job_id: 1, job_number: 'JOB-1', description: 'x' }],
+  it('renders a prefilled label from selectedItem without a fetch', async () => {
+    const { findByText } = render(JobPicker, {
+      props: { value: 1, selectedItem: { job_id: 1, job_number: 'JOB-1', name: 'x' } },
     });
-    const { getByPlaceholderText, findByRole, getByRole } = render(JobPicker);
-    await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'j' } });
-    await fireEvent.click(await findByRole('button', { name: /JOB-1/ }));
-
-    await fireEvent.click(getByRole('button', { name: 'Clear' }));
-    expect(getByPlaceholderText('Search jobs…')).toBeInTheDocument();
+    expect(await findByText(/JOB-1/)).toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalled();
   });
 });
