@@ -1,6 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { push, querystring } from 'svelte-spa-router';
+  import BusinessPicker from '../../components/BusinessPicker.svelte';
 
   const { params = {} } = $props();
   const isEdit = $derived(!!params.id);
@@ -26,15 +27,19 @@
   let poBilling = $state(null);
 
   let form = $state({
-    business: '',
+    business: null,
     contact: '',
     vendor_invoice_number: '',
     due_date: '',
   });
 
   let lastFetchedBusiness = form.business;
+  let pickedBusiness = $state(null);
 
   function getDefaultContactId(businessId) {
+    if (pickedBusiness && String(pickedBusiness.business_id) === String(businessId)) {
+      return pickedBusiness.default_contact || null;
+    }
     const biz = businesses.find(b => String(b.business_id) === String(businessId));
     return biz?.default_contact || null;
   }
@@ -121,7 +126,7 @@
         const bill = await api.get(`/api/bills/${params.id}/`);
         billStatus = bill.status;
         if (bill.status === 'draft') {
-          form.business = bill.business || '';
+          form.business = bill.business || null;
           form.contact = bill.contact || '';
           form.vendor_invoice_number = bill.vendor_invoice_number || '';
           form.due_date = bill.due_date ? bill.due_date.slice(0, 10) : '';
@@ -139,8 +144,8 @@
         selectedPoId = po.po_id;
         selectedPoNumber = po.po_number;
         if (po.business) {
-          form.business = po.business;
-          lastFetchedBusiness = po.business;
+          form.business = po.business || null;
+          lastFetchedBusiness = po.business || null;
           await fetchContactsAndAutoSelect(po.business, false);
           form.contact = po.contact || '';
         }
@@ -159,7 +164,7 @@
     errors = null;
     try {
       const body = {
-        business: form.business !== '' ? Number(form.business) : null,
+        business: (form.business !== '' && form.business != null) ? Number(form.business) : null,
         contact: form.contact !== '' ? Number(form.contact) : null,
         vendor_invoice_number: form.vendor_invoice_number,
         due_date: form.due_date || null,
@@ -199,13 +204,9 @@
   {/if}
   <form onsubmit={handleSubmit}>
     <p>
-      <label for="business"><strong>Vendor (Business) *</strong></label><br>
-      <select id="business" bind:value={form.business} required disabled={!!contextPoId}>
-        <option value="">-- Select Business --</option>
-        {#each businesses as biz (biz.business_id)}
-          <option value={biz.business_id}>{biz.business_name}</option>
-        {/each}
-      </select>
+      <label><strong>Vendor (Business) *</strong></label><br>
+      <BusinessPicker bind:value={form.business} disabled={!!contextPoId}
+        onSelect={(b) => { pickedBusiness = b; }} />
       {#if contextPoId}<br><small>Vendor comes from the purchase order.</small>{/if}
     </p>
 

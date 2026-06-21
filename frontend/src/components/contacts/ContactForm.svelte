@@ -1,4 +1,6 @@
 <script>
+  import BusinessPicker from '../BusinessPicker.svelte';
+
   const {
     contact = null,
     businesses = [],
@@ -23,13 +25,13 @@
     municipality: contact?.municipality || '',
     postal_code: contact?.postal_code || '',
     country_code: contact?.country_code || '',
-    business: contact?.business || '',
+    business: contact?.business ?? null,
   });
 
   function handleSubmit(e) {
     e.preventDefault();
     const data = { ...form };
-    if (data.business === '') {
+    if (data.business === '' || data.business == null) {
       data.business = null;
     }
     onSubmit(data);
@@ -107,13 +109,8 @@
   </fieldset>
 
   <p>
-    <label for="business"><strong>Business</strong></label><br>
-    <select id="business" bind:value={form.business}>
-      <option value="">-- None --</option>
-      {#each businesses as biz}
-        <option value={biz.business_id}>{biz.business_name}</option>
-      {/each}
-    </select>
+    <label><strong>Business</strong></label><br>
+    <BusinessPicker bind:value={form.business} selectedItem={contact?.business_detail ?? null} />
   </p>
 
   <p>

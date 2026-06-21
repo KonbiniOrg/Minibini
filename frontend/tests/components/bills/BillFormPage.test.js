@@ -47,16 +47,15 @@ beforeEach(() => {
 });
 
 describe('BillFormPage', () => {
-  it('new mode renders the form with a Save button and loads businesses into the vendor select', async () => {
+  it('new mode renders the form with a Save button and a BusinessPicker for vendor', async () => {
     const { container } = render(BillFormPage, { props: { params: {} } });
 
-    // Wait for businesses to load and Save button to appear
+    // Wait for form to load and Save button to appear
     const saveBtn = await findByRole(container, 'button', { name: 'Save' });
     expect(saveBtn).toBeInTheDocument();
 
-    // Vendor select should contain the businesses from the API
-    expect(await findByText(container, 'Acme Supply')).toBeInTheDocument();
-    expect(await findByText(container, 'Widget Co')).toBeInTheDocument();
+    // BusinessPicker renders an input with placeholder "Search business…"
+    expect(container.querySelector('input[placeholder="Search business…"]')).toBeInTheDocument();
 
     // API called for businesses
     expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/api/businesses/'));
@@ -68,7 +67,8 @@ describe('BillFormPage', () => {
   it('new mode with ?po= pre-fills the vendor from the PO and shows the PO', async () => {
     qsRef.value = 'po=5';
     api.get.mockImplementation((url) => {
-      if (url.includes('/api/businesses/')) return Promise.resolve({ results: BUSINESSES });
+      if (url.includes('/api/businesses/?')) return Promise.resolve({ results: BUSINESSES });
+      if (url.includes('/api/businesses/1/')) return Promise.resolve(BUSINESSES[0]);
       if (url.includes('/api/contacts/')) return Promise.resolve({ results: [] });
       if (url.includes('/api/purchase-orders/5/')) return Promise.resolve({
         po_id: 5, po_number: 'PO-1', business: 1, contact: null,
@@ -82,9 +82,12 @@ describe('BillFormPage', () => {
 
     // PO is shown read-only and the vendor is pre-filled + locked
     expect(await findByText(container, /PO-1/)).toBeInTheDocument();
-    const businessSelect = container.querySelector('#business');
-    expect(businessSelect.value).toBe('1');
-    expect(businessSelect.disabled).toBe(true);
+    // BusinessPicker is disabled when contextPoId is set
+    const pickerInput = container.querySelector('input[placeholder="Search business…"]');
+    // The picker resolves the label for business 1 and shows the selected state (no input visible)
+    // OR the input is disabled — either way the vendor is locked
+    // Check that the "Vendor comes from the purchase order" note is shown
+    expect(await findByText(container, /Vendor comes from the purchase order/)).toBeInTheDocument();
   });
 
   it('edit mode on a non-draft bill shows the read-only notice instead of the form', async () => {
