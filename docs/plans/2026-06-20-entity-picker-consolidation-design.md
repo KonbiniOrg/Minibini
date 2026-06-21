@@ -189,11 +189,11 @@ if search:
 | `EmailAssociatePage` job | raw `<select>` (`page_size=500`, capped) | `JobPicker` |
 | `EmailAssociatePOPage` PO | raw `<select>` | `PurchaseOrderPicker` (global) |
 | `EmailAssociateBillPage` bill | raw `<select>` | `BillPicker` |
-| `DuplicateJobPage` contact | old `ContactPicker` | `ContactPicker` (on base) |
-| `ExpenseForm` job | old `JobPicker` | `JobPicker` (on base) |
-| `LineItemForm` (PO) job | old `JobPicker` | `JobPicker` (on base) |
-| `PurchaseOrderDetail` job ×2 | old `JobPicker` | `JobPicker` (on base) |
-| `InvoiceListPage` / `BillListPage` customer filter | old `CustomerPicker` | `CustomerPicker` (on base) |
+| `DuplicateJobPage` contact | old `ContactPicker` | `ContactPicker` |
+| `ExpenseForm` job | old `JobPicker` | `JobPicker` |
+| `LineItemForm` (PO) job | old `JobPicker` | `JobPicker` |
+| `PurchaseOrderDetail` job ×2 | old `JobPicker` | `JobPicker` |
+| `InvoiceListPage` / `BillListPage` customer filter | old `CustomerPicker` | `CustomerPicker` |
 | `LineItemModal`, `MaterialModal`, `PlanMaterialModal`, `MaterialPicker`, `LineItemForm` material | `PriceListItemPicker` | `InventoryItemPicker` |
 
 **`JobPicker`-consumer refactor.** The three job sites round-trip
