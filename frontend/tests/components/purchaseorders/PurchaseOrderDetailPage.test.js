@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, findByText, findAllByText } from '@testing-library/svelte';
 
+const { qsRef } = vi.hoisted(() => ({ qsRef: { value: '' } }));
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 vi.mock('svelte-spa-router', () => ({
   push: vi.fn(),
-  querystring: { subscribe: (fn) => { fn(''); return () => {}; } },
+  querystring: { subscribe: (fn) => { fn(qsRef.value); return () => {}; } },
   link: () => {},
 }));
 vi.mock('@/stores/permissions.js', () => ({
@@ -33,7 +34,9 @@ const PO = {
 };
 
 beforeEach(() => {
+  qsRef.value = '';
   api.get.mockReset();
+  api.post.mockReset();
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
     if (url.includes('/history/')) return Promise.resolve([]);
@@ -66,5 +69,50 @@ describe('PurchaseOrderDetailPage delete with sever', () => {
     expect(body).toHaveProperty('sever_decisions');
     expect(body).not.toHaveProperty('sever_decision');
     expect(body.sever_decisions).toHaveProperty('42');
+  });
+});
+
+describe('PurchaseOrderDetailPage one-shot material prefill', () => {
+  it('does not re-send material_id on a second line', async () => {
+    qsRef.value = 'prefill_material=9&default_job=3';
+    const PO_DRAFT = {
+      po_id: 7, po_number: 'PO-7', status: 'draft', business_name: 'Acme',
+      created_date: '2026-06-20T00:00:00Z', line_items: [],
+    };
+    api.get.mockImplementation((url) => {
+      if (url.includes('/history/')) return Promise.resolve([]);
+      if (url.includes('/accounting-categories/')) return Promise.resolve({ results: [] });
+      if (url.includes('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'J-1' });
+      if (url.includes('/api/jobs/')) return Promise.resolve({ results: [] });
+      if (url.includes('/api/materials/9/')) return Promise.resolve({
+        material_id: 9, quantity: '2', inventory_item: 5, description: 'Bolt',
+        unit_cost: '1.00', accounting_category: null });
+      if (url.includes('/api/inventory/5/')) return Promise.resolve({
+        inventory_item_id: 5, code: 'B', description: 'Bolt', units: 'ea',
+        purchase_price: '1.00', accounting_category: null });
+      if (url.includes('/api/inventory/')) return Promise.resolve({
+        results: [{ inventory_item_id: 5, code: 'B', description: 'Bolt' }] });
+      return Promise.resolve(PO_DRAFT);
+    });
+    api.post.mockResolvedValue({});
+
+    const { container } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+
+    // The prefilled add form auto-opens; submit the first line.
+    await fireEvent.click(await findByText(container, 'Add'));
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    // First line carried the material_id from the "order this material" prefill.
+    expect(api.post.mock.calls[0][1]).toHaveProperty('material_id', 9);
+
+    // Reopen the form for a second line and fill it manually.
+    await fireEvent.click(await findByText(container, 'Add Line Item'));
+    await fireEvent.input(container.querySelector('#description'), { target: { value: 'Nut' } });
+    await fireEvent.input(container.querySelector('#qty'), { target: { value: '4' } });
+    await fireEvent.input(container.querySelector('#price'), { target: { value: '0.50' } });
+    await fireEvent.click(await findByText(container, 'Add'));
+
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+    // The fix: the one-shot prefill was cleared, so no stale material_id.
+    expect(api.post.mock.calls[1][1]).not.toHaveProperty('material_id');
   });
 });

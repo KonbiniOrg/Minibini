@@ -201,6 +201,12 @@
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/line-items/`, data);
       showAddLineItem = false;
+      // The "order this material" prefill is one-shot: it applies only to the
+      // first line. Clear it after a successful add so a second line doesn't
+      // re-send the same material_id (which is now linked) — the job stays
+      // selected for convenience on the same job's subsequent lines.
+      prefilledMaterialIdNum = null;
+      prefilledLine = null;
       await reload();
     } catch (e) {
       error = e.data ? JSON.stringify(e.data) : e.message;
