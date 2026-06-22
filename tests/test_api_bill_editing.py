@@ -110,7 +110,7 @@ class BillEditingAPITest(BaseTestCase):
         r2 = self.client.post(
             f'/api/bills/{bill.bill_id}/payments/',
             {'amount': '5.00', 'payment_date': '2026-06-19T12:00:00Z',
-             'method': 'check'},
+             },
             format='json',
         )
         self.assertEqual(r2.status_code, 201, r2.data)

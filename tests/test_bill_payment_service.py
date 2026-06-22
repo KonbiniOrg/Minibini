@@ -26,14 +26,14 @@ class BillPaymentServiceTest(TestCase):
     def test_record_payment_partial_then_full(self):
         BillPaymentService.record_payment(
             self.bill, amount=Decimal('50.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
             reference='4471',
         )
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)
         BillPaymentService.record_payment(
             self.bill, amount=Decimal('150.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
         )
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
@@ -41,7 +41,7 @@ class BillPaymentServiceTest(TestCase):
     def test_record_payment_writes_history_on_bill(self):
         BillPaymentService.record_payment(
             self.bill, amount=Decimal('200.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
         )
         self.assertTrue(PurchasingHistory.objects.filter(
             object_type='bill', object_id=self.bill.pk,
@@ -53,12 +53,12 @@ class BillPaymentServiceTest(TestCase):
         with self.assertRaises(ValidationError):
             BillPaymentService.record_payment(
                 draft, amount=Decimal('10.00'),
-                payment_date=timezone.now(), method=BillPayment.METHOD_CHECK)
+                payment_date=timezone.now())
 
     def test_delete_payment_recomputes(self):
         p = BillPaymentService.record_payment(
             self.bill, amount=Decimal('200.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK)
+            payment_date=timezone.now())
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
         BillPaymentService.delete_payment(p.pk)
@@ -70,7 +70,7 @@ class BillPaymentServiceTest(TestCase):
         # Create a payment directly so we can put the bill into cancelled state
         payment = BillPayment.objects.create(
             bill=self.bill, amount=Decimal('50.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
         )
         self.bill.status = Bill.STATUS_CANCELLED
         self.bill.save()
@@ -82,7 +82,7 @@ class BillPaymentServiceTest(TestCase):
         # Bill total = 2 * 100.00 = 200.00
         p = BillPaymentService.record_payment(
             self.bill, amount=Decimal('100.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
         )
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PARTLY_PAID)

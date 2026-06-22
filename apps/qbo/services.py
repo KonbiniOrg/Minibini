@@ -438,11 +438,11 @@ class QBOBillSyncService:
             entity_type='bill_payment',
             entity_id=payment.pk,
             qbo_entity_type='BillPayment',
-            qbo_entity_id=payment.qbo_payment_id or '',
+            qbo_entity_id=payment.qbo_id or '',
             action='create',
             status='success',
         )
-        return payment.qbo_payment_id or None
+        return payment.qbo_id or None
 
     @staticmethod
     def _build_qbo_bill(bill):
@@ -1037,7 +1037,7 @@ class QBOBillPaymentPollingService:
             stats['error'] = 'No active QBO connection'
             return stats
         pending = BillPayment.objects.filter(
-            cleared_date__isnull=True).exclude(qbo_payment_id='')
+            cleared_date__isnull=True).exclude(qbo_id='')
         for payment in pending:
             stats['checked'] += 1
             # QBO reconciliation fetch + cleared_date set lands in the QBO session.

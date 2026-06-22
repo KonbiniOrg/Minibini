@@ -936,7 +936,7 @@ class BillPaymentService:
 
     @staticmethod
     @transaction.atomic
-    def record_payment(bill, *, amount, payment_date, method, reference='', user=None):
+    def record_payment(bill, *, amount, payment_date, reference='', user=None):
         from apps.purchasing.models import BillPayment
         if bill.status not in BillPaymentService._PAYABLE:
             raise ValidationError(
@@ -946,7 +946,7 @@ class BillPaymentService:
         amount = BillPaymentService._normalize_amount(amount)
         payment = BillPayment(
             bill=bill, amount=amount, payment_date=payment_date,
-            method=method, reference=reference, created_by=user,
+            reference=reference, created_by=user,
         )
         payment.full_clean()
         payment.save()
@@ -954,7 +954,7 @@ class BillPaymentService:
         record_history(
             entry_type='action', object_type='bill', object_id=bill.pk,
             user=user,
-            changes={'_action': f'Payment recorded: {amount} via {method}'
+            changes={'_action': f'Payment recorded: {amount}'
                                  + (f' (ref {reference})' if reference else '')},
         )
         BillPaymentService._push_to_qbo(payment)
@@ -982,7 +982,7 @@ class BillPaymentService:
             raise ValidationError(
                 'Cannot edit a payment on a cancelled or refunded bill.'
             )
-        allowed = {'amount', 'payment_date', 'method', 'reference'}
+        allowed = {'amount', 'payment_date', 'reference'}
         for field, value in out_fields.items():
             if field in allowed:
                 if field == 'amount':

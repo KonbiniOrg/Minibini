@@ -18,8 +18,7 @@ class BillSerializerBalanceTest(TestCase):
                                     qty=Decimal('1'), price=Decimal('100.00'),
                                     units='none', accounting_category=ac)
         BillPayment.objects.create(bill=bill, amount=Decimal('30.00'),
-                                   payment_date=timezone.now(),
-                                   method=BillPayment.METHOD_CHECK)
+                                   payment_date=timezone.now())
         data = BillSerializer(bill).data
         self.assertEqual(data['amount_paid'], '30.00')
         self.assertEqual(data['balance'], '70.00')
@@ -57,11 +56,9 @@ class BillSerializerBalanceTest(TestCase):
                                     units='none', accounting_category=ac)
         # 2 payments: paid = 20 + 30 = 50
         BillPayment.objects.create(bill=bill, amount=Decimal('20.00'),
-                                   payment_date=timezone.now(),
-                                   method=BillPayment.METHOD_CHECK)
+                                   payment_date=timezone.now())
         BillPayment.objects.create(bill=bill, amount=Decimal('30.00'),
-                                   payment_date=timezone.now(),
-                                   method=BillPayment.METHOD_CHECK)
+                                   payment_date=timezone.now())
 
         # Test detail serializer: no fan-out, balance should be 75 (125 - 50)
         data = BillSerializer(bill).data

@@ -17,7 +17,7 @@ class PushBillPaymentStubTest(TestCase):
             status=Bill.STATUS_RECEIVED)
         self.payment = BillPayment.objects.create(
             bill=self.bill, amount=Decimal('10.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK)
+            payment_date=timezone.now())
 
     @patch('apps.qbo.services.QBOService.get_client', return_value=None)
     def test_no_connection_is_noop(self, _mock):

@@ -32,7 +32,7 @@ class BillPaymentApiTest(TestCase):
         resp = self.client.post(
             f'/api/bills/{self.bill.pk}/payments/',
             {'amount': '100.00', 'payment_date': '2026-06-19T12:00:00Z',
-             'method': 'check', 'reference': '4471'}, format='json')
+             'reference': '4471'}, format='json')
         self.assertEqual(resp.status_code, 201)
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
@@ -44,8 +44,7 @@ class BillPaymentApiTest(TestCase):
         # The endpoint must normalize it and accept the exact 2-decimal value.
         resp = self.client.post(
             f'/api/bills/{self.bill.pk}/payments/',
-            {'amount': 33.33, 'payment_date': '2026-06-19T12:00:00Z',
-             'method': 'check'}, format='json')
+            {'amount': 33.33, 'payment_date': '2026-06-19T12:00:00Z'}, format='json')
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertEqual(resp.data['amount'], '33.33')
         self.bill.refresh_from_db()
@@ -55,15 +54,13 @@ class BillPaymentApiTest(TestCase):
         # Genuine >2-decimal input must still be rejected (validation preserved).
         resp = self.client.post(
             f'/api/bills/{self.bill.pk}/payments/',
-            {'amount': '33.333', 'payment_date': '2026-06-19T12:00:00Z',
-             'method': 'check'}, format='json')
+            {'amount': '33.333', 'payment_date': '2026-06-19T12:00:00Z'}, format='json')
         self.assertEqual(resp.status_code, 400)
 
     def test_delete_payment_returns_200_json(self):
         resp = self.client.post(
             f'/api/bills/{self.bill.pk}/payments/',
-            {'amount': '40.00', 'payment_date': '2026-06-19T12:00:00Z',
-             'method': 'cash'}, format='json')
+            {'amount': '40.00', 'payment_date': '2026-06-19T12:00:00Z'}, format='json')
         pid = resp.data['payment_id']
         d = self.client.delete(f'/api/bills/{self.bill.pk}/payments/{pid}/')
         self.assertEqual(d.status_code, 200)
@@ -74,7 +71,7 @@ class BillPaymentApiTest(TestCase):
         resp = self.client.post(
             f'/api/bills/{self.bill.pk}/payments/',
             {'amount': '100.00', 'payment_date': '2026-06-19T12:00:00Z',
-             'method': 'check', 'reference': 'CHK-001'}, format='json')
+             'reference': 'CHK-001'}, format='json')
         self.assertEqual(resp.status_code, 201)
         pid = resp.data['payment_id']
         self.bill.refresh_from_db()

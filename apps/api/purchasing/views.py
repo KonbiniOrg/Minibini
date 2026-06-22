@@ -621,7 +621,6 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
                 bill,
                 amount=data.get('amount'),
                 payment_date=data.get('payment_date'),
-                method=data.get('method'),
                 reference=data.get('reference', ''),
                 user=request.user,
             )

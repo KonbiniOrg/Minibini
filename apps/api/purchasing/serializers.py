@@ -158,10 +158,11 @@ class BillLineItemSerializer(serializers.ModelSerializer):
 class BillPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = BillPayment
-        fields = ['payment_id', 'amount', 'payment_date', 'method', 'reference',
-                  'created_by', 'created_date', 'qbo_payment_id', 'cleared_date']
+        fields = ['payment_id', 'amount', 'payment_date', 'reference',
+                  'payment_account_id', 'created_by', 'created_date',
+                  'qbo_id', 'qbo_sync_status', 'cleared_date']
         read_only_fields = ['payment_id', 'created_by', 'created_date',
-                            'qbo_payment_id', 'cleared_date']
+                            'qbo_id', 'qbo_sync_status', 'cleared_date']
 
 
 class BillSerializer(serializers.ModelSerializer):
