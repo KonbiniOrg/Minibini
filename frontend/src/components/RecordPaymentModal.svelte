@@ -1,9 +1,10 @@
 <script>
   import { api } from '../lib/api.js';
+  import PaymentAccountSelect from './qbo/PaymentAccountSelect.svelte';
   let { open = false, billId, defaultAmount = '', onSaved = () => {}, onClose = () => {} } = $props();
 
   let amount = $state('');
-  let method = $state('check');
+  let paymentAccountId = $state('');
   let reference = $state('');
   let paymentDate = $state(new Date().toISOString().slice(0, 10));
   let error = $state('');
@@ -15,7 +16,7 @@
     if (!amount || Number(amount) <= 0) { error = 'Amount must be greater than zero.'; return; }
     try {
       const payment = await api.post(`/api/bills/${billId}/payments/`, {
-        amount, method, reference,
+        amount, payment_account_id: paymentAccountId, reference,
         payment_date: new Date(paymentDate).toISOString(),
       });
       onSaved(payment);
@@ -31,14 +32,8 @@
     <h3>Record Payment</h3>
     {#if error}<p class="error">{error}</p>{/if}
     <label>Amount<input bind:value={amount} type="text" inputmode="decimal" /></label>
-    <label>Method
-      <select bind:value={method}>
-        <option value="check">Check</option>
-        <option value="credit_card">Credit Card</option>
-        <option value="ach">ACH</option>
-        <option value="cash">Cash</option>
-        <option value="other">Other</option>
-      </select>
+    <label>Payment Account
+      <PaymentAccountSelect bind:value={paymentAccountId} required={true} />
     </label>
     <label>Reference<input bind:value={reference} /></label>
     <label>Date<input bind:value={paymentDate} type="date" /></label>

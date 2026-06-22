@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() } }));
+vi.mock('@/lib/paymentAccounts.js', () => ({
+  getPaymentAccounts: vi.fn(async () => ([
+    { qbo_account_id: '35', display_name: 'Checking', account_type: 'Bank' },
+  ])),
+}));
 import { api } from '@/lib/api.js';
 import RecordPaymentModal from '@/components/RecordPaymentModal.svelte';
 
 beforeEach(() => api.post.mockReset());
 
 describe('RecordPaymentModal', () => {
-  it('posts payment with method/reference/amount and requires amount', async () => {
+  it('posts payment with payment_account_id/reference/amount and requires amount', async () => {
     api.post.mockResolvedValue({ payment_id: 1 });
     const onSaved = vi.fn();
     const { getByLabelText, getByText } = render(RecordPaymentModal, {
@@ -16,7 +21,7 @@ describe('RecordPaymentModal', () => {
     await fireEvent.input(getByLabelText(/reference/i), { target: { value: '4471' } });
     await fireEvent.click(getByText(/save/i));
     expect(api.post).toHaveBeenCalledWith('/api/bills/7/payments/', expect.objectContaining({
-      amount: '100.00', method: 'check', reference: '4471',
+      amount: '100.00', payment_account_id: '', reference: '4471',
     }));
   });
 
