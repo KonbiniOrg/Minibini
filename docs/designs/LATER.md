@@ -60,6 +60,19 @@ page stays whole.
 
 ## Open
 
+- **Email can be linked to a Job unrelated to its already-linked PO.** — _added 2026-06-21_
+  When an email is associated with a PO and also with a Job, nothing checks that the Job
+  matches any job referenced by the PO's line items — I was able to link an email to a Job
+  that appears on no line item of that email's existing linked PO. The email-association
+  actions (`linkToJob` / `linkToPo`, used by the email-association pages) validate each
+  link independently, with no cross-consistency guard. Open questions before fixing: a PO's
+  lines can legitimately span **multiple** jobs (per-line job via the linked material), so a
+  strict "must match" rule may be wrong — maybe it's a soft warning ("this job isn't on the
+  linked PO — link anyway?") rather than a block, and we need to decide what "related" means
+  when a PO touches several jobs. _Done when:_ we've decided whether/how to constrain or warn
+  on email↔job vs email↔PO consistency, and either added the guard or recorded why
+  independent links are intentional.
+
 - **Reassigning a PO line's job/material is tricky — rethink the whole flow.** — _added 2026-06-21_
   Changing which job a PO line (and its linked material) belongs to currently has
   awkward, split entry points. On a **draft** PO the inline **Edit** changes the job
