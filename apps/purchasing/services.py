@@ -1005,7 +1005,7 @@ class BillPaymentService:
         # QBO resync (best-effort; never blocks the local edit).
         from apps.qbo.services import QBOBillSyncService, QBOSyncService
         if payment.qbo_id:
-            QBOSyncService.run_resync(
+            QBOSyncService.run_update(
                 payment, lambda: QBOBillSyncService.update_bill_payment(payment))
         else:
             QBOBillSyncService.push_bill_payment(payment)

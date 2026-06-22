@@ -1020,18 +1020,18 @@ class QBOSyncService:
             return qbo_id
         except Exception as e:  # noqa: BLE001
             logger.exception('QBO create sync failed for %r', record)
-            record.mark_failed(e)
+            record.mark_failed(e, record.OP_CREATE)
             return None
 
     @staticmethod
-    def run_resync(record, resync_callable):
-        """resync_callable() updates the existing QBO object (qbo_id unchanged)."""
+    def run_update(record, update_callable):
+        """update_callable() updates the existing QBO object (qbo_id unchanged)."""
         try:
-            resync_callable()
+            update_callable()
             record.mark_synced(record.qbo_id)
         except Exception as e:  # noqa: BLE001
-            logger.exception('QBO resync failed for %r', record)
-            record.mark_failed(e)
+            logger.exception('QBO update sync failed for %r', record)
+            record.mark_failed(e, record.OP_UPDATE)
 
     @staticmethod
     def run_delete(record, delete_callable):
@@ -1040,10 +1040,10 @@ class QBOSyncService:
         On success: returns None.
         On failure: marks the record sync_failed AND re-raises — the re-raise is
         deliberate so the caller can abort the local delete and retain the row.
-        This is the key difference from run_create/run_resync, which swallow.
+        This is the key difference from run_create/run_update, which swallow.
         """
         try:
             delete_callable()
         except Exception as e:
-            record.mark_failed(e)
+            record.mark_failed(e, record.OP_DELETE)
             raise

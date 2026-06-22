@@ -195,9 +195,9 @@ class ExpenseService:
     def _resync(expense):
         from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
         if expense.reimbursement_id:
-            QBOSyncService.run_resync(expense.reimbursement, lambda: QBOExpenseSyncService.update_reimbursement(expense.reimbursement))
+            QBOSyncService.run_update(expense.reimbursement, lambda: QBOExpenseSyncService.update_reimbursement(expense.reimbursement))
         else:
-            QBOSyncService.run_resync(expense, lambda: QBOExpenseSyncService.update_expense(expense))
+            QBOSyncService.run_update(expense, lambda: QBOExpenseSyncService.update_expense(expense))
 
     @staticmethod
     def delete(*, expense, actor):
