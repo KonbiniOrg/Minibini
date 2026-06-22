@@ -70,12 +70,12 @@ class ExpenseService:
                     reason=f'Stock receipt (expense {expense.pk})')
 
         if payment_method == Expense.PAYMENT_METHOD_COMPANY:
-            ExpenseService._push_and_set_status(expense)
+            ExpenseService._push_create(expense)
 
         return expense
 
     @staticmethod
-    def _push_and_set_status(expense):
+    def _push_create(expense):
         from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
         QBOSyncService.run_create(
             expense, lambda: QBOExpenseSyncService.push_expense(expense))
@@ -118,7 +118,7 @@ class ExpenseService:
                         reason=f'Stock receipt adj (expense {expense.pk})')
 
         if expense.qbo_id:
-            ExpenseService._resync(expense)
+            ExpenseService._push_update(expense)
         return expense
 
     # ----- job/material cost & freeze helpers -------------------------------
@@ -192,7 +192,7 @@ class ExpenseService:
             InventoryService._mutate_earmark(pli, new_job, material.quantity)
 
     @staticmethod
-    def _resync(expense):
+    def _push_update(expense):
         from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
         if expense.reimbursement_id:
             QBOSyncService.run_update(expense.reimbursement, lambda: QBOExpenseSyncService.update_reimbursement(expense.reimbursement))
@@ -261,14 +261,23 @@ class ExpenseService:
         return expense
 
     @staticmethod
-    def retry_sync(*, expense, actor):
+    def retry(*, expense, actor):
         if expense.qbo_sync_status != Expense.SYNC_FAILED:
-            raise ValidationError(
-                'Can only retry sync on expenses in sync_failed status.'
-            )
-        ExpenseService._push_and_set_status(expense)
+            raise ValidationError('Can only retry a sync that failed.')
+        op = expense.qbo_pending_op
+        if op == Expense.OP_DELETE:
+            ExpenseService.delete(expense=expense, actor=actor)  # re-void + remove
+            return None
+        if op == Expense.OP_UPDATE:
+            ExpenseService._push_update(expense)
+        else:  # create (or blank → treat as create)
+            ExpenseService._push_create(expense)
         expense.refresh_from_db()
         return expense
+
+    @staticmethod
+    def retry_sync(*, expense, actor):
+        return ExpenseService.retry(expense=expense, actor=actor)
 
 
 class ReimbursementService:
