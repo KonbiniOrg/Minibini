@@ -1,5 +1,6 @@
 <script>
   import QBOConnectionCard from '../components/QBOConnectionCard.svelte';
+  import QBOSyncFailures from '../components/qbo/QBOSyncFailures.svelte';
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
@@ -67,6 +68,8 @@
 
 {#if tab === 'accounting'}
   <QBOConnectionCard />
+
+  <QBOSyncFailures />
 
   <AccountingCategories />
 

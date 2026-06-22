@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
@@ -106,6 +106,21 @@
       push('/bills');
     } catch (e) {
       alert(e.message || 'Could not delete bill.');
+    }
+  }
+
+  let paymentRetryErrors = $state({});
+
+  async function retryPaymentSync(pid) {
+    paymentRetryErrors = { ...paymentRetryErrors, [pid]: '' };
+    try {
+      await api.post(`/api/bills/${bill.bill_id}/payments/${pid}/retry-sync/`);
+      await load();
+    } catch (e) {
+      paymentRetryErrors = {
+        ...paymentRetryErrors,
+        [pid]: errorMessage(e, 'Retry failed.'),
+      };
     }
   }
 </script>
@@ -240,7 +255,11 @@
           <td>{p.cleared_date ? `cleared ${p.cleared_date.slice(0,10)}` : 'pending'}</td>
           <td>
             {#if p.qbo_sync_status === 'sync_failed'}
-              <span class="sync-error" title={p.qbo_sync_error}>QBO sync failed — retry</span>
+              <span class="sync-error" title={p.qbo_sync_error}>QBO sync failed</span>
+              <button type="button" onclick={() => retryPaymentSync(p.payment_id)}>Retry</button>
+              {#if paymentRetryErrors[p.payment_id]}
+                <em class="sync-error">{paymentRetryErrors[p.payment_id]}</em>
+              {/if}
             {:else if p.qbo_id}
               <span>synced</span>
             {/if}

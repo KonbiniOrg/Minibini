@@ -1034,6 +1034,7 @@ class QBOSyncFailureService:
                 'amount': str(e.amount),
                 'qbo_pending_op': e.qbo_pending_op,
                 'qbo_sync_error': e.qbo_sync_error,
+                'retry_url': f'/api/expenses/{e.pk}/retry-sync/',
             })
 
         for b in Reimbursement.objects.filter(
@@ -1046,6 +1047,7 @@ class QBOSyncFailureService:
                 'amount': str(b.total),
                 'qbo_pending_op': b.qbo_pending_op,
                 'qbo_sync_error': b.qbo_sync_error,
+                'retry_url': f'/api/reimbursements/{b.pk}/retry-sync/',
             })
 
         for p in BillPayment.objects.filter(
@@ -1058,6 +1060,7 @@ class QBOSyncFailureService:
                 'amount': str(p.amount),
                 'qbo_pending_op': p.qbo_pending_op,
                 'qbo_sync_error': p.qbo_sync_error,
+                'retry_url': f'/api/bills/{p.bill_id}/payments/{p.pk}/retry-sync/',
             })
 
         return results

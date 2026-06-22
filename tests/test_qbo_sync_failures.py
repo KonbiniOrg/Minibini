@@ -167,8 +167,26 @@ class QBOSyncFailureServiceTest(TestCase):
         failures = QBOSyncFailureService.list_failures()
         self.assertEqual(len(failures), 1)
         f = failures[0]
-        required_keys = {'entity_type', 'id', 'label', 'amount', 'qbo_pending_op', 'qbo_sync_error'}
+        required_keys = {'entity_type', 'id', 'label', 'amount', 'qbo_pending_op', 'qbo_sync_error', 'retry_url'}
         self.assertEqual(set(f.keys()), required_keys)
+
+    def test_retry_url_expense(self):
+        exp = self._failed_company_expense()
+        failures = QBOSyncFailureService.list_failures()
+        match = next(f for f in failures if f['entity_type'] == 'expense')
+        self.assertEqual(match['retry_url'], f'/api/expenses/{exp.pk}/retry-sync/')
+
+    def test_retry_url_reimbursement(self):
+        batch = self._failed_reimbursement()
+        failures = QBOSyncFailureService.list_failures()
+        match = next(f for f in failures if f['entity_type'] == 'reimbursement')
+        self.assertEqual(match['retry_url'], f'/api/reimbursements/{batch.pk}/retry-sync/')
+
+    def test_retry_url_bill_payment(self):
+        pay = self._failed_bill_payment()
+        failures = QBOSyncFailureService.list_failures()
+        match = next(f for f in failures if f['entity_type'] == 'bill_payment')
+        self.assertEqual(match['retry_url'], f'/api/bills/{self.bill.pk}/payments/{pay.pk}/retry-sync/')
 
     def test_list_failures_empty_when_none(self):
         failures = QBOSyncFailureService.list_failures()
@@ -284,6 +302,7 @@ class SyncFailuresEndpointTest(TestCase):
             self.assertIn('amount', f)
             self.assertIn('qbo_pending_op', f)
             self.assertIn('qbo_sync_error', f)
+            self.assertIn('retry_url', f)
 
     def test_personal_expense_not_included(self):
         personal = Expense.objects.create(
