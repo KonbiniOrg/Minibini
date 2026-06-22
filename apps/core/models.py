@@ -617,10 +617,22 @@ class QBOSyncable(models.Model):
         (SYNC_FAILED, 'QBO sync failed'),
     ]
 
+    OP_NONE = ''
+    OP_CREATE = 'create'
+    OP_UPDATE = 'update'
+    OP_DELETE = 'delete'
+    PENDING_OP_CHOICES = [
+        (OP_CREATE, 'Create'),
+        (OP_UPDATE, 'Update'),
+        (OP_DELETE, 'Delete'),
+    ]
+
     qbo_id = models.CharField(max_length=50, blank=True, default='')
     qbo_sync_status = models.CharField(
         max_length=20, choices=SYNC_STATUS_CHOICES, default=SYNC_PENDING)
     qbo_sync_error = models.TextField(blank=True, default='')
+    qbo_pending_op = models.CharField(
+        max_length=10, blank=True, default='', choices=PENDING_OP_CHOICES)
 
     class Meta:
         abstract = True
@@ -629,9 +641,11 @@ class QBOSyncable(models.Model):
         self.qbo_id = qbo_id
         self.qbo_sync_status = self.SYNC_SYNCED
         self.qbo_sync_error = ''
-        self.save(update_fields=['qbo_id', 'qbo_sync_status', 'qbo_sync_error'])
+        self.qbo_pending_op = self.OP_NONE
+        self.save(update_fields=['qbo_id', 'qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])
 
-    def mark_failed(self, error):
+    def mark_failed(self, error, op=OP_NONE):
         self.qbo_sync_status = self.SYNC_FAILED
         self.qbo_sync_error = str(error)
-        self.save(update_fields=['qbo_sync_status', 'qbo_sync_error'])
+        self.qbo_pending_op = op
+        self.save(update_fields=['qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])
