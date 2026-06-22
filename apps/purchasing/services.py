@@ -991,6 +991,13 @@ class BillPaymentService:
         payment.full_clean()
         payment.save()
         payment.bill.recompute_payment_status()
+        # QBO resync (best-effort; never blocks the local edit).
+        from apps.qbo.services import QBOBillSyncService, QBOSyncService
+        if payment.qbo_id:
+            QBOSyncService.run_resync(
+                payment, lambda: QBOBillSyncService.update_bill_payment(payment))
+        else:
+            QBOBillSyncService.push_bill_payment(payment)
         return payment
 
     @staticmethod
@@ -1002,5 +1009,8 @@ class BillPaymentService:
         except BillPayment.DoesNotExist:
             raise NotFoundError(f'BillPayment {payment_id} not found')
         bill = payment.bill
+        from apps.qbo.services import QBOBillSyncService
+        if payment.qbo_id:
+            QBOBillSyncService.void_bill_payment(payment)
         payment.delete()
         bill.recompute_payment_status()

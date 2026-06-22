@@ -502,6 +502,55 @@ class QBOBillSyncService:
             raise
 
     @staticmethod
+    def update_bill_payment(payment):
+        """Re-fetch and update the QBO BillPayment with the current local values.
+        Raises ValueError if the payment has no qbo_id or there is no active connection."""
+        from quickbooks.objects.billpayment import BillPayment as QBOBillPayment
+        if not payment.qbo_id:
+            raise ValueError('BillPayment has no qbo_id — use push_bill_payment')
+        client = QBOService.get_client()
+        if not client:
+            raise ValueError('No active QBO connection')
+        existing = QBOBillPayment.get(payment.qbo_id, qb=client)
+        existing.TotalAmt = float(payment.amount)
+        if payment.reference:
+            existing.DocNumber = payment.reference
+        if existing.Line:
+            existing.Line[0].Amount = float(payment.amount)
+        existing.save(qb=client)
+        QBOService.log_sync(
+            entity_type='bill_payment', entity_id=payment.pk,
+            qbo_entity_type='BillPayment', qbo_entity_id=payment.qbo_id,
+            action='update', status='success',
+        )
+        return payment.qbo_id
+
+    @staticmethod
+    def void_bill_payment(payment):
+        """Delete the QBO BillPayment. Logs but never raises — caller is mid-delete."""
+        from quickbooks.objects.billpayment import BillPayment as QBOBillPayment
+        if not payment.qbo_id:
+            return
+        try:
+            client = QBOService.get_client()
+            if not client:
+                return
+            existing = QBOBillPayment.get(payment.qbo_id, qb=client)
+            existing.delete(qb=client)
+            QBOService.log_sync(
+                entity_type='bill_payment', entity_id=payment.pk,
+                qbo_entity_type='BillPayment', qbo_entity_id=payment.qbo_id,
+                action='delete', status='success',
+            )
+        except Exception as e:  # noqa: BLE001 — caller is mid-delete; never block
+            logger.exception('QBO bill-payment void failed for payment %s', payment.pk)
+            QBOService.log_sync(
+                entity_type='bill_payment', entity_id=payment.pk,
+                qbo_entity_type='BillPayment', qbo_entity_id=payment.qbo_id,
+                action='delete', status='failed', error_message=str(e),
+            )
+
+    @staticmethod
     def _build_qbo_bill(bill):
         from quickbooks.objects.bill import Bill as QBOBill
         from quickbooks.objects.detailline import AccountBasedExpenseLine, AccountBasedExpenseLineDetail
