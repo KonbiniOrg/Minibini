@@ -140,15 +140,17 @@ Billing address, shipping address, payment terms, tax exemption, and notes are n
 
 Parallel to customer sync. `push_vendor(business)` is called lazily by `QBOBillSyncService.push_bill` and (transitively) by anything else that needs a vendor ID. Same DisplayName collision logic. Stores `qbo_vendor_id` on the `Business`.
 
-## Invoice push — `QBOInvoiceSyncService.push_invoice`
+## Invoice push — `InvoiceEmailService.send_invoice`
 
-Entry point: `POST /api/invoices/{id}/send-to-qbo/` (defined in `apps/api/invoicing/views.py`). Requires `can_manage_financials`. Body:
+The invoice QBO push is **fused into the invoice's Send action** — there is no separate `send-to-qbo` endpoint for invoices (bills have one; invoices do not). Entry point: `POST /api/invoices/{id}/send` (the `send` action on `InvoiceViewSet`, `apps/api/invoicing/views.py`). Requires `can_manage_financials`. Body:
 
 ```json
-{ "send_to": "customer@example.com", "cc": "...", "bcc": "..." }
+{ "to": "customer@example.com", "subject": "...", "body": "...", "cc": "...", "bcc": "..." }
 ```
 
-Service flow (`apps/qbo/services.py`):
+The action delegates to `InvoiceEmailService.send_invoice` (`apps/invoicing/services.py`), which performs the QBO push (only when `invoice.qbo_id` is unset) and then emails the customer — push and send are one operation, not two buttons. It uses the `QBOInvoiceSyncService` *helpers* (`_build_qbo_invoice`, `_mark_as_sent`, `_download_qbo_pdf`); there is no `QBOInvoiceSyncService.push_invoice` method.
+
+Service flow (`InvoiceEmailService.send_invoice`, `apps/invoicing/services.py`):
 
 1. **Short-circuit** — if `invoice.qbo_id` is set, return it. No re-pushing.
 2. **Resolve QBO customer** — push `business` (or `contact`) as customer if not yet synced.
@@ -307,9 +309,9 @@ Settings page — `frontend/src/routes/SettingsPage.svelte`:
 
 Invoice detail — `frontend/src/routes/invoices/InvoiceDetailPage.svelte`:
 
-- "Send to QuickBooks" button (visible when `!invoice.qbo_id` and the user has invoice edit permission) opens `SendToQBODialog.svelte`. Dialog collects `send_to` / `cc` / `bcc` and posts to `/api/invoices/{id}/send-to-qbo/`. Once `qbo_id` is set, the button is replaced by a read-only QBO ID row.
+- A "Send Invoice" link (relabelled "Resend Invoice" once `invoice.qbo_id` is set) navigates to the invoice send page (`#/invoices/{id}/send`). That page posts to `POST /api/invoices/{id}/send`, which performs the QBO push (first send only) and the customer email together. There is no separate "Send to QuickBooks" button or `SendToQBODialog`. Once `qbo_id` is set, the detail page also shows read-only QBO ID / payment-status / amount-paid rows.
 
-The dialog flow on the Minibini side is documented in `invoicing-and-expenses.md`.
+The send flow on the Minibini side is documented in `invoicing-and-expenses.md`.
 
 ## API endpoints
 
@@ -328,7 +330,7 @@ Push endpoints live on the owning resource's viewset:
 
 | Method | Path | Permission | Service |
 |---|---|---|---|
-| `POST` | `/api/invoices/{id}/send-to-qbo/` | `can_manage_financials` | `QBOInvoiceSyncService.push_invoice` |
+| `POST` | `/api/invoices/{id}/send` | `can_manage_financials` | `InvoiceEmailService.send_invoice` — QBO push fused into the send-email action; **no** separate invoice send-to-qbo endpoint |
 | `POST` | `/api/bills/{id}/send-to-qbo/` | `can_manage_financials` | `QBOBillSyncService.push_bill` |
 
 Expense and reimbursement pushes are triggered server-side from their respective save / finalize flows in `apps/expenses` and `apps/reimbursements` — not via dedicated REST actions.
