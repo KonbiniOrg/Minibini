@@ -475,3 +475,48 @@ class ExpenseInvoiceClaimTest(TestCase):
         resp = self.client.get(f'/api/expenses/{exp.pk}/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(set(resp.json()['invoice'].keys()), {'id', 'number'})
+
+
+class ExpenseQboSyncStatusSerializerTest(TestCase):
+    """qbo_sync_status is exposed separately from business status in the API."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+        self.company_expense = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('100.00'), purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+        )
+        self.client_http.force_login(self.admin)
+
+    def test_expense_serializer_exposes_qbo_sync_status(self):
+        resp = self.client_http.get(f'/api/expenses/{self.company_expense.pk}/')
+        body = resp.json()
+        self.assertIn('status', body)
+        self.assertIn('qbo_sync_status', body)
+
+    def test_qbo_sync_status_filter(self):
+        # Create a second expense with sync_failed status.
+        failed = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('50.00'), purchased_on=date(2026, 4, 10),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_sync_status=Expense.SYNC_FAILED,
+        )
+        resp = self.client_http.get('/api/expenses/?qbo_sync_status=sync_failed')
+        self.assertEqual(resp.status_code, 200)
+        ids = {row['id'] for row in resp.json()['results']}
+        self.assertIn(failed.pk, ids)
+        self.assertNotIn(self.company_expense.pk, ids)

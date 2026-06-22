@@ -34,6 +34,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(purchased_by=params['purchased_by'])
         if params.get('status'):
             qs = qs.filter(status=params['status'])
+        if params.get('qbo_sync_status'):
+            qs = qs.filter(qbo_sync_status=params['qbo_sync_status'])
         if params.get('payment_method'):
             qs = qs.filter(payment_method=params['payment_method'])
         if params.get('accounting_category'):
