@@ -9,8 +9,9 @@ each checklist item maps to an assertion. Keep it current as the Bill UI evolves
 **Model (2026-06 payment-lifecycle work):** a Bill is a vendor invoice,
 optionally linked to one `PurchaseOrder` (single FK — a bill belongs to at most
 one PO; one PO may have many bills). Payments are **child records**
-(`BillPayment`): each records what we paid out (amount, method, reference, date)
-plus clearance data that QBO reconciliation fills in later. **Bill status is
+(`BillPayment`): each records what we paid out (amount, payment account,
+reference, date), pushes to QBO, and carries a sync state + clearance data that
+QBO reconciliation fills in later. **Bill status is
 derived from payments**, never set by hand:
 
 | Status | Meaning |
@@ -36,15 +37,20 @@ amount_paid` for active bills, and **$0.00** for `paid_in_full` / `cancelled` /
 - **Financials** — holds `can_manage_financials`. Full CRUD: create bills,
   receive, record/edit/delete payments, cancel, delete drafts, link POs.
 
-## Dev note — QuickBooks is stubbed
+## Dev note — QuickBooks push is live; clearance polling is stubbed
 
-QBO push and clearance polling are **stubbed** for this phase:
-- Recording a payment **works fully offline** — the QBO push is a logged no-op,
-  so no QBO connection is needed and nothing errors.
-- **Clearance never populates in dev.** A payment's clearance badge stays
-  **"pending"** forever because the bill-clearance poller is a stub; `cleared
-  <date>` only appears once the live QBO poller lands. Pending-forever is
-  **expected, not a bug**.
+As of the 2026-06 QBO work, the bill-payment **push is live** — recording a
+payment pushes a QBO `BillPayment`, editing re-syncs, and deleting voids it
+**first** (a failed void refuses the local delete). The payment-account picker
+and sync behaviour have their own flow doc: see **`QuickBooks-Sync.md`**. Two
+caveats for this doc's steps:
+- **Recording needs a payment account, and a connected QBO sandbox to go
+  "synced".** Offline, a payment still records but shows **sync failed** (see
+  `QuickBooks-Sync.md` §4). The account field replaced the old Method dropdown.
+- **Clearance never populates in dev.** A payment's **clearance** badge stays
+  **"pending"** forever because the bill-clearance poller is still a stub
+  (separate from push); `cleared <date>` only appears once the live poller
+  lands. Pending-forever clearance is **expected, not a bug**.
 
 ## Prerequisites (test-data setup)
 
@@ -105,13 +111,19 @@ Routes: list `#/bills`; create `#/bills/new`; detail `#/bills/{id}`; edit
 
 On a `received` or `partly_paid` bill, **Financials** sees **Record Payment** and
 **Pay in full**. Both open the **Record Payment** modal with fields **Amount**,
-**Method** (Check / Credit Card / ACH / Cash / Other), **Reference** (check #,
-receipt, confirmation #), **Date**.
+**Payment account** (a picker of the QBO accounts configured in Settings — this
+replaced the old Method dropdown), **Reference** (check #, receipt, confirmation
+#), **Date**. The account drives the QBO push and is **required when QBO is
+connected** — see `QuickBooks-Sync.md` §2–§3 for the picker, the guard, and the
+sync result.
 
 - [ ] **Partial payment → partly_paid:** on a $200 received bill, Record Payment
-  $50 (method Check, ref `4471`) → **Save**. Status flips to **partly paid**;
+  $50 (Payment account "Business Checking", ref `4471`) → **Save**. Status flips
+  to **partly paid**;
   **Balance** drops to **$150.00**; the payment appears in the **Payments**
-  section showing method, reference, amount, and a **pending** clearance badge.
+  section showing the **account name**, reference, amount, a **sync** indicator
+  (synced / sync-failed — see `QuickBooks-Sync.md` §7), and a **pending**
+  clearance badge.
 - [ ] **Covering the rest → paid_in_full:** record another $150 → status flips to
   **paid in full**; Balance shows **$0.00**.
 - [ ] **Guard — amount required/positive:** Save with a blank or `0` amount →
@@ -127,8 +139,9 @@ receipt, confirmation #), **Date**.
 
 - [ ] **Pre-fills the balance:** on a partly-paid bill with $150 outstanding,
   click **Pay in full** → the modal opens with **Amount pre-filled to 150.00**.
-- [ ] **Still explicit:** it is **not** one-click — you must still choose Method
-  and (optionally) Reference/Date and press **Save** before anything is recorded.
+- [ ] **Still explicit:** it is **not** one-click — you must still choose a
+  **Payment account** and (optionally) Reference/Date and press **Save** before
+  anything is recorded.
 
 ## 5. Editing & removing payments → backward status
 
@@ -136,7 +149,9 @@ receipt, confirmation #), **Date**.
   payment from the Payments section (per-row **Delete**) → status drops back to
   **partly paid** (or **received** if nothing remains); Balance rises by the
   removed amount. No confirmation prompt — deleting a payment is reversible
-  (re-record it), so it just happens.
+  (re-record it), so it just happens. **Exception (synced payments):** the QBO
+  void runs first, and if it **fails** the delete is **refused** and the payment
+  is kept marked sync-failed — see `QuickBooks-Sync.md` §6.
 - [ ] **Edit a payment recomputes:** edit a payment's amount so it no longer
   covers the total → status recomputes to **partly paid** accordingly.
 - [ ] **Guard — can't edit a payment on a terminal bill:** editing a payment on a
@@ -221,7 +236,8 @@ navigates to `#/bills/new` pre-filled.
 | PO-link guard | issued+ PO accepted · draft PO refused · cancelled/draft excluded from picker |
 | Status (derived) | draft → received · received → partly_paid → paid_in_full · received → cancelled · paid_in_full → refunded |
 | Backward status | delete payment: paid_in_full → partly_paid → received · edit payment recomputes |
-| Payment fields | amount (>0 guard) · method (check/credit_card/ach/cash/other) · reference · date |
+| Payment fields | amount (>0 guard) · payment account (picker; required when QBO connected) · reference · date |
+| QBO push (see QuickBooks-Sync.md) | synced when connected · sync-failed offline · edit re-syncs · delete refused+retained on void failure |
 | Payment guards | none on draft · none on cancelled/refunded · edit refused on terminal |
 | Balance | active = exact (total − paid) · cancelled = 0 · paid_in_full = 0 · refunded = 0 · list matches detail |
 | Double-bill surfacing | info notice (any prior bill, linked) · warning banner (fully billed) · non-blocking · cancelled excluded · shown on form + detail |
