@@ -69,6 +69,22 @@ class BillPaymentApiTest(TestCase):
         self.assertEqual(d.status_code, 200)
         self.assertIn('message', d.data)
 
+    @patch('apps.qbo.services.QBOBillSyncService.void_bill_payment')
+    def test_delete_payment_qbo_failure_returns_400(self, mock_void):
+        """If the QBO void fails, the API must return 400 and the payment must still exist."""
+        from apps.purchasing.models import BillPayment
+        # Create a payment that already has a qbo_id so the void path is triggered
+        pay = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('40.00'), payment_date=timezone.now(),
+            qbo_id='qbo-bp-api-fail', qbo_sync_status=BillPayment.SYNC_SYNCED,
+        )
+        mock_void.side_effect = Exception('QBO is down')
+        d = self.client.delete(f'/api/bills/{self.bill.pk}/payments/{pay.pk}/')
+        self.assertEqual(d.status_code, 400)
+        self.assertIn('detail', d.data)
+        # Payment still exists
+        self.assertTrue(BillPayment.objects.filter(pk=pay.pk).exists())
+
     @patch('apps.qbo.services.QBOService.get_client', return_value=object())
     def test_record_payment_requires_account_when_qbo_connected(self, _c):
         """When QBO is connected, omitting payment_account_id must return 400."""

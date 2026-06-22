@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -56,12 +57,60 @@ class BillPaymentServiceTest(TestCase):
                 payment_date=timezone.now())
 
     def test_delete_payment_recomputes(self):
+        """(a) No qbo_id → deletes locally, bill status recomputed."""
         p = BillPaymentService.record_payment(
             self.bill, amount=Decimal('200.00'),
             payment_date=timezone.now())
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_PAID_IN_FULL)
         BillPaymentService.delete_payment(p.pk)
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
+
+    def test_delete_payment_no_qbo_id_no_qbo_call(self):
+        """(c) No qbo_id → deletes locally with no QBO call."""
+        p = BillPaymentService.record_payment(
+            self.bill, amount=Decimal('50.00'),
+            payment_date=timezone.now())
+        # Ensure no qbo_id
+        self.assertFalse(p.qbo_id)
+        with patch('apps.qbo.services.QBOBillSyncService.void_bill_payment') as mock_void:
+            BillPaymentService.delete_payment(p.pk)
+        mock_void.assert_not_called()
+        self.assertFalse(BillPayment.objects.filter(pk=p.pk).exists())
+
+    @patch('apps.qbo.services.QBOBillSyncService.void_bill_payment')
+    def test_delete_payment_with_qbo_id_success(self, mock_void):
+        """(a) QBO void succeeds → payment deleted + bill status recomputed."""
+        p = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('200.00'), payment_date=timezone.now(),
+            qbo_id='qbo-bp-ok', qbo_sync_status=BillPayment.SYNC_SYNCED,
+        )
+        self.bill.status = Bill.STATUS_PAID_IN_FULL
+        self.bill.save()
+        BillPaymentService.delete_payment(p.pk)
+        mock_void.assert_called_once()
+        self.assertFalse(BillPayment.objects.filter(pk=p.pk).exists())
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
+
+    @patch('apps.qbo.services.QBOBillSyncService.void_bill_payment')
+    def test_delete_payment_qbo_failure_raises_validation_error(self, mock_void):
+        """(b) QBO void FAILS → ValidationError raised, payment still exists, sync_failed committed."""
+        mock_void.side_effect = Exception('QBO is unreachable')
+        p = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('200.00'), payment_date=timezone.now(),
+            qbo_id='qbo-bp-fail', qbo_sync_status=BillPayment.SYNC_SYNCED,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            BillPaymentService.delete_payment(p.pk)
+        self.assertIn('QuickBooks', str(ctx.exception))
+        # Payment still exists
+        self.assertTrue(BillPayment.objects.filter(pk=p.pk).exists())
+        # sync_failed was committed (not rolled back by the atomic block)
+        p.refresh_from_db()
+        self.assertEqual(p.qbo_sync_status, BillPayment.SYNC_FAILED)
+        # bill status NOT recomputed — remains STATUS_RECEIVED (recompute_payment_status never ran)
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.STATUS_RECEIVED)
 

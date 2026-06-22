@@ -1012,16 +1012,25 @@ class BillPaymentService:
         return payment
 
     @staticmethod
-    @transaction.atomic
     def delete_payment(payment_id):
         from apps.purchasing.models import BillPayment
         try:
             payment = BillPayment.objects.get(pk=payment_id)
         except BillPayment.DoesNotExist:
             raise NotFoundError(f'BillPayment {payment_id} not found')
-        bill = payment.bill
-        from apps.qbo.services import QBOBillSyncService
+        # QBO void runs OUTSIDE the atomic block so that mark_failed (a save) can commit
+        # even when the delete is refused.  run_delete → mark_failed → re-raises on failure.
         if payment.qbo_id:
-            QBOBillSyncService.void_bill_payment(payment)
-        payment.delete()
-        bill.recompute_payment_status()
+            from apps.qbo.services import QBOBillSyncService, QBOSyncService
+            try:
+                QBOSyncService.run_delete(
+                    payment, lambda: QBOBillSyncService.void_bill_payment(payment))
+            except Exception:
+                raise ValidationError(
+                    'Could not delete this payment — its QuickBooks sync failed, so the payment '
+                    'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
+                )
+        # Local delete only runs when QBO void succeeded (or no qbo_id)
+        with transaction.atomic():
+            payment.delete()
+            payment.bill.recompute_payment_status()

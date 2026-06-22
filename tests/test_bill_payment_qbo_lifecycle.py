@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 import json
 from django.test import TestCase
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from apps.contacts.models import Business, Contact
 from apps.core.models import Configuration
 from apps.purchasing.models import Bill, BillPayment
@@ -43,6 +44,7 @@ class BillPaymentLifecycleTests(TestCase):
 
     @patch('apps.qbo.services.QBOBillSyncService.void_bill_payment')
     def test_delete_synced_payment_voids(self, mock_void):
+        """Successful QBO void → payment deleted and bill status recomputed."""
         pay = BillPayment.objects.create(
             bill=self.bill, amount=Decimal('50.00'), payment_date=timezone.now(),
             payment_account_id='35',
@@ -50,3 +52,84 @@ class BillPaymentLifecycleTests(TestCase):
         )
         BillPaymentService.delete_payment(pay.pk)
         mock_void.assert_called_once()
+        # Payment must be gone
+        self.assertFalse(BillPayment.objects.filter(pk=pay.pk).exists())
+
+    @patch('apps.qbo.services.QBOBillSyncService.void_bill_payment')
+    def test_delete_synced_payment_raises_on_qbo_failure(self, mock_void):
+        """QBO void raises → ValidationError propagated, row kept as sync_failed."""
+        mock_void.side_effect = Exception('QBO is down')
+        pay = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('50.00'), payment_date=timezone.now(),
+            payment_account_id='35',
+            qbo_id='qbo-bp-fail', qbo_sync_status=BillPayment.SYNC_SYNCED,
+        )
+        with self.assertRaises(ValidationError):
+            BillPaymentService.delete_payment(pay.pk)
+        # Row must still exist
+        self.assertTrue(BillPayment.objects.filter(pk=pay.pk).exists())
+        pay.refresh_from_db()
+        self.assertEqual(pay.qbo_sync_status, BillPayment.SYNC_FAILED)
+
+
+class VoidBillPaymentTests(TestCase):
+    """Unit tests for QBOBillSyncService.void_bill_payment — now raises on failure."""
+
+    def setUp(self):
+        contact = Contact.objects.create(first_name='V', last_name='Vendor')
+        business = Business.objects.create(business_name='V Corp', default_contact=contact)
+        bill = Bill.objects.create(
+            business=business, vendor_invoice_number='INV-V-1',
+            status=Bill.STATUS_RECEIVED,
+        )
+        self.payment = BillPayment.objects.create(
+            bill=bill, amount=Decimal('100.00'), payment_date=timezone.now(),
+            qbo_id='qbo-bp-10', qbo_sync_status=BillPayment.SYNC_SYNCED,
+        )
+
+    def test_void_no_qbo_id_is_noop(self):
+        """No qbo_id → returns immediately without any call."""
+        from apps.qbo.services import QBOBillSyncService
+        self.payment.qbo_id = ''
+        self.payment.save(update_fields=['qbo_id'])
+        # Should not raise
+        QBOBillSyncService.void_bill_payment(self.payment)
+
+    @patch('apps.qbo.services.QBOService.get_client', return_value=None)
+    def test_void_no_client_raises(self, _):
+        """No active QBO connection → ValueError raised."""
+        from apps.qbo.services import QBOBillSyncService
+        with self.assertRaises(ValueError):
+            QBOBillSyncService.void_bill_payment(self.payment)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    @patch('apps.qbo.services.QBOService.log_sync')
+    def test_void_success(self, mock_log, mock_get_client):
+        """QBO delete succeeds → log success and return normally."""
+        from apps.qbo.services import QBOBillSyncService
+        client = MagicMock()
+        mock_get_client.return_value = client
+        with patch('quickbooks.objects.billpayment.BillPayment.get') as mock_get:
+            qbo_obj = MagicMock()
+            mock_get.return_value = qbo_obj
+            QBOBillSyncService.void_bill_payment(self.payment)
+        qbo_obj.delete.assert_called_once_with(qb=client)
+        mock_log.assert_called_once()
+        call_kwargs = mock_log.call_args[1]
+        self.assertEqual(call_kwargs['status'], 'success')
+        self.assertEqual(call_kwargs['action'], 'delete')
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    @patch('apps.qbo.services.QBOService.log_sync')
+    def test_void_sdk_failure_raises(self, mock_log, mock_get_client):
+        """SDK raises → log failed and re-raise."""
+        from apps.qbo.services import QBOBillSyncService
+        client = MagicMock()
+        mock_get_client.return_value = client
+        with patch('quickbooks.objects.billpayment.BillPayment.get') as mock_get:
+            mock_get.side_effect = RuntimeError('network timeout')
+            with self.assertRaises(RuntimeError):
+                QBOBillSyncService.void_bill_payment(self.payment)
+        mock_log.assert_called_once()
+        call_kwargs = mock_log.call_args[1]
+        self.assertEqual(call_kwargs['status'], 'failed')
