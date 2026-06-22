@@ -972,12 +972,21 @@ class BillPaymentService:
         return payment
 
     @staticmethod
+    def _push_create(payment):
+        from apps.qbo.services import QBOBillSyncService
+        QBOBillSyncService.push_bill_payment(payment)   # already orchestrates run_create internally
+
+    @staticmethod
+    def _push_update(payment):
+        from apps.qbo.services import QBOBillSyncService, QBOSyncService
+        QBOSyncService.run_update(payment, lambda: QBOBillSyncService.update_bill_payment(payment))
+
+    @staticmethod
     def _push_to_qbo(payment):
         """Immediate push-on-action. Failure is swallowed-and-logged because
         inbound clearance polling self-heals state later."""
         try:
-            from apps.qbo.services import QBOBillSyncService
-            QBOBillSyncService.push_bill_payment(payment)
+            BillPaymentService._push_create(payment)
         except Exception:  # noqa: BLE001 - never block recording on a QBO hiccup
             logger.exception('QBO bill-payment push failed for payment %s', payment.pk)
 
@@ -1003,12 +1012,10 @@ class BillPaymentService:
         payment.save()
         payment.bill.recompute_payment_status()
         # QBO resync (best-effort; never blocks the local edit).
-        from apps.qbo.services import QBOBillSyncService, QBOSyncService
         if payment.qbo_id:
-            QBOSyncService.run_update(
-                payment, lambda: QBOBillSyncService.update_bill_payment(payment))
+            BillPaymentService._push_update(payment)
         else:
-            QBOBillSyncService.push_bill_payment(payment)
+            BillPaymentService._push_create(payment)
         return payment
 
     @staticmethod
@@ -1034,3 +1041,20 @@ class BillPaymentService:
         with transaction.atomic():
             payment.delete()
             payment.bill.recompute_payment_status()
+
+    @staticmethod
+    def retry(payment_id):
+        from apps.purchasing.models import BillPayment
+        payment = BillPayment.objects.get(pk=payment_id)
+        if payment.qbo_sync_status != BillPayment.SYNC_FAILED:
+            raise ValidationError('Can only retry a sync that failed.')
+        op = payment.qbo_pending_op
+        if op == BillPayment.OP_DELETE:
+            BillPaymentService.delete_payment(payment_id)   # re-void + remove; raises if still failing
+            return None
+        if op == BillPayment.OP_UPDATE:
+            BillPaymentService._push_update(payment)
+        else:
+            BillPaymentService._push_create(payment)
+        payment.refresh_from_db()
+        return payment

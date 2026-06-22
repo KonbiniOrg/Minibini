@@ -72,6 +72,74 @@ class BillPaymentLifecycleTests(TestCase):
         self.assertEqual(pay.qbo_sync_status, BillPayment.SYNC_FAILED)
 
 
+class BillPaymentRetryTests(TestCase):
+    """Tests for BillPaymentService.retry — dispatch on qbo_pending_op."""
+
+    def setUp(self):
+        contact = Contact.objects.create(first_name='Retry', last_name='Vendor')
+        business = Business.objects.create(business_name='Retry Corp', default_contact=contact,
+                                           qbo_vendor_id='qbo-v-retry')
+        self.bill = Bill.objects.create(
+            business=business, vendor_invoice_number='INV-R-1',
+            status=Bill.STATUS_RECEIVED,
+        )
+        self.bill.qbo_id = 'qbo-bill-retry'
+        self.bill.save(update_fields=['qbo_id'])
+
+    def _payment(self, *, qbo_id=''):
+        return BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('100.00'),
+            payment_date=timezone.now(),
+            payment_account_id='35',
+            qbo_id=qbo_id,
+            qbo_sync_status=BillPayment.SYNC_SYNCED if qbo_id else BillPayment.SYNC_PENDING,
+        )
+
+    @patch('apps.qbo.services.QBOBillSyncService.update_bill_payment')
+    @patch('apps.qbo.services.QBOBillSyncService.push_bill_payment')
+    def test_retry_failed_update_calls_update(self, mock_push, mock_update):
+        """LOAD-BEARING: OP_UPDATE with qbo_id → update called, push NOT called."""
+        pay = self._payment(qbo_id='q1')
+        pay.qbo_sync_status = BillPayment.SYNC_FAILED
+        pay.qbo_pending_op = BillPayment.OP_UPDATE
+        pay.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
+        BillPaymentService.retry(pay.pk)
+        mock_update.assert_called_once()
+        mock_push.assert_not_called()
+
+    @patch('apps.qbo.services.QBOBillSyncService.void_bill_payment')
+    def test_retry_failed_delete_voids_and_removes(self, mock_void):
+        """OP_DELETE retry → delete_payment re-run; payment row gone on success."""
+        pay = self._payment(qbo_id='q2')
+        pay.qbo_sync_status = BillPayment.SYNC_FAILED
+        pay.qbo_pending_op = BillPayment.OP_DELETE
+        pay.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
+        result = BillPaymentService.retry(pay.pk)
+        mock_void.assert_called_once()
+        self.assertIsNone(result)
+        self.assertFalse(BillPayment.objects.filter(pk=pay.pk).exists())
+
+    @patch('apps.qbo.services.QBOBillSyncService.update_bill_payment')
+    @patch('apps.qbo.services.QBOBillSyncService.push_bill_payment')
+    def test_retry_failed_create_calls_push(self, mock_push, mock_update):
+        """OP_CREATE (no qbo_id) → push_bill_payment called, update NOT called."""
+        pay = self._payment(qbo_id='')
+        pay.qbo_sync_status = BillPayment.SYNC_FAILED
+        pay.qbo_pending_op = BillPayment.OP_CREATE
+        pay.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
+        BillPaymentService.retry(pay.pk)
+        mock_push.assert_called_once()
+        mock_update.assert_not_called()
+
+    def test_retry_non_failed_raises(self):
+        """Calling retry on a non-failed payment raises ValidationError."""
+        pay = self._payment(qbo_id='q3')
+        pay.qbo_sync_status = BillPayment.SYNC_SYNCED
+        pay.save(update_fields=['qbo_sync_status'])
+        with self.assertRaises(ValidationError):
+            BillPaymentService.retry(pay.pk)
+
+
 class VoidBillPaymentTests(TestCase):
     """Unit tests for QBOBillSyncService.void_bill_payment — now raises on failure."""
 
