@@ -876,46 +876,17 @@ class QBOExpenseSyncService:
 
     @staticmethod
     def void_reimbursement(batch):
-        """Delete the QBO Purchase for this batch. Logs but doesn't raise on failure."""
+        """Delete the QBO Purchase for this batch. Raises on failure so the caller refuses the local delete."""
+        from quickbooks.objects.purchase import Purchase
         if not batch.qbo_id:
             return
-
         client = QBOService.get_client()
         if not client:
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=batch.qbo_id,
-                action='delete',
-                status='failed',
-                error_message='No active QBO connection',
-            )
-            return
-
-        from quickbooks.objects.purchase import Purchase
-        try:
-            existing = Purchase.get(batch.qbo_id, qb=client)
-            existing.delete(qb=client)
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=batch.qbo_id,
-                action='delete',
-                status='success',
-            )
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=batch.qbo_id,
-                action='delete',
-                status='failed',
-                error_message=str(e),
-            )
-            # Intentionally do NOT raise — caller still deletes locally.
+            raise ValueError('No active QBO connection')
+        QBOService.delete_and_log(
+            Purchase, batch.qbo_id, client,
+            entity_type='reimbursement', qbo_entity_type='Purchase', entity_id=batch.pk,
+        )
 
 
 class QBOPaymentPollingService:

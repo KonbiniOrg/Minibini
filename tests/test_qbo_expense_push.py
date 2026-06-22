@@ -535,6 +535,18 @@ class VoidReimbursementTest(TestCase):
         self.batch.save(update_fields=['qbo_id'])
         QBOExpenseSyncService.void_reimbursement(self.batch)  # no exception
 
+    def test_void_reimbursement_raises_without_connection(self):
+        with patch('apps.qbo.services.QBOService.get_client', return_value=None):
+            with self.assertRaises(ValueError):
+                QBOExpenseSyncService.void_reimbursement(self.batch)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_void_reimbursement_raises_on_qbo_failure(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        with patch('quickbooks.objects.purchase.Purchase.get', side_effect=Exception('QBO error')):
+            with self.assertRaises(Exception):
+                QBOExpenseSyncService.void_reimbursement(self.batch)
+
 
 class SFMOMAIntegrationTest(TestCase):
     """End-to-end scenarios for the SFMOMA paint use case."""

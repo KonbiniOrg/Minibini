@@ -193,6 +193,17 @@ class ReimbursementDeleteTwoPhaseTest(TestCase):
         self.assertFalse(Reimbursement.objects.filter(pk=self.batch.pk).exists())
         mock_void.assert_called_once()
 
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement', side_effect=Exception('QBO down'))
+    def test_confirmed_delete_returns_400_when_void_fails(self, mock_void):
+        """API returns 400 and retains the batch when the QBO void fails."""
+        self.client_http.force_login(self.admin)
+        r = self.client_http.delete(
+            f'/api/reimbursements/{self.batch.pk}/?confirm=true'
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('detail', r.json())
+        self.assertTrue(Reimbursement.objects.filter(pk=self.batch.pk).exists())
+
 
 class OutstandingSummaryEndpointTest(TestCase):
     def setUp(self):

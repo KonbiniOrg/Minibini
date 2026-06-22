@@ -71,11 +71,11 @@ class ReimbursementViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         }
 
     def perform_confirmed_destroy(self, batch):
-        ReimbursementService.delete(batch=batch, actor=self.request.user)
-        return Response(
-            {'message': 'Reimbursement batch deleted.'},
-            status=status.HTTP_200_OK,
-        )
+        try:
+            ReimbursementService.delete(batch=batch, actor=self.request.user)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=400)
+        return Response({'message': 'Reimbursement batch deleted.'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
     def retry_sync(self, request, pk=None):

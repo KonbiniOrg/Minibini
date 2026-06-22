@@ -345,9 +345,15 @@ class ReimbursementService:
     @staticmethod
     def delete(*, batch, actor):
         """Unwind: void QBO, flip expenses back to submitted, delete the batch row."""
-        from apps.qbo.services import QBOExpenseSyncService
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
         if batch.qbo_id:
-            QBOExpenseSyncService.void_reimbursement(batch)
+            try:
+                QBOSyncService.run_delete(batch, lambda: QBOExpenseSyncService.void_reimbursement(batch))
+            except Exception:
+                raise ValidationError(
+                    'Could not delete this reimbursement — its QuickBooks sync failed, so the batch '
+                    'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
+                )
 
         with transaction.atomic():
             for e in batch.expenses.all():

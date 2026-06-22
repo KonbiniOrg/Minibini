@@ -212,3 +212,30 @@ class ReimbursementDeleteTest(TestCase):
         self.assertEqual(self.e1.status, Expense.STATUS_SUBMITTED)
         self.assertIsNone(self.e1.reimbursement)
         mock_void.assert_called_once()
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement', side_effect=Exception('QBO down'))
+    def test_delete_void_failure_raises_validation_error_and_retains_batch(self, mock_void):
+        """A failed QBO void must abort the unwind: batch stays, expenses stay reimbursed."""
+        batch_pk = self.batch.pk
+        with self.assertRaises(ValidationError):
+            ReimbursementService.delete(batch=self.batch, actor=self.admin)
+        # batch still exists
+        self.assertTrue(Reimbursement.objects.filter(pk=batch_pk).exists())
+        # batch marked sync_failed
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.qbo_sync_status, Reimbursement.SYNC_FAILED)
+        # expenses were NOT flipped back
+        self.e1.refresh_from_db()
+        self.assertEqual(self.e1.status, Expense.STATUS_REIMBURSED)
+        self.assertEqual(self.e1.reimbursement_id, batch_pk)
+
+    def test_delete_no_qbo_id_unwinds_locally(self):
+        """When there is no qbo_id, the batch is simply unwound locally with no QBO call."""
+        self.batch.qbo_id = ''
+        self.batch.save(update_fields=['qbo_id'])
+        batch_pk = self.batch.pk
+        ReimbursementService.delete(batch=self.batch, actor=self.admin)
+        self.assertFalse(Reimbursement.objects.filter(pk=batch_pk).exists())
+        self.e1.refresh_from_db()
+        self.assertEqual(self.e1.status, Expense.STATUS_SUBMITTED)
+        self.assertIsNone(self.e1.reimbursement)
