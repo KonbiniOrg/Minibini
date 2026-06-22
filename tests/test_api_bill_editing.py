@@ -110,6 +110,7 @@ class BillEditingAPITest(BaseTestCase):
         r2 = self.client.post(
             f'/api/bills/{bill.bill_id}/payments/',
             {'amount': '5.00', 'payment_date': '2026-06-19T12:00:00Z',
+             'payment_account_id': '35',
              },
             format='json',
         )

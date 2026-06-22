@@ -176,6 +176,10 @@
           <option value="company:{a.qbo_account_id}">{a.display_name}</option>
         {/each}
       </select>
+      {#if paymentAccounts.length === 0}
+        <br><em>Company-paid needs a payment account — configure one in
+          Settings → QuickBooks.</em>
+      {/if}
     </p>
   {/if}
 

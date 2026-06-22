@@ -617,10 +617,12 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         bill = self.get_object()
         data = request.data
         payment_account_id = (data.get('payment_account_id') or '').strip()
-        from apps.qbo.services import QBOService
-        if QBOService.get_client() and not payment_account_id:
+        # A payment account is necessary info regardless of QBO connectivity —
+        # the SPA blocks recording when none are configured. QBO being down is
+        # accepted silently (the push marks the payment sync_failed, retryable).
+        if not payment_account_id:
             return Response(
-                {'payment_account_id': ['Required while QuickBooks is connected.']},
+                {'payment_account_id': ['A payment account is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
