@@ -71,9 +71,14 @@ Route: `#/settings`.
   payment-account picker/list is populated from `/api/qbo/payment-accounts/`
   (Bank / Credit Card / Other Current Asset). Enable at least one Bank and one
   Credit Card account and save.
-- [ ] **Empty state:** with no payment accounts configured, the Record Payment
-  account picker (§2) renders a disabled **"No payment accounts configured"**
-  option rather than an empty dropdown.
+- [ ] **Empty state blocks recording (not just the dropdown):** with **no**
+  payment accounts configured, the forms that need one don't let you proceed —
+  the **Record Payment** modal shows a **"No payment accounts are configured — set
+  them up in Settings → QuickBooks"** message *instead of* the input fields
+  (§2); the reimbursement panel replaces its **Reimburse selected** button with
+  the same hint (§10); and the expense form notes that **company-paid needs a
+  configured account** under "Paid by". A payment account is **necessary info**,
+  so without one these flows are gated, not merely awkward.
 
 ## 2. Recording a bill payment — the account picker & guard
 
@@ -85,9 +90,17 @@ payment).
 - [ ] **Account picker lists configured accounts:** the **Payment account**
   dropdown shows each account's **display name** (e.g. "Business Checking",
   "Visa"), not raw ids.
-- [ ] **Guard — account required when connected:** with QBO **connected**, Save
-  with the account left blank → **refused (400)**, error names the
-  payment-account field; no payment recorded.
+- [ ] **Account auto-selected:** when accounts are configured, the picker
+  defaults to the first one (you can change it) — so the required field is
+  pre-filled.
+- [ ] **Guard — account required (always):** clear the account (pick the blank
+  "— select account —" option) and Save → **blocked client-side** with **"Choose
+  a payment account."**, no request sent. (The backend also rejects a blank
+  account with 400 regardless of QBO connectivity — it's necessary info, not a
+  QBO-only requirement.)
+- [ ] **Errors state the reason:** a refused save shows the **specific** message
+  (e.g. the field error), not a generic "Could not record payment." *(Report a
+  generic/opaque failure message as a bug.)*
 - [ ] **Records & commits locally:** choose an account, enter Amount/Reference →
   **Save** → the payment appears in the Payments section and the bill status /
   balance update (per `Bills.md` §3).
@@ -203,8 +216,8 @@ QBO sync status **separately**.
 
 | Dimension | Cases |
 |---|---|
-| Payment account | picker lists display names · empty → "No payment accounts configured" · Bank vs Credit Card both push |
-| Account guard | required when QBO connected (400 if blank) · not required when disconnected |
+| Payment account | picker lists display names · auto-selects first · empty → form replaced by "configure in Settings" message (modal + reimbursement + expense form) |
+| Account guard | required always — client-side "Choose a payment account." + backend 400 (regardless of QBO connection) · specific error message (not generic) |
 | Push result | synced badge + QBO id when connected · reference → DocNumber |
 | Disconnected | local write commits · row = sync failed (not pending) · reconnect + edit → synced |
 | Edit | synced → re-sync · never-synced → push fresh |
