@@ -116,6 +116,26 @@ class BillPaymentApiTest(TestCase):
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertIn('qbo_sync_status', resp.json())
 
+    @patch('apps.qbo.services.QBOBillSyncService.push_bill_payment')
+    def test_retry_sync_endpoint(self, mock_push):
+        from apps.purchasing.models import BillPayment
+        pay = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('10.00'), payment_date=timezone.now(),
+            payment_account_id='35', qbo_sync_status=BillPayment.SYNC_FAILED,
+            qbo_pending_op=BillPayment.OP_CREATE)
+        resp = self.client.post(f'/api/bills/{self.bill.pk}/payments/{pay.pk}/retry-sync/')
+        self.assertEqual(resp.status_code, 200)
+        mock_push.assert_called_once()
+
+    def test_retry_sync_non_failed_returns_400(self):
+        from apps.purchasing.models import BillPayment
+        pay = BillPayment.objects.create(
+            bill=self.bill, amount=Decimal('10.00'), payment_date=timezone.now(),
+            payment_account_id='35', qbo_sync_status=BillPayment.SYNC_SYNCED,
+            qbo_pending_op=BillPayment.OP_CREATE)
+        resp = self.client.post(f'/api/bills/{self.bill.pk}/payments/{pay.pk}/retry-sync/')
+        self.assertEqual(resp.status_code, 400)
+
     def test_patch_payment_updates_reference_and_recomputes_status(self):
         # Record a partial payment (40 of 100) — bill should be partly_paid
         resp = self.client.post(
