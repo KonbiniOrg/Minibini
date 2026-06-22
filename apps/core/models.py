@@ -602,3 +602,36 @@ class ShiftChangeRequest(TimeChangeRequest):
         return ShiftService.create(self.requester, actor=reviewer,
                                    start_time=self.requested_start,
                                    end_time=self.requested_end)
+
+
+class QBOSyncable(models.Model):
+    """Abstract base for records mirrored to a QBO object. Carries the QBO id
+    and a sync-state machine (pending → synced | sync_failed). Adopters:
+    Expense, Reimbursement, BillPayment."""
+    SYNC_PENDING = 'pending'
+    SYNC_SYNCED = 'synced'
+    SYNC_FAILED = 'sync_failed'
+    SYNC_STATUS_CHOICES = [
+        (SYNC_PENDING, 'Pending'),
+        (SYNC_SYNCED, 'Synced to QBO'),
+        (SYNC_FAILED, 'QBO sync failed'),
+    ]
+
+    qbo_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_sync_status = models.CharField(
+        max_length=20, choices=SYNC_STATUS_CHOICES, default=SYNC_PENDING)
+    qbo_sync_error = models.TextField(blank=True, default='')
+
+    class Meta:
+        abstract = True
+
+    def mark_synced(self, qbo_id):
+        self.qbo_id = qbo_id
+        self.qbo_sync_status = self.SYNC_SYNCED
+        self.qbo_sync_error = ''
+        self.save(update_fields=['qbo_id', 'qbo_sync_status', 'qbo_sync_error'])
+
+    def mark_failed(self, error):
+        self.qbo_sync_status = self.SYNC_FAILED
+        self.qbo_sync_error = str(error)
+        self.save(update_fields=['qbo_sync_status', 'qbo_sync_error'])

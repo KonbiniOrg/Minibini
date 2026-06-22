@@ -1,4 +1,5 @@
 import datetime
+import logging
 from apps.core.history import record_history
 import json
 from decimal import Decimal
@@ -7,6 +8,8 @@ from django.db import transaction
 from django.utils import timezone
 from apps.core.models import Configuration
 from apps.qbo.models import QBOConnection, QBOSyncLog
+
+logger = logging.getLogger(__name__)
 
 
 class QBOService:
@@ -1051,3 +1054,32 @@ class QBOInboundPollingService:
             'invoices': QBOPaymentPollingService.poll_all(),
             'bills': QBOBillPaymentPollingService.poll_all(),
         }
+
+
+class QBOSyncService:
+    """Wraps the push/resync try-except so every adopter records its sync
+    outcome the same way. Never raises — a QBO hiccup must not block the local
+    write that already committed."""
+
+    @staticmethod
+    def run_create(record, push_callable):
+        """push_callable() does the QBO create and returns the new qbo_id."""
+        try:
+            qbo_id = push_callable()
+            if qbo_id:
+                record.mark_synced(qbo_id)
+            return qbo_id
+        except Exception as e:  # noqa: BLE001
+            logger.exception('QBO create sync failed for %r', record)
+            record.mark_failed(e)
+            return None
+
+    @staticmethod
+    def run_resync(record, resync_callable):
+        """resync_callable() updates the existing QBO object (qbo_id unchanged)."""
+        try:
+            resync_callable()
+            record.mark_synced(record.qbo_id)
+        except Exception as e:  # noqa: BLE001
+            logger.exception('QBO resync failed for %r', record)
+            record.mark_failed(e)
