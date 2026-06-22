@@ -289,6 +289,25 @@ class ExpenseDeleteTest(TestCase):
         self.assertIn('message', r.json())
         self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
 
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_delete_returns_400_when_void_fails_and_expense_survives(self, mock_void):
+        """When QBO void fails, the API returns 400 and the expense row is retained."""
+        _seed_payment_accounts()
+        mock_void.side_effect = RuntimeError('qbo down')
+        exp = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('10.00'), purchased_on=date(2026, 4, 5),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_sync_status=Expense.SYNC_SYNCED, qbo_id='9001',
+        )
+        self.client_http.force_login(self.admin)
+        r = self.client_http.delete(f'/api/expenses/{exp.pk}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('detail', r.json())
+        self.assertTrue(Expense.objects.filter(pk=exp.pk).exists())
+
 
 # NOTE: MaterialsBucketFlagTest removed in Phase C2. The
 # /api/work-orders/{wo_pk}/materials/ endpoint with _use_materials_bucket

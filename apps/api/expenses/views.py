@@ -101,7 +101,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         expense = self.get_object()
-        ExpenseService.delete(expense=expense, actor=request.user)
+        try:
+            ExpenseService.delete(expense=expense, actor=request.user)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=400)
         return Response({'message': 'Expense deleted.'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='reject', url_name='reject')

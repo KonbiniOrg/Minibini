@@ -769,46 +769,17 @@ class QBOExpenseSyncService:
 
     @staticmethod
     def void_expense(expense):
-        """Delete the QBO Purchase for this expense. Logs but doesn't raise on failure."""
+        """Delete the QBO Purchase for this expense. Raises on failure so the caller refuses the local delete."""
+        from quickbooks.objects.purchase import Purchase
         if not expense.qbo_id:
             return
-
         client = QBOService.get_client()
         if not client:
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=expense.qbo_id,
-                action='delete',
-                status='failed',
-                error_message='No active QBO connection',
-            )
-            return
-
-        from quickbooks.objects.purchase import Purchase
-        try:
-            existing = Purchase.get(expense.qbo_id, qb=client)
-            existing.delete(qb=client)
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=expense.qbo_id,
-                action='delete',
-                status='success',
-            )
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=expense.qbo_id,
-                action='delete',
-                status='failed',
-                error_message=str(e),
-            )
-            # Intentionally do NOT raise — caller still deletes locally.
+            raise ValueError('No active QBO connection')
+        QBOService.delete_and_log(
+            Purchase, expense.qbo_id, client,
+            entity_type='expense', qbo_entity_type='Purchase', entity_id=expense.pk,
+        )
 
     # ---- reimbursement batch push / update / void ----
 

@@ -209,16 +209,24 @@ class ExpenseService:
             raise ValidationError(
                 'Cannot delete a reimbursed expense; unwind the reimbursement first.'
             )
-        from apps.qbo.services import QBOExpenseSyncService
-        if expense.qbo_id and not expense.reimbursement_id:
-            QBOExpenseSyncService.void_expense(expense)
-        # Reverse a stock receipt's QOH bump.
-        if expense.stock_pli_id and expense.stock_qty:
-            from apps.inventory.services import InventoryService
-            InventoryService.receive_stock(
-                expense.stock_pli, -expense.stock_qty,
-                reason=f'Stock receipt void (expense {expense.pk})')
-        expense.delete()
+        # QBO void runs OUTSIDE the transaction so that on failure mark_failed→expense.save()
+        # commits (row retained as sync_failed) while the stock reversal + delete are never reached.
+        if expense.qbo_id:
+            from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+            try:
+                QBOSyncService.run_delete(expense, lambda: QBOExpenseSyncService.void_expense(expense))
+            except Exception:
+                raise ValidationError(
+                    'Could not delete this expense — its QuickBooks sync failed, so the expense '
+                    'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
+                )
+        with transaction.atomic():
+            if expense.stock_pli_id and expense.stock_qty:
+                from apps.inventory.services import InventoryService
+                InventoryService.receive_stock(
+                    expense.stock_pli, -expense.stock_qty,
+                    reason=f'Stock receipt void (expense {expense.pk})')
+            expense.delete()
 
     @staticmethod
     def reject(*, expense, actor):

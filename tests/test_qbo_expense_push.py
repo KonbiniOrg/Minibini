@@ -342,14 +342,20 @@ class VoidExpenseTest(TestCase):
         QBOExpenseSyncService.void_expense(self.exp)  # no exception
 
     @patch('apps.qbo.services.QBOService.get_client')
-    def test_void_expense_logs_failure_but_does_not_raise(self, mock_get_client):
+    def test_void_expense_raises_on_qbo_failure(self, mock_get_client):
         mock_get_client.return_value = MagicMock()
         existing = MagicMock()
         existing.delete = MagicMock(side_effect=RuntimeError('qbo down'))
         with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
-            QBOExpenseSyncService.void_expense(self.exp)  # must not raise
+            with self.assertRaises(RuntimeError):
+                QBOExpenseSyncService.void_expense(self.exp)
         log = QBOSyncLog.objects.get(entity_type='expense', action='delete')
         self.assertEqual(log.status, 'failed')
+
+    def test_void_expense_raises_without_connection(self):
+        """No active QBO client → raises ValueError."""
+        with self.assertRaises(ValueError):
+            QBOExpenseSyncService.void_expense(self.exp)
 
 
 class PushReimbursementTest(TestCase):

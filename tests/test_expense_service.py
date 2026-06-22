@@ -179,6 +179,80 @@ class ExpenseDeleteTest(TestCase):
         self.assertFalse(Expense.objects.filter(pk=pk).exists())
         mock_void.assert_called_once()
 
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_delete_void_failure_raises_validation_error_and_retains_expense(self, mock_void):
+        """When void raises, delete raises ValidationError and the expense row survives."""
+        from django.core.exceptions import ValidationError
+        mock_void.side_effect = RuntimeError('qbo down')
+        exp = Expense.objects.create(
+            entered_by=self.user, amount=Decimal('10.00'),
+            purchased_on=date(2026, 4, 9), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57', qbo_sync_status=Expense.SYNC_SYNCED, qbo_id='9001',
+        )
+        pk = exp.pk
+        with self.assertRaises(ValidationError):
+            ExpenseService.delete(expense=exp, actor=self.user)
+        self.assertTrue(Expense.objects.filter(pk=pk).exists())
+        exp.refresh_from_db()
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_FAILED)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_delete_void_failure_does_not_reverse_stock(self, mock_void):
+        """When void fails, QOH is unchanged (stock reversal was never reached)."""
+        from apps.inventory.models import InventoryItem
+        mock_void.side_effect = RuntimeError('qbo down')
+        pli = InventoryItem.objects.create(
+            code='VF1', description='plywood', accounting_category=self.cat,
+            is_catalog=True, qty_on_hand=Decimal('10.00'),
+        )
+        exp = Expense.objects.create(
+            entered_by=self.user, amount=Decimal('50.00'),
+            purchased_on=date(2026, 4, 9), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57', qbo_sync_status=Expense.SYNC_SYNCED, qbo_id='9001',
+            stock_pli=pli, stock_qty=Decimal('3.00'),
+        )
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            ExpenseService.delete(expense=exp, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('10.00'))  # unchanged
+
+    def test_delete_no_qbo_id_deletes_locally_no_qbo_call(self):
+        """Expense without qbo_id deletes locally without any QBO call."""
+        exp = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user,
+            amount=Decimal('10.00'),
+            purchased_on=date(2026, 4, 9), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+        )
+        pk = exp.pk
+        with patch('apps.qbo.services.QBOExpenseSyncService.void_expense') as mock_void:
+            ExpenseService.delete(expense=exp, actor=self.user)
+            mock_void.assert_not_called()
+        self.assertFalse(Expense.objects.filter(pk=pk).exists())
+
+    def test_delete_reimbursed_expense_raises_upfront(self):
+        """Reimbursed expense raises ValidationError before any QBO call."""
+        from django.core.exceptions import ValidationError
+        from apps.expenses.models import Reimbursement
+        batch = Reimbursement.objects.create(
+            purchased_by=self.user, paid_on=date(2026, 4, 2),
+            payment_account_id='ACC', created_by=self.user,
+        )
+        exp = Expense.objects.create(
+            entered_by=self.user, purchased_by=self.user,
+            amount=Decimal('10.00'),
+            purchased_on=date(2026, 4, 9), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            reimbursement=batch,
+        )
+        with patch('apps.qbo.services.QBOExpenseSyncService.void_expense') as mock_void:
+            with self.assertRaises(ValidationError):
+                ExpenseService.delete(expense=exp, actor=self.user)
+            mock_void.assert_not_called()
+
 
 class ExpenseRejectTest(TestCase):
     def setUp(self):
