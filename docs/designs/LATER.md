@@ -673,6 +673,17 @@ IMAP-SMTP machinery and tend to be worked together.
   Recorded in `quickbooks-integration.md` ("Inventory write-offs are not pushed"). Revisit only if QBO is
   ever switched to true inventory-asset tracking.
 
+- **Maybe fold the invoice push into `save_and_log`?** — _added 2026-06-21_
+  Every QBO create/update push now routes through `QBOService.save_and_log` (and the deletes through
+  `delete_and_log`). The **invoice send** (`InvoiceEmailService.send_invoice`) is the lone holdout: it does
+  create-`save` → persist `qbo_id` → `_mark_as_sent` (a *second* QBO round trip) → *then* `log_sync` success,
+  so its success row means "created **and** marked-sent," not just "created." Folding the create-`save` step
+  into `save_and_log` would move the success log to right after the create (before mark-sent) — a deliberate
+  change to what the log row means (QBO-object-creation vs whole-send success). Possibly worth it for symmetry,
+  but it needs more thought about the two-round-trip semantics and the partial-failure window.
+  _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
+  call made) or stays a bespoke sequence, and recorded why.
+
 - **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
   Background: the original plan was *delete-on-spend*, but the code review surfaced
   that line items (estimate/invoice/PO/bill) and `TemplateMaterialAssociation`

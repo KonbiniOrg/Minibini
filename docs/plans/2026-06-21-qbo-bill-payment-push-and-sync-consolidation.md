@@ -1341,7 +1341,31 @@ git commit -m "test: green full suite after QBO sync consolidation"
 
 ---
 
-### Task 13: Correct the invoice-push docs
+### Task 13: Consolidate QBO save+log boilerplate (`QBOService.save_and_log`)
+
+The per-entity create/update push methods each repeat a `try: obj.save(qb=client); qbo_id=str(obj.Id); log_sync(...success); return qbo_id / except: log_sync(...failed); raise` block. Factor it into one helper. This does NOT merge the per-entity classes (their *builders* genuinely differ); it removes the remaining save+log boilerplate, the level below the `run_create`/`run_resync` orchestration.
+
+**Files:**
+- Modify: `apps/qbo/services.py` (add `QBOService.save_and_log`; refactor 7 create + 3 update methods)
+- Test: `tests/test_qbo_save_and_log.py` (create)
+
+**Interfaces:**
+- Produces: `QBOService.save_and_log(qbo_obj, client, *, entity_type, qbo_entity_type, entity_id, action='create') -> str` — `qbo_obj.save(qb=client)`, write a success `QBOSyncLog` row, return `str(qbo_obj.Id)`; on exception write a failed row (`qbo_entity_id=''`) and re-raise.
+
+**Methods to refactor** (preserve each one's existing `entity_type`/`qbo_entity_type`/`entity_id` and use the right `action`):
+- create (`action='create'`): `push_customer`, `push_contact_as_customer`, `push_vendor`, `push_bill`, `_build_qbo_bill_payment`, `push_expense`, `push_reimbursement`
+- update (`action='update'`): `update_bill_payment`, `update_expense`, `update_reimbursement`
+- **EXCLUDE** (different shape, leave as-is): the `void_*` methods (delete + swallow, never raise) and the invoice push in `InvoiceEmailService.send_invoice` (its `log_sync` lands *after* `_mark_as_sent`, so its sequence differs).
+
+**Behavior must be identical** — same log rows, same return values, same exceptions. The record-id-persistence steps (e.g. `bill.qbo_id = qbo_id; bill.save(update_fields=['qbo_id'])`) move to *after* the `save_and_log` call in the caller (behaviorally equivalent — `log_sync` still records the same `qbo_entity_id`). Verify via the existing push/update tests (they assert the log rows + returns), which must stay green unchanged.
+
+**Steps (TDD):** write `tests/test_qbo_save_and_log.py` (success → logs success + returns `str(Id)`; failure → logs failed with `qbo_entity_id=''` + re-raises) → confirm fail → add `save_and_log` → confirm pass → refactor the 10 methods one cluster at a time, re-running that cluster's tests → commit.
+
+**Green gate (one process):** `python manage.py test tests.test_qbo_save_and_log tests.test_qbo_customer_sync tests.test_qbo_vendor_sync tests.test_qbo_bill_push tests.test_qbo_bill_payment_push tests.test_bill_payment_qbo_lifecycle tests.test_qbo_expense_push tests.test_qbo_reimbursement_push tests.test_expense_service tests.test_reimbursement_service -v 1` — all pass.
+
+---
+
+### Task 14: Correct the invoice-push docs
 
 The QBO doc describes a non-existent `POST /api/invoices/{id}/send-to-qbo/` endpoint + `SendToQBODialog`. Reality: the invoice push is fused into `POST /api/invoices/{id}/send` (`InvoiceEmailService.send_invoice`). Bills are the only `send-to-qbo` endpoint.
 
@@ -1362,7 +1386,7 @@ git commit -m "docs(qbo): correct invoice push — fused into /send, no send-to-
 
 ---
 
-### Task 14: Record the bill-payment push, the sync consolidation, the write-off decision; close LATER items
+### Task 15: Record the bill-payment push, the sync consolidation, the write-off decision; close LATER items
 
 **Files:** `docs/designs/quickbooks-integration.md`, `docs/designs/materials-inventory-and-purchasing.md`, `docs/designs/LATER.md`
 
@@ -1389,6 +1413,46 @@ git commit -m "docs(qbo): correct invoice push — fused into /send, no send-to-
 git add docs/designs/quickbooks-integration.md docs/designs/materials-inventory-and-purchasing.md docs/designs/LATER.md
 git commit -m "docs(qbo): bill-payment push + sync consolidation; write-off=inventory-only; close LATER items"
 ```
+
+---
+
+## Phase 5 — Void symmetry (added mid-branch)
+
+Make the QBO *delete* paths symmetric with create/update: a failed QBO delete must **refuse the local delete and retain the row** marked `sync_failed`, so retrying the delete re-attempts the QBO delete and completes locally on success — instead of silently accepting a QBO↔local mismatch. Confirmed decisions: (1) an already-gone QBO object counts as a successful delete (idempotent), so the local delete completes; (2) retry = re-invoke the delete action, no new state — `sync_failed` + the row's continued existence is the signal; (3) the three delete actions surface the failure to the user the same way other QBO failures surface.
+
+### Task 16: `delete_and_log` + `run_delete` helpers
+
+**Files:** Modify `apps/qbo/services.py`; Test `tests/test_qbo_delete_helpers.py`.
+
+**Interfaces:**
+- `QBOService.delete_and_log(qbo_obj, client, *, entity_type, qbo_entity_type, entity_id) -> None` — delete the QBO object; on an **already-gone / not-found** condition, treat as success (log success, return); on a real failure, log failed and **raise** (unlike the old swallow). Logs `action='delete'`.
+- `QBOSyncService.run_delete(record, delete_callable) -> None` — run `delete_callable()`; on success return; on exception `record.mark_failed(e)` **and re-raise** (the re-raise aborts the caller's local delete; this is the deliberate difference from `run_create`/`run_resync`, which swallow).
+
+TDD: helper tests for success, not-found-as-success, and failure (logs failed + re-raises; run_delete marks failed + re-raises).
+
+### Task 17: Bill-payment void symmetry
+
+**Files:** `apps/qbo/services.py` (`void_bill_payment` → `delete_and_log`, idempotent, raise); `apps/purchasing/services.py` (`delete_payment`); `apps/api/purchasing/views.py` (the payment-delete action returns 400 on QBO-void failure); tests.
+
+Reorder `delete_payment`: if `payment.qbo_id`, run `QBOSyncService.run_delete(payment, lambda: void_bill_payment(payment))` **before** the local delete; on raise, `mark_failed` has committed and the local `payment.delete()` + bill-status recompute are NOT reached — surface as a 400/ValidationError. On success, proceed.
+
+### Task 18: Expense void symmetry
+
+**Files:** `apps/qbo/services.py` (`void_expense`); `apps/expenses/services.py` (`ExpenseService.delete`); `apps/api/expenses/views.py`; tests.
+
+In `ExpenseService.delete`, run the QBO void (for a non-reimbursed company expense with `qbo_id`) via `run_delete` **before** the stock-receipt reversal + `expense.delete()`; a void failure aborts the whole local unwind (record + its stock/earmark effects stay intact) and surfaces as an error. Keep the existing `if expense.qbo_id and not expense.reimbursement_id` guard (reimbursed expenses void via the batch, not individually).
+
+### Task 19: Reimbursement void symmetry
+
+**Files:** `apps/qbo/services.py` (`void_reimbursement`); `apps/expenses/services.py` (`ReimbursementBatchService.cancel` / the void path); `apps/api/reimbursements/views.py`; tests.
+
+Run the QBO void via `run_delete` **before** the local batch unwind; a failure aborts the unwind and surfaces as an error.
+
+### Task 20: Frontend — surface delete-failure on the three actions
+
+**Files:** the bill-payment delete (`RecordPaymentModal`/`BillDetailPage`), expense delete (`ExpenseListPage`), reimbursement cancel (`UserReimbursementPanel`) handlers.
+
+Each delete/cancel handler now must surface the API error the same way the other QBO failures surface (the global `lib/api.js` overlay / the existing inline error row), so a refused delete tells the user the row was kept and to retry. No new component — match the existing error-surfacing pattern at each site.
 
 ---
 
