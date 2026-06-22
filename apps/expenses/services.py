@@ -1,12 +1,9 @@
-import logging
 from decimal import Decimal
 
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
 from apps.expenses.models import Expense
-
-logger = logging.getLogger(__name__)
 
 
 class ExpenseService:

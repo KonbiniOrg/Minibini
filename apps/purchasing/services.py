@@ -959,7 +959,7 @@ class BillPaymentService:
                 from apps.qbo.services import QBOPaymentAccountService
                 display_name = QBOPaymentAccountService.lookup(payment_account_id)['display_name']
                 history_action = f'Payment recorded: {amount} from {display_name}'
-            except (ValueError, Exception):
+            except (ValueError, KeyError):
                 pass
         if reference:
             history_action += f' (ref {reference})'
