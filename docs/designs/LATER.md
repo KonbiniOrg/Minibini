@@ -60,6 +60,19 @@ page stays whole.
 
 ## Open
 
+- **PO/Bill vendor field: let users search by contact name but resolve to the business.** — _added 2026-06-21_
+  The PO and Bill forms pick a vendor with `BusinessPicker` (searches businesses, returns a
+  `business_id`). But a user often knows the *contact* name, not the business name. Idea:
+  use a `CustomerPicker`-style picker that **searches contact names too** yet, on selecting a
+  contact, **returns that contact's business** (the PO/Bill vendor must be a Business). This
+  isn't quite today's `CustomerPicker`, which emits `{type, id}` and can return a standalone
+  contact — here we always need a business id, so it'd be an extended/variant picker. Edge
+  case to handle: a contact with **no business** can't be used as a vendor — reject it in
+  some way (disable that result row with a hint like "no business on file", or block the pick
+  with a message), rather than silently returning nothing. _Done when:_ we've decided whether
+  to extend `CustomerPicker` or add a vendor-specific picker, defined the contact→business
+  resolution + the no-business rejection UX, and wired it into the PO/Bill vendor fields.
+
 - **Email can be linked to a Job unrelated to its already-linked PO.** — _added 2026-06-21_
   When an email is associated with a PO and also with a Job, nothing checks that the Job
   matches any job referenced by the PO's line items — I was able to link an email to a Job
