@@ -76,6 +76,23 @@ class QBOService:
             error_message=error_message,
         )
 
+    @staticmethod
+    def save_and_log(qbo_obj, client, *, entity_type, qbo_entity_type, entity_id, action='create'):
+        """Save a QBO SDK object, write a QBOSyncLog row, return str(qbo_obj.Id).
+        On exception: log a failed row (qbo_entity_id='') and re-raise."""
+        try:
+            qbo_obj.save(qb=client)
+            qbo_id = str(qbo_obj.Id)
+            QBOService.log_sync(entity_type=entity_type, entity_id=entity_id,
+                                qbo_entity_type=qbo_entity_type, qbo_entity_id=qbo_id,
+                                action=action, status='success')
+            return qbo_id
+        except Exception as e:
+            QBOService.log_sync(entity_type=entity_type, entity_id=entity_id,
+                                qbo_entity_type=qbo_entity_type, qbo_entity_id='',
+                                action=action, status='failed', error_message=str(e))
+            raise
+
 
 class QBODisplayNameService:
     """Generates QBO-compliant DisplayNames for customer/vendor records."""
@@ -126,33 +143,16 @@ class QBOCustomerSyncService:
 
         customer = QBOCustomerSyncService._build_customer(business)
 
-        try:
-            customer.save(qb=client)
-            with transaction.atomic():
-                business.qbo_customer_id = str(customer.Id)
-                business.save(update_fields=['qbo_customer_id'])
-
-                QBOService.log_sync(
-                    entity_type='customer',
-                    entity_id=business.pk,
-                    qbo_entity_type='Customer',
-                    qbo_entity_id=str(customer.Id),
-                    action='create',
-                    status='success',
-                )
-            return str(customer.Id)
-
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='customer',
-                entity_id=business.pk,
-                qbo_entity_type='Customer',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        qbo_id = QBOService.save_and_log(
+            customer, client,
+            entity_type='customer',
+            qbo_entity_type='Customer',
+            entity_id=business.pk,
+        )
+        with transaction.atomic():
+            business.qbo_customer_id = qbo_id
+            business.save(update_fields=['qbo_customer_id'])
+        return qbo_id
 
     @staticmethod
     def _build_customer(business):
@@ -196,33 +196,16 @@ class QBOCustomerSyncService:
 
         customer = QBOCustomerSyncService._build_contact_customer(contact)
 
-        try:
-            customer.save(qb=client)
-            with transaction.atomic():
-                contact.qbo_customer_id = str(customer.Id)
-                contact.save(update_fields=['qbo_customer_id'])
-
-                QBOService.log_sync(
-                    entity_type='contact_customer',
-                    entity_id=contact.pk,
-                    qbo_entity_type='Customer',
-                    qbo_entity_id=str(customer.Id),
-                    action='create',
-                    status='success',
-                )
-            return str(customer.Id)
-
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='contact_customer',
-                entity_id=contact.pk,
-                qbo_entity_type='Customer',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        qbo_id = QBOService.save_and_log(
+            customer, client,
+            entity_type='contact_customer',
+            qbo_entity_type='Customer',
+            entity_id=contact.pk,
+        )
+        with transaction.atomic():
+            contact.qbo_customer_id = qbo_id
+            contact.save(update_fields=['qbo_customer_id'])
+        return qbo_id
 
     @staticmethod
     def _build_contact_customer(contact):
@@ -267,33 +250,16 @@ class QBOVendorSyncService:
 
         vendor = QBOVendorSyncService._build_vendor(business)
 
-        try:
-            vendor.save(qb=client)
-            with transaction.atomic():
-                business.qbo_vendor_id = str(vendor.Id)
-                business.save(update_fields=['qbo_vendor_id'])
-
-                QBOService.log_sync(
-                    entity_type='vendor',
-                    entity_id=business.pk,
-                    qbo_entity_type='Vendor',
-                    qbo_entity_id=str(vendor.Id),
-                    action='create',
-                    status='success',
-                )
-            return str(vendor.Id)
-
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='vendor',
-                entity_id=business.pk,
-                qbo_entity_type='Vendor',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        qbo_id = QBOService.save_and_log(
+            vendor, client,
+            entity_type='vendor',
+            qbo_entity_type='Vendor',
+            entity_id=business.pk,
+        )
+        with transaction.atomic():
+            business.qbo_vendor_id = qbo_id
+            business.save(update_fields=['qbo_vendor_id'])
+        return qbo_id
 
     @staticmethod
     def _build_vendor(business):
@@ -393,34 +359,15 @@ class QBOBillSyncService:
 
         qbo_bill = QBOBillSyncService._build_qbo_bill(bill)
 
-        try:
-            qbo_bill.save(qb=client)
-            qbo_id = str(qbo_bill.Id)
-
-            bill.qbo_id = qbo_id
-            bill.save(update_fields=['qbo_id'])
-
-            QBOService.log_sync(
-                entity_type='bill',
-                entity_id=bill.pk,
-                qbo_entity_type='Bill',
-                qbo_entity_id=qbo_id,
-                action='create',
-                status='success',
-            )
-            return qbo_id
-
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='bill',
-                entity_id=bill.pk,
-                qbo_entity_type='Bill',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        qbo_id = QBOService.save_and_log(
+            qbo_bill, client,
+            entity_type='bill',
+            qbo_entity_type='Bill',
+            entity_id=bill.pk,
+        )
+        bill.qbo_id = qbo_id
+        bill.save(update_fields=['qbo_id'])
+        return qbo_id
 
     @staticmethod
     def push_bill_payment(payment):
@@ -484,22 +431,12 @@ class QBOBillSyncService:
         line.LinkedTxn = [linked]
         qbp.Line = [line]
 
-        try:
-            qbp.save(qb=client)
-            qbo_id = str(qbp.Id)
-            QBOService.log_sync(
-                entity_type='bill_payment', entity_id=payment.pk,
-                qbo_entity_type='BillPayment', qbo_entity_id=qbo_id,
-                action='create', status='success',
-            )
-            return qbo_id
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='bill_payment', entity_id=payment.pk,
-                qbo_entity_type='BillPayment', qbo_entity_id='',
-                action='create', status='failed', error_message=str(e),
-            )
-            raise
+        return QBOService.save_and_log(
+            qbp, client,
+            entity_type='bill_payment',
+            qbo_entity_type='BillPayment',
+            entity_id=payment.pk,
+        )
 
     @staticmethod
     def update_bill_payment(payment):
@@ -517,11 +454,12 @@ class QBOBillSyncService:
             existing.DocNumber = payment.reference
         if existing.Line:
             existing.Line[0].Amount = float(payment.amount)
-        existing.save(qb=client)
-        QBOService.log_sync(
-            entity_type='bill_payment', entity_id=payment.pk,
-            qbo_entity_type='BillPayment', qbo_entity_id=payment.qbo_id,
-            action='update', status='success',
+        QBOService.save_and_log(
+            existing, client,
+            entity_type='bill_payment',
+            qbo_entity_type='BillPayment',
+            entity_id=payment.pk,
+            action='update',
         )
         return payment.qbo_id
 
@@ -760,31 +698,15 @@ class QBOExpenseSyncService:
 
         qbo_purchase = QBOExpenseSyncService._build_qbo_purchase_for_expense(expense)
 
-        try:
-            qbo_purchase.save(qb=client)
-            qbo_id = str(qbo_purchase.Id)
-            expense.qbo_id = qbo_id
-            expense.save(update_fields=['qbo_id'])
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=qbo_id,
-                action='create',
-                status='success',
-            )
-            return qbo_id
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        qbo_id = QBOService.save_and_log(
+            qbo_purchase, client,
+            entity_type='expense',
+            qbo_entity_type='Purchase',
+            entity_id=expense.pk,
+        )
+        expense.qbo_id = qbo_id
+        expense.save(update_fields=['qbo_id'])
+        return qbo_id
 
     @staticmethod
     def update_expense(expense):
@@ -814,27 +736,13 @@ class QBOExpenseSyncService:
         existing.TxnDate = expense.purchased_on.isoformat()
         existing.Line = [QBOExpenseSyncService._build_expense_line(expense)]
 
-        try:
-            existing.save(qb=client)
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=expense.qbo_id,
-                action='update',
-                status='success',
-            )
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='expense',
-                entity_id=expense.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=expense.qbo_id,
-                action='update',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        QBOService.save_and_log(
+            existing, client,
+            entity_type='expense',
+            qbo_entity_type='Purchase',
+            entity_id=expense.pk,
+            action='update',
+        )
 
     @staticmethod
     def void_expense(expense):
@@ -923,31 +831,15 @@ class QBOExpenseSyncService:
 
         qbo_purchase = QBOExpenseSyncService._build_qbo_purchase_for_reimbursement(batch)
 
-        try:
-            qbo_purchase.save(qb=client)
-            qbo_id = str(qbo_purchase.Id)
-            batch.qbo_id = qbo_id
-            batch.save(update_fields=['qbo_id'])
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=qbo_id,
-                action='create',
-                status='success',
-            )
-            return qbo_id
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id='',
-                action='create',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        qbo_id = QBOService.save_and_log(
+            qbo_purchase, client,
+            entity_type='reimbursement',
+            qbo_entity_type='Purchase',
+            entity_id=batch.pk,
+        )
+        batch.qbo_id = qbo_id
+        batch.save(update_fields=['qbo_id'])
+        return qbo_id
 
     @staticmethod
     def update_reimbursement(batch):
@@ -980,27 +872,13 @@ class QBOExpenseSyncService:
             for e in batch.expenses.all().order_by('pk')
         ]
 
-        try:
-            existing.save(qb=client)
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=batch.qbo_id,
-                action='update',
-                status='success',
-            )
-        except Exception as e:
-            QBOService.log_sync(
-                entity_type='reimbursement',
-                entity_id=batch.pk,
-                qbo_entity_type='Purchase',
-                qbo_entity_id=batch.qbo_id,
-                action='update',
-                status='failed',
-                error_message=str(e),
-            )
-            raise
+        QBOService.save_and_log(
+            existing, client,
+            entity_type='reimbursement',
+            qbo_entity_type='Purchase',
+            entity_id=batch.pk,
+            action='update',
+        )
 
     @staticmethod
     def void_reimbursement(batch):
