@@ -136,7 +136,7 @@ class ExpenseCreateTest(TestCase):
         r = self.client_http.post('/api/expenses/', payload, content_type='application/json')
         self.assertEqual(r.status_code, 201, r.content)
         exp = Expense.objects.get()
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
         mock_push.assert_called_once()
 
 
@@ -256,13 +256,13 @@ class ExpenseRejectRetryTest(TestCase):
             accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
-            status=Expense.STATUS_SYNC_FAILED,
+            qbo_sync_status=Expense.SYNC_FAILED,
         )
         self.client_http.force_login(self.admin)
         r = self.client_http.post(f'/api/expenses/{exp.pk}/retry-sync/')
         self.assertEqual(r.status_code, 200, r.content)
         exp.refresh_from_db()
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
 
 
 class ExpenseDeleteTest(TestCase):

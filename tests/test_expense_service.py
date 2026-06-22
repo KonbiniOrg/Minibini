@@ -78,7 +78,7 @@ class ExpenseSubmitCompanyTest(TestCase):
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
         )
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
         mock_push.assert_called_once()
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
@@ -92,7 +92,7 @@ class ExpenseSubmitCompanyTest(TestCase):
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
         )
-        self.assertEqual(exp.status, Expense.STATUS_SYNC_FAILED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_FAILED)
         self.assertIn('qbo down', exp.qbo_sync_error)
 
     def test_submit_company_requires_payment_account(self):
@@ -129,7 +129,7 @@ class ExpenseUpdateTest(TestCase):
             accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
-            status=Expense.STATUS_SYNCED,
+            qbo_sync_status=Expense.SYNC_SYNCED,
             qbo_id='9001',
         )
         ExpenseService.update(expense=exp, actor=self.user, amount=Decimal('110.00'))
@@ -172,7 +172,7 @@ class ExpenseDeleteTest(TestCase):
             entered_by=self.user, amount=Decimal('10.00'),
             purchased_on=date(2026, 4, 9), accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
-            payment_account_id='57', status=Expense.STATUS_SYNCED, qbo_id='9001',
+            payment_account_id='57', qbo_sync_status=Expense.SYNC_SYNCED, qbo_id='9001',
         )
         pk = exp.pk
         ExpenseService.delete(expense=exp, actor=self.user)
@@ -210,7 +210,7 @@ class ExpenseRejectTest(TestCase):
             entered_by=self.admin, amount=Decimal('100.00'),
             purchased_on=date(2026, 4, 9), accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
-            payment_account_id='57', status=Expense.STATUS_SYNCED,
+            payment_account_id='57', qbo_sync_status=Expense.SYNC_SYNCED,
         )
         with self.assertRaises(ValidationError):
             ExpenseService.reject(expense=exp, actor=self.admin)
@@ -237,11 +237,11 @@ class ExpenseRetrySyncTest(TestCase):
             purchased_on=date(2026, 4, 9), accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
-            status=Expense.STATUS_SYNC_FAILED,
+            qbo_sync_status=Expense.SYNC_FAILED,
             qbo_sync_error='previous failure',
         )
         result = ExpenseService.retry_sync(expense=exp, actor=self.user)
-        self.assertEqual(result.status, Expense.STATUS_SYNCED)
+        self.assertEqual(result.qbo_sync_status, Expense.SYNC_SYNCED)
         self.assertEqual(result.qbo_sync_error, '')
         mock_push.assert_called_once()
 

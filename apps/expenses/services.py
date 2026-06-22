@@ -79,17 +79,9 @@ class ExpenseService:
 
     @staticmethod
     def _push_and_set_status(expense):
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            QBOExpenseSyncService.push_expense(expense)
-            expense.status = Expense.STATUS_SYNCED
-            expense.qbo_sync_error = ''
-            expense.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO expense push failed for expense %s', expense.pk)
-            expense.status = Expense.STATUS_SYNC_FAILED
-            expense.qbo_sync_error = str(e)
-            expense.save(update_fields=['status', 'qbo_sync_error'])
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_create(
+            expense, lambda: QBOExpenseSyncService.push_expense(expense))
 
     @staticmethod
     def update(*, expense, actor, **fields):
@@ -204,25 +196,11 @@ class ExpenseService:
 
     @staticmethod
     def _resync(expense):
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            if expense.reimbursement_id:
-                QBOExpenseSyncService.update_reimbursement(expense.reimbursement)
-            else:
-                QBOExpenseSyncService.update_expense(expense)
-            if expense.status == Expense.STATUS_SYNC_FAILED:
-                expense.status = Expense.STATUS_SYNCED
-                expense.qbo_sync_error = ''
-                expense.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO resync failed for expense %s', expense.pk)
-            if expense.reimbursement_id:
-                batch = expense.reimbursement
-                batch.mark_failed(e)
-            else:
-                expense.status = Expense.STATUS_SYNC_FAILED
-                expense.qbo_sync_error = str(e)
-                expense.save(update_fields=['status', 'qbo_sync_error'])
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        if expense.reimbursement_id:
+            QBOSyncService.run_resync(expense.reimbursement, lambda: QBOExpenseSyncService.update_reimbursement(expense.reimbursement))
+        else:
+            QBOSyncService.run_resync(expense, lambda: QBOExpenseSyncService.update_expense(expense))
 
     @staticmethod
     def delete(*, expense, actor):
@@ -279,7 +257,7 @@ class ExpenseService:
 
     @staticmethod
     def retry_sync(*, expense, actor):
-        if expense.status != Expense.STATUS_SYNC_FAILED:
+        if expense.qbo_sync_status != Expense.SYNC_FAILED:
             raise ValidationError(
                 'Can only retry sync on expenses in sync_failed status.'
             )

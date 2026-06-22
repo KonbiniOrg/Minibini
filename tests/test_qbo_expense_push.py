@@ -614,8 +614,8 @@ class SFMOMAIntegrationTest(TestCase):
 
         # Both expenses pushed to QBO
         self.assertEqual(mock_push.call_count, 2)
-        self.assertEqual(exp1.status, Expense.STATUS_SYNCED)
-        self.assertEqual(exp2.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp1.qbo_sync_status, Expense.SYNC_SYNCED)
+        self.assertEqual(exp2.qbo_sync_status, Expense.SYNC_SYNCED)
 
     @patch('apps.qbo.services.QBOService.get_client')
     def test_full_company_paid_push_happy_path(self, mock_get_client):
@@ -644,6 +644,6 @@ class SFMOMAIntegrationTest(TestCase):
             )
 
         exp.refresh_from_db()
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
         self.assertEqual(exp.qbo_id, '9001')
         wrap_build.assert_called_once()
