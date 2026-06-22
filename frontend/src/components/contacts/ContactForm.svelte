@@ -30,10 +30,11 @@
 
   function handleSubmit(e) {
     e.preventDefault();
-    const data = { ...form };
-    if (data.business === '' || data.business == null) {
-      data.business = null;
-    }
+    // The serializer's `business` field is read-only; the writable field is
+    // `business_id` (PrimaryKeyRelatedField, source='business'). Send that key
+    // or the association is silently dropped.
+    const { business, ...rest } = form;
+    const data = { ...rest, business_id: (business === '' || business == null) ? null : business };
     onSubmit(data);
   }
 </script>

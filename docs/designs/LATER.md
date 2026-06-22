@@ -797,15 +797,6 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ entering a non-round amount (e.g. `19.99`) in any money field saves
   cleanly, with regression tests, and no `type="number"` money input sends a raw float.
 
-- **ContactForm submits `business` but the writable field is `business_id` — association silently dropped.** — _added 2026-06-21_
-  `ContactForm.svelte` sends `data.business` (a numeric id) in the POST/PATCH body, but the
-  Contact serializer's `business` field is read-only (nested `BusinessSummarySerializer`); the
-  writable field is `business_id`. So setting a contact's business via the form is accepted
-  by the API without error but the association is never persisted. Pre-existing, surfaced
-  during the picker code review.
-  _Done when:_ the form submits `business_id` (and the serializer accepts it) so the
-  association persists after save.
-
 - **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
   When adding a PO line for a job that already has materials, there's no way to
   deterministically attach the line to a *specific* existing pending material.
