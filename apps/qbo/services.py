@@ -93,6 +93,40 @@ class QBOService:
                                 action=action, status='failed', error_message=str(e))
             raise
 
+    @staticmethod
+    def delete_and_log(sdk_class, qbo_id, client, *, entity_type, qbo_entity_type, entity_id):
+        """Fetch and delete a QBO SDK object; write a QBOSyncLog row with action='delete'.
+
+        Idempotent: if QBO reports the object is already gone (ObjectNotFoundException /
+        error_code 610), treat it as a successful delete — log success and return normally.
+
+        On a real failure: log a failed row (qbo_entity_id='') and re-raise so the caller
+        can refuse the local delete.
+        """
+        from quickbooks.exceptions import ObjectNotFoundException
+        try:
+            obj = sdk_class.get(qbo_id, qb=client)
+            obj.delete(qb=client)
+            QBOService.log_sync(
+                entity_type=entity_type, entity_id=entity_id,
+                qbo_entity_type=qbo_entity_type, qbo_entity_id=qbo_id,
+                action='delete', status='success',
+            )
+        except ObjectNotFoundException:
+            # Already gone in QBO — treat as a successful delete.
+            QBOService.log_sync(
+                entity_type=entity_type, entity_id=entity_id,
+                qbo_entity_type=qbo_entity_type, qbo_entity_id=qbo_id,
+                action='delete', status='success',
+            )
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type=entity_type, entity_id=entity_id,
+                qbo_entity_type=qbo_entity_type, qbo_entity_id='',
+                action='delete', status='failed', error_message=str(e),
+            )
+            raise
+
 
 class QBODisplayNameService:
     """Generates QBO-compliant DisplayNames for customer/vendor records."""
@@ -1067,3 +1101,18 @@ class QBOSyncService:
         except Exception as e:  # noqa: BLE001
             logger.exception('QBO resync failed for %r', record)
             record.mark_failed(e)
+
+    @staticmethod
+    def run_delete(record, delete_callable):
+        """delete_callable() performs the QBO delete.
+
+        On success: returns None.
+        On failure: marks the record sync_failed AND re-raises — the re-raise is
+        deliberate so the caller can abort the local delete and retain the row.
+        This is the key difference from run_create/run_resync, which swallow.
+        """
+        try:
+            delete_callable()
+        except Exception as e:
+            record.mark_failed(e)
+            raise
