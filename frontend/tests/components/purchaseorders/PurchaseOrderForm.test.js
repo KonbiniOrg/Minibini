@@ -36,7 +36,7 @@ describe('PurchaseOrderForm', () => {
     const pickerInput = getByPlaceholderText('Search business…');
     await fireEvent.input(pickerInput, { target: { value: 'Ac' } });
     await new Promise((r) => setTimeout(r, 300));
-    expect(api.get).toHaveBeenCalledWith('/api/businesses/?search=Ac&page_size=10');
+    expect(api.get).toHaveBeenCalledWith('/api/businesses/?search=Ac&page_size=25');
 
     // Pick the result
     const acmeBtn = await findByRole('button', { name: /Acme/ });

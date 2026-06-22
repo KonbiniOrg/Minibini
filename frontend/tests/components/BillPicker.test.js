@@ -16,7 +16,7 @@ describe('BillPicker', () => {
     const { getByPlaceholderText, findByRole } = render(BillPicker, { props: { onSelect } });
     await fireEvent.input(getByPlaceholderText(/bill/i), { target: { value: '7788' } });
     await new Promise((r) => setTimeout(r, 300));
-    expect(api.get).toHaveBeenCalledWith('/api/bills/?search=7788&page_size=10');
+    expect(api.get).toHaveBeenCalledWith('/api/bills/?search=7788&page_size=25');
     await fireEvent.mouseDown(await findByRole('button', { name: /INV-7788/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ bill_id: 4 }));
   });

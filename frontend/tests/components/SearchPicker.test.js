@@ -43,6 +43,21 @@ describe('SearchPicker', () => {
     expect(resolveLabel).toHaveBeenCalledWith(42, null);
   });
 
+  it('shows "showing N of M" hint when total exceeds results', async () => {
+    const search = vi.fn().mockResolvedValue({ rows: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }], total: 16 });
+    const { getByPlaceholderText, findByText } = render(SearchPicker, {
+      props: {
+        search,
+        resolveLabel: vi.fn().mockResolvedValue(null),
+        rowLabel: (r) => r.name,
+        placeholder: 'Search…',
+      },
+    });
+    await fireEvent.input(getByPlaceholderText('Search…'), { target: { value: 'a' } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await findByText(/showing 2 of 16/i)).toBeInTheDocument();
+  });
+
   it('clears the selection', async () => {
     const onClear = vi.fn();
     const { getByRole, findByText } = render(SearchPicker, {

@@ -1,16 +1,18 @@
 <script>
   import SearchPicker from './SearchPicker.svelte';
   import { api } from '../lib/api.js';
+  import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
   let { value = $bindable(null), selectedItem = null, onSelect = () => {},
         params = {}, disabled = false } = $props();
   const label = (i) => `${i.code} — ${i.description ?? ''}`;
   function buildQuery(q) {
-    const usp = new URLSearchParams({ search: q, page_size: '10' });
+    const usp = new URLSearchParams({ search: q, page_size: String(PICKER_PAGE_SIZE) });
     for (const [k, v] of Object.entries(params)) usp.set(k, String(v));
     return usp.toString();
   }
   const search = (q) =>
-    api.get(`/api/inventory/?${buildQuery(q)}`).then((d) => d.results || d);
+    api.get(`/api/inventory/?${buildQuery(q)}`)
+       .then((d) => ({ rows: d.results || d, total: d.count ?? (d.results || d).length }));
   const resolveLabel = (id, item) =>
     item ? Promise.resolve(label(item))
     : id == null ? Promise.resolve(null)

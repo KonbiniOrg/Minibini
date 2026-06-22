@@ -1,5 +1,8 @@
 export const PAGE_SIZE = 25;
 
+// How many matches each type-ahead picker requests. One spot — change here.
+export const PICKER_PAGE_SIZE = 25;
+
 export function pageFromUrl(url) {
   const match = url?.match(/page=(\d+)/);
   return match ? parseInt(match[1]) : 1;

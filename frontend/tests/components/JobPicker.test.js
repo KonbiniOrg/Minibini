@@ -14,7 +14,7 @@ describe('JobPicker', () => {
     const { getByPlaceholderText, findByRole } = render(JobPicker, { props: { onSelect } });
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'wid' } });
     await new Promise((r) => setTimeout(r, 300));
-    expect(api.get).toHaveBeenCalledWith('/api/jobs/?search=wid&page_size=10');
+    expect(api.get).toHaveBeenCalledWith('/api/jobs/?search=wid&page_size=25');
     await fireEvent.mouseDown(await findByRole('button', { name: /JOB-1/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ job_id: 1 }));
   });

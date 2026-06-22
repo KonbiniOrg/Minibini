@@ -21,16 +21,23 @@
 
   let query = $state('');
   let results = $state([]);
+  let total = $state(0);            // total matches available (for the truncation hint)
   let showResults = $state(false);
   let selectedLabel = $state('');
   let labelForValue = $state(null); // which `value` selectedLabel describes
   let timer = null;
 
+  // `search` may return a plain row[] or { rows, total }. Normalize both so the
+  // dropdown can show "showing N of M" when the result set is capped.
   function runSearch() {
     const q = query.trim();
-    if (!q) { results = []; showResults = false; return; }
+    if (!q) { results = []; total = 0; showResults = false; return; }
     Promise.resolve(search(q))
-      .then((rows) => { results = rows || []; showResults = true; })
+      .then((res) => {
+        results = Array.isArray(res) ? res : (res?.rows ?? []);
+        total = Array.isArray(res) ? res.length : (res?.total ?? results.length);
+        showResults = true;
+      })
       .catch((e) => console.error(e));
   }
 
@@ -42,7 +49,7 @@
 
   function onFocus() { if (query.trim()) showResults = true; }
   function onBlur() { setTimeout(() => { showResults = false; }, 200); }
-  function close() { showResults = false; query = ''; results = []; }
+  function close() { showResults = false; query = ''; results = []; total = 0; }
 
   let pendingLabel = null; // label captured at pick time, applied when value updates
 
@@ -101,6 +108,9 @@
             </button>
           </li>
         {/each}
+        {#if total > results.length}
+          <li class="sp-more">showing {results.length} of {total} — keep typing to narrow</li>
+        {/if}
       {:else}
         <li class="sp-empty">No matches.</li>
       {/if}
@@ -116,5 +126,6 @@
     background: none; border: none; padding: 6px 8px; cursor: pointer; font-size: 13px; }
   .sp-results li button:hover { background: #eef; }
   .sp-empty { padding: 6px 8px; color: #777; font-size: 13px; }
+  .sp-more { padding: 6px 8px; color: #777; font-size: 12px; font-style: italic; }
   .sp-selected { font-size: 14px; }
 </style>

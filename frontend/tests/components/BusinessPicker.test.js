@@ -14,7 +14,7 @@ describe('BusinessPicker', () => {
     const { getByPlaceholderText, findByRole } = render(BusinessPicker, { props: { onSelect } });
     await fireEvent.input(getByPlaceholderText(/business/i), { target: { value: 'ac' } });
     await new Promise((r) => setTimeout(r, 300));
-    expect(api.get).toHaveBeenCalledWith('/api/businesses/?search=ac&page_size=10');
+    expect(api.get).toHaveBeenCalledWith('/api/businesses/?search=ac&page_size=25');
     await fireEvent.mouseDown(await findByRole('button', { name: /Acme Steel/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ business_id: 5 }));
   });
