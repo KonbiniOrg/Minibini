@@ -160,9 +160,9 @@ class BillPaymentSerializer(serializers.ModelSerializer):
         model = BillPayment
         fields = ['payment_id', 'amount', 'payment_date', 'reference',
                   'payment_account_id', 'created_by', 'created_date',
-                  'qbo_id', 'qbo_sync_status', 'cleared_date']
+                  'qbo_id', 'qbo_sync_status', 'qbo_sync_error', 'cleared_date']
         read_only_fields = ['payment_id', 'created_by', 'created_date',
-                            'qbo_id', 'qbo_sync_status', 'cleared_date']
+                            'qbo_id', 'qbo_sync_status', 'qbo_sync_error', 'cleared_date']
 
 
 class BillSerializer(serializers.ModelSerializer):

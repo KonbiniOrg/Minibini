@@ -616,12 +616,20 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
     def payments(self, request, pk=None):
         bill = self.get_object()
         data = request.data
+        payment_account_id = (data.get('payment_account_id') or '').strip()
+        from apps.qbo.services import QBOService
+        if QBOService.get_client() and not payment_account_id:
+            return Response(
+                {'payment_account_id': ['Required while QuickBooks is connected.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             payment = BillPaymentService.record_payment(
                 bill,
                 amount=data.get('amount'),
                 payment_date=data.get('payment_date'),
                 reference=data.get('reference', ''),
+                payment_account_id=payment_account_id,
                 user=request.user,
             )
         except DjangoValidationError as e:

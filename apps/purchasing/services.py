@@ -936,7 +936,7 @@ class BillPaymentService:
 
     @staticmethod
     @transaction.atomic
-    def record_payment(bill, *, amount, payment_date, reference='', user=None):
+    def record_payment(bill, *, amount, payment_date, reference='', payment_account_id='', user=None):
         from apps.purchasing.models import BillPayment
         if bill.status not in BillPaymentService._PAYABLE:
             raise ValidationError(
@@ -946,16 +946,27 @@ class BillPaymentService:
         amount = BillPaymentService._normalize_amount(amount)
         payment = BillPayment(
             bill=bill, amount=amount, payment_date=payment_date,
-            reference=reference, created_by=user,
+            reference=reference, payment_account_id=payment_account_id or '',
+            created_by=user,
         )
         payment.full_clean()
         payment.save()
         bill.recompute_payment_status()
+        # Build history string: enrich with account display_name when resolvable.
+        history_action = f'Payment recorded: {amount}'
+        if payment_account_id:
+            try:
+                from apps.qbo.services import QBOPaymentAccountService
+                display_name = QBOPaymentAccountService.lookup(payment_account_id)['display_name']
+                history_action = f'Payment recorded: {amount} from {display_name}'
+            except (ValueError, Exception):
+                pass
+        if reference:
+            history_action += f' (ref {reference})'
         record_history(
             entry_type='action', object_type='bill', object_id=bill.pk,
             user=user,
-            changes={'_action': f'Payment recorded: {amount}'
-                                 + (f' (ref {reference})' if reference else '')},
+            changes={'_action': history_action},
         )
         BillPaymentService._push_to_qbo(payment)
         return payment

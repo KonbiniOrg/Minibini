@@ -1,9 +1,12 @@
+import json
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APIClient
 from apps.contacts.models import Business, Contact
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, Configuration
 from apps.purchasing.models import Bill, BillLineItem
 
 User = get_user_model()
@@ -65,6 +68,34 @@ class BillPaymentApiTest(TestCase):
         d = self.client.delete(f'/api/bills/{self.bill.pk}/payments/{pid}/')
         self.assertEqual(d.status_code, 200)
         self.assertIn('message', d.data)
+
+    @patch('apps.qbo.services.QBOService.get_client', return_value=object())
+    def test_record_payment_requires_account_when_qbo_connected(self, _c):
+        """When QBO is connected, omitting payment_account_id must return 400."""
+        resp = self.client.post(
+            f'/api/bills/{self.bill.pk}/payments/',
+            {'amount': '10.00', 'payment_date': timezone.now().isoformat()},
+            format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('payment_account_id', resp.json())
+
+    @patch('apps.qbo.services.QBOBillSyncService.push_bill_payment', return_value=None)
+    @patch('apps.qbo.services.QBOService.get_client', return_value=object())
+    def test_record_payment_with_account_returns_qbo_sync_status(self, _c, _p):
+        """When account is supplied, the response must include qbo_sync_status."""
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': json.dumps([
+                {'qbo_account_id': '35', 'display_name': 'Checking', 'account_type': 'Bank'},
+            ])},
+        )
+        resp = self.client.post(
+            f'/api/bills/{self.bill.pk}/payments/',
+            {'amount': '10.00', 'payment_date': timezone.now().isoformat(),
+             'payment_account_id': '35'},
+            format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertIn('qbo_sync_status', resp.json())
 
     def test_patch_payment_updates_reference_and_recomputes_status(self):
         # Record a partial payment (40 of 100) — bill should be partly_paid
