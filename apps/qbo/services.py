@@ -518,6 +518,32 @@ class QBOAccountsService:
         return results
 
 
+class QBOPaymentAccountService:
+    """Owns the `qbo_payment_accounts` Configuration lookup. Shared by the
+    expense/reimbursement Purchase push and the bill-payment push."""
+
+    @staticmethod
+    def load_accounts():
+        """Parsed payment-account config JSON; [] if unset/blank."""
+        try:
+            raw = Configuration.objects.get(key='qbo_payment_accounts').value
+        except Configuration.DoesNotExist:
+            return []
+        if not raw:
+            return []
+        return json.loads(raw)
+
+    @staticmethod
+    def lookup(payment_account_id):
+        """Return the dict for a given qbo_account_id, or raise ValueError."""
+        for a in QBOPaymentAccountService.load_accounts():
+            if a['qbo_account_id'] == payment_account_id:
+                return a
+        raise ValueError(
+            f"payment_account_id={payment_account_id!r} not in configured payment accounts"
+        )
+
+
 class QBOExpenseSyncService:
     """Pushes Minibini expenses and reimbursement batches to QBO.
     Follows the pattern of QBOBillSyncService."""
@@ -547,24 +573,11 @@ class QBOExpenseSyncService:
 
     @staticmethod
     def _load_payment_accounts():
-        """Load the payment account config JSON from Configuration."""
-        try:
-            raw = Configuration.objects.get(key='qbo_payment_accounts').value
-        except Configuration.DoesNotExist:
-            return []
-        if not raw:
-            return []
-        return json.loads(raw)
+        return QBOPaymentAccountService.load_accounts()
 
     @staticmethod
     def _lookup_account(payment_account_id):
-        """Return the dict for a given qbo_account_id, or raise ValueError."""
-        for a in QBOExpenseSyncService._load_payment_accounts():
-            if a['qbo_account_id'] == payment_account_id:
-                return a
-        raise ValueError(
-            f"payment_account_id={payment_account_id!r} not in configured payment accounts"
-        )
+        return QBOPaymentAccountService.lookup(payment_account_id)
 
     @staticmethod
     def _derive_payment_type(account_type, reference_number):
