@@ -283,9 +283,10 @@
                 <button onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
                 <button onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
                 <button onclick={() => onDeleteLineItem(li)}>Delete</button>
-                {#if canChangeJob(li) && editingId !== li.line_item_id}
-                  <button onclick={() => openChangeJob(li)}>Change Job</button>
-                {/if}
+                <!-- No "Change Job" here: the Edit button already reassigns the
+                     job (saveEdit routes job changes through onChangeLineJob).
+                     The received/issued view keeps its Change Job button since
+                     that view has no Edit. -->
               </td>
             {/if}
             {#if showReceived}

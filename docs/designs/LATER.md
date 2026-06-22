@@ -60,6 +60,21 @@ page stays whole.
 
 ## Open
 
+- **Reassigning a PO line's job/material is tricky — rethink the whole flow.** — _added 2026-06-21_
+  Changing which job a PO line (and its linked material) belongs to currently has
+  awkward, split entry points. On a **draft** PO the inline **Edit** changes the job
+  (routed through `onChangeLineJob`); on an **issued/received** PO there's no Edit, so a
+  standalone **Change Job** modal is the only path, gated by `canChangeJob` (allowed when
+  the linked material's `consumption_state === 'pending'`). The draft-only duplicate
+  "Change Job" button was removed 2026-06-21 (Edit covers it), but the underlying model is
+  still murky: the rules differ by PO status × material consumption_state, and reassigning
+  an already-received line's material to a different job has cost/earmark implications that
+  aren't obviously surfaced. Want to think more about the right mental model and UX for
+  "this material actually belongs to a different job" before committing to a design.
+  _Done when:_ we've settled how (and when) a line's job/material allocation can change
+  across the PO lifecycle, with one coherent UX, and documented it in
+  `materials-inventory-and-purchasing.md`.
+
 - **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
   `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
   calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
