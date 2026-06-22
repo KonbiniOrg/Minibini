@@ -54,13 +54,13 @@
 </script>
 
 <fieldset>
-  <legend><strong>Inventory item (optional)</strong></legend>
+  <legend><strong>Purchased item (optional)</strong></legend>
 
   {#if !jobId}
     <p><em>Choose a job above to record what this bought. The expense is recorded
       against the job either way.</em></p>
   {:else if !adding}
-    <button type="button" onclick={startAdd}>+ Choose the inventory item</button>
+    <button type="button" onclick={startAdd}>+ Add a purchased item</button>
   {:else}
     <p>
       <label for="mp-pli">Price list item</label><br>
