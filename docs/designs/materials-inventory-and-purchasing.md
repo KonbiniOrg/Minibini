@@ -998,17 +998,19 @@ physical receipt (the linked PO does).
 | `bill` | FK CASCADE | |
 | `amount` | `Decimal(10,2)` | Must be > 0 |
 | `payment_date` | datetime | |
-| `method` | choices | `check`, `credit_card`, `ach`, `cash`, `other` |
-| `reference` | `CharField(100)` blank | Cheque number, transaction ID, etc. |
+| `payment_account_id` | `CharField(50)` blank | Which QBO bank/CC account paid (a `qbo_account_id` from `Configuration['qbo_payment_accounts']`); drives the QBO `BillPayment` PayType. Required while QBO is connected. **Replaces the old `method` field** — the human descriptor is derived from the account + reference. |
+| `reference` | `CharField(100)` blank | Cheque number, transaction ID, etc.; becomes the QBO `DocNumber`. |
 | `created_by` | FK User SET_NULL nullable (`related_name='recorded_bill_payments'`) | |
 | `created_date` | datetime | auto |
 
-**Clearance-IN fields** (written only by the inbound polling service):
+**QBO sync fields** (from the `QBOSyncable` base — `qbo_id` is written by the push, `cleared_date` by the deferred clearance poller):
 
 | Field | Type | Notes |
 |---|---|---|
-| `qbo_payment_id` | `CharField(50)` blank | QBO BillPayment ID once cleared |
-| `cleared_date` | datetime nullable | Set by `QBOBillPaymentPollingService` when QBO confirms clearance |
+| `qbo_id` | `CharField(50)` blank | QBO `BillPayment` Id; written by `push_bill_payment` (was `qbo_payment_id`) |
+| `qbo_sync_status` | choices | `pending` / `synced` / `sync_failed` (from `QBOSyncable`) |
+| `qbo_sync_error` | text blank | Last push error message |
+| `cleared_date` | datetime nullable | Set by `QBOBillPaymentPollingService` when QBO confirms clearance (deferred — poller stubbed) |
 
 ### `BillPaymentService`
 

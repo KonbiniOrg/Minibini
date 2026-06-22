@@ -642,14 +642,13 @@ IMAP-SMTP machinery and tend to be worked together.
   calls `.save()` (or otherwise invokes the completion gate), with a test that a cancelled last-invoice on an
   all-shipped job completes the job.
 
-- **Reimbursement QBO push fails consistently with an error.** — _added 2026-06-14_
-  Surfaced during Expenses UI testing: creating a `Reimbursement` batch (`ReimbursementService.create_batch`
-  → `QBOExpenseSyncService.push_reimbursement`) fails on the QBO push, leaving the batch in `sync_failed`
-  every time. The DB commit stands (expenses still flip to `reimbursed`), but the QBO sync never succeeds.
-  Error text not yet captured here — paste it in when reproducing. Could be env-only (QBO connection/
-  credentials in this dev env) or a real defect in the reimbursement push payload; needs triage to tell which.
-  _Done when:_ the push succeeds against a connected QBO sandbox, or the failure is root-caused to an env/config
-  issue and documented (with the retry path via `ReimbursementService.retry_sync` confirmed working).
+- ~~**Reimbursement QBO push fails consistently with an error.**~~ — _resolved 2026-06-21 (ENV-ONLY)_
+  Root-caused: no code defect. `push_reimbursement` is structurally identical to the working expense
+  push; a characterization test with a mocked client passes on first run (`tests/test_qbo_reimbursement_push.py`).
+  The dev `sync_failed` is purely the missing QBO sandbox: `get_client()` → None →
+  `ValueError('No active QBO connection')` → `QBOSyncService.run_create` records `sync_failed`. The local
+  commit stands (batch + reimbursed expenses); recovery is the existing `ReimbursementService.retry_sync`
+  once a sandbox is connected.
 
 - **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
   An expense is single-mode (cost OR stock receipt) and records one purchased item.
@@ -668,13 +667,11 @@ IMAP-SMTP machinery and tend to be worked together.
   mixed receipt and prompts the user to split it — so a non-inventory cost can never be
   silently swallowed by a stock receipt.
 
-- **Write-off → QBO?** — _added 2026-06-15_
-  Inventory write-off (`InventoryService.write_off`) zeroes a lot's QOH and books
-  the remainder to `qty_wasted`, recording an `InventoryHistory` entry. It does
-  **not** push anything to QBO. Decide whether written-off inventory should post
-  to QBO as an expense / COGS / shrinkage adjustment, or stay inventory-only.
-  _Done when:_ a decision is recorded — either a QBO push path for write-offs
-  exists, or it's documented that write-offs are deliberately inventory-only.
+- ~~**Write-off → QBO?**~~ — _resolved 2026-06-21_ Decision: write-offs stay **inventory-only**, no QBO
+  push. Inventory cost is expensed at purchase time (bills/expenses post to expense/COGS accounts, not a
+  capitalized inventory asset), so a write-off has no QBO consequence and pushing one would double-count.
+  Recorded in `quickbooks-integration.md` ("Inventory write-offs are not pushed"). Revisit only if QBO is
+  ever switched to true inventory-asset tracking.
 
 - **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
   Background: the original plan was *delete-on-spend*, but the code review surfaced

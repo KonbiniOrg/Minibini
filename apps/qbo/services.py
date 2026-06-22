@@ -1010,10 +1010,10 @@ class QBOBillPaymentPollingService:
 
     @staticmethod
     def poll_all():
-        """Clear per-BillPayment from QBO reconciliation. STUBBED: the QBO fetch
-        is wired in the upcoming QBO session. Today, no connection is reported as
-        an error and (when connected) there is nothing to clear because payment
-        push is itself stubbed (no qbo_payment_id is ever set yet)."""
+        """Clear per-BillPayment from QBO reconciliation. STUBBED: all QBO ->
+        Minibini polling is deferred to a dedicated later session. The
+        bill-payment push is live and writes `qbo_id`, so rows can match the
+        filter below; the inner loop just doesn't fetch/confirm clearance yet."""
         from apps.purchasing.models import BillPayment
         stats = {'checked': 0, 'cleared': 0, 'errors': []}
         client = QBOService.get_client()
