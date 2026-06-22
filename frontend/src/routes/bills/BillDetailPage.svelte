@@ -88,8 +88,15 @@
   }
 
   async function deletePayment(pid) {
-    await api.delete(`/api/bills/${bill.bill_id}/payments/${pid}/`);
-    load();
+    error = null;
+    try {
+      await api.delete(`/api/bills/${bill.bill_id}/payments/${pid}/`);
+      load();
+    } catch (e) {
+      // A synced payment whose QBO void fails is refused (400) and retained
+      // marked sync-failed — surface that to the user instead of silently failing.
+      error = e.message;
+    }
   }
 
   async function deleteBill() {

@@ -673,6 +673,26 @@ IMAP-SMTP machinery and tend to be worked together.
   Recorded in `quickbooks-integration.md` ("Inventory write-offs are not pushed"). Revisit only if QBO is
   ever switched to true inventory-asset tracking.
 
+- **Reimbursement batch delete/unwind isn't exposed in the SPA.** — _added 2026-06-22_
+  The backend fully supports unwinding a reimbursement batch — `ReimbursementService.delete`
+  voids the QBO Purchase (now symmetric: a failed void refuses the delete and retains the batch
+  marked `sync_failed`), flips its expenses back to `submitted`, and deletes the batch row, behind
+  the confirm-delete endpoint `DELETE /api/reimbursements/{id}/?confirm=true`. But **no SPA component
+  calls it** — `UserReimbursementPanel` only creates batches and retries sync; there's no
+  delete/unwind button. So a batch (e.g. one stuck in `sync_failed`) can't be unwound from the UI.
+  _Done when:_ the reimbursement panel (or a batch detail view) has a confirm-guarded delete/unwind
+  action wired to the existing endpoint, surfacing the 400 the same way the other delete actions do.
+
+- **Failed-*delete* batch vs. retry-sync ambiguity.** — _added 2026-06-22_
+  With void symmetry, a reimbursement batch whose QBO *delete* fails is retained marked `sync_failed`
+  — the same status a failed *push* uses. The existing `retry-sync` action calls `push_reimbursement`,
+  which short-circuits on the still-set `qbo_id` (harmless: it just re-marks the batch `synced`), so
+  retry-sync on a failed-delete batch does NOT re-attempt the delete — the user must re-invoke delete.
+  Minor and recoverable, but the single `sync_failed` state can't distinguish "push failed" from
+  "delete failed." Revisit if it confuses users (options: a distinct delete-pending signal, or make
+  retry context-aware). _Done when:_ decided — either keep the shared state with the documented
+  re-invoke-delete recovery, or differentiate.
+
 - **Maybe fold the invoice push into `save_and_log`?** — _added 2026-06-21_
   Every QBO create/update push now routes through `QBOService.save_and_log` (and the deletes through
   `delete_and_log`). The **invoice send** (`InvoiceEmailService.send_invoice`) is the lone holdout: it does
