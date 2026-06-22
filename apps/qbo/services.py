@@ -424,25 +424,82 @@ class QBOBillSyncService:
 
     @staticmethod
     def push_bill_payment(payment):
-        """Push a Minibini BillPayment to QBO. STUBBED for now — the live QBO
-        BillPayment object is built in the upcoming QBO session. Today this
-        establishes the seam: no live connection is a clean no-op; with a
-        connection it ensures the bill exists in QBO and logs the attempt."""
+        """Create a QBO BillPayment for a recorded Minibini BillPayment.
+        Idempotent on payment.qbo_id. Never raises — records sync state on the
+        payment via QBOSyncService."""
+        if payment.qbo_id:
+            return payment.qbo_id
+        return QBOSyncService.run_create(
+            payment,
+            lambda: QBOBillSyncService._build_qbo_bill_payment(payment),
+        )
+
+    @staticmethod
+    def _build_qbo_bill_payment(payment):
+        from quickbooks.objects.billpayment import (
+            BillPayment as QBOBillPayment, BillPaymentLine,
+            CheckPayment, BillPaymentCreditCard,
+        )
+        from quickbooks.objects.base import Ref, LinkedTxn
+
         client = QBOService.get_client()
         if not client:
-            return None
+            raise ValueError('No active QBO connection')
+        if not payment.payment_account_id:
+            raise ValueError('No payment account selected for this bill payment')
+
         bill = payment.bill
         if not bill.qbo_id:
             QBOBillSyncService.push_bill(bill)
-        QBOService.log_sync(
-            entity_type='bill_payment',
-            entity_id=payment.pk,
-            qbo_entity_type='BillPayment',
-            qbo_entity_id=payment.qbo_id or '',
-            action='create',
-            status='success',
-        )
-        return payment.qbo_id or None
+
+        account = QBOPaymentAccountService.lookup(payment.payment_account_id)
+
+        qbp = QBOBillPayment()
+        qbp.TotalAmt = float(payment.amount)
+        if payment.reference:
+            qbp.DocNumber = payment.reference
+
+        vendor_ref = Ref()
+        vendor_ref.value = bill.business.qbo_vendor_id
+        qbp.VendorRef = vendor_ref
+
+        acct_ref = Ref()
+        acct_ref.value = account['qbo_account_id']
+        if account['account_type'] == 'Credit Card':
+            qbp.PayType = 'CreditCard'
+            cc = BillPaymentCreditCard()
+            cc.CCAccountRef = acct_ref
+            qbp.CreditCardPayment = cc
+        else:
+            qbp.PayType = 'Check'
+            chk = CheckPayment()
+            chk.BankAccountRef = acct_ref
+            qbp.CheckPayment = chk
+
+        line = BillPaymentLine()
+        line.Amount = float(payment.amount)
+        linked = LinkedTxn()
+        linked.TxnId = bill.qbo_id
+        linked.TxnType = 'Bill'
+        line.LinkedTxn = [linked]
+        qbp.Line = [line]
+
+        try:
+            qbp.save(qb=client)
+            qbo_id = str(qbp.Id)
+            QBOService.log_sync(
+                entity_type='bill_payment', entity_id=payment.pk,
+                qbo_entity_type='BillPayment', qbo_entity_id=qbo_id,
+                action='create', status='success',
+            )
+            return qbo_id
+        except Exception as e:
+            QBOService.log_sync(
+                entity_type='bill_payment', entity_id=payment.pk,
+                qbo_entity_type='BillPayment', qbo_entity_id='',
+                action='create', status='failed', error_message=str(e),
+            )
+            raise
 
     @staticmethod
     def _build_qbo_bill(bill):
