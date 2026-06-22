@@ -218,10 +218,7 @@ class ExpenseService:
             logger.exception('QBO resync failed for expense %s', expense.pk)
             if expense.reimbursement_id:
                 batch = expense.reimbursement
-                from apps.expenses.models import Reimbursement
-                batch.status = Reimbursement.STATUS_SYNC_FAILED
-                batch.qbo_sync_error = str(e)
-                batch.save(update_fields=['status', 'qbo_sync_error'])
+                batch.mark_failed(e)
             else:
                 expense.status = Expense.STATUS_SYNC_FAILED
                 expense.qbo_sync_error = str(e)
@@ -335,7 +332,6 @@ class ReimbursementService:
                 reference_number=reference_number,
                 notes=notes,
                 created_by=created_by,
-                status=Reimbursement.STATUS_PENDING,
             )
             for e in expenses:
                 e.reimbursement = batch
@@ -343,37 +339,21 @@ class ReimbursementService:
                 e.save(update_fields=['reimbursement', 'status'])
 
         # After commit: attempt QBO push.
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            QBOExpenseSyncService.push_reimbursement(batch)
-            batch.status = Reimbursement.STATUS_SYNCED
-            batch.qbo_sync_error = ''
-            batch.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO reimbursement push failed for batch %s', batch.pk)
-            batch.status = Reimbursement.STATUS_SYNC_FAILED
-            batch.qbo_sync_error = str(e)
-            batch.save(update_fields=['status', 'qbo_sync_error'])
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_create(batch, lambda: QBOExpenseSyncService.push_reimbursement(batch))
 
         return batch
 
     @staticmethod
     def retry_sync(*, batch, actor):
         from apps.expenses.models import Reimbursement
-        if batch.status != Reimbursement.STATUS_SYNC_FAILED:
+        if batch.qbo_sync_status != Reimbursement.SYNC_FAILED:
             raise ValidationError(
                 'Can only retry sync on batches in sync_failed status.'
             )
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            QBOExpenseSyncService.push_reimbursement(batch)
-            batch.status = Reimbursement.STATUS_SYNCED
-            batch.qbo_sync_error = ''
-            batch.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO reimbursement retry failed for batch %s', batch.pk)
-            batch.qbo_sync_error = str(e)
-            batch.save(update_fields=['qbo_sync_error'])
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_create(batch, lambda: QBOExpenseSyncService.push_reimbursement(batch))
+        batch.refresh_from_db()
         return batch
 
     @staticmethod

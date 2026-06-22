@@ -243,9 +243,9 @@
             <td>{b.expense_count}</td>
             <td style="text-align: right">${b.total}</td>
             <td>{b.reference_number || '—'}</td>
-            <td><em>{b.status}</em></td>
+            <td><em>{b.qbo_sync_status}</em></td>
             <td>
-              {#if b.status === 'sync_failed'}
+              {#if b.qbo_sync_status === 'sync_failed'}
                 <button type="button" onclick={() => retryBatch(b)}>retry push</button>
               {/if}
             </td>

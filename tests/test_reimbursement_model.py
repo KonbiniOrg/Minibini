@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, QBOSyncable
 from apps.expenses.models import Expense, Reimbursement
 
 User = get_user_model()
@@ -13,6 +13,13 @@ class ReimbursementModelTest(TestCase):
         self.worker = User.objects.create_user(username='worker', password='testpass')
         self.admin = User.objects.create_user(username='admin', password='testpass')
 
+    def test_reimbursement_uses_qbosyncable(self):
+        self.assertTrue(issubclass(Reimbursement, QBOSyncable))
+        self.assertTrue(hasattr(Reimbursement, 'qbo_sync_status'))
+        self.assertTrue(hasattr(Reimbursement, 'SYNC_PENDING'))
+        self.assertTrue(hasattr(Reimbursement, 'mark_synced'))
+        self.assertTrue(hasattr(Reimbursement, 'mark_failed'))
+
     def test_create_reimbursement_defaults_pending(self):
         r = Reimbursement.objects.create(
             purchased_by=self.worker,
@@ -20,13 +27,13 @@ class ReimbursementModelTest(TestCase):
             payment_account_id='42',
             created_by=self.admin,
         )
-        self.assertEqual(r.status, Reimbursement.STATUS_PENDING)
+        self.assertEqual(r.qbo_sync_status, Reimbursement.SYNC_PENDING)
         self.assertEqual(r.reference_number, '')
         self.assertEqual(r.notes, '')
         self.assertEqual(r.qbo_id, '')
 
     def test_status_choices_enumerated(self):
-        statuses = [s for s, _ in Reimbursement.STATUS_CHOICES]
+        statuses = [s for s, _ in Reimbursement.SYNC_STATUS_CHOICES]
         self.assertEqual(set(statuses), {'pending', 'synced', 'sync_failed'})
 
     def test_table_name(self):

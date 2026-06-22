@@ -67,7 +67,7 @@ class ReimbursementCreateBatchTest(TestCase):
             notes='',
             created_by=self.admin,
         )
-        self.assertEqual(batch.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(batch.qbo_sync_status, Reimbursement.SYNC_SYNCED)
         self.assertEqual(batch.qbo_id, '9100')
         self.assertEqual(batch.total, Decimal('138.25'))
         for e in (e1, e2, e3):
@@ -92,7 +92,7 @@ class ReimbursementCreateBatchTest(TestCase):
         # Expenses are still flipped to reimbursed — real-world check was cut.
         e1.refresh_from_db()
         self.assertEqual(e1.status, Expense.STATUS_REIMBURSED)
-        self.assertEqual(batch.status, Reimbursement.STATUS_SYNC_FAILED)
+        self.assertEqual(batch.qbo_sync_status, Reimbursement.SYNC_FAILED)
         self.assertIn('qbo down', batch.qbo_sync_error)
 
     def test_create_batch_rejects_mixed_user_expenses(self):
@@ -166,7 +166,7 @@ class ReimbursementRetrySyncTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNC_FAILED,
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
             qbo_sync_error='previous fail',
         )
 
@@ -174,7 +174,7 @@ class ReimbursementRetrySyncTest(TestCase):
     def test_retry_sync_calls_push_and_flips_to_synced(self, mock_push):
         mock_push.return_value = '9100'
         result = ReimbursementService.retry_sync(batch=self.batch, actor=self.admin)
-        self.assertEqual(result.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(result.qbo_sync_status, Reimbursement.SYNC_SYNCED)
         self.assertEqual(result.qbo_sync_error, '')
 
 
@@ -191,7 +191,7 @@ class ReimbursementDeleteTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNCED,
+            qbo_sync_status=Reimbursement.SYNC_SYNCED,
             qbo_id='9100',
         )
         self.e1 = Expense.objects.create(

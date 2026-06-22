@@ -75,7 +75,7 @@ class ReimbursementCreateEndpointTest(TestCase):
         )
         self.assertEqual(r.status_code, 201, r.content)
         batch = Reimbursement.objects.get()
-        self.assertEqual(batch.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(batch.qbo_sync_status, Reimbursement.SYNC_SYNCED)
         self.e1.refresh_from_db()
         self.assertEqual(self.e1.status, Expense.STATUS_REIMBURSED)
 
@@ -129,7 +129,7 @@ class ReimbursementRetrySyncEndpointTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNC_FAILED,
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
         )
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
@@ -139,7 +139,7 @@ class ReimbursementRetrySyncEndpointTest(TestCase):
         r = self.client_http.post(f'/api/reimbursements/{self.batch.pk}/retry-sync/')
         self.assertEqual(r.status_code, 200, r.content)
         self.batch.refresh_from_db()
-        self.assertEqual(self.batch.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(self.batch.qbo_sync_status, Reimbursement.SYNC_SYNCED)
 
 
 class ReimbursementDeleteTwoPhaseTest(TestCase):
@@ -161,7 +161,7 @@ class ReimbursementDeleteTwoPhaseTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNCED,
+            qbo_sync_status=Reimbursement.SYNC_SYNCED,
             qbo_id='9100',
         )
         Expense.objects.create(
