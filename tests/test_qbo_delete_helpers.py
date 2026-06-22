@@ -14,13 +14,20 @@ from quickbooks.exceptions import ObjectNotFoundException
 
 class _FakeRecord:
     """Minimal stand-in for a model with QBO sync state."""
+    OP_NONE = ''
+    OP_CREATE = 'create'
+    OP_UPDATE = 'update'
+    OP_DELETE = 'delete'
+
     def __init__(self):
         self.qbo_sync_status = 'synced'
         self.qbo_sync_error = ''
+        self.qbo_pending_op = ''
 
-    def mark_failed(self, error):
+    def mark_failed(self, error, op=OP_NONE):
         self.qbo_sync_status = 'sync_failed'
         self.qbo_sync_error = str(error)
+        self.qbo_pending_op = op
 
 
 # ---------------------------------------------------------------------------
@@ -299,9 +306,9 @@ class RunDeleteFailureTest(SimpleTestCase):
 
         mark_called_with = []
         original_mark_failed = rec.mark_failed
-        def tracking_mark_failed(e):
+        def tracking_mark_failed(e, op=_FakeRecord.OP_NONE):
             mark_called_with.append(e)
-            original_mark_failed(e)
+            original_mark_failed(e, op)
         rec.mark_failed = tracking_mark_failed
 
         try:
