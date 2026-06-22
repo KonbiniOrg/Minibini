@@ -331,22 +331,39 @@ class ReimbursementService:
                 e.save(update_fields=['reimbursement', 'status'])
 
         # After commit: attempt QBO push.
-        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
-        QBOSyncService.run_create(batch, lambda: QBOExpenseSyncService.push_reimbursement(batch))
+        ReimbursementService._push_create(batch)
 
         return batch
 
     @staticmethod
-    def retry_sync(*, batch, actor):
-        from apps.expenses.models import Reimbursement
-        if batch.qbo_sync_status != Reimbursement.SYNC_FAILED:
-            raise ValidationError(
-                'Can only retry sync on batches in sync_failed status.'
-            )
+    def _push_create(batch):
         from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
         QBOSyncService.run_create(batch, lambda: QBOExpenseSyncService.push_reimbursement(batch))
+
+    @staticmethod
+    def _push_update(batch):
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_update(batch, lambda: QBOExpenseSyncService.update_reimbursement(batch))
+
+    @staticmethod
+    def retry(*, batch, actor):
+        from apps.expenses.models import Reimbursement
+        if batch.qbo_sync_status != Reimbursement.SYNC_FAILED:
+            raise ValidationError('Can only retry a sync that failed.')
+        op = batch.qbo_pending_op
+        if op == Reimbursement.OP_DELETE:
+            ReimbursementService.delete(batch=batch, actor=actor)
+            return None
+        if op == Reimbursement.OP_UPDATE:
+            ReimbursementService._push_update(batch)
+        else:  # create (or blank → treat as create)
+            ReimbursementService._push_create(batch)
         batch.refresh_from_db()
         return batch
+
+    @staticmethod
+    def retry_sync(*, batch, actor):
+        return ReimbursementService.retry(batch=batch, actor=actor)
 
     @staticmethod
     def delete(*, batch, actor):
