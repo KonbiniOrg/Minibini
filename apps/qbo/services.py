@@ -1005,6 +1005,64 @@ class QBOInboundPollingService:
         }
 
 
+class QBOSyncFailureService:
+    """Returns a unified list of all sync-failed records across the three
+    money-push entity types: company Expense, Reimbursement, BillPayment."""
+
+    @staticmethod
+    def list_failures():
+        """Return a list of dicts, one per sync_failed record.
+
+        Each dict: {entity_type, id, label, amount, qbo_pending_op, qbo_sync_error}.
+
+        Only company-paid Expenses are included (personal ones never carry their
+        own QBO failure — their Reimbursement batch does).
+        """
+        from apps.expenses.models import Expense, Reimbursement
+        from apps.purchasing.models import BillPayment
+
+        results = []
+
+        for e in Expense.objects.filter(
+            qbo_sync_status=Expense.SYNC_FAILED,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+        ).select_related('entered_by'):
+            results.append({
+                'entity_type': 'expense',
+                'id': e.pk,
+                'label': f"Expense #{e.pk}: {e.description or '—'}",
+                'amount': str(e.amount),
+                'qbo_pending_op': e.qbo_pending_op,
+                'qbo_sync_error': e.qbo_sync_error,
+            })
+
+        for b in Reimbursement.objects.filter(
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
+        ).select_related('purchased_by'):
+            results.append({
+                'entity_type': 'reimbursement',
+                'id': b.pk,
+                'label': f"Reimbursement batch #{b.pk}: {b.purchased_by.username}",
+                'amount': str(b.total),
+                'qbo_pending_op': b.qbo_pending_op,
+                'qbo_sync_error': b.qbo_sync_error,
+            })
+
+        for p in BillPayment.objects.filter(
+            qbo_sync_status=BillPayment.SYNC_FAILED,
+        ).select_related('bill'):
+            results.append({
+                'entity_type': 'bill_payment',
+                'id': p.pk,
+                'label': f"Payment on bill {p.bill.vendor_invoice_number}",
+                'amount': str(p.amount),
+                'qbo_pending_op': p.qbo_pending_op,
+                'qbo_sync_error': p.qbo_sync_error,
+            })
+
+        return results
+
+
 class QBOSyncService:
     """Wraps the push/resync try-except so every adopter records its sync
     outcome the same way. Never raises — a QBO hiccup must not block the local
