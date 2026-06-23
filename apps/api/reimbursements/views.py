@@ -10,14 +10,19 @@ from django.contrib.auth import get_user_model
 
 from apps.expenses.models import Expense, Reimbursement
 from apps.expenses.services import ReimbursementService
-from apps.api.mixins import ConfirmDeleteMixin
+from apps.api.mixins import ConfirmDeleteMixin, QBORetrySyncMixin
 from apps.api.permissions import CanManageFinancials
 from .serializers import ReimbursementSerializer, ReimbursementCreateSerializer
 
 User = get_user_model()
 
 
-class ReimbursementViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
+class ReimbursementViewSet(QBORetrySyncMixin, ConfirmDeleteMixin, viewsets.ModelViewSet):
+    retry_deleted_message = 'Reimbursement batch deleted.'
+
+    def retry_service_call(self, obj, request):
+        return ReimbursementService.retry_sync(batch=obj, actor=request.user)
+
     queryset = Reimbursement.objects.all().select_related(
         'purchased_by', 'created_by',
     ).prefetch_related('expenses')
@@ -76,18 +81,6 @@ class ReimbursementViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         except DjangoValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
         return Response({'message': 'Reimbursement batch deleted.'}, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
-    def retry_sync(self, request, pk=None):
-        batch = self.get_object()
-        try:
-            result = ReimbursementService.retry_sync(batch=batch, actor=request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
-        if result is None:  # delete branch completed — the batch was removed
-            return Response({'message': 'Reimbursement batch deleted.'})
-        batch.refresh_from_db()
-        return Response(ReimbursementSerializer(batch).data)
 
     @action(
         detail=False, methods=['get'],

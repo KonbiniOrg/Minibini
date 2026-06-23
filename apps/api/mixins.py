@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.core.history import record_history
 from rest_framework import serializers, status
 from rest_framework.decorators import action
@@ -77,6 +78,27 @@ class ConfirmDeleteMixin:
                 'impact': self.get_deletion_impact(obj),
             })
         return self.perform_confirmed_destroy(obj)
+
+
+class QBORetrySyncMixin:
+    """Shared retry-sync action: dispatch to a service retry that may return
+    None (delete branch) and shape the response uniformly."""
+    retry_deleted_message = 'Deleted.'
+
+    def retry_service_call(self, obj, request):
+        raise NotImplementedError
+
+    @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
+    def retry_sync(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            result = self.retry_service_call(obj, request)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=400)
+        if result is None:
+            return Response({'message': self.retry_deleted_message})
+        obj.refresh_from_db()
+        return Response(self.get_serializer(obj).data)
 
 
 class StatusTransitionMixin:

@@ -6,11 +6,17 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
+from apps.api.mixins import QBORetrySyncMixin
 from apps.api.permissions import CanManageFinancials
 from .serializers import ExpenseSerializer
 
 
-class ExpenseViewSet(viewsets.ModelViewSet):
+class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
+    retry_deleted_message = 'Expense deleted.'
+
+    def retry_service_call(self, obj, request):
+        return ExpenseService.retry_sync(expense=obj, actor=request.user)
+
     queryset = Expense.objects.all().select_related(
         'entered_by', 'purchased_by', 'accounting_category',
         'job', 'material', 'material__job', 'reimbursement',
@@ -114,19 +120,6 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ExpenseService.reject(expense=expense, actor=request.user)
         except DjangoValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
-        serializer = self.get_serializer(expense)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
-    def retry_sync(self, request, pk=None):
-        expense = self.get_object()
-        try:
-            result = ExpenseService.retry_sync(expense=expense, actor=request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
-        if result is None:  # delete branch completed — the expense was removed
-            return Response({'message': 'Expense deleted.'})
-        expense.refresh_from_db()
         serializer = self.get_serializer(expense)
         return Response(serializer.data)
 
