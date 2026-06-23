@@ -1,5 +1,4 @@
 from django.core.exceptions import ValidationError
-from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.core.history import record_history
 from rest_framework import serializers, status
 from rest_framework.decorators import action
@@ -93,7 +92,7 @@ class QBORetrySyncMixin:
         obj = self.get_object()
         try:
             result = self.retry_service_call(obj, request)
-        except DjangoValidationError as e:
+        except ValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
         if result is None:
             return Response({'message': self.retry_deleted_message})

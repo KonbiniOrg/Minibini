@@ -50,14 +50,10 @@ class SyncLogAttributionTest(TestCase):
         log.refresh_from_db()
         self.assertEqual(log.triggered_by, other_user)
 
-    def test_explicit_triggered_by_none_does_not_fall_back_to_context(self):
-        """Passing triggered_by=None explicitly still falls back to context user.
-
-        The param default is a sentinel so None means 'use context'; callers who
-        genuinely want no attribution should pass triggered_by=False — but in
-        practice this edge case is untested in prod, so this test just verifies
-        the documented behaviour of the optional kwarg.
-        """
+    def test_explicit_triggered_by_none_falls_back_to_context(self):
+        """Passing triggered_by=None (the default) falls back to the context user —
+        `None` means 'use the request context', not 'force no attribution'. There
+        is no path that needs to force-null over a present context."""
         set_history_context(HistoryContext(user=self.user))
 
         # triggered_by=None (the default) should still use context
