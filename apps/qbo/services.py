@@ -64,8 +64,17 @@ class QBOService:
 
     @staticmethod
     def log_sync(entity_type, entity_id, qbo_entity_type, qbo_entity_id,
-                 action, status, error_message=''):
-        """Create a sync log entry."""
+                 action, status, error_message='', triggered_by=None):
+        """Create a sync log entry.
+
+        triggered_by defaults to the authenticated user from the active request
+        context (apps.core.history.current_request_user).  Pass an explicit User
+        instance to override, or pass triggered_by=None to use the context (the
+        default — None means "fall back to context", not "force null").
+        """
+        from apps.core.history import current_request_user
+        if triggered_by is None:
+            triggered_by = current_request_user()
         return QBOSyncLog.objects.create(
             entity_type=entity_type,
             entity_id=entity_id,
@@ -74,6 +83,7 @@ class QBOService:
             action=action,
             status=status,
             error_message=error_message,
+            triggered_by=triggered_by,
         )
 
     @staticmethod
