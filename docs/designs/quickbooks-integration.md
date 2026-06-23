@@ -46,6 +46,7 @@ Append-only audit trail. Every push attempt writes a row, success or failure.
 | `action` | `'create'`, `'update'`, `'delete'` |
 | `status` | `'success'` or `'failed'` |
 | `error_message` | Exception string on failure; blank otherwise |
+| `triggered_by` | User FK (SET_NULL, nullable) — **who initiated this QBO call.** Auto-set by `log_sync` from the active request context (`current_request_user()`): the acting user for an API-triggered push/retry/void, `None` for a cron/poller sync. No threading — `log_sync` reads the same `HistoryContext` the `@history` decorator uses. Pass an explicit `triggered_by=` only to override. |
 | `synced_at` | `auto_now_add` |
 
 Default ordering is `-synced_at`. No retention policy — log grows forever.
@@ -113,6 +114,13 @@ The per-entity sync services (`QBOCustomerSyncService`, `QBOVendorSyncService`, 
 - **`QBOPaymentAccountService`** (`apps/qbo/services.py`) — owns the `Configuration['qbo_payment_accounts']` lookup (`load_accounts()` / `lookup(id)`), shared by the expense/reimbursement `Purchase` push and the bill-payment push.
 
 A typical push method is now: short-circuit on existing id → get client (raise if none) → build the QBO object → `save_and_log(...)` → persist the id on the record; wrapped by `run_create`/`run_update` where the record is a `QBOSyncable`.
+
+### Audit & attribution
+
+Two separate audit trails, with a clean seam between them — and **attribution flows from the request context, never threaded**:
+
+- **QBO-mechanics audit → `QBOSyncLog`** (the swap-the-backend seam): every push/update/void writes a row; `triggered_by` records who initiated it (auto from the request context; `None` for cron). QBO-coupled facts (qbo ids, sync status, error text) live only here.
+- **Domain audit → the history partitions** (`docs/designs/architecture-and-conventions.md`): `Expense` is `@history`-decorated into a new **`ExpensesHistory`** partition (`object_type='expense'`/`'reimbursement'`), with `exclude=[…, qbo_id, qbo_sync_status, qbo_sync_error, qbo_pending_op]` so QBO sync churn never enters the domain timeline. The two **adjuncts** record their lifecycle imperatively on their **primary's** timeline via `record_action(object_type, object_id, action)`: `BillPayment` → the **Bill** (`'bill'`: recorded / edited / deleted), `Reimbursement` → each member **Expense** (`'expense'`: reimbursed-in-batch / unwound). `record_action` and `log_sync` both default their author to `current_request_user()`, so no service threads an actor.
 
 ### Retry & sync failures
 
