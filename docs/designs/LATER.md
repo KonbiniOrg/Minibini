@@ -703,6 +703,45 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
   call made) or stays a bespoke sequence, and recorded why.
 
+- **Drop `request.user` threading from imperative history; default to the request context.** — _added 2026-06-22_
+  Imperative history sites that fire from an authenticated request (`record_payment`, `cancel_line_item`,
+  the inventory/purchasing services, the PO email/cancel/receive paths) **thread `request.user` through
+  service-method signatures** purely to hand it to `record_history`. That's redundant: `record_history`
+  could default `user` to `current_request_user()` — the same request-scoped `HistoryContext` the `@history`
+  decorator already reads (middleware sets it; DRF auth has run by the time a view's service code executes).
+  The **deliberate-author sites need no change** — they call `record_history` directly with their own
+  explicit `user`, which overrides any default: portal (`user=None` + customer in the changes payload),
+  signals & the expiry commands (`user=system_user`), and `backfill_job_history` (a *specific historical
+  author* + backdated `timestamp=`, run with no request — the proof that `record_history` must keep an
+  *optional* `user=` param). So the refactor is bounded and mechanical: **(a)** make
+  `record_history`/`record_action` default `user` to `current_request_user()`; **(b)** drop the `user`/`actor`
+  params from the request-driven service methods; **(c)** leave the deliberate-author sites untouched.
+  Context: the 2026-06-22 QBO-attribution work (`record_action`, `QBOSyncLog.triggered_by` via `log_sync`)
+  already uses the context for its *new* code — deliberately inconsistent with the still-threaded older
+  sites; this item converges everything to one attribution style.
+  _Done when:_ request-driven services no longer thread a user just for history attribution, the
+  deliberate-author sites are unchanged, and there's a single attribution mechanism.
+
+- **`@history` decorator `anchor=` param — route an adjunct's auto-history to its primary.** — _added 2026-06-22_
+  The `@history` decorator keys entries to the model's *own* `object_type`, so an adjunct (BillPayment→Bill,
+  line item→parent document) can't use it to land its auto create/update entries on the **primary's**
+  timeline — those stay imperative (`record_action(object_type='<primary>', …)`). A declarative
+  `@history(anchor=('bill', 'bill_id'))` could route a child's auto-history to its parent (and would
+  generalize to line items, etc.). Caveats that keep it from being a clean win: parent-anchored *field
+  diffs* read ambiguously without a self-describing label ("amount 50→75" on the bill — whose amount?);
+  it still wouldn't cover deletes; and a many-anchor case (Reimbursement→many expenses) doesn't fit. It's a
+  change to a core mechanism on ~12 models. Deferred — adjunct lifecycle stays imperative via `record_action`.
+  _Done when:_ decided whether to add `anchor=` (+ a labeling mechanism) to the decorator, or keep adjunct
+  history imperative.
+
+- **`@history` doesn't track deletes (`post_delete`).** — _added 2026-06-22_
+  The decorator wires `post_init`/`pre_save`/`post_save` only — **no `post_delete`** — so a tracked model's
+  deletion records nothing automatically. Not a problem today: the decorated records (estimates, bills, POs,
+  …) and the newly-decorated `Expense` are *created-and-kept forever*; deletions are rare and are recorded
+  imperatively where they matter. Revisit only if a frequently-deleted model becomes `@history`-tracked.
+  _Done when:_ decided whether `@history` should grow delete tracking, or imperative delete entries remain
+  the norm.
+
 - **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
   Background: the original plan was *delete-on-spend*, but the code review surfaced
   that line items (estimate/invoice/PO/bill) and `TemplateMaterialAssociation`
