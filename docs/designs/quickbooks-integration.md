@@ -107,12 +107,29 @@ Test code mocks at this layer rather than at the python-quickbooks SDK level. Mo
 
 The per-entity sync services (`QBOCustomerSyncService`, `QBOVendorSyncService`, `QBOInvoiceSyncService`, `QBOBillSyncService`, `QBOExpenseSyncService`) are organized by QBO entity — each owns the *builder* for its QBO object, which genuinely differs (a `Customer`, an `Invoice`, a `BillPayment`, a `Purchase`…). What they used to duplicate has been factored into four shared pieces:
 
-- **`QBOSyncable`** (`apps/core/models.py`) — abstract model base carrying the sync-state fields `qbo_id`, `qbo_sync_status` (`pending` / `synced` / `sync_failed`), `qbo_sync_error`, plus `mark_synced(qbo_id)` / `mark_failed(error)`. Adopted by `Expense`, `Reimbursement`, and `BillPayment`. (`Expense.status` is business-only — `submitted`/`reimbursed`/`rejected`; its QBO sync state lives in the inherited `qbo_sync_status`. `Reimbursement`'s sole status *is* its `qbo_sync_status`.)
-- **`QBOSyncService`** (`apps/qbo/services.py`) — the push/resync orchestrator. `run_create(record, push_callable)` runs the push and marks the record `synced` (writing the returned `qbo_id`) or `sync_failed`; `run_resync(record, resync_callable)` does the same for an in-place update. Neither raises — a QBO failure never blocks the local write that already committed.
+- **`QBOSyncable`** (`apps/core/models.py`) — abstract model base carrying the sync-state fields `qbo_id`, `qbo_sync_status` (`pending` / `synced` / `sync_failed`), `qbo_sync_error`, **`qbo_pending_op`** (`''` / `create` / `update` / `delete` — the operation a `sync_failed` record still owes QBO), plus `mark_synced(qbo_id)` (clears the op) / `mark_failed(error, op)` (records the op). Adopted by `Expense`, `Reimbursement`, and `BillPayment`. (`Expense.status` is business-only — `submitted`/`reimbursed`/`rejected`; its QBO sync state lives in the inherited `qbo_sync_status`. `Reimbursement`'s sole status *is* its `qbo_sync_status`.)
+- **`QBOSyncService`** (`apps/qbo/services.py`) — the push orchestrators, one per verb: `run_create(record, push_callable)`, `run_update(record, update_callable)`, `run_delete(record, delete_callable)`. Each runs its callable and on failure calls `record.mark_failed(e, record.OP_<verb>)` — so a `sync_failed` row is **self-describing** about which operation to retry. `run_create`/`run_update` **swallow** (a QBO failure never blocks the local write that already committed); `run_delete` **re-raises** so a refused delete aborts the local removal and retains the row. (`run_update` was formerly named `run_resync` — "resync" now means *retry a failure*, not "an edit happened, push the update.")
 - **`QBOService.save_and_log(qbo_obj, client, *, entity_type, qbo_entity_type, entity_id, action='create')`** — saves a QBO SDK object, writes the success/failure `QBOSyncLog` row, returns `str(qbo_obj.Id)`, re-raises on error. Every create/update push method calls it, so the save-and-log boilerplate lives in one place. (The `void_*` deletes and the invoice send — whose log lands after `_mark_as_sent` — keep their own shape.)
 - **`QBOPaymentAccountService`** (`apps/qbo/services.py`) — owns the `Configuration['qbo_payment_accounts']` lookup (`load_accounts()` / `lookup(id)`), shared by the expense/reimbursement `Purchase` push and the bill-payment push.
 
-A typical push method is now: short-circuit on existing id → get client (raise if none) → build the QBO object → `save_and_log(...)` → persist the id on the record; wrapped by `run_create`/`run_resync` where the record is a `QBOSyncable`.
+A typical push method is now: short-circuit on existing id → get client (raise if none) → build the QBO object → `save_and_log(...)` → persist the id on the record; wrapped by `run_create`/`run_update` where the record is a `QBOSyncable`.
+
+### Retry & sync failures
+
+Each domain service exposes the same small sync-dispatch surface so a failure can be retried as the *operation it actually owes*:
+
+- `_push_create(record)` / `_push_update(record)` — the create and update push wrappers (the update one carries any domain routing, e.g. a personal `Expense`'s edit resyncs its reimbursement **batch**, not the expense).
+- `retry(record, …)` — guards `qbo_sync_status == sync_failed`, then **dispatches on `qbo_pending_op`**: `delete` → re-run the full delete (re-void + local removal); `update` → `_push_update`; `create`/blank → `_push_create`. This fixes the old bug where a blind retry always create-pushed — which **short-circuited on `qbo_id` and silently marked a failed *update* as synced without re-applying the edit**, and abandoned a failed *delete*.
+- `ExpenseService.retry`, `ReimbursementService.retry`, `BillPaymentService.retry` (each backed by a per-entity `POST …/retry-sync/` endpoint). Bill payments' retry endpoint is `POST /api/bills/{id}/payments/{pid}/retry-sync/`.
+
+**Cross-entity failures view.** `QBOSyncFailureService.list_failures()` aggregates every `sync_failed` company `Expense` (personal expenses never carry their own failure — their batch does), `Reimbursement`, and `BillPayment` into one list (`entity_type`, `id`, `label`, `amount`, `qbo_pending_op`, `qbo_sync_error`, `retry_url`). Exposed at:
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` | List all QBO sync failures across the three money pushes |
+| `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` | Retry each (isolated per-record); returns `{retried, still_failing}` |
+
+The SPA surfaces this as `QBOSyncFailures.svelte` (per-row Retry + Retry all) on the Settings page; the failures view covers **only** the three `QBOSyncable` money pushes (Customers/Vendors/Invoices use ad-hoc sync state and are out of scope).
 
 ## Customer sync — `QBOCustomerSyncService`
 

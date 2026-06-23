@@ -123,11 +123,32 @@ Run with QBO **disconnected** (Settings → Disconnect, or no sandbox).
 
 - [ ] **Local write still succeeds:** Record Payment with an account chosen →
   the payment is **created** and bill status/balance update normally.
-- [ ] **Row shows sync failed:** the payment row shows **sync failed** (not
-  pending) — the push raised "No active QBO connection." Hovering/expanding shows
-  the error.
-- [ ] **(Reconnect) retry path:** once QBO is reconnected, editing the payment
-  (§5) re-attempts the push and flips it to **synced**.
+- [ ] **Row shows sync failed + a Retry button:** the payment row shows **sync
+  failed** (not pending) with the error in a tooltip, and a **Retry** button (the
+  old text-only "— retry" is now a real control). The push raised "No active QBO
+  connection."
+- [ ] **(Reconnect) Retry button works:** once QBO is reconnected, click the
+  row's **Retry** → it re-runs the *owed* operation (a failed create re-creates;
+  a failed edit re-updates) and the row flips to **synced**. Editing the payment
+  (§5) also re-attempts the push.
+
+## 4a. Retry re-runs the operation that failed (not a blind re-push)
+
+The retry knows which verb a `sync_failed` row owes (create / update / delete),
+so it does the right thing — the key correctness fix.
+
+- [ ] **Failed update retries as an update:** edit a **synced** payment while QBO
+  is unreachable (the update fails → row shows sync failed); reconnect → **Retry**
+  → the *edit* is actually re-applied to QBO (not silently marked synced with the
+  old values).
+- [ ] **Failed delete retries as a delete:** a payment whose delete was refused
+  (§6) shows sync failed; **Retry** (or Delete again) **deletes** it — it does not
+  flip back to synced.
+- [ ] **Cross-entity failures panel (Settings):** as **Financials**, the Settings
+  page shows a **QBO sync failures** panel listing every failed payment / company
+  expense / reimbursement batch with its pending operation; a per-row **Retry**
+  and a **Retry all** button. Retry-all re-runs each (one failure doesn't stop the
+  rest) and reports how many are still failing.
 
 ## 5. Editing a synced payment → re-sync
 
@@ -219,7 +240,8 @@ QBO sync status **separately**.
 | Payment account | picker lists display names · auto-selects first · empty → form replaced by "configure in Settings" message (modal + reimbursement + expense form) |
 | Account guard | required always — client-side "Choose a payment account." + backend 400 (regardless of QBO connection) · specific error message (not generic) |
 | Push result | synced badge + QBO id when connected · reference → DocNumber |
-| Disconnected | local write commits · row = sync failed (not pending) · reconnect + edit → synced |
+| Disconnected | local write commits · row = sync failed (not pending) · reconnect + Retry → synced |
+| Retry (per-verb) | failed create → re-creates · failed update → re-applies the edit (not a blind re-push) · failed delete → deletes (not back to synced) · bill-payment row Retry button · cross-entity failures panel on Settings + Retry all |
 | Edit | synced → re-sync · never-synced → push fresh |
 | Delete (void symmetry) | happy void+delete · QBO fail → refused + retained + sync_failed (status unchanged) · retry = delete again · idempotent not-found deletes locally · no-qbo_id deletes freely |
 | Bill table display | account name + reference (no method) · sync indicator per row · — when account unresolved |
