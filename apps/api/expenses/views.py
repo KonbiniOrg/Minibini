@@ -121,9 +121,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def retry_sync(self, request, pk=None):
         expense = self.get_object()
         try:
-            ExpenseService.retry_sync(expense=expense, actor=request.user)
+            result = ExpenseService.retry_sync(expense=expense, actor=request.user)
         except DjangoValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
+        if result is None:  # delete branch completed — the expense was removed
+            return Response({'message': 'Expense deleted.'})
         expense.refresh_from_db()
         serializer = self.get_serializer(expense)
         return Response(serializer.data)

@@ -205,6 +205,53 @@ class ReimbursementDeleteTwoPhaseTest(TestCase):
         self.assertTrue(Reimbursement.objects.filter(pk=self.batch.pk).exists())
 
 
+class ReimbursementRetrySyncDeletePendingTest(TestCase):
+    """retry-sync on a delete-pending reimbursement must return 200 + message, not 500."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='DEL', name='DelRei')
+        self.worker = User.objects.create_user(username='worker_del', password='testpass')
+        self.admin = User.objects.create_user(username='admin_del', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement')
+    def test_retry_sync_delete_pending_returns_200_and_batch_removed(self, mock_void):
+        """When qbo_pending_op == OP_DELETE, retry-sync completes the delete and
+        returns 200 with a message body instead of 500 DoesNotExist."""
+        mock_void.return_value = None
+        batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 4, 11),
+            payment_account_id='42',
+            created_by=self.admin,
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
+            qbo_id='9100',
+            qbo_pending_op=Reimbursement.OP_DELETE,
+        )
+        # Add one expense so the delete unwinds properly.
+        exp = Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('30.00'), purchased_on=date(2026, 4, 5),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=batch,
+        )
+        self.client_http.force_login(self.admin)
+        r = self.client_http.post(f'/api/reimbursements/{batch.pk}/retry-sync/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn('message', r.json())
+        self.assertFalse(Reimbursement.objects.filter(pk=batch.pk).exists())
+        exp.refresh_from_db()
+        self.assertEqual(exp.status, Expense.STATUS_SUBMITTED)
+
+
 class OutstandingSummaryEndpointTest(TestCase):
     def setUp(self):
         self.client_http = Client()

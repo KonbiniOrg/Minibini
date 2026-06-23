@@ -81,9 +81,11 @@ class ReimbursementViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     def retry_sync(self, request, pk=None):
         batch = self.get_object()
         try:
-            ReimbursementService.retry_sync(batch=batch, actor=request.user)
+            result = ReimbursementService.retry_sync(batch=batch, actor=request.user)
         except DjangoValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
+        if result is None:  # delete branch completed — the batch was removed
+            return Response({'message': 'Reimbursement batch deleted.'})
         batch.refresh_from_db()
         return Response(ReimbursementSerializer(batch).data)
 

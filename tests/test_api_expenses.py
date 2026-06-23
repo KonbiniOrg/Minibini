@@ -496,6 +496,44 @@ class ExpenseInvoiceClaimTest(TestCase):
         self.assertEqual(set(resp.json()['invoice'].keys()), {'id', 'number'})
 
 
+class ExpenseRetrySyncDeletePendingTest(TestCase):
+    """retry-sync on a delete-pending expense must return 200 + message, not 500."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='DEL', name='Del')
+        self.admin = User.objects.create_user(username='admin_del', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_retry_sync_delete_pending_returns_200_and_expense_removed(self, mock_void):
+        """When qbo_pending_op == OP_DELETE, retry-sync completes the delete and
+        returns 200 with a message body instead of 500 DoesNotExist."""
+        from apps.expenses.models import Expense
+        exp = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('55.00'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_sync_status=Expense.SYNC_FAILED,
+            qbo_id='9001',
+            qbo_pending_op=Expense.OP_DELETE,
+        )
+        mock_void.return_value = None
+        self.client_http.force_login(self.admin)
+        r = self.client_http.post(f'/api/expenses/{exp.pk}/retry-sync/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn('message', r.json())
+        self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
+
+
 class ExpenseQboSyncStatusSerializerTest(TestCase):
     """qbo_sync_status is exposed separately from business status in the API."""
 
