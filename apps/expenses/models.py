@@ -2,8 +2,10 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import models
 from apps.core.models import QBOSyncable
+from apps.core.history import history
 
 
+@history(exclude=['id', 'created_at', 'updated_at', 'qbo_id', 'qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])
 class Expense(QBOSyncable):
     PAYMENT_METHOD_COMPANY = 'company'
     PAYMENT_METHOD_PERSONAL = 'personal'

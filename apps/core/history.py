@@ -33,9 +33,11 @@ def _domain_models():
     if _DOMAIN_MODELS is None:
         from apps.core.models import (
             JobHistory, CrmHistory, PurchasingHistory, InventoryHistory,
+            ExpensesHistory,
         )
-        job, crm, pur, inv = (
+        job, crm, pur, inv, exp = (
             JobHistory, CrmHistory, PurchasingHistory, InventoryHistory,
+            ExpensesHistory,
         )
         _DOMAIN_MODELS = {
             'job': job, 'task': job, 'estimate': job, 'changeorder': job,
@@ -43,6 +45,7 @@ def _domain_models():
             'contact': crm, 'business': crm,
             'purchaseorder': pur, 'bill': pur,
             'inventoryitem': inv,
+            'expense': exp, 'reimbursement': exp,
         }
     return _DOMAIN_MODELS
 

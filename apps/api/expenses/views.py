@@ -8,6 +8,8 @@ from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
 from apps.api.mixins import QBORetrySyncMixin
 from apps.api.permissions import CanManageFinancials
+from apps.api.history.serializers import HistoryEntrySerializer
+from apps.core.models import ExpensesHistory
 from .serializers import ExpenseSerializer
 
 
@@ -25,7 +27,7 @@ class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'create'):
+        if self.action in ('list', 'retrieve', 'create', 'history'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
@@ -112,6 +114,19 @@ class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
         except DjangoValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
         return Response({'message': 'Expense deleted.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        expense = self.get_object()
+        entries = ExpensesHistory.objects.filter(
+            object_type='expense', object_id=expense.pk,
+        ).select_related('user').order_by('-timestamp')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='reject', url_name='reject')
     def reject(self, request, pk=None):

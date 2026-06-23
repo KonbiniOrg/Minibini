@@ -515,6 +515,13 @@ class InventoryHistory(HistoryEntryBase):
         ordering = ['-timestamp']
 
 
+class ExpensesHistory(HistoryEntryBase):
+    """History for expenses and reimbursement batches."""
+    class Meta:
+        db_table = 'expenses_history'
+        ordering = ['-timestamp']
+
+
 class ScheduledProcessRun(models.Model):
     """One row per invocation of a scheduled management command (observability)."""
     OUTCOME_OK = 'ok'
