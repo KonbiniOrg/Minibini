@@ -158,7 +158,6 @@ class BillSerializerPrefetchQueryCountTest(TestCase):
             bill=bill,
             amount=Decimal('10.00'),
             payment_date=timezone.now(),
-            method=BillPayment.METHOD_CHECK,
         )
         return bill
 

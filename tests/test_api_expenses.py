@@ -136,7 +136,7 @@ class ExpenseCreateTest(TestCase):
         r = self.client_http.post('/api/expenses/', payload, content_type='application/json')
         self.assertEqual(r.status_code, 201, r.content)
         exp = Expense.objects.get()
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
         mock_push.assert_called_once()
 
 
@@ -256,13 +256,13 @@ class ExpenseRejectRetryTest(TestCase):
             accounting_category=self.cat,
             payment_method=Expense.PAYMENT_METHOD_COMPANY,
             payment_account_id='57',
-            status=Expense.STATUS_SYNC_FAILED,
+            qbo_sync_status=Expense.SYNC_FAILED,
         )
         self.client_http.force_login(self.admin)
         r = self.client_http.post(f'/api/expenses/{exp.pk}/retry-sync/')
         self.assertEqual(r.status_code, 200, r.content)
         exp.refresh_from_db()
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
 
 
 class ExpenseDeleteTest(TestCase):
@@ -288,6 +288,25 @@ class ExpenseDeleteTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('message', r.json())
         self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_delete_returns_400_when_void_fails_and_expense_survives(self, mock_void):
+        """When QBO void fails, the API returns 400 and the expense row is retained."""
+        _seed_payment_accounts()
+        mock_void.side_effect = RuntimeError('qbo down')
+        exp = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('10.00'), purchased_on=date(2026, 4, 5),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_sync_status=Expense.SYNC_SYNCED, qbo_id='9001',
+        )
+        self.client_http.force_login(self.admin)
+        r = self.client_http.delete(f'/api/expenses/{exp.pk}/')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('detail', r.json())
+        self.assertTrue(Expense.objects.filter(pk=exp.pk).exists())
 
 
 # NOTE: MaterialsBucketFlagTest removed in Phase C2. The
@@ -475,3 +494,86 @@ class ExpenseInvoiceClaimTest(TestCase):
         resp = self.client.get(f'/api/expenses/{exp.pk}/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(set(resp.json()['invoice'].keys()), {'id', 'number'})
+
+
+class ExpenseRetrySyncDeletePendingTest(TestCase):
+    """retry-sync on a delete-pending expense must return 200 + message, not 500."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='DEL', name='Del')
+        self.admin = User.objects.create_user(username='admin_del', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_retry_sync_delete_pending_returns_200_and_expense_removed(self, mock_void):
+        """When qbo_pending_op == OP_DELETE, retry-sync completes the delete and
+        returns 200 with a message body instead of 500 DoesNotExist."""
+        from apps.expenses.models import Expense
+        exp = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('55.00'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_sync_status=Expense.SYNC_FAILED,
+            qbo_id='9001',
+            qbo_pending_op=Expense.OP_DELETE,
+        )
+        mock_void.return_value = None
+        self.client_http.force_login(self.admin)
+        r = self.client_http.post(f'/api/expenses/{exp.pk}/retry-sync/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn('message', r.json())
+        self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
+
+
+class ExpenseQboSyncStatusSerializerTest(TestCase):
+    """qbo_sync_status is exposed separately from business status in the API."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
+        self.admin = User.objects.create_user(username='admin', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+        self.company_expense = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('100.00'), purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+        )
+        self.client_http.force_login(self.admin)
+
+    def test_expense_serializer_exposes_qbo_sync_status(self):
+        resp = self.client_http.get(f'/api/expenses/{self.company_expense.pk}/')
+        body = resp.json()
+        self.assertIn('status', body)
+        self.assertIn('qbo_sync_status', body)
+
+    def test_qbo_sync_status_filter(self):
+        # Create a second expense with sync_failed status.
+        failed = Expense.objects.create(
+            entered_by=self.admin,
+            amount=Decimal('50.00'), purchased_on=date(2026, 4, 10),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_sync_status=Expense.SYNC_FAILED,
+        )
+        resp = self.client_http.get('/api/expenses/?qbo_sync_status=sync_failed')
+        self.assertEqual(resp.status_code, 200)
+        ids = {row['id'] for row in resp.json()['results']}
+        self.assertIn(failed.pk, ids)
+        self.assertNotIn(self.company_expense.pk, ids)

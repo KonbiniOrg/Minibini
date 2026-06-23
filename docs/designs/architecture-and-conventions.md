@@ -753,13 +753,15 @@ it to a user profile page — that move hasn't happened.
 
 ### 7.1 Model
 
-History is **partitioned by domain into three tables** (`apps/core/models.py`),
+History is **partitioned by domain into per-domain tables** (`apps/core/models.py`),
 all sharing the abstract `HistoryEntryBase`:
 
 - `JobHistory` (`job_history`) — Job + everything that hangs off it (task,
   estimate, change order, invoice, material, deliverable, shipment).
 - `CrmHistory` (`crm_history`) — contacts and businesses.
-- `PurchasingHistory` (`purchasing_history`) — purchase orders and bills.
+- `PurchasingHistory` (`purchasing_history`) — purchase orders, bills, **and bill payments** (a payment is an adjunct of its bill — see §7.4).
+- `InventoryHistory` (`inventory_history`) — inventory items.
+- `ExpensesHistory` (`expenses_history`) — expenses **and reimbursement batches** (a batch is an adjunct of its member expenses — see §7.4).
 
 Three entry types (on the base): `audit` (automatic field-change tracking on
 decorated models), `action` (system-generated state changes from
@@ -788,6 +790,9 @@ Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 - `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
 - `Material` — `apps/inventory/models.py`
 - `Deliverable`, `Shipment` — `apps/deliverables/models.py`
+- `Expense` — `apps/expenses/models.py`. Excludes the four `qbo_*` fields (`qbo_id`, `qbo_sync_status`, `qbo_sync_error`, `qbo_pending_op`) so QBO sync-state churn never enters the expense timeline — the domain↔QBO seam (QBO sync state lives in `QBOSyncLog`, not here).
+
+`BillPayment` and `Reimbursement` are deliberately **not** decorated — they're adjuncts whose history is written imperatively onto their *primary* (§7.4), which the decorator (keyed to a model's own `object_type`) can't express.
 
 Time/workforce models (`Shift`, `ShiftChangeRequest`, `BlepChangeRequest`)
 are **not** tracked: their lifecycle is already first-class data
@@ -819,6 +824,36 @@ or its transaction rolled back, the entries are dropped.
 hooks. `StatusTransitionMixin` uses them to attach a status-change
 reason to the most recent pending audit entry
 (`apps/api/mixins.py`).
+
+### 7.4 `record_action`, imperative entries, and attribution
+
+`audit` entries are automatic (the decorator). `action` and `note` entries are
+**imperative** — a service calls into `apps/core/history.py`:
+
+- `record_history(object_type, entry_type, object_id, user=None, changes=…)` — the
+  single low-level write entry point.
+- `record_action(object_type, object_id, action, user=None)` — the thin convenience
+  wrapper for `entry_type='action'` (`changes={'_action': action}`). **Prefer this**
+  for system/service action entries over hand-writing `record_history(entry_type='action', …)`.
+
+**Attribution defaults to the request context.** `record_action` (and
+`QBOService.log_sync`) default their author to `current_request_user()` — the
+authenticated user resolved from the active `HistoryContext` — so a service does
+**not** thread a `user`/`actor` just for attribution. Pass an explicit `user=` only
+for a *deliberate non-request author*: a `system` user (signals, expiry commands),
+a customer (the portal puts the customer in the `changes` payload with `user=None`),
+or a historical author + backdated `timestamp` (`backfill_job_history`). (Many older
+imperative sites still thread `request.user` redundantly — converging them on the
+context default is a tracked follow-up in `LATER.md`.)
+
+**Adjunct → primary.** The `@history` decorator keys entries to a model's *own*
+`object_type`, so a sub-resource can't auto-route its history to its parent. Adjuncts
+therefore record imperatively on the **primary's** timeline: `BillPayment` lifecycle
+(recorded / edited / deleted) → `record_action(object_type='bill', object_id=bill_id, …)`;
+`Reimbursement` lifecycle (reimbursed-in-batch / unwound) → `record_action(object_type='expense', …)`
+on each member expense. Delete entries are written on the **success path only** (after
+the QBO void succeeds and just before the local row is removed — capture the parent id +
+amount first).
 
 **Important** (also in CLAUDE.md): never use `QuerySet.update()` on
 tracked models — it bypasses signals. Always load and `.save()`.

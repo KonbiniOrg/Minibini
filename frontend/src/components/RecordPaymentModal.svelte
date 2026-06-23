@@ -1,26 +1,43 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import { getPaymentAccounts } from '../lib/paymentAccounts.js';
+  import PaymentAccountSelect from './qbo/PaymentAccountSelect.svelte';
   let { open = false, billId, defaultAmount = '', onSaved = () => {}, onClose = () => {} } = $props();
 
   let amount = $state('');
-  let method = $state('check');
+  let paymentAccountId = $state('');
   let reference = $state('');
   let paymentDate = $state(new Date().toISOString().slice(0, 10));
   let error = $state('');
 
+  // A payment account is necessary info — if none are configured we can't record
+  // a payment, so the modal explains that instead of showing the form.
+  let accounts = $state([]);
+  let accountsLoaded = $state(false);
+
   $effect(() => { amount = defaultAmount; });
+  $effect(() => {
+    if (open && !accountsLoaded) {
+      getPaymentAccounts().then((a) => {
+        accounts = a;
+        if (a.length > 0 && !paymentAccountId) paymentAccountId = a[0].qbo_account_id;
+        accountsLoaded = true;
+      });
+    }
+  });
 
   async function save() {
     error = '';
     if (!amount || Number(amount) <= 0) { error = 'Amount must be greater than zero.'; return; }
+    if (!paymentAccountId) { error = 'Choose a payment account.'; return; }
     try {
       const payment = await api.post(`/api/bills/${billId}/payments/`, {
-        amount, method, reference,
+        amount, payment_account_id: paymentAccountId, reference,
         payment_date: new Date(paymentDate).toISOString(),
       });
       onSaved(payment);
     } catch (e) {
-      error = e?.data?.detail || 'Could not record payment.';
+      error = errorMessage(e, 'Could not record payment.');
     }
   }
 </script>
@@ -30,22 +47,24 @@
   <div class="modal">
     <h3>Record Payment</h3>
     {#if error}<p class="error">{error}</p>{/if}
-    <label>Amount<input bind:value={amount} type="text" inputmode="decimal" /></label>
-    <label>Method
-      <select bind:value={method}>
-        <option value="check">Check</option>
-        <option value="credit_card">Credit Card</option>
-        <option value="ach">ACH</option>
-        <option value="cash">Cash</option>
-        <option value="other">Other</option>
-      </select>
-    </label>
-    <label>Reference<input bind:value={reference} /></label>
-    <label>Date<input bind:value={paymentDate} type="date" /></label>
-    <div class="actions">
-      <button onclick={save}>Save</button>
-      <button onclick={onClose}>Cancel</button>
-    </div>
+    {#if accountsLoaded && accounts.length === 0}
+      <p>No payment accounts are configured. Set them up in
+        <strong>Settings → QuickBooks</strong> before recording payments.</p>
+      <div class="actions">
+        <button onclick={onClose}>Close</button>
+      </div>
+    {:else}
+      <label>Amount<input bind:value={amount} type="text" inputmode="decimal" /></label>
+      <label>Payment Account
+        <PaymentAccountSelect bind:value={paymentAccountId} required={true} />
+      </label>
+      <label>Reference<input bind:value={reference} /></label>
+      <label>Date<input bind:value={paymentDate} type="date" /></label>
+      <div class="actions">
+        <button onclick={save}>Save</button>
+        <button onclick={onClose}>Cancel</button>
+      </div>
+    {/if}
   </div>
 </div>
 {/if}

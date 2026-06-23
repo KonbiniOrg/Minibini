@@ -75,7 +75,7 @@ class ReimbursementCreateEndpointTest(TestCase):
         )
         self.assertEqual(r.status_code, 201, r.content)
         batch = Reimbursement.objects.get()
-        self.assertEqual(batch.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(batch.qbo_sync_status, Reimbursement.SYNC_SYNCED)
         self.e1.refresh_from_db()
         self.assertEqual(self.e1.status, Expense.STATUS_REIMBURSED)
 
@@ -129,7 +129,7 @@ class ReimbursementRetrySyncEndpointTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNC_FAILED,
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
         )
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
@@ -139,7 +139,7 @@ class ReimbursementRetrySyncEndpointTest(TestCase):
         r = self.client_http.post(f'/api/reimbursements/{self.batch.pk}/retry-sync/')
         self.assertEqual(r.status_code, 200, r.content)
         self.batch.refresh_from_db()
-        self.assertEqual(self.batch.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(self.batch.qbo_sync_status, Reimbursement.SYNC_SYNCED)
 
 
 class ReimbursementDeleteTwoPhaseTest(TestCase):
@@ -161,7 +161,7 @@ class ReimbursementDeleteTwoPhaseTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNCED,
+            qbo_sync_status=Reimbursement.SYNC_SYNCED,
             qbo_id='9100',
         )
         Expense.objects.create(
@@ -192,6 +192,64 @@ class ReimbursementDeleteTwoPhaseTest(TestCase):
         self.assertIn('message', r.json())
         self.assertFalse(Reimbursement.objects.filter(pk=self.batch.pk).exists())
         mock_void.assert_called_once()
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement', side_effect=Exception('QBO down'))
+    def test_confirmed_delete_returns_400_when_void_fails(self, mock_void):
+        """API returns 400 and retains the batch when the QBO void fails."""
+        self.client_http.force_login(self.admin)
+        r = self.client_http.delete(
+            f'/api/reimbursements/{self.batch.pk}/?confirm=true'
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('detail', r.json())
+        self.assertTrue(Reimbursement.objects.filter(pk=self.batch.pk).exists())
+
+
+class ReimbursementRetrySyncDeletePendingTest(TestCase):
+    """retry-sync on a delete-pending reimbursement must return 200 + message, not 500."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(code='DEL', name='DelRei')
+        self.worker = User.objects.create_user(username='worker_del', password='testpass')
+        self.admin = User.objects.create_user(username='admin_del', password='testpass')
+        perm = Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core',
+        )
+        self.admin.user_permissions.add(perm)
+        self.admin = User.objects.get(pk=self.admin.pk)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement')
+    def test_retry_sync_delete_pending_returns_200_and_batch_removed(self, mock_void):
+        """When qbo_pending_op == OP_DELETE, retry-sync completes the delete and
+        returns 200 with a message body instead of 500 DoesNotExist."""
+        mock_void.return_value = None
+        batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 4, 11),
+            payment_account_id='42',
+            created_by=self.admin,
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
+            qbo_id='9100',
+            qbo_pending_op=Reimbursement.OP_DELETE,
+        )
+        # Add one expense so the delete unwinds properly.
+        exp = Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('30.00'), purchased_on=date(2026, 4, 5),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=batch,
+        )
+        self.client_http.force_login(self.admin)
+        r = self.client_http.post(f'/api/reimbursements/{batch.pk}/retry-sync/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn('message', r.json())
+        self.assertFalse(Reimbursement.objects.filter(pk=batch.pk).exists())
+        exp.refresh_from_db()
+        self.assertEqual(exp.status, Expense.STATUS_SUBMITTED)
 
 
 class OutstandingSummaryEndpointTest(TestCase):

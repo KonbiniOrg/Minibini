@@ -16,8 +16,8 @@ class ExpenseAdmin(admin.ModelAdmin):
 @admin.register(Reimbursement)
 class ReimbursementAdmin(admin.ModelAdmin):
     list_display = [
-        'pk', 'paid_on', 'purchased_by', 'status', 'reference_number',
+        'pk', 'paid_on', 'purchased_by', 'qbo_sync_status', 'reference_number',
     ]
-    list_filter = ['status']
+    list_filter = ['qbo_sync_status']
     search_fields = ['reference_number', 'notes']
     ordering = ['-paid_on']

@@ -616,13 +616,22 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
     def payments(self, request, pk=None):
         bill = self.get_object()
         data = request.data
+        payment_account_id = (data.get('payment_account_id') or '').strip()
+        # A payment account is necessary info regardless of QBO connectivity —
+        # the SPA blocks recording when none are configured. QBO being down is
+        # accepted silently (the push marks the payment sync_failed, retryable).
+        if not payment_account_id:
+            return Response(
+                {'payment_account_id': ['A payment account is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             payment = BillPaymentService.record_payment(
                 bill,
                 amount=data.get('amount'),
                 payment_date=data.get('payment_date'),
-                method=data.get('method'),
                 reference=data.get('reference', ''),
+                payment_account_id=payment_account_id,
                 user=request.user,
             )
         except DjangoValidationError as e:
@@ -645,6 +654,22 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
                             status=status.HTTP_400_BAD_REQUEST)
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(BillPaymentSerializer(payment).data)
+
+    @action(detail=True, methods=['post'],
+            url_path='payments/(?P<payment_id>[0-9]+)/retry-sync',
+            url_name='payment-retry-sync')
+    def retry_sync(self, request, pk=None, payment_id=None):
+        self.get_object()  # permission + existence check on the bill
+        try:
+            payment = BillPaymentService.retry(int(payment_id))
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': e.messages[0] if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if payment is None:  # delete branch completed — the payment was removed
+            return Response({'message': 'Payment deleted.'})
         return Response(BillPaymentSerializer(payment).data)
 
     @action(detail=True, methods=['post'], url_path='send-to-qbo')

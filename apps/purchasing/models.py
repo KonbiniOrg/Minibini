@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from apps.core.models import BaseLineItem
+from apps.core.models import BaseLineItem, QBOSyncable
 from apps.core.history import history
 
 
@@ -428,34 +428,26 @@ class Bill(models.Model):
         return f"Bill {self.vendor_invoice_number or self.pk}"
 
 
-class BillPayment(models.Model):
-    METHOD_CHECK = 'check'
-    METHOD_CREDIT_CARD = 'credit_card'
-    METHOD_ACH = 'ach'
-    METHOD_CASH = 'cash'
-    METHOD_OTHER = 'other'
-    METHOD_CHOICES = [
-        (METHOD_CHECK, 'Check'),
-        (METHOD_CREDIT_CARD, 'Credit Card'),
-        (METHOD_ACH, 'ACH'),
-        (METHOD_CASH, 'Cash'),
-        (METHOD_OTHER, 'Other'),
-    ]
-
+class BillPayment(QBOSyncable):
     payment_id = models.AutoField(primary_key=True)
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
     # Payment OUT — entered in Minibini
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_date = models.DateTimeField()
-    method = models.CharField(max_length=20, choices=METHOD_CHOICES)
     reference = models.CharField(max_length=100, blank=True, default='')
+    # Which QBO bank/CC account the money came from (a qbo_account_id from
+    # Configuration['qbo_payment_accounts']). Required by the QBO BillPayment push.
+    # Drives the QBO PayType and replaces the old free-standing `method` field —
+    # the human label is derived from the account display name + reference.
+    payment_account_id = models.CharField(max_length=50, blank=True, default='')
     created_by = models.ForeignKey(
         'core.User', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='recorded_bill_payments',
     )
     created_date = models.DateTimeField(default=timezone.now)
-    # Clearance IN — written only by the polling service
-    qbo_payment_id = models.CharField(max_length=50, blank=True, default='')
+    # qbo_id (the QBO BillPayment Id) + qbo_sync_status + qbo_sync_error come
+    # from QBOSyncable. qbo_id is written by the PUSH; cleared_date is written
+    # later by the (deferred) clearance poller.
     cleared_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:

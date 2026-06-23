@@ -43,6 +43,10 @@ class QBOSyncLog(models.Model):
     status = models.CharField(max_length=20)
     error_message = models.TextField(blank=True)
     synced_at = models.DateTimeField(auto_now_add=True)
+    triggered_by = models.ForeignKey(
+        'core.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+',
+    )
 
     class Meta:
         db_table = 'qbo_sync_log'

@@ -12,6 +12,7 @@
 
   // Filter state
   let filterStatus = $state('');
+  let filterQboSyncStatus = $state('');
   let filterPaymentMethod = $state('');
   let filterFrom = $state('');
   let filterTo = $state('');
@@ -22,6 +23,7 @@
     try {
       const params = new URLSearchParams();
       if (filterStatus) params.set('status', filterStatus);
+      if (filterQboSyncStatus) params.set('qbo_sync_status', filterQboSyncStatus);
       if (filterPaymentMethod) params.set('payment_method', filterPaymentMethod);
       if (filterFrom) params.set('from', filterFrom);
       if (filterTo) params.set('to', filterTo);
@@ -135,6 +137,12 @@
       <option value="submitted">submitted</option>
       <option value="reimbursed">reimbursed</option>
       <option value="rejected">rejected</option>
+    </select>
+  </label>
+  <label>QBO sync:
+    <select bind:value={filterQboSyncStatus} onchange={load}>
+      <option value="">(any)</option>
+      <option value="pending">pending</option>
       <option value="synced">synced</option>
       <option value="sync_failed">sync failed</option>
     </select>
@@ -197,8 +205,11 @@
           <td>{e.payment_method}</td>
           <td>
             <em>{e.status}</em>
-            {#if e.status === 'sync_failed'}
+            {#if e.qbo_sync_status === 'sync_failed'}
+              <span class="sync-failed-badge">sync failed</span>
               <button type="button" onclick={() => retryPush(e)}>retry</button>
+            {:else if e.qbo_sync_status === 'synced'}
+              <span class="synced-badge">synced</span>
             {/if}
             {#if e.invoice}<br>{@render invoicedLink(e.invoice)}{/if}
           </td>
@@ -226,4 +237,6 @@
   }
   .badge-invoiced:hover { text-decoration: underline; }
   .locked-note { font-size: 11px; color: #888; font-style: italic; }
+  .synced-badge { font-size: 11px; color: #047857; font-weight: 600; }
+  .sync-failed-badge { font-size: 11px; color: #b91c1c; font-weight: 600; }
 </style>

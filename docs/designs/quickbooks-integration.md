@@ -46,6 +46,7 @@ Append-only audit trail. Every push attempt writes a row, success or failure.
 | `action` | `'create'`, `'update'`, `'delete'` |
 | `status` | `'success'` or `'failed'` |
 | `error_message` | Exception string on failure; blank otherwise |
+| `triggered_by` | User FK (SET_NULL, nullable) — **who initiated this QBO call.** Auto-set by `log_sync` from the active request context (`current_request_user()`): the acting user for an API-triggered push/retry/void, `None` for a cron/poller sync. No threading — `log_sync` reads the same `HistoryContext` the `@history` decorator uses. Pass an explicit `triggered_by=` only to override. |
 | `synced_at` | `auto_now_add` |
 
 Default ordering is `-synced_at`. No retention policy — log grows forever.
@@ -103,6 +104,41 @@ Read via `QBOExpenseSyncService._load_payment_accounts()`; individual lookup via
 
 Test code mocks at this layer rather than at the python-quickbooks SDK level. Mocking deeper (`quickbooks.objects.invoice.Invoice.save`, etc.) is fragile against SDK upgrades; mocking shallower (the requests library) leaks unrelated HTTP traffic.
 
+## Shared sync scaffolding
+
+The per-entity sync services (`QBOCustomerSyncService`, `QBOVendorSyncService`, `QBOInvoiceSyncService`, `QBOBillSyncService`, `QBOExpenseSyncService`) are organized by QBO entity — each owns the *builder* for its QBO object, which genuinely differs (a `Customer`, an `Invoice`, a `BillPayment`, a `Purchase`…). What they used to duplicate has been factored into four shared pieces:
+
+- **`QBOSyncable`** (`apps/core/models.py`) — abstract model base carrying the sync-state fields `qbo_id`, `qbo_sync_status` (`pending` / `synced` / `sync_failed`), `qbo_sync_error`, **`qbo_pending_op`** (`''` / `create` / `update` / `delete` — the operation a `sync_failed` record still owes QBO), plus `mark_synced(qbo_id)` (clears the op) / `mark_failed(error, op)` (records the op). Adopted by `Expense`, `Reimbursement`, and `BillPayment`. (`Expense.status` is business-only — `submitted`/`reimbursed`/`rejected`; its QBO sync state lives in the inherited `qbo_sync_status`. `Reimbursement`'s sole status *is* its `qbo_sync_status`.)
+- **`QBOSyncService`** (`apps/qbo/services.py`) — the push orchestrators, one per verb: `run_create(record, push_callable)`, `run_update(record, update_callable)`, `run_delete(record, delete_callable)`. Each runs its callable and on failure calls `record.mark_failed(e, record.OP_<verb>)` — so a `sync_failed` row is **self-describing** about which operation to retry. `run_create`/`run_update` **swallow** (a QBO failure never blocks the local write that already committed); `run_delete` **re-raises** so a refused delete aborts the local removal and retains the row. (`run_update` was formerly named `run_resync` — "resync" now means *retry a failure*, not "an edit happened, push the update.")
+- **`QBOService.save_and_log(qbo_obj, client, *, entity_type, qbo_entity_type, entity_id, action='create')`** — saves a QBO SDK object, writes the success/failure `QBOSyncLog` row, returns `str(qbo_obj.Id)`, re-raises on error. Every create/update push method calls it, so the save-and-log boilerplate lives in one place. (The `void_*` deletes and the invoice send — whose log lands after `_mark_as_sent` — keep their own shape.)
+- **`QBOPaymentAccountService`** (`apps/qbo/services.py`) — owns the `Configuration['qbo_payment_accounts']` lookup (`load_accounts()` / `lookup(id)`), shared by the expense/reimbursement `Purchase` push and the bill-payment push.
+
+A typical push method is now: short-circuit on existing id → get client (raise if none) → build the QBO object → `save_and_log(...)` → persist the id on the record; wrapped by `run_create`/`run_update` where the record is a `QBOSyncable`.
+
+### Audit & attribution
+
+Two separate audit trails, with a clean seam between them — and **attribution flows from the request context, never threaded**:
+
+- **QBO-mechanics audit → `QBOSyncLog`** (the swap-the-backend seam): every push/update/void writes a row; `triggered_by` records who initiated it (auto from the request context; `None` for cron). QBO-coupled facts (qbo ids, sync status, error text) live only here.
+- **Domain audit → the history partitions** (`docs/designs/architecture-and-conventions.md`): `Expense` is `@history`-decorated into a new **`ExpensesHistory`** partition (`object_type='expense'`/`'reimbursement'`), with `exclude=[…, qbo_id, qbo_sync_status, qbo_sync_error, qbo_pending_op]` so QBO sync churn never enters the domain timeline. The two **adjuncts** record their lifecycle imperatively on their **primary's** timeline via `record_action(object_type, object_id, action)`: `BillPayment` → the **Bill** (`'bill'`: recorded / edited / deleted), `Reimbursement` → each member **Expense** (`'expense'`: reimbursed-in-batch / unwound). `record_action` and `log_sync` both default their author to `current_request_user()`, so no service threads an actor.
+
+### Retry & sync failures
+
+Each domain service exposes the same small sync-dispatch surface so a failure can be retried as the *operation it actually owes*:
+
+- `_push_create(record)` / `_push_update(record)` — the create and update push wrappers (the update one carries any domain routing, e.g. a personal `Expense`'s edit resyncs its reimbursement **batch**, not the expense).
+- `retry(record, …)` — guards `qbo_sync_status == sync_failed`, then **dispatches on `qbo_pending_op`**: `delete` → re-run the full delete (re-void + local removal); `update` → `_push_update`; `create`/blank → `_push_create`. This fixes the old bug where a blind retry always create-pushed — which **short-circuited on `qbo_id` and silently marked a failed *update* as synced without re-applying the edit**, and abandoned a failed *delete*.
+- `ExpenseService.retry`, `ReimbursementService.retry`, `BillPaymentService.retry` (each backed by a per-entity `POST …/retry-sync/` endpoint). Bill payments' retry endpoint is `POST /api/bills/{id}/payments/{pid}/retry-sync/`.
+
+**Cross-entity failures view.** `QBOSyncFailureService.list_failures()` aggregates every `sync_failed` company `Expense` (personal expenses never carry their own failure — their batch does), `Reimbursement`, and `BillPayment` into one list (`entity_type`, `id`, `label`, `amount`, `qbo_pending_op`, `qbo_sync_error`, `retry_url`). Exposed at:
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` | List all QBO sync failures across the three money pushes |
+| `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` | Retry each (isolated per-record); returns `{retried, still_failing}` |
+
+The SPA surfaces this as `QBOSyncFailures.svelte` (per-row Retry + Retry all) on the Settings page; the failures view covers **only** the three `QBOSyncable` money pushes (Customers/Vendors/Invoices use ad-hoc sync state and are out of scope).
+
 ## Customer sync — `QBOCustomerSyncService`
 
 Customers are pushed lazily. `QBOInvoiceSyncService.push_invoice` resolves the QBO customer ID from `invoice.job.contact.business` (preferred) or `invoice.job.contact` (individual customer), and pushes the missing record if needed.
@@ -140,15 +176,17 @@ Billing address, shipping address, payment terms, tax exemption, and notes are n
 
 Parallel to customer sync. `push_vendor(business)` is called lazily by `QBOBillSyncService.push_bill` and (transitively) by anything else that needs a vendor ID. Same DisplayName collision logic. Stores `qbo_vendor_id` on the `Business`.
 
-## Invoice push — `QBOInvoiceSyncService.push_invoice`
+## Invoice push — `InvoiceEmailService.send_invoice`
 
-Entry point: `POST /api/invoices/{id}/send-to-qbo/` (defined in `apps/api/invoicing/views.py`). Requires `can_manage_financials`. Body:
+The invoice QBO push is **fused into the invoice's Send action** — there is no separate `send-to-qbo` endpoint for invoices (bills have one; invoices do not). Entry point: `POST /api/invoices/{id}/send` (the `send` action on `InvoiceViewSet`, `apps/api/invoicing/views.py`). Requires `can_manage_financials`. Body:
 
 ```json
-{ "send_to": "customer@example.com", "cc": "...", "bcc": "..." }
+{ "to": "customer@example.com", "subject": "...", "body": "...", "cc": "...", "bcc": "..." }
 ```
 
-Service flow (`apps/qbo/services.py`):
+The action delegates to `InvoiceEmailService.send_invoice` (`apps/invoicing/services.py`), which performs the QBO push (only when `invoice.qbo_id` is unset) and then emails the customer — push and send are one operation, not two buttons. It uses the `QBOInvoiceSyncService` *helpers* (`_build_qbo_invoice`, `_mark_as_sent`, `_download_qbo_pdf`); there is no `QBOInvoiceSyncService.push_invoice` method.
+
+Service flow (`InvoiceEmailService.send_invoice`, `apps/invoicing/services.py`):
 
 1. **Short-circuit** — if `invoice.qbo_id` is set, return it. No re-pushing.
 2. **Resolve QBO customer** — push `business` (or `contact`) as customer if not yet synced.
@@ -193,11 +231,21 @@ Flow:
 
 Bills do not push attachments, do not mark-as-sent, and do not send emails. The push is one-way and silent.
 
-### `QBOBillSyncService.push_bill_payment` (stubbed seam)
+### Bill payment push — `QBOBillSyncService.push_bill_payment` / `update_bill_payment` / `void_bill_payment`
 
-`BillPaymentService.record_payment` calls `QBOBillSyncService.push_bill_payment(payment)` immediately after recording a `BillPayment`. This is a **push-on-action seam** — any QBO failures are swallowed-and-logged so they never block the local recording.
+The bill-payment push lives **inside the Minibini payment process**, not as a separate user action. `BillPaymentService.record_payment` calls `push_bill_payment(payment)` immediately after recording a `BillPayment`; `update_payment` resyncs on edit; `delete_payment` voids on delete. All three are best-effort — failures are swallowed-and-logged (`record_payment`/`update_payment` go through `QBOSyncService.run_create`/`run_resync`; `void_bill_payment` swallows internally) so a QBO hiccup never blocks the local write.
 
-Today `push_bill_payment` is **stubbed**: when there is no active QBO connection it returns `None` immediately. When a connection exists it ensures the parent Bill is pushed to QBO first (`push_bill`), then logs the attempt, but does not yet construct or send a QBO `BillPayment` object (the live QBO call lands in the upcoming QBO session). No `qbo_payment_id` is ever written yet. The `entity_type` logged is `'bill_payment'`.
+`push_bill_payment` (live):
+
+1. **Idempotent** — short-circuit if `payment.qbo_id` is already set.
+2. **Connection / account required** — `QBOService.get_client()`; raise `ValueError('No active QBO connection')` if none, and `ValueError` if `payment.payment_account_id` is blank. Both land the payment in `qbo_sync_status='sync_failed'` with the message (the recovery path is editing the payment, which re-pushes). The API requires `payment_account_id` while QBO is connected (400 otherwise).
+3. **Ensure the parent Bill exists** — `push_bill(bill)` if `bill.qbo_id` unset (which in turn lazy-pushes the vendor).
+4. **Build the QBO `BillPayment`** — `VendorRef` from `bill.business.qbo_vendor_id`; `TotalAmt`; one `Line` with a `LinkedTxn` (`TxnId = bill.qbo_id`, `TxnType = 'Bill'`) — that link is what pays the bill down; `DocNumber` from `reference`. **PayType is driven by the selected payment account's `account_type`** (resolved via `QBOPaymentAccountService.lookup(payment.payment_account_id)`): `Credit Card` → `PayType='CreditCard'` + `CreditCardPayment.CCAccountRef`; anything else (`Bank`, `Other Current Asset`, incl. a Petty-Cash account used for a cash payment) → `PayType='Check'` + `CheckPayment.BankAccountRef`.
+5. **Save + log + write back** — via `QBOService.save_and_log`; `run_create` then writes `qbo_id` and `qbo_sync_status='synced'` onto the payment.
+
+`update_bill_payment` re-fetches the QBO `BillPayment`, rebuilds `TotalAmt`/`DocNumber`/line amount, saves. `void_bill_payment` deletes the QBO `BillPayment` (logs but never raises — the caller is mid-delete). On edit, `update_payment` resyncs when `payment.qbo_id` is set, else pushes fresh (covers a payment first recorded while disconnected).
+
+The `BillPayment` model carries the result via the shared `QBOSyncable` fields (`qbo_id` written by the push, `qbo_sync_status`, `qbo_sync_error`); `cleared_date` remains the deferred clearance-poller's field. There is no `method` field — the human descriptor is derived from the payment account + reference.
 
 ## Expense push — `QBOExpenseSyncService`
 
@@ -243,6 +291,10 @@ Personal reimbursement batches do **not** set `EntityRef` on the Purchase. That 
 | `update_expense` / `update_reimbursement` | Re-fetch the QBO `Purchase`, rebuild fields, save. Raises if `qbo_id` not set |
 | `void_expense` / `void_reimbursement` | Delete the QBO `Purchase`. **Logs but does not raise** on failure — the caller is mid-delete and the local row must still be removed |
 
+## Inventory write-offs are not pushed (by design)
+
+`InventoryService.write_off` zeroes a lot's on-hand and books the remainder to `qty_wasted`, recording an `InventoryHistory` entry — it pushes **nothing** to QBO, deliberately. Inventory cost is *expensed at purchase time*: Bills push as a QBO `Bill` and company-paid Expenses as a QBO `Purchase`, both with `AccountBasedExpenseLine`s posting to an **expense / COGS account** (`AccountingCategory.qbo_expense_account_id`), never to a capitalized inventory asset. So the cost already hit QBO's P&L when the bill/expense was recorded; a write-off is a pure quantity event in Minibini with no QBO consequence, and pushing one would **double-count** the cost. This only changes if QBO is ever switched to true inventory-asset tracking (Items with quantities, COGS on sale) — then write-offs would need to relieve the asset; that is a much larger change and is not planned.
+
 ## Accounting categories — `QBOAccountsService`
 
 Two endpoints feed the settings UI mapping page:
@@ -276,7 +328,7 @@ Walks every `Invoice` where `qbo_id` is set and the Minibini status is still `op
 
 ### Bill clearance polling — `QBOBillPaymentPollingService.poll_all()` (stubbed)
 
-Walks every `BillPayment` where `cleared_date` is null and `qbo_payment_id` is non-empty (i.e. payments that have been pushed to QBO but not yet confirmed as cleared). When the live QBO fetch lands (in the upcoming QBO session), this service will write `cleared_date` and confirm `qbo_payment_id` per `BillPayment`. **Today the inner loop body is a stub** — no actual QBO fetch or `cleared_date` write occurs. Because payment push is itself stubbed (`push_bill_payment` never sets `qbo_payment_id`), no rows match the filter yet, so the stub produces no visible effect.
+Walks every `BillPayment` where `cleared_date` is null and `qbo_id` is non-empty (i.e. payments pushed to QBO but not yet confirmed as cleared). When the live QBO fetch lands (**all polling is deferred to a later session**), this service will write `cleared_date` per `BillPayment`. **Today the inner loop body is a stub** — no QBO fetch or `cleared_date` write occurs. Note the bill-payment *push* is now live and writes `qbo_id`, so rows can match this filter; the stub simply doesn't act on them yet.
 
 ### Unified inbound orchestrator — `QBOInboundPollingService`
 
@@ -307,9 +359,9 @@ Settings page — `frontend/src/routes/SettingsPage.svelte`:
 
 Invoice detail — `frontend/src/routes/invoices/InvoiceDetailPage.svelte`:
 
-- "Send to QuickBooks" button (visible when `!invoice.qbo_id` and the user has invoice edit permission) opens `SendToQBODialog.svelte`. Dialog collects `send_to` / `cc` / `bcc` and posts to `/api/invoices/{id}/send-to-qbo/`. Once `qbo_id` is set, the button is replaced by a read-only QBO ID row.
+- A "Send Invoice" link (relabelled "Resend Invoice" once `invoice.qbo_id` is set) navigates to the invoice send page (`#/invoices/{id}/send`). That page posts to `POST /api/invoices/{id}/send`, which performs the QBO push (first send only) and the customer email together. There is no separate "Send to QuickBooks" button or `SendToQBODialog`. Once `qbo_id` is set, the detail page also shows read-only QBO ID / payment-status / amount-paid rows.
 
-The dialog flow on the Minibini side is documented in `invoicing-and-expenses.md`.
+The send flow on the Minibini side is documented in `invoicing-and-expenses.md`.
 
 ## API endpoints
 
@@ -328,7 +380,7 @@ Push endpoints live on the owning resource's viewset:
 
 | Method | Path | Permission | Service |
 |---|---|---|---|
-| `POST` | `/api/invoices/{id}/send-to-qbo/` | `can_manage_financials` | `QBOInvoiceSyncService.push_invoice` |
+| `POST` | `/api/invoices/{id}/send` | `can_manage_financials` | `InvoiceEmailService.send_invoice` — QBO push fused into the send-email action; **no** separate invoice send-to-qbo endpoint |
 | `POST` | `/api/bills/{id}/send-to-qbo/` | `can_manage_financials` | `QBOBillSyncService.push_bill` |
 
 Expense and reimbursement pushes are triggered server-side from their respective save / finalize flows in `apps/expenses` and `apps/reimbursements` — not via dedicated REST actions.
@@ -337,8 +389,7 @@ There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently ins
 
 ## Unfinished work
 
-- **Bill payment push (live QBO call).** `push_bill_payment` is wired as a seam but is stubbed — the actual QBO `BillPayment` object construction and API call land in the upcoming QBO session. Once live, `qbo_payment_id` will be written back to `BillPayment` and the inbound clearance poller can confirm cleared payments.
-- **Bill clearance polling.** `QBOBillPaymentPollingService` is folded into `QBOInboundPollingService` and called by `poll_qbo_payments`, but the inner loop body (QBO fetch + `cleared_date` write) is stubbed pending the live QBO session.
+- **Bill clearance polling.** `QBOBillPaymentPollingService` is folded into `QBOInboundPollingService` and called by `poll_qbo_payments`, but the inner loop body (QBO fetch + `cleared_date` write) is stubbed. **All QBO → Minibini polling is deferred to a dedicated later session** — the bill-payment *push* is live (writes `qbo_id`) but its inbound clearance confirmation is not yet built.
 - **Sync log UI.** No `/api/qbo/sync-log/` endpoint or settings panel showing recent push attempts; failures are visible only via the Django admin.
 - **Employee-as-Vendor sync for personal reimbursements** — tracked in `invoicing-and-expenses.md`.
 - **Job P&L view.** Phase 5 of the original plan — pull QBO-reported actuals back into Minibini for a per-job profit & loss view. Tracked in `invoicing-and-expenses.md`.

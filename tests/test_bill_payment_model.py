@@ -3,8 +3,26 @@ from django.test import TestCase
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.contacts.models import Business, Contact
-from apps.core.models import AccountingCategory
+from apps.core.models import AccountingCategory, QBOSyncable
 from apps.purchasing.models import Bill, BillLineItem, BillPayment
+
+
+class BillPaymentSyncFieldsTests(TestCase):
+    def test_billpayment_inherits_qbosyncable(self):
+        self.assertTrue(issubclass(BillPayment, QBOSyncable))
+
+    def test_new_payment_defaults_pending(self):
+        bp = BillPayment()
+        self.assertEqual(bp.qbo_sync_status, BillPayment.SYNC_PENDING)
+        self.assertEqual(bp.qbo_id, '')
+        self.assertEqual(bp.payment_account_id, '')
+
+    def test_has_payment_account_field(self):
+        names = {f.name for f in BillPayment._meta.get_fields()}
+        self.assertIn('payment_account_id', names)
+        self.assertIn('qbo_id', names)
+        self.assertNotIn('qbo_payment_id', names)
+        self.assertNotIn('method', names)
 
 
 class BillPaymentModelTest(TestCase):
@@ -34,7 +52,7 @@ class BillPaymentModelTest(TestCase):
     def test_payment_drives_status(self):
         BillPayment.objects.create(
             bill=self.bill, amount=Decimal('200.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
             reference='4471',
         )
         self.bill.recompute_payment_status()
@@ -45,7 +63,7 @@ class BillPaymentModelTest(TestCase):
     def test_partial_then_reversal_moves_status_backward(self):
         p = BillPayment.objects.create(
             bill=self.bill, amount=Decimal('50.00'),
-            payment_date=timezone.now(), method=BillPayment.METHOD_CHECK,
+            payment_date=timezone.now(),
         )
         self.bill.recompute_payment_status()
         self.bill.refresh_from_db()

@@ -33,9 +33,11 @@ def _domain_models():
     if _DOMAIN_MODELS is None:
         from apps.core.models import (
             JobHistory, CrmHistory, PurchasingHistory, InventoryHistory,
+            ExpensesHistory,
         )
-        job, crm, pur, inv = (
+        job, crm, pur, inv, exp = (
             JobHistory, CrmHistory, PurchasingHistory, InventoryHistory,
+            ExpensesHistory,
         )
         _DOMAIN_MODELS = {
             'job': job, 'task': job, 'estimate': job, 'changeorder': job,
@@ -43,6 +45,7 @@ def _domain_models():
             'contact': crm, 'business': crm,
             'purchaseorder': pur, 'bill': pur,
             'inventoryitem': inv,
+            'expense': exp, 'reimbursement': exp,
         }
     return _DOMAIN_MODELS
 
@@ -71,6 +74,39 @@ def record_history(object_type, entry_type='audit', object_id=None,
         model.objects.filter(pk=obj.pk).update(timestamp=timestamp)
         obj.timestamp = timestamp
     return obj
+
+
+def current_request_user():
+    """The authenticated user for the active request (from HistoryContext), or None.
+
+    Mirrors the middleware's flush-time resolution: prefers ``_request.user``
+    when it is present and authenticated, then falls back to an explicitly-set
+    ``ctx.user`` (non-request callers / tests).
+    """
+    ctx = get_history_context()
+    if ctx is None:
+        return None
+    request = getattr(ctx, '_request', None)
+    if request is not None and getattr(request, 'user', None) is not None \
+            and request.user.is_authenticated:
+        return request.user
+    return ctx.user
+
+
+def record_action(object_type, object_id, action, user=None):
+    """Record a human-readable 'action' history entry.
+
+    Defaults the author to the current request user (``current_request_user``)
+    so callers need not thread it through.  Pass ``user=`` explicitly only for
+    a deliberate non-request author (e.g. a management command).
+    """
+    return record_history(
+        entry_type='action',
+        object_type=object_type,
+        object_id=object_id,
+        user=user if user is not None else current_request_user(),
+        changes={'_action': action},
+    )
 
 
 def _snapshot_fields(instance):

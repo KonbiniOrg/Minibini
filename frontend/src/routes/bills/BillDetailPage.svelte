@@ -1,7 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
   import RecordPaymentModal from '../../components/RecordPaymentModal.svelte';
@@ -27,6 +28,7 @@
   // RecordPaymentModal state
   let showPayment = $state(false);
   let payDefault = $state('');
+  let paymentAccounts = $state([]);
   let lineItems = $derived(
     (bill?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
@@ -55,6 +57,7 @@
   onMount(() => {
     load();
     loadCategories();
+    getPaymentAccounts().then(a => { paymentAccounts = a; }).catch(() => {});
   });
 
   function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
@@ -85,8 +88,15 @@
   }
 
   async function deletePayment(pid) {
-    await api.delete(`/api/bills/${bill.bill_id}/payments/${pid}/`);
-    load();
+    error = null;
+    try {
+      await api.delete(`/api/bills/${bill.bill_id}/payments/${pid}/`);
+      load();
+    } catch (e) {
+      // A synced payment whose QBO void fails is refused (400) and retained
+      // marked sync-failed — surface that to the user instead of silently failing.
+      error = e.message;
+    }
   }
 
   async function deleteBill() {
@@ -96,6 +106,21 @@
       push('/bills');
     } catch (e) {
       alert(e.message || 'Could not delete bill.');
+    }
+  }
+
+  let paymentRetryErrors = $state({});
+
+  async function retryPaymentSync(pid) {
+    paymentRetryErrors = { ...paymentRetryErrors, [pid]: '' };
+    try {
+      await api.post(`/api/bills/${bill.bill_id}/payments/${pid}/retry-sync/`);
+      await load();
+    } catch (e) {
+      paymentRetryErrors = {
+        ...paymentRetryErrors,
+        [pid]: errorMessage(e, 'Retry failed.'),
+      };
     }
   }
 </script>
@@ -224,9 +249,21 @@
     <table><tbody>
       {#each bill.payments as p}
         <tr>
-          <td>{p.method}</td><td>{p.reference}</td>
+          <td>{paymentAccounts.find(a => a.qbo_account_id === p.payment_account_id)?.display_name || '—'}</td>
+          <td>{p.reference}</td>
           <td>${Number(p.amount).toFixed(2)}</td>
           <td>{p.cleared_date ? `cleared ${p.cleared_date.slice(0,10)}` : 'pending'}</td>
+          <td>
+            {#if p.qbo_sync_status === 'sync_failed'}
+              <span class="sync-error" title={p.qbo_sync_error}>QBO sync failed</span>
+              <button type="button" onclick={() => retryPaymentSync(p.payment_id)}>Retry</button>
+              {#if paymentRetryErrors[p.payment_id]}
+                <em class="sync-error">{paymentRetryErrors[p.payment_id]}</em>
+              {/if}
+            {:else if p.qbo_id}
+              <span>synced</span>
+            {/if}
+          </td>
           {#if $canManageFinancials}
             <td><button type="button" onclick={() => deletePayment(p.payment_id)}>Delete</button></td>
           {/if}
@@ -260,4 +297,5 @@
   .metadata-table td:first-child { white-space: nowrap; }
   h3 { margin-top: 24px; margin-bottom: 8px; }
   .info { color: #555; }
+  .sync-error { color: #a8071a; cursor: default; }
 </style>

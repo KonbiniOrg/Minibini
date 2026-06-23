@@ -642,14 +642,13 @@ IMAP-SMTP machinery and tend to be worked together.
   calls `.save()` (or otherwise invokes the completion gate), with a test that a cancelled last-invoice on an
   all-shipped job completes the job.
 
-- **Reimbursement QBO push fails consistently with an error.** — _added 2026-06-14_
-  Surfaced during Expenses UI testing: creating a `Reimbursement` batch (`ReimbursementService.create_batch`
-  → `QBOExpenseSyncService.push_reimbursement`) fails on the QBO push, leaving the batch in `sync_failed`
-  every time. The DB commit stands (expenses still flip to `reimbursed`), but the QBO sync never succeeds.
-  Error text not yet captured here — paste it in when reproducing. Could be env-only (QBO connection/
-  credentials in this dev env) or a real defect in the reimbursement push payload; needs triage to tell which.
-  _Done when:_ the push succeeds against a connected QBO sandbox, or the failure is root-caused to an env/config
-  issue and documented (with the retry path via `ReimbursementService.retry_sync` confirmed working).
+- ~~**Reimbursement QBO push fails consistently with an error.**~~ — _resolved 2026-06-21 (ENV-ONLY)_
+  Root-caused: no code defect. `push_reimbursement` is structurally identical to the working expense
+  push; a characterization test with a mocked client passes on first run (`tests/test_qbo_reimbursement_push.py`).
+  The dev `sync_failed` is purely the missing QBO sandbox: `get_client()` → None →
+  `ValueError('No active QBO connection')` → `QBOSyncService.run_create` records `sync_failed`. The local
+  commit stands (batch + reimbursed expenses); recovery is the existing `ReimbursementService.retry_sync`
+  once a sandbox is connected.
 
 - **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
   An expense is single-mode (cost OR stock receipt) and records one purchased item.
@@ -668,13 +667,80 @@ IMAP-SMTP machinery and tend to be worked together.
   mixed receipt and prompts the user to split it — so a non-inventory cost can never be
   silently swallowed by a stock receipt.
 
-- **Write-off → QBO?** — _added 2026-06-15_
-  Inventory write-off (`InventoryService.write_off`) zeroes a lot's QOH and books
-  the remainder to `qty_wasted`, recording an `InventoryHistory` entry. It does
-  **not** push anything to QBO. Decide whether written-off inventory should post
-  to QBO as an expense / COGS / shrinkage adjustment, or stay inventory-only.
-  _Done when:_ a decision is recorded — either a QBO push path for write-offs
-  exists, or it's documented that write-offs are deliberately inventory-only.
+- ~~**Write-off → QBO?**~~ — _resolved 2026-06-21_ Decision: write-offs stay **inventory-only**, no QBO
+  push. Inventory cost is expensed at purchase time (bills/expenses post to expense/COGS accounts, not a
+  capitalized inventory asset), so a write-off has no QBO consequence and pushing one would double-count.
+  Recorded in `quickbooks-integration.md` ("Inventory write-offs are not pushed"). Revisit only if QBO is
+  ever switched to true inventory-asset tracking.
+
+- **Reimbursement batch delete/unwind isn't exposed in the SPA.** — _added 2026-06-22_
+  The backend fully supports unwinding a reimbursement batch — `ReimbursementService.delete`
+  voids the QBO Purchase (now symmetric: a failed void refuses the delete and retains the batch
+  marked `sync_failed`), flips its expenses back to `submitted`, and deletes the batch row, behind
+  the confirm-delete endpoint `DELETE /api/reimbursements/{id}/?confirm=true`. But **no SPA component
+  calls it** — `UserReimbursementPanel` only creates batches and retries sync; there's no
+  delete/unwind button. So a batch (e.g. one stuck in `sync_failed`) can't be unwound from the UI.
+  _Done when:_ the reimbursement panel (or a batch detail view) has a confirm-guarded delete/unwind
+  action wired to the existing endpoint, surfacing the 400 the same way the other delete actions do.
+
+- ~~**Failed-*delete* batch vs. retry-sync ambiguity.**~~ — _resolved 2026-06-22_
+  Resolved by the `qbo_pending_op` work: every `QBOSyncable` record now stores which operation it
+  owes (`create`/`update`/`delete`), set by the orchestrator (`run_create`/`run_update`/`run_delete`)
+  on failure. `retry` dispatches on it — a failed-delete row re-runs the delete, a failed-update row
+  re-applies the update (the old retry's create-push short-circuit, which silently mis-handled both,
+  is gone). See `quickbooks-integration.md` "Retry & sync failures". The broader "should
+  Customers/Vendors/Invoices also get this base + appear in the failures view" is the remaining open
+  question (they use ad-hoc sync state today) — left below as its own consideration.
+
+- **Maybe fold the invoice push into `save_and_log`?** — _added 2026-06-21_
+  Every QBO create/update push now routes through `QBOService.save_and_log` (and the deletes through
+  `delete_and_log`). The **invoice send** (`InvoiceEmailService.send_invoice`) is the lone holdout: it does
+  create-`save` → persist `qbo_id` → `_mark_as_sent` (a *second* QBO round trip) → *then* `log_sync` success,
+  so its success row means "created **and** marked-sent," not just "created." Folding the create-`save` step
+  into `save_and_log` would move the success log to right after the create (before mark-sent) — a deliberate
+  change to what the log row means (QBO-object-creation vs whole-send success). Possibly worth it for symmetry,
+  but it needs more thought about the two-round-trip semantics and the partial-failure window.
+  _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
+  call made) or stays a bespoke sequence, and recorded why.
+
+- **Drop `request.user` threading from imperative history; default to the request context.** — _added 2026-06-22_
+  Imperative history sites that fire from an authenticated request (`record_payment`, `cancel_line_item`,
+  the inventory/purchasing services, the PO email/cancel/receive paths) **thread `request.user` through
+  service-method signatures** purely to hand it to `record_history`. That's redundant: `record_history`
+  could default `user` to `current_request_user()` — the same request-scoped `HistoryContext` the `@history`
+  decorator already reads (middleware sets it; DRF auth has run by the time a view's service code executes).
+  The **deliberate-author sites need no change** — they call `record_history` directly with their own
+  explicit `user`, which overrides any default: portal (`user=None` + customer in the changes payload),
+  signals & the expiry commands (`user=system_user`), and `backfill_job_history` (a *specific historical
+  author* + backdated `timestamp=`, run with no request — the proof that `record_history` must keep an
+  *optional* `user=` param). So the refactor is bounded and mechanical: **(a)** make
+  `record_history`/`record_action` default `user` to `current_request_user()`; **(b)** drop the `user`/`actor`
+  params from the request-driven service methods; **(c)** leave the deliberate-author sites untouched.
+  Context: the 2026-06-22 QBO-attribution work (`record_action`, `QBOSyncLog.triggered_by` via `log_sync`)
+  already uses the context for its *new* code — deliberately inconsistent with the still-threaded older
+  sites; this item converges everything to one attribution style.
+  _Done when:_ request-driven services no longer thread a user just for history attribution, the
+  deliberate-author sites are unchanged, and there's a single attribution mechanism.
+
+- **`@history` decorator `anchor=` param — route an adjunct's auto-history to its primary.** — _added 2026-06-22_
+  The `@history` decorator keys entries to the model's *own* `object_type`, so an adjunct (BillPayment→Bill,
+  line item→parent document) can't use it to land its auto create/update entries on the **primary's**
+  timeline — those stay imperative (`record_action(object_type='<primary>', …)`). A declarative
+  `@history(anchor=('bill', 'bill_id'))` could route a child's auto-history to its parent (and would
+  generalize to line items, etc.). Caveats that keep it from being a clean win: parent-anchored *field
+  diffs* read ambiguously without a self-describing label ("amount 50→75" on the bill — whose amount?);
+  it still wouldn't cover deletes; and a many-anchor case (Reimbursement→many expenses) doesn't fit. It's a
+  change to a core mechanism on ~12 models. Deferred — adjunct lifecycle stays imperative via `record_action`.
+  _Done when:_ decided whether to add `anchor=` (+ a labeling mechanism) to the decorator, or keep adjunct
+  history imperative.
+
+- **`@history` doesn't track deletes (`post_delete`).** — _added 2026-06-22_
+  The decorator wires `post_init`/`pre_save`/`post_save` only — **no `post_delete`** — so a tracked model's
+  deletion records nothing automatically. Not a problem today: the decorated records (estimates, bills, POs,
+  …) and the newly-decorated `Expense` are *created-and-kept forever*; deletions are rare and are recorded
+  imperatively where they matter. Revisit only if a frequently-deleted model becomes `@history`-tracked.
+  _Done when:_ decided whether `@history` should grow delete tracking, or imperative delete entries remain
+  the norm.
 
 - **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
   Background: the original plan was *delete-on-spend*, but the code review surfaced
