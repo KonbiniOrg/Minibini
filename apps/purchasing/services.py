@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal
-from apps.core.history import record_history
+from apps.core.history import record_history, record_action
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -963,11 +963,7 @@ class BillPaymentService:
                 pass
         if reference:
             history_action += f' (ref {reference})'
-        record_history(
-            entry_type='action', object_type='bill', object_id=bill.pk,
-            user=user,
-            changes={'_action': history_action},
-        )
+        record_action(object_type='bill', object_id=bill.pk, action=history_action)
         BillPaymentService._push_to_qbo(payment)
         return payment
 
@@ -1011,6 +1007,10 @@ class BillPaymentService:
         payment.full_clean()
         payment.save()
         payment.bill.recompute_payment_status()
+        edit_action = f'Payment edited: {payment.amount}'
+        if payment.reference:
+            edit_action += f' (ref {payment.reference})'
+        record_action(object_type='bill', object_id=payment.bill_id, action=edit_action)
         # QBO resync (best-effort; never blocks the local edit).
         if payment.qbo_id:
             BillPaymentService._push_update(payment)
@@ -1038,9 +1038,12 @@ class BillPaymentService:
                     'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
                 )
         # Local delete only runs when QBO void succeeded (or no qbo_id)
+        bill_id = payment.bill_id
+        amt = payment.amount
         with transaction.atomic():
             payment.delete()
             payment.bill.recompute_payment_status()
+        record_action(object_type='bill', object_id=bill_id, action=f'Payment deleted: {amt}')
 
     @staticmethod
     def retry(payment_id):
