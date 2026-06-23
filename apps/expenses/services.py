@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
+from apps.core.history import record_action
 from apps.expenses.models import Expense
 
 
@@ -329,6 +330,11 @@ class ReimbursementService:
                 e.reimbursement = batch
                 e.status = Expense.STATUS_REIMBURSED
                 e.save(update_fields=['reimbursement', 'status'])
+                record_action(
+                    object_type='expense',
+                    object_id=e.pk,
+                    action=f'Reimbursed in batch #{batch.pk} (paid to {purchased_by.username})',
+                )
 
         # After commit: attempt QBO push.
         ReimbursementService._push_create(batch)
@@ -379,8 +385,14 @@ class ReimbursementService:
                 )
 
         with transaction.atomic():
+            batch_pk = batch.pk
             for e in batch.expenses.all():
                 e.reimbursement = None
                 e.status = Expense.STATUS_SUBMITTED
                 e.save(update_fields=['reimbursement', 'status'])
+                record_action(
+                    object_type='expense',
+                    object_id=e.pk,
+                    action=f'Reimbursement unwound (batch #{batch_pk})',
+                )
             batch.delete()

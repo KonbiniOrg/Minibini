@@ -5,7 +5,8 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, ExpensesHistory
+from apps.core.history import set_history_context, HistoryContext
 from apps.expenses.models import Expense, Reimbursement
 from apps.expenses.services import ReimbursementService
 
@@ -298,3 +299,102 @@ class ReimbursementDeleteTest(TestCase):
         self.e1.refresh_from_db()
         self.assertEqual(self.e1.status, Expense.STATUS_SUBMITTED)
         self.assertIsNone(self.e1.reimbursement)
+
+
+class ReimbursementHistoryTest(TestCase):
+    """record_action writes human-context action rows on member expenses."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.worker = User.objects.create_user(username='worker_h', password='testpass')
+        self.admin = User.objects.create_user(username='admin_h', password='testpass')
+        self.cat = AccountingCategory.objects.create(
+            code='HST', name='History Supplies', qbo_expense_account_id='500',
+        )
+        set_history_context(HistoryContext(user=self.admin))
+
+    def tearDown(self):
+        set_history_context(None)
+
+    def _expense(self, amt='30.00'):
+        return Expense.objects.create(
+            entered_by=self.worker,
+            purchased_by=self.worker,
+            amount=Decimal(amt),
+            purchased_on=date(2026, 5, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_SUBMITTED,
+        )
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
+    def test_create_batch_writes_action_row_on_each_member_expense(self, mock_push):
+        mock_push.return_value = '9999'
+        e1 = self._expense('20.00')
+        e2 = self._expense('30.00')
+
+        batch = ReimbursementService.create_batch(
+            purchased_by=self.worker,
+            expense_ids=[e1.pk, e2.pk],
+            paid_on=date(2026, 5, 10),
+            payment_account_id='42',
+            reference_number='',
+            notes='',
+            created_by=self.admin,
+        )
+
+        for e in (e1, e2):
+            action_rows = ExpensesHistory.objects.filter(
+                object_type='expense',
+                object_id=e.pk,
+                entry_type='action',
+            )
+            self.assertEqual(action_rows.count(), 1,
+                             f'Expected 1 action row on expense {e.pk}')
+            row = action_rows.first()
+            self.assertIn(f'Reimbursed in batch #{batch.pk}', row.changes['_action'])
+            self.assertEqual(row.user, self.admin)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement')
+    def test_delete_writes_unwind_action_row_on_each_member_expense(self, mock_void):
+        # Build a batch manually so we can test the delete path.
+        batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 5, 10),
+            payment_account_id='42',
+            created_by=self.admin,
+            qbo_sync_status=Reimbursement.SYNC_SYNCED,
+            qbo_id='8888',
+        )
+        e1 = Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('20.00'), purchased_on=date(2026, 5, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=batch,
+        )
+        e2 = Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('30.00'), purchased_on=date(2026, 5, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=batch,
+        )
+        batch_pk = batch.pk
+
+        ReimbursementService.delete(batch=batch, actor=self.admin)
+
+        for e in (e1, e2):
+            action_rows = ExpensesHistory.objects.filter(
+                object_type='expense',
+                object_id=e.pk,
+                entry_type='action',
+            )
+            self.assertEqual(action_rows.count(), 1,
+                             f'Expected 1 unwind action row on expense {e.pk}')
+            row = action_rows.first()
+            self.assertIn('Reimbursement unwound', row.changes['_action'])
+            self.assertIn(f'batch #{batch_pk}', row.changes['_action'])
+            self.assertEqual(row.user, self.admin)
