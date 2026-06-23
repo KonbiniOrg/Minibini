@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the delete-retry 500 (final-review blocker) by extracting a shared retry-endpoint mixin; give the three QBO money records proper audit — domain history for `Expense` (via the `@history` decorator), adjunct lifecycle history for `BillPayment`→Bill and `Reimbursement`→Expense (imperative), and "who triggered it" on every QBO sync via `QBOSyncLog.triggered_by` — all attributed automatically from the existing request-user context, no actor threading.
+**Goal:** Give the three QBO money records proper audit — domain history for `Expense` (via the `@history` decorator), adjunct lifecycle history for `BillPayment`→Bill and `Reimbursement`→Expense (imperative), and "who triggered it" on every QBO sync via `QBOSyncLog.triggered_by` — all attributed automatically from the existing request-user context, no actor threading. Also de-duplicate the two retry-sync endpoints (whose delete-branch `None` guard was just fixed per-endpoint in `c4d7b17f`) into one shared mixin.
+
+**Note on the 500:** the delete-retry 500 the final review flagged is **already fixed** (commit `c4d7b17f` added the `if result is None` guard to both endpoints, with regression tests). Task 1 is therefore a **de-dup refactor** of that now-duplicated guard, not a bug fix.
 
 **Architecture:** Attribution is uniform: `@history` already reads `request.user` from a request-scoped `HistoryContext` (set by middleware, resolved at write time); we make `record_action` (a new thin wrapper over `record_history` for `entry_type='action'`) and `QBOSyncLog`'s `log_sync` read the **same** context via a new `current_request_user()` accessor. So nothing threads an `actor`. Domain history: `Expense` gets `@history(exclude=[pk, qbo_*])` writing to a new `ExpensesHistory` partition (qbo_* excluded keeps the QBO seam); `BillPayment` and `Reimbursement` are adjuncts, so their lifecycle events are written imperatively to their primary's timeline (`object_type='bill'` / `object_type='expense'`) via `record_action`. QBO-mechanics audit stays in `QBOSyncLog` (the swap-the-backend seam).
 
@@ -46,33 +48,17 @@
 
 ## Phase 1 — Close the blocker + the standard helper
 
-### Task 1: `QBORetrySyncMixin` (fixes the delete-retry 500)
+### Task 1: `QBORetrySyncMixin` (de-dup the retry-sync endpoints)
 
-The Expense and Reimbursement `retry-sync` actions 500 when retrying a *delete*-pending record: `retry` returns `None` (record deleted), but both views `refresh_from_db()` unconditionally. The bill-payment action (`apps/api/purchasing/views.py`) already guards `if … is None`. Extract one mixin.
+The delete-retry 500 is **already fixed** (commit `c4d7b17f`): both the Expense and Reimbursement `retry-sync` actions now capture the return and `if result is None: return {message}` (mirroring the bill-payment action). That guard is now **duplicated across the two endpoints** — extract it into one mixin so it can't drift. Behavior is unchanged; this is a pure refactor that should keep the existing (already-passing) regression tests green.
 
 **Files:** `apps/api/mixins.py` (add mixin); `apps/api/expenses/views.py`, `apps/api/reimbursements/views.py` (use it); tests `tests/test_api_expenses.py`, `tests/test_api_reimbursements.py`.
 
 **Interfaces:**
 - `QBORetrySyncMixin` provides a `retry_sync` DRF action (`detail=True`, POST, `url_path='retry-sync'`). It resolves the target via `self.get_object()`, calls a configurable service retry (`self.retry_service_call(obj, request)`), and: on `DjangoValidationError` → 400; on `None` return → `Response({'message': self.retry_deleted_message})`; else 200 `Response(self.get_serializer(obj).data)` after `obj.refresh_from_db()`.
 
-- [ ] **Step 1: Write the failing tests** — for BOTH endpoints, a `sync_failed` record with `qbo_pending_op=OP_DELETE` and `qbo_id` set; mock the entity's `void_*` to succeed; POST `…/retry-sync/` → assert **200**, body has `'message'`, and the row is **gone**. (These currently 500.) Plus keep a create-op retry → 200 + serialized.
-
-```python
-# tests/test_api_expenses.py
-@patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
-def test_retry_sync_delete_op_returns_deleted_message(self, _v):
-    exp = self._company_expense(qbo_id='q1')
-    exp.qbo_sync_status = Expense.SYNC_FAILED
-    exp.qbo_pending_op = Expense.OP_DELETE
-    exp.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
-    resp = self.client.post(f'/api/expenses/{exp.pk}/retry-sync/')
-    self.assertEqual(resp.status_code, 200)
-    self.assertIn('message', resp.json())
-    self.assertFalse(Expense.objects.filter(pk=exp.pk).exists())
-```
-
-- [ ] **Step 2: Run → fail** (500 / `DoesNotExist`).
-- [ ] **Step 3: Implement the mixin** in `apps/api/mixins.py`:
+- [ ] **Step 1: Confirm the existing regression tests pass** — `c4d7b17f` already added delete-op retry tests to `tests/test_api_expenses.py` and `tests/test_api_reimbursements.py` (delete-pending retry → 200 + `'message'` + row gone). Run `python manage.py test tests.test_api_expenses tests.test_api_reimbursements -v 1` to confirm green BEFORE refactoring — these are the safety net for the de-dup.
+- [ ] **Step 2: Implement the mixin** in `apps/api/mixins.py`:
 
 ```python
 class QBORetrySyncMixin:
@@ -98,8 +84,8 @@ class QBORetrySyncMixin:
 
 Wire the two viewsets: remove their hand-written `retry_sync` actions, mix in `QBORetrySyncMixin`, set `retry_deleted_message`, and implement `retry_service_call` (`ExpenseService.retry(expense=obj, actor=request.user)` / `ReimbursementService.retry(batch=obj, actor=request.user)`). (Bill payments keep their own action — it's a nested route with a different signature.)
 
-- [ ] **Step 4: Run → pass.** Green gate: `python manage.py test tests.test_api_expenses tests.test_api_reimbursements -v 1`.
-- [ ] **Step 5: Commit** `fix(api): QBORetrySyncMixin — handle delete-branch retry (None) uniformly; fixes 500`.
+- [ ] **Step 3: Run → still green** (behavior unchanged). Green gate: `python manage.py test tests.test_api_expenses tests.test_api_reimbursements -v 1`.
+- [ ] **Step 4: Commit** `refactor(api): extract QBORetrySyncMixin; de-dup the retry-sync delete-branch guard`.
 
 ### Task 2: `current_request_user()` + `record_action()`
 
