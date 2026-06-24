@@ -100,6 +100,14 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
+    def validate_service_price(self, value):
+        from apps.jobs.models import ServicePrice
+        if value and value.algorithm == ServicePrice.PERCENTAGE:
+            raise serializers.ValidationError(
+                'Percentage services are document adjustments and cannot bill a task.'
+            )
+        return value
+
     def get_assignee_name(self, obj):
         if obj.assignee:
             name = obj.assignee.get_full_name()

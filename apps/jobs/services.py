@@ -872,6 +872,10 @@ class TaskService:
             raise ValidationError(
                 {'service_price': 'Selected ServicePrice is superseded.'}
             )
+        if scheme.algorithm == ServicePrice.PERCENTAGE:
+            raise ValidationError(
+                {'service_price': 'Percentage services are document adjustments and cannot bill a task.'}
+            )
         with transaction.atomic():
             task = Task.objects.create(
                 job=job, name=name,

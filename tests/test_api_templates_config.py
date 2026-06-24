@@ -67,3 +67,29 @@ class ConfigurationAPITest(BaseTestCase):
     def test_list_accounting_categories(self):
         response = self.client.get('/api/accounting-categories/')
         self.assertEqual(response.status_code, 200)
+
+
+class PercentageServiceTaskTemplateRejectionTest(BaseTestCase):
+    """A ServicePrice with algorithm=PERCENTAGE must be rejected when assigning
+    to a TaskTemplate — percentage services are document-level adjustments only."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        from apps.jobs.models import ServicePrice
+        from apps.core.models import AccountingCategory
+        ac = AccountingCategory.objects.create(code='TMP-PCT', name='TMP-PCT')
+        self.rush = ServicePrice.objects.create(
+            name='Rush TT', algorithm=ServicePrice.PERCENTAGE, rate='15',
+            unit_label='%', accounting_category=ac,
+        )
+
+    def test_cannot_assign_percentage_service_to_task_template(self):
+        resp = self.client.post('/api/task-templates/', {
+            'template_name': 'Rush Template',
+            'service_price': self.rush.pk,
+            'default_billable_qty': '1.00',
+        }, format='json')
+        self.assertEqual(resp.status_code, 400, resp.data)

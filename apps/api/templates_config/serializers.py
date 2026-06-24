@@ -15,6 +15,14 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['template_id']
 
+    def validate_service_price(self, value):
+        from apps.jobs.models import ServicePrice
+        if value and value.algorithm == ServicePrice.PERCENTAGE:
+            raise serializers.ValidationError(
+                'Percentage services are document adjustments and cannot bill a task.'
+            )
+        return value
+
 
 class TemplateAssociationSerializer(serializers.ModelSerializer):
     task_template = TaskTemplateSerializer(read_only=True)

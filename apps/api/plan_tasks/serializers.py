@@ -79,6 +79,14 @@ class PlanTaskDetailSerializer(JobScopedCanManageMixin, serializers.ModelSeriali
         ]
         read_only_fields = fields
 
+    def validate_service_price(self, value):
+        from apps.jobs.models import ServicePrice
+        if value and value.algorithm == ServicePrice.PERCENTAGE:
+            raise serializers.ValidationError(
+                'Percentage services are document adjustments and cannot bill a task.'
+            )
+        return value
+
     def get_effective_rate(self, obj):
         rate = obj.effective_rate() if obj.service_price_id else None
         return str(rate) if rate is not None else None

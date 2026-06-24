@@ -396,3 +396,32 @@ class ServicePriceSupersedeSameNameTest(BaseTestCase):
         self.assertEqual(resp.json()['name'], 'SN-Setup Premium')
         old.refresh_from_db()
         self.assertEqual(old.name, 'SN-Setup (v1)')
+
+
+class ServicePriceTaskApplicableFilterTest(TestCase):
+    """GET /api/service-prices/?task_applicable=true must exclude percentage services."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import ServicePrice
+        self.user = get_user_model().objects.create_user(
+            username='u-taf', password='testpass',
+        )
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='TAF', name='TAF')
+        ServicePrice.objects.create(
+            name='Hourly TAF', algorithm=ServicePrice.ELAPSED_TIME,
+            rate=Decimal('45.00'), unit_label='hour', accounting_category=self.ac,
+        )
+        ServicePrice.objects.create(
+            name='Rush TAF', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('15'), unit_label='%', accounting_category=self.ac,
+        )
+
+    def test_task_applicable_filter_excludes_percentage(self):
+        resp = self.client.get('/api/service-prices/?task_applicable=true')
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        items = body.get('results', body)
+        algos = {r['algorithm'] for r in items}
+        self.assertNotIn('percentage', algos)

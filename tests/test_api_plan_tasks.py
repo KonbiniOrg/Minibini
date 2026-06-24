@@ -225,3 +225,36 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         plan_task = PlanTask.objects.get(pk=response.data['plan_task_id'])
         self.assertEqual(plan_task.est_worker_time, timedelta(hours=1))
+
+
+class PercentageServicePlanTaskRejectionTest(TestCase):
+    """A ServicePrice with algorithm=PERCENTAGE must be rejected when assigning
+    to a PlanTask via the worksheet tasks endpoint."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='pct_ws_mgr', password='testpass',
+        )
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.user = User.objects.get(pk=self.user.pk)
+        self.client.force_authenticate(user=self.user)
+        contact = Contact.objects.create(first_name='Pct', last_name='Ws')
+        self.job = Job.objects.create(
+            job_number='PCT-WS-001', name='Pct Ws Job', contact=contact,
+        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        ac = AccountingCategory.objects.create(code='LAB-pws', name='Labor PWS')
+        self.rush = ServicePrice.objects.create(
+            name='Rush WS', algorithm=ServicePrice.PERCENTAGE, rate=Decimal('15'),
+            unit_label='%', accounting_category=ac,
+        )
+
+    def test_cannot_assign_percentage_service_to_plan_task(self):
+        resp = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/tasks/',
+            {'name': 'y', 'service_price': self.rush.pk, 'est_qty': '1'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.data)
