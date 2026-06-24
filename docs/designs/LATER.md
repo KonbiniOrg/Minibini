@@ -921,3 +921,16 @@ IMAP-SMTP machinery and tend to be worked together.
   second-line-to-second-material deterministic.
   _Done when:_ a user can add a PO line for a job and explicitly choose which
   existing pending material it links to (or opt to create a new one), with tests.
+
+- **nealsdata converter mints a zero-rate flat-fee ServicePrice for $0 source lines.** — _added 2026-06-23_
+  After the ServicePrice reframe, the converter (`nealsdata/converter/build.py`,
+  `_match_seed_scheme`) mints one flat-fee `ServicePrice` per distinct price; a
+  source line priced at $0 yields a `rate=0.00` flat-fee service (seen in
+  regenerated `fixtures/large_datasets/nealsmall.json`, pk 18 "Flat Fee $0.00").
+  `validate_data` flags flat-fee services with non-positive `rate`, so this is
+  discoverable, but it's untidy dev seed data. Lowest-risk fix: a converter guard
+  that skips emitting a flat-fee service when `rate <= 0` (and logs the source
+  line) or routes it to a documented sentinel. Dev-data only; not test-path.
+  _Done when:_ regenerating the neals fixtures produces no zero-rate flat-fee
+  ServicePrice (or the case is deliberately documented), and `validate_data` is
+  clean on the regenerated dev data.
