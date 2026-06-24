@@ -327,6 +327,7 @@ class Command(BaseCommand):
 
     def check_tasks(self):
         from apps.jobs.models import Task, PlanTask
+        from apps.estimates.models import TaskTemplate
         valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
         # Tasks now belong directly to a Job (post-WorkOrder-removal).
         for t in Task.objects.select_related('job').all():
@@ -334,10 +335,25 @@ class Command(BaseCommand):
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
             if t.status not in valid_task_statuses:
                 self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
+            if isinstance(t.active_modifiers, dict):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
+                )
         # Plan tasks: PlanTask is worksheet-only
         for t in PlanTask.objects.select_related('est_worksheet').all():
             if not t.est_worksheet_id:
                 self.errors.append(f'PlanTask {t.pk} ({t.name}): not attached to an EstWorksheet')
+            if isinstance(t.active_modifiers, dict):
+                self.errors.append(
+                    f'PlanTask {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
+                )
+        # TaskTemplates: default_active_modifiers must be a list
+        for tt in TaskTemplate.objects.all():
+            if isinstance(tt.default_active_modifiers, dict):
+                self.errors.append(
+                    f'TaskTemplate {tt.pk} ({tt.template_name}): '
+                    f'default_active_modifiers is a dict; must be a list of keys'
+                )
 
     # ── Materials ─────────────────────────────────────────────
 
@@ -491,6 +507,10 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'ServicePrice {rs.pk} ({rs.name}): replaced_by and replaced_at '
                     f'must both be set or both be null'
+                )
+            if rs.algorithm == ServicePrice.FLAT_FEE and (rs.rate is None or rs.rate <= 0):
+                self.errors.append(
+                    f'ServicePrice {rs.pk} ({rs.name}): flat-fee service must have a positive rate'
                 )
 
     # ── Deliverables ──────────────────────────────────────────
