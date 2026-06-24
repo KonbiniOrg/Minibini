@@ -222,16 +222,16 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.price, Decimal('15.00'))
 
     def test_flat_fee_same_scheme_summed(self):
-        # flat_fee carries its unit price as a dict in active_modifiers; same
-        # scheme + same price still summarizes — est_qty summed, not set to 1.
+        # flat_fee price now lives on ServicePrice.rate; active_modifiers is [].
+        # Same scheme + same (empty) modifiers summarizes — est_qty summed, not set to 1.
         scheme_flat = ServicePrice.objects.create(
             name='E-Tapping', algorithm=ServicePrice.FLAT_FEE,
-            rate=Decimal('0.00'), unit_label='holes',
+            rate=Decimal('7.00'), unit_label='holes',
             accounting_category=self.cat,
         )
         li = self._bundle(
-            self._pt(scheme_flat, 4, {'flat_fee_price': '7.00'}),
-            self._pt(scheme_flat, 6, {'flat_fee_price': '7.00'}),
+            self._pt(scheme_flat, 4),
+            self._pt(scheme_flat, 6),
         )
         self.assertEqual(li.units, 'holes')
         self.assertEqual(li.qty, Decimal('10'))  # 4 + 6 est_qty, not 1

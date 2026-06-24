@@ -36,14 +36,13 @@ def _pick_least_used_accent_color():
 
 
 def copy_active_modifiers(value):
-    """Return a copy of an atom's active_modifiers JSON, preserving its shape.
+    """Return a copy of an atom's active_modifiers list (modifier keys).
 
-    flat_fee atoms store a dict ({'flat_fee_price': str}); other algorithms
-    store a list of modifier keys. A bare list(value) would silently reduce a
-    dict to a list of its keys, dropping the price.
+    Legacy flat-fee dicts ({'flat_fee_price': ...}) collapse to [] — the price
+    now lives on ServicePrice.rate, not on the atom.
     """
     if isinstance(value, dict):
-        return dict(value)
+        return []
     return list(value or [])
 
 
@@ -531,19 +530,6 @@ class ServicePrice(models.Model):
             self.full_clean()
         super().save(*args, **kwargs)
 
-    @staticmethod
-    def _flat_fee_price(active_modifiers):
-        """Pull the flat-fee unit price out of an atom's active_modifiers JSON.
-
-        flat_fee atoms store the price as {'flat_fee_price': <str>}; every
-        other algorithm stores a list of modifier keys. Returns a Decimal, or
-        None when no price is present (caller falls back to the scheme rate).
-        """
-        if isinstance(active_modifiers, dict):
-            raw = active_modifiers.get('flat_fee_price')
-            if raw is not None and raw != '':
-                return Decimal(str(raw))
-        return None
 
     def effective_rate(self, active_modifiers=None):
         """Compute the per-unit rate.

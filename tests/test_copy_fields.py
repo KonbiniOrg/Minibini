@@ -19,6 +19,15 @@ def _make_scheme(suffix):
     )
 
 
+class CopyActiveModifiersTest(TestCase):
+    def test_copy_active_modifiers_always_returns_list(self):
+        from apps.jobs.models import copy_active_modifiers
+        self.assertEqual(copy_active_modifiers(['a', 'b']), ['a', 'b'])
+        self.assertEqual(copy_active_modifiers(None), [])
+        # legacy dict shape collapses to empty list (price now lives on the service)
+        self.assertEqual(copy_active_modifiers({'flat_fee_price': '5'}), [])
+
+
 class TaskBaseCopyFieldsTest(TestCase):
     def test_copy_fields_returns_full_taskbase_field_set(self):
         scheme = _make_scheme('task')
