@@ -306,6 +306,49 @@ class EstimateServiceReviseTest(EstimatesTestBase):
             1,
         )
 
+    def test_revise_preserves_adjustment_lines(self):
+        """revise_estimate must copy adjustment_service (FK) and
+        adjustment_target_categories (M2M) onto the revision's copy of
+        each percentage-adjustment line item."""
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import ServicePrice
+
+        cat = AccountingCategory.objects.get_or_create(
+            code='RUSH', defaults={'name': 'Rush', 'taxable': False},
+        )[0]
+        rush = ServicePrice.objects.create(
+            name='Rush Fee', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=cat,
+        )
+        est = EstimateService.create_for_job(self.job.pk)
+        # Base line so the estimate has something to adjust
+        EstimateLineItem.objects.create(
+            estimate=est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Base work', price=Decimal('200.00'),
+            accounting_category=cat,
+        )
+        # Adjustment line with a target category
+        EstimateService.add_adjustment_line(
+            est,
+            adjustment_service_id=rush.pk,
+            target_category_ids=[cat.pk],
+        )
+        # Must be non-draft to revise
+        EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
+
+        new_est = EstimateService.revise_estimate(est.pk)
+
+        adj_lines = EstimateLineItem.objects.filter(
+            estimate=new_est,
+            adjustment_service__isnull=False,
+        )
+        self.assertEqual(adj_lines.count(), 1, 'Revision should have one adjustment line')
+        new_adj = adj_lines.first()
+        self.assertEqual(new_adj.adjustment_service_id, rush.pk)
+        target_cats = list(new_adj.adjustment_target_categories.values_list('pk', flat=True))
+        self.assertIn(cat.pk, target_cats)
+
 
 class EstimateServiceAddLineItemTest(EstimatesTestBase):
     """Tests for EstimateService.add_line_item and add_line_item_from_pli."""

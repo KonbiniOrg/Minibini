@@ -156,7 +156,12 @@ class EstimateService:
                 description=li.description,
                 price=li.price,
                 accounting_category=li.accounting_category,
+                adjustment_service_id=li.adjustment_service_id,
             )
+            # Copy M2M adjustment target categories (empty set is fine — means "all lines")
+            cats = li.adjustment_target_categories.all()
+            if cats:
+                new_li.adjustment_target_categories.set(cats)
             for src in li.sources.all():
                 src.estimate_line_item = new_li
                 src.save()
