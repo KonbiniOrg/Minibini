@@ -50,6 +50,11 @@ It does **not** own:
 
 ## 2. RateScheme
 
+> **Rename (2026-06):** the model is now `ServicePrice` (`db_table='service_prices'`,
+> FK field `service_price`, API `/api/service-prices/`). This section still uses the
+> old name `RateScheme` pending the Phase 1 reframe rewrite
+> (`docs/plans/2026-06-23-service-price-list-and-percentage-adjustments.md`).
+
 `RateScheme` (`apps/jobs/models.py`, `db_table = 'rate_schemes'`) is
 the unit of billing identity for labor. It owns the math (rate,
 algorithm, modifiers), the `AccountingCategory` (and therefore

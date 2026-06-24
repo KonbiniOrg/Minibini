@@ -31,7 +31,7 @@ class ServicePriceViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         instance.delete()
-        return Response({'message': f'Rate scheme "{instance.name}" deleted.'})
+        return Response({'message': f'Service price "{instance.name}" deleted.'})
 
     def _block_if_referenced(self, instance, request):
         if instance.is_referenced():

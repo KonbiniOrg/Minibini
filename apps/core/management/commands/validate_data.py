@@ -472,7 +472,7 @@ class Command(BaseCommand):
             if inv.status not in valid_statuses:
                 self.errors.append(f'Invoice {inv.invoice_number}: invalid status "{inv.status}"')
 
-    # ── Rate Schemes ──────────────────────────────────────────
+    # ── Service Prices ────────────────────────────────────────
 
     def check_service_prices(self):
         from apps.jobs.models import ServicePrice
