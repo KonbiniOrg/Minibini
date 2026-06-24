@@ -7,6 +7,7 @@ import { api } from '@/lib/api.js';
 import ServicePriceManager from '@/components/ServicePriceManager.svelte';
 
 const SCHEME = { service_price_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
+const FLAT_FEE_SCHEME = { service_price_id: 2, name: 'Flat Weld', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [], reference_counts: {} };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -28,9 +29,32 @@ describe('ServicePriceManager', () => {
     expect(await findByText('Hourly')).toBeInTheDocument();
   });
 
+  it('shows "Services" as the section heading', async () => {
+    const { findByRole } = render(ServicePriceManager);
+    expect(await findByRole('heading', { name: 'Services' })).toBeInTheDocument();
+  });
+
+  it('has an "Add Service" button (not "Add Rate Scheme")', async () => {
+    const { findByRole, queryByRole } = render(ServicePriceManager);
+    expect(await findByRole('button', { name: 'Add Service' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Add Rate Scheme' })).not.toBeInTheDocument();
+  });
+
+  it('creates a scheme with rate field for flat-fee algorithm', async () => {
+    const { findByRole, getByLabelText, getByRole } = render(ServicePriceManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    // Switch to flat-fee
+    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'flat_fee' } });
+    // Should have a Rate field (not a separate flat_fee_price)
+    expect(getByLabelText(/Rate/)).toBeInTheDocument();
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Quick Fix' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/service-prices/', expect.objectContaining({ name: 'Quick Fix', algorithm: 'flat_fee' }));
+  });
+
   it('creates a scheme', async () => {
     const { findByRole, getByLabelText, getByRole } = render(ServicePriceManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Premium' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/service-prices/', expect.objectContaining({ name: 'Premium' }));

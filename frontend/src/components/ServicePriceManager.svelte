@@ -43,7 +43,7 @@
       categories = catResp.results || catResp;
       unitsList = unitsResp;
     } catch (e) {
-      error = e.message || 'Could not load rate schemes.';
+      error = e.message || 'Could not load services.';
     } finally {
       loading = false;
     }
@@ -151,7 +151,7 @@
   }
 
   async function remove(scheme) {
-    if (!confirm(`Delete rate scheme "${scheme.name}"?`)) return;
+    if (!confirm(`Delete service "${scheme.name}"?`)) return;
     try {
       await api.delete(`/api/service-prices/${scheme.service_price_id}/`);
       await load();
@@ -176,7 +176,7 @@
   load();
 </script>
 
-<h3>Rate Schemes</h3>
+<h3>Services</h3>
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
@@ -185,7 +185,7 @@
   <p>
     <label>
       <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
-      Show superseded schemes
+      Show superseded services
     </label>
   </p>
   <table class="data-table">
@@ -224,13 +224,13 @@
     </tbody>
   </table>
   {#if !showSuperseded}
-    <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
+    <p><button type="button" onclick={startCreate}>Add Service</button></p>
   {/if}
 {/if}
 
 {#if editingId !== null || supersedingId !== null}
   <fieldset>
-    <legend><strong>{supersedingId ? 'New Version of Rate Scheme' : (editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme')}</strong></legend>
+    <legend><strong>{supersedingId ? 'New Version of Service' : (editingId === 'new' ? 'New Service' : 'Edit Service')}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label>
@@ -251,13 +251,9 @@
         <option value="flat_fee">Fixed charge</option>
       </select>
     </label></p>
-    <p><label><strong>{isFlatFee ? 'Fallback price *' : 'Rate *'}</strong><br>
+    <p><label><strong>Rate *</strong><br>
       <input type="number" step="0.01" bind:value={form.rate}>
     </label>
-    {#if isFlatFee}
-      <small>Flat-fee items set their own price on each Task Template; this
-        value is only used when a task carries no price.</small>
-    {/if}
     <label><strong>Unit label *</strong><br>
       <select bind:value={form.unit_label} required>
         <option value="">-- select --</option>

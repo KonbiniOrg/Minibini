@@ -21,7 +21,6 @@
   let name = $state('');
   let description = $state('');
   let activeModifiers = $state([]);
-  let flatFeePrice = $state(''); // flat-fee unit price; lives in active_modifiers
   let estQty = $state('');
   let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
   let busy = $state(false);
@@ -35,30 +34,16 @@
       const resp = await api.get('/api/service-prices/');
       schemes = resp.results || resp;
     } catch (e) {
-      error = e.message || 'Could not load rate schemes.';
+      error = e.message || 'Could not load services.';
     } finally {
       loading = false;
     }
   });
 
   // Populate when opening or when prefill changes
-  // Render a price as dollars-and-cents (2 dp); leaves blank/unparseable as-is.
-  function fmtPrice(v) {
-    if (v === '' || v == null) return '';
-    const n = Number(v);
-    return Number.isNaN(n) ? String(v) : n.toFixed(2);
-  }
-
-  // flat-fee atoms store {flat_fee_price: str} in active_modifiers; every
-  // other algorithm stores a list of modifier keys.
+  // active_modifiers is always a list of modifier keys.
   function loadModifiers(value) {
-    if (value && !Array.isArray(value)) {
-      flatFeePrice = fmtPrice(value.flat_fee_price);
-      activeModifiers = [];
-    } else {
-      activeModifiers = [...(value || [])];
-      flatFeePrice = '';
-    }
+    activeModifiers = Array.isArray(value) ? [...value] : [];
   }
 
   $effect(() => {
@@ -73,7 +58,7 @@
       templateId = '';
     } else {
       name = ''; description = '';
-      servicePriceId = ''; activeModifiers = []; flatFeePrice = '';
+      servicePriceId = ''; activeModifiers = [];
       estQty = ''; estWorkerTime = '';
       templateId = '';
       lastFilledTemplateId = '';
@@ -103,10 +88,6 @@
 
   const selectedScheme = $derived(
     schemes.find(s => s.service_price_id === Number(servicePriceId)) || null
-  );
-
-  const isFlatFee = $derived(
-    !!selectedScheme && selectedScheme.algorithm === 'flat_fee'
   );
 
   const estQtyRequired = $derived(context === 'worksheet');
@@ -177,7 +158,7 @@
       return;
     }
     if (mode === 'manual' && !servicePriceId) {
-      error = 'Please pick a rate scheme.';
+      error = 'Please pick a service.';
       return;
     }
 
@@ -190,14 +171,11 @@
     busy = true;
     error = '';
     try {
-      const activeModifiersPayload = isFlatFee
-        ? { flat_fee_price: flatFeePrice }
-        : activeModifiers;
       const payload = {
         name,
         description,
         service_price: servicePriceId,
-        active_modifiers: activeModifiersPayload,
+        active_modifiers: activeModifiers,
         est_qty: estQty || null,
         est_worker_time: estWorkerTimeISO,
       };
@@ -216,7 +194,7 @@
           name,
           description,
           est_qty: estQty || null,
-          active_modifiers: activeModifiersPayload,
+          active_modifiers: activeModifiers,
           est_worker_time: estWorkerTimeISO,
         });
       } else {
@@ -251,7 +229,7 @@
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
       {#if loading}
-        <p>Loading rate schemes…</p>
+        <p>Loading services…</p>
       {:else}
         {#if !isEdit && mode === 'template'}
           <p>
@@ -268,7 +246,7 @@
 
         {#if mode === 'manual'}
           <p>
-            <label><strong>Rate scheme *</strong><br>
+            <label><strong>Service *</strong><br>
               <select bind:value={servicePriceId}>
                 <option value="">-- select --</option>
                 {#each schemes as s (s.service_price_id)}
@@ -293,19 +271,17 @@
         {#if selectedScheme}
           {#if mode === 'template'}
             <p>
-              <strong>Rate scheme:</strong> {selectedScheme.name} —
+              <strong>Service:</strong> {selectedScheme.name} —
               ${selectedScheme.rate}/{selectedScheme.unit_label}
               <small>(from template)</small>
             </p>
-          {/if}
-          {#if isFlatFee}
+          {:else}
             <p>
-              <label><strong>Flat fee unit price *</strong><br>
-                <input type="number" step="0.01" min="0" bind:value={flatFeePrice}
-                  onblur={() => flatFeePrice = fmtPrice(flatFeePrice)}>
-              </label>
+              <strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label}
+              <small>(from service)</small>
             </p>
-          {:else if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
+          {/if}
+          {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
             <fieldset>
               <legend><strong>Modifiers</strong></legend>
               {#each selectedScheme.modifiers as m (m.key)}
@@ -326,7 +302,7 @@
           <p>
             <label><strong>Estimated qty {estQtyRequired ? '*' : ''}</strong><br>
               <input type="number" step="0.01" bind:value={estQty}>
-              {#if selectedScheme && !isFlatFee}<small>{selectedScheme.unit_label}</small>{/if}
+              <small>{selectedScheme.unit_label}</small>
             </label>
           </p>
         {/if}
