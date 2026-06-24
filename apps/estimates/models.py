@@ -492,18 +492,6 @@ class TaskTemplate(models.Model):
 
     def clean(self):
         super().clean()
-        from apps.jobs.models import ServicePrice
-        # A flat-fee template carries its own unit price in
-        # default_active_modifiers ({'flat_fee_price': str}). Without one, a
-        # generated task would silently fall back to the shared scheme rate.
-        if self.service_price_id and self.service_price.algorithm == ServicePrice.FLAT_FEE:
-            price = ServicePrice._flat_fee_price(self.default_active_modifiers)
-            if price is None or price <= 0:
-                raise ValidationError({
-                    'default_active_modifiers':
-                        'A flat-fee task template must carry a positive '
-                        'flat_fee_price.',
-                })
 
     @property
     def effective_accounting_category(self):

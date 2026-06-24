@@ -56,3 +56,17 @@ class TestTemplateTaskAssociation(TestCase):
 
         with self.assertRaises(IntegrityError):
             TemplateTaskAssociation.objects.create(work_template=wot, task_template=tt, est_qty=2)
+
+    def test_flat_fee_template_needs_no_price_in_modifiers(self):
+        """A flat-fee TaskTemplate with empty default_active_modifiers validates cleanly."""
+        ac = AccountingCategory.objects.create(name="Setup AC", code="STP")
+        svc = ServicePrice.objects.create(
+            name='Setup fee', algorithm=ServicePrice.FLAT_FEE,
+            rate=Decimal('100.00'), unit_label='job',
+            accounting_category=ac,
+        )
+        tt = TaskTemplate(
+            template_name='Setup', service_price=svc,
+            default_active_modifiers=[], default_billable_qty=Decimal('1'),
+        )
+        tt.full_clean()  # must not raise
