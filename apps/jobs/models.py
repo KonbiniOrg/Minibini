@@ -548,13 +548,11 @@ class ServicePrice(models.Model):
     def effective_rate(self, active_modifiers=None):
         """Compute the per-unit rate.
 
-        For flat_fee the per-unit price rides on the atom (active_modifiers);
-        self.rate is only a fallback. For time/qty schemes, apply additive
-        modifier surcharges.
+        Flat-fee price lives on self.rate (one priced service per item).
+        For time/qty schemes, apply additive modifier surcharges.
         """
         if self.algorithm == self.FLAT_FEE:
-            price = self._flat_fee_price(active_modifiers)
-            return price if price is not None else self.rate
+            return self.rate
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
