@@ -625,3 +625,38 @@ class ServicePriceIsReferencedTaskTest(BaseTestCase):
         counts = scheme.reference_counts()
         self.assertEqual(counts['task_count'], 1)
         self.assertNotIn('task_charge_count', counts)
+
+
+class ServicePricePercentageAlgorithmTest(BaseTestCase):
+    fixtures = []
+
+    def setUp(self):
+        super().setUp()
+        self.ac = AccountingCategory.objects.create(code='PCT', name='PCT')
+
+    def test_percentage_allows_negative_rate(self):
+        from apps.jobs.models import ServicePrice
+        svc = ServicePrice(
+            name='Discount', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('-10.00'), unit_label='%', accounting_category=self.ac,
+        )
+        svc.full_clean()  # must not raise
+
+    def test_non_percentage_rejects_negative_rate(self):
+        from django.core.exceptions import ValidationError
+        from apps.jobs.models import ServicePrice
+        svc = ServicePrice(
+            name='Bad', algorithm=ServicePrice.ELAPSED_TIME,
+            rate=Decimal('-5.00'), unit_label='hour', accounting_category=self.ac,
+        )
+        with self.assertRaises(ValidationError):
+            svc.full_clean()
+
+    def test_get_actual_qty_rejects_percentage(self):
+        from apps.jobs.models import ServicePrice
+        svc = ServicePrice.objects.create(
+            name='Rush', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('15.00'), unit_label='%', accounting_category=self.ac,
+        )
+        with self.assertRaises(ValueError):
+            svc.get_actual_qty(object())

@@ -470,11 +470,13 @@ class ServicePrice(models.Model):
     ELAPSED_TIME = 'elapsed_time'
     ENTERED_QTY = 'entered_qty'
     FLAT_FEE = 'flat_fee'
+    PERCENTAGE = 'percentage'
 
     ALGORITHM_CHOICES = [
         (ELAPSED_TIME, 'Based on time worked'),
         (ENTERED_QTY, 'Worker enters quantity'),
         (FLAT_FEE, 'Fixed charge'),
+        (PERCENTAGE, 'Percentage of other lines'),
     ]
 
     service_price_id = models.AutoField(primary_key=True)
@@ -511,6 +513,9 @@ class ServicePrice(models.Model):
             raise ValidationError({
                 'accounting_category': 'Required: every ServicePrice must have an AccountingCategory.',
             })
+        if self.algorithm != self.PERCENTAGE and self.rate is not None and self.rate < 0:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({'rate': 'Only percentage services may have a negative rate.'})
         if self.pk and self.is_referenced():
             old = ServicePrice.objects.get(pk=self.pk)
             changed = [
@@ -537,6 +542,8 @@ class ServicePrice(models.Model):
         Flat-fee price lives on self.rate (one priced service per item).
         For time/qty schemes, apply additive modifier surcharges.
         """
+        if self.algorithm == self.PERCENTAGE:
+            raise ValueError('percentage services compute at the document layer, not per-unit')
         if self.algorithm == self.FLAT_FEE:
             return self.rate
         modifier_percent = sum(
@@ -556,6 +563,8 @@ class ServicePrice(models.Model):
 
     def get_actual_qty(self, task):
         """Resolve actual quantity based on algorithm."""
+        if self.algorithm == self.PERCENTAGE:
+            raise ValueError('percentage services are document adjustments, not task billing')
         if self.algorithm == self.ELAPSED_TIME:
             total_seconds = sum(
                 b.elapsed.total_seconds() for b in task.blep_set.all() if b.elapsed is not None
