@@ -51,7 +51,7 @@ class BaseBuildersTest(unittest.TestCase):
                  for f in self._models('core.accountingcategory')}
         self.assertIn('SVC', codes)
         self.assertIn('MTL', codes)
-        self.assertGreater(len(self._models('jobs.ratescheme')), 0)
+        self.assertGreater(len(self._models('jobs.serviceprice')), 0)
         # build_seed indexes the seed data for downstream builders
         self.assertEqual(self.c.ac_by_code.get('SVC'), self.c.ac_svc_pk)
         self.assertIn('Shop labor', self.c.scheme_by_name)
@@ -84,7 +84,7 @@ class BaseBuildersTest(unittest.TestCase):
         self.assertEqual(value, canon)
 
     def test_ratescheme_unit_labels_within_canon(self):
-        # Every emitted RateScheme.unit_label must be a value in the
+        # Every emitted ServicePrice.unit_label must be a value in the
         # converter's units_list. The seed historically used the singular
         # 'hour', which is not in DEFAULT_UNITS ('hours') — a mismatch that
         # makes the seeded schemes fail unit validation in the running app.
@@ -93,11 +93,11 @@ class BaseBuildersTest(unittest.TestCase):
         cfg = next(f for f in self._models('core.configuration')
                    if f['pk'] == 'units_list')
         units = set(json.loads(cfg['fields']['value']))
-        for f in self._models('jobs.ratescheme'):
+        for f in self._models('jobs.serviceprice'):
             label = f['fields']['unit_label']
             self.assertIn(
                 label, units,
-                f"RateScheme {f['fields']['name']!r} unit_label {label!r} "
+                f"ServicePrice {f['fields']['name']!r} unit_label {label!r} "
                 f"is not in units_list {sorted(units)}")
 
     def test_build_inventory_items(self):
@@ -388,11 +388,11 @@ class AtomDerivationTest(unittest.TestCase):
 
     def test_derives_ratescheme_task_material_deliverable(self):
         build.derive_atoms(self.c)
-        self.assertGreater(len(self._models('jobs.ratescheme')), 0)
+        self.assertGreater(len(self._models('jobs.serviceprice')), 0)
         self.assertGreater(len(self._models('jobs.task')), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
+        rs_pks = {f['pk'] for f in self._models('jobs.serviceprice')}
         for t in self._models('jobs.task'):
-            self.assertIn(t['fields']['rate_scheme'], rs_pks)
+            self.assertIn(t['fields']['service_price'], rs_pks)
 
     def test_atoms_emit_canon_units_only(self):
         # Materials and Deliverables must use canonical units (no 'each' /
@@ -411,10 +411,10 @@ class AtomDerivationTest(unittest.TestCase):
         self.assertEqual(job_pks, deliv_jobs)
         # Tasks on the shared Flat Fee scheme carry a per-task price in
         # active_modifiers ({'flat_fee_price': ...}); no per-rate clones exist.
-        ff_pks = {f['pk'] for f in self._models('jobs.ratescheme')
+        ff_pks = {f['pk'] for f in self._models('jobs.serviceprice')
                   if f['fields']['name'] == 'Flat Fee'}
         for t in self._models('jobs.task'):
-            if t['fields']['rate_scheme'] in ff_pks:
+            if t['fields']['service_price'] in ff_pks:
                 mods = t['fields']['active_modifiers']
                 self.assertIsInstance(mods, dict)
                 self.assertIn('flat_fee_price', mods)
@@ -671,16 +671,16 @@ class PlanSideAtomsTest(unittest.TestCase):
                          'real-side jobs should not have EstWorksheets')
 
     def test_every_plantask_has_required_fields(self):
-        # PlanTask.clean() raises if est_qty is null; rate_scheme is NOT NULL
+        # PlanTask.clean() raises if est_qty is null; service_price is NOT NULL
         # at the DB level. Every emitted PlanTask must satisfy both.
         plantasks = self._models('jobs.plantask')
         self.assertGreater(len(plantasks), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
+        rs_pks = {f['pk'] for f in self._models('jobs.serviceprice')}
         ws_pks = {f['pk'] for f in self._models('estimates.estworksheet')}
         for pt in plantasks:
             self.assertIsNotNone(pt['fields'].get('est_qty'),
                                  f'plantask {pt["pk"]} has null est_qty')
-            self.assertIn(pt['fields']['rate_scheme'], rs_pks)
+            self.assertIn(pt['fields']['service_price'], rs_pks)
             self.assertIn(pt['fields']['est_worksheet'], ws_pks)
             # PlanTask has no parent_task / status / actual_qty fields.
             for f in ('parent_task', 'status', 'actual_qty', 'blocked_reason',
@@ -927,7 +927,7 @@ class BlepHorizonTest(unittest.TestCase):
         pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', pk, {
             'job': job_pk, 'name': f't{pk}', 'status': status,
-            'est_worker_time': ewt, 'est_qty': None, 'rate_scheme': None,
+            'est_worker_time': ewt, 'est_qty': None, 'service_price': None,
             'assignee': None, 'worker_queue': None, 'sort_order': pk,
         })
         return pk
@@ -1480,7 +1480,7 @@ class BlepShiftSynthesisTest(unittest.TestCase):
     def _add_task(self, c, pk, job, status='complete', scheme=10,
                   ewt='02:00:00', est_qty=None, sort_order=1):
         c.add_fixture('jobs.task', pk, {
-            'job': job, 'rate_scheme': scheme, 'name': f't{pk}', 'description': '',
+            'job': job, 'service_price': scheme, 'name': f't{pk}', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': status, 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
@@ -1608,7 +1608,7 @@ class EstQuantityHeuristicTest(unittest.TestCase):
 
     def _add_task(self, c, pk, scheme, ewt='02:30:00', est_qty=None):
         c.add_fixture('jobs.task', pk, {
-            'job': 1, 'rate_scheme': scheme, 'name': 't', 'description': '',
+            'job': 1, 'service_price': scheme, 'name': 't', 'description': '',
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': 'complete', 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,

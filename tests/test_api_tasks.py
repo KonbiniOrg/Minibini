@@ -6,7 +6,7 @@ from django.contrib.auth.models import Permission
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, RateScheme, Task
+from apps.jobs.models import Job, ServicePrice, Task
 
 User = get_user_model()
 
@@ -19,9 +19,9 @@ class ActualQtyActionTest(TestCase):
         from apps.core.models import AccountingCategory
 
         ac = AccountingCategory.objects.create(code='LAB2', name='Labor2')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServicePrice.objects.create(
             name='Press',
-            algorithm=RateScheme.ENTERED_QTY,
+            algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('10.00'),
             unit_label='piece',
             accounting_category=ac,
@@ -32,7 +32,7 @@ class ActualQtyActionTest(TestCase):
             name='Widget Run', contact=contact, job_number='JOB-TEST-002'
         )
         self.task = Task.objects.create(
-            name='Press parts', job=self.job, rate_scheme=self.scheme
+            name='Press parts', job=self.job, service_price=self.scheme
         )
 
         # A plain worker — no can_manage_jobs permission.
@@ -115,9 +115,9 @@ class CancelTaskPermissionTest(TestCase):
         from apps.core.models import AccountingCategory
 
         ac = AccountingCategory.objects.create(code='LABC', name='LaborC')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServicePrice.objects.create(
             name='CancelScheme',
-            algorithm=RateScheme.ENTERED_QTY,
+            algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('10.00'),
             unit_label='piece',
             accounting_category=ac,
@@ -127,7 +127,7 @@ class CancelTaskPermissionTest(TestCase):
             name='Cancel Job', contact=contact, job_number='JOB-CANCEL-001'
         )
         self.task = Task.objects.create(
-            name='Cancellable', job=self.job, rate_scheme=self.scheme
+            name='Cancellable', job=self.job, service_price=self.scheme
         )
 
         # A plain worker — no atom, not the job's PM.

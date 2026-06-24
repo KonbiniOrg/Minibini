@@ -8,7 +8,7 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, PlanTask, ServicePrice
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material, Earmark, InventoryItem
 from apps.jobs.services import JobService
@@ -16,8 +16,8 @@ from apps.jobs.services import JobService
 
 def _make_scheme(suffix):
     ac = AccountingCategory.objects.create(code=f'MW-{suffix}', name=f'mw-{suffix}')
-    return RateScheme.objects.create(
-        name=f'S-mw-{suffix}', algorithm=RateScheme.FLAT_FEE,
+    return ServicePrice.objects.create(
+        name=f'S-mw-{suffix}', algorithm=ServicePrice.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -36,7 +36,7 @@ class MaterializeWorksheetTest(TestCase):
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Cut', description='cut it',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            service_price=self.scheme, est_qty=Decimal('2'),
             sort_order=7, est_worker_time=timedelta(hours=3),
         )
         # Task-attached material (inventoried, non-default units).
@@ -94,4 +94,4 @@ class MaterializeWorksheetTest(TestCase):
         self.scheme.supersede(name='S-mw-core v2')
         JobService.materialize_worksheet_onto_job(self.job, self.ws)
         task = Task.objects.get(job=self.job)
-        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.service_price_id, self.scheme.pk)

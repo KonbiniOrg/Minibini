@@ -74,7 +74,7 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'rate_scheme', 'active_modifiers', 'est_qty', 'est_worker_time',
+            'service_price', 'active_modifiers', 'est_qty', 'est_worker_time',
             'amount', 'units', 'plan_materials',
         ]
         read_only_fields = ['plan_task_id', 'sort_order', 'amount', 'units']
@@ -83,7 +83,7 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         return str(obj.compute_amount().quantize(Decimal('0.01')))
 
     def get_units(self, obj):
-        return obj.rate_scheme.unit_label if obj.rate_scheme_id else ''
+        return obj.service_price.unit_label if obj.service_price_id else ''
 
 
 class PlanMaterialAssignTaskSerializer(serializers.Serializer):

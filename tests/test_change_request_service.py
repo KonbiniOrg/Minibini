@@ -17,7 +17,7 @@ class ChangeRequestServiceTest(BaseTestCase):
         # minute boundary to match the stored values.
         self.now = timezone.now().replace(second=0, microsecond=0)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
 
     def test_approve_create_request_makes_shift(self):
         r = ShiftChangeRequest.objects.create(

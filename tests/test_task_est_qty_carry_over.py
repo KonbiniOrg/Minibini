@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase
 
-from apps.jobs.models import Task, PlanTask, RateScheme, Job
+from apps.jobs.models import Task, PlanTask, ServicePrice, Job
 from apps.jobs.services import JobService
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact, Business
@@ -25,13 +25,13 @@ class TaskEstQtyCarryOverTest(TestCase):
     def _create_pt(self, scheme, est_qty):
         return PlanTask.objects.create(
             est_worksheet=self.ws, name='X',
-            rate_scheme=scheme, active_modifiers=[],
+            service_price=scheme, active_modifiers=[],
             est_qty=est_qty,
         )
 
     def test_carry_over_elapsed_time_sets_task_est_qty(self):
-        scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        scheme = ServicePrice.objects.create(
+            name='Hourly', algorithm=ServicePrice.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour',
             accounting_category=self.ac,
         )
@@ -42,8 +42,8 @@ class TaskEstQtyCarryOverTest(TestCase):
         self.assertIsNone(task.actual_qty)  # estimate, not actual
 
     def test_carry_over_entered_qty_sets_task_est_qty(self):
-        scheme = RateScheme.objects.create(
-            name='Pieces', algorithm=RateScheme.ENTERED_QTY,
+        scheme = ServicePrice.objects.create(
+            name='Pieces', algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('5'), unit_label='piece',
             accounting_category=self.ac,
         )
@@ -55,30 +55,30 @@ class TaskEstQtyCarryOverTest(TestCase):
         self.assertIsNone(task.actual_qty)
 
     def test_template_generate_task_for_job_persists_est_qty(self):
-        scheme = RateScheme.objects.create(
-            name='T', algorithm=RateScheme.FLAT_FEE,
+        scheme = ServicePrice.objects.create(
+            name='T', algorithm=ServicePrice.FLAT_FEE,
             rate=Decimal('100'), unit_label='job',
             accounting_category=self.ac,
         )
         template = TaskTemplate.objects.create(
             template_name='Setup',
-            rate_scheme=scheme,
+            service_price=scheme,
             default_billable_qty=Decimal('1'),
         )
         task = template.generate_task(self.job, est_qty=Decimal('3'))
         self.assertEqual(task.est_qty, Decimal('3'))
-        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.service_price_id, scheme.pk)
 
     def test_template_generate_task_honors_name_and_description_overrides(self):
         """User-entered name and description must survive the template-add path."""
-        scheme = RateScheme.objects.create(
-            name='Hourly-O', algorithm=RateScheme.ELAPSED_TIME,
+        scheme = ServicePrice.objects.create(
+            name='Hourly-O', algorithm=ServicePrice.ELAPSED_TIME,
             rate=Decimal('75'), unit_label='hour',
             accounting_category=self.ac,
         )
         template = TaskTemplate.objects.create(
             template_name='Default Template Name',
-            rate_scheme=scheme,
+            service_price=scheme,
             default_billable_qty=Decimal('1'),
         )
         template.description = 'Default template description'

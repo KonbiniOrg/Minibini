@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import Configuration, AccountingCategory, User
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, PlanTask, ServicePrice
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
 from apps.deliverables.models import Deliverable
@@ -15,8 +15,8 @@ from apps.jobs.services import JobService
 
 def _make_scheme(suffix):
     ac = AccountingCategory.objects.create(code=f'DUP-{suffix}', name=f'dup-{suffix}')
-    return RateScheme.objects.create(
-        name=f'S-dup-{suffix}', algorithm=RateScheme.FLAT_FEE,
+    return ServicePrice.objects.create(
+        name=f'S-dup-{suffix}', algorithm=ServicePrice.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -67,12 +67,12 @@ class DuplicateJobTestBase(BaseTestCase):
         self.task_a = Task.objects.create(
             job=self.source, name='Build', description='Build the boxes',
             sort_order=1, est_worker_time=timedelta(hours=4),
-            est_qty=Decimal('6'), rate_scheme=self.scheme,
+            est_qty=Decimal('6'), service_price=self.scheme,
         )
         self.task_b = Task.objects.create(
             job=self.source, name='Finish', description='Sand + seal',
             sort_order=2, est_worker_time=timedelta(hours=2),
-            est_qty=Decimal('6'), rate_scheme=self.scheme,
+            est_qty=Decimal('6'), service_price=self.scheme,
             parent_task=self.task_a,
         )
         self.material_attached = Material.objects.create(
@@ -131,7 +131,7 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertIsNone(finish.source_plan_task_id)
         # carried fields
         self.assertEqual(finish.est_qty, Decimal('6'))
-        self.assertEqual(finish.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(finish.service_price_id, self.scheme.pk)
         # hierarchy remapped to the NEW build task (not the source's)
         self.assertEqual(finish.parent_task_id, build.task_id)
 
@@ -215,7 +215,7 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertEqual(names, {'Build', 'Finish'})
         build = PlanTask.objects.get(est_worksheet=ws, name='Build')
         self.assertEqual(build.est_qty, Decimal('6'))
-        self.assertEqual(build.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(build.service_price_id, self.scheme.pk)
         self.assertEqual(build.est_worker_time, timedelta(hours=4))  # carried over
 
     def test_maps_materials_preserving_task_attachment(self):
@@ -237,12 +237,12 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         # Task with no est_qty but an actual_qty -> PlanTask.est_qty = actual_qty.
         Task.objects.create(
             job=self.source, name='AdHoc', sort_order=3,
-            rate_scheme=self.scheme, est_qty=None, actual_qty=Decimal('3.00'),
+            service_price=self.scheme, est_qty=None, actual_qty=Decimal('3.00'),
         )
         # Task with neither -> PlanTask.est_qty = 0.00.
         Task.objects.create(
             job=self.source, name='Bare', sort_order=4,
-            rate_scheme=self.scheme, est_qty=None, actual_qty=None,
+            service_price=self.scheme, est_qty=None, actual_qty=None,
         )
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')

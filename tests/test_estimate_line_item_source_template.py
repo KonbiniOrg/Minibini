@@ -3,7 +3,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import Estimate, EstimateLineItem, TaskTemplate
-from apps.jobs.models import Job, RateScheme
+from apps.jobs.models import Job, ServicePrice
 
 
 class EstimateLineItemSourceTemplateTest(TestCase):
@@ -19,13 +19,13 @@ class EstimateLineItemSourceTemplateTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.estimate = Estimate.objects.create(job=self.job, status=Estimate.STATUS_DRAFT, estimate_number='EST-2026-0001')
-        self.scheme = RateScheme.objects.create(
-            name='S-elist', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServicePrice.objects.create(
+            name='S-elist', algorithm=ServicePrice.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         self.template = TaskTemplate.objects.create(
             template_name='Setup',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_price=self.scheme, default_billable_qty=Decimal('1.00'),
         )
 
     def test_source_template_can_be_null(self):

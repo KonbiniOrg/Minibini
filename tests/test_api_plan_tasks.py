@@ -4,7 +4,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import AccountingCategory, User
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.jobs.models import Job, PlanTask, ServicePrice
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet
 
@@ -25,8 +25,8 @@ class PlanTaskAPITest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-pt', name='Labor PT')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly PT', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServicePrice.objects.create(
+            name='Hourly PT', algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
@@ -34,7 +34,7 @@ class PlanTaskAPITest(TestCase):
             est_worksheet=self.worksheet,
             name='Install shelves',
             description='Wall-mount 3 shelves',
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
             est_qty=Decimal('1'),
         )
 
@@ -101,15 +101,15 @@ class WorksheetNestedPlanTaskTest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-pt2', name='Labor PT2')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly PT2', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServicePrice.objects.create(
+            name='Hourly PT2', algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Sand floor',
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
             est_qty=Decimal('1'),
         )
 
@@ -153,8 +153,8 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-ewt', name='Labor EWT')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly EWT', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServicePrice.objects.create(
+            name='Hourly EWT', algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('75.00'), unit_label='hour',
             accounting_category=self.cat,
         )
@@ -165,7 +165,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
             f'/api/est-worksheets/{self.worksheet.pk}/tasks/',
             {
                 'name': 'Fit panels',
-                'rate_scheme': self.scheme.pk,
+                'service_price': self.scheme.pk,
                 'est_qty': '3.00',
                 'est_worker_time': 'PT2H30M',
             },
@@ -181,7 +181,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Polish surface',
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
             est_qty=Decimal('1'),
             est_worker_time=timedelta(hours=1),
         )
@@ -197,7 +197,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Detail task',
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
             est_qty=Decimal('2'),
             est_worker_time=timedelta(minutes=45),
         )
@@ -211,7 +211,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         from apps.estimates.models import TaskTemplate
         tt = TaskTemplate.objects.create(
             template_name='Cut pieces',
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
             default_billable_qty=Decimal('4'),
         )
         response = self.client.post(

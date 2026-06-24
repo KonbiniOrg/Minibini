@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, Task, RateScheme
+from apps.jobs.models import Job, Task, ServicePrice
 from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.inventory.services import InventoryService
 
@@ -52,21 +52,21 @@ class EarmarkPreviewTest(TestCase):
             accounting_category=self.category,
         )
 
-        self.scheme = RateScheme.objects.create(
-            name='S-emk', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServicePrice.objects.create(
+            name='S-emk', algorithm=ServicePrice.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         self.task_a = Task.objects.create(
             job=self.job,
             name='Build cabinets',
             sort_order=1,
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
         )
         self.task_b = Task.objects.create(
             job=self.job,
             name='Install trim',
             sort_order=2,
-            rate_scheme=self.scheme,
+            service_price=self.scheme,
         )
 
     def test_preview_aggregates_by_item(self):
@@ -244,7 +244,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         any earmark rows."""
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import Job, PlanTask, RateScheme
+        from apps.jobs.models import Job, PlanTask, ServicePrice
         from apps.estimates.models import EstWorksheet
         from apps.inventory.models import InventoryItem, PlanMaterial, Earmark
         from apps.inventory.services import InventoryService
@@ -256,8 +256,8 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         contact.business = biz; contact.save()
         cat = AccountingCategory.objects.create(name='c', code='NOP1')
         scheme_ac = AccountingCategory.objects.create(name='nop-sc', code='NOP-SC')
-        scheme = RateScheme.objects.create(
-            name='S-nop', algorithm=RateScheme.FLAT_FEE,
+        scheme = ServicePrice.objects.create(
+            name='S-nop', algorithm=ServicePrice.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
         )
         pli = InventoryItem.objects.create(
@@ -267,7 +267,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         ws = EstWorksheet.objects.create(job=src_job)
         pt = PlanTask.objects.create(
             est_worksheet=ws, name='pt',
-            rate_scheme=scheme, est_qty=Decimal('1'),
+            service_price=scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=pt, est_worksheet=ws,

@@ -13,7 +13,7 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep, RateScheme, copy_active_modifiers
+from apps.jobs.models import Job, Task, Blep, ServicePrice, copy_active_modifiers
 from apps.estimates.models import (
     Estimate, WorkTemplate, TaskTemplate,
     EstWorksheet, EstimateLineItem,
@@ -834,30 +834,30 @@ class TaskService:
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
+        if template.service_price_id and template.service_price.replaced_by_id is not None:
             raise SchemeSupersededError(
-                f'Template "{template.template_name}" references a superseded RateScheme.'
+                f'Template "{template.template_name}" references a superseded ServicePrice.'
             )
-        if not template.rate_scheme_id:
+        if not template.service_price_id:
             raise ValidationError(
-                f'Template "{template.template_name}" has no rate_scheme.'
+                f'Template "{template.template_name}" has no service_price.'
             )
         with transaction.atomic():
             task = Task.objects.create(
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
-                rate_scheme=template.rate_scheme,
+                service_price=template.service_price,
                 active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else template.default_billable_qty,
             )
         return task
 
     @staticmethod
-    def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
+    def create_direct(job, name, service_price_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
                       allow_superseded_scheme=False, **task_fields):
-        """Create Task directly. Requires rate_scheme_id.
+        """Create Task directly. Requires service_price_id.
 
         ``allow_superseded_scheme`` bypasses the superseded-scheme rejection.
         The only intended caller is the worksheet→job copy/carry-over core,
@@ -865,17 +865,17 @@ class TaskService:
         since been superseded.
         """
         _assert_job_not_on_hold(job, 'add a task to this job')
-        if not rate_scheme_id:
-            raise ValidationError({'rate_scheme': 'Required.'})
-        scheme = RateScheme.objects.get(pk=rate_scheme_id)
+        if not service_price_id:
+            raise ValidationError({'service_price': 'Required.'})
+        scheme = ServicePrice.objects.get(pk=service_price_id)
         if scheme.replaced_by_id is not None and not allow_superseded_scheme:
             raise ValidationError(
-                {'rate_scheme': 'Selected RateScheme is superseded.'}
+                {'service_price': 'Selected ServicePrice is superseded.'}
             )
         with transaction.atomic():
             task = Task.objects.create(
                 job=job, name=name,
-                rate_scheme=scheme,
+                service_price=scheme,
                 active_modifiers=copy_active_modifiers(active_modifiers),
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
@@ -1019,11 +1019,11 @@ class TaskLifecycleService:
                 if actual_qty <= 0:
                     raise ValidationError('Quantity must be greater than 0.')
                 task.actual_qty = actual_qty
-            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+            if (task.service_price.algorithm == ServicePrice.ENTERED_QTY
                     and (task.actual_qty is None or task.actual_qty <= 0)):
-                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
-            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
-                    and task.rate_scheme.get_actual_qty(task) <= 0):
+                raise TaskActualQtyRequired(task.service_price.unit_label)
+            if (task.service_price.algorithm == ServicePrice.ELAPSED_TIME
+                    and task.service_price.get_actual_qty(task) <= 0):
                 raise TaskTimeRequired()
             update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
             if actual_qty is not None:

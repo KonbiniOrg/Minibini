@@ -22,7 +22,7 @@ Per-model field checks:
                    W  draft/submitted/rejected: stray start_date
                    W  completed/cancelled/rejected: missing completed_date
                    W  non-terminal: stray completed_date
-  RateScheme       E  valid algorithm value
+  ServicePrice       E  valid algorithm value
                    E  missing accounting_category
                    E  replaced_by/replaced_at must be set together
   Estimate         E  valid status value
@@ -119,7 +119,7 @@ class Command(BaseCommand):
         self.check_contacts()
         self.check_businesses()
         self.check_jobs()
-        self.check_rate_schemes()
+        self.check_service_prices()
         self.check_estimates()
         self.check_worksheets()
         self.check_tasks()
@@ -474,22 +474,22 @@ class Command(BaseCommand):
 
     # ── Rate Schemes ──────────────────────────────────────────
 
-    def check_rate_schemes(self):
-        from apps.jobs.models import RateScheme
-        valid_algorithms = {a[0] for a in RateScheme.ALGORITHM_CHOICES}
-        for rs in RateScheme.objects.select_related('accounting_category').all():
+    def check_service_prices(self):
+        from apps.jobs.models import ServicePrice
+        valid_algorithms = {a[0] for a in ServicePrice.ALGORITHM_CHOICES}
+        for rs in ServicePrice.objects.select_related('accounting_category').all():
             if rs.algorithm not in valid_algorithms:
                 self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
+                    f'ServicePrice {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
                 )
             if not rs.accounting_category_id:
                 self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): missing accounting_category'
+                    f'ServicePrice {rs.pk} ({rs.name}): missing accounting_category'
                 )
             # replaced_by and replaced_at are set together by supersede()
             if bool(rs.replaced_by_id) != bool(rs.replaced_at):
                 self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
+                    f'ServicePrice {rs.pk} ({rs.name}): replaced_by and replaced_at '
                     f'must both be set or both be null'
                 )
 

@@ -8,7 +8,7 @@ from apps.estimates.carry_over import AtomCarryOverService
 from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Earmark, Material, PlanMaterial, InventoryItem
-from apps.jobs.models import Job, PlanTask, RateScheme, Task
+from apps.jobs.models import Job, PlanTask, ServicePrice, Task
 
 
 class CarryOverFromWorksheetAtomsTest(TestCase):
@@ -25,13 +25,13 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001',
         )
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServicePrice.objects.create(
+            name='Hourly', algorithm=ServicePrice.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            service_price=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -49,18 +49,18 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
     def test_carry_over_elapsed_time_sets_fields_on_task(self):
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
         t = Task.objects.get(job=self.job)
-        self.assertEqual(t.rate_scheme, self.scheme)
+        self.assertEqual(t.service_price, self.scheme)
         # elapsed_time scheme: actual_qty stays None (bleps will populate at invoice time)
         self.assertIsNone(t.actual_qty)
         self.assertEqual(t.est_qty, Decimal('2'))
 
     def test_carry_over_entered_qty_seeds_task_est_qty(self):
         # Replace scheme to entered_qty on the PlanTask
-        scheme_qty = RateScheme.objects.create(
-            name='PerItem', algorithm=RateScheme.ENTERED_QTY,
+        scheme_qty = ServicePrice.objects.create(
+            name='PerItem', algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('50'), unit_label='item', accounting_category=self.cat,
         )
-        self.pt.rate_scheme = scheme_qty
+        self.pt.service_price = scheme_qty
         self.pt.est_qty = Decimal('2')
         self.pt.save()
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
@@ -128,12 +128,12 @@ class CarryOverFromDirectLineItemsTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job, status=Estimate.STATUS_DRAFT, estimate_number='EST-2026-0001',
         )
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServicePrice.objects.create(
+            name='Hourly', algorithm=ServicePrice.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='Setup', rate_scheme=self.scheme,
+            template_name='Setup', service_price=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         self.pli = InventoryItem.objects.create(
@@ -196,19 +196,19 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
         self.estimate = EstimateWizardService.open_for_worksheet(self.worksheet)
 
     def test_carry_over_uses_plan_task_directly(self):
-        scheme = RateScheme.objects.create(
-            name='Carry Hourly', algorithm=RateScheme.ENTERED_QTY,
+        scheme = ServicePrice.objects.create(
+            name='Carry Hourly', algorithm=ServicePrice.ENTERED_QTY,
             rate=Decimal('40.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Inline atom',
-            rate_scheme=scheme, est_qty=Decimal('2.0'),
+            service_price=scheme, est_qty=Decimal('2.0'),
         )
 
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
 
         task = Task.objects.get(source_plan_task=pt)
-        self.assertEqual(task.rate_scheme_id, scheme.pk)
+        self.assertEqual(task.service_price_id, scheme.pk)
         self.assertEqual(task.est_qty, Decimal('2.0'))
 

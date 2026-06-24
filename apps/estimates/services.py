@@ -803,7 +803,7 @@ class WorksheetService:
     @staticmethod
     def add_task_from_template(
         worksheet_pk, template_pk,
-        rate_scheme_id=None,
+        service_price_id=None,
         active_modifiers=None,
         est_qty=None,
         est_worker_time=None,
@@ -830,21 +830,21 @@ class WorksheetService:
         except TaskTemplate.DoesNotExist:
             raise NotFoundError(f'TaskTemplate {template_pk} not found')
 
-        # Guard: refuse to use a template whose RateScheme has been superseded.
-        # Only fires when the caller is relying on the template's rate_scheme
+        # Guard: refuse to use a template whose ServicePrice has been superseded.
+        # Only fires when the caller is relying on the template's service_price
         # (i.e. they didn't supply an explicit override).
-        if rate_scheme_id is None and tt.rate_scheme_id and tt.rate_scheme.replaced_by_id is not None:
+        if service_price_id is None and tt.service_price_id and tt.service_price.replaced_by_id is not None:
             from apps.core.services import SchemeSupersededError
             raise SchemeSupersededError(
                 f'Template "{tt.template_name}" references a superseded '
-                f'RateScheme. Update the template before adding tasks from it.'
+                f'ServicePrice. Update the template before adding tasks from it.'
             )
 
         task = PlanTask.objects.create(
             name=name if name else tt.template_name,
             description=description if description is not None else tt.description,
             est_worksheet=ws,
-            rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
+            service_price_id=service_price_id if service_price_id is not None else tt.service_price_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
             est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
             est_worker_time=est_worker_time,
@@ -863,9 +863,9 @@ class WorksheetService:
             raise ValidationError(
                 'Cannot add tasks to a worksheet whose estimate has been sent.'
             )
-        if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
+        if not kwargs.get('service_price_id') and not kwargs.get('service_price'):
             raise ValidationError(
-                {'rate_scheme': 'A RateScheme is required to add a task.'}
+                {'service_price': 'A ServicePrice is required to add a task.'}
             )
         task = PlanTask(est_worksheet=ws, **kwargs)
         task.full_clean()
@@ -976,7 +976,7 @@ class EstimateWizardService(BaseWizardService):
     def _atom_units(atom_instance):
         """Return the units label for an atom.
 
-        PlanTask: from rate_scheme.unit_label (or 'none' if no scheme).
+        PlanTask: from service_price.unit_label (or 'none' if no scheme).
         PlanMaterial: from the atom's own units field (which is populated
                       from the linked PLI at create time via _populate_from_pli,
                       so PLI-linked PMs reflect the PLI's units; freeform PMs
@@ -985,8 +985,8 @@ class EstimateWizardService(BaseWizardService):
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         if isinstance(atom_instance, PlanTask):
-            if atom_instance.rate_scheme_id:
-                return atom_instance.rate_scheme.unit_label
+            if atom_instance.service_price_id:
+                return atom_instance.service_price.unit_label
             return 'none'
         if isinstance(atom_instance, PlanMaterial):
             return atom_instance.units or 'none'
@@ -1056,7 +1056,7 @@ class EstimateWizardService(BaseWizardService):
         atoms = []
 
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
+            'service_price', 'service_price__accounting_category',
         ):
             key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
             state_info = claims.get(key, default_state)
@@ -1125,7 +1125,7 @@ class EstimateWizardService(BaseWizardService):
 
         # PlanTasks
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
+            'service_price', 'service_price__accounting_category',
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
                 continue
@@ -1202,7 +1202,7 @@ class EstimateWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        if task.rate_scheme_id and task.est_qty is not None:
+        if task.service_price_id and task.est_qty is not None:
             return task.est_qty, task.effective_rate()
         return Decimal('1'), total_price
 

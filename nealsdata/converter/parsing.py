@@ -252,7 +252,7 @@ def parse_checklist(cell):
 
 
 def checklist_scheme_name(task_name):
-    """RateScheme name for a task, chosen by keyword in its name.
+    """ServicePrice name for a task, chosen by keyword in its name.
 
     Starts with 'cut' -> 'CNC routing'; contains 'laser' -> 'Laser';
     contains 'draw'/'cad'/'model' -> 'CAD'; otherwise -> 'Shop labor'.
@@ -268,7 +268,7 @@ def checklist_scheme_name(task_name):
 
 
 def infer_algorithm(item_type, units):
-    """RateScheme.algorithm for a Task-classified line item."""
+    """ServicePrice.algorithm for a Task-classified line item."""
     it = (item_type or '').strip().lower()
     u = (units or '').strip().lower()
     if it in ('hours', 'days') or u in ('hour', 'hours', 'day', 'days'):

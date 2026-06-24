@@ -67,7 +67,7 @@ def _revision_index(row):
 
 
 def build_seed(c):
-    """Emit core.user, core.accountingcategory and jobs.ratescheme records
+    """Emit core.user, core.accountingcategory and jobs.serviceprice records
     verbatim from the nealseed fixture.
 
     The records are appended to c.fixture_data exactly as they appear in
@@ -75,7 +75,7 @@ def build_seed(c):
     assigns them on load). Indexes the seed data for downstream builders:
       - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
       - c.scheme_by_name
-    Also advances the jobs.ratescheme pk counter past the seeded schemes so
+    Also advances the jobs.serviceprice pk counter past the seeded schemes so
     any derived (cloned) scheme gets a fresh pk.
     """
     from nealsdata.converter.loaders import load_seed_records
@@ -101,7 +101,7 @@ def build_seed(c):
         c.fixture_data.append(rec)
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
-        elif model == 'jobs.ratescheme':
+        elif model == 'jobs.serviceprice':
             c.scheme_by_name[fields['name']] = rec.get('pk')
             c.scheme_algorithm_by_pk[rec.get('pk')] = fields.get('algorithm')
             if isinstance(rec.get('pk'), int):
@@ -110,15 +110,15 @@ def build_seed(c):
     c.ac_svc_pk = c.ac_by_code.get('SVC')
     c.ac_mat_pk = c.ac_by_code.get('MTL')
     if max_rs_pk:
-        c._pk_counters['jobs.ratescheme'] = max(
-            c._pk_counters['jobs.ratescheme'], max_rs_pk)
+        c._pk_counters['jobs.serviceprice'] = max(
+            c._pk_counters['jobs.serviceprice'], max_rs_pk)
 
-    # One shared flat-fee ("Fixed charge") RateScheme for converter-derived
+    # One shared flat-fee ("Fixed charge") ServicePrice for converter-derived
     # tasks that don't fit a nealseed scheme. Per the flat-fee pricing design,
     # the per-task price rides on the task's active_modifiers as
     # {'flat_fee_price': <str>}; this scheme's own rate is only a fallback.
-    ff_pk = c.next_pk('jobs.ratescheme')
-    c.add_fixture('jobs.ratescheme', ff_pk, {
+    ff_pk = c.next_pk('jobs.serviceprice')
+    c.add_fixture('jobs.serviceprice', ff_pk, {
         'name':                'Flat Fee',
         'description':         'Shared fixed-charge scheme; price set per task.',
         'algorithm':           'flat_fee',
@@ -960,18 +960,18 @@ def build_estimates(c):
         c.estimates[base] = base_estimates
 
 
-# Default RateScheme for tasks with no more specific keyword match.
+# Default ServicePrice for tasks with no more specific keyword match.
 _CHECKLIST_DEFAULT_SCHEME = 'Shop labor'
 
 
 def _scheme_pk(c, scheme_name):
-    """Resolve a seed RateScheme name to its pk, falling back to Shop labor."""
+    """Resolve a seed ServicePrice name to its pk, falling back to Shop labor."""
     return (c.scheme_by_name.get(scheme_name)
             or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
 
 
 def _match_seed_scheme(c, algorithm, rate):
-    """Match a line's (algorithm, rate) to a seed RateScheme.
+    """Match a line's (algorithm, rate) to a seed ServicePrice.
 
     Returns (scheme_pk, active_modifiers). Time/qty lines match the nearest
     seed scheme of that algorithm when within ~10% of its rate. Anything
@@ -982,7 +982,7 @@ def _match_seed_scheme(c, algorithm, rate):
     if algorithm != 'flat_fee':
         candidates = [
             f for f in c.fixture_data
-            if f['model'] == 'jobs.ratescheme'
+            if f['model'] == 'jobs.serviceprice'
             and f['fields'].get('algorithm') == algorithm
             and f.get('pk') != c.flat_fee_scheme_pk
         ]
@@ -999,7 +999,7 @@ def _match_seed_scheme(c, algorithm, rate):
 
 
 def _fallback_scheme(c, li):
-    """RateScheme pk + active_modifiers for an estimate-line-item-derived task.
+    """ServicePrice pk + active_modifiers for an estimate-line-item-derived task.
 
     Keyword rule first; otherwise match a seed scheme by rate, or fall back
     to the shared Flat Fee scheme. Returns (scheme_pk, active_modifiers).
@@ -1127,7 +1127,7 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
-            'rate_scheme':      scheme_pk,
+            'service_price':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          None,
@@ -1165,7 +1165,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
-            'rate_scheme':      scheme_pk,
+            'service_price':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
@@ -1260,7 +1260,7 @@ def assign_est_quantities(c):
         if f['model'] != 'jobs.task':
             continue
         fields = f['fields']
-        algo = c.scheme_algorithm_by_pk.get(fields.get('rate_scheme'))
+        algo = c.scheme_algorithm_by_pk.get(fields.get('service_price'))
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
         elif algo == 'flat_fee':
@@ -1323,7 +1323,7 @@ def _build_plan_checklist_tasks(c, base_ref, ws_pk, items, start_sort=0):
         pt_pk = c.next_pk('jobs.plantask')
         c.add_fixture('jobs.plantask', pt_pk, {
             'est_worksheet':    ws_pk,
-            'rate_scheme':      scheme_pk,
+            'service_price':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          '1.00',
@@ -1347,7 +1347,7 @@ def _build_plan_line_item_tasks(c, base_ref, ws_pk, task_lines, start_sort=0):
         pt_pk = c.next_pk('jobs.plantask')
         c.add_fixture('jobs.plantask', pt_pk, {
             'est_worksheet':    ws_pk,
-            'rate_scheme':      scheme_pk,
+            'service_price':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
@@ -2122,7 +2122,7 @@ def build_bleps_and_shifts(c):
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
         # EVERY complete task — even an old finished one too old to get a blep
         # (the horizon skip below) — so nothing can invoice at zero.
-        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
+        if c.scheme_algorithm_by_pk.get(fields.get('service_price')) == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))

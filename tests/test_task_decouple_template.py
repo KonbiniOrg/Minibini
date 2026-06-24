@@ -3,7 +3,7 @@ Tests for decoupling PlanTask from TaskTemplate.
 
 NOTE: As of B6, PlanTask/Task/TaskTemplate no longer have direct
 accounting_category fields — the effective category is derived from
-the linked RateScheme. The original AC-on-task tests have been
+the linked ServicePrice. The original AC-on-task tests have been
 removed. The HTML-view subclasses (TaskDetailAccountingCategoryTests)
 are also gone with the rest of the HTML test suite.
 

@@ -228,9 +228,9 @@ class TaskBase(models.Model):
         """Canonical TaskBase field set for cloning to another container.
 
         Excludes identity, status, provenance, hierarchy, and assignee — callers
-        add those. Returns the rate scheme as ``rate_scheme_id`` (not the object)
+        add those. Returns the rate scheme as ``service_price_id`` (not the object)
         so the dict splats straight into ``TaskService.create_direct`` (which
-        takes ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
+        takes ``service_price_id``); Django's ``.objects.create()`` accepts the
         ``_id`` form too, so the raw-create clone paths work as well.
         ``active_modifiers`` is deep-copied here to keep raw-create callers safe
         from shared-reference bugs.
@@ -241,7 +241,7 @@ class TaskBase(models.Model):
             sort_order=self.sort_order,
             est_worker_time=self.est_worker_time,
             est_qty=self.est_qty,
-            rate_scheme_id=self.rate_scheme_id,
+            service_price_id=self.service_price_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
         )
 
@@ -252,8 +252,8 @@ class PlanTask(TaskBase):
     est_worksheet = models.ForeignKey(
         'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
     )
-    rate_scheme = models.ForeignKey(
-        'jobs.RateScheme', on_delete=models.PROTECT,
+    service_price = models.ForeignKey(
+        'jobs.ServicePrice', on_delete=models.PROTECT,
     )
     active_modifiers = models.JSONField(default=list, blank=True)
     # est_qty is now inherited from TaskBase (nullable at DB level; PlanTask.clean()
@@ -286,24 +286,24 @@ class PlanTask(TaskBase):
 
         Ignores the active_modifiers argument (uses self.active_modifiers).
         Parameter is accepted to match the BillableAtom interface.
-        Returns Decimal('0.00') when rate_scheme or est_qty is unset
+        Returns Decimal('0.00') when service_price or est_qty is unset
         — i.e., billing not yet configured.
         """
-        if not self.rate_scheme_id or self.est_qty is None:
+        if not self.service_price_id or self.est_qty is None:
             return Decimal('0.00')
-        charge = self.rate_scheme.compute_charge(
+        charge = self.service_price.compute_charge(
             self.est_qty, self.active_modifiers,
         )
         return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
-        if not self.rate_scheme_id:
+        if not self.service_price_id:
             return None
-        return self.rate_scheme.effective_rate(self.active_modifiers)
+        return self.service_price.effective_rate(self.active_modifiers)
 
     @property
     def effective_accounting_category(self):
-        return self.rate_scheme.accounting_category
+        return self.service_price.accounting_category
 
 
 @history(exclude=['task_id'])
@@ -356,9 +356,9 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
-    # Billing fields (Phase B: rate_scheme is NOT NULL at the DB level).
-    rate_scheme = models.ForeignKey(
-        'jobs.RateScheme',
+    # Billing fields (Phase B: service_price is NOT NULL at the DB level).
+    service_price = models.ForeignKey(
+        'jobs.ServicePrice',
         on_delete=models.PROTECT,
         related_name='task_set',
     )
@@ -395,7 +395,7 @@ class Task(TaskBase):
                 'est_worker_time':
                     'An assigned task must have an estimated worker time.',
             })
-        # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
+        # charge guard removed in B4. service_price is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -410,7 +410,7 @@ class Task(TaskBase):
 
     @property
     def effective_accounting_category(self):
-        return self.rate_scheme.accounting_category
+        return self.service_price.accounting_category
 
     def compute_amount(self, active_modifiers=None):
         """Uniform atom interface: total billable amount for this task.
@@ -419,12 +419,12 @@ class Task(TaskBase):
         Parameter is accepted to match the BillableAtom interface shared
         with PlanTask/Material/PlanMaterial.
         """
-        qty = self.rate_scheme.get_actual_qty(self)
-        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        qty = self.service_price.get_actual_qty(self)
+        charge = self.service_price.compute_charge(qty, self.active_modifiers)
         return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
-        return self.rate_scheme.effective_rate(self.active_modifiers)
+        return self.service_price.effective_rate(self.active_modifiers)
 
 
 class Blep(models.Model):
@@ -467,7 +467,7 @@ class Blep(models.Model):
         return f"Blep {self.pk} for Task {self.task.pk}"
 
 
-class RateScheme(models.Model):
+class ServicePrice(models.Model):
     ELAPSED_TIME = 'elapsed_time'
     ENTERED_QTY = 'entered_qty'
     FLAT_FEE = 'flat_fee'
@@ -478,7 +478,7 @@ class RateScheme(models.Model):
         (FLAT_FEE, 'Fixed charge'),
     ]
 
-    rate_scheme_id = models.AutoField(primary_key=True)
+    service_price_id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, default='')
     algorithm = models.CharField(max_length=20, choices=ALGORITHM_CHOICES)
@@ -503,17 +503,17 @@ class RateScheme(models.Model):
     )
 
     class Meta:
-        db_table = 'rate_schemes'
+        db_table = 'service_prices'
 
     def clean(self):
         super().clean()
         if self.accounting_category_id is None:
             from django.core.exceptions import ValidationError
             raise ValidationError({
-                'accounting_category': 'Required: every RateScheme must have an AccountingCategory.',
+                'accounting_category': 'Required: every ServicePrice must have an AccountingCategory.',
             })
         if self.pk and self.is_referenced():
-            old = RateScheme.objects.get(pk=self.pk)
+            old = ServicePrice.objects.get(pk=self.pk)
             changed = [
                 f for f in self.FROZEN_FIELDS
                 if getattr(self, f) != getattr(old, f)
@@ -595,11 +595,11 @@ class RateScheme(models.Model):
     def is_referenced(self):
         """True if any PlanTask, Task, or TaskTemplate points at this scheme."""
         from apps.estimates.models import TaskTemplate
-        if PlanTask.objects.filter(rate_scheme=self).exists():
+        if PlanTask.objects.filter(service_price=self).exists():
             return True
-        if Task.objects.filter(rate_scheme=self).exists():
+        if Task.objects.filter(service_price=self).exists():
             return True
-        if TaskTemplate.objects.filter(rate_scheme=self).exists():
+        if TaskTemplate.objects.filter(service_price=self).exists():
             return True
         return False
 
@@ -607,13 +607,13 @@ class RateScheme(models.Model):
         """Return reference counts for the outdated-schemes UI."""
         from apps.estimates.models import TaskTemplate
         return {
-            'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
-            'task_count': Task.objects.filter(rate_scheme=self).count(),
-            'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
+            'plan_task_count': PlanTask.objects.filter(service_price=self).count(),
+            'task_count': Task.objects.filter(service_price=self).count(),
+            'task_template_count': TaskTemplate.objects.filter(service_price=self).count(),
         }
 
     def supersede(self, **overrides):
-        """Create a new RateScheme inheriting this one's fields, set replaced_by/at.
+        """Create a new ServicePrice inheriting this one's fields, set replaced_by/at.
 
         The old row is renamed in place to "<orig> (v{N})" where N is the count
         of pre-existing predecessors + 1. The new row takes the original name
@@ -651,11 +651,11 @@ class RateScheme(models.Model):
             # update() bypasses full_clean(), which is what we want — `name`
             # is in FROZEN_FIELDS, but renaming during supersede is the one
             # exception, alongside replaced_by/replaced_at.
-            RateScheme.objects.filter(pk=self.pk).update(name=retired_name)
+            ServicePrice.objects.filter(pk=self.pk).update(name=retired_name)
             self.name = retired_name  # keep the in-memory instance in sync
-            new = RateScheme.objects.create(**defaults)
+            new = ServicePrice.objects.create(**defaults)
             replaced_at = timezone.now()
-            RateScheme.objects.filter(pk=self.pk).update(
+            ServicePrice.objects.filter(pk=self.pk).update(
                 replaced_by=new, replaced_at=replaced_at,
             )
             self.replaced_by = new

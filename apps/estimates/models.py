@@ -464,8 +464,8 @@ class TaskTemplate(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    rate_scheme = models.ForeignKey(
-        'jobs.RateScheme',
+    service_price = models.ForeignKey(
+        'jobs.ServicePrice',
         on_delete=models.PROTECT,
         help_text="Default billing scheme for tasks from this template"
     )
@@ -492,12 +492,12 @@ class TaskTemplate(models.Model):
 
     def clean(self):
         super().clean()
-        from apps.jobs.models import RateScheme
+        from apps.jobs.models import ServicePrice
         # A flat-fee template carries its own unit price in
         # default_active_modifiers ({'flat_fee_price': str}). Without one, a
         # generated task would silently fall back to the shared scheme rate.
-        if self.rate_scheme_id and self.rate_scheme.algorithm == RateScheme.FLAT_FEE:
-            price = RateScheme._flat_fee_price(self.default_active_modifiers)
+        if self.service_price_id and self.service_price.algorithm == ServicePrice.FLAT_FEE:
+            price = ServicePrice._flat_fee_price(self.default_active_modifiers)
             if price is None or price <= 0:
                 raise ValidationError({
                     'default_active_modifiers':
@@ -507,7 +507,7 @@ class TaskTemplate(models.Model):
 
     @property
     def effective_accounting_category(self):
-        return self.rate_scheme.accounting_category
+        return self.service_price.accounting_category
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None,
@@ -527,10 +527,10 @@ class TaskTemplate(models.Model):
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
-        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
+        if self.service_price_id and self.service_price.replaced_by_id is not None:
             raise SchemeSupersededError(
                 f'Template "{self.template_name}" references a superseded '
-                f'RateScheme. Update the template before adding tasks from it.'
+                f'ServicePrice. Update the template before adding tasks from it.'
             )
 
         resolved_name = name if name else self.template_name
@@ -548,7 +548,7 @@ class TaskTemplate(models.Model):
                     description=resolved_description,
                     assignee=assignee,
                     sort_order=sort_order,
-                    rate_scheme=self.rate_scheme,
+                    service_price=self.service_price,
                     active_modifiers=resolved_modifiers,
                     est_qty=est_qty,
                     est_worker_time=est_worker_time,
@@ -559,7 +559,7 @@ class TaskTemplate(models.Model):
                 est_worksheet=container,
                 name=resolved_name,
                 description=resolved_description,
-                rate_scheme=self.rate_scheme,
+                service_price=self.service_price,
                 active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,

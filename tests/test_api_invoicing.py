@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, EmailRecord
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.jobs.models import Job, RateScheme
+from apps.jobs.models import Job, ServicePrice
 from apps.inventory.models import Material
 
 
@@ -254,8 +254,8 @@ class BillabilityGateTest(BaseTestCase):
             email='bill@test.com', mobile_number='555-9999',
         )
         self.cat = AccountingCategory.objects.create(name='BillCat', code='BCAT')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly-bill', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServicePrice.objects.create(
+            name='Hourly-bill', algorithm=ServicePrice.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours',
             accounting_category=self.cat,
         )
@@ -266,13 +266,13 @@ class BillabilityGateTest(BaseTestCase):
 
         # An incomplete (pending) task — must appear as not_billable
         self.incomplete_task = Task.objects.create(
-            job=self.job, name='Pending Work', rate_scheme=self.scheme,
+            job=self.job, name='Pending Work', service_price=self.scheme,
         )
         # Status is STATUS_PENDING by default — don't change it.
 
         # A complete task — for contrast
         self.complete_task = Task.objects.create(
-            job=self.job, name='Done Work', rate_scheme=self.scheme,
+            job=self.job, name='Done Work', service_price=self.scheme,
         )
         self.complete_task.status = Task.STATUS_COMPLETE
         self.complete_task.save()

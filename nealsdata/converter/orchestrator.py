@@ -31,7 +31,7 @@ class NealsDataConverter:
         self._pk_counters = defaultdict(int)
         self.csv_cards = []
         self.ac_by_code = {}        # AccountingCategory code -> pk (from seed)
-        self.scheme_by_name = {}    # RateScheme name -> pk (from seed)
+        self.scheme_by_name = {}    # ServicePrice name -> pk (from seed)
         self.ac_svc_pk = None
         self.ac_mat_pk = None
         self.pli_map = {}

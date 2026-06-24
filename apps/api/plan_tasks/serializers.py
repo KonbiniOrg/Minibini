@@ -62,9 +62,9 @@ class PlanTaskDetailSerializer(JobScopedCanManageMixin, serializers.ModelSeriali
     can_manage_job_path = 'est_worksheet.job'
     plan_materials = PlanMaterialSerializer(many=True, read_only=True)
     est_worksheet = serializers.SerializerMethodField()
-    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
-    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
-    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
+    scheme_name = serializers.CharField(source='service_price.name', read_only=True, default=None)
+    scheme_algorithm = serializers.CharField(source='service_price.algorithm', read_only=True, default=None)
+    scheme_unit_label = serializers.CharField(source='service_price.unit_label', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
 
@@ -72,7 +72,7 @@ class PlanTaskDetailSerializer(JobScopedCanManageMixin, serializers.ModelSeriali
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'rate_scheme', 'active_modifiers', 'est_qty', 'est_worker_time',
+            'service_price', 'active_modifiers', 'est_qty', 'est_worker_time',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
             'plan_materials', 'est_worksheet', 'can_manage',
@@ -80,7 +80,7 @@ class PlanTaskDetailSerializer(JobScopedCanManageMixin, serializers.ModelSeriali
         read_only_fields = fields
 
     def get_effective_rate(self, obj):
-        rate = obj.effective_rate() if obj.rate_scheme_id else None
+        rate = obj.effective_rate() if obj.service_price_id else None
         return str(rate) if rate is not None else None
 
     def get_computed_charge(self, obj):

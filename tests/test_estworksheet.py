@@ -12,16 +12,16 @@ from django.test import TestCase
 from decimal import Decimal
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, PlanTask, ServicePrice
 from apps.estimates.models import EstWorksheet
 from apps.core.models import User, AccountingCategory
 
 
 def _make_scheme(suffix):
-    """Helper: create a minimal RateScheme + AccountingCategory for tests."""
+    """Helper: create a minimal ServicePrice + AccountingCategory for tests."""
     ac = AccountingCategory.objects.create(code=f'ESTWS-{suffix}', name=f'estws-{suffix}')
-    return RateScheme.objects.create(
-        name=f'S-estws-{suffix}', algorithm=RateScheme.FLAT_FEE,
+    return ServicePrice.objects.create(
+        name=f'S-estws-{suffix}', algorithm=ServicePrice.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -68,7 +68,7 @@ class TaskWorkContainerTest(TestCase):
         task = Task.objects.create(
             job=self.job,
             name="Job Task",
-            rate_scheme=scheme,
+            service_price=scheme,
         )
 
         self.assertEqual(task.job, self.job)
@@ -81,7 +81,7 @@ class TaskWorkContainerTest(TestCase):
         task = PlanTask.objects.create(
             est_worksheet=worksheet,
             name="Worksheet Task",
-            rate_scheme=scheme,
+            service_price=scheme,
             est_qty=Decimal('1'),
         )
 
@@ -95,14 +95,14 @@ class TaskWorkContainerTest(TestCase):
         task1 = PlanTask.objects.create(
             est_worksheet=worksheet,
             name="Task 1",
-            rate_scheme=scheme,
+            service_price=scheme,
             est_qty=Decimal('1'),
         )
 
         task2 = PlanTask.objects.create(
             est_worksheet=worksheet,
             name="Task 2",
-            rate_scheme=scheme,
+            service_price=scheme,
             est_qty=Decimal('1'),
         )
 

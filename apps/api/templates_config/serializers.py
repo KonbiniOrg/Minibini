@@ -11,7 +11,7 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
         model = TaskTemplate
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
-            'rate_scheme', 'default_active_modifiers', 'default_billable_qty',
+            'service_price', 'default_active_modifiers', 'default_billable_qty',
         ]
         read_only_fields = ['template_id']
 

@@ -18,7 +18,7 @@ class TaskLifecycleAPITest(BaseTestCase):
             self.job.status = s
             self.job.save()
         self.task = Task.objects.create(
-            job=self.job, name="Test task", rate_scheme_id=1,
+            job=self.job, name="Test task", service_price_id=1,
         )
 
     def _create_user(self, username):
@@ -38,9 +38,9 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
     def test_complete_entered_qty_task_without_value_signals_needs_qty(self):
-        # rate_scheme 2 in the fixture is entered_qty
+        # service_price 2 in the fixture is entered_qty
         eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+            job=self.job, name='CNC', service_price_id=2,
         )
         resp = self.client.post(f'/api/tasks/{eq_task.pk}/complete/')
         self.assertEqual(resp.status_code, 200)
@@ -51,7 +51,7 @@ class TaskLifecycleAPITest(BaseTestCase):
 
     def test_complete_entered_qty_task_with_value_completes(self):
         eq_task = Task.objects.create(
-            job=self.job, name='CNC', rate_scheme_id=2,
+            job=self.job, name='CNC', service_price_id=2,
         )
         resp = self.client.post(
             f'/api/tasks/{eq_task.pk}/complete/',
@@ -65,7 +65,7 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertEqual(eq_task.actual_qty, Decimal('7'))
 
     def test_complete_elapsed_task_without_time_signals_needs_time(self):
-        # self.task is rate_scheme 1 (elapsed_time) with no bleps logged.
+        # self.task is service_price 1 (elapsed_time) with no bleps logged.
         resp = self.client.post(f'/api/tasks/{self.task.pk}/complete/')
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.data.get('needs_time_logged'))
@@ -255,7 +255,7 @@ class TaskSerializerStatusTest(BaseTestCase):
             self.job.status = s
             self.job.save()
         self.task = Task.objects.create(
-            job=self.job, name="Test task", rate_scheme_id=1,
+            job=self.job, name="Test task", service_price_id=1,
         )
 
     def test_task_list_includes_status(self):

@@ -70,7 +70,7 @@ def _labor_cost(job):
     """Approximate labor cost = all blep hours on the job × average_labor_cost.
 
     Labor cost is about hours worked, not how the task is billed, so every blep
-    counts regardless of the task's RateScheme or status (cancelled-task hours
+    counts regardless of the task's ServicePrice or status (cancelled-task hours
     were still worked). A running blep counts its time so far via Blep.elapsed.
     """
     from apps.jobs.models import Blep

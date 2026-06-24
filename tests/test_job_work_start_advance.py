@@ -67,15 +67,15 @@ class WorkStartAdvancesJobTest(BaseTestCase):
 
     def test_start_work_advances_approved_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task.objects.create(name='T', job=job, service_price_id=1)
         TaskLifecycleService.start_work(task.pk, self.user)
         job.refresh_from_db()
         self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
 
     def test_complete_task_advances_approved_job_with_others_remaining(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
-        t1 = Task.objects.create(name='T1', job=job, rate_scheme_id=1)
-        Task.objects.create(name='T2', job=job, rate_scheme_id=1)
+        t1 = Task.objects.create(name='T1', job=job, service_price_id=1)
+        Task.objects.create(name='T2', job=job, service_price_id=1)
         now = timezone.now()
         BlepService._create(t1, self.user, start_time=now - timedelta(hours=1), end_time=now)
         TaskLifecycleService.complete_task(t1.pk)
@@ -84,7 +84,7 @@ class WorkStartAdvancesJobTest(BaseTestCase):
 
     def test_create_historical_advances_approved_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task.objects.create(name='T', job=job, service_price_id=1)
         now = timezone.now()
         BlepService.create_historical(
             self.user, task, now - timedelta(hours=2), now - timedelta(hours=1),
@@ -95,7 +95,7 @@ class WorkStartAdvancesJobTest(BaseTestCase):
     def test_create_historical_on_work_complete_job_stays_work_complete(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
                       Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE)
-        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        task = Task.objects.create(name='T', job=job, service_price_id=1)
         now = timezone.now()
         BlepService.create_historical(
             self.user, task, now - timedelta(hours=2), now - timedelta(hours=1),

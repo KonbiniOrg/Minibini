@@ -332,12 +332,12 @@ class WizardAtomLabels:
     @staticmethod
     def qty_source_label(task):
         """Describe where the billable quantity came from for a Task atom."""
-        from apps.jobs.models import RateScheme
-        scheme = task.rate_scheme
-        if scheme.algorithm == RateScheme.ELAPSED_TIME:
+        from apps.jobs.models import ServicePrice
+        scheme = task.service_price
+        if scheme.algorithm == ServicePrice.ELAPSED_TIME:
             qty = scheme.get_actual_qty(task)
             return f'{qty:.2f} {scheme.unit_label} from bleps'
-        if scheme.algorithm == RateScheme.ENTERED_QTY:
+        if scheme.algorithm == ServicePrice.ENTERED_QTY:
             qty = scheme.get_actual_qty(task)
             return f'{qty} {scheme.unit_label} entered'
         return 'flat fee'
@@ -453,7 +453,7 @@ class InvoiceWizardService(BaseWizardService):
         tasks = (
             Task.objects.filter(job=job)
             .exclude(status=Task.STATUS_CANCELLED)
-            .select_related('rate_scheme')
+            .select_related('service_price')
             .order_by('sort_order', 'pk')
         )
         task_list = []
@@ -466,7 +466,7 @@ class InvoiceWizardService(BaseWizardService):
             atoms.append({
                 'type': 'task',
                 'id': task.pk,
-                'description': f'{task.name} ({task.rate_scheme.name})',
+                'description': f'{task.name} ({task.service_price.name})',
                 'sub_info': WizardAtomLabels.qty_source_label(task),
                 'qty': detail['qty'],
                 'rate': detail['rate'],
@@ -639,7 +639,7 @@ class InvoiceWizardService(BaseWizardService):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            return atom_instance.rate_scheme.unit_label
+            return atom_instance.service_price.unit_label
         if isinstance(atom_instance, Material):
             if atom_instance.inventory_item_id:
                 return atom_instance.inventory_item.units
@@ -684,4 +684,4 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _task_actual_qty(cls, task):
-        return task.rate_scheme.get_actual_qty(task)
+        return task.service_price.get_actual_qty(task)

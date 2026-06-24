@@ -12,7 +12,7 @@ class ShiftClockTest(BaseTestCase):
         super().setUp()
         self.user = User.objects.create_user(username='clock_u', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
 
     def test_clock_in_opens_shift(self):
         s = ShiftService.clock_in(self.user)
