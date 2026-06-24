@@ -32,8 +32,8 @@
     error = '';
     try {
       const url = showSuperseded
-        ? '/api/rate-schemes/?include_superseded=true'
-        : '/api/rate-schemes/';
+        ? '/api/service-prices/?include_superseded=true'
+        : '/api/service-prices/';
       const [schemeResp, catResp, unitsResp] = await Promise.all([
         api.get(url),
         api.get('/api/accounting-categories/'),
@@ -71,7 +71,7 @@
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
-    editingId = scheme.rate_scheme_id;
+    editingId = scheme.service_price_id;
     supersedingId = null;
     saveError = '';
   }
@@ -86,7 +86,7 @@
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
-    supersedingId = scheme.rate_scheme_id;
+    supersedingId = scheme.service_price_id;
     editingId = null;
     saveError = '';
   }
@@ -128,11 +128,11 @@
       };
 
       if (supersedingId) {
-        await api.post(`/api/rate-schemes/${supersedingId}/supersede/`, payload);
+        await api.post(`/api/service-prices/${supersedingId}/supersede/`, payload);
       } else if (editingId === 'new') {
-        await api.post('/api/rate-schemes/', payload);
+        await api.post('/api/service-prices/', payload);
       } else {
-        await api.patch(`/api/rate-schemes/${editingId}/`, payload);
+        await api.patch(`/api/service-prices/${editingId}/`, payload);
       }
       editingId = null;
       supersedingId = null;
@@ -153,7 +153,7 @@
   async function remove(scheme) {
     if (!confirm(`Delete rate scheme "${scheme.name}"?`)) return;
     try {
-      await api.delete(`/api/rate-schemes/${scheme.rate_scheme_id}/`);
+      await api.delete(`/api/service-prices/${scheme.service_price_id}/`);
       await load();
     } catch (e) {
       error = e.message || 'Could not delete.';
@@ -196,7 +196,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each schemes as s (s.rate_scheme_id)}
+      {#each schemes as s (s.service_price_id)}
         <tr>
           <td>{s.name}</td>
           <td>{ALGORITHM_LABELS[s.algorithm] || s.algorithm}</td>

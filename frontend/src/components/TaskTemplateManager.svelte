@@ -13,7 +13,7 @@
 
   function emptyForm() {
     return {
-      template_name: '', description: '', rate_scheme: '',
+      template_name: '', description: '', service_price: '',
       default_active_modifiers: [], default_billable_qty: '',
       flat_fee_price: '', is_active: true,
     };
@@ -25,8 +25,8 @@
     try {
       const [tmplResp, schemeResp, allSchemeResp] = await Promise.all([
         api.get('/api/task-templates/'),
-        api.get('/api/rate-schemes/'),
-        api.get('/api/rate-schemes/?include_superseded=true'),
+        api.get('/api/service-prices/'),
+        api.get('/api/service-prices/?include_superseded=true'),
       ]);
       templates = tmplResp.results || tmplResp;
       schemes = schemeResp.results || schemeResp;
@@ -39,7 +39,7 @@
   }
 
   const selectedScheme = $derived(
-    schemes.find(s => s.rate_scheme_id === Number(form.rate_scheme)) || null
+    schemes.find(s => s.service_price_id === Number(form.service_price)) || null
   );
 
   const isFlatFee = $derived(
@@ -47,11 +47,11 @@
   );
 
   function schemeFor(id) {
-    return allSchemes.find(s => s.rate_scheme_id === id);
+    return allSchemes.find(s => s.service_price_id === id);
   }
 
   function isSuperseded(template) {
-    const s = schemeFor(template.rate_scheme);
+    const s = schemeFor(template.service_price);
     return !!(s && s.superseded);
   }
 
@@ -69,7 +69,7 @@
     form = {
       template_name: tmpl.template_name,
       description: tmpl.description || '',
-      rate_scheme: tmpl.rate_scheme || '',
+      service_price: tmpl.service_price || '',
       default_active_modifiers: isPriced ? [] : [...(dm || [])],
       default_billable_qty: tmpl.default_billable_qty || '',
       flat_fee_price: isPriced ? fmtPrice(dm.flat_fee_price) : '',
@@ -103,7 +103,7 @@
       const payload = {
         template_name: form.template_name,
         description: form.description,
-        rate_scheme: form.rate_scheme || null,
+        service_price: form.service_price || null,
         default_active_modifiers: isFlatFee
           ? { flat_fee_price: form.flat_fee_price }
           : form.default_active_modifiers,
@@ -155,7 +155,7 @@
     </thead>
     <tbody>
       {#each templates as t (t.template_id)}
-        {@const scheme = schemeFor(t.rate_scheme)}
+        {@const scheme = schemeFor(t.service_price)}
         <tr>
           <td>{t.template_name}</td>
           <td>
@@ -187,10 +187,10 @@
       <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
     </label></p>
     <p><label><strong>Rate Scheme</strong><br>
-      <select bind:value={form.rate_scheme}>
+      <select bind:value={form.service_price}>
         <option value="">-- None --</option>
-        {#each schemes as s (s.rate_scheme_id)}
-          <option value={s.rate_scheme_id}>{s.name} ({s.algorithm})</option>
+        {#each schemes as s (s.service_price_id)}
+          <option value={s.service_price_id}>{s.name} ({s.algorithm})</option>
         {/each}
       </select>
     </label></p>

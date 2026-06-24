@@ -17,7 +17,7 @@
 
   let templateId = $state('');
   let lastFilledTemplateId = $state('');
-  let rateSchemeId = $state('');
+  let servicePriceId = $state('');
   let name = $state('');
   let description = $state('');
   let activeModifiers = $state([]);
@@ -32,7 +32,7 @@
 
   onMount(async () => {
     try {
-      const resp = await api.get('/api/rate-schemes/');
+      const resp = await api.get('/api/service-prices/');
       schemes = resp.results || resp;
     } catch (e) {
       error = e.message || 'Could not load rate schemes.';
@@ -66,14 +66,14 @@
     if (isEdit && item) {
       name = item.name || '';
       description = item.description || '';
-      rateSchemeId = item.rate_scheme ?? '';
+      servicePriceId = item.service_price ?? '';
       loadModifiers(item.active_modifiers);
       estQty = item.est_qty ?? '';
       estWorkerTime = formatDuration(item.est_worker_time);
       templateId = '';
     } else {
       name = ''; description = '';
-      rateSchemeId = ''; activeModifiers = []; flatFeePrice = '';
+      servicePriceId = ''; activeModifiers = []; flatFeePrice = '';
       estQty = ''; estWorkerTime = '';
       templateId = '';
       lastFilledTemplateId = '';
@@ -98,11 +98,11 @@
     if (selectedTemplate.default_billable_qty) {
       estQty = selectedTemplate.default_billable_qty;
     }
-    rateSchemeId = selectedTemplate.rate_scheme ?? '';
+    servicePriceId = selectedTemplate.service_price ?? '';
   });
 
   const selectedScheme = $derived(
-    schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null
+    schemes.find(s => s.service_price_id === Number(servicePriceId)) || null
   );
 
   const isFlatFee = $derived(
@@ -176,7 +176,7 @@
       error = 'Please pick a template.';
       return;
     }
-    if (mode === 'manual' && !rateSchemeId) {
+    if (mode === 'manual' && !servicePriceId) {
       error = 'Please pick a rate scheme.';
       return;
     }
@@ -196,7 +196,7 @@
       const payload = {
         name,
         description,
-        rate_scheme: rateSchemeId,
+        service_price: servicePriceId,
         active_modifiers: activeModifiersPayload,
         est_qty: estQty || null,
         est_worker_time: estWorkerTimeISO,
@@ -269,10 +269,10 @@
         {#if mode === 'manual'}
           <p>
             <label><strong>Rate scheme *</strong><br>
-              <select bind:value={rateSchemeId}>
+              <select bind:value={servicePriceId}>
                 <option value="">-- select --</option>
-                {#each schemes as s (s.rate_scheme_id)}
-                  <option value={s.rate_scheme_id}>{s.name}</option>
+                {#each schemes as s (s.service_price_id)}
+                  <option value={s.service_price_id}>{s.name}</option>
                 {/each}
               </select>
             </label>

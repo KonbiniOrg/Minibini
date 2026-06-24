@@ -4,16 +4,16 @@ import { render, fireEvent } from '@testing-library/svelte';
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
-import RateSchemeManager from '@/components/RateSchemeManager.svelte';
+import ServicePriceManager from '@/components/ServicePriceManager.svelte';
 
-const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
+const SCHEME = { service_price_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
 
 beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
-    if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
+    if (url.startsWith('/api/service-prices/')) return Promise.resolve({ results: [SCHEME] });
     if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
     if (url === '/api/settings/units/') return Promise.resolve(['none', 'hr']);
     return Promise.resolve({ results: [] });
@@ -22,25 +22,25 @@ beforeEach(() => {
   api.delete.mockResolvedValue({});
 });
 
-describe('RateSchemeManager', () => {
+describe('ServicePriceManager', () => {
   it('loads and lists schemes', async () => {
-    const { findByText } = render(RateSchemeManager);
+    const { findByText } = render(ServicePriceManager);
     expect(await findByText('Hourly')).toBeInTheDocument();
   });
 
   it('creates a scheme', async () => {
-    const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
+    const { findByRole, getByLabelText, getByRole } = render(ServicePriceManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Premium' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/', expect.objectContaining({ name: 'Premium' }));
+    expect(api.post).toHaveBeenCalledWith('/api/service-prices/', expect.objectContaining({ name: 'Premium' }));
   });
 
   it('deletes an unreferenced scheme after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const { findByRole } = render(RateSchemeManager);
+    const { findByRole } = render(ServicePriceManager);
     await fireEvent.click(await findByRole('button', { name: 'Delete' }));
-    expect(api.delete).toHaveBeenCalledWith('/api/rate-schemes/1/');
+    expect(api.delete).toHaveBeenCalledWith('/api/service-prices/1/');
     confirmSpy.mockRestore();
   });
 });

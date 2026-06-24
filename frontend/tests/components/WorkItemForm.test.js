@@ -9,7 +9,7 @@ import WorkItemForm from '@/components/WorkItemForm.svelte';
 beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
-  api.get.mockResolvedValue({ results: [{ rate_scheme_id: 1, name: 'Hourly', algorithm: 'per_unit', rate: '25', unit_label: 'hr', modifiers: [] }] });
+  api.get.mockResolvedValue({ results: [{ service_price_id: 1, name: 'Hourly', algorithm: 'per_unit', rate: '25', unit_label: 'hr', modifiers: [] }] });
   api.post.mockResolvedValue({});
 });
 
@@ -32,7 +32,7 @@ describe('WorkItemForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
-      name: 'Cut', rate_scheme: 1, est_worker_time: null,
+      name: 'Cut', service_price: 1, est_worker_time: null,
     }));
     expect(onSaved).toHaveBeenCalled();
   });
