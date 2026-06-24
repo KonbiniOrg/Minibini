@@ -1002,8 +1002,9 @@ def _match_seed_scheme(c, algorithm, rate):
 def _fallback_scheme(c, li):
     """ServicePrice pk + active_modifiers for an estimate-line-item-derived task.
 
-    Keyword rule first; otherwise match a seed scheme by rate, or fall back
-    to the shared Flat Fee scheme. Returns (scheme_pk, active_modifiers).
+    Keyword rule first; otherwise match a seed scheme by rate, or create a
+    per-price flat-fee ServicePrice (rate=price) and return it with an empty
+    modifier list. Returns (scheme_pk, active_modifiers).
     """
     keyword_name = P.checklist_scheme_name(li['description'])
     if keyword_name != _CHECKLIST_DEFAULT_SCHEME:
