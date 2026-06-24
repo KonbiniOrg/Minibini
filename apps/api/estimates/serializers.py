@@ -35,6 +35,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'line_item_id', 'line_number', 'inventory_item',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
+            'adjustment_service', 'adjustment_target_categories',
             'sources',
         ]
         read_only_fields = ['line_item_id']

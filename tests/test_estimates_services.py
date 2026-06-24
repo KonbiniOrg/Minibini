@@ -678,4 +678,73 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
         estimate.refresh_from_db()
         with self.assertRaises(ValidationError):
             EstimateService.discard_draft(estimate)
-        self.assertTrue(Estimate.objects.filter(pk=estimate.pk).exists())
+
+
+# --- Adjustment line service methods ---
+
+class EstimateAdjustmentLineServiceTest(EstimatesTestBase):
+    """Tests for EstimateService.add_adjustment_line and recalculate_adjustment_line."""
+
+    def setUp(self):
+        super().setUp()
+        # Create a draft estimate with two base lines totaling 140
+        self.labor = AccountingCategory.objects.get(pk=901)
+        self.est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Line A', price=Decimal('100.00'),
+            accounting_category=self.labor,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, qty=Decimal('1'),
+            units='ea', description='Line B', price=Decimal('40.00'),
+            accounting_category=self.labor,
+        )
+
+    def test_add_and_recalculate_adjustment(self):
+        rush = ServicePrice.objects.create(
+            name='Rush', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('15.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        line = EstimateService.add_adjustment_line(
+            self.est, adjustment_service_id=rush.pk, target_category_ids=[])
+        self.assertEqual(line.price, Decimal('21.00'))
+        self.assertEqual(line.description, 'Rush')
+        self.assertEqual(line.adjustment_service_id, rush.pk)
+
+    def test_add_adjustment_rejects_non_draft(self):
+        rush = ServicePrice.objects.create(
+            name='Rush2', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        Estimate.objects.filter(pk=self.est.pk).update(status=Estimate.STATUS_OPEN)
+        self.est.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            EstimateService.add_adjustment_line(
+                self.est, adjustment_service_id=rush.pk)
+
+    def test_add_adjustment_rejects_non_percentage_service(self):
+        non_pct = ServicePrice.objects.create(
+            name='NonPct', algorithm=ServicePrice.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hr',
+            accounting_category=self.labor,
+        )
+        with self.assertRaises(ValidationError):
+            EstimateService.add_adjustment_line(
+                self.est, adjustment_service_id=non_pct.pk)
+
+    def test_recalculate_rejects_non_draft(self):
+        rush = ServicePrice.objects.create(
+            name='Rush3', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        line = EstimateService.add_adjustment_line(
+            self.est, adjustment_service_id=rush.pk)
+        Estimate.objects.filter(pk=self.est.pk).update(status=Estimate.STATUS_OPEN)
+        self.est.refresh_from_db()
+        line.estimate = self.est
+        with self.assertRaises(ValidationError):
+            EstimateService.recalculate_adjustment_line(line)

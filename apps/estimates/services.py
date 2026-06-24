@@ -300,6 +300,58 @@ class EstimateService:
         estimate.delete()
 
     @staticmethod
+    @transaction.atomic
+    def add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=None):
+        """Add a percentage-adjustment line item to a draft estimate.
+
+        Creates an EstimateLineItem backed by a PERCENTAGE ServicePrice, sets
+        target categories (empty list = apply to all non-adjustment lines),
+        computes the initial price via ``compute_adjustment_amount``, and
+        returns the saved line.
+
+        Raises ValidationError if the estimate is not draft or the service is
+        not a PERCENTAGE algorithm.
+        """
+        from django.db.models import Max
+        from apps.jobs.models import ServicePrice
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Adjustments can only be added to a draft estimate.')
+        svc = ServicePrice.objects.get(pk=adjustment_service_id)
+        if svc.algorithm != ServicePrice.PERCENTAGE:
+            raise ValidationError('Adjustment line requires a percentage service.')
+        max_ln = (EstimateLineItem.objects.filter(estimate=estimate)
+                  .aggregate(Max('line_number'))['line_number__max'] or 0)
+        line = EstimateLineItem.objects.create(
+            estimate=estimate,
+            line_number=max_ln + 1,
+            qty=Decimal('1'),
+            units=svc.unit_label or 'none',
+            description=svc.name,
+            price=Decimal('0.00'),
+            accounting_category=svc.accounting_category,
+            adjustment_service=svc,
+        )
+        if target_category_ids:
+            line.adjustment_target_categories.set(target_category_ids)
+        return EstimateService.recalculate_adjustment_line(line)
+
+    @staticmethod
+    def recalculate_adjustment_line(line):
+        """Recompute the price of a percentage-adjustment line from its siblings.
+
+        Raises ValidationError if the parent estimate is not draft.
+        Returns the saved line with updated price.
+        """
+        from apps.core.adjustments import compute_adjustment_amount
+        estimate = line.estimate
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Cannot recalculate on a non-draft estimate.')
+        siblings = EstimateLineItem.objects.filter(estimate=estimate).exclude(pk=line.pk)
+        line.price = compute_adjustment_amount(line, siblings)
+        line.save()
+        return line
+
+    @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
         """Add a line item from a InventoryItem to a draft estimate."""
         try:

@@ -183,6 +183,50 @@ class EstimateViewSet(
             'line_item': EstimateLineItemSerializer(line_item).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='adjustment-lines')
+    def adjustment_lines(self, request, pk=None):
+        """Add a percentage-adjustment line item to a draft estimate.
+
+        Body: ``adjustment_service`` (ServicePrice PK, must be PERCENTAGE),
+        ``target_category_ids`` (list of AccountingCategory PKs; empty = all).
+        Returns 201 with the serialized line item.
+        Returns 400 when the estimate is not draft or the service is not PERCENTAGE.
+        """
+        estimate = self.get_object()
+        try:
+            line = EstimateService.add_adjustment_line(
+                estimate,
+                adjustment_service_id=request.data['adjustment_service'],
+                target_category_ids=request.data.get('target_category_ids') or [],
+            )
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(EstimateLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<lid>[^/.]+)/recalculate',
+    )
+    def recalculate(self, request, pk=None, lid=None):
+        """Recompute a percentage-adjustment line's price from its siblings.
+
+        Returns 200 with the serialized line item on success.
+        Returns 404 if the line item doesn't exist on this estimate.
+        Returns 409 if the estimate is not draft.
+        """
+        estimate = self.get_object()
+        try:
+            line = EstimateLineItem.objects.get(pk=lid, estimate=estimate)
+        except EstimateLineItem.DoesNotExist:
+            return Response({'detail': 'Line item not found.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            EstimateService.recalculate_adjustment_line(line)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_409_CONFLICT)
+        return Response(EstimateLineItemSerializer(line).data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
         """Pre-populated values for the Send Email page."""
