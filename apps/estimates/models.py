@@ -565,6 +565,15 @@ class EstimateLineItem(BaseLineItem):
         null=True, blank=True,
         help_text='TaskTemplate this line item was created from (preserves catalog ref for direct-estimate carry-over).',
     )
+    adjustment_service = models.ForeignKey(
+        'jobs.ServicePrice', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='+',
+        help_text='Set when this line is a percentage adjustment (rush/discount).',
+    )
+    adjustment_target_categories = models.ManyToManyField(
+        'core.AccountingCategory', blank=True, related_name='+',
+        help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
+    )
 
     class Meta:
         db_table = 'est_li'
