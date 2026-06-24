@@ -113,25 +113,9 @@ def build_seed(c):
         c._pk_counters['jobs.serviceprice'] = max(
             c._pk_counters['jobs.serviceprice'], max_rs_pk)
 
-    # One shared flat-fee ("Fixed charge") ServicePrice for converter-derived
-    # tasks that don't fit a nealseed scheme. Per the flat-fee pricing design,
-    # the per-task price rides on the task's active_modifiers as
-    # {'flat_fee_price': <str>}; this scheme's own rate is only a fallback.
-    ff_pk = c.next_pk('jobs.serviceprice')
-    c.add_fixture('jobs.serviceprice', ff_pk, {
-        'name':                'Flat Fee',
-        'description':         'Shared fixed-charge scheme; price set per task.',
-        'algorithm':           'flat_fee',
-        'rate':                '0.00',
-        'unit_label':          'ea',
-        'modifiers':           [],
-        'accounting_category': c.ac_svc_pk,
-        'replaced_by':         None,
-        'replaced_at':         None,
-    })
-    c.flat_fee_scheme_pk = ff_pk
-    c.scheme_by_name['Flat Fee'] = ff_pk
-    c.scheme_algorithm_by_pk[ff_pk] = 'flat_fee'
+    # Per-price flat-fee ServicePrices are minted on demand in _match_seed_scheme
+    # (one per distinct rate). c.flat_fee_by_rate caches rate string → pk.
+    c.flat_fee_by_rate = {}
 
 
 def build_configuration(c):
@@ -976,15 +960,16 @@ def _match_seed_scheme(c, algorithm, rate):
     Returns (scheme_pk, active_modifiers). Time/qty lines match the nearest
     seed scheme of that algorithm when within ~10% of its rate. Anything
     that doesn't fit — and every flat-fee line, since the only flat-fee
-    seed scheme (Delivery1) is delivery-specific — goes to the shared
-    'Flat Fee' scheme with the price carried on the task's active_modifiers.
+    seed scheme (Delivery1) is delivery-specific — gets a per-price
+    ServicePrice minted on demand (one per distinct rate), with the price
+    on `rate` and `active_modifiers` as an empty list.
     """
     if algorithm != 'flat_fee':
         candidates = [
             f for f in c.fixture_data
             if f['model'] == 'jobs.serviceprice'
             and f['fields'].get('algorithm') == algorithm
-            and f.get('pk') != c.flat_fee_scheme_pk
+            and f['pk'] not in c.flat_fee_by_rate.values()
         ]
         if candidates:
             nearest = min(
@@ -994,8 +979,24 @@ def _match_seed_scheme(c, algorithm, rate):
             tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
             if abs(near_rate - rate) <= tolerance:
                 return nearest['pk'], []
-    # Doesn't fit a seed scheme: shared Flat Fee scheme, price per task.
-    return c.flat_fee_scheme_pk, {'flat_fee_price': f'{rate:.2f}'}
+    # Doesn't fit a seed scheme: mint or reuse a per-price flat-fee ServicePrice.
+    rate_str = f'{rate:.2f}'
+    if rate_str not in c.flat_fee_by_rate:
+        ff_pk = c.next_pk('jobs.serviceprice')
+        c.add_fixture('jobs.serviceprice', ff_pk, {
+            'name':                f'Flat Fee ${rate_str}',
+            'description':         f'Fixed charge; rate = ${rate_str}.',
+            'algorithm':           'flat_fee',
+            'rate':                rate_str,
+            'unit_label':          'ea',
+            'modifiers':           [],
+            'accounting_category': c.ac_svc_pk,
+            'replaced_by':         None,
+            'replaced_at':         None,
+        })
+        c.scheme_algorithm_by_pk[ff_pk] = 'flat_fee'
+        c.flat_fee_by_rate[rate_str] = ff_pk
+    return c.flat_fee_by_rate[rate_str], []
 
 
 def _fallback_scheme(c, li):

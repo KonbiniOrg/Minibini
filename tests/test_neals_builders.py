@@ -409,15 +409,43 @@ class AtomDerivationTest(unittest.TestCase):
         job_pks = {f['pk'] for f in self._models('jobs.job')}
         deliv_jobs = {d['fields']['job'] for d in self._models('deliverables.deliverable')}
         self.assertEqual(job_pks, deliv_jobs)
-        # Tasks on the shared Flat Fee scheme carry a per-task price in
-        # active_modifiers ({'flat_fee_price': ...}); no per-rate clones exist.
-        ff_pks = {f['pk'] for f in self._models('jobs.serviceprice')
-                  if f['fields']['name'] == 'Flat Fee'}
+        # Every task must have a list active_modifiers with no flat_fee_price.
         for t in self._models('jobs.task'):
-            if t['fields']['service_price'] in ff_pks:
-                mods = t['fields']['active_modifiers']
-                self.assertIsInstance(mods, dict)
-                self.assertIn('flat_fee_price', mods)
+            mods = t['fields']['active_modifiers']
+            self.assertIsInstance(mods, list,
+                                  f"task {t['pk']} active_modifiers should be a list, got {type(mods)}")
+            self.assertNotIn('flat_fee_price', mods if isinstance(mods, dict) else {},
+                             f"task {t['pk']} active_modifiers must not contain flat_fee_price")
+
+    def test_flat_fee_tasks_use_per_price_service_price(self):
+        # After Phase 1 reframe: flat-fee tasks point to a per-price ServicePrice
+        # (rate = the fee amount) and carry an empty list active_modifiers.
+        # No shared zero-rate 'Flat Fee' scheme should be emitted.
+        build.derive_atoms(self.c)
+        ff_schemes = [f for f in self._models('jobs.serviceprice')
+                      if f['fields'].get('algorithm') == 'flat_fee']
+        # No zero-rate shared catch-all scheme.
+        for f in ff_schemes:
+            self.assertNotEqual(
+                f['fields']['rate'], '0.00',
+                f"flat_fee ServicePrice pk={f['pk']} has rate=0.00 (shared catch-all should not be emitted)")
+        # Every flat-fee task: rate on ServicePrice, empty list modifiers.
+        ff_pks = {f['pk'] for f in ff_schemes}
+        for t in self._models('jobs.task'):
+            sp = t['fields']['service_price']
+            mods = t['fields']['active_modifiers']
+            self.assertIsInstance(mods, list,
+                                  f"task {t['pk']} active_modifiers should be list")
+            if sp in ff_pks:
+                # The price must be on the ServicePrice.rate, not in modifiers.
+                rate_str = next(f['fields']['rate'] for f in ff_schemes if f['pk'] == sp)
+                self.assertNotEqual(rate_str, '0.00',
+                                    f"task {t['pk']} points to a flat_fee scheme with zero rate")
+        # PlanTasks likewise carry list modifiers.
+        for pt in self._models('jobs.plantask'):
+            mods = pt['fields']['active_modifiers']
+            self.assertIsInstance(mods, list,
+                                  f"plantask {pt['pk']} active_modifiers should be list")
 
     def test_assign_worker_times_random_per_task_in_range(self):
         # Every task/plantask gets an invented per-task estimate in [0.5, 4.0]h

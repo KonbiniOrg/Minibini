@@ -44,7 +44,7 @@ class NealsDataConverter:
         self.discarded_cards = []
         self.line_items = {}
         self.estimates = {}
-        self.flat_fee_scheme_pk = None  # shared flat-fee scheme (build_seed)
+        self.flat_fee_by_rate = {}      # rate string -> pk (per-price flat-fee schemes)
         self.scheme_algorithm_by_pk = {}  # ratescheme pk -> algorithm (for actuals)
         self.user_by_username = {}      # username -> pk (build_seed assigns user pks)
         self.rotation_user_pks = []     # ordered blep-rotation pool (excludes system)
