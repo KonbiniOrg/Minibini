@@ -125,6 +125,59 @@ class InvoiceService:
             )
         return LineItemService.delete_line_item_with_renumber(line_item)
 
+    @staticmethod
+    def add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=None):
+        """Add a percentage-adjustment line item to a draft invoice.
+
+        Creates an InvoiceLineItem backed by a PERCENTAGE ServicePrice, sets
+        target categories (empty list = apply to all non-adjustment lines),
+        computes the initial price via ``compute_adjustment_amount``, and
+        returns the saved line.
+
+        Raises ValidationError if the invoice is not draft or the service is
+        not a PERCENTAGE algorithm.
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.jobs.models import ServicePrice
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError('Adjustments can only be added to a draft invoice.')
+        svc = ServicePrice.objects.get(pk=adjustment_service_id)
+        if svc.algorithm != ServicePrice.PERCENTAGE:
+            raise ValidationError('Adjustment line requires a percentage service.')
+        with transaction.atomic():
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+            line = InvoiceLineItem.objects.create(
+                invoice=invoice,
+                line_number=max_ln + 1,
+                qty=Decimal('1'),
+                units=svc.unit_label or 'none',
+                description=svc.name,
+                price=Decimal('0.00'),
+                accounting_category=svc.accounting_category,
+                adjustment_service=svc,
+            )
+            if target_category_ids:
+                line.adjustment_target_categories.set(target_category_ids)
+            return InvoiceService.recalculate_adjustment_line(line)
+
+    @staticmethod
+    def recalculate_adjustment_line(line):
+        """Recompute the price of a percentage-adjustment line from its siblings.
+
+        Raises ValidationError if the parent invoice is not draft.
+        Returns the saved line with updated price.
+        """
+        from apps.core.adjustments import compute_adjustment_amount
+        invoice = line.invoice
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError('Cannot recalculate on a non-draft invoice.')
+        siblings = InvoiceLineItem.objects.filter(invoice=invoice).exclude(pk=line.pk)
+        line.price = compute_adjustment_amount(line, siblings)
+        line.save()
+        return line
+
 
 class InvoiceEmailService:
     """Orchestrates sending an Invoice to the customer.

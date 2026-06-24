@@ -17,6 +17,7 @@ from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate
 def _line_dict_from_estimate_item(eli):
     """Build a line dict from an EstimateLineItem."""
     amount = eli.qty * eli.price
+    is_adjustment = eli.adjustment_service_id is not None
     return {
         'description': eli.description,
         'qty': eli.qty,
@@ -24,11 +25,23 @@ def _line_dict_from_estimate_item(eli):
         'price': eli.price,
         'amount': amount,
         'origin': 'estimate',
+        'is_adjustment': is_adjustment,
+        'adjustment_service_id': eli.adjustment_service_id,
+        'percent': (eli.adjustment_service.rate if is_adjustment else None),
+        'target_category_ids': (
+            list(eli.adjustment_target_categories.values_list('pk', flat=True))
+            if is_adjustment else []
+        ),
     }
 
 
 def _line_dict_from_co_item(coli):
-    """Build a line dict from a ChangeOrderLineItem (replace or add)."""
+    """Build a line dict from a ChangeOrderLineItem (replace or add).
+
+    CO-origin lines are never adjustment lines — adjustments are estimate-only
+    for now.  Keep is_adjustment falsey so agreement-adjustments filtering skips
+    them.
+    """
     amount = coli.qty * coli.price
     return {
         'description': coli.description,
@@ -37,6 +50,10 @@ def _line_dict_from_co_item(coli):
         'price': coli.price,
         'amount': amount,
         'origin': 'change_order',
+        'is_adjustment': False,
+        'adjustment_service_id': None,
+        'percent': None,
+        'target_category_ids': [],
     }
 
 

@@ -49,6 +49,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
             'taxable_override', 'tax_rate_override',
+            'adjustment_service', 'adjustment_target_categories',
             'sources',
         ]
         read_only_fields = ['line_item_id']
