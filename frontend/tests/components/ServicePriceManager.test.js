@@ -67,4 +67,22 @@ describe('ServicePriceManager', () => {
     expect(api.delete).toHaveBeenCalledWith('/api/service-prices/1/');
     confirmSpy.mockRestore();
   });
+
+  it('percentage algorithm: shows rate field (negative allowed), AC selector, and hides modifier editor', async () => {
+    const { findByRole, getByLabelText, queryByText } = render(ServicePriceManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'percentage' } });
+
+    // Rate field is present
+    const rateInput = getByLabelText(/Rate/);
+    expect(rateInput).toBeInTheDocument();
+    // Negative values allowed (min attribute not present or no constraint forcing positive)
+    expect(rateInput.getAttribute('min')).toBeNull();
+
+    // AC selector is present
+    expect(getByLabelText(/Accounting Category/)).toBeInTheDocument();
+
+    // Modifier editor is NOT rendered
+    expect(queryByText('Add modifier')).not.toBeInTheDocument();
+  });
 });

@@ -17,6 +17,7 @@
     elapsed_time: 'Based on time worked',
     entered_qty: 'Worker enters quantity',
     flat_fee: 'Fixed charge',
+    percentage: 'Percentage of other lines',
   };
 
   function emptyForm() {
@@ -163,6 +164,8 @@
   // flat_fee schemes carry no modifier catalog: the per-item price rides on
   // the TaskTemplate/Task, and rate is only a fallback default.
   const isFlatFee = $derived(form.algorithm === 'flat_fee');
+  // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
+  const isPercentage = $derived(form.algorithm === 'percentage');
 
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
@@ -249,19 +252,28 @@
         <option value="elapsed_time">Based on time worked</option>
         <option value="entered_qty">Worker enters quantity</option>
         <option value="flat_fee">Fixed charge</option>
+        <option value="percentage">Percentage of other lines</option>
       </select>
     </label></p>
-    <p><label><strong>Rate *</strong><br>
-      <input type="number" step="0.01" bind:value={form.rate}>
-    </label>
-    <label><strong>Unit label *</strong><br>
-      <select bind:value={form.unit_label} required>
-        <option value="">-- select --</option>
-        {#each unitsList as u}
-          <option value={u}>{u}</option>
-        {/each}
-      </select>
-    </label></p>
+    <p>
+    {#if isPercentage}
+      <label><strong>Rate (%) *</strong><br>
+        <input type="number" step="0.01" bind:value={form.rate}>
+      </label>
+    {:else}
+      <label><strong>Rate *</strong><br>
+        <input type="number" step="0.01" bind:value={form.rate}>
+      </label>
+      <label><strong>Unit label *</strong><br>
+        <select bind:value={form.unit_label} required>
+          <option value="">-- select --</option>
+          {#each unitsList as u}
+            <option value={u}>{u}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+    </p>
     <p><label><strong>Accounting Category *</strong><br>
       <select bind:value={form.accounting_category} required>
         <option value="">-- select --</option>
@@ -271,7 +283,7 @@
       </select>
     </label></p>
 
-    {#if !isFlatFee}
+    {#if !isFlatFee && !isPercentage}
       <fieldset>
         <legend><strong>Modifiers</strong></legend>
         {#each form.modifiers as mod, i}
@@ -285,7 +297,7 @@
       </fieldset>
     {/if}
 
-    {#if previewTotal && !isFlatFee}
+    {#if previewTotal && !isFlatFee && !isPercentage}
       <p><strong>Preview:</strong>
         {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
       </p>
