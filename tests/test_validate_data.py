@@ -91,6 +91,27 @@ class ValidateDataServicePriceTest(TestCase):
         output = self._run()
         self.assertIn('default_active_modifiers', output.lower())
 
+    # ── Negative rate / percentage checks ───────────────────────
+
+    def test_negative_rate_only_allowed_for_percentage(self):
+        """A percentage ServicePrice with a negative rate (discount) is OK."""
+        ServicePrice.objects.create(
+            name='disc', algorithm=ServicePrice.PERCENTAGE,
+            rate=Decimal('-10'), unit_label='%', accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertNotIn('disc', output)
+
+    def test_negative_rate_non_percentage_is_flagged(self):
+        """A non-percentage ServicePrice with a negative rate is an error."""
+        ServicePrice.objects.create(
+            name='bad-elapsed', algorithm=ServicePrice.ELAPSED_TIME,
+            rate=Decimal('-5.00'), unit_label='hr', accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertIn('bad-elapsed', output)
+        self.assertIn('negative rate', output)
+
     def test_valid_list_active_modifiers_not_flagged(self):
         sp = self._make_sp(name='Sp-list')
         job = self._make_job('J-VDT-004')

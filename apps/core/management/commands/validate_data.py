@@ -512,6 +512,10 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'ServicePrice {rs.pk} ({rs.name}): flat-fee service must have a positive rate'
                 )
+            if rs.algorithm != ServicePrice.PERCENTAGE and rs.rate is not None and rs.rate < 0:
+                self.errors.append(
+                    f'ServicePrice {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
+                )
 
     # ── Deliverables ──────────────────────────────────────────
 
