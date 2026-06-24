@@ -60,6 +60,40 @@ class ServicePriceAPITest(TestCase):
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(len(resp.json()['modifiers']), 1)
 
+    def test_create_percentage_without_unit_label_defaults_none(self):
+        """A percentage service carries no unit; omitting unit_label is fine and
+        it defaults to 'none' (the percentage form hides the unit field)."""
+        self.client.login(username='admin', password='testpass')
+        resp = self.client.post('/api/service-prices/', {
+            'name': 'Rush Fee', 'algorithm': 'percentage',
+            'rate': '15.00',
+            'accounting_category': self.ac.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['unit_label'], 'none')
+
+    def test_create_percentage_blank_unit_label_ok(self):
+        """A blank unit_label (what the percentage form submits) is accepted."""
+        self.client.login(username='admin', password='testpass')
+        resp = self.client.post('/api/service-prices/', {
+            'name': 'Loyalty Discount', 'algorithm': 'percentage',
+            'rate': '-10.00', 'unit_label': '',
+            'accounting_category': self.ac.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()['unit_label'], 'none')
+
+    def test_create_non_percentage_still_requires_unit_label(self):
+        """Non-percentage algorithms still require a configured unit_label."""
+        self.client.login(username='admin', password='testpass')
+        resp = self.client.post('/api/service-prices/', {
+            'name': 'No Unit Flat', 'algorithm': 'flat_fee',
+            'rate': '50.00',
+            'accounting_category': self.ac.pk,
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('unit_label', resp.json())
+
     def test_update(self):
         self.client.login(username='admin', password='testpass')
         resp = self.client.patch(
