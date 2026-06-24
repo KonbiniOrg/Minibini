@@ -28,6 +28,7 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
 class EstimateLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
+    adjustment_service_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
@@ -36,9 +37,20 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'adjustment_service', 'adjustment_target_categories',
+            'adjustment_service_detail',
             'sources',
         ]
         read_only_fields = ['line_item_id']
+
+    def get_adjustment_service_detail(self, obj):
+        if obj.adjustment_service_id is None:
+            return None
+        svc = obj.adjustment_service
+        return {
+            'name': svc.name,
+            'rate': str(svc.rate),
+            'algorithm': svc.algorithm,
+        }
 
 
 class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):

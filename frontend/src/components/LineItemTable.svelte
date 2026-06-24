@@ -33,14 +33,16 @@
 
   /** Build the adjustment badge label, e.g. "+15% Rush on Labor, Materials" */
   function adjustmentBadge(li) {
-    const svc = li.adjustment_service;
-    if (!svc) return '';
-    const pct = Number(svc.rate);
+    if (!li.adjustment_service) return '';
+    const detail = li.adjustment_service_detail;
+    if (!detail) return '';
+    const pct = Number(detail.rate);
     const sign = pct >= 0 ? '+' : '';
-    const targets = li.target_categories?.length
-      ? ' on ' + li.target_categories.map(c => c.name).join(', ')
-      : '';
-    return `${sign}${pct}% ${svc.name}${targets}`;
+    const targetNames = (li.adjustment_target_categories || [])
+      .map(pk => categoryById[pk]?.name)
+      .filter(Boolean);
+    const targets = targetNames.length ? ' on ' + targetNames.join(', ') : '';
+    return `${sign}${pct}% ${detail.name}${targets}`;
   }
 </script>
 

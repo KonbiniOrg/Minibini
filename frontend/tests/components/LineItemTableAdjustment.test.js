@@ -7,13 +7,8 @@ const CATEGORIES = [
   { id: 20, code: 'MAT', name: 'Materials', taxable: true },
 ];
 
-const ADJUSTMENT_SERVICE = {
-  service_price_id: 1,
-  name: 'Rush',
-  algorithm: 'percentage',
-  rate: '15.00',
-};
-
+// Real wire shape: adjustment_service is an integer PK; detail lives in
+// adjustment_service_detail; target categories are PK lists.
 function makeAdjLine(overrides = {}) {
   return {
     line_item_id: 99,
@@ -23,8 +18,9 @@ function makeAdjLine(overrides = {}) {
     price: '30.00',
     units: 'none',
     accounting_category: null,
-    adjustment_service: ADJUSTMENT_SERVICE,
-    target_categories: [{ id: 10, name: 'Labor', code: 'LAB' }],
+    adjustment_service: 1,
+    adjustment_service_detail: { name: 'Rush', rate: '15.00', algorithm: 'percentage' },
+    adjustment_target_categories: [10],
     sources: [],
     ...overrides,
   };
@@ -40,7 +36,8 @@ function makeRegularLine() {
     units: 'none',
     accounting_category: 10,
     adjustment_service: null,
-    target_categories: [],
+    adjustment_service_detail: null,
+    adjustment_target_categories: [],
     sources: [],
   };
 }
@@ -60,8 +57,43 @@ describe('LineItemTable adjustment row rendering', () => {
     const { getByText } = render(LineItemTable, {
       props: { lineItems, categories: CATEGORIES },
     });
-    // Should mention the target category
+    // Should resolve the PK (10) to the name "Labor"
     expect(getByText(/Labor/i)).toBeInTheDocument();
+  });
+
+  it('badge text contains percent sign, service name, and category name', () => {
+    const adjLine = makeAdjLine();
+    const { container } = render(LineItemTable, {
+      props: { lineItems: [adjLine], categories: CATEGORIES },
+    });
+    const badge = container.querySelector('.adj-badge');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toMatch(/15%/);
+    expect(badge.textContent).toMatch(/Rush/);
+    expect(badge.textContent).toMatch(/Labor/);
+  });
+
+  it('badge text shows no target when adjustment_target_categories is empty', () => {
+    const adjLine = makeAdjLine({ adjustment_target_categories: [] });
+    const { container } = render(LineItemTable, {
+      props: { lineItems: [adjLine], categories: CATEGORIES },
+    });
+    const badge = container.querySelector('.adj-badge');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toMatch(/15%/);
+    expect(badge.textContent).toMatch(/Rush/);
+    // No "on ..." suffix when no target categories
+    expect(badge.textContent).not.toMatch(/on\s/i);
+  });
+
+  it('badge gracefully omits unresolvable category PKs (no "undefined")', () => {
+    // PK 99 is not in CATEGORIES — should not appear as "undefined"
+    const adjLine = makeAdjLine({ adjustment_target_categories: [99] });
+    const { container } = render(LineItemTable, {
+      props: { lineItems: [adjLine], categories: CATEGORIES },
+    });
+    const badge = container.querySelector('.adj-badge');
+    expect(badge.textContent).not.toMatch(/undefined/i);
   });
 
   it('shows Recalculate button for adjustment line when canEdit is true', () => {
