@@ -184,7 +184,7 @@
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
 
-{#if !loading && editingId === null && supersedingId === null}
+{#if !loading}
   <p>
     <label>
       <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
@@ -226,7 +226,7 @@
       {/each}
     </tbody>
   </table>
-  {#if !showSuperseded}
+  {#if !showSuperseded && editingId === null && supersedingId === null}
     <p><button type="button" onclick={startCreate}>Add Service</button></p>
   {/if}
 {/if}

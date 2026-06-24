@@ -60,6 +60,19 @@ describe('ServicePriceManager', () => {
     expect(api.post).toHaveBeenCalledWith('/api/service-prices/', expect.objectContaining({ name: 'Premium' }));
   });
 
+  it('keeps the existing-services list visible while adding a new one', async () => {
+    const { findByRole, getByText, queryByRole } = render(ServicePriceManager);
+    // Existing service is listed before adding.
+    expect(await findByRole('button', { name: 'Add Service' })).toBeInTheDocument();
+    expect(getByText('Hourly')).toBeInTheDocument();
+    // Open the add form — the list must NOT be suppressed.
+    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    expect(getByText('Hourly')).toBeInTheDocument();           // existing rows still shown
+    expect(await findByRole('button', { name: 'Save' })).toBeInTheDocument(); // form is open
+    // The Add Service button is hidden while the form is open (no double-add).
+    expect(queryByRole('button', { name: 'Add Service' })).not.toBeInTheDocument();
+  });
+
   it('deletes an unreferenced scheme after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { findByRole } = render(ServicePriceManager);

@@ -115,9 +115,9 @@
 
   <UnitsManager />
 
+{:else if tab === 'catalog'}
   <ServicePriceManager />
 
-{:else if tab === 'catalog'}
   <MaterialMarkupSetting />
 
   <TaskTemplateManager />

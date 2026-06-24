@@ -72,11 +72,16 @@ Without these, whole branches below are silent no-ops:
 
 ## 1. Services manager (Config persona)
 
-Entry: **Settings** (`#/settings`) → the **Services** section
-(`ServicePriceManager`, heading **"Services"**).
+Entry: **Settings** (`#/settings`) → the **Catalog** tab → the **Services**
+section (`ServicePriceManager`, heading **"Services"**).
 
+- [ ] **Lives under Catalog.** The Services list is on the **Catalog** tab
+  (alongside the material markup and templates) — *not* on the Setup tab.
 - [ ] **List + add.** The heading reads **Services** (not "Rate Schemes").
   **Add Service** opens the create form (legend **"New Service"**).
+- [ ] **List stays visible while adding.** After **Add Service**, the existing
+  services remain listed above the form (the list is not suppressed); the
+  **Add Service** button is hidden while the form is open.
 - [ ] **Flat-fee has a single price field.** Create a Service with algorithm
   **"Fixed charge"** → there is **one Rate field** (no separate "flat-fee
   price"); enter the price there. Save → it lists with that rate.
