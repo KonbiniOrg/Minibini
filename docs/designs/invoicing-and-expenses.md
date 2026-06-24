@@ -109,6 +109,16 @@ Inherits `BaseLineItem` (description, qty, units, price, accounting_category, ta
 
 Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)` per the project rule — never `.delete()` directly. `InvoiceService.delete_line_item` does this.
 
+**Adjustment fields** (parallel to `EstimateLineItem`):
+
+- `adjustment_service` — nullable FK to `ServicePrice` (PROTECT). Set when
+  this line is a percentage adjustment (e.g. rush surcharge, volume discount).
+  A line with `adjustment_service_id` set is an **adjustment line**.
+- `adjustment_target_categories` — M2M to `AccountingCategory`. The
+  categories the adjustment applies to. Empty = all non-adjustment lines.
+- The serializer exposes a read-only `adjustment_service_detail` dict
+  `{name, rate, algorithm}` for display when `adjustment_service` is set.
+
 ### InvoiceLineItemSource
 
 Polymorphic join between `InvoiceLineItem` and the atom it represents (a real-side `Task` or `Material`). "Polymorphic" only in the sense that the atom side may be one of two model types; this is not a Django generic relation.
@@ -310,6 +320,52 @@ On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeh
 ### Discard
 
 `DELETE /api/invoices/{id}/` calls `InvoiceService.discard_draft`, which validates draft status and hard-deletes. The viewset returns 200 with `{'message': 'Invoice discarded'}` per the project's all-DELETE-returns-JSON convention. There is no two-phase confirmation on this endpoint (the wizard owns the confirmation in the UI; cascade impact is implicit — all claimed atoms become free).
+
+---
+
+## Invoice adjustment lines
+
+Percentage adjustments (rush surcharges, volume discounts, etc.) can be added
+as `InvoiceLineItem` rows backed by a `PERCENTAGE` `ServicePrice`. The
+mechanics mirror the estimate side exactly — see
+`docs/designs/estimates-and-prices.md` §2.2 and §5.3b for the
+`compute_adjustment_amount` helper and the `percentage` algorithm semantics.
+
+### Service methods
+
+`InvoiceService` (`apps/invoicing/services.py`) provides two static methods:
+
+| Method | Behavior |
+|---|---|
+| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServicePrice` at the end of the invoice's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
+| `recalculate_adjustment_line(line)` | Fetches all sibling lines on the same invoice (excluding the adjustment line itself), calls `compute_adjustment_amount`, saves `line.price`, and returns the line. Raises `ValidationError` if the invoice is not `draft`. Once the invoice is finalized (transitions out of `draft`), recalculation is refused — the amount is frozen at finalize time. |
+
+### API endpoints
+
+| Verb + path | Behavior |
+|---|---|
+| `POST /api/invoices/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item. Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageFinancials`. |
+| `POST /api/invoices/{id}/line-items/{lid}/recalculate/` | Recomputes the adjustment line's price. Returns 200 with the line item. Returns 404 if the line doesn't exist; returns 409 if the invoice is not draft. Permission: `CanManageFinancials`. |
+| `GET /api/invoices/{id}/agreement-adjustments/` | Returns `{adjustments: [{adjustment_service_id, description, percent, target_category_ids, already_added}, ...]}` — the adjustment lines from the job's accepted-estimate agreement (via `compose_agreement`), annotated with whether this invoice already has a matching adjustment line. This endpoint is **path-independent**: it reads the agreement, not the wizard atom pool, so it works regardless of how line items were added. Permission: `CanManageFinancials`. |
+
+### Agreement-adjustments panel (invoice wizard / detail page)
+
+`frontend/src/components/invoices/AgreementAdjustmentsPanel.svelte` is
+rendered on the invoice detail page when the invoice is `draft` and the job
+has a composed agreement with adjustment lines.
+
+On mount it calls `GET /api/invoices/{id}/agreement-adjustments/` and
+renders each returned entry as a row: description, percent label, and an
+**Add** button (disabled, labeled "Added", when `already_added` is true).
+Clicking Add calls `POST /api/invoices/{id}/adjustment-lines/` with the
+entry's `adjustment_service_id` and `target_category_ids`, then reloads the
+panel. The panel only renders when at least one adjustment exists — it is
+hidden while the list is empty or loading.
+
+The panel surfaces agreement adjustments through the agreement composition
+layer, not through the wizard atom pool. This means it works on `draft`
+invoices that were created either through the wizard or directly, and
+regardless of which line items have already been added.
 
 ---
 

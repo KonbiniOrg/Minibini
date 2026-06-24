@@ -65,8 +65,8 @@ one `ServicePrice` and inherits the rest.
 | `service_price_id` | AutoField PK | |
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor", "Tap a hole" |
 | `description` | TextField, blank | longer admin explanation |
-| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `flat_fee` |
-| `rate` | Decimal(10,2) | the per-unit price for **all** algorithms — including `flat_fee` (see §2.2) |
+| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `flat_fee`, `percentage` |
+| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`/`flat_fee`; holds the percent value for `percentage` (negative = discount) |
 | `unit_label` | CharField(50) | the customer-facing unit (e.g. `hour`, `minute`, `piece`, `job`); validated against the configured units list (`apps/core/units.py`) |
 | `modifiers` | JSONField | list of `{key, label, percent}` dicts |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
@@ -83,6 +83,39 @@ one `ServicePrice` and inherits the rest.
 | `elapsed_time` | `ServicePrice.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
 | `entered_qty` | `ServicePrice.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
 | `flat_fee` | `ServicePrice.FLAT_FEE` | the atom's `est_qty` (fallback `Decimal(1)`) | one-off and per-unit priced services (tap a hole, plywood coating, setup fee) |
+| `percentage` | `ServicePrice.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
+
+#### The `percentage` algorithm
+
+`percentage` is a **document-level adjustment** — it never backs a `Task`,
+`PlanTask`, or `TaskTemplate`. Calling `ServicePrice.effective_rate()` or
+`get_actual_qty()` on a percentage service raises `ValueError`; the estimate
+and invoice serializers reject it; `TaskService.create_direct` rejects it;
+and `GET /api/service-prices/?task_applicable=true` excludes it. The
+`Services` manager in the settings UI still displays percentage types so they
+can be managed; the task-creation pickers never show them.
+
+`rate` holds the **percent value**: `10` means 10%, `-5` means a 5% discount.
+Negative rates are allowed only for `percentage` services (all other
+algorithms must have `rate >= 0`, enforced by `ServicePrice.clean()` and
+`validate_data.py`).
+
+**`compute_adjustment_amount`** (`apps/core/adjustments.py`) is the helper
+that resolves a percentage line's dollar amount at the document layer:
+
+```python
+compute_adjustment_amount(adjustment_line, sibling_lines) → Decimal
+```
+
+1. Reads `service.rate` (the percent) and the line's
+   `adjustment_target_categories` M2M set.
+2. Sums `total_amount` (`qty × price`) of every **non-adjustment** sibling
+   line whose `accounting_category_id` is in the target set. An **empty**
+   target set matches **all** non-adjustment siblings.
+3. Adjustment lines are explicitly skipped — no stacking: an adjustment
+   never sums other adjustments.
+4. Result: `(rate / 100) × base_total`, quantized to `Decimal('0.01')`
+   (nearest cent).
 
 `ServicePrice.get_actual_qty(task)` resolves the right quantity per
 algorithm:
@@ -477,6 +510,38 @@ in `architecture-and-conventions.md` §9; it runs daily.
 The `unique_together = ['estimate_number', 'version']` constraint
 keeps revisions distinct.
 
+### 5.3a Adjustment lines and `revise_estimate`
+
+`revise_estimate` preserves adjustment lines exactly like normal lines:
+`adjustment_service_id` and the `adjustment_target_categories` M2M set are
+both copied onto the new revision's line items. The revision's adjustment line
+amounts are **not** automatically recalculated on copy — the inherited amount
+stays until the user explicitly recalculates (see §5.3b). Source atom rows
+(`EstimateLineItemSource`) are moved onto the new line items as usual (see
+§5.3).
+
+### 5.3b Adjustment line services and endpoints
+
+`EstimateService` (`apps/estimates/services.py`) provides two static methods:
+
+| Method | Behavior |
+|---|---|
+| `add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=[])` | Creates a new `EstimateLineItem` backed by a PERCENTAGE `ServicePrice` at the end of the estimate's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the estimate is not `draft` or the service is not `PERCENTAGE`. |
+| `recalculate_adjustment_line(line)` | Fetches all sibling lines on the same estimate (excluding the adjustment line itself), calls `compute_adjustment_amount`, saves `line.price`, and returns the line. Raises `ValidationError` if the estimate is not `draft`. Once a non-draft estimate is finalized (e.g., transitions to `open`), recalculation is refused — the amount is frozen. |
+
+**API endpoints:**
+
+| Verb + path | Behavior |
+|---|---|
+| `POST /api/estimates/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item. Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageJobs` (or the job's PM). |
+| `POST /api/estimates/{id}/line-items/{lid}/recalculate/` | Recomputes the adjustment line's price. Returns 200 with the line item. Returns 404 if the line doesn't exist; returns 409 if the estimate is not draft. Permission: `CanManageJobs` (or the job's PM). |
+
+**`compose_agreement` surfacing.** `compose_agreement(job)` line dicts carry
+`is_adjustment` (bool), `adjustment_service_id`, `percent` (the rate, or
+`None` for non-adjustment lines), and `target_category_ids` for
+estimate-origin lines. CO-origin lines always have falsey adjustment fields
+(adjustments are estimate-only).
+
 ### 5.4 Document numbering
 
 One estimate tree per job, so the estimate's identity *is* the job's: the
@@ -503,6 +568,17 @@ accounting_category, taxable_override, tax_rate_override; see
 - `source_template` — nullable FK to `TaskTemplate`. Preserves the
   catalog reference for direct-estimate line items so the carry-over
   service can spawn matching atoms when the estimate is accepted.
+- `adjustment_service` — nullable FK to `ServicePrice` (PROTECT). Set
+  when this line is a percentage adjustment. A line with
+  `adjustment_service_id` set is an **adjustment line**; one without is
+  a normal line.
+- `adjustment_target_categories` — M2M to `AccountingCategory`. The
+  categories whose lines this adjustment applies to. Empty = all
+  non-adjustment lines.
+
+The serializer exposes a read-only `adjustment_service_detail` dict
+`{name, rate, algorithm}` for display purposes when `adjustment_service`
+is set.
 
 Line item deletion goes through
 `LineItemService.delete_line_item_with_renumber` per the rule in

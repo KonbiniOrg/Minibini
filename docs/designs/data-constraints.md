@@ -302,15 +302,39 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
 - **name**: required, unique, max 100 chars. `supersede()` renames the old
   row to `"<name> (v{N})"` before creating the new one to preserve the
   DB-level unique constraint.
-- **algorithm**: one of `elapsed_time`, `entered_qty`, `flat_fee`
-- **rate**: decimal(10,2). The per-unit price for **all** algorithms,
-  including `flat_fee`. For `flat_fee`, `rate` must be positive
-  (`validate_data.py` raises an error otherwise).
+- **algorithm**: one of `elapsed_time`, `entered_qty`, `flat_fee`, `percentage`
+- **rate**: decimal(10,2). Semantics depend on `algorithm`:
+  - `flat_fee`: per-unit price; **must be positive** (`validate_data.py`
+    raises an error for `rate <= 0`).
+  - `elapsed_time` / `entered_qty`: per-unit price; **must be ≥ 0**
+    (`ServicePrice.clean()` raises `ValidationError` for negative values
+    on these two algorithms).
+  - `percentage`: the percent value (e.g. `10` = 10% surcharge; `-5` = 5%
+    discount). **Negative values are allowed** only for `percentage`. This
+    is the sole exception to the non-negative rate invariant.
+    `validate_data.py` (line ~515) raises an error if a non-`percentage`
+    service has a negative rate.
 - **unit_label**: max 50 chars
-- **modifiers**: JSON list of `{key, label, percent}` dicts (default `[]`)
+- **modifiers**: JSON list of `{key, label, percent}` dicts (default `[]`).
+  `percentage` services have no modifiers (their `modifiers` list is `[]`).
 - **accounting_category** (required FK → AccountingCategory): `clean()`
   raises if missing
 - **replaced_by** (optional FK → self) / **replaced_at**: set by `supersede()`
+
+#### `percentage` algorithm — applicability constraints
+
+A `percentage` service can **never** back a `Task`, `PlanTask`, or
+`TaskTemplate`. The application enforces this in multiple places:
+
+- `TaskService.create_direct` rejects a `percentage` service_price.
+- `EstimateLineItemSerializer` / `InvoiceLineItemSerializer` reject it on atom-based lines.
+- `GET /api/service-prices/?task_applicable=true` excludes `percentage` entries from the response.
+- `ServicePrice.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
+
+A `percentage` entry that is **not** referenced by any atom (it can only be
+used as `EstimateLineItem.adjustment_service` or
+`InvoiceLineItem.adjustment_service`, which do not count as atom references)
+is therefore always un-frozen and can be superseded freely.
 
 #### Frozen fields
 
@@ -687,6 +711,13 @@ Enforced in `Estimate.clean()`.
 - **source_template** (optional FK → TaskTemplate, SET_NULL): preserves the
   catalog ref for direct-estimate lines so carry-over can still create a
   Task at acceptance even with no PlanTask
+- **adjustment_service** (optional FK → ServicePrice, PROTECT): set when
+  this line is a percentage adjustment. A line with `adjustment_service_id`
+  set is an **adjustment line**; `adjustment_service.algorithm` must be
+  `percentage`. Cannot coexist with `source_template` or `price_list_item`.
+- **adjustment_target_categories** (M2M → AccountingCategory, blank):
+  the categories the adjustment applies to. Empty = all non-adjustment lines.
+  Must only be set when `adjustment_service` is set.
 - **line_number**: auto-generated sequentially per estimate if null
 - **units** (required, max 50 chars, default `'none'`): **non-blank** —
   `CharField` without `blank=True`, and `BaseLineItem.save()` always runs
@@ -922,6 +953,13 @@ Enforced in `Invoice.clean()`.
   `BaseLineItem.clean()` compatibility. Source atoms are joined via
   `InvoiceLineItemSource`.
 - **price_list_item** (optional FK → PriceListItem, PROTECT)
+- **adjustment_service** (optional FK → ServicePrice, PROTECT): set when
+  this line is a percentage adjustment. `adjustment_service.algorithm` must
+  be `percentage`. Cannot be combined with `InvoiceLineItemSource` atom
+  sources (an adjustment line has no source atoms).
+- **adjustment_target_categories** (M2M → AccountingCategory, blank):
+  the categories the adjustment applies to. Empty = all non-adjustment lines.
+  Must only be set when `adjustment_service` is set.
 - **line_number**: auto-generated sequentially per invoice if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 
