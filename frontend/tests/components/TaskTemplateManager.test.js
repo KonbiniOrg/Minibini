@@ -6,11 +6,11 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import TaskTemplateManager from '@/components/TaskTemplateManager.svelte';
 
-const TMPL = { template_id: 1, template_name: 'Welding', service_price: 1, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
-const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', service_price: 2, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
+const TMPL = { template_id: 1, template_name: 'Welding', service_item: 1, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
+const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', service_item: 2, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
 
-const HOURLY_SCHEME = { service_price_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
-const FLAT_FEE_SCHEME = { service_price_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
+const HOURLY_SCHEME = { service_item_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
+const FLAT_FEE_SCHEME = { service_item_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -18,7 +18,7 @@ beforeEach(() => {
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
     if (url === '/api/task-templates/') return Promise.resolve({ results: [TMPL, FLAT_FEE_TMPL] });
-    if (url.startsWith('/api/service-prices/')) return Promise.resolve({ results: [HOURLY_SCHEME, FLAT_FEE_SCHEME] });
+    if (url.startsWith('/api/service-items/')) return Promise.resolve({ results: [HOURLY_SCHEME, FLAT_FEE_SCHEME] });
     return Promise.resolve({ results: [] });
   });
   api.post.mockResolvedValue({});

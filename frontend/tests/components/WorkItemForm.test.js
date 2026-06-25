@@ -6,8 +6,8 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import WorkItemForm from '@/components/WorkItemForm.svelte';
 
-const HOURLY_SCHEME = { service_price_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
-const FLAT_FEE_SCHEME = { service_price_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
+const HOURLY_SCHEME = { service_item_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
+const FLAT_FEE_SCHEME = { service_item_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -70,7 +70,7 @@ describe('WorkItemForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
-      name: 'Cut', service_price: 1, est_worker_time: null,
+      name: 'Cut', service_item: 1, est_worker_time: null,
     }));
     expect(onSaved).toHaveBeenCalled();
   });

@@ -33,8 +33,8 @@
     error = '';
     try {
       const url = showSuperseded
-        ? '/api/service-prices/?include_superseded=true'
-        : '/api/service-prices/';
+        ? '/api/service-items/?include_superseded=true'
+        : '/api/service-items/';
       const [schemeResp, catResp, unitsResp] = await Promise.all([
         api.get(url),
         api.get('/api/accounting-categories/'),
@@ -72,7 +72,7 @@
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
-    editingId = scheme.service_price_id;
+    editingId = scheme.service_item_id;
     supersedingId = null;
     saveError = '';
   }
@@ -87,7 +87,7 @@
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
-    supersedingId = scheme.service_price_id;
+    supersedingId = scheme.service_item_id;
     editingId = null;
     saveError = '';
   }
@@ -129,11 +129,11 @@
       };
 
       if (supersedingId) {
-        await api.post(`/api/service-prices/${supersedingId}/supersede/`, payload);
+        await api.post(`/api/service-items/${supersedingId}/supersede/`, payload);
       } else if (editingId === 'new') {
-        await api.post('/api/service-prices/', payload);
+        await api.post('/api/service-items/', payload);
       } else {
-        await api.patch(`/api/service-prices/${editingId}/`, payload);
+        await api.patch(`/api/service-items/${editingId}/`, payload);
       }
       editingId = null;
       supersedingId = null;
@@ -154,7 +154,7 @@
   async function remove(scheme) {
     if (!confirm(`Delete service "${scheme.name}"?`)) return;
     try {
-      await api.delete(`/api/service-prices/${scheme.service_price_id}/`);
+      await api.delete(`/api/service-items/${scheme.service_item_id}/`);
       await load();
     } catch (e) {
       error = e.message || 'Could not delete.';
@@ -199,7 +199,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each schemes as s (s.service_price_id)}
+      {#each schemes as s (s.service_item_id)}
         <tr>
           <td>{s.name}</td>
           <td>{ALGORITHM_LABELS[s.algorithm] || s.algorithm}</td>
