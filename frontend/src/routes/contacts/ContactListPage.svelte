@@ -50,6 +50,8 @@
         _id: c.contact_id,
         _name: c.name,
         name: c.name,
+        business_name: c.business?.business_name || '',
+        business_id: c.business?.business_id || null,
         email: c.email,
         phone: c.work_number || c.mobile_number || c.home_number || '',
         tags: c.tags || [],
@@ -157,6 +159,7 @@
       <tr>
         <th>Name</th>
         <th>Type</th>
+        <th>Business</th>
         <th>Email</th>
         <th>Phone</th>
         <th>Tags</th>
@@ -167,6 +170,7 @@
         <tr>
           <td><a href={item.href}>{item.name}</a></td>
           <td>{item._type === 'contact' ? 'Contact' : 'Business'}</td>
+          <td>{#if item.business_name}<a href="#/businesses/{item.business_id}">{item.business_name}</a>{:else}—{/if}</td>
           <td>{item.email}</td>
           <td>{item.phone}</td>
           <td>
