@@ -22,7 +22,7 @@ Per-model field checks:
                    W  draft/submitted/rejected: stray start_date
                    W  completed/cancelled/rejected: missing completed_date
                    W  non-terminal: stray completed_date
-  ServicePrice       E  valid algorithm value
+  ServiceItem       E  valid algorithm value
                    E  missing accounting_category
                    E  replaced_by/replaced_at must be set together
   Estimate         E  valid status value
@@ -119,7 +119,7 @@ class Command(BaseCommand):
         self.check_contacts()
         self.check_businesses()
         self.check_jobs()
-        self.check_service_prices()
+        self.check_service_items()
         self.check_estimates()
         self.check_worksheets()
         self.check_tasks()
@@ -490,31 +490,31 @@ class Command(BaseCommand):
 
     # ── Service Prices ────────────────────────────────────────
 
-    def check_service_prices(self):
-        from apps.jobs.models import ServicePrice
-        valid_algorithms = {a[0] for a in ServicePrice.ALGORITHM_CHOICES}
-        for rs in ServicePrice.objects.select_related('accounting_category').all():
+    def check_service_items(self):
+        from apps.jobs.models import ServiceItem
+        valid_algorithms = {a[0] for a in ServiceItem.ALGORITHM_CHOICES}
+        for rs in ServiceItem.objects.select_related('accounting_category').all():
             if rs.algorithm not in valid_algorithms:
                 self.errors.append(
-                    f'ServicePrice {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
+                    f'ServiceItem {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
                 )
             if not rs.accounting_category_id:
                 self.errors.append(
-                    f'ServicePrice {rs.pk} ({rs.name}): missing accounting_category'
+                    f'ServiceItem {rs.pk} ({rs.name}): missing accounting_category'
                 )
             # replaced_by and replaced_at are set together by supersede()
             if bool(rs.replaced_by_id) != bool(rs.replaced_at):
                 self.errors.append(
-                    f'ServicePrice {rs.pk} ({rs.name}): replaced_by and replaced_at '
+                    f'ServiceItem {rs.pk} ({rs.name}): replaced_by and replaced_at '
                     f'must both be set or both be null'
                 )
-            if rs.algorithm == ServicePrice.FLAT_FEE and (rs.rate is None or rs.rate <= 0):
+            if rs.algorithm == ServiceItem.FLAT_FEE and (rs.rate is None or rs.rate <= 0):
                 self.errors.append(
-                    f'ServicePrice {rs.pk} ({rs.name}): flat-fee service must have a positive rate'
+                    f'ServiceItem {rs.pk} ({rs.name}): flat-fee service must have a positive rate'
                 )
-            if rs.algorithm != ServicePrice.PERCENTAGE and rs.rate is not None and rs.rate < 0:
+            if rs.algorithm != ServiceItem.PERCENTAGE and rs.rate is not None and rs.rate < 0:
                 self.errors.append(
-                    f'ServicePrice {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
+                    f'ServiceItem {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
                 )
 
     # ── Deliverables ──────────────────────────────────────────

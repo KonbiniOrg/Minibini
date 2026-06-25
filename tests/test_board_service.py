@@ -182,20 +182,20 @@ class ApprovedSubStatusTest(FixtureTestCase):
 
     def test_work_ready_when_tasks_pending(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending', service_price_id=1)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending', service_item_id=1)
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'work-ready')
 
     def test_in_progress_when_tasks_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', service_price_id=1)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', service_item_id=1)
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'in-progress')
 
     def test_blocked_takes_priority_over_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', service_price_id=1)
-        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked', service_price_id=1)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', service_item_id=1)
+        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked', service_item_id=1)
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'blocked')
 
@@ -399,10 +399,10 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
         Task.objects.create(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1, service_price_id=1,
+            assignee=self.worker, worker_queue=1, service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
-        Task.objects.create(name='Unassigned task', job=job, service_price_id=1)
+        Task.objects.create(name='Unassigned task', job=job, service_item_id=1)
         data = BoardService.get_board_data()
         self.assertEqual(len(data['approved']['workers']), 1)
         self.assertEqual(data['approved']['workers'][0]['user']['id'], self.worker.pk)
@@ -421,7 +421,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
         Task.objects.create(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1, service_price_id=1,
+            assignee=self.worker, worker_queue=1, service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
         data = BoardService.get_board_data()
@@ -816,16 +816,16 @@ class UnpaidDataTest(FixtureTestCase):
         InvoiceLineItem.objects.create(
             invoice=inv, qty=Decimal('1'), price=Decimal('500.00'),
         )
-        from apps.jobs.models import ServicePrice
+        from apps.jobs.models import ServiceItem
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.create(code='LBR-bs', name='lbr-bs')
-        scheme = ServicePrice.objects.create(
-            name='Hourly-bs', algorithm=ServicePrice.ELAPSED_TIME,
+        scheme = ServiceItem.objects.create(
+            name='Hourly-bs', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours', accounting_category=cat,
         )
         task = Task.objects.create(
             job=job, name='Labor task', status='in_progress',
-            service_price=scheme,
+            service_item=scheme,
         )
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(

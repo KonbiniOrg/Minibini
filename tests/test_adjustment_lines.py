@@ -10,7 +10,7 @@ Covers:
 from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import ServicePrice
+from apps.jobs.models import ServiceItem
 
 
 class AdjustmentFieldsTest(TestCase):
@@ -65,16 +65,16 @@ class ComputeAdjustmentAmountTest(TestCase):
             accounting_category=self.materials,
         )
 
-        # A 15% percentage ServicePrice (rush surcharge)
-        self.rush_svc = ServicePrice.objects.create(
-            name='Rush-adj', algorithm=ServicePrice.PERCENTAGE,
+        # A 15% percentage ServiceItem (rush surcharge)
+        self.rush_svc = ServiceItem.objects.create(
+            name='Rush-adj', algorithm=ServiceItem.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%',
             accounting_category=self.labor,
         )
 
-        # A -10% percentage ServicePrice (discount)
-        self.discount_svc = ServicePrice.objects.create(
-            name='Discount-adj', algorithm=ServicePrice.PERCENTAGE,
+        # A -10% percentage ServiceItem (discount)
+        self.discount_svc = ServiceItem.objects.create(
+            name='Discount-adj', algorithm=ServiceItem.PERCENTAGE,
             rate=Decimal('-10.00'), unit_label='%',
             accounting_category=self.labor,
         )

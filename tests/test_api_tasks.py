@@ -6,7 +6,7 @@ from django.contrib.auth.models import Permission
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, ServicePrice, Task
+from apps.jobs.models import Job, ServiceItem, Task
 
 User = get_user_model()
 
@@ -19,9 +19,9 @@ class ActualQtyActionTest(TestCase):
         from apps.core.models import AccountingCategory
 
         ac = AccountingCategory.objects.create(code='LAB2', name='Labor2')
-        self.scheme = ServicePrice.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='Press',
-            algorithm=ServicePrice.ENTERED_QTY,
+            algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.00'),
             unit_label='piece',
             accounting_category=ac,
@@ -32,7 +32,7 @@ class ActualQtyActionTest(TestCase):
             name='Widget Run', contact=contact, job_number='JOB-TEST-002'
         )
         self.task = Task.objects.create(
-            name='Press parts', job=self.job, service_price=self.scheme
+            name='Press parts', job=self.job, service_item=self.scheme
         )
 
         # A plain worker — no can_manage_jobs permission.
@@ -115,9 +115,9 @@ class CancelTaskPermissionTest(TestCase):
         from apps.core.models import AccountingCategory
 
         ac = AccountingCategory.objects.create(code='LABC', name='LaborC')
-        self.scheme = ServicePrice.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='CancelScheme',
-            algorithm=ServicePrice.ENTERED_QTY,
+            algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.00'),
             unit_label='piece',
             accounting_category=ac,
@@ -127,7 +127,7 @@ class CancelTaskPermissionTest(TestCase):
             name='Cancel Job', contact=contact, job_number='JOB-CANCEL-001'
         )
         self.task = Task.objects.create(
-            name='Cancellable', job=self.job, service_price=self.scheme
+            name='Cancellable', job=self.job, service_item=self.scheme
         )
 
         # A plain worker — no atom, not the job's PM.
@@ -169,7 +169,7 @@ class CancelTaskPermissionTest(TestCase):
 
 
 class PercentageServiceTaskRejectionTest(TestCase):
-    """A ServicePrice with algorithm=PERCENTAGE must be rejected when assigning
+    """A ServiceItem with algorithm=PERCENTAGE must be rejected when assigning
     to a Task — percentage services are document-level adjustments only."""
 
     def setUp(self):
@@ -181,8 +181,8 @@ class PercentageServiceTaskRejectionTest(TestCase):
         self.job = Job.objects.create(
             name='Pct Job', contact=self.contact, job_number='JOB-PCT-001'
         )
-        self.rush = ServicePrice.objects.create(
-            name='Rush', algorithm=ServicePrice.PERCENTAGE, rate=Decimal('15'),
+        self.rush = ServiceItem.objects.create(
+            name='Rush', algorithm=ServiceItem.PERCENTAGE, rate=Decimal('15'),
             unit_label='%', accounting_category=ac,
         )
         self.manager = User.objects.create_user(
@@ -194,6 +194,6 @@ class PercentageServiceTaskRejectionTest(TestCase):
     def test_cannot_assign_percentage_service_to_task(self):
         self.client.force_login(self.manager)
         resp = self.client.post(f'/api/jobs/{self.job.pk}/tasks/', {
-            'name': 'x', 'service_price': self.rush.pk, 'est_qty': '1',
+            'name': 'x', 'service_item': self.rush.pk, 'est_qty': '1',
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 400)

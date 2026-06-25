@@ -4,17 +4,17 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from datetime import timedelta
 from decimal import Decimal
-from apps.jobs.models import Job, Task, Blep, ServicePrice
+from apps.jobs.models import Job, Task, Blep, ServiceItem
 from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
 
 
 def _make_scheme(suffix):
-    """Helper: create a minimal ServicePrice + AccountingCategory for tests."""
+    """Helper: create a minimal ServiceItem + AccountingCategory for tests."""
     ac = AccountingCategory.objects.create(code=f'JM-{suffix}', name=f'jm-{suffix}')
-    return ServicePrice.objects.create(
-        name=f'S-jm-{suffix}', algorithm=ServicePrice.FLAT_FEE,
+    return ServiceItem.objects.create(
+        name=f'S-jm-{suffix}', algorithm=ServiceItem.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -432,7 +432,7 @@ class TaskModelTest(TestCase):
         parent_task = Task.objects.create(
             job=self.job,
             name="Parent Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
         )
         task = Task.objects.create(
             parent_task=parent_task,
@@ -440,7 +440,7 @@ class TaskModelTest(TestCase):
             est_worker_time=timedelta(hours=1),
             job=self.job,
             name="Installation Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
         )
         self.assertEqual(task.parent_task, parent_task)
         self.assertEqual(task.assignee, self.user)
@@ -453,21 +453,21 @@ class TaskModelTest(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             Task.objects.create(
                 job=self.job, name="Assigned, no estimate",
-                service_price=self.scheme, assignee=self.user,
+                service_item=self.scheme, assignee=self.user,
             )
         self.assertIn('est_worker_time', ctx.exception.message_dict)
 
     def test_assigned_task_with_est_worker_time_allowed(self):
         task = Task.objects.create(
             job=self.job, name="Assigned, estimated",
-            service_price=self.scheme, assignee=self.user,
+            service_item=self.scheme, assignee=self.user,
             est_worker_time=timedelta(hours=2),
         )
         self.assertEqual(task.assignee, self.user)
 
     def test_unassigned_task_needs_no_est_worker_time(self):
         task = Task.objects.create(
-            job=self.job, name="Unassigned", service_price=self.scheme,
+            job=self.job, name="Unassigned", service_item=self.scheme,
         )
         self.assertIsNone(task.est_worker_time)
 
@@ -475,7 +475,7 @@ class TaskModelTest(TestCase):
         task = Task.objects.create(
             job=self.job,
             name="Test Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
         )
         self.assertEqual(str(task), "Test Task")
 
@@ -483,7 +483,7 @@ class TaskModelTest(TestCase):
         task = Task.objects.create(
             job=self.job,
             name="Basic Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
         )
         self.assertIsNone(task.parent_task)
         self.assertIsNone(task.assignee)
@@ -492,11 +492,11 @@ class TaskModelTest(TestCase):
         """Task.job is non-nullable. Creating without job raises."""
         with self.assertRaises(Exception):  # ValidationError (full_clean in save) or IntegrityError
             with transaction.atomic():
-                Task.objects.create(name="No Job Task", service_price=self.scheme)
+                Task.objects.create(name="No Job Task", service_item=self.scheme)
 
     def test_deleting_job_cascades_to_tasks(self):
-        Task.objects.create(job=self.job, name="T1", service_price=self.scheme)
-        Task.objects.create(job=self.job, name="T2", service_price=self.scheme)
+        Task.objects.create(job=self.job, name="T1", service_item=self.scheme)
+        Task.objects.create(job=self.job, name="T2", service_item=self.scheme)
         self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
         job_pk = self.job.pk
         self.job.delete()
@@ -505,10 +505,10 @@ class TaskModelTest(TestCase):
     def test_task_sort_order_scoped_to_job(self):
         """Auto sort_order is per-job, not global."""
         other_job = Job.objects.create(job_number="JOB_OTHER", contact=self.contact)
-        t1 = Task.objects.create(job=self.job, name="T1", service_price=self.scheme)
-        t2 = Task.objects.create(job=self.job, name="T2", service_price=self.scheme)
-        t3 = Task.objects.create(job=other_job, name="T3", service_price=self.scheme)
-        t4 = Task.objects.create(job=other_job, name="T4", service_price=self.scheme)
+        t1 = Task.objects.create(job=self.job, name="T1", service_item=self.scheme)
+        t2 = Task.objects.create(job=self.job, name="T2", service_item=self.scheme)
+        t3 = Task.objects.create(job=other_job, name="T3", service_item=self.scheme)
+        t4 = Task.objects.create(job=other_job, name="T4", service_item=self.scheme)
         self.assertEqual(t1.sort_order, 1)
         self.assertEqual(t2.sort_order, 2)
         # Other job's tasks start counting from 1 independently
@@ -528,7 +528,7 @@ class BlepModelTest(TestCase):
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
         )
 
     def test_blep_creation(self):
@@ -585,7 +585,7 @@ class TaskTemplateModelTest(TestCase):
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
         )
         self.work_template = WorkTemplate.objects.create(
             template_name="Test WO Template"
@@ -597,7 +597,7 @@ class TaskTemplateModelTest(TestCase):
             template_name="Electrical Installation",
             description="Standard electrical installation task",
             is_active=True,
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
 
@@ -618,7 +618,7 @@ class TaskTemplateModelTest(TestCase):
     def test_task_template_str_method(self):
         template = TaskTemplate.objects.create(
             template_name="Plumbing Setup",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(str(template), "Plumbing Setup")
@@ -626,7 +626,7 @@ class TaskTemplateModelTest(TestCase):
     def test_task_template_defaults(self):
         template = TaskTemplate.objects.create(
             template_name="Default Template",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         self.assertTrue(template.is_active)
@@ -636,16 +636,16 @@ class TaskTemplateModelTest(TestCase):
     def test_task_template_new_fields_optional(self):
         template = TaskTemplate.objects.create(
             template_name="Simple Template",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        # units/rate dropped from TaskTemplate; billing now lives on service_price
-        self.assertEqual(template.service_price, self.scheme)
+        # units/rate dropped from TaskTemplate; billing now lives on service_item
+        self.assertEqual(template.service_item, self.scheme)
 
     def test_task_template_without_work_template(self):
         template = TaskTemplate.objects.create(
             template_name="Standalone Template",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(template.work_templates.count(), 0)
@@ -655,17 +655,17 @@ class TaskTemplateModelTest(TestCase):
 
         task_template1 = TaskTemplate.objects.create(
             template_name="First Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         task_template2 = TaskTemplate.objects.create(
             template_name="Second Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         task_template3 = TaskTemplate.objects.create(
             template_name="Third Task",
-            service_price=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
 
@@ -708,7 +708,7 @@ class TaskTemplateModelTest(TestCase):
         for i in range(5):
             template = TaskTemplate.objects.create(
                 template_name=f"Task {i+1}",
-                service_price=self.scheme,
+                service_item=self.scheme,
                 default_billable_qty=Decimal('1.00'),
             )
             task_templates.append(template)

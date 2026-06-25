@@ -7,7 +7,7 @@ from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.models import InventoryHistory
 from apps.inventory.services import InventoryService, MaterialService
-from apps.jobs.models import Job, Task, ServicePrice
+from apps.jobs.models import Job, Task, ServiceItem
 from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
@@ -26,13 +26,13 @@ class ConsumeMaterialTest(TestCase):
             code='PLI-001', description='Steel plate',
             is_catalog=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
-        self.scheme = ServicePrice.objects.create(
-            name='S-qohs1', algorithm=ServicePrice.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-qohs1', algorithm=ServiceItem.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
             job=self.job, name='Cut steel',
-            sort_order=1, service_price=self.scheme)
+            sort_order=1, service_item=self.scheme)
 
     def test_decreases_qoh_and_increases_qty_sold(self):
         """Consuming material decreases QOH and increases qty_sold."""
@@ -137,7 +137,7 @@ class ConsumeMaterialTest(TestCase):
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""
         wo_task = Task.objects.create(
-            job=self.job, name='Assemble', sort_order=1, service_price=self.scheme)
+            job=self.job, name='Assemble', sort_order=1, service_item=self.scheme)
 
         Earmark.objects.create(
             inventory_item=self.pli, job=self.job,
@@ -170,13 +170,13 @@ class CompleteTaskAdjustmentTest(TestCase):
             code='PLI-001', description='Steel plate',
             is_catalog=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
-        self.scheme = ServicePrice.objects.create(
-            name='S-qohs2', algorithm=ServicePrice.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-qohs2', algorithm=ServiceItem.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
             job=self.job, name='Cut steel',
-            sort_order=1, service_price=self.scheme)
+            sort_order=1, service_item=self.scheme)
 
         self.material = Material(
             job=self.job,

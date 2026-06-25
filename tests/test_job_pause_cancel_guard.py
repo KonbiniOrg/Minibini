@@ -24,7 +24,7 @@ def _make_job(contact, *statuses):
 
 
 def _make_task(job):
-    return Task.objects.create(name='Guard-Test Task', job=job, service_price_id=1)
+    return Task.objects.create(name='Guard-Test Task', job=job, service_item_id=1)
 
 
 class OpenBlepBlocksOnHoldTest(BaseTestCase):

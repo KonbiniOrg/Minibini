@@ -11,7 +11,7 @@ class TimeIntegrityTest(BaseTestCase):
         super().setUp()
         self.user = User.objects.create_user(username='integ_u', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         self.t0 = timezone.now().replace(microsecond=0) - timedelta(hours=10)
 
     def _blep(self, start_h, end_h):

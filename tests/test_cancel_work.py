@@ -30,7 +30,7 @@ class CancelWorkFirstActivityTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_cancel_reverts_task_to_pending(self):
@@ -86,7 +86,7 @@ class CancelWorkGuardTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.user = User.objects.get(username='admin')
         self.other = User.objects.create_user(username='cw_other', password='x')

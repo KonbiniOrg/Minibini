@@ -5,7 +5,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import Material, PlanMaterial
-from apps.jobs.models import Job, ServicePrice
+from apps.jobs.models import Job, ServiceItem
 from tests.base import FixtureTestCase
 
 
@@ -44,14 +44,14 @@ class MaterialComputeAmountTest(TestCase):
 
 
 from apps.jobs.models import (
-    Blep, PlanTask, ServicePrice, Task,
+    Blep, PlanTask, ServiceItem, Task,
 )
 from django.utils import timezone
 from datetime import timedelta
 
 
 class TaskComputeAmountTest(TestCase):
-    """Task.compute_amount() covers all three ServicePrice algorithms."""
+    """Task.compute_amount() covers all three ServiceItem algorithms."""
 
     def setUp(self):
         from apps.core.models import User
@@ -63,21 +63,21 @@ class TaskComputeAmountTest(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.scheme_time = ServicePrice.objects.create(
-            name='Hourly', algorithm=ServicePrice.ELAPSED_TIME,
+        self.scheme_time = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.scheme_qty = ServicePrice.objects.create(
-            name='PerItem', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme_qty = ServiceItem.objects.create(
+            name='PerItem', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('50'), unit_label='item', accounting_category=self.cat,
         )
-        self.scheme_flat = ServicePrice.objects.create(
-            name='FlatFee', algorithm=ServicePrice.FLAT_FEE,
+        self.scheme_flat = ServiceItem.objects.create(
+            name='FlatFee', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('250'), unit_label='each', accounting_category=self.cat,
         )
 
     def test_task_elapsed_time(self):
-        task = Task.objects.create(job=self.job, name='t', service_price=self.scheme_time)
+        task = Task.objects.create(job=self.job, name='t', service_item=self.scheme_time)
         now = timezone.now()
         Blep.objects.create(task=task, user=self.user, start_time=now - timedelta(hours=2), end_time=now)
         # 2 hours × $100 = $200
@@ -86,13 +86,13 @@ class TaskComputeAmountTest(TestCase):
     def test_task_entered_qty(self):
         task = Task.objects.create(
             job=self.job, name='t', actual_qty=Decimal('3'),
-            service_price=self.scheme_qty,
+            service_item=self.scheme_qty,
         )
         # 3 × $50 = $150
         self.assertEqual(task.compute_amount(), Decimal('150.00'))
 
     def test_task_flat_fee(self):
-        task = Task.objects.create(job=self.job, name='t', service_price=self.scheme_flat)
+        task = Task.objects.create(job=self.job, name='t', service_item=self.scheme_flat)
         self.assertEqual(task.compute_amount(), Decimal('250.00'))
 
 
@@ -106,14 +106,14 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
     def test_compute_amount_with_scheme(self):
         from apps.core.models import AccountingCategory
         ac = AccountingCategory.objects.first()
-        scheme = ServicePrice.objects.create(
-            name='Test Hourly', algorithm=ServicePrice.ENTERED_QTY,
+        scheme = ServiceItem.objects.create(
+            name='Test Hourly', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('60.00'), unit_label='hour',
             accounting_category=ac,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Test',
-            service_price=scheme,
+            service_item=scheme,
             active_modifiers=[],
             est_qty=Decimal('2.5'),
         )
@@ -124,14 +124,14 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
         a 4dp product that would otherwise surface raw in worksheet totals."""
         from apps.core.models import AccountingCategory
         ac = AccountingCategory.objects.first()
-        scheme = ServicePrice.objects.create(
-            name='Odd Plan Rate', algorithm=ServicePrice.ENTERED_QTY,
+        scheme = ServiceItem.objects.create(
+            name='Odd Plan Rate', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.07'), unit_label='piece',
             accounting_category=ac,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Odd',
-            service_price=scheme, active_modifiers=[],
+            service_item=scheme, active_modifiers=[],
             est_qty=Decimal('1.03'),
         )
         # 1.03 * 10.07 = 10.3721 -> 10.37
@@ -141,7 +141,7 @@ class PlanTaskComputeAmountTests(FixtureTestCase):
 
     def test_compute_amount_without_scheme_returns_zero(self):
         # Build an unsaved instance — DB+full_clean now forbid persisting
-        # a PlanTask without service_price/est_qty, but the helper still has
+        # a PlanTask without service_item/est_qty, but the helper still has
         # a guard for the in-memory case.
         pt = PlanTask(est_worksheet=self.ws, name='Bare')
         self.assertEqual(pt.compute_amount(), Decimal('0.00'))

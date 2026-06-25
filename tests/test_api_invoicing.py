@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, EmailRecord
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.jobs.models import Job, ServicePrice
+from apps.jobs.models import Job, ServiceItem
 from apps.inventory.models import Material
 
 
@@ -26,8 +26,8 @@ def _make_adjustment_fixture(test_case):
         email='adj@test.com', mobile_number='555-0001',
     )
     cat = AccountingCategory.objects.create(name='AdjCat', code='ADJC')
-    svc = ServicePrice.objects.create(
-        name='Rush Fee', algorithm=ServicePrice.PERCENTAGE,
+    svc = ServiceItem.objects.create(
+        name='Rush Fee', algorithm=ServiceItem.PERCENTAGE,
         rate=Decimal('10.00'), unit_label='%',
         accounting_category=cat,
     )
@@ -309,8 +309,8 @@ class BillabilityGateTest(BaseTestCase):
             email='bill@test.com', mobile_number='555-9999',
         )
         self.cat = AccountingCategory.objects.create(name='BillCat', code='BCAT')
-        self.scheme = ServicePrice.objects.create(
-            name='Hourly-bill', algorithm=ServicePrice.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly-bill', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours',
             accounting_category=self.cat,
         )
@@ -321,13 +321,13 @@ class BillabilityGateTest(BaseTestCase):
 
         # An incomplete (pending) task — must appear as not_billable
         self.incomplete_task = Task.objects.create(
-            job=self.job, name='Pending Work', service_price=self.scheme,
+            job=self.job, name='Pending Work', service_item=self.scheme,
         )
         # Status is STATUS_PENDING by default — don't change it.
 
         # A complete task — for contrast
         self.complete_task = Task.objects.create(
-            job=self.job, name='Done Work', service_price=self.scheme,
+            job=self.job, name='Done Work', service_item=self.scheme,
         )
         self.complete_task.status = Task.STATUS_COMPLETE
         self.complete_task.save()
@@ -596,8 +596,8 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
         from django.core.exceptions import ValidationError
         from apps.invoicing.services import InvoiceService
         from apps.core.models import AccountingCategory
-        flat_svc = ServicePrice.objects.create(
-            name='Flat Labor', algorithm=ServicePrice.FLAT_FEE,
+        flat_svc = ServiceItem.objects.create(
+            name='Flat Labor', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('50.00'), unit_label='ea',
             accounting_category=self.adj_cat,
         )

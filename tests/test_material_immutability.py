@@ -6,7 +6,7 @@ from apps.inventory.models import (
     Material, PlanMaterial, InventoryItem,
 )
 from apps.estimates.models import EstWorksheet
-from apps.jobs.models import Job, Task, PlanTask, ServicePrice
+from apps.jobs.models import Job, Task, PlanTask, ServiceItem
 
 
 class _Setup(APITestCase):
@@ -227,13 +227,13 @@ class PropagateFlagOnFreeformAndPostPathsTests(_Setup):
     def test_post_plan_material_on_plan_task_with_propagate_flag_succeeds(self):
         ws = EstWorksheet.objects.create(job=self.job)
         scheme_ac = AccountingCategory.objects.create(code='RS-AC', name='RS AC')
-        scheme = ServicePrice.objects.create(
-            name='RS', algorithm=ServicePrice.FLAT_FEE,
+        scheme = ServiceItem.objects.create(
+            name='RS', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
         )
         pt = PlanTask.objects.create(
             est_worksheet=ws, name='T', sort_order=1, est_qty=Decimal('1'),
-            service_price=scheme,
+            service_item=scheme,
         )
         resp = self.client.post(
             f'/api/plan-tasks/{pt.pk}/materials/',

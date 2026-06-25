@@ -40,13 +40,13 @@ class TaskTemplateAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_create_task_template(self):
-        from apps.jobs.models import ServicePrice
-        scheme = ServicePrice.objects.get(pk=1)  # from fixture
+        from apps.jobs.models import ServiceItem
+        scheme = ServiceItem.objects.get(pk=1)  # from fixture
         response = self.client.post('/api/task-templates/', {
             'template_name': 'API Test Template',
             'description': 'Created via API',
             'units': 'hours',
-            'service_price': scheme.pk,
+            'service_item': scheme.pk,
             'default_billable_qty': '1.00',
         }, format='json')
         self.assertEqual(response.status_code, 201)
@@ -70,7 +70,7 @@ class ConfigurationAPITest(BaseTestCase):
 
 
 class PercentageServiceTaskTemplateRejectionTest(BaseTestCase):
-    """A ServicePrice with algorithm=PERCENTAGE must be rejected when assigning
+    """A ServiceItem with algorithm=PERCENTAGE must be rejected when assigning
     to a TaskTemplate — percentage services are document-level adjustments only."""
 
     def setUp(self):
@@ -78,18 +78,18 @@ class PercentageServiceTaskTemplateRejectionTest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
-        from apps.jobs.models import ServicePrice
+        from apps.jobs.models import ServiceItem
         from apps.core.models import AccountingCategory
         ac = AccountingCategory.objects.create(code='TMP-PCT', name='TMP-PCT')
-        self.rush = ServicePrice.objects.create(
-            name='Rush TT', algorithm=ServicePrice.PERCENTAGE, rate='15',
+        self.rush = ServiceItem.objects.create(
+            name='Rush TT', algorithm=ServiceItem.PERCENTAGE, rate='15',
             unit_label='%', accounting_category=ac,
         )
 
     def test_cannot_assign_percentage_service_to_task_template(self):
         resp = self.client.post('/api/task-templates/', {
             'template_name': 'Rush Template',
-            'service_price': self.rush.pk,
+            'service_item': self.rush.pk,
             'default_billable_qty': '1.00',
         }, format='json')
         self.assertEqual(resp.status_code, 400, resp.data)

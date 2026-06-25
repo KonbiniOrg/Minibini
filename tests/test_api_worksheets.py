@@ -3,7 +3,7 @@ from tests.base import BaseTestCase
 from apps.core.models import User, AccountingCategory
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import Job, PlanTask, ServicePrice
+from apps.jobs.models import Job, PlanTask, ServiceItem
 
 
 class WorksheetAPITest(BaseTestCase):
@@ -55,10 +55,10 @@ class WorksheetAPITest(BaseTestCase):
             description='Shop supplies', quantity=1, unit_cost=15, sell_price=25,
             accounting_category=cat,
         )
-        service_price = ServicePrice.objects.first()
+        service_item = ServiceItem.objects.first()
         plan_task = PlanTask.objects.create(
             est_worksheet=ws, name='Cut blanks',
-            service_price=service_price, est_qty=1,
+            service_item=service_item, est_qty=1,
         )
         PlanMaterial.objects.create(
             est_worksheet=ws, plan_task=plan_task,
@@ -81,12 +81,12 @@ class WorksheetAPITest(BaseTestCase):
         job = Job.objects.create(contact=contact, job_number='JOB-WSDEL-1')
         ws = EstWorksheet.objects.create(job=job)
         ac = AccountingCategory.objects.create(code='WSDEL', name='wsdel')
-        scheme = ServicePrice.objects.create(
-            name='S-wsdel', algorithm=ServicePrice.FLAT_FEE, rate=Decimal('1'),
+        scheme = ServiceItem.objects.create(
+            name='S-wsdel', algorithm=ServiceItem.FLAT_FEE, rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         pt = PlanTask.objects.create(
-            est_worksheet=ws, name='T', service_price=scheme, est_qty=Decimal('1'),
+            est_worksheet=ws, name='T', service_item=scheme, est_qty=Decimal('1'),
         )
         est = EstimateWizardService.open_for_worksheet(ws)
         li = EstimateLineItem.objects.create(estimate=est, description='T', price=Decimal('10'))

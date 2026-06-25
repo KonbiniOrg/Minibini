@@ -83,7 +83,7 @@ class ChangeRequestAPITest(BaseTestCase):
         # reconciles it on review. This is the agreed warn-and-allow contract.
         from apps.jobs.models import Job, Task, Blep
         job = Job.objects.first()
-        task = Task.objects.create(name='T', job=job, service_price_id=1)
+        task = Task.objects.create(name='T', job=job, service_item_id=1)
         blep = Blep.objects.create(
             task=task, user=self.worker,
             start_time=self.now - timedelta(hours=3),
@@ -103,7 +103,7 @@ class ChangeRequestAPITest(BaseTestCase):
     def test_shift_request_conflict_surfaces_offending_blep(self):
         from apps.jobs.models import Job, Task, Blep
         job = Job.objects.first()
-        task = Task.objects.create(name='Demo', job=job, service_price_id=1)
+        task = Task.objects.create(name='Demo', job=job, service_item_id=1)
         shift = Shift.objects.create(user=self.worker,
                                      start_time=self.now - timedelta(hours=5),
                                      end_time=self.now - timedelta(hours=1))
@@ -125,7 +125,7 @@ class ChangeRequestAPITest(BaseTestCase):
     def test_blep_request_conflict_surfaces_overlapping_shift(self):
         from apps.jobs.models import Job, Task, Blep, BlepChangeRequest
         job = Job.objects.first()
-        task = Task.objects.create(name='Demo2', job=job, service_price_id=1)
+        task = Task.objects.create(name='Demo2', job=job, service_item_id=1)
         shift = Shift.objects.create(user=self.worker,
                                      start_time=self.now - timedelta(hours=3),
                                      end_time=self.now - timedelta(hours=1))

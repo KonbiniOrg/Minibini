@@ -311,7 +311,7 @@
         }
     },
     {
-        "model": "jobs.serviceprice",
+        "model": "jobs.serviceitem",
         "pk": 1,
         "fields": {
             "name": "Std Hourly",
@@ -324,7 +324,7 @@
         }
     },
     {
-        "model": "jobs.serviceprice",
+        "model": "jobs.serviceitem",
         "pk": 2,
         "fields": {
             "name": "Std CNC Router",
@@ -348,7 +348,7 @@
         }
     },
     {
-        "model": "jobs.serviceprice",
+        "model": "jobs.serviceitem",
         "pk": 3,
         "fields": {
             "name": "Std Setup Fee",
@@ -397,7 +397,7 @@
             "description": "",
             "sort_order": null,
             "job": 1,
-            "service_price": 1,
+            "service_item": 1,
             "active_modifiers": [],
             "actual_qty": null,
             "est_qty": null
@@ -412,7 +412,7 @@
             "description": "",
             "sort_order": null,
             "job": 1,
-            "service_price": 1,
+            "service_item": 1,
             "active_modifiers": [],
             "actual_qty": null,
             "est_qty": null
@@ -652,7 +652,7 @@
             "description": "Standard site preparation and safety setup",
             "is_active": true,
             "created_date": "2023-01-15T10:30:00Z",
-            "service_price": 3,
+            "service_item": 3,
             "default_billable_qty": "1.00"
         }
     },
@@ -664,7 +664,7 @@
             "description": "Material procurement and delivery setup",
             "is_active": true,
             "created_date": "2023-01-15T11:00:00Z",
-            "service_price": 3,
+            "service_item": 3,
             "default_billable_qty": "1.00"
         }
     },
@@ -676,7 +676,7 @@
             "description": "Standard electrical rough-in work",
             "is_active": true,
             "created_date": "2023-01-15T11:30:00Z",
-            "service_price": 1,
+            "service_item": 1,
             "default_billable_qty": "1.00"
         }
     },
@@ -688,7 +688,7 @@
             "description": "General construction and installation",
             "is_active": true,
             "created_date": "2023-01-15T12:00:00Z",
-            "service_price": 1,
+            "service_item": 1,
             "default_billable_qty": "1.00"
         }
     },

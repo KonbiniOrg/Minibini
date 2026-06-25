@@ -40,7 +40,7 @@ class BackfillJobHistoryTest(BaseTestCase):
         job = Job.objects.first()
         task = Task.objects.filter(job=job).first()
         if task is None:
-            task = Task.objects.create(job=job, name='BF chronology task', service_price_id=1)
+            task = Task.objects.create(job=job, name='BF chronology task', service_item_id=1)
         call_command('backfill_job_history', f'--job={job.pk}')
         job_created = JobHistory.objects.filter(
             object_type='job', object_id=job.pk,
@@ -79,7 +79,7 @@ class BackfillJobHistoryTest(BaseTestCase):
         job = Job.objects.first()
         # several tasks share one anchor date -> would collide without spacing
         for i in range(4):
-            Task.objects.create(job=job, name=f'BF spacing {i}', service_price_id=1)
+            Task.objects.create(job=job, name=f'BF spacing {i}', service_item_id=1)
         call_command('backfill_job_history', f'--job={job.pk}')
         times = list(
             JobHistory.objects.filter(changes___backfill=True)

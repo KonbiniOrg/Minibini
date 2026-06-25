@@ -246,7 +246,7 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     def adjustment_lines(self, request, pk=None):
         """Add a percentage-adjustment line item to a draft invoice.
 
-        Body: ``adjustment_service`` (ServicePrice PK, must be PERCENTAGE),
+        Body: ``adjustment_service`` (ServiceItem PK, must be PERCENTAGE),
         ``target_category_ids`` (list of AccountingCategory PKs; empty = all).
         Returns 201 with the serialized line item.
         Returns 400 when the invoice is not draft or the service is not PERCENTAGE.

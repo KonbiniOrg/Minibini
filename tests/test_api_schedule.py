@@ -86,7 +86,7 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
             job=job,
             assignee=worker,
             status=Task.STATUS_PENDING,
-            service_price_id=1,
+            service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
         result = ScheduleService.get_schedule(now=timezone.now())
@@ -113,7 +113,7 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
             job=job,
             assignee=worker2,
             status=Task.STATUS_PENDING,
-            service_price_id=1,
+            service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
         result = ScheduleService.get_schedule(now=timezone.now())
@@ -152,7 +152,7 @@ class ScheduleWorkCompleteHistoryTest(BaseTestCase):
             job=self.job,
             assignee=self.worker,
             status=Task.STATUS_COMPLETE,
-            service_price_id=1,
+            service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
         now = timezone.now()
@@ -223,7 +223,7 @@ class ScheduleForecastScopeTest(BaseTestCase):
             job=job,
             assignee=worker,
             status=status,
-            service_price_id=1,
+            service_item_id=1,
             est_worker_time=timedelta(hours=1),
             **extra,
         )
@@ -332,7 +332,7 @@ class ScheduleAllInProgressChipsTest(BaseTestCase):
         job = self._in_progress_job()
         Task.objects.create(
             name='Unassigned', job=job, assignee=None,
-            status=Task.STATUS_PENDING, service_price_id=1,
+            status=Task.STATUS_PENDING, service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
         result = ScheduleService.get_schedule(now=timezone.now())
@@ -367,7 +367,7 @@ class ScheduleChipOrderTest(BaseTestCase):
             job.save()
         Task.objects.create(
             name='Order task', job=job, assignee=self.worker,
-            status=Task.STATUS_PENDING, service_price_id=1,
+            status=Task.STATUS_PENDING, service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
         return job
@@ -411,7 +411,7 @@ class ScheduleJobsPMNameTest(BaseTestCase):
             job=self.job,
             assignee=self.worker,
             status=Task.STATUS_PENDING,
-            service_price_id=1,
+            service_item_id=1,
             est_worker_time=timedelta(hours=1),
         )
 

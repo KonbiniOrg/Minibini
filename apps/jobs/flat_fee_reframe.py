@@ -12,15 +12,15 @@ def _price_of(active_modifiers):
     return None
 
 
-def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *, log=print):
-    """Best-effort: relocate per-atom flat_fee_price onto dedicated ServicePrice rows.
+def reframe_flat_fee_prices(ServiceItem, Task, PlanTask, TaskTemplate, *, log=print):
+    """Best-effort: relocate per-atom flat_fee_price onto dedicated ServiceItem rows.
 
     Works with both real and historical (migration) model classes — uses the
     literal 'flat_fee', never model constants. Returns a worklist of
     (model_name, pk, reason) for rows that couldn't be resolved.
     """
     worklist = []
-    minted = {}  # (orig_service_id, price_str) -> ServicePrice
+    minted = {}  # (orig_service_id, price_str) -> ServiceItem
 
     def mint(orig, price):
         key = (orig.pk, str(price))
@@ -28,7 +28,7 @@ def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *, log=p
             return minted[key]
         name = f'{orig.name} — {price}'
         try:
-            new = ServicePrice.objects.create(
+            new = ServiceItem.objects.create(
                 name=name, description=orig.description, algorithm=FLAT_FEE,
                 rate=price, unit_label=orig.unit_label, modifiers=[],
                 accounting_category=orig.accounting_category,
@@ -41,8 +41,8 @@ def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *, log=p
     for model, attr in ((Task, 'active_modifiers'),
                         (PlanTask, 'active_modifiers'),
                         (TaskTemplate, 'default_active_modifiers')):
-        for obj in model.objects.select_related('service_price').all():
-            svc = obj.service_price
+        for obj in model.objects.select_related('service_item').all():
+            svc = obj.service_item
             if not svc or svc.algorithm != FLAT_FEE:
                 continue
             am = getattr(obj, attr)
@@ -55,7 +55,7 @@ def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *, log=p
             if new_svc is None:
                 worklist.append((model.__name__, obj.pk, 'could not mint service'))
                 continue
-            obj.service_price = new_svc
+            obj.service_item = new_svc
             setattr(obj, attr, [])
             obj.save()
     return worklist

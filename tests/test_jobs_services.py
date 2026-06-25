@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, PlanTask, ServicePrice
+from apps.jobs.models import Job, Task, PlanTask, ServiceItem
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
     Estimate, EstWorksheet,
@@ -141,14 +141,14 @@ class TaskServiceUpdateTest(JobsTestBase):
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        scheme = ServicePrice.objects.create(
-            name='TSU scheme', algorithm=ServicePrice.FLAT_FEE,
+        scheme = ServiceItem.objects.create(
+            name='TSU scheme', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
         self.task = Task.objects.create(
             job=self.job, name='Task 1', sort_order=1,
-            service_price=scheme,
+            service_item=scheme,
         )
 
     def test_update_task(self):
@@ -166,18 +166,18 @@ class TaskServiceReorderTest(JobsTestBase):
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
-        scheme = ServicePrice.objects.create(
-            name='TSR scheme', algorithm=ServicePrice.FLAT_FEE,
+        scheme = ServiceItem.objects.create(
+            name='TSR scheme', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
         self.t1 = Task.objects.create(
             job=self.job, name='Task 1', sort_order=1,
-            service_price=scheme,
+            service_item=scheme,
         )
         self.t2 = Task.objects.create(
             job=self.job, name='Task 2', sort_order=2,
-            service_price=scheme,
+            service_item=scheme,
         )
 
     def test_reorder_down(self):
@@ -202,10 +202,10 @@ class MaterialServiceTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServicePrice.objects.get(pk=1)  # from fixture
+        self.scheme = ServiceItem.objects.get(pk=1)  # from fixture
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task 1', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_create_material(self):
@@ -252,13 +252,13 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.template = WorkTemplate.objects.create(template_name='Standard Build')
-        self.scheme = ServicePrice.objects.get(pk=1)  # from fixture
+        self.scheme = ServiceItem.objects.get(pk=1)  # from fixture
         self.task_tmpl_1 = TaskTemplate.objects.create(
             template_name='Cut',
-            service_price=self.scheme, default_billable_qty=Decimal('1.00'))
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'))
         self.task_tmpl_2 = TaskTemplate.objects.create(
             template_name='Weld',
-            service_price=self.scheme, default_billable_qty=Decimal('1.00'))
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'))
         TemplateTaskAssociation.objects.create(
             work_template=self.template, task_template=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)
@@ -277,11 +277,11 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
 
         cut_task = tasks[0]
         self.assertEqual(cut_task.name, 'Cut')
-        self.assertEqual(cut_task.service_price, self.scheme)
+        self.assertEqual(cut_task.service_item, self.scheme)
 
         weld_task = tasks[1]
         self.assertEqual(weld_task.name, 'Weld')
-        self.assertEqual(weld_task.service_price, self.scheme)
+        self.assertEqual(weld_task.service_item, self.scheme)
 
     def test_skips_inactive_task_templates(self):
         self.task_tmpl_2.is_active = False
@@ -317,15 +317,15 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServicePrice.objects.get(pk=1)  # from fixture
+        self.scheme = ServiceItem.objects.get(pk=1)  # from fixture
 
     def test_copies_tasks(self):
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Weld', sort_order=2,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
@@ -339,7 +339,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             est_worksheet=self.worksheet, name='Paint',
             description='Apply primer and topcoat',
             sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
 
@@ -350,7 +350,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
     def test_copies_materials(self):
         ws_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         pli = InventoryItem.objects.create(
             code='STL-001', description='Steel plate',
             purchase_price=Decimal('50.00'),
@@ -380,10 +380,10 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
     def test_copy_flat_no_parent_task(self):
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Alpha', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Beta', sort_order=2,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
         for task in Task.objects.filter(job=self.job):
             self.assertIsNone(task.parent_task)
@@ -391,7 +391,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
     def test_copy_preserves_plan_material_pli_linkage(self):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         pli = InventoryItem.objects.create(
             code='LINK-001', description='Linked item',
             purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
@@ -417,7 +417,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         """Units set on PlanMaterial are preserved on the resulting Material."""
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=plan_task,
             description='task-attached', quantity=Decimal('5'),
@@ -440,7 +440,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
     def test_sets_provenance_on_copied_atoms(self):
         pt = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
         PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=pt, description='Steel',
             quantity=Decimal('2'), units='ea', accounting_category=self.lit)
@@ -456,7 +456,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
         from apps.estimates.carry_over import AtomCarryOverService
         PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'))
+            service_item=self.scheme, est_qty=Decimal('1'))
 
         JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
         AtomCarryOverService.carry_over_for_estimate(self.estimate)

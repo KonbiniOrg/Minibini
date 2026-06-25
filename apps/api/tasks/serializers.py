@@ -73,9 +73,9 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
-    scheme_name = serializers.CharField(source='service_price.name', read_only=True, default=None)
-    scheme_algorithm = serializers.CharField(source='service_price.algorithm', read_only=True, default=None)
-    scheme_unit_label = serializers.CharField(source='service_price.unit_label', read_only=True, default=None)
+    scheme_name = serializers.CharField(source='service_item.name', read_only=True, default=None)
+    scheme_algorithm = serializers.CharField(source='service_item.algorithm', read_only=True, default=None)
+    scheme_unit_label = serializers.CharField(source='service_item.unit_label', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
     has_active_blep = serializers.SerializerMethodField()
@@ -89,7 +89,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
-            'service_price', 'active_modifiers',
+            'service_item', 'active_modifiers',
             'est_qty', 'est_worker_time', 'actual_qty',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
@@ -100,9 +100,9 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
-    def validate_service_price(self, value):
-        from apps.jobs.models import ServicePrice
-        if value and value.algorithm == ServicePrice.PERCENTAGE:
+    def validate_service_item(self, value):
+        from apps.jobs.models import ServiceItem
+        if value and value.algorithm == ServiceItem.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )

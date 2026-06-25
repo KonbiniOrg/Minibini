@@ -20,7 +20,7 @@ class BlepMinMinutesPayloadTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(job=self.job, name='T', service_price_id=1)
+        self.task = Task.objects.create(job=self.job, name='T', service_item_id=1)
 
     def test_current_blep_includes_min_minutes(self):
         TaskLifecycleService.start_work(self.task.pk, self.user)

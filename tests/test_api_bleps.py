@@ -15,7 +15,7 @@ class BlepListAndRetrieveTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         self.blep = Blep.objects.create(
             task=self.task, user=self.user, start_time=timezone.now(),
         )
@@ -54,8 +54,8 @@ class BlepListFiltersTest(BaseTestCase):
         self.worker = User.objects.create_user(username='worker', password='x')
         self.client.force_authenticate(user=self.admin)
         self.job = Job.objects.first()
-        self.task_a = Task.objects.create(name='A', job=self.job, service_price_id=1)
-        self.task_b = Task.objects.create(name='B', job=self.job, service_price_id=1)
+        self.task_a = Task.objects.create(name='A', job=self.job, service_item_id=1)
+        self.task_b = Task.objects.create(name='B', job=self.job, service_item_id=1)
         now = timezone.now()
         self.old = Blep.objects.create(
             task=self.task_a, user=self.admin,
@@ -119,7 +119,7 @@ class BlepCreateAPITest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         # Wide closed shift so historical bleps have an enclosing shift.
         now = timezone.now()
         Shift.objects.create(user=self.user, start_time=now - timedelta(days=3),
@@ -186,7 +186,7 @@ class BlepCreateHistoricalCompleteTaskTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T_hist', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T_hist', job=self.job, service_item_id=1)
         # Wide closed shift so historical bleps have an enclosing shift.
         now = timezone.now()
         Shift.objects.create(
@@ -221,7 +221,7 @@ class BlepUpdateAPITest(BaseTestCase):
         self.manager.user_permissions.add(perm)
         self.manager = User.objects.get(pk=self.manager.pk)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         # Wide closed shift so edited bleps stay enclosed by a shift.
         now = timezone.now()
         Shift.objects.create(user=self.user, start_time=now - timedelta(days=3),
@@ -273,7 +273,7 @@ class BlepDeleteAPITest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.create_user(username='worker1_delete_api', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
 
     def test_delete_own_recent_blep(self):
         now = timezone.now()
@@ -307,7 +307,7 @@ class TaskRetrieveAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
         self.task = Task.objects.create(
-            name='T', description='desc', job=self.job, service_price_id=1,
+            name='T', description='desc', job=self.job, service_item_id=1,
         )
 
     def test_retrieve_task(self):

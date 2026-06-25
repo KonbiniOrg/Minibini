@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, PlanTask, ServicePrice
+from apps.jobs.models import Job, PlanTask, ServiceItem
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.inventory.models import PlanMaterial, InventoryItem
@@ -31,14 +31,14 @@ class PlanMaterialCRUDTest(TestCase):
         self.scheme_ac = AccountingCategory.objects.create(
             name='Mat-scheme', code='MAT-SC-AWUI',
         )
-        self.scheme = ServicePrice.objects.create(
-            name='S-mat-awui', algorithm=ServicePrice.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-mat-awui', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install countertop',
-            service_price=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
         )
         self.category = AccountingCategory.objects.create(
@@ -157,7 +157,7 @@ class PlanMaterialCRUDTest(TestCase):
     def test_material_on_wrong_task_returns_404(self):
         other_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Other task',
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         response = self.client.patch(
             f'/api/plan-tasks/{other_task.pk}/materials/{self.material.pk}/',
@@ -187,18 +187,18 @@ class ReorderTest(TestCase):
         self.category = AccountingCategory.objects.create(
             name='Labor', code='LAB', is_active=True,
         )
-        self.scheme = ServicePrice.objects.create(
-            name='S-reord-awui', algorithm=ServicePrice.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-reord-awui', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
 
         self.task1 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task A', sort_order=1,
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.task2 = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Task B', sort_order=2,
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_reorder_task_down(self):
@@ -272,17 +272,17 @@ class AddFromTemplateTest(TestCase):
             job_number='TMPL-001', name='Template Job', contact=self.contact,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
-        # Phase B requires PlanTask.service_price; templates used by add-from-template
+        # Phase B requires PlanTask.service_item; templates used by add-from-template
         # must carry a default scheme so the created PlanTask inherits one.
-        self.template_scheme = ServicePrice.objects.create(
-            name='Tmpl default scheme', algorithm=ServicePrice.FLAT_FEE,
+        self.template_scheme = ServiceItem.objects.create(
+            name='Tmpl default scheme', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('2.50'), unit_label='sqft',
             accounting_category=self.category,
         )
         self.task_template = TaskTemplate.objects.create(
             template_name='Standard Sanding',
             description='Sand and prep surfaces',
-            service_price=self.template_scheme,
+            service_item=self.template_scheme,
             default_billable_qty=Decimal('1.00'),
         )
 
@@ -294,7 +294,7 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['name'], 'Standard Sanding')
-        self.assertEqual(response.data['service_price'], self.template_scheme.pk)
+        self.assertEqual(response.data['service_item'], self.template_scheme.pk)
         self.assertEqual(response.data['est_qty'], '100.00')
         # 100 × $2.50 scheme rate = $250.00
         self.assertEqual(response.data['amount'], '250.00')
@@ -307,24 +307,24 @@ class AddFromTemplateTest(TestCase):
 
     def test_add_from_template_explicit_billing_overrides_template_defaults(self):
         """Passing billing fields to add-from-template uses the caller's values."""
-        from apps.jobs.models import ServicePrice
-        scheme = ServicePrice.objects.create(
+        from apps.jobs.models import ServiceItem
+        scheme = ServiceItem.objects.create(
             name='Hourly', rate='75.00', unit_label='hr',
-            algorithm=ServicePrice.ENTERED_QTY,
+            algorithm=ServiceItem.ENTERED_QTY,
             accounting_category=self.category,
         )
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
             {
                 'task_template_id': self.task_template.pk,
-                'service_price': scheme.service_price_id,
+                'service_item': scheme.service_item_id,
                 'est_qty': '8.00',
                 'active_modifiers': ['overtime'],
             },
             format='json',
         )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['service_price'], scheme.service_price_id)
+        self.assertEqual(response.data['service_item'], scheme.service_item_id)
         self.assertEqual(response.data['est_qty'], '8.00')
         self.assertEqual(response.data['active_modifiers'], ['overtime'])
 
@@ -386,17 +386,17 @@ class AddFromTemplateTest(TestCase):
 
     def test_add_from_template_inherits_template_defaults_when_request_omits_billing(self):
         """When the caller doesn't send billing fields, template defaults are inherited."""
-        from apps.jobs.models import ServicePrice
+        from apps.jobs.models import ServiceItem
 
-        scheme = ServicePrice.objects.create(
-            name='Default Inheritance Test', algorithm=ServicePrice.ENTERED_QTY,
+        scheme = ServiceItem.objects.create(
+            name='Default Inheritance Test', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('45.00'), unit_label='hour',
             accounting_category=self.category,
         )
         template_with_defaults = TaskTemplate.objects.create(
             template_name='Template With Defaults',
             description='Has billing defaults',
-            service_price=scheme,
+            service_item=scheme,
             default_billable_qty=Decimal('3.0'),
             default_active_modifiers=['rush'],
         )
@@ -407,7 +407,7 @@ class AddFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['service_price'], scheme.service_price_id)
+        self.assertEqual(response.data['service_item'], scheme.service_item_id)
         self.assertEqual(response.data['est_qty'], '3.00')
         self.assertEqual(response.data['active_modifiers'], ['rush'])
 
@@ -430,22 +430,22 @@ class PlanMaterialAssignTaskApiTest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(name='c', code='ASGN-C')
-        self.scheme = ServicePrice.objects.create(
-            name='asgn-scheme', algorithm=ServicePrice.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='asgn-scheme', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.task_a = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='A',
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='B',
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.other_ws = EstWorksheet.objects.create(job=self.job)
         self.other_task = PlanTask.objects.create(
             est_worksheet=self.other_ws, name='Other',
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.material = PlanMaterial.objects.create(
             est_worksheet=self.worksheet, plan_task=self.task_a,

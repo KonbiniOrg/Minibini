@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, ServicePrice
+from apps.jobs.models import Job, Task, ServiceItem
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -80,10 +80,10 @@ class CollectIfFinishedTest(TestCase):
     # --- consume must NOT delete (reversibility) ---
 
     def test_consume_does_not_delete_so_unconsume_works(self):
-        scheme = ServicePrice.objects.create(
-            name='S', algorithm=ServicePrice.FLAT_FEE, rate=1, unit_label='ea',
+        scheme = ServiceItem.objects.create(
+            name='S', algorithm=ServiceItem.FLAT_FEE, rate=1, unit_label='ea',
             accounting_category=self.cat)
-        task = Task.objects.create(job=self.job, name='t', service_price=scheme)
+        task = Task.objects.create(job=self.job, name='t', service_item=scheme)
         it = self._item(code='C1', is_catalog=False, qty_on_hand=Decimal('5.00'))
         m = Material.objects.create(
             job=self.job, task=task, inventory_item=it,

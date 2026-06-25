@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from django.contrib.auth.models import Permission
 from apps.core.models import AccountingCategory, User, InventoryHistory
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, ServicePrice
+from apps.jobs.models import Job, Task, ServiceItem
 from apps.inventory.models import InventoryItem, Earmark, Material
 from apps.inventory.services import InventoryService
 
@@ -34,10 +34,10 @@ class MergeServiceTest(TestCase):
         self.assertFalse(InventoryItem.objects.filter(pk=self.discard.pk).exists())
 
     def test_merge_repoints_materials(self):
-        scheme = ServicePrice.objects.create(
-            name='S', algorithm=ServicePrice.FLAT_FEE, rate=1, unit_label='ea',
+        scheme = ServiceItem.objects.create(
+            name='S', algorithm=ServiceItem.FLAT_FEE, rate=1, unit_label='ea',
             accounting_category=self.cat)
-        task = Task.objects.create(job=self.job, name='t', service_price=scheme)
+        task = Task.objects.create(job=self.job, name='t', service_item=scheme)
         m = Material.objects.create(
             job=self.job, task=task, inventory_item=self.discard,
             description='x', quantity=Decimal('1'))

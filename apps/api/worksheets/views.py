@@ -42,7 +42,7 @@ class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanT
         qs = super().get_queryset().prefetch_related(
             Prefetch(
                 'plan_tasks',
-                queryset=PlanTask.objects.select_related('service_price').order_by('sort_order'),
+                queryset=PlanTask.objects.select_related('service_item').order_by('sort_order'),
             )
         )
         job = self.request.query_params.get('job')
@@ -104,7 +104,7 @@ class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanT
         worksheet = self.get_object()
         task_template_id = request.data.get('task_template_id')
         est_qty = request.data.get('est_qty')
-        service_price = request.data.get('service_price')
+        service_item = request.data.get('service_item')
         active_modifiers = request.data.get('active_modifiers')
         est_worker_time = request.data.get('est_worker_time')
         name = request.data.get('name') or None
@@ -119,7 +119,7 @@ class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanT
             task = WorksheetService.add_task_from_template(
                 worksheet.pk,
                 task_template_id,
-                service_price_id=int(service_price) if service_price else None,
+                service_item_id=int(service_item) if service_item else None,
                 active_modifiers=active_modifiers,
                 est_qty=(
                     Decimal(str(est_qty))

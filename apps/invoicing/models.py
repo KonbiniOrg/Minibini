@@ -139,7 +139,7 @@ class InvoiceLineItem(BaseLineItem):
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
     adjustment_service = models.ForeignKey(
-        'jobs.ServicePrice', on_delete=models.PROTECT,
+        'jobs.ServiceItem', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
     )

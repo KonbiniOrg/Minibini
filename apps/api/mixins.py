@@ -321,7 +321,7 @@ class PlanTaskMixin:
             from apps.jobs.models import PlanTask
             tasks = PlanTask.objects.filter(
                 est_worksheet=worksheet,
-            ).select_related('service_price').order_by('sort_order')
+            ).select_related('service_item').order_by('sort_order')
             serializer = self.plan_task_serializer_class(tasks, many=True)
             return Response(serializer.data)
 
@@ -377,13 +377,13 @@ class JobTaskMixin:
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
-        from apps.jobs.models import ServicePrice
+        from apps.jobs.models import ServiceItem
         data = request.data
         try:
             task = TaskService.create_direct(
                 job,
                 name=data.get('name', ''),
-                service_price_id=data.get('service_price'),
+                service_item_id=data.get('service_item'),
                 active_modifiers=data.get('active_modifiers') or [],
                 est_qty=data.get('est_qty'),
                 est_worker_time=data.get('est_worker_time'),
@@ -392,9 +392,9 @@ class JobTaskMixin:
                 parent_task_id=data.get('parent_task'),
                 assignee_id=data.get('assignee'),
             )
-        except ServicePrice.DoesNotExist:
+        except ServiceItem.DoesNotExist:
             return Response(
-                {'detail': {'service_price': 'ServicePrice not found.'}},
+                {'detail': {'service_item': 'ServiceItem not found.'}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except ValidationError as e:

@@ -17,8 +17,8 @@ class NealsFixtureLoadTest(TestCase):
         # FK / field / schema mismatch.
         call_command('loaddata', FIXTURE, verbosity=0)
         self.assertGreater(Job.objects.count(), 0)
-        # every Task has a service_price (it is a NOT NULL FK)
-        self.assertEqual(Task.objects.filter(service_price__isnull=True).count(), 0)
+        # every Task has a service_item (it is a NOT NULL FK)
+        self.assertEqual(Task.objects.filter(service_item__isnull=True).count(), 0)
         # every Job with a non-draft estimate has at least one Deliverable
         for est in Estimate.objects.exclude(status='draft'):
             self.assertTrue(

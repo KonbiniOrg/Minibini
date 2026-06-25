@@ -8,7 +8,7 @@ from apps.core.models import AccountingCategory, Configuration, User, AppState
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import Job, PlanTask, ServicePrice
+from apps.jobs.models import Job, PlanTask, ServiceItem
 
 
 class EstimateWizardAPITest(TestCase):
@@ -30,13 +30,13 @@ class EstimateWizardAPITest(TestCase):
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServicePrice.objects.create(
-            name='Hourly', algorithm=ServicePrice.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            service_price=self.scheme, est_qty=Decimal('2'),
+            service_item=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -137,13 +137,13 @@ class SendAllAtomsAPITest(TestCase):
         self.client.login(username='u', password='p')
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServicePrice.objects.create(
-            name='Hourly', algorithm=ServicePrice.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            service_price=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_send_all_creates_estimate_and_line_items(self):
@@ -184,9 +184,9 @@ class SendAllAtomsAPITest(TestCase):
         self.assertEqual(first['estimate_id'], second['estimate_id'])
 
     def test_plan_task_create_via_api_includes_billing(self):
-        from apps.jobs.models import ServicePrice
-        scheme = ServicePrice.objects.create(
-            name='Test', algorithm=ServicePrice.ENTERED_QTY,
+        from apps.jobs.models import ServiceItem
+        scheme = ServiceItem.objects.create(
+            name='Test', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('30.00'), unit_label='hour',
             accounting_category=self.cat,
         )
@@ -196,7 +196,7 @@ class SendAllAtomsAPITest(TestCase):
                 'name': 'Test Task',
                 'description': '',
                 'accounting_category': None,
-                'service_price': scheme.pk,
+                'service_item': scheme.pk,
                 'active_modifiers': [],
                 'est_qty': '4.5',
             },

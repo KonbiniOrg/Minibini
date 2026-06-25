@@ -27,7 +27,7 @@ class OpenShiftEnclosesBlepTest(BaseTestCase):
         self.user = User.objects.get(pk=self.user.pk)
         self.client.force_authenticate(user=self.user)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_price_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
 
     def test_open_shift_encloses_blep_pure(self):
         now = timezone.now()

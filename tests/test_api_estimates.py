@@ -264,9 +264,9 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
 
     def test_adjustment_line_endpoints(self):
         from decimal import Decimal
-        from apps.jobs.models import ServicePrice
-        rush = ServicePrice.objects.create(
-            name='Rush', algorithm=ServicePrice.PERCENTAGE,
+        from apps.jobs.models import ServiceItem
+        rush = ServiceItem.objects.create(
+            name='Rush', algorithm=ServiceItem.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%',
             accounting_category=self.labor,
         )
@@ -286,9 +286,9 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
     def test_adjustment_line_recalculate_409_on_non_draft(self):
         """recalculate returns 409 when the estimate is not a draft."""
         from decimal import Decimal
-        from apps.jobs.models import ServicePrice
-        rush = ServicePrice.objects.create(
-            name='Rush4', algorithm=ServicePrice.PERCENTAGE,
+        from apps.jobs.models import ServiceItem
+        rush = ServiceItem.objects.create(
+            name='Rush4', algorithm=ServiceItem.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.labor,
         )

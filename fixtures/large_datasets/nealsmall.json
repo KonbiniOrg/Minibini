@@ -254,7 +254,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 1,
     "fields": {
       "name": "CNC routing",
@@ -295,7 +295,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 2,
     "fields": {
       "name": "CAD",
@@ -310,7 +310,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 3,
     "fields": {
       "name": "Laser",
@@ -336,7 +336,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 4,
     "fields": {
       "name": "Shop labor (v1)",
@@ -351,7 +351,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 5,
     "fields": {
       "name": "Design/Consultation",
@@ -366,7 +366,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 6,
     "fields": {
       "name": "Delivery1",
@@ -381,7 +381,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 7,
     "fields": {
       "name": "Shop labor",
@@ -396,7 +396,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 8,
     "fields": {
       "name": "SUB",
@@ -19745,7 +19745,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 9,
     "fields": {
       "name": "Flat Fee $110.00",
@@ -19764,7 +19764,7 @@
     "pk": 1,
     "fields": {
       "est_worksheet": 1,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -19787,7 +19787,7 @@
     "pk": 2,
     "fields": {
       "est_worksheet": 1,
-      "service_price": 3,
+      "service_item": 3,
       "name": "Laser cut sunburst pattern from 1/4\" BB ply\nMask first if needed to reduce scorching",
       "description": "Laser cut sunburst pattern from 1/4\" BB ply\nMask first if needed to reduce scorching",
       "est_qty": "1.00",
@@ -19855,7 +19855,7 @@
     "pk": 3,
     "fields": {
       "est_worksheet": 2,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting fr more info from customer",
       "description": "waiting fr more info from customer",
       "est_qty": "1.00",
@@ -19911,7 +19911,7 @@
     "pk": 4,
     "fields": {
       "est_worksheet": 4,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -19934,7 +19934,7 @@
     "pk": 5,
     "fields": {
       "est_worksheet": 4,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut and construct door, 80\" x 30\", from 2 panels of 3/4\" maple ply and splined end strips of solid maple, with 1/4\" deep groove on one side",
       "description": "Cut and construct door, 80\" x 30\", from 2 panels of 3/4\" maple ply and splined end strips of solid maple, with 1/4\" deep groove on one side",
       "est_qty": "2.00",
@@ -20026,7 +20026,7 @@
     "pk": 6,
     "fields": {
       "est_worksheet": 5,
-      "service_price": 2,
+      "service_item": 2,
       "name": "compare sample door to our model",
       "description": "compare sample door to our model",
       "est_qty": "1.00",
@@ -20040,7 +20040,7 @@
     "pk": 7,
     "fields": {
       "est_worksheet": 5,
-      "service_price": 7,
+      "service_item": 7,
       "name": "work up pricing for 6 sheets of 5x10 (30 doors, 5/sheet)",
       "description": "work up pricing for 6 sheets of 5x10 (30 doors, 5/sheet)",
       "est_qty": "1.00",
@@ -20054,7 +20054,7 @@
     "pk": 8,
     "fields": {
       "est_worksheet": 5,
-      "service_price": 7,
+      "service_item": 7,
       "name": "work up pricing for 8 sheets of 4x8 (32 doors, 4/sheet)",
       "description": "work up pricing for 8 sheets of 4x8 (32 doors, 4/sheet)",
       "est_qty": "1.00",
@@ -20081,7 +20081,7 @@
     "pk": 1,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "1.70",
@@ -20103,7 +20103,7 @@
     "pk": 2,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "2.00",
@@ -20125,7 +20125,7 @@
     "pk": 3,
     "fields": {
       "job": 6,
-      "service_price": 2,
+      "service_item": 2,
       "name": "draw 3d model & detail for cutting",
       "description": "draw 3d model & detail for cutting",
       "est_qty": "2.70",
@@ -20147,7 +20147,7 @@
     "pk": 4,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 1\" MDF",
       "description": "get 1\" MDF",
       "est_qty": "2.70",
@@ -20169,7 +20169,7 @@
     "pk": 5,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.30",
@@ -20191,7 +20191,7 @@
     "pk": 6,
     "fields": {
       "job": 6,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut 1 prototype",
       "description": "cut 1 prototype",
       "est_qty": "3.00",
@@ -20213,7 +20213,7 @@
     "pk": 7,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "construct 1 prototype",
       "description": "construct 1 prototype",
       "est_qty": "2.00",
@@ -20235,7 +20235,7 @@
     "pk": 8,
     "fields": {
       "job": 6,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut 4 more",
       "description": "cut 4 more",
       "est_qty": "10.00",
@@ -20257,7 +20257,7 @@
     "pk": 9,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "construct 4 more",
       "description": "construct 4 more",
       "est_qty": "2.90",
@@ -20279,7 +20279,7 @@
     "pk": 10,
     "fields": {
       "job": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recut buttons",
       "description": "recut buttons",
       "est_qty": "1.50",
@@ -20322,7 +20322,7 @@
     "pk": 9,
     "fields": {
       "est_worksheet": 6,
-      "service_price": 7,
+      "service_item": 7,
       "name": "needs a call (from R and/or G) or they can drop by to discuss materials for their spinning tops",
       "description": "needs a call (from R and/or G) or they can drop by to discuss materials for their spinning tops",
       "est_qty": "1.00",
@@ -20349,7 +20349,7 @@
     "pk": 11,
     "fields": {
       "job": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "2.70",
@@ -20371,7 +20371,7 @@
     "pk": 12,
     "fields": {
       "job": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "2.30",
@@ -20393,7 +20393,7 @@
     "pk": 13,
     "fields": {
       "job": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get material (edit me)",
       "description": "get material (edit me)",
       "est_qty": "1.00",
@@ -20415,7 +20415,7 @@
     "pk": 14,
     "fields": {
       "job": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.30",
@@ -20437,7 +20437,7 @@
     "pk": 15,
     "fields": {
       "job": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.20",
@@ -20510,7 +20510,7 @@
     "pk": 16,
     "fields": {
       "job": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "needs cut sheets",
       "description": "needs cut sheets",
       "est_qty": "3.70",
@@ -20532,7 +20532,7 @@
     "pk": 17,
     "fields": {
       "job": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "confirm they want C & D now or if those should wait",
       "description": "confirm they want C & D now or if those should wait",
       "est_qty": "3.00",
@@ -20554,7 +20554,7 @@
     "pk": 18,
     "fields": {
       "job": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Balance remaining from 07863 is added into this job",
       "description": "Balance remaining from 07863 is added into this job",
       "est_qty": "1.10",
@@ -20597,7 +20597,7 @@
     "pk": 10,
     "fields": {
       "est_worksheet": 7,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -20620,7 +20620,7 @@
     "pk": 11,
     "fields": {
       "est_worksheet": 7,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut part from 1/8\" FR4",
       "description": "Cut part from 1/8\" FR4",
       "est_qty": "1.00",
@@ -20643,7 +20643,7 @@
     "pk": 12,
     "fields": {
       "est_worksheet": 7,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut part from 1/8\" FR4",
       "description": "Cut part from 1/8\" FR4",
       "est_qty": "5.00",
@@ -20666,7 +20666,7 @@
     "pk": 13,
     "fields": {
       "est_worksheet": 7,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut part from 1/8\" FR4",
       "description": "Cut part from 1/8\" FR4",
       "est_qty": "100.00",
@@ -20702,7 +20702,7 @@
     "pk": 19,
     "fields": {
       "job": 11,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.77",
@@ -20724,7 +20724,7 @@
     "pk": 20,
     "fields": {
       "job": 11,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "3.50",
@@ -20767,7 +20767,7 @@
     "pk": 14,
     "fields": {
       "est_worksheet": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "R + G review",
       "description": "R + G review",
       "est_qty": "1.00",
@@ -20781,7 +20781,7 @@
     "pk": 15,
     "fields": {
       "est_worksheet": 8,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reply about materials",
       "description": "reply about materials",
       "est_qty": "1.00",
@@ -20795,7 +20795,7 @@
     "pk": 16,
     "fields": {
       "est_worksheet": 8,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut left a sample color of powder coated for matching",
       "description": "cut left a sample color of powder coated for matching",
       "est_qty": "1.00",
@@ -20830,7 +20830,7 @@
     "pk": 17,
     "fields": {
       "est_worksheet": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "R + G review",
       "description": "R + G review",
       "est_qty": "1.00",
@@ -20844,7 +20844,7 @@
     "pk": 18,
     "fields": {
       "est_worksheet": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for customer to send STEP files or otherwise respond",
       "description": "wait for customer to send STEP files or otherwise respond",
       "est_qty": "1.00",
@@ -20858,7 +20858,7 @@
     "pk": 19,
     "fields": {
       "est_worksheet": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "R zoom on Friday",
       "description": "R zoom on Friday",
       "est_qty": "1.00",
@@ -20872,7 +20872,7 @@
     "pk": 20,
     "fields": {
       "est_worksheet": 9,
-      "service_price": 7,
+      "service_item": 7,
       "name": "see notes; work up estimate next week",
       "description": "see notes; work up estimate next week",
       "est_qty": "1.00",
@@ -20899,7 +20899,7 @@
     "pk": 21,
     "fields": {
       "job": 14,
-      "service_price": 7,
+      "service_item": 7,
       "name": "maybe a 5-axis project when that's online",
       "description": "maybe a 5-axis project when that's online",
       "est_qty": "0.54",
@@ -20942,7 +20942,7 @@
     "pk": 21,
     "fields": {
       "est_worksheet": 10,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for files",
       "description": "wait for files",
       "est_qty": "1.00",
@@ -20969,7 +20969,7 @@
     "pk": 22,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send partial est for BB cab parts & diff mat'l prices",
       "description": "send partial est for BB cab parts & diff mat'l prices",
       "est_qty": "2.50",
@@ -20991,7 +20991,7 @@
     "pk": 23,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for bamboo countertop files",
       "description": "wait for bamboo countertop files",
       "est_qty": "0.74",
@@ -21013,7 +21013,7 @@
     "pk": 24,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv for prefin",
       "description": "send material dep inv for prefin",
       "est_qty": "2.90",
@@ -21035,7 +21035,7 @@
     "pk": 25,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "0.85",
@@ -21057,7 +21057,7 @@
     "pk": 26,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 7 sheets of 3/4\" prefin baltic birch BB/BB - order when bamboo arrives",
       "description": "get 7 sheets of 3/4\" prefin baltic birch BB/BB - order when bamboo arrives",
       "est_qty": "2.60",
@@ -21079,7 +21079,7 @@
     "pk": 27,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for cust to bring bamboo 5/14 around 11:30",
       "description": "wait for cust to bring bamboo 5/14 around 11:30",
       "est_qty": "1.10",
@@ -21101,7 +21101,7 @@
     "pk": 28,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.50",
@@ -21123,7 +21123,7 @@
     "pk": 29,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "2.60",
@@ -21145,7 +21145,7 @@
     "pk": 30,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "cust wants the drops",
       "description": "cust wants the drops",
       "est_qty": "2.00",
@@ -21167,7 +21167,7 @@
     "pk": 31,
     "fields": {
       "job": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "hoping to p/u 5/21",
       "description": "hoping to p/u 5/21",
       "est_qty": "0.67",
@@ -21229,7 +21229,7 @@
     "pk": 22,
     "fields": {
       "est_worksheet": 11,
-      "service_price": 7,
+      "service_item": 7,
       "name": "minimum?",
       "description": "minimum?",
       "est_qty": "1.00",
@@ -21256,7 +21256,7 @@
     "pk": 32,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 4x 1x12x8' pine planks",
       "description": "get 4x 1x12x8' pine planks",
       "est_qty": "3.80",
@@ -21278,7 +21278,7 @@
     "pk": 33,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "make test cuts to determine proper ramikin depth",
       "description": "make test cuts to determine proper ramikin depth",
       "est_qty": "0.76",
@@ -21300,7 +21300,7 @@
     "pk": 34,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send photos to Indica",
       "description": "send photos to Indica",
       "est_qty": "0.95",
@@ -21322,7 +21322,7 @@
     "pk": 35,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.30",
@@ -21344,7 +21344,7 @@
     "pk": 36,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "0.98",
@@ -21366,7 +21366,7 @@
     "pk": 37,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "9/16\" pocket depth",
       "description": "9/16\" pocket depth",
       "est_qty": "3.30",
@@ -21388,7 +21388,7 @@
     "pk": 38,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "stain finished parts black",
       "description": "stain finished parts black",
       "est_qty": "2.50",
@@ -21410,7 +21410,7 @@
     "pk": 39,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "apply a matte finish?  they said matte black and wipeable, \"somewhat food-safe\"",
       "description": "apply a matte finish?  they said matte black and wipeable, \"somewhat food-safe\"",
       "est_qty": "2.70",
@@ -21432,7 +21432,7 @@
     "pk": 40,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recut from black MDF",
       "description": "recut from black MDF",
       "est_qty": "0.52",
@@ -21454,7 +21454,7 @@
     "pk": 41,
     "fields": {
       "job": 18,
-      "service_price": 7,
+      "service_item": 7,
       "name": "apply linseed oil to MDF parts",
       "description": "apply linseed oil to MDF parts",
       "est_qty": "1.10",
@@ -21489,7 +21489,7 @@
     "pk": 42,
     "fields": {
       "job": 19,
-      "service_price": 7,
+      "service_item": 7,
       "name": "#3 and #4 need ASAP",
       "description": "#3 and #4 need ASAP",
       "est_qty": "2.00",
@@ -21511,7 +21511,7 @@
     "pk": 43,
     "fields": {
       "job": 19,
-      "service_price": 7,
+      "service_item": 7,
       "name": "canvas provided by customer",
       "description": "canvas provided by customer",
       "est_qty": "1.10",
@@ -21533,7 +21533,7 @@
     "pk": 44,
     "fields": {
       "job": 19,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.40",
@@ -21555,7 +21555,7 @@
     "pk": 45,
     "fields": {
       "job": 19,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "3.80",
@@ -21598,7 +21598,7 @@
     "pk": 23,
     "fields": {
       "est_worksheet": 12,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting if $300 min is ok",
       "description": "waiting if $300 min is ok",
       "est_qty": "1.00",
@@ -21625,7 +21625,7 @@
     "pk": 46,
     "fields": {
       "job": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "will send files 4/29",
       "description": "will send files 4/29",
       "est_qty": "2.10",
@@ -21647,7 +21647,7 @@
     "pk": 47,
     "fields": {
       "job": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "material provided by customer",
       "description": "material provided by customer",
       "est_qty": "3.90",
@@ -21669,7 +21669,7 @@
     "pk": 48,
     "fields": {
       "job": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.90",
@@ -21691,7 +21691,7 @@
     "pk": 49,
     "fields": {
       "job": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "2.10",
@@ -21734,7 +21734,7 @@
     "pk": 24,
     "fields": {
       "est_worksheet": 13,
-      "service_price": 7,
+      "service_item": 7,
       "name": "she will set up meeting with furniture design expert",
       "description": "she will set up meeting with furniture design expert",
       "est_qty": "1.00",
@@ -21761,7 +21761,7 @@
     "pk": 50,
     "fields": {
       "job": 23,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "0.93",
@@ -21783,7 +21783,7 @@
     "pk": 51,
     "fields": {
       "job": 23,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "3.60",
@@ -21805,7 +21805,7 @@
     "pk": 52,
     "fields": {
       "job": 23,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 2 sheets of 1/2\" baltic birch and 1 sheet of 3/4\" baltic birch",
       "description": "get 2 sheets of 1/2\" baltic birch and 1 sheet of 3/4\" baltic birch",
       "est_qty": "3.90",
@@ -21827,7 +21827,7 @@
     "pk": 53,
     "fields": {
       "job": 23,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.90",
@@ -21849,7 +21849,7 @@
     "pk": 54,
     "fields": {
       "job": 23,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "2.40",
@@ -21930,7 +21930,7 @@
     "pk": 25,
     "fields": {
       "est_worksheet": 14,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for files",
       "description": "waiting for files",
       "est_qty": "1.00",
@@ -21965,7 +21965,7 @@
     "pk": 26,
     "fields": {
       "est_worksheet": 15,
-      "service_price": 7,
+      "service_item": 7,
       "name": "G calll",
       "description": "G calll",
       "est_qty": "1.00",
@@ -21979,7 +21979,7 @@
     "pk": 27,
     "fields": {
       "est_worksheet": 15,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for STEP files",
       "description": "waiting for STEP files",
       "est_qty": "1.00",
@@ -22014,7 +22014,7 @@
     "pk": 28,
     "fields": {
       "est_worksheet": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get back to cust abt material choice and est",
       "description": "get back to cust abt material choice and est",
       "est_qty": "1.00",
@@ -22028,7 +22028,7 @@
     "pk": 29,
     "fields": {
       "est_worksheet": 16,
-      "service_price": 7,
+      "service_item": 7,
       "name": "create file",
       "description": "create file",
       "est_qty": "1.00",
@@ -22087,7 +22087,7 @@
     "pk": 30,
     "fields": {
       "est_worksheet": 17,
-      "service_price": 7,
+      "service_item": 7,
       "name": "cust called Friday",
       "description": "cust called Friday",
       "est_qty": "1.00",
@@ -22101,7 +22101,7 @@
     "pk": 31,
     "fields": {
       "est_worksheet": 17,
-      "service_price": 7,
+      "service_item": 7,
       "name": "L prepped-ish the est and put files in folder",
       "description": "L prepped-ish the est and put files in folder",
       "est_qty": "1.00",
@@ -22115,7 +22115,7 @@
     "pk": 32,
     "fields": {
       "est_worksheet": 17,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for customer to respond",
       "description": "waiting for customer to respond",
       "est_qty": "1.00",
@@ -22129,7 +22129,7 @@
     "pk": 33,
     "fields": {
       "est_worksheet": 17,
-      "service_price": 7,
+      "service_item": 7,
       "name": "need 31 sheets (",
       "description": "need 31 sheets (",
       "est_qty": "1.00",
@@ -22156,7 +22156,7 @@
     "pk": 55,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reisue est with painting",
       "description": "reisue est with painting",
       "est_qty": "2.30",
@@ -22178,7 +22178,7 @@
     "pk": 56,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 2 sheets of 3/4\" acx",
       "description": "get 2 sheets of 3/4\" acx",
       "est_qty": "0.79",
@@ -22200,7 +22200,7 @@
     "pk": 57,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.90",
@@ -22222,7 +22222,7 @@
     "pk": 58,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get gallon of paint (see est for paint specifications)",
       "description": "get gallon of paint (see est for paint specifications)",
       "est_qty": "2.90",
@@ -22244,7 +22244,7 @@
     "pk": 59,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "0.70",
@@ -22266,7 +22266,7 @@
     "pk": 60,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint before cutting",
       "description": "paint before cutting",
       "est_qty": "2.30",
@@ -22288,7 +22288,7 @@
     "pk": 61,
     "fields": {
       "job": 28,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut",
       "description": "cut",
       "est_qty": "5.00",
@@ -22310,7 +22310,7 @@
     "pk": 62,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint edges",
       "description": "paint edges",
       "est_qty": "1.20",
@@ -22332,7 +22332,7 @@
     "pk": 63,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "cust dropping off panels to get threaded inserts",
       "description": "cust dropping off panels to get threaded inserts",
       "est_qty": "2.70",
@@ -22354,7 +22354,7 @@
     "pk": 64,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy threaded inserts of apprpriate size",
       "description": "buy threaded inserts of apprpriate size",
       "est_qty": "2.20",
@@ -22376,7 +22376,7 @@
     "pk": 65,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "client will send a check",
       "description": "client will send a check",
       "est_qty": "2.80",
@@ -22398,7 +22398,7 @@
     "pk": 66,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for larger holes",
       "description": "code for larger holes",
       "est_qty": "0.92",
@@ -22420,7 +22420,7 @@
     "pk": 67,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "we have 1/4-20 T nuts; 3/8-16 are on order from Amazon to arrive Monday",
       "description": "we have 1/4-20 T nuts; 3/8-16 are on order from Amazon to arrive Monday",
       "est_qty": "2.50",
@@ -22442,7 +22442,7 @@
     "pk": 68,
     "fields": {
       "job": 28,
-      "service_price": 7,
+      "service_item": 7,
       "name": "insert threaded inserts",
       "description": "insert threaded inserts",
       "est_qty": "1.20",
@@ -22504,7 +22504,7 @@
     "pk": 34,
     "fields": {
       "est_worksheet": 18,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -22527,7 +22527,7 @@
     "pk": 35,
     "fields": {
       "est_worksheet": 18,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut SawMod custom speaker parts from 1/2\" baltic birch",
       "description": "Cut SawMod custom speaker parts from 1/2\" baltic birch",
       "est_qty": "2.00",
@@ -22595,7 +22595,7 @@
     "pk": 36,
     "fields": {
       "est_worksheet": 19,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -22618,7 +22618,7 @@
     "pk": 37,
     "fields": {
       "est_worksheet": 19,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut Sawed standard speaker parts (2) from 1/2\" baltic birch",
       "description": "Cut Sawed standard speaker parts (2) from 1/2\" baltic birch",
       "est_qty": "1.00",
@@ -22678,7 +22678,7 @@
     "pk": 69,
     "fields": {
       "job": 31,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy 4 sheets 1/2\" MDF",
       "description": "buy 4 sheets 1/2\" MDF",
       "est_qty": "1.80",
@@ -22700,7 +22700,7 @@
     "pk": 70,
     "fields": {
       "job": 31,
-      "service_price": 7,
+      "service_item": 7,
       "name": "part has 1/8\" x 3/4\" rabbet on ALL FOUR EDGES as they will wrap these with leather",
       "description": "part has 1/8\" x 3/4\" rabbet on ALL FOUR EDGES as they will wrap these with leather",
       "est_qty": "3.30",
@@ -22722,7 +22722,7 @@
     "pk": 71,
     "fields": {
       "job": 31,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.00",
@@ -22744,7 +22744,7 @@
     "pk": 72,
     "fields": {
       "job": 31,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "3.40",
@@ -22798,7 +22798,7 @@
     "pk": 73,
     "fields": {
       "job": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for quote for 1/2\" black king starboard",
       "description": "waiting for quote for 1/2\" black king starboard",
       "est_qty": "1.60",
@@ -22820,7 +22820,7 @@
     "pk": 74,
     "fields": {
       "job": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 1 sheet of black king starboard",
       "description": "get 1 sheet of black king starboard",
       "est_qty": "0.62",
@@ -22842,7 +22842,7 @@
     "pk": 75,
     "fields": {
       "job": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "SF sign and plastics miscommunicated material lead time, we are getting a refund and I reordered for piedmont plastics",
       "description": "SF sign and plastics miscommunicated material lead time, we are getting a refund and I reordered for piedmont plastics",
       "est_qty": "0.56",
@@ -22864,7 +22864,7 @@
     "pk": 76,
     "fields": {
       "job": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for material to arrive 5/8",
       "description": "waiting for material to arrive 5/8",
       "est_qty": "1.70",
@@ -22886,7 +22886,7 @@
     "pk": 77,
     "fields": {
       "job": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.50",
@@ -22908,7 +22908,7 @@
     "pk": 78,
     "fields": {
       "job": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.60",
@@ -22970,7 +22970,7 @@
     "pk": 38,
     "fields": {
       "est_worksheet": 20,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Waiting on cables from cust to verify channel size",
       "description": "Waiting on cables from cust to verify channel size",
       "est_qty": "1.00",
@@ -22984,7 +22984,7 @@
     "pk": 39,
     "fields": {
       "est_worksheet": 20,
-      "service_price": 7,
+      "service_item": 7,
       "name": "cust wants an evaluation piece first - mod this job to be the test cut and we'll make a new one for the final parts later",
       "description": "cust wants an evaluation piece first - mod this job to be the test cut and we'll make a new one for the final parts later",
       "est_qty": "1.00",
@@ -23043,7 +23043,7 @@
     "pk": 40,
     "fields": {
       "est_worksheet": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "EST NEEDS TO BE SENT 4/20 BY EOD",
       "description": "EST NEEDS TO BE SENT 4/20 BY EOD",
       "est_qty": "1.00",
@@ -23057,7 +23057,7 @@
     "pk": 41,
     "fields": {
       "est_worksheet": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Plastics pricing came from Port, $75 delivery charge but everything is in stock",
       "description": "Plastics pricing came from Port, $75 delivery charge but everything is in stock",
       "est_qty": "1.00",
@@ -23071,7 +23071,7 @@
     "pk": 42,
     "fields": {
       "est_worksheet": 21,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Aluminum pricing came from TCI, all 6061 is in stock, no MiC-6.  Coast has none of it now but will have MiC-6 sometime in June",
       "description": "Aluminum pricing came from TCI, all 6061 is in stock, no MiC-6.  Coast has none of it now but will have MiC-6 sometime in June",
       "est_qty": "1.00",
@@ -23226,7 +23226,7 @@
     "pk": 43,
     "fields": {
       "est_worksheet": 22,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for files",
       "description": "waiting for files",
       "est_qty": "1.00",
@@ -23240,7 +23240,7 @@
     "pk": 44,
     "fields": {
       "est_worksheet": 22,
-      "service_price": 7,
+      "service_item": 7,
       "name": "G call",
       "description": "G call",
       "est_qty": "1.00",
@@ -23254,7 +23254,7 @@
     "pk": 45,
     "fields": {
       "est_worksheet": 22,
-      "service_price": 7,
+      "service_item": 7,
       "name": "needs parts late summer, wants pricing in the next few days",
       "description": "needs parts late summer, wants pricing in the next few days",
       "est_qty": "1.00",
@@ -23313,7 +23313,7 @@
     "pk": 46,
     "fields": {
       "est_worksheet": 23,
-      "service_price": 2,
+      "service_item": 2,
       "name": "CAD drawing - detailing customer's 3d model\nDesign review with customer\nUpdates from design review",
       "description": "CAD drawing - detailing customer's 3d model\nDesign review with customer\nUpdates from design review",
       "est_qty": "10.00",
@@ -23332,7 +23332,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 10,
     "fields": {
       "name": "Flat Fee $10000.00",
@@ -23351,7 +23351,7 @@
     "pk": 47,
     "fields": {
       "est_worksheet": 23,
-      "service_price": 10,
+      "service_item": 10,
       "name": "Build prototype of mock train seating booth with folding wall",
       "description": "Build prototype of mock train seating booth with folding wall",
       "est_qty": "1.00",
@@ -23411,7 +23411,7 @@
     "pk": 79,
     "fields": {
       "job": 37,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wants updated est for updated files - new material! glass-mica ceramic.  see R research",
       "description": "wants updated est for updated files - new material! glass-mica ceramic.  see R research",
       "est_qty": "2.90",
@@ -23433,7 +23433,7 @@
     "pk": 80,
     "fields": {
       "job": 37,
-      "service_price": 7,
+      "service_item": 7,
       "name": "material provided by customer",
       "description": "material provided by customer",
       "est_qty": "2.40",
@@ -23455,7 +23455,7 @@
     "pk": 81,
     "fields": {
       "job": 37,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.30",
@@ -23477,7 +23477,7 @@
     "pk": 82,
     "fields": {
       "job": 37,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "3.30",
@@ -23556,7 +23556,7 @@
     "pk": 48,
     "fields": {
       "est_worksheet": 24,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting to resend files",
       "description": "waiting to resend files",
       "est_qty": "1.00",
@@ -23583,7 +23583,7 @@
     "pk": 83,
     "fields": {
       "job": 39,
-      "service_price": 7,
+      "service_item": 7,
       "name": "use existing MDF (charge him)",
       "description": "use existing MDF (charge him)",
       "est_qty": "3.70",
@@ -23605,7 +23605,7 @@
     "pk": 84,
     "fields": {
       "job": 39,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.50",
@@ -23627,7 +23627,7 @@
     "pk": 85,
     "fields": {
       "job": 39,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "0.88",
@@ -23689,7 +23689,7 @@
     "pk": 49,
     "fields": {
       "est_worksheet": 25,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -23712,7 +23712,7 @@
     "pk": 50,
     "fields": {
       "est_worksheet": 25,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut part from 1/4\" or 3/16\" HDPE",
       "description": "Cut part from 1/4\" or 3/16\" HDPE",
       "est_qty": "1.00",
@@ -23731,7 +23731,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 11,
     "fields": {
       "name": "Flat Fee $235.00",
@@ -23750,7 +23750,7 @@
     "pk": 51,
     "fields": {
       "est_worksheet": 25,
-      "service_price": 11,
+      "service_item": 11,
       "name": "Charge to meet minimum charge of $300",
       "description": "Charge to meet minimum charge of $300",
       "est_qty": "1.00",
@@ -23818,7 +23818,7 @@
     "pk": 52,
     "fields": {
       "est_worksheet": 26,
-      "service_price": 7,
+      "service_item": 7,
       "name": "set up job- (unsure of how to file this since it is a pair design that came from company studio west)",
       "description": "set up job- (unsure of how to file this since it is a pair design that came from company studio west)",
       "est_qty": "1.00",
@@ -23853,7 +23853,7 @@
     "pk": 53,
     "fields": {
       "est_worksheet": 27,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for a STEP file for render test",
       "description": "waiting for a STEP file for render test",
       "est_qty": "1.00",
@@ -23867,7 +23867,7 @@
     "pk": 54,
     "fields": {
       "est_worksheet": 27,
-      "service_price": 7,
+      "service_item": 7,
       "name": "gerard schedule meeting for Mike Friday the 24th at 10",
       "description": "gerard schedule meeting for Mike Friday the 24th at 10",
       "est_qty": "1.00",
@@ -23881,7 +23881,7 @@
     "pk": 55,
     "fields": {
       "est_worksheet": 27,
-      "service_price": 2,
+      "service_item": 2,
       "name": "wait for drawings",
       "description": "wait for drawings",
       "est_qty": "1.00",
@@ -23916,7 +23916,7 @@
     "pk": 56,
     "fields": {
       "est_worksheet": 28,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -23939,7 +23939,7 @@
     "pk": 57,
     "fields": {
       "est_worksheet": 28,
-      "service_price": 2,
+      "service_item": 2,
       "name": "CAD drawing/designing",
       "description": "CAD drawing/designing",
       "est_qty": "4.00",
@@ -23962,7 +23962,7 @@
     "pk": 58,
     "fields": {
       "est_worksheet": 28,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cutting and assembling 10' x 8' structure with intricate patterns on vertical posts",
       "description": "Cutting and assembling 10' x 8' structure with intricate patterns on vertical posts",
       "est_qty": "1.00",
@@ -23981,7 +23981,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 12,
     "fields": {
       "name": "Flat Fee $1500.00",
@@ -24000,7 +24000,7 @@
     "pk": 59,
     "fields": {
       "est_worksheet": 28,
-      "service_price": 12,
+      "service_item": 12,
       "name": "Materials TBD\n**ESTIMATED PRICE**",
       "description": "Materials TBD\n**ESTIMATED PRICE**",
       "est_qty": "1.00",
@@ -24036,7 +24036,7 @@
     "pk": 86,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "figure out this goddam marmoleum!",
       "description": "figure out this goddam marmoleum!",
       "est_qty": "3.20",
@@ -24058,7 +24058,7 @@
     "pk": 87,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "work out material order, there are a bunch of different finishes",
       "description": "work out material order, there are a bunch of different finishes",
       "est_qty": "1.60",
@@ -24080,7 +24080,7 @@
     "pk": 88,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "0.54",
@@ -24102,7 +24102,7 @@
     "pk": 89,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "3.40",
@@ -24124,7 +24124,7 @@
     "pk": 90,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "finalize Royal Plywood order (check overages from last set of booths)",
       "description": "finalize Royal Plywood order (check overages from last set of booths)",
       "est_qty": "2.80",
@@ -24146,7 +24146,7 @@
     "pk": 91,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.30",
@@ -24168,7 +24168,7 @@
     "pk": 92,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "3.50",
@@ -24190,7 +24190,7 @@
     "pk": 93,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "add invoice for sheet of black laminate",
       "description": "add invoice for sheet of black laminate",
       "est_qty": "2.70",
@@ -24212,7 +24212,7 @@
     "pk": 94,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "determine if we need to order more marmoleum WE HAVE (18' 9\")",
       "description": "determine if we need to order more marmoleum WE HAVE (18' 9\")",
       "est_qty": "1.90",
@@ -24234,7 +24234,7 @@
     "pk": 95,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "asked Royal when the backordered layups will be here",
       "description": "asked Royal when the backordered layups will be here",
       "est_qty": "3.40",
@@ -24256,7 +24256,7 @@
     "pk": 96,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "inventory what we have cut",
       "description": "inventory what we have cut",
       "est_qty": "1.60",
@@ -24278,7 +24278,7 @@
     "pk": 97,
     "fields": {
       "job": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "ask if they want to pick up partial",
       "description": "ask if they want to pick up partial",
       "est_qty": "3.30",
@@ -24296,7 +24296,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 13,
     "fields": {
       "name": "Flat Fee $600.00",
@@ -24315,7 +24315,7 @@
     "pk": 98,
     "fields": {
       "job": 44,
-      "service_price": 13,
+      "service_item": 13,
       "name": "Prepare two-lam stock for cutting M58 roofs:\n* cut black lam and mirror lam to approximate size using 1/8\" bit (dimensions are very tight)\n* cut 5x10 single-sided layup in half\n* Apply black and mirror laminates to blank side of each cut half, butt joinin",
       "description": "Prepare two-lam stock for cutting M58 roofs:\n* cut black lam and mirror lam to approximate size using 1/8\" bit (dimensions are very tight)\n* cut 5x10 single-sided layup in half\n* Apply black and mirror laminates to blank side of each cut half, butt joining where they meet",
       "est_qty": "1.00",
@@ -24333,7 +24333,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 14,
     "fields": {
       "name": "Flat Fee $200.00",
@@ -24352,7 +24352,7 @@
     "pk": 99,
     "fields": {
       "job": 44,
-      "service_price": 14,
+      "service_item": 14,
       "name": "Prepare stock for M67 floors: apply marmoleum to part of 1 side of 5x10 stock and black laminate to the other",
       "description": "Prepare stock for M67 floors: apply marmoleum to part of 1 side of 5x10 stock and black laminate to the other",
       "est_qty": "2.00",
@@ -24374,7 +24374,7 @@
     "pk": 100,
     "fields": {
       "job": 44,
-      "service_price": 14,
+      "service_item": 14,
       "name": "Prepare stock for M58 floors: apply marmoleum to one side of 5x10 stock and black laminate to the other",
       "description": "Prepare stock for M58 floors: apply marmoleum to one side of 5x10 stock and black laminate to the other",
       "est_qty": "1.00",
@@ -24753,7 +24753,7 @@
     "pk": 60,
     "fields": {
       "est_worksheet": 29,
-      "service_price": 2,
+      "service_item": 2,
       "name": "send est (jan pls help converting ai file to bring to auocad)",
       "description": "send est (jan pls help converting ai file to bring to auocad)",
       "est_qty": "1.00",
@@ -24780,7 +24780,7 @@
     "pk": 101,
     "fields": {
       "job": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 4 3/4\" amber plyboo",
       "description": "get 4 3/4\" amber plyboo",
       "est_qty": "2.50",
@@ -24802,7 +24802,7 @@
     "pk": 102,
     "fields": {
       "job": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.70",
@@ -24824,7 +24824,7 @@
     "pk": 103,
     "fields": {
       "job": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.10",
@@ -24846,7 +24846,7 @@
     "pk": 104,
     "fields": {
       "job": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "oil sheets b4 cutting",
       "description": "oil sheets b4 cutting",
       "est_qty": "1.80",
@@ -24868,7 +24868,7 @@
     "pk": 105,
     "fields": {
       "job": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for 4th sheet",
       "description": "wait for 4th sheet",
       "est_qty": "1.90",
@@ -24947,7 +24947,7 @@
     "pk": 61,
     "fields": {
       "est_worksheet": 30,
-      "service_price": 7,
+      "service_item": 7,
       "name": "G call",
       "description": "G call",
       "est_qty": "1.00",
@@ -24974,7 +24974,7 @@
     "pk": 106,
     "fields": {
       "job": 48,
-      "service_price": 7,
+      "service_item": 7,
       "name": "find a piece of maple",
       "description": "find a piece of maple",
       "est_qty": "2.90",
@@ -24996,7 +24996,7 @@
     "pk": 107,
     "fields": {
       "job": 48,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.30",
@@ -25018,7 +25018,7 @@
     "pk": 108,
     "fields": {
       "job": 48,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut / engrave",
       "description": "cut / engrave",
       "est_qty": "12.00",
@@ -25040,7 +25040,7 @@
     "pk": 109,
     "fields": {
       "job": 48,
-      "service_price": 7,
+      "service_item": 7,
       "name": "epoxy seal coat - do at same time as Glynn",
       "description": "epoxy seal coat - do at same time as Glynn",
       "est_qty": "1.50",
@@ -25062,7 +25062,7 @@
     "pk": 110,
     "fields": {
       "job": 48,
-      "service_price": 7,
+      "service_item": 7,
       "name": "blk epoxy in lettering - same time as Glynn",
       "description": "blk epoxy in lettering - same time as Glynn",
       "est_qty": "2.20",
@@ -25084,7 +25084,7 @@
     "pk": 111,
     "fields": {
       "job": 48,
-      "service_price": 7,
+      "service_item": 7,
       "name": "epoxy finish coat - same time as Glynn",
       "description": "epoxy finish coat - same time as Glynn",
       "est_qty": "2.20",
@@ -25127,7 +25127,7 @@
     "pk": 62,
     "fields": {
       "est_worksheet": 31,
-      "service_price": 7,
+      "service_item": 7,
       "name": "estimate for a prototype using a pre-existing box if we can find something suitable",
       "description": "estimate for a prototype using a pre-existing box if we can find something suitable",
       "est_qty": "1.00",
@@ -25162,7 +25162,7 @@
     "pk": 63,
     "fields": {
       "est_worksheet": 32,
-      "service_price": 7,
+      "service_item": 7,
       "name": "approval?",
       "description": "approval?",
       "est_qty": "1.00",
@@ -25197,7 +25197,7 @@
     "pk": 64,
     "fields": {
       "est_worksheet": 33,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for proper files",
       "description": "waiting for proper files",
       "est_qty": "1.00",
@@ -25310,7 +25310,7 @@
     "pk": 65,
     "fields": {
       "est_worksheet": 34,
-      "service_price": 7,
+      "service_item": 7,
       "name": "what weight? mostly posterboard, see notes",
       "description": "what weight? mostly posterboard, see notes",
       "est_qty": "1.00",
@@ -25324,7 +25324,7 @@
     "pk": 66,
     "fields": {
       "est_worksheet": 34,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Note that the estimate says wooden French cleats, but per the note we will use alum Z rail instead",
       "description": "Note that the estimate says wooden French cleats, but per the note we will use alum Z rail instead",
       "est_qty": "1.00",
@@ -25359,7 +25359,7 @@
     "pk": 67,
     "fields": {
       "est_worksheet": 35,
-      "service_price": 7,
+      "service_item": 7,
       "name": "$500 Rachel butt number",
       "description": "$500 Rachel butt number",
       "est_qty": "1.00",
@@ -25394,7 +25394,7 @@
     "pk": 68,
     "fields": {
       "est_worksheet": 36,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting if minimum is okay",
       "description": "waiting if minimum is okay",
       "est_qty": "1.00",
@@ -25453,7 +25453,7 @@
     "pk": 69,
     "fields": {
       "est_worksheet": 37,
-      "service_price": 7,
+      "service_item": 7,
       "name": "G review",
       "description": "G review",
       "est_qty": "1.00",
@@ -25480,7 +25480,7 @@
     "pk": 112,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "need better box built and prepped for shipping w/ packing list and shipping label",
       "description": "need better box built and prepped for shipping w/ packing list and shipping label",
       "est_qty": "2.70",
@@ -25502,7 +25502,7 @@
     "pk": 113,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "READY FOR P/U",
       "description": "READY FOR P/U",
       "est_qty": "0.78",
@@ -25524,7 +25524,7 @@
     "pk": 114,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for questions to be confirmed",
       "description": "wait for questions to be confirmed",
       "est_qty": "2.00",
@@ -25546,7 +25546,7 @@
     "pk": 115,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "work out fabric quantities needed",
       "description": "work out fabric quantities needed",
       "est_qty": "1.40",
@@ -25568,7 +25568,7 @@
     "pk": 116,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "await word on when material will arrive",
       "description": "await word on when material will arrive",
       "est_qty": "1.60",
@@ -25590,7 +25590,7 @@
     "pk": 117,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "alter recore to have 2\" radius corners, per Steve Sanchez email 3-19-26",
       "description": "alter recore to have 2\" radius corners, per Steve Sanchez email 3-19-26",
       "est_qty": "3.70",
@@ -25612,7 +25612,7 @@
     "pk": 118,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.96",
@@ -25634,7 +25634,7 @@
     "pk": 119,
     "fields": {
       "job": 56,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut fabric, send to Joanna",
       "description": "cut fabric, send to Joanna",
       "est_qty": "15.00",
@@ -25656,7 +25656,7 @@
     "pk": 120,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy 27@ 21\" blk #5 zipper",
       "description": "buy 27@ 21\" blk #5 zipper",
       "est_qty": "3.20",
@@ -25678,7 +25678,7 @@
     "pk": 121,
     "fields": {
       "job": 56,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut recore",
       "description": "cut recore",
       "est_qty": "2.00",
@@ -25700,7 +25700,7 @@
     "pk": 122,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "package in custom box",
       "description": "package in custom box",
       "est_qty": "1.30",
@@ -25722,7 +25722,7 @@
     "pk": 123,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "we received a frame, DMDiv_66-72PR, to test with.  I think this just is for recore fitting for the corner curve change",
       "description": "we received a frame, DMDiv_66-72PR, to test with.  I think this just is for recore fitting for the corner curve change",
       "est_qty": "2.80",
@@ -25744,7 +25744,7 @@
     "pk": 124,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wrap w/ packing slip",
       "description": "wrap w/ packing slip",
       "est_qty": "1.90",
@@ -25766,7 +25766,7 @@
     "pk": 125,
     "fields": {
       "job": 56,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for shipping label",
       "description": "wait for shipping label",
       "est_qty": "2.40",
@@ -25801,7 +25801,7 @@
     "pk": 126,
     "fields": {
       "job": 57,
-      "service_price": 7,
+      "service_item": 7,
       "name": "1/2\" arauco provided by customer",
       "description": "1/2\" arauco provided by customer",
       "est_qty": "1.60",
@@ -25823,7 +25823,7 @@
     "pk": 127,
     "fields": {
       "job": 57,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.40",
@@ -25845,7 +25845,7 @@
     "pk": 128,
     "fields": {
       "job": 57,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "2.10",
@@ -25880,7 +25880,7 @@
     "pk": 129,
     "fields": {
       "job": 58,
-      "service_price": 7,
+      "service_item": 7,
       "name": "check material with Uri",
       "description": "check material with Uri",
       "est_qty": "2.60",
@@ -25902,7 +25902,7 @@
     "pk": 130,
     "fields": {
       "job": 58,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting of glue-up parts",
       "description": "code for cutting of glue-up parts",
       "est_qty": "3.10",
@@ -25924,7 +25924,7 @@
     "pk": 131,
     "fields": {
       "job": 58,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.20",
@@ -25946,7 +25946,7 @@
     "pk": 132,
     "fields": {
       "job": 58,
-      "service_price": 7,
+      "service_item": 7,
       "name": "glue up parts for 3d cutting",
       "description": "glue up parts for 3d cutting",
       "est_qty": "1.90",
@@ -25968,7 +25968,7 @@
     "pk": 133,
     "fields": {
       "job": 58,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for 3d cutting",
       "description": "code for 3d cutting",
       "est_qty": "3.40",
@@ -25990,7 +25990,7 @@
     "pk": 134,
     "fields": {
       "job": 58,
-      "service_price": 7,
+      "service_item": 7,
       "name": "we waaaay undercharged, but they sent us a PO so shall I just send this as is?",
       "description": "we waaaay undercharged, but they sent us a PO so shall I just send this as is?",
       "est_qty": "2.30",
@@ -26089,7 +26089,7 @@
     "pk": 135,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Ready for P/U",
       "description": "Ready for P/U",
       "est_qty": "2.10",
@@ -26111,7 +26111,7 @@
     "pk": 136,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for them to clarify the SKUs on the PO - update our estimate and send",
       "description": "wait for them to clarify the SKUs on the PO - update our estimate and send",
       "est_qty": "2.50",
@@ -26133,7 +26133,7 @@
     "pk": 137,
     "fields": {
       "job": 59,
-      "service_price": 2,
+      "service_item": 2,
       "name": "these are custom sizes, add CAD time",
       "description": "these are custom sizes, add CAD time",
       "est_qty": "4.00",
@@ -26155,7 +26155,7 @@
     "pk": 138,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "material arriving week of Mar 30 - Apr 3",
       "description": "material arriving week of Mar 30 - Apr 3",
       "est_qty": "2.60",
@@ -26177,7 +26177,7 @@
     "pk": 139,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.40",
@@ -26199,7 +26199,7 @@
     "pk": 140,
     "fields": {
       "job": 59,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut fabric parts",
       "description": "cut fabric parts",
       "est_qty": "4.00",
@@ -26221,7 +26221,7 @@
     "pk": 141,
     "fields": {
       "job": 59,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut recore parts",
       "description": "cut recore parts",
       "est_qty": "8.00",
@@ -26243,7 +26243,7 @@
     "pk": 142,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "customer is sending more fabric",
       "description": "customer is sending more fabric",
       "est_qty": "2.10",
@@ -26265,7 +26265,7 @@
     "pk": 143,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "need 8x #5 black 37\" zippers",
       "description": "need 8x #5 black 37\" zippers",
       "est_qty": "2.90",
@@ -26287,7 +26287,7 @@
     "pk": 144,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send cut fabric and zippers to Joanna",
       "description": "send cut fabric and zippers to Joanna",
       "est_qty": "3.40",
@@ -26309,7 +26309,7 @@
     "pk": 145,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "pack in custom box if needed - practice AXYZ box cutting",
       "description": "pack in custom box if needed - practice AXYZ box cutting",
       "est_qty": "2.50",
@@ -26331,7 +26331,7 @@
     "pk": 146,
     "fields": {
       "job": 59,
-      "service_price": 7,
+      "service_item": 7,
       "name": "READY FOR P/U Mon 5/11",
       "description": "READY FOR P/U Mon 5/11",
       "est_qty": "1.30",
@@ -26366,7 +26366,7 @@
     "pk": 147,
     "fields": {
       "job": 60,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sent stmt of account 5-8-26",
       "description": "sent stmt of account 5-8-26",
       "est_qty": "2.00",
@@ -26409,7 +26409,7 @@
     "pk": 70,
     "fields": {
       "est_worksheet": 38,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting to confirm part quantities",
       "description": "waiting to confirm part quantities",
       "est_qty": "1.00",
@@ -26444,7 +26444,7 @@
     "pk": 71,
     "fields": {
       "est_worksheet": 39,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -26467,7 +26467,7 @@
     "pk": 72,
     "fields": {
       "est_worksheet": 39,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut panels from 1/2\" ply or MDF",
       "description": "Cut panels from 1/2\" ply or MDF",
       "est_qty": "1.00",
@@ -26486,7 +26486,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 15,
     "fields": {
       "name": "Flat Fee $325.00",
@@ -26505,7 +26505,7 @@
     "pk": 73,
     "fields": {
       "est_worksheet": 39,
-      "service_price": 15,
+      "service_item": 15,
       "name": "'--== RUSH +25% ==--",
       "description": "'--== RUSH +25% ==--",
       "est_qty": "0.25",
@@ -26589,7 +26589,7 @@
     "pk": 148,
     "fields": {
       "job": 63,
-      "service_price": 2,
+      "service_item": 2,
       "name": "redraw proof for approval - 3-23",
       "description": "redraw proof for approval - 3-23",
       "est_qty": "3.10",
@@ -26611,7 +26611,7 @@
     "pk": 149,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "make cardboard template 3-24",
       "description": "make cardboard template 3-24",
       "est_qty": "2.40",
@@ -26633,7 +26633,7 @@
     "pk": 150,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "show DK the template",
       "description": "show DK the template",
       "est_qty": "4.00",
@@ -26655,7 +26655,7 @@
     "pk": 151,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "make sample of 1/2\" aluinum plus scrap acrylic letter with glued off standoff",
       "description": "make sample of 1/2\" aluinum plus scrap acrylic letter with glued off standoff",
       "est_qty": "3.70",
@@ -26677,7 +26677,7 @@
     "pk": 152,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "show DK the sample alum/acrylic",
       "description": "show DK the sample alum/acrylic",
       "est_qty": "2.20",
@@ -26699,7 +26699,7 @@
     "pk": 153,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send materials deposit",
       "description": "send materials deposit",
       "est_qty": "3.00",
@@ -26721,7 +26721,7 @@
     "pk": 154,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "ask DK what thickness of HDU - give pricing for 1.5\"",
       "description": "ask DK what thickness of HDU - give pricing for 1.5\"",
       "est_qty": "2.20",
@@ -26743,7 +26743,7 @@
     "pk": 155,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for DK to come back",
       "description": "waiting for DK to come back",
       "est_qty": "2.00",
@@ -26765,7 +26765,7 @@
     "pk": 156,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy 2\" HDU (after CYC is out the shop)",
       "description": "buy 2\" HDU (after CYC is out the shop)",
       "est_qty": "1.30",
@@ -26787,7 +26787,7 @@
     "pk": 157,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for HDU",
       "description": "code for HDU",
       "est_qty": "0.76",
@@ -26809,7 +26809,7 @@
     "pk": 158,
     "fields": {
       "job": 63,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut piece",
       "description": "cut piece",
       "est_qty": "2.00",
@@ -26831,7 +26831,7 @@
     "pk": 159,
     "fields": {
       "job": 63,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint after cutting",
       "description": "paint after cutting",
       "est_qty": "3.30",
@@ -26874,7 +26874,7 @@
     "pk": 74,
     "fields": {
       "est_worksheet": 40,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send est",
       "description": "send est",
       "est_qty": "1.00",
@@ -26909,7 +26909,7 @@
     "pk": 75,
     "fields": {
       "est_worksheet": 41,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -26932,7 +26932,7 @@
     "pk": 76,
     "fields": {
       "est_worksheet": 41,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut 6 parallelogram parts from 1/2\" ply",
       "description": "Cut 6 parallelogram parts from 1/2\" ply",
       "est_qty": "1.00",
@@ -26951,7 +26951,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 16,
     "fields": {
       "name": "Flat Fee $150.00",
@@ -26970,7 +26970,7 @@
     "pk": 77,
     "fields": {
       "est_worksheet": 41,
-      "service_price": 16,
+      "service_item": 16,
       "name": "Charge to meet minimum order of $300",
       "description": "Charge to meet minimum order of $300",
       "est_qty": "1.00",
@@ -27038,7 +27038,7 @@
     "pk": 78,
     "fields": {
       "est_worksheet": 42,
-      "service_price": 9,
+      "service_item": 9,
       "name": "Setup, editing, and coding",
       "description": "Setup, editing, and coding",
       "est_qty": "1.00",
@@ -27061,7 +27061,7 @@
     "pk": 79,
     "fields": {
       "est_worksheet": 42,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut inner and outer rings from 3/4\" ply",
       "description": "Cut inner and outer rings from 3/4\" ply",
       "est_qty": "1.00",
@@ -27121,7 +27121,7 @@
     "pk": 160,
     "fields": {
       "job": 67,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for shipping label",
       "description": "waiting for shipping label",
       "est_qty": "3.20",
@@ -27143,7 +27143,7 @@
     "pk": 161,
     "fields": {
       "job": 67,
-      "service_price": 7,
+      "service_item": 7,
       "name": "look at this SKU, what even is it?  No recore involved",
       "description": "look at this SKU, what even is it?  No recore involved",
       "est_qty": "3.80",
@@ -27165,7 +27165,7 @@
     "pk": 162,
     "fields": {
       "job": 67,
-      "service_price": 7,
+      "service_item": 7,
       "name": "material arriving week of March 30-Apr 3",
       "description": "material arriving week of March 30-Apr 3",
       "est_qty": "3.80",
@@ -27187,7 +27187,7 @@
     "pk": 163,
     "fields": {
       "job": 67,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting (fabric only, no recore)",
       "description": "code for cutting (fabric only, no recore)",
       "est_qty": "3.60",
@@ -27209,7 +27209,7 @@
     "pk": 164,
     "fields": {
       "job": 67,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut fabric components, send to Joanna",
       "description": "cut fabric components, send to Joanna",
       "est_qty": "14.00",
@@ -27231,7 +27231,7 @@
     "pk": 165,
     "fields": {
       "job": 67,
-      "service_price": 7,
+      "service_item": 7,
       "name": "package, probably can fit in existing box.",
       "description": "package, probably can fit in existing box.",
       "est_qty": "3.20",
@@ -27253,7 +27253,7 @@
     "pk": 166,
     "fields": {
       "job": 67,
-      "service_price": 7,
+      "service_item": 7,
       "name": "order 32x #3 - 15\" zippers.  Find this - usu supplier has 15.25\" long!",
       "description": "order 32x #3 - 15\" zippers.  Find this - usu supplier has 15.25\" long!",
       "est_qty": "2.20",
@@ -27288,7 +27288,7 @@
     "pk": 167,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "cust. wants a site visit and possible design on the units",
       "description": "cust. wants a site visit and possible design on the units",
       "est_qty": "2.50",
@@ -27310,7 +27310,7 @@
     "pk": 168,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "site visit Wednesday 3/11 @ 4pm - see google calendar for address",
       "description": "site visit Wednesday 3/11 @ 4pm - see google calendar for address",
       "est_qty": "0.89",
@@ -27332,7 +27332,7 @@
     "pk": 169,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "G to source hinges",
       "description": "G to source hinges",
       "est_qty": "0.81",
@@ -27354,7 +27354,7 @@
     "pk": 170,
     "fields": {
       "job": 68,
-      "service_price": 2,
+      "service_item": 2,
       "name": "CAD to determine hinge placement",
       "description": "CAD to determine hinge placement",
       "est_qty": "3.30",
@@ -27376,7 +27376,7 @@
     "pk": 171,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "1.10",
@@ -27398,7 +27398,7 @@
     "pk": 172,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "0.97",
@@ -27420,7 +27420,7 @@
     "pk": 173,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 2 sheets prefin 3/4\" BB ply",
       "description": "get 2 sheets prefin 3/4\" BB ply",
       "est_qty": "1.40",
@@ -27442,7 +27442,7 @@
     "pk": 174,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "test hinge locations on 2 pc ply",
       "description": "test hinge locations on 2 pc ply",
       "est_qty": "2.20",
@@ -27464,7 +27464,7 @@
     "pk": 175,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "update hinge cutting pattern - adjust locations and add pilot holes to round pocket",
       "description": "update hinge cutting pattern - adjust locations and add pilot holes to round pocket",
       "est_qty": "1.20",
@@ -27486,7 +27486,7 @@
     "pk": 176,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "second hinge test",
       "description": "second hinge test",
       "est_qty": "3.10",
@@ -27508,7 +27508,7 @@
     "pk": 177,
     "fields": {
       "job": 68,
-      "service_price": 2,
+      "service_item": 2,
       "name": "transfer hinge cuts to 3d model",
       "description": "transfer hinge cuts to 3d model",
       "est_qty": "1.60",
@@ -27530,7 +27530,7 @@
     "pk": 178,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.60",
@@ -27552,7 +27552,7 @@
     "pk": 179,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recut backer strips 1/8\" longer for prototypes - use old too-small backs?",
       "description": "recut backer strips 1/8\" longer for prototypes - use old too-small backs?",
       "est_qty": "1.60",
@@ -27574,7 +27574,7 @@
     "pk": 180,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "assemble piece (3 hr)",
       "description": "assemble piece (3 hr)",
       "est_qty": "1.90",
@@ -27596,7 +27596,7 @@
     "pk": 181,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sanding and finishing (track time)",
       "description": "sanding and finishing (track time)",
       "est_qty": "0.73",
@@ -27618,7 +27618,7 @@
     "pk": 182,
     "fields": {
       "job": 68,
-      "service_price": 7,
+      "service_item": 7,
       "name": "update 3d file per adjustments found during install",
       "description": "update 3d file per adjustments found during install",
       "est_qty": "2.90",
@@ -27672,7 +27672,7 @@
     "pk": 183,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "work out laminating/material requirements",
       "description": "work out laminating/material requirements",
       "est_qty": "1.80",
@@ -27694,7 +27694,7 @@
     "pk": 184,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "1.50",
@@ -27716,7 +27716,7 @@
     "pk": 185,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "1.90",
@@ -27738,7 +27738,7 @@
     "pk": 186,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "order layups from Royal",
       "description": "order layups from Royal",
       "est_qty": "0.51",
@@ -27760,7 +27760,7 @@
     "pk": 187,
     "fields": {
       "job": 69,
-      "service_price": 2,
+      "service_item": 2,
       "name": "update the booth models AGAIN 3-25 R CAD 3 hr",
       "description": "update the booth models AGAIN 3-25 R CAD 3 hr",
       "est_qty": "1.80",
@@ -27782,7 +27782,7 @@
     "pk": 188,
     "fields": {
       "job": 69,
-      "service_price": 2,
+      "service_item": 2,
       "name": "meet with Max Thursday at 9:30 - 1hr meeting, 2 hr CAD",
       "description": "meet with Max Thursday at 9:30 - 1hr meeting, 2 hr CAD",
       "est_qty": "1.60",
@@ -27804,7 +27804,7 @@
     "pk": 189,
     "fields": {
       "job": 69,
-      "service_price": 2,
+      "service_item": 2,
       "name": "redo M58 booth to standardize groove depths 3hr R CAD 4-1",
       "description": "redo M58 booth to standardize groove depths 3hr R CAD 4-1",
       "est_qty": "2.40",
@@ -27826,7 +27826,7 @@
     "pk": 190,
     "fields": {
       "job": 69,
-      "service_price": 2,
+      "service_item": 2,
       "name": "redraw M67 booth to standardize groove depths 4 hr R CAD 4-2",
       "description": "redraw M67 booth to standardize groove depths 4 hr R CAD 4-2",
       "est_qty": "3.90",
@@ -27848,7 +27848,7 @@
     "pk": 191,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "figure out how to apply marmoleum given that it is 6'7\" wide and arbitrarily long",
       "description": "figure out how to apply marmoleum given that it is 6'7\" wide and arbitrarily long",
       "est_qty": "2.30",
@@ -27870,7 +27870,7 @@
     "pk": 192,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy black marmoleum sufficient for all floor tops",
       "description": "buy black marmoleum sufficient for all floor tops",
       "est_qty": "0.89",
@@ -27892,7 +27892,7 @@
     "pk": 193,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.20",
@@ -27914,7 +27914,7 @@
     "pk": 194,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "0.86",
@@ -27936,7 +27936,7 @@
     "pk": 195,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "look for black laminate drop 48x17 (8x) DON'T HAVE",
       "description": "look for black laminate drop 48x17 (8x) DON'T HAVE",
       "est_qty": "3.70",
@@ -27958,7 +27958,7 @@
     "pk": 196,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy a sheet of commodity blk lam, 4x8 is sufficient.  matte  NO I WAS WRONG need 5x10 sigh",
       "description": "buy a sheet of commodity blk lam, 4x8 is sufficient.  matte  NO I WAS WRONG need 5x10 sigh",
       "est_qty": "1.10",
@@ -27980,7 +27980,7 @@
     "pk": 197,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get a special color of masking tape for the labels; these pieces won't match with previous versions b/c CHANGES",
       "description": "get a special color of masking tape for the labels; these pieces won't match with previous versions b/c CHANGES",
       "est_qty": "3.70",
@@ -28002,7 +28002,7 @@
     "pk": 198,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy additional prelam for the piece we were short and the piece we cut wrong",
       "description": "buy additional prelam for the piece we were short and the piece we cut wrong",
       "est_qty": "2.50",
@@ -28024,7 +28024,7 @@
     "pk": 199,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "needs cut sheets for marmoleum, possibly for roofs",
       "description": "needs cut sheets for marmoleum, possibly for roofs",
       "est_qty": "3.90",
@@ -28046,7 +28046,7 @@
     "pk": 200,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "update CAM on both booths; sort out marmoleum floor process. 4 hr over several days",
       "description": "update CAM on both booths; sort out marmoleum floor process. 4 hr over several days",
       "est_qty": "2.60",
@@ -28068,7 +28068,7 @@
     "pk": 201,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "laminate for roofs",
       "description": "laminate for roofs",
       "est_qty": "1.80",
@@ -28090,7 +28090,7 @@
     "pk": 202,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "laminate marmoleum for floors",
       "description": "laminate marmoleum for floors",
       "est_qty": "1.60",
@@ -28112,7 +28112,7 @@
     "pk": 203,
     "fields": {
       "job": 69,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut roofs, floors",
       "description": "cut roofs, floors",
       "est_qty": "4.00",
@@ -28134,7 +28134,7 @@
     "pk": 204,
     "fields": {
       "job": 69,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recut 1 sheet",
       "description": "recut 1 sheet",
       "est_qty": "3.20",
@@ -28156,7 +28156,7 @@
     "pk": 205,
     "fields": {
       "job": 69,
-      "service_price": 2,
+      "service_item": 2,
       "name": "CAD time in checklist",
       "description": "CAD time in checklist",
       "est_qty": "1.50",
@@ -28178,7 +28178,7 @@
     "pk": 206,
     "fields": {
       "job": 69,
-      "service_price": 13,
+      "service_item": 13,
       "name": "Prepare two-lam stock for cutting M8 Roofs:\n* cut black lam and mirror lam to approximate size using 1/8\" bit (dimensions are very tight)\n* cut 5x10 single-sided layup in half\n* Apply black and mirror laminates to blank side of each cut half, butt joining",
       "description": "Prepare two-lam stock for cutting M8 Roofs:\n* cut black lam and mirror lam to approximate size using 1/8\" bit (dimensions are very tight)\n* cut 5x10 single-sided layup in half\n* Apply black and mirror laminates to blank side of each cut half, butt joining where they meet",
       "est_qty": "2.00",
@@ -28306,7 +28306,7 @@
     "pk": 207,
     "fields": {
       "job": 70,
-      "service_price": 2,
+      "service_item": 2,
       "name": "put hole placement and size in drawing as instructed in email",
       "description": "put hole placement and size in drawing as instructed in email",
       "est_qty": "1.00",
@@ -28328,7 +28328,7 @@
     "pk": 208,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "1.90",
@@ -28350,7 +28350,7 @@
     "pk": 209,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "3.80",
@@ -28372,7 +28372,7 @@
     "pk": 210,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 1 sheet 1/2\" of 3030 \"green glass\" acrylic",
       "description": "get 1 sheet 1/2\" of 3030 \"green glass\" acrylic",
       "est_qty": "0.98",
@@ -28394,7 +28394,7 @@
     "pk": 211,
     "fields": {
       "job": 70,
-      "service_price": 3,
+      "service_item": 3,
       "name": "laser cut test for flame polish test",
       "description": "laser cut test for flame polish test",
       "est_qty": "6.00",
@@ -28416,7 +28416,7 @@
     "pk": 212,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "do flame polish test on sample piece",
       "description": "do flame polish test on sample piece",
       "est_qty": "2.70",
@@ -28438,7 +28438,7 @@
     "pk": 213,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.69",
@@ -28460,7 +28460,7 @@
     "pk": 214,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "4.00",
@@ -28482,7 +28482,7 @@
     "pk": 215,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "flame polish edges",
       "description": "flame polish edges",
       "est_qty": "2.50",
@@ -28504,7 +28504,7 @@
     "pk": 216,
     "fields": {
       "job": 70,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut parts are on cart under blue moving blanket",
       "description": "cut parts are on cart under blue moving blanket",
       "est_qty": "3.00",
@@ -28526,7 +28526,7 @@
     "pk": 217,
     "fields": {
       "job": 70,
-      "service_price": 7,
+      "service_item": 7,
       "name": "jig for holding for polish",
       "description": "jig for holding for polish",
       "est_qty": "1.60",
@@ -28580,7 +28580,7 @@
     "pk": 218,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reissue estimate now that we have final spec",
       "description": "reissue estimate now that we have final spec",
       "est_qty": "3.70",
@@ -28602,7 +28602,7 @@
     "pk": 219,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wood grain to go horizontally not vertically",
       "description": "wood grain to go horizontally not vertically",
       "est_qty": "2.90",
@@ -28624,7 +28624,7 @@
     "pk": 220,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "0.64",
@@ -28646,7 +28646,7 @@
     "pk": 221,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "1.40",
@@ -28668,7 +28668,7 @@
     "pk": 222,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "need to order more material to meet qty5",
       "description": "need to order more material to meet qty5",
       "est_qty": "3.30",
@@ -28690,7 +28690,7 @@
     "pk": 223,
     "fields": {
       "job": 71,
-      "service_price": 2,
+      "service_item": 2,
       "name": "complete drawing updated dimensions",
       "description": "complete drawing updated dimensions",
       "est_qty": "2.10",
@@ -28712,7 +28712,7 @@
     "pk": 224,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy 3x 3/4\" prefin appleply; 3x 1/2\" prefin appleply",
       "description": "buy 3x 3/4\" prefin appleply; 3x 1/2\" prefin appleply",
       "est_qty": "2.80",
@@ -28734,7 +28734,7 @@
     "pk": 225,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.53",
@@ -28756,7 +28756,7 @@
     "pk": 226,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "assemble piece (track time)",
       "description": "assemble piece (track time)",
       "est_qty": "3.40",
@@ -28778,7 +28778,7 @@
     "pk": 227,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sanding and finishing (track time)",
       "description": "sanding and finishing (track time)",
       "est_qty": "1.70",
@@ -28800,7 +28800,7 @@
     "pk": 228,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "last painting and touchup of the 3 to deliver today",
       "description": "last painting and touchup of the 3 to deliver today",
       "est_qty": "2.00",
@@ -28822,7 +28822,7 @@
     "pk": 229,
     "fields": {
       "job": 71,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sent stmt of account 5-8-26",
       "description": "sent stmt of account 5-8-26",
       "est_qty": "2.40",
@@ -28895,7 +28895,7 @@
     "pk": 230,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "write contract; send contract",
       "description": "write contract; send contract",
       "est_qty": "0.67",
@@ -28917,7 +28917,7 @@
     "pk": 231,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "3.10",
@@ -28939,7 +28939,7 @@
     "pk": 232,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "2.60",
@@ -28961,7 +28961,7 @@
     "pk": 233,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy a door from HD as wall reference",
       "description": "buy a door from HD as wall reference",
       "est_qty": "1.80",
@@ -28983,7 +28983,7 @@
     "pk": 234,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "design first pod (#5 living room) R 1.5 hr 3-2, 2 hr 3-3",
       "description": "design first pod (#5 living room) R 1.5 hr 3-2, 2 hr 3-3",
       "est_qty": "3.70",
@@ -29005,7 +29005,7 @@
     "pk": 235,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy a sliding door to design around - closet door without lintel",
       "description": "buy a sliding door to design around - closet door without lintel",
       "est_qty": "2.70",
@@ -29027,7 +29027,7 @@
     "pk": 236,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "detail out pod 5 components - R 4 hr 3-4",
       "description": "detail out pod 5 components - R 4 hr 3-4",
       "est_qty": "1.30",
@@ -29049,7 +29049,7 @@
     "pk": 237,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.00",
@@ -29071,7 +29071,7 @@
     "pk": 238,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "bought more than enough ply for pod 5, will need additional for future pods",
       "description": "bought more than enough ply for pod 5, will need additional for future pods",
       "est_qty": "1.00",
@@ -29093,7 +29093,7 @@
     "pk": 239,
     "fields": {
       "job": 72,
-      "service_price": 2,
+      "service_item": 2,
       "name": "prepare construction drawings for each component showing part numbers used",
       "description": "prepare construction drawings for each component showing part numbers used",
       "est_qty": "2.40",
@@ -29115,7 +29115,7 @@
     "pk": 240,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "work out partial billing plan",
       "description": "work out partial billing plan",
       "est_qty": "2.60",
@@ -29137,7 +29137,7 @@
     "pk": 241,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recode to reduce Rachel's oversized tabs",
       "description": "recode to reduce Rachel's oversized tabs",
       "est_qty": "2.90",
@@ -29159,7 +29159,7 @@
     "pk": 242,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "assemble piece (track time)",
       "description": "assemble piece (track time)",
       "est_qty": "3.40",
@@ -29181,7 +29181,7 @@
     "pk": 243,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "on site assembly (track time)",
       "description": "on site assembly (track time)",
       "est_qty": "3.40",
@@ -29203,7 +29203,7 @@
     "pk": 244,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Invoiced early to track deposit since I added tax to it by accident",
       "description": "Invoiced early to track deposit since I added tax to it by accident",
       "est_qty": "2.30",
@@ -29225,7 +29225,7 @@
     "pk": 245,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "add pilot holes to the Fxx parts for 1\" wood screws, #6",
       "description": "add pilot holes to the Fxx parts for 1\" wood screws, #6",
       "est_qty": "2.10",
@@ -29247,7 +29247,7 @@
     "pk": 246,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy attachment hardware",
       "description": "buy attachment hardware",
       "est_qty": "2.20",
@@ -29269,7 +29269,7 @@
     "pk": 247,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy paint in their color",
       "description": "buy paint in their color",
       "est_qty": "3.90",
@@ -29291,7 +29291,7 @@
     "pk": 248,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "prime faces",
       "description": "prime faces",
       "est_qty": "1.80",
@@ -29313,7 +29313,7 @@
     "pk": 249,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint faces of pod 5",
       "description": "paint faces of pod 5",
       "est_qty": "3.30",
@@ -29335,7 +29335,7 @@
     "pk": 250,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "$500 enterprise truck and delivery + handling 3/12/26",
       "description": "$500 enterprise truck and delivery + handling 3/12/26",
       "est_qty": "2.00",
@@ -29357,7 +29357,7 @@
     "pk": 251,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint one F12 panel (skinny with pilot holes) for small pod 5 gap on T component",
       "description": "paint one F12 panel (skinny with pilot holes) for small pod 5 gap on T component",
       "est_qty": "2.50",
@@ -29379,7 +29379,7 @@
     "pk": 252,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy carpet",
       "description": "buy carpet",
       "est_qty": "3.60",
@@ -29401,7 +29401,7 @@
     "pk": 253,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy another sliding door",
       "description": "buy another sliding door",
       "est_qty": "4.00",
@@ -29423,7 +29423,7 @@
     "pk": 254,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install carpet, Wednesday if possible",
       "description": "install carpet, Wednesday if possible",
       "est_qty": "2.50",
@@ -29445,7 +29445,7 @@
     "pk": 255,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install electrical boxes (G, Tuesday)",
       "description": "install electrical boxes (G, Tuesday)",
       "est_qty": "2.30",
@@ -29467,7 +29467,7 @@
     "pk": 256,
     "fields": {
       "job": 72,
-      "service_price": 2,
+      "service_item": 2,
       "name": "design sliding door component (R, G) R 4hr CAD 3-17",
       "description": "design sliding door component (R, G) R 4hr CAD 3-17",
       "est_qty": "2.40",
@@ -29489,7 +29489,7 @@
     "pk": 257,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get Encord to tell us if the 1/4\" lintel for the sliding door is OK - yes!",
       "description": "get Encord to tell us if the 1/4\" lintel for the sliding door is OK - yes!",
       "est_qty": "0.98",
@@ -29511,7 +29511,7 @@
     "pk": 258,
     "fields": {
       "job": 72,
-      "service_price": 2,
+      "service_item": 2,
       "name": "33\" wall, large corner block, R 4 hr CAD 3-18",
       "description": "33\" wall, large corner block, R 4 hr CAD 3-18",
       "est_qty": "3.30",
@@ -29533,7 +29533,7 @@
     "pk": 259,
     "fields": {
       "job": 72,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut sliding door component (2x)",
       "description": "cut sliding door component (2x)",
       "est_qty": "9.00",
@@ -29555,7 +29555,7 @@
     "pk": 260,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "build sliding door component (2x)",
       "description": "build sliding door component (2x)",
       "est_qty": "1.10",
@@ -29577,7 +29577,7 @@
     "pk": 261,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "builld more regular components - 14x 4x8 wall, 2x 2x8 wall",
       "description": "builld more regular components - 14x 4x8 wall, 2x 2x8 wall",
       "est_qty": "2.30",
@@ -29599,7 +29599,7 @@
     "pk": 262,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recut 3x C04 corner block part; build 3 more corner blocks only",
       "description": "recut 3x C04 corner block part; build 3 more corner blocks only",
       "est_qty": "3.00",
@@ -29621,7 +29621,7 @@
     "pk": 263,
     "fields": {
       "job": 72,
-      "service_price": 2,
+      "service_item": 2,
       "name": "design trusses R 5 hr CAD 3-23,3-24",
       "description": "design trusses R 5 hr CAD 3-23,3-24",
       "est_qty": "1.70",
@@ -29643,7 +29643,7 @@
     "pk": 264,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "design water pump system for sinks - Sam?  Glampervan?",
       "description": "design water pump system for sinks - Sam?  Glampervan?",
       "est_qty": "2.80",
@@ -29665,7 +29665,7 @@
     "pk": 265,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "OK to do another 36\" door - buy one",
       "description": "OK to do another 36\" door - buy one",
       "est_qty": "3.90",
@@ -29687,7 +29687,7 @@
     "pk": 266,
     "fields": {
       "job": 72,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut and assemble a 3rd standard door component for bathroom",
       "description": "cut and assemble a 3rd standard door component for bathroom",
       "est_qty": "2.00",
@@ -29709,7 +29709,7 @@
     "pk": 267,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "find kitchen cabinets",
       "description": "find kitchen cabinets",
       "est_qty": "3.60",
@@ -29731,7 +29731,7 @@
     "pk": 268,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy lower cabinets",
       "description": "buy lower cabinets",
       "est_qty": "1.30",
@@ -29753,7 +29753,7 @@
     "pk": 269,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "find shower stall?  Or design partial wall to mock up a stall",
       "description": "find shower stall?  Or design partial wall to mock up a stall",
       "est_qty": "0.74",
@@ -29775,7 +29775,7 @@
     "pk": 270,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy kitchen faucet - sink coming from Glampergang",
       "description": "buy kitchen faucet - sink coming from Glampergang",
       "est_qty": "0.87",
@@ -29797,7 +29797,7 @@
     "pk": 271,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy kitchen countertop",
       "description": "buy kitchen countertop",
       "est_qty": "1.90",
@@ -29819,7 +29819,7 @@
     "pk": 272,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy fridge",
       "description": "buy fridge",
       "est_qty": "2.80",
@@ -29841,7 +29841,7 @@
     "pk": 273,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy range top",
       "description": "buy range top",
       "est_qty": "2.00",
@@ -29863,7 +29863,7 @@
     "pk": 274,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy toilet",
       "description": "buy toilet",
       "est_qty": "2.90",
@@ -29885,7 +29885,7 @@
     "pk": 275,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy vanity, sink, faucet",
       "description": "buy vanity, sink, faucet",
       "est_qty": "3.40",
@@ -29907,7 +29907,7 @@
     "pk": 276,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "more carpet - happenng Wednesday - G managing",
       "description": "more carpet - happenng Wednesday - G managing",
       "est_qty": "3.20",
@@ -29929,7 +29929,7 @@
     "pk": 277,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "ask them to get an electrician in to drop more power",
       "description": "ask them to get an electrician in to drop more power",
       "est_qty": "1.90",
@@ -29951,7 +29951,7 @@
     "pk": 278,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "electrical on pods 4 and 6 - ask where",
       "description": "electrical on pods 4 and 6 - ask where",
       "est_qty": "0.56",
@@ -29973,7 +29973,7 @@
     "pk": 279,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install backer panels in pods 4, 6",
       "description": "install backer panels in pods 4, 6",
       "est_qty": "1.20",
@@ -29995,7 +29995,7 @@
     "pk": 280,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "set 2nd sliding door in pod 4",
       "description": "set 2nd sliding door in pod 4",
       "est_qty": "2.50",
@@ -30017,7 +30017,7 @@
     "pk": 281,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "finish shower components, paint them",
       "description": "finish shower components, paint them",
       "est_qty": "1.30",
@@ -30039,7 +30039,7 @@
     "pk": 282,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint bathroom door component",
       "description": "paint bathroom door component",
       "est_qty": "3.10",
@@ -30061,7 +30061,7 @@
     "pk": 283,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "assemble remainder of bathroom",
       "description": "assemble remainder of bathroom",
       "est_qty": "0.69",
@@ -30083,7 +30083,7 @@
     "pk": 284,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "one sheet of 1/4\" clear acrylic",
       "description": "one sheet of 1/4\" clear acrylic",
       "est_qty": "0.70",
@@ -30105,7 +30105,7 @@
     "pk": 285,
     "fields": {
       "job": 72,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut acrylic for shower \"door\"",
       "description": "cut acrylic for shower \"door\"",
       "est_qty": "7.00",
@@ -30127,7 +30127,7 @@
     "pk": 286,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "measure for countertop - where sink?",
       "description": "measure for countertop - where sink?",
       "est_qty": "3.30",
@@ -30149,7 +30149,7 @@
     "pk": 287,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "biuld trusses",
       "description": "biuld trusses",
       "est_qty": "1.20",
@@ -30171,7 +30171,7 @@
     "pk": 288,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install trusses",
       "description": "install trusses",
       "est_qty": "3.50",
@@ -30193,7 +30193,7 @@
     "pk": 289,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Buy shower head and taps",
       "description": "Buy shower head and taps",
       "est_qty": "3.40",
@@ -30215,7 +30215,7 @@
     "pk": 290,
     "fields": {
       "job": 72,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut holes for electric outlets - talk to Tony for location",
       "description": "Cut holes for electric outlets - talk to Tony for location",
       "est_qty": "9.00",
@@ -30237,7 +30237,7 @@
     "pk": 291,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install countertop",
       "description": "install countertop",
       "est_qty": "1.40",
@@ -30259,7 +30259,7 @@
     "pk": 292,
     "fields": {
       "job": 72,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut template for kitchen sink hole routing once sink dims are known",
       "description": "cut template for kitchen sink hole routing once sink dims are known",
       "est_qty": "6.00",
@@ -30281,7 +30281,7 @@
     "pk": 293,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "place toilet",
       "description": "place toilet",
       "est_qty": "1.20",
@@ -30303,7 +30303,7 @@
     "pk": 294,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "place vanity etc",
       "description": "place vanity etc",
       "est_qty": "3.60",
@@ -30325,7 +30325,7 @@
     "pk": 295,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install shower head and taps",
       "description": "install shower head and taps",
       "est_qty": "2.60",
@@ -30347,7 +30347,7 @@
     "pk": 296,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "install water tanks and pumps (Sam) - Tuesday morning 4-21",
       "description": "install water tanks and pumps (Sam) - Tuesday morning 4-21",
       "est_qty": "3.50",
@@ -30369,7 +30369,7 @@
     "pk": 297,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "last electrical sockets installed",
       "description": "last electrical sockets installed",
       "est_qty": "0.71",
@@ -30391,7 +30391,7 @@
     "pk": 298,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "find the missing tank!!!",
       "description": "find the missing tank!!!",
       "est_qty": "0.75",
@@ -30413,7 +30413,7 @@
     "pk": 299,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "last items onsite:",
       "description": "last items onsite:",
       "est_qty": "1.30",
@@ -30435,7 +30435,7 @@
     "pk": 300,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "power for sink pumps (drill thru rear wall, extension cord)",
       "description": "power for sink pumps (drill thru rear wall, extension cord)",
       "est_qty": "2.40",
@@ -30457,7 +30457,7 @@
     "pk": 301,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint the one corner of the bathroom that's blank",
       "description": "paint the one corner of the bathroom that's blank",
       "est_qty": "1.50",
@@ -30479,7 +30479,7 @@
     "pk": 302,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "paint the top edge of the shower stall",
       "description": "paint the top edge of the shower stall",
       "est_qty": "1.60",
@@ -30501,7 +30501,7 @@
     "pk": 303,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "remove the paper from the acrylic on the shower stall",
       "description": "remove the paper from the acrylic on the shower stall",
       "est_qty": "1.90",
@@ -30523,7 +30523,7 @@
     "pk": 304,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "label the electrical cables and outlets",
       "description": "label the electrical cables and outlets",
       "est_qty": "0.85",
@@ -30545,7 +30545,7 @@
     "pk": 305,
     "fields": {
       "job": 72,
-      "service_price": 7,
+      "service_item": 7,
       "name": "purchase and install handles for the kitchen upper cabinets",
       "description": "purchase and install handles for the kitchen upper cabinets",
       "est_qty": "1.80",
@@ -30694,7 +30694,7 @@
     "pk": 306,
     "fields": {
       "job": 73,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "1.30",
@@ -30716,7 +30716,7 @@
     "pk": 307,
     "fields": {
       "job": 73,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment (included in the 210 LF set)",
       "description": "wait for deposit payment (included in the 210 LF set)",
       "est_qty": "2.20",
@@ -30738,7 +30738,7 @@
     "pk": 308,
     "fields": {
       "job": 73,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 3/4\" MDF ultralight 4x10 - for 2 units",
       "description": "get 3/4\" MDF ultralight 4x10 - for 2 units",
       "est_qty": "2.50",
@@ -30760,7 +30760,7 @@
     "pk": 309,
     "fields": {
       "job": 73,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut 2 units (~500 pcs)",
       "description": "Cut 2 units (~500 pcs)",
       "est_qty": "4.00",
@@ -30782,7 +30782,7 @@
     "pk": 310,
     "fields": {
       "job": 73,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.82",
@@ -30804,7 +30804,7 @@
     "pk": 311,
     "fields": {
       "job": 73,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "3.80",
@@ -30877,7 +30877,7 @@
     "pk": 312,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Customer sending adjustments",
       "description": "Customer sending adjustments",
       "est_qty": "3.20",
@@ -30899,7 +30899,7 @@
     "pk": 313,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Re-issue estimate for all pcs with new bit",
       "description": "Re-issue estimate for all pcs with new bit",
       "est_qty": "2.00",
@@ -30921,7 +30921,7 @@
     "pk": 314,
     "fields": {
       "job": 74,
-      "service_price": 2,
+      "service_item": 2,
       "name": "CAD time",
       "description": "CAD time",
       "est_qty": "1.20",
@@ -30943,7 +30943,7 @@
     "pk": 315,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "3 hours",
       "description": "3 hours",
       "est_qty": "1.90",
@@ -30965,7 +30965,7 @@
     "pk": 316,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "1.5 hours",
       "description": "1.5 hours",
       "est_qty": "1.60",
@@ -30987,7 +30987,7 @@
     "pk": 317,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.80",
@@ -31009,7 +31009,7 @@
     "pk": 318,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "payment reminder sent 4/22",
       "description": "payment reminder sent 4/22",
       "est_qty": "3.90",
@@ -31031,7 +31031,7 @@
     "pk": 319,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reminder sent 5/8/26",
       "description": "reminder sent 5/8/26",
       "est_qty": "1.60",
@@ -31053,7 +31053,7 @@
     "pk": 320,
     "fields": {
       "job": 74,
-      "service_price": 7,
+      "service_item": 7,
       "name": ".",
       "description": ".",
       "est_qty": "3.70",
@@ -31096,7 +31096,7 @@
     "pk": 80,
     "fields": {
       "est_worksheet": 43,
-      "service_price": 7,
+      "service_item": 7,
       "name": "i just based the pricing from job 06608 and added 10%",
       "description": "i just based the pricing from job 06608 and added 10%",
       "est_qty": "1.00",
@@ -31155,7 +31155,7 @@
     "pk": 81,
     "fields": {
       "est_worksheet": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reach out in March!!!",
       "description": "reach out in March!!!",
       "est_qty": "1.00",
@@ -31169,7 +31169,7 @@
     "pk": 82,
     "fields": {
       "est_worksheet": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "they are okay with us providing an est in march",
       "description": "they are okay with us providing an est in march",
       "est_qty": "1.00",
@@ -31183,7 +31183,7 @@
     "pk": 83,
     "fields": {
       "est_worksheet": 44,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send quote by end of week of 3/16",
       "description": "send quote by end of week of 3/16",
       "est_qty": "1.00",
@@ -31210,7 +31210,7 @@
     "pk": 321,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for individual parts step file",
       "description": "waiting for individual parts step file",
       "est_qty": "1.60",
@@ -31232,7 +31232,7 @@
     "pk": 322,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "G pick up starboard from Pyka",
       "description": "G pick up starboard from Pyka",
       "est_qty": "2.90",
@@ -31254,7 +31254,7 @@
     "pk": 323,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting to hear from customer about d-bones or filet",
       "description": "waiting to hear from customer about d-bones or filet",
       "est_qty": "1.40",
@@ -31276,7 +31276,7 @@
     "pk": 324,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "0.82",
@@ -31298,7 +31298,7 @@
     "pk": 325,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.40",
@@ -31320,7 +31320,7 @@
     "pk": 326,
     "fields": {
       "job": 77,
-      "service_price": 2,
+      "service_item": 2,
       "name": "1.5 hours CAD 1/28",
       "description": "1.5 hours CAD 1/28",
       "est_qty": "3.60",
@@ -31342,7 +31342,7 @@
     "pk": 327,
     "fields": {
       "job": 77,
-      "service_price": 2,
+      "service_item": 2,
       "name": "4 hours CAD 2/2 Seth",
       "description": "4 hours CAD 2/2 Seth",
       "est_qty": "1.10",
@@ -31364,7 +31364,7 @@
     "pk": 328,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "REMOVE ONE GD HOLE PER ALEX argh",
       "description": "REMOVE ONE GD HOLE PER ALEX argh",
       "est_qty": "3.20",
@@ -31386,7 +31386,7 @@
     "pk": 329,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "followed up with Alex to see if we need to re-cut or accept with discount",
       "description": "followed up with Alex to see if we need to re-cut or accept with discount",
       "est_qty": "1.10",
@@ -31408,7 +31408,7 @@
     "pk": 330,
     "fields": {
       "job": 77,
-      "service_price": 7,
+      "service_item": 7,
       "name": "payment reminder sent 4/22/26",
       "description": "payment reminder sent 4/22/26",
       "est_qty": "1.20",
@@ -31443,7 +31443,7 @@
     "pk": 331,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for plastic desk sample",
       "description": "wait for plastic desk sample",
       "est_qty": "3.00",
@@ -31465,7 +31465,7 @@
     "pk": 332,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "design desk",
       "description": "design desk",
       "est_qty": "1.20",
@@ -31487,7 +31487,7 @@
     "pk": 333,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.50",
@@ -31509,7 +31509,7 @@
     "pk": 334,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "3.5 hours of design",
       "description": "3.5 hours of design",
       "est_qty": "3.90",
@@ -31531,7 +31531,7 @@
     "pk": 335,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "2 hours fab",
       "description": "2 hours fab",
       "est_qty": "0.71",
@@ -31553,7 +31553,7 @@
     "pk": 336,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "asked for less of a round corner",
       "description": "asked for less of a round corner",
       "est_qty": "1.10",
@@ -31575,7 +31575,7 @@
     "pk": 337,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting from 1/2\" stock",
       "description": "code for cutting from 1/2\" stock",
       "est_qty": "3.80",
@@ -31597,7 +31597,7 @@
     "pk": 338,
     "fields": {
       "job": 78,
-      "service_price": 1,
+      "service_item": 1,
       "name": "Cut one additional desk to test nesting",
       "description": "Cut one additional desk to test nesting",
       "est_qty": "4.00",
@@ -31619,7 +31619,7 @@
     "pk": 339,
     "fields": {
       "job": 78,
-      "service_price": 7,
+      "service_item": 7,
       "name": "payment reminder sent 4/22",
       "description": "payment reminder sent 4/22",
       "est_qty": "1.40",
@@ -31654,7 +31654,7 @@
     "pk": 340,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy epoxy as needed",
       "description": "buy epoxy as needed",
       "est_qty": "3.20",
@@ -31676,7 +31676,7 @@
     "pk": 341,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for cust to say if the current one needs a trim",
       "description": "waiting for cust to say if the current one needs a trim",
       "est_qty": "2.10",
@@ -31698,7 +31698,7 @@
     "pk": 342,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.10",
@@ -31720,7 +31720,7 @@
     "pk": 343,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Toni Morrison (rect)",
       "description": "Toni Morrison (rect)",
       "est_qty": "0.95",
@@ -31742,7 +31742,7 @@
     "pk": 344,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plane down to remove old lettering",
       "description": "plane down to remove old lettering",
       "est_qty": "3.40",
@@ -31764,7 +31764,7 @@
     "pk": 345,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recut letters",
       "description": "recut letters",
       "est_qty": "1.70",
@@ -31786,7 +31786,7 @@
     "pk": 346,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "trim perimeter if needed",
       "description": "trim perimeter if needed",
       "est_qty": "3.10",
@@ -31808,7 +31808,7 @@
     "pk": 347,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sand face and elsewhere as needed",
       "description": "sand face and elsewhere as needed",
       "est_qty": "1.70",
@@ -31830,7 +31830,7 @@
     "pk": 348,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "back/sides epoxy",
       "description": "back/sides epoxy",
       "est_qty": "3.00",
@@ -31852,7 +31852,7 @@
     "pk": 349,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "face seal coat",
       "description": "face seal coat",
       "est_qty": "0.87",
@@ -31874,7 +31874,7 @@
     "pk": 350,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "black epoxy fill",
       "description": "black epoxy fill",
       "est_qty": "2.70",
@@ -31896,7 +31896,7 @@
     "pk": 351,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "face flood coat",
       "description": "face flood coat",
       "est_qty": "1.50",
@@ -31918,7 +31918,7 @@
     "pk": 352,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "ask customer if we should do a second flood coat bc dust",
       "description": "ask customer if we should do a second flood coat bc dust",
       "est_qty": "2.90",
@@ -31940,7 +31940,7 @@
     "pk": 353,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "do tiny patches",
       "description": "do tiny patches",
       "est_qty": "0.73",
@@ -31962,7 +31962,7 @@
     "pk": 354,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "do one more tiny patch + apply anti skate hardware etc etc",
       "description": "do one more tiny patch + apply anti skate hardware etc etc",
       "est_qty": "1.40",
@@ -31984,7 +31984,7 @@
     "pk": 355,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "MLK (rect)",
       "description": "MLK (rect)",
       "est_qty": "2.00",
@@ -32006,7 +32006,7 @@
     "pk": 356,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plane down and recut letters - align bench on table before planing",
       "description": "plane down and recut letters - align bench on table before planing",
       "est_qty": "3.30",
@@ -32028,7 +32028,7 @@
     "pk": 357,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "epoxy face fill",
       "description": "epoxy face fill",
       "est_qty": "3.50",
@@ -32050,7 +32050,7 @@
     "pk": 358,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "face seal coat",
       "description": "face seal coat",
       "est_qty": "2.80",
@@ -32072,7 +32072,7 @@
     "pk": 359,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "face lettering epoxy",
       "description": "face lettering epoxy",
       "est_qty": "1.20",
@@ -32094,7 +32094,7 @@
     "pk": 360,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sanding - Monday the 9th",
       "description": "sanding - Monday the 9th",
       "est_qty": "3.20",
@@ -32116,7 +32116,7 @@
     "pk": 361,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "flood coat & edges",
       "description": "flood coat & edges",
       "est_qty": "2.30",
@@ -32138,7 +32138,7 @@
     "pk": 362,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "attach skate stoppers",
       "description": "attach skate stoppers",
       "est_qty": "2.30",
@@ -32160,7 +32160,7 @@
     "pk": 363,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "few tiny patches",
       "description": "few tiny patches",
       "est_qty": "3.50",
@@ -32182,7 +32182,7 @@
     "pk": 364,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "customer will pick up THursday morning",
       "description": "customer will pick up THursday morning",
       "est_qty": "3.40",
@@ -32204,7 +32204,7 @@
     "pk": 365,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Nez Perce (rect)",
       "description": "Nez Perce (rect)",
       "est_qty": "0.99",
@@ -32226,7 +32226,7 @@
     "pk": 366,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plane down and recut letters - align first then do both processes at once",
       "description": "plane down and recut letters - align first then do both processes at once",
       "est_qty": "3.00",
@@ -32248,7 +32248,7 @@
     "pk": 367,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sand out tool marks",
       "description": "sand out tool marks",
       "est_qty": "2.90",
@@ -32270,7 +32270,7 @@
     "pk": 368,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "epoxy face fill/seal coat",
       "description": "epoxy face fill/seal coat",
       "est_qty": "2.60",
@@ -32292,7 +32292,7 @@
     "pk": 369,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "lettering epoxy",
       "description": "lettering epoxy",
       "est_qty": "1.10",
@@ -32314,7 +32314,7 @@
     "pk": 370,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sanding",
       "description": "sanding",
       "est_qty": "3.00",
@@ -32336,7 +32336,7 @@
     "pk": 371,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "flood coat & edges",
       "description": "flood coat & edges",
       "est_qty": "2.10",
@@ -32358,7 +32358,7 @@
     "pk": 372,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "attach skate stoppers",
       "description": "attach skate stoppers",
       "est_qty": "3.30",
@@ -32380,7 +32380,7 @@
     "pk": 373,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "touchups",
       "description": "touchups",
       "est_qty": "1.90",
@@ -32402,7 +32402,7 @@
     "pk": 374,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Mark Twain (arc)",
       "description": "Mark Twain (arc)",
       "est_qty": "2.40",
@@ -32424,7 +32424,7 @@
     "pk": 375,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "redo the lettering layouts and fix typos",
       "description": "redo the lettering layouts and fix typos",
       "est_qty": "1.50",
@@ -32446,7 +32446,7 @@
     "pk": 376,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send PDF proofs",
       "description": "send PDF proofs",
       "est_qty": "0.75",
@@ -32468,7 +32468,7 @@
     "pk": 377,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plane completely down to remove all prev lettering",
       "description": "plane completely down to remove all prev lettering",
       "est_qty": "1.80",
@@ -32490,7 +32490,7 @@
     "pk": 378,
     "fields": {
       "job": 79,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut lettering again",
       "description": "cut lettering again",
       "est_qty": "7.00",
@@ -32512,7 +32512,7 @@
     "pk": 379,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "epoxy stuff",
       "description": "epoxy stuff",
       "est_qty": "0.69",
@@ -32534,7 +32534,7 @@
     "pk": 380,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Anson B (arc)",
       "description": "Anson B (arc)",
       "est_qty": "2.40",
@@ -32556,7 +32556,7 @@
     "pk": 381,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "redo the lettering layouts and fix typos",
       "description": "redo the lettering layouts and fix typos",
       "est_qty": "4.00",
@@ -32578,7 +32578,7 @@
     "pk": 382,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send PDF proofs",
       "description": "send PDF proofs",
       "est_qty": "3.30",
@@ -32600,7 +32600,7 @@
     "pk": 383,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plane completely down to remove all prev lettering",
       "description": "plane completely down to remove all prev lettering",
       "est_qty": "2.00",
@@ -32622,7 +32622,7 @@
     "pk": 384,
     "fields": {
       "job": 79,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut lettering again",
       "description": "cut lettering again",
       "est_qty": "3.00",
@@ -32644,7 +32644,7 @@
     "pk": 385,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "epoxy stuff",
       "description": "epoxy stuff",
       "est_qty": "0.89",
@@ -32666,7 +32666,7 @@
     "pk": 386,
     "fields": {
       "job": 79,
-      "service_price": 7,
+      "service_item": 7,
       "name": "poke for payment, then put back on board, next bench due Apr 30 or possibly 24th",
       "description": "poke for payment, then put back on board, next bench due Apr 30 or possibly 24th",
       "est_qty": "2.10",
@@ -32684,7 +32684,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 17,
     "fields": {
       "name": "Flat Fee $2250.00",
@@ -32703,7 +32703,7 @@
     "pk": 387,
     "fields": {
       "job": 79,
-      "service_price": 17,
+      "service_item": 17,
       "name": "Apply epoxy to engraved redwood bench:\n* inspect surface for obvious cracks and gaps; tape and fill\n* seal coat on all sides to seal lettering and find small bubble holes\n* patch and fill remaining gaps (knots and cracks)\n* seal and scrape letters; fill w",
       "description": "Apply epoxy to engraved redwood bench:\n* inspect surface for obvious cracks and gaps; tape and fill\n* seal coat on all sides to seal lettering and find small bubble holes\n* patch and fill remaining gaps (knots and cracks)\n* seal and scrape letters; fill with black epoxy; sand flat\n* flood coat on all sides\n* patching any remaining holes\nIncludes epoxy and consumables",
       "est_qty": "5.00",
@@ -32746,7 +32746,7 @@
     "pk": 84,
     "fields": {
       "est_worksheet": 45,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for AXYZ machine to come online.  sample in Jan @ AA?",
       "description": "wait for AXYZ machine to come online.  sample in Jan @ AA?",
       "est_qty": "1.00",
@@ -32760,7 +32760,7 @@
     "pk": 85,
     "fields": {
       "est_worksheet": 45,
-      "service_price": 7,
+      "service_item": 7,
       "name": "also figure out how to price for it!  Ask Josh",
       "description": "also figure out how to price for it!  Ask Josh",
       "est_qty": "1.00",
@@ -32774,7 +32774,7 @@
     "pk": 86,
     "fields": {
       "est_worksheet": 45,
-      "service_price": 3,
+      "service_item": 3,
       "name": "this is a laser cut.  initial est for a 4\"x5\" part, $0.50 per pc",
       "description": "this is a laser cut.  initial est for a 4\"x5\" part, $0.50 per pc",
       "est_qty": "1.00",
@@ -32788,7 +32788,7 @@
     "pk": 87,
     "fields": {
       "est_worksheet": 45,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for customer to confirm size",
       "description": "wait for customer to confirm size",
       "est_qty": "1.00",
@@ -32802,7 +32802,7 @@
     "pk": 88,
     "fields": {
       "est_worksheet": 45,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for oscillating knife machine",
       "description": "wait for oscillating knife machine",
       "est_qty": "1.00",
@@ -32829,7 +32829,7 @@
     "pk": 388,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "2.20",
@@ -32851,7 +32851,7 @@
     "pk": 389,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "3.90",
@@ -32873,7 +32873,7 @@
     "pk": 390,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for updated file and save in client folder",
       "description": "wait for updated file and save in client folder",
       "est_qty": "2.90",
@@ -32895,7 +32895,7 @@
     "pk": 391,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "order 5 sheets 1/4\" HDPE",
       "description": "order 5 sheets 1/4\" HDPE",
       "est_qty": "3.50",
@@ -32917,7 +32917,7 @@
     "pk": 392,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Waiting on file verification from Alex - looks like the same from 12/15",
       "description": "Waiting on file verification from Alex - looks like the same from 12/15",
       "est_qty": "3.50",
@@ -32939,7 +32939,7 @@
     "pk": 393,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.20",
@@ -32961,7 +32961,7 @@
     "pk": 394,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "2.40",
@@ -32983,7 +32983,7 @@
     "pk": 395,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "material back ordered - will arrive in Feb",
       "description": "material back ordered - will arrive in Feb",
       "est_qty": "1.10",
@@ -33005,7 +33005,7 @@
     "pk": 396,
     "fields": {
       "job": 81,
-      "service_price": 7,
+      "service_item": 7,
       "name": "roundovers and holes poked",
       "description": "roundovers and holes poked",
       "est_qty": "1.40",
@@ -33059,7 +33059,7 @@
     "pk": 397,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting if $300 is ok",
       "description": "waiting if $300 is ok",
       "est_qty": "0.98",
@@ -33081,7 +33081,7 @@
     "pk": 398,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for new file",
       "description": "waiting for new file",
       "est_qty": "3.90",
@@ -33103,7 +33103,7 @@
     "pk": 399,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "estimate sent and waiting on action for the oversized piece.",
       "description": "estimate sent and waiting on action for the oversized piece.",
       "est_qty": "3.90",
@@ -33125,7 +33125,7 @@
     "pk": 400,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "2.60",
@@ -33147,7 +33147,7 @@
     "pk": 401,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "2.60",
@@ -33169,7 +33169,7 @@
     "pk": 402,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 5 sheets of 3/8\" baltic birch",
       "description": "get 5 sheets of 3/8\" baltic birch",
       "est_qty": "3.50",
@@ -33191,7 +33191,7 @@
     "pk": 403,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.30",
@@ -33213,7 +33213,7 @@
     "pk": 404,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.80",
@@ -33235,7 +33235,7 @@
     "pk": 405,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "payment reminder sent 4/22",
       "description": "payment reminder sent 4/22",
       "est_qty": "1.10",
@@ -33257,7 +33257,7 @@
     "pk": 406,
     "fields": {
       "job": 82,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get Ronell Ellis to give us a PO - see email 4-24",
       "description": "get Ronell Ellis to give us a PO - see email 4-24",
       "est_qty": "2.60",
@@ -33319,7 +33319,7 @@
     "pk": 89,
     "fields": {
       "est_worksheet": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "waiting for new STEP files",
       "description": "waiting for new STEP files",
       "est_qty": "1.00",
@@ -33333,7 +33333,7 @@
     "pk": 90,
     "fields": {
       "est_worksheet": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "this might need a butt number",
       "description": "this might need a butt number",
       "est_qty": "1.00",
@@ -33347,7 +33347,7 @@
     "pk": 91,
     "fields": {
       "est_worksheet": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "new files sent!!",
       "description": "new files sent!!",
       "est_qty": "1.00",
@@ -33361,7 +33361,7 @@
     "pk": 92,
     "fields": {
       "est_worksheet": 46,
-      "service_price": 7,
+      "service_item": 7,
       "name": "5-axis cut, wait for that machine",
       "description": "5-axis cut, wait for that machine",
       "est_qty": "1.00",
@@ -33436,7 +33436,7 @@
     "pk": 407,
     "fields": {
       "job": 84,
-      "service_price": 2,
+      "service_item": 2,
       "name": "wait for detailed drawings",
       "description": "wait for detailed drawings",
       "est_qty": "3.80",
@@ -33458,7 +33458,7 @@
     "pk": 408,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "review PDF of panels spec and ask questions",
       "description": "review PDF of panels spec and ask questions",
       "est_qty": "1.10",
@@ -33480,7 +33480,7 @@
     "pk": 409,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "resend estimate including sample piece for structural question",
       "description": "resend estimate including sample piece for structural question",
       "est_qty": "1.90",
@@ -33502,7 +33502,7 @@
     "pk": 410,
     "fields": {
       "job": 84,
-      "service_price": 2,
+      "service_item": 2,
       "name": "draw prototype - 2 hr 1-30 Rachel",
       "description": "draw prototype - 2 hr 1-30 Rachel",
       "est_qty": "2.50",
@@ -33524,7 +33524,7 @@
     "pk": 411,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy metals for prototype - 12' of 2\"x2\"x1/8\" angle iron (~$50 from Alco or USA Metals) plus 24' of thin edging which I estimated was about half that",
       "description": "buy metals for prototype - 12' of 2\"x2\"x1/8\" angle iron (~$50 from Alco or USA Metals) plus 24' of thin edging which I estimated was about half that",
       "est_qty": "2.60",
@@ -33546,7 +33546,7 @@
     "pk": 412,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "construct prototype in \"about a week\" assuming they approve.  It's a Type A, will probably be Martin or Polke",
       "description": "construct prototype in \"about a week\" assuming they approve.  It's a Type A, will probably be Martin or Polke",
       "est_qty": "0.99",
@@ -33568,7 +33568,7 @@
     "pk": 413,
     "fields": {
       "job": 84,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut last reinforcement piece after adjusting",
       "description": "cut last reinforcement piece after adjusting",
       "est_qty": "24.00",
@@ -33590,7 +33590,7 @@
     "pk": 414,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "collate chirality and hardware from design PDF into a list of what to construct",
       "description": "collate chirality and hardware from design PDF into a list of what to construct",
       "est_qty": "3.70",
@@ -33612,7 +33612,7 @@
     "pk": 415,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "when we deliver the prototype, also return prev monitor; p/u new monitor + handset",
       "description": "when we deliver the prototype, also return prev monitor; p/u new monitor + handset",
       "est_qty": "2.10",
@@ -33634,7 +33634,7 @@
     "pk": 416,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "adjust monitor depth per Zach's email thread about screw clearance BEFORE coding",
       "description": "adjust monitor depth per Zach's email thread about screw clearance BEFORE coding",
       "est_qty": "1.50",
@@ -33656,7 +33656,7 @@
     "pk": 417,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "review the email about how they want to pay a deposit soon, we should let them do that!",
       "description": "review the email about how they want to pay a deposit soon, we should let them do that!",
       "est_qty": "3.10",
@@ -33678,7 +33678,7 @@
     "pk": 418,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send deposit inv",
       "description": "send deposit inv",
       "est_qty": "0.92",
@@ -33700,7 +33700,7 @@
     "pk": 419,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "determine faceplate thickness and attachment hole/screws",
       "description": "determine faceplate thickness and attachment hole/screws",
       "est_qty": "3.30",
@@ -33722,7 +33722,7 @@
     "pk": 420,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get more MDO - how much?",
       "description": "get more MDO - how much?",
       "est_qty": "0.76",
@@ -33744,7 +33744,7 @@
     "pk": 421,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.30",
@@ -33766,7 +33766,7 @@
     "pk": 422,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "assemble piece (track time)",
       "description": "assemble piece (track time)",
       "est_qty": "2.70",
@@ -33788,7 +33788,7 @@
     "pk": 423,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sanding and finishing (track time)",
       "description": "sanding and finishing (track time)",
       "est_qty": "3.30",
@@ -33810,7 +33810,7 @@
     "pk": 424,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "make 1 extra faceplate of each type",
       "description": "make 1 extra faceplate of each type",
       "est_qty": "3.50",
@@ -33832,7 +33832,7 @@
     "pk": 425,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "add a 1/2\" strip behind the monitor hole for attachment security",
       "description": "add a 1/2\" strip behind the monitor hole for attachment security",
       "est_qty": "1.50",
@@ -33854,7 +33854,7 @@
     "pk": 426,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "add top mounting strip",
       "description": "add top mounting strip",
       "est_qty": "3.70",
@@ -33876,7 +33876,7 @@
     "pk": 427,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "pick up paint - Claire",
       "description": "pick up paint - Claire",
       "est_qty": "1.00",
@@ -33898,7 +33898,7 @@
     "pk": 428,
     "fields": {
       "job": 84,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut a mounting jig for the box and side strips",
       "description": "cut a mounting jig for the box and side strips",
       "est_qty": "10.00",
@@ -33920,7 +33920,7 @@
     "pk": 429,
     "fields": {
       "job": 84,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut the side strips",
       "description": "cut the side strips",
       "est_qty": "10.00",
@@ -33942,7 +33942,7 @@
     "pk": 430,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "prime and paint all the cover plates as well as the panels",
       "description": "prime and paint all the cover plates as well as the panels",
       "est_qty": "2.30",
@@ -33964,7 +33964,7 @@
     "pk": 431,
     "fields": {
       "job": 84,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sent stmt of account 5-8-26",
       "description": "sent stmt of account 5-8-26",
       "est_qty": "1.80",
@@ -34050,7 +34050,7 @@
     "pk": 432,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "suggested we do the bevelling before the outlines are cut, as there are SO MANY skinny bits in the plants",
       "description": "suggested we do the bevelling before the outlines are cut, as there are SO MANY skinny bits in the plants",
       "est_qty": "1.30",
@@ -34072,7 +34072,7 @@
     "pk": 433,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "customer is poking us for estimates",
       "description": "customer is poking us for estimates",
       "est_qty": "0.87",
@@ -34094,7 +34094,7 @@
     "pk": 434,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "call Zac (WHYYYYY) and/or find another waterjet place",
       "description": "call Zac (WHYYYYY) and/or find another waterjet place",
       "est_qty": "1.10",
@@ -34116,7 +34116,7 @@
     "pk": 435,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for Luke at Product And Design to get back to me",
       "description": "wait for Luke at Product And Design to get back to me",
       "est_qty": "3.40",
@@ -34138,7 +34138,7 @@
     "pk": 436,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "ask Lester at Advanced whatever for a waterjet estimate",
       "description": "ask Lester at Advanced whatever for a waterjet estimate",
       "est_qty": "2.10",
@@ -34160,7 +34160,7 @@
     "pk": 437,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "the test brass is here",
       "description": "the test brass is here",
       "est_qty": "2.90",
@@ -34182,7 +34182,7 @@
     "pk": 438,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Rachel discuss test brass sample with Louis",
       "description": "Rachel discuss test brass sample with Louis",
       "est_qty": "3.60",
@@ -34204,7 +34204,7 @@
     "pk": 439,
     "fields": {
       "job": 85,
-      "service_price": 3,
+      "service_item": 3,
       "name": "asked Tim at Advanced Laser for estimate, Lester unavailable",
       "description": "asked Tim at Advanced Laser for estimate, Lester unavailable",
       "est_qty": "20.00",
@@ -34226,7 +34226,7 @@
     "pk": 440,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sample likely to cost around $500 - $200 for waterjet",
       "description": "sample likely to cost around $500 - $200 for waterjet",
       "est_qty": "2.00",
@@ -34248,7 +34248,7 @@
     "pk": 441,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for customer's updated sample file",
       "description": "wait for customer's updated sample file",
       "est_qty": "2.10",
@@ -34270,7 +34270,7 @@
     "pk": 442,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "run Durjoy PDF thru Flexi, check dims",
       "description": "run Durjoy PDF thru Flexi, check dims",
       "est_qty": "1.10",
@@ -34292,7 +34292,7 @@
     "pk": 443,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "~7\" x 12\"",
       "description": "~7\" x 12\"",
       "est_qty": "2.90",
@@ -34314,7 +34314,7 @@
     "pk": 444,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "review test files, prep V-carve coding",
       "description": "review test files, prep V-carve coding",
       "est_qty": "0.75",
@@ -34336,7 +34336,7 @@
     "pk": 445,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "see if cut wants to send another sample file, the first ones are not great",
       "description": "see if cut wants to send another sample file, the first ones are not great",
       "est_qty": "1.30",
@@ -34358,7 +34358,7 @@
     "pk": 446,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "see if they approve my suggestion for final sample file",
       "description": "see if they approve my suggestion for final sample file",
       "est_qty": "2.70",
@@ -34380,7 +34380,7 @@
     "pk": 447,
     "fields": {
       "job": 85,
-      "service_price": 3,
+      "service_item": 3,
       "name": "\"assembly\" meaning, send it to Advanced Laser with a DXF",
       "description": "\"assembly\" meaning, send it to Advanced Laser with a DXF",
       "est_qty": "19.00",
@@ -34402,7 +34402,7 @@
     "pk": 448,
     "fields": {
       "job": 85,
-      "service_price": 3,
+      "service_item": 3,
       "name": "pick up sample from Advanced Laser",
       "description": "pick up sample from Advanced Laser",
       "est_qty": "15.00",
@@ -34424,7 +34424,7 @@
     "pk": 449,
     "fields": {
       "job": 85,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send photos of waterjet cut parts",
       "description": "send photos of waterjet cut parts",
       "est_qty": "1.60",
@@ -34446,7 +34446,7 @@
     "pk": 450,
     "fields": {
       "job": 85,
-      "service_price": 3,
+      "service_item": 3,
       "name": "Advanced Laser inv in job folder; $200",
       "description": "Advanced Laser inv in job folder; $200",
       "est_qty": "6.00",
@@ -34481,7 +34481,7 @@
     "pk": 451,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "quote with off the shelf T slot bit",
       "description": "quote with off the shelf T slot bit",
       "est_qty": "1.70",
@@ -34503,7 +34503,7 @@
     "pk": 452,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "customer emailed and is ready to move forward- Communicated back of beginning of March lead-time",
       "description": "customer emailed and is ready to move forward- Communicated back of beginning of March lead-time",
       "est_qty": "3.10",
@@ -34525,7 +34525,7 @@
     "pk": 453,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "3.20",
@@ -34547,7 +34547,7 @@
     "pk": 454,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "2.10",
@@ -34569,7 +34569,7 @@
     "pk": 455,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get 18 sheets of 1\" baltic birch",
       "description": "get 18 sheets of 1\" baltic birch",
       "est_qty": "2.30",
@@ -34591,7 +34591,7 @@
     "pk": 456,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "2.00",
@@ -34613,7 +34613,7 @@
     "pk": 457,
     "fields": {
       "job": 86,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.40",
@@ -34635,7 +34635,7 @@
     "pk": 458,
     "fields": {
       "job": 86,
-      "service_price": 2,
+      "service_item": 2,
       "name": "get updated drawing that doesn't have the angled side feature",
       "description": "get updated drawing that doesn't have the angled side feature",
       "est_qty": "3.30",
@@ -34689,7 +34689,7 @@
     "pk": 459,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "coming Friday 1:30",
       "description": "coming Friday 1:30",
       "est_qty": "2.50",
@@ -34711,7 +34711,7 @@
     "pk": 460,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send dep inv $500",
       "description": "send dep inv $500",
       "est_qty": "3.00",
@@ -34733,7 +34733,7 @@
     "pk": 461,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "3.40",
@@ -34755,7 +34755,7 @@
     "pk": 462,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "customer brought sample piece",
       "description": "customer brought sample piece",
       "est_qty": "1.70",
@@ -34777,7 +34777,7 @@
     "pk": 463,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.80",
@@ -34799,7 +34799,7 @@
     "pk": 464,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "1.60",
@@ -34821,7 +34821,7 @@
     "pk": 465,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "if the sample cut is under $500 apply the balance to the main cut",
       "description": "if the sample cut is under $500 apply the balance to the main cut",
       "est_qty": "3.30",
@@ -34843,7 +34843,7 @@
     "pk": 466,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send photo of test cuts, we are going to try some different stuff",
       "description": "send photo of test cuts, we are going to try some different stuff",
       "est_qty": "2.30",
@@ -34865,7 +34865,7 @@
     "pk": 467,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "2 hours testing cut strategy 8-12",
       "description": "2 hours testing cut strategy 8-12",
       "est_qty": "0.65",
@@ -34887,7 +34887,7 @@
     "pk": 468,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for GnR to return",
       "description": "wait for GnR to return",
       "est_qty": "1.10",
@@ -34909,7 +34909,7 @@
     "pk": 469,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "1 hr coding and cutting new samples 9-30-25",
       "description": "1 hr coding and cutting new samples 9-30-25",
       "est_qty": "2.10",
@@ -34931,7 +34931,7 @@
     "pk": 470,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for .08mm dia ballnose bit",
       "description": "wait for .08mm dia ballnose bit",
       "est_qty": "2.90",
@@ -34953,7 +34953,7 @@
     "pk": 471,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "test again with tiniest bit",
       "description": "test again with tiniest bit",
       "est_qty": "2.80",
@@ -34975,7 +34975,7 @@
     "pk": 472,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "recode tiniest ballnose bit properly; cut larger sample",
       "description": "recode tiniest ballnose bit properly; cut larger sample",
       "est_qty": "2.50",
@@ -34997,7 +34997,7 @@
     "pk": 473,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "how much does he owe now?  also how much will the full part cost assuming samples are approved?",
       "description": "how much does he owe now?  also how much will the full part cost assuming samples are approved?",
       "est_qty": "1.30",
@@ -35019,7 +35019,7 @@
     "pk": 474,
     "fields": {
       "job": 87,
-      "service_price": 7,
+      "service_item": 7,
       "name": "larger sample kinda sucks, discuss with customer",
       "description": "larger sample kinda sucks, discuss with customer",
       "est_qty": "3.30",
@@ -35037,7 +35037,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 18,
     "fields": {
       "name": "Flat Fee $0.00",
@@ -35056,7 +35056,7 @@
     "pk": 475,
     "fields": {
       "job": 87,
-      "service_price": 18,
+      "service_item": 18,
       "name": "Engrave decorative pattern into lead bonded to Baltic birch plywood",
       "description": "Engrave decorative pattern into lead bonded to Baltic birch plywood",
       "est_qty": "1.00",
@@ -35091,7 +35091,7 @@
     "pk": 476,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "redo estimate for pedestal A, see email",
       "description": "redo estimate for pedestal A, see email",
       "est_qty": "1.80",
@@ -35113,7 +35113,7 @@
     "pk": 477,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reissue as quote, see email thread. R told him expect quote Monday or Tuesday",
       "description": "reissue as quote, see email thread. R told him expect quote Monday or Tuesday",
       "est_qty": "3.20",
@@ -35135,7 +35135,7 @@
     "pk": 478,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reissue, adding concrete base to second pedestal.  note this is more complicated as it requires two sections and an attachment, although the artwork just sits on the pedestal without being attached.",
       "description": "reissue, adding concrete base to second pedestal.  note this is more complicated as it requires two sections and an attachment, although the artwork just sits on the pedestal without being attached.",
       "est_qty": "2.70",
@@ -35157,7 +35157,7 @@
     "pk": 479,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "update new estimate to include delivery and sculpture attachment",
       "description": "update new estimate to include delivery and sculpture attachment",
       "est_qty": "1.10",
@@ -35179,7 +35179,7 @@
     "pk": 480,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send estimate to new customer",
       "description": "send estimate to new customer",
       "est_qty": "1.90",
@@ -35201,7 +35201,7 @@
     "pk": 481,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Barbara would like a phone convo about this job. Please schedule",
       "description": "Barbara would like a phone convo about this job. Please schedule",
       "est_qty": "3.40",
@@ -35223,7 +35223,7 @@
     "pk": 482,
     "fields": {
       "job": 88,
-      "service_price": 2,
+      "service_item": 2,
       "name": "draw 2 pedestals, 1hr CAD R 4-3",
       "description": "draw 2 pedestals, 1hr CAD R 4-3",
       "est_qty": "2.00",
@@ -35245,7 +35245,7 @@
     "pk": 483,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send material dep inv",
       "description": "send material dep inv",
       "est_qty": "0.61",
@@ -35267,7 +35267,7 @@
     "pk": 484,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for deposit payment",
       "description": "wait for deposit payment",
       "est_qty": "1.70",
@@ -35289,7 +35289,7 @@
     "pk": 485,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get material (edit me)",
       "description": "get material (edit me)",
       "est_qty": "2.10",
@@ -35311,7 +35311,7 @@
     "pk": 486,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "3.90",
@@ -35333,7 +35333,7 @@
     "pk": 487,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "assemble piece (track time)",
       "description": "assemble piece (track time)",
       "est_qty": "2.40",
@@ -35355,7 +35355,7 @@
     "pk": 488,
     "fields": {
       "job": 88,
-      "service_price": 7,
+      "service_item": 7,
       "name": "sanding and finishing (track time)",
       "description": "sanding and finishing (track time)",
       "est_qty": "2.50",
@@ -35430,7 +35430,7 @@
     "pk": 93,
     "fields": {
       "est_worksheet": 47,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for customer to give more detail",
       "description": "wait for customer to give more detail",
       "est_qty": "1.00",
@@ -35444,7 +35444,7 @@
     "pk": 94,
     "fields": {
       "est_worksheet": 47,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send estimate for veneer stain tests",
       "description": "send estimate for veneer stain tests",
       "est_qty": "1.00",
@@ -35458,7 +35458,7 @@
     "pk": 95,
     "fields": {
       "est_worksheet": 47,
-      "service_price": 7,
+      "service_item": 7,
       "name": "make a new job for the pedestals themselves once they're ready to move forward",
       "description": "make a new job for the pedestals themselves once they're ready to move forward",
       "est_qty": "1.00",
@@ -35472,7 +35472,7 @@
     "pk": 96,
     "fields": {
       "est_worksheet": 47,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send estimate to new customer",
       "description": "send estimate to new customer",
       "est_qty": "1.00",
@@ -35512,7 +35512,7 @@
     "pk": 489,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send esitmate based on .0125% stepover samples",
       "description": "send esitmate based on .0125% stepover samples",
       "est_qty": "1.40",
@@ -35534,7 +35534,7 @@
     "pk": 490,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "wait for walnut stock",
       "description": "wait for walnut stock",
       "est_qty": "1.40",
@@ -35556,7 +35556,7 @@
     "pk": 491,
     "fields": {
       "job": 91,
-      "service_price": 2,
+      "service_item": 2,
       "name": "did he send updated model?",
       "description": "did he send updated model?",
       "est_qty": "2.40",
@@ -35578,7 +35578,7 @@
     "pk": 492,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "code for cutting",
       "description": "code for cutting",
       "est_qty": "1.90",
@@ -35600,7 +35600,7 @@
     "pk": 493,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "put cuts on calendar",
       "description": "put cuts on calendar",
       "est_qty": "2.00",
@@ -35622,7 +35622,7 @@
     "pk": 494,
     "fields": {
       "job": 91,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut 2nd MDF stock glueup",
       "description": "cut 2nd MDF stock glueup",
       "est_qty": "7.00",
@@ -35644,7 +35644,7 @@
     "pk": 495,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "glue up 2nd MDF stock",
       "description": "glue up 2nd MDF stock",
       "est_qty": "3.70",
@@ -35666,7 +35666,7 @@
     "pk": 496,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Create Traveler",
       "description": "Create Traveler",
       "est_qty": "0.52",
@@ -35688,7 +35688,7 @@
     "pk": 497,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "buy 1 sheet 1\" MDF",
       "description": "buy 1 sheet 1\" MDF",
       "est_qty": "3.00",
@@ -35710,7 +35710,7 @@
     "pk": 498,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "glue up MDF stock",
       "description": "glue up MDF stock",
       "est_qty": "2.40",
@@ -35732,7 +35732,7 @@
     "pk": 499,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plan jig/cutting strategy",
       "description": "plan jig/cutting strategy",
       "est_qty": "1.30",
@@ -35754,7 +35754,7 @@
     "pk": 500,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "review latest version, is it suitable?",
       "description": "review latest version, is it suitable?",
       "est_qty": "3.90",
@@ -35776,7 +35776,7 @@
     "pk": 501,
     "fields": {
       "job": 91,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut MDF test version",
       "description": "cut MDF test version",
       "est_qty": "16.00",
@@ -35798,7 +35798,7 @@
     "pk": 502,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "get Efren to joint both sides of walnut plank",
       "description": "get Efren to joint both sides of walnut plank",
       "est_qty": "3.60",
@@ -35820,7 +35820,7 @@
     "pk": 503,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Glue up walnut stock, 3pc -> 2 glue joints",
       "description": "Glue up walnut stock, 3pc -> 2 glue joints",
       "est_qty": "1.10",
@@ -35842,7 +35842,7 @@
     "pk": 504,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "plane back of stock",
       "description": "plane back of stock",
       "est_qty": "2.60",
@@ -35864,7 +35864,7 @@
     "pk": 505,
     "fields": {
       "job": 91,
-      "service_price": 1,
+      "service_item": 1,
       "name": "cut walnut final version",
       "description": "cut walnut final version",
       "est_qty": "2.00",
@@ -35886,7 +35886,7 @@
     "pk": 506,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "route off last 1/4\"",
       "description": "route off last 1/4\"",
       "est_qty": "1.50",
@@ -35908,7 +35908,7 @@
     "pk": 507,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "$4000 Payment Received and pieces back",
       "description": "$4000 Payment Received and pieces back",
       "est_qty": "1.90",
@@ -35930,7 +35930,7 @@
     "pk": 508,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "poked 3/31/25",
       "description": "poked 3/31/25",
       "est_qty": "1.70",
@@ -35952,7 +35952,7 @@
     "pk": 509,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "poked 4/24/25",
       "description": "poked 4/24/25",
       "est_qty": "1.50",
@@ -35974,7 +35974,7 @@
     "pk": 510,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "called Oomung & left voicemail 5/28/25",
       "description": "called Oomung & left voicemail 5/28/25",
       "est_qty": "3.80",
@@ -35996,7 +35996,7 @@
     "pk": 511,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "called Oomung 6/16 and number is out of service.  Emailed info@abinari.it with history, also v. worried about Oomung",
       "description": "called Oomung 6/16 and number is out of service.  Emailed info@abinari.it with history, also v. worried about Oomung",
       "est_qty": "1.00",
@@ -36018,7 +36018,7 @@
     "pk": 512,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "found https://www.particle.art/sostenibilita/socialfurniture/showcase/projectDetail/7 and poked them, don't expect anything",
       "description": "found https://www.particle.art/sostenibilita/socialfurniture/showcase/projectDetail/7 and poked them, don't expect anything",
       "est_qty": "3.00",
@@ -36040,7 +36040,7 @@
     "pk": 513,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "found a physical address matching his phone number online; sent a demand letter to it registered mail",
       "description": "found a physical address matching his phone number online; sent a demand letter to it registered mail",
       "est_qty": "1.20",
@@ -36062,7 +36062,7 @@
     "pk": 514,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "rejiggered invoices per Oomung's request as he may be able to collect from his client who had been stonewalling him",
       "description": "rejiggered invoices per Oomung's request as he may be able to collect from his client who had been stonewalling him",
       "est_qty": "1.60",
@@ -36084,7 +36084,7 @@
     "pk": 515,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "send him info on the collections agencies we have used",
       "description": "send him info on the collections agencies we have used",
       "est_qty": "1.40",
@@ -36106,7 +36106,7 @@
     "pk": 516,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "Oomung coming Thurs 26th",
       "description": "Oomung coming Thurs 26th",
       "est_qty": "2.20",
@@ -36128,7 +36128,7 @@
     "pk": 517,
     "fields": {
       "job": 91,
-      "service_price": 7,
+      "service_item": 7,
       "name": "reverted the invoices back to our original amounts",
       "description": "reverted the invoices back to our original amounts",
       "est_qty": "2.50",
@@ -36146,7 +36146,7 @@
     }
   },
   {
-    "model": "jobs.serviceprice",
+    "model": "jobs.serviceitem",
     "pk": 19,
     "fields": {
       "name": "Flat Fee $5000.00",
@@ -36165,7 +36165,7 @@
     "pk": 518,
     "fields": {
       "job": 91,
-      "service_price": 19,
+      "service_item": 19,
       "name": "Glue up MDF to similar proportions and cut a test of the full piece (material included)",
       "description": "Glue up MDF to similar proportions and cut a test of the full piece (material included)",
       "est_qty": "1.00",

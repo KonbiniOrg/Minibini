@@ -74,14 +74,14 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         model = PlanTask
         fields = [
             'plan_task_id', 'name', 'description', 'sort_order',
-            'service_price', 'active_modifiers', 'est_qty', 'est_worker_time',
+            'service_item', 'active_modifiers', 'est_qty', 'est_worker_time',
             'amount', 'units', 'plan_materials',
         ]
         read_only_fields = ['plan_task_id', 'sort_order', 'amount', 'units']
 
-    def validate_service_price(self, value):
-        from apps.jobs.models import ServicePrice
-        if value and value.algorithm == ServicePrice.PERCENTAGE:
+    def validate_service_item(self, value):
+        from apps.jobs.models import ServiceItem
+        if value and value.algorithm == ServiceItem.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
@@ -91,7 +91,7 @@ class PlanTaskSerializer(serializers.ModelSerializer):
         return str(obj.compute_amount().quantize(Decimal('0.01')))
 
     def get_units(self, obj):
-        return obj.service_price.unit_label if obj.service_price_id else ''
+        return obj.service_item.unit_label if obj.service_item_id else ''
 
 
 class PlanMaterialAssignTaskSerializer(serializers.Serializer):

@@ -1,5 +1,5 @@
 """Bundling 2+ atoms in a wizard: when every atom is a task sharing one
-ServicePrice and identical active_modifiers, the line item is summarized
+ServiceItem and identical active_modifiers, the line item is summarized
 (units = scheme unit_label, qty = summed actuals, price = effective rate)
 instead of the qty=1 / units='none' fallback."""
 
@@ -16,7 +16,7 @@ from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceWizardService
-from apps.jobs.models import Blep, Job, PlanTask, ServicePrice, Task
+from apps.jobs.models import Blep, Job, PlanTask, ServiceItem, Task
 
 
 class InvoiceWizardBundleSummaryTest(TestCase):
@@ -34,26 +34,26 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-1',
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        self.scheme = ServicePrice.objects.create(
-            name='Widgets', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Widgets', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             accounting_category=self.cat,
         )
-        self.scheme_rush = ServicePrice.objects.create(
-            name='Widgets-rush', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme_rush = ServiceItem.objects.create(
+            name='Widgets-rush', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             modifiers=[{'key': 'rush', 'percent': 50}],
             accounting_category=self.cat,
         )
-        self.scheme_other = ServicePrice.objects.create(
-            name='Jobs', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme_other = ServiceItem.objects.create(
+            name='Jobs', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('99.00'), unit_label='jobs',
             accounting_category=self.cat,
         )
 
     def _task(self, scheme, actual_qty, modifiers=None):
         t = Task.objects.create(
-            job=self.job, name='T', service_price=scheme,
+            job=self.job, name='T', service_item=scheme,
             actual_qty=Decimal(str(actual_qty)),
             active_modifiers=modifiers or [],
         )
@@ -86,13 +86,13 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         # elapsed_time bills logged time: the bundle sums each task's Blep
         # hours (the actuals), never est_qty. These tasks carry no est_qty,
         # so a non-zero summed qty can only come from the Bleps.
-        scheme_hourly = ServicePrice.objects.create(
-            name='Bench', algorithm=ServicePrice.ELAPSED_TIME,
+        scheme_hourly = ServiceItem.objects.create(
+            name='Bench', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours',
             accounting_category=self.cat,
         )
-        a = Task.objects.create(job=self.job, name='T', service_price=scheme_hourly)
-        b = Task.objects.create(job=self.job, name='T', service_price=scheme_hourly)
+        a = Task.objects.create(job=self.job, name='T', service_item=scheme_hourly)
+        b = Task.objects.create(job=self.job, name='T', service_item=scheme_hourly)
         start = timezone.now()
         Blep.objects.create(task=a, user=self.user, start_time=start, end_time=start + timedelta(hours=2))
         Blep.objects.create(task=b, user=self.user, start_time=start, end_time=start + timedelta(hours=3))
@@ -178,19 +178,19 @@ class EstimateWizardBundleSummaryTest(TestCase):
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-E1',
         )
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServicePrice.objects.create(
-            name='E-Widgets', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='E-Widgets', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             accounting_category=self.cat,
         )
-        self.scheme_rush = ServicePrice.objects.create(
-            name='E-Widgets-rush', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme_rush = ServiceItem.objects.create(
+            name='E-Widgets-rush', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             modifiers=[{'key': 'rush', 'percent': 50}],
             accounting_category=self.cat,
         )
-        self.scheme_other = ServicePrice.objects.create(
-            name='E-Jobs', algorithm=ServicePrice.ENTERED_QTY,
+        self.scheme_other = ServiceItem.objects.create(
+            name='E-Jobs', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('99.00'), unit_label='jobs',
             accounting_category=self.cat,
         )
@@ -198,7 +198,7 @@ class EstimateWizardBundleSummaryTest(TestCase):
 
     def _pt(self, scheme, est_qty, modifiers=None):
         return PlanTask.objects.create(
-            est_worksheet=self.ws, name='PT', service_price=scheme,
+            est_worksheet=self.ws, name='PT', service_item=scheme,
             est_qty=Decimal(str(est_qty)), active_modifiers=modifiers or [],
         )
 
@@ -222,10 +222,10 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.price, Decimal('15.00'))
 
     def test_flat_fee_same_scheme_summed(self):
-        # flat_fee price now lives on ServicePrice.rate; active_modifiers is [].
+        # flat_fee price now lives on ServiceItem.rate; active_modifiers is [].
         # Same scheme + same (empty) modifiers summarizes — est_qty summed, not set to 1.
-        scheme_flat = ServicePrice.objects.create(
-            name='E-Tapping', algorithm=ServicePrice.FLAT_FEE,
+        scheme_flat = ServiceItem.objects.create(
+            name='E-Tapping', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('7.00'), unit_label='holes',
             accounting_category=self.cat,
         )

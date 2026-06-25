@@ -9,16 +9,16 @@ class TaskCreationProducesChargeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import ServicePrice, Job
+        from apps.jobs.models import ServiceItem, Job
         from apps.estimates.models import TaskTemplate
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tcr', name='X-tcr')
-        self.scheme = ServicePrice.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='S-tcr', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='T-tcr', service_price=self.scheme,
+            template_name='T-tcr', service_item=self.scheme,
             default_billable_qty=Decimal('1'),
         )
         contact = Contact.objects.create(
@@ -31,22 +31,22 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         contact.save()
         self.job = Job.objects.create(job_number='J-tcr', contact=contact)
 
-    def test_create_from_template_sets_service_price_on_task(self):
+    def test_create_from_template_sets_service_item_on_task(self):
         from apps.jobs.services import TaskService
         task = TaskService.create_from_template(self.template, self.job)
-        self.assertEqual(task.service_price, self.scheme)
+        self.assertEqual(task.service_item, self.scheme)
 
     def test_create_direct_without_scheme_raises(self):
         from apps.jobs.services import TaskService
         with self.assertRaises(ValidationError):
             TaskService.create_direct(self.job, name='no scheme')
 
-    def test_create_direct_with_scheme_sets_service_price_on_task(self):
+    def test_create_direct_with_scheme_sets_service_item_on_task(self):
         from apps.jobs.services import TaskService
         task = TaskService.create_direct(
-            self.job, name='ok', service_price_id=self.scheme.pk,
+            self.job, name='ok', service_item_id=self.scheme.pk,
         )
-        self.assertEqual(task.service_price_id, self.scheme.pk)
+        self.assertEqual(task.service_item_id, self.scheme.pk)
 
     def test_template_with_superseded_scheme_raises(self):
         from apps.jobs.services import TaskService
@@ -62,7 +62,7 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         self.scheme.refresh_from_db()
         with self.assertRaises(ValidationError):
             TaskService.create_direct(
-                self.job, name='x', service_price_id=self.scheme.pk,
+                self.job, name='x', service_item_id=self.scheme.pk,
             )
 
     def test_create_direct_allow_superseded_scheme_bypasses_check(self):
@@ -70,25 +70,25 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         self.scheme.supersede(name='S-tcr v2')
         self.scheme.refresh_from_db()
         task = TaskService.create_direct(
-            self.job, name='clone', service_price_id=self.scheme.pk,
+            self.job, name='clone', service_item_id=self.scheme.pk,
             allow_superseded_scheme=True,
         )
-        self.assertEqual(task.service_price_id, self.scheme.pk)
+        self.assertEqual(task.service_item_id, self.scheme.pk)
 
 
 class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
     """B4 removed the hasattr(self, 'charge') guard from Task.clean().
-    B8 makes service_price NOT NULL at the DB level — Tasks always have it.
+    B8 makes service_item NOT NULL at the DB level — Tasks always have it.
     """
     fixtures = []
 
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import Job, ServicePrice
+        from apps.jobs.models import Job, ServiceItem
         from apps.contacts.models import Business, Contact
         ac = AccountingCategory.objects.create(code='B8-tcrc', name='B8-tcrc')
-        self.scheme = ServicePrice.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='S-tcrc', algorithm='flat_fee', rate=1,
             unit_label='ea', accounting_category=ac,
         )
@@ -103,8 +103,8 @@ class TaskCleanNoLongerRequiresChargeTest(BaseTestCase):
         self.job = Job.objects.create(job_number='J-tcrc', contact=contact)
 
     def test_task_full_clean_succeeds_without_charge(self):
-        """B4 removed charge guard; B8 requires service_price. Task with service_price passes clean."""
+        """B4 removed charge guard; B8 requires service_item. Task with service_item passes clean."""
         from apps.jobs.models import Task
-        t = Task.objects.create(job=self.job, name='with scheme', service_price=self.scheme)
-        # Should not raise — charge guard removed in B4, service_price required (B8)
+        t = Task.objects.create(job=self.job, name='with scheme', service_item=self.scheme)
+        # Should not raise — charge guard removed in B4, service_item required (B8)
         t.full_clean()

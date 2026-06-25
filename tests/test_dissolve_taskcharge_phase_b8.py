@@ -1,13 +1,13 @@
-"""B8: Task.service_price is NOT NULL at the DB level.
+"""B8: Task.service_item is NOT NULL at the DB level.
 
 These tests verify the tightening introduced in migration
-0035_phase_b_tighten_task_service_price:
+0035_phase_b_tighten_task_service_item:
 
-1. Creating a Task without service_price raises IntegrityError (DB constraint).
-2. The Task.service_price related_name is 'task_set', so
-   ServicePrice.task_set.exists() works as the reverse manager.
+1. Creating a Task without service_item raises IntegrityError (DB constraint).
+2. The Task.service_item related_name is 'task_set', so
+   ServiceItem.task_set.exists() works as the reverse manager.
 3. Task.clean() still validates status transitions and nothing else
-   (no charge guard, no service_price validation — that's now DB-level).
+   (no charge guard, no service_item validation — that's now DB-level).
 """
 from decimal import Decimal
 
@@ -15,13 +15,13 @@ from django.test import TestCase
 
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Business, Contact
-from apps.jobs.models import Job, ServicePrice, Task
+from apps.jobs.models import Job, ServiceItem, Task
 
 
 def _make_scheme(name='S-b8'):
     ac, _ = AccountingCategory.objects.get_or_create(code='B8', defaults={'name': 'B8-Labor'})
-    return ServicePrice.objects.create(
-        name=name, algorithm=ServicePrice.FLAT_FEE,
+    return ServiceItem.objects.create(
+        name=name, algorithm=ServiceItem.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea',
         accounting_category=ac,
     )
@@ -39,34 +39,34 @@ def _make_job(suffix='b8'):
     return Job.objects.create(job_number=f'J-{suffix}', contact=contact)
 
 
-class TaskServicePriceNotNullTest(TestCase):
-    """service_price must be set; the DB column is NOT NULL."""
+class TaskServiceItemNotNullTest(TestCase):
+    """service_item must be set; the DB column is NOT NULL."""
 
     def setUp(self):
         self.scheme = _make_scheme()
         self.job = _make_job()
 
-    def test_task_with_service_price_saves_ok(self):
-        """Happy path: Task with service_price creates successfully."""
+    def test_task_with_service_item_saves_ok(self):
+        """Happy path: Task with service_item creates successfully."""
         task = Task.objects.create(
-            job=self.job, name='Valid task', service_price=self.scheme,
+            job=self.job, name='Valid task', service_item=self.scheme,
         )
         task.refresh_from_db()
-        self.assertEqual(task.service_price_id, self.scheme.pk)
+        self.assertEqual(task.service_item_id, self.scheme.pk)
 
-    def test_task_without_service_price_raises_validation_error(self):
-        """Task.service_price is NOT NULL — omitting it raises ValidationError."""
+    def test_task_without_service_item_raises_validation_error(self):
+        """Task.service_item is NOT NULL — omitting it raises ValidationError."""
         from django.core.exceptions import ValidationError
         # Task.save() calls full_clean(), which surfaces the NOT NULL
         # constraint as a ValidationError before the DB is ever hit.
         t = Task(job=self.job, name='No scheme', sort_order=1)
         with self.assertRaises(ValidationError) as cm:
             t.save()
-        self.assertIn('service_price', cm.exception.message_dict)
+        self.assertIn('service_item', cm.exception.message_dict)
 
 
-class ServicePriceReverseManagerTest(TestCase):
-    """Task.service_price related_name is 'task_set' — reverse manager works."""
+class ServiceItemReverseManagerTest(TestCase):
+    """Task.service_item related_name is 'task_set' — reverse manager works."""
 
     def setUp(self):
         self.scheme = _make_scheme('S-b8-rev')
@@ -74,9 +74,9 @@ class ServicePriceReverseManagerTest(TestCase):
         self.job = _make_job('b8-rev')
 
     def test_task_set_reverse_manager_returns_linked_tasks(self):
-        t1 = Task.objects.create(job=self.job, name='T1', service_price=self.scheme)
-        t2 = Task.objects.create(job=self.job, name='T2', service_price=self.scheme)
-        Task.objects.create(job=self.job, name='T3', service_price=self.other)
+        t1 = Task.objects.create(job=self.job, name='T1', service_item=self.scheme)
+        t2 = Task.objects.create(job=self.job, name='T2', service_item=self.scheme)
+        Task.objects.create(job=self.job, name='T3', service_item=self.other)
 
         linked = list(self.scheme.task_set.values_list('pk', flat=True))
         self.assertIn(t1.pk, linked)
@@ -84,9 +84,9 @@ class ServicePriceReverseManagerTest(TestCase):
         self.assertEqual(len(linked), 2)
 
     def test_is_referenced_detects_task_via_reverse_manager(self):
-        """ServicePrice.is_referenced() returns True when a Task uses it."""
+        """ServiceItem.is_referenced() returns True when a Task uses it."""
         self.assertFalse(self.scheme.is_referenced())
-        Task.objects.create(job=self.job, name='Ref task', service_price=self.scheme)
+        Task.objects.create(job=self.job, name='Ref task', service_item=self.scheme)
         self.assertTrue(self.scheme.is_referenced())
 
     def test_unreferenced_scheme_is_not_referenced(self):
@@ -101,7 +101,7 @@ class TaskCleanStatusTransitionTest(TestCase):
         self.scheme = _make_scheme('S-b8-clean')
         self.job = _make_job('b8-clean')
         self.task = Task.objects.create(
-            job=self.job, name='Clean task', service_price=self.scheme,
+            job=self.job, name='Clean task', service_item=self.scheme,
         )
 
     def test_valid_status_transition_passes_clean(self):

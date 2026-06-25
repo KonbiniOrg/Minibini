@@ -114,7 +114,7 @@ class TaskModelFixtureTest(FixtureTestCase):
             est_worker_time=timedelta(hours=1),
             job=job,
             name="Cabinet installation",
-            service_price_id=1,
+            service_item_id=1,
         )
         self.assertEqual(new_task.job, job)
         self.assertEqual(Task.objects.count(), 3)  # 2 from fixture + 1 new

@@ -5,7 +5,7 @@ from django.utils import timezone as dj_tz
 from tests.base import BaseTestCase
 from apps.core.models import Configuration, User
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, Blep, ServicePrice
+from apps.jobs.models import Job, Task, Blep, ServiceItem
 from apps.jobs.services import JobService
 from apps.schedule.services import (
     CONFIG_DEFAULTS,
@@ -49,9 +49,9 @@ def _seed_user_with_pending_task(est_minutes=120, name='J-101 fab',
     for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
         job.status = s
         job.save()
-    rs = ServicePrice.objects.first()
+    rs = ServiceItem.objects.first()
     task = Task.objects.create(
-        job=job, assignee=user, service_price=rs,
+        job=job, assignee=user, service_item=rs,
         name=name, est_worker_time=timedelta(minutes=est_minutes),
         worker_queue=1, status=Task.STATUS_PENDING,
     )
@@ -140,9 +140,9 @@ class OffHoursInProgressTest(BaseTestCase):
         user, active = _seed_user_with_pending_task(
             est_minutes=120, name='Early', username='early_user',
         )
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         pending = Task.objects.create(
-            job=active.job, assignee=user, service_price=rs,
+            job=active.job, assignee=user, service_item=rs,
             name='Later', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
@@ -286,9 +286,9 @@ class OverrunCascadeTest(BaseTestCase):
         user, task1 = _seed_user_with_pending_task(est_minutes=60, name='T1')
         task1.status = Task.STATUS_IN_PROGRESS
         task1.save()
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         task2 = Task.objects.create(
-            job=task1.job, assignee=user, service_price=rs,
+            job=task1.job, assignee=user, service_item=rs,
             name='T2', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
@@ -314,9 +314,9 @@ class CompletedEarlyTest(BaseTestCase):
         # forecast before now — so it lands at 10:30, not at 10:10 (the
         # completed end + buffer, which is in the past).
         user, task1 = _seed_user_with_pending_task(est_minutes=120, name='T1')
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         task2 = Task.objects.create(
-            job=task1.job, assignee=user, service_price=rs,
+            job=task1.job, assignee=user, service_item=rs,
             name='T2', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
@@ -343,9 +343,9 @@ class CompletedEarlyTest(BaseTestCase):
         # completed the task, and it's now 09:00. The pending task must not
         # render behind the now line.
         user, task1 = _seed_user_with_pending_task(est_minutes=60, name='Early1')
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         task2 = Task.objects.create(
-            job=task1.job, assignee=user, service_price=rs,
+            job=task1.job, assignee=user, service_item=rs,
             name='Early2', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
@@ -376,9 +376,9 @@ class BlockedTaskTest(BaseTestCase):
         )
         blocked.status = Task.STATUS_IN_PROGRESS; blocked.save()
         blocked.status = Task.STATUS_BLOCKED; blocked.save()
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         after = Task.objects.create(
-            job=blocked.job, assignee=user, service_price=rs,
+            job=blocked.job, assignee=user, service_item=rs,
             name='After', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
@@ -496,19 +496,19 @@ class FourTaskWorkerWithActiveBlepTest(BaseTestCase):
             est_minutes=120, name='Active', username='four_worker',
         )
         job = t_active.job
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         t_done = Task.objects.create(
-            job=job, assignee=worker, service_price=rs, name='Done',
+            job=job, assignee=worker, service_item=rs, name='Done',
             est_worker_time=timedelta(minutes=60), worker_queue=2,
             status=Task.STATUS_COMPLETE,
         )
         t_p1 = Task.objects.create(
-            job=job, assignee=worker, service_price=rs, name='P1',
+            job=job, assignee=worker, service_item=rs, name='P1',
             est_worker_time=timedelta(minutes=60), worker_queue=3,
             status=Task.STATUS_PENDING,
         )
         t_p2 = Task.objects.create(
-            job=job, assignee=worker, service_price=rs, name='P2',
+            job=job, assignee=worker, service_item=rs, name='P2',
             est_worker_time=timedelta(minutes=60), worker_queue=4,
             status=Task.STATUS_PENDING,
         )
@@ -549,9 +549,9 @@ class PausedInProgressTaskTest(BaseTestCase):
             est_minutes=60, name='Active', username='paused_worker',
         )
         job = t_active.job
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         t_paused = Task.objects.create(
-            job=job, assignee=worker, service_price=rs, name='Paused',
+            job=job, assignee=worker, service_item=rs, name='Paused',
             est_worker_time=timedelta(minutes=60), worker_queue=2,
             status=Task.STATUS_IN_PROGRESS,
         )
@@ -733,15 +733,15 @@ class CompletedPlusActiveOrderingTest(BaseTestCase):
         user, completed = _seed_user_with_pending_task(
             est_minutes=30, name='Completed', username='copa_user',
         )
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         # Build out the queue
         active = Task.objects.create(
-            job=completed.job, assignee=user, service_price=rs,
+            job=completed.job, assignee=user, service_item=rs,
             name='Active', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_PENDING,
         )
         next_pending = Task.objects.create(
-            job=completed.job, assignee=user, service_price=rs,
+            job=completed.job, assignee=user, service_item=rs,
             name='Next', est_worker_time=timedelta(minutes=60),
             worker_queue=3, status=Task.STATUS_PENDING,
         )
@@ -918,9 +918,9 @@ class FloatingOrderMatchesQueueTest(BaseTestCase):
         user, pending = _seed_user_with_pending_task(
             est_minutes=60, name='PendFirst', username='order_user',
         )  # _seed sets worker_queue=1, status pending
-        rs = ServicePrice.objects.first()
+        rs = ServiceItem.objects.first()
         in_prog = Task.objects.create(
-            job=pending.job, assignee=user, service_price=rs,
+            job=pending.job, assignee=user, service_item=rs,
             name='InProgSecond', est_worker_time=timedelta(minutes=60),
             worker_queue=2, status=Task.STATUS_IN_PROGRESS,
         )  # in_progress but NO bleps → a floating forecast bar

@@ -1,11 +1,11 @@
 """Per-item priced flat fees with quantity.
 
 flat_fee billing means "fixed unit price x estimated quantity". The unit
-price lives on ServicePrice.rate. See docs/designs/estimates-and-prices.md.
+price lives on ServiceItem.rate. See docs/designs/estimates-and-prices.md.
 """
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, PlanTask, ServicePrice, Job
+from apps.jobs.models import Task, PlanTask, ServiceItem, Job
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
@@ -22,15 +22,15 @@ class FlatFeePricingTest(TestCase):
             job_number='JOB-FF-1', contact=contact, status=Job.STATUS_DRAFT,
         )
         # Shared flat-fee scheme; price comes from rate (Phase 1).
-        self.flat = ServicePrice.objects.create(
-            name='Flat Fee', algorithm=ServicePrice.FLAT_FEE,
+        self.flat = ServiceItem.objects.create(
+            name='Flat Fee', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('5.00'), unit_label='unit',
             accounting_category=self.ac,
         )
 
     def test_flat_fee_effective_rate_is_rate(self):
-        svc = ServicePrice.objects.create(
-            name='Tap a hole', algorithm=ServicePrice.FLAT_FEE,
+        svc = ServiceItem.objects.create(
+            name='Tap a hole', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1.00'), unit_label='hole', accounting_category=self.ac,
         )
         # active_modifiers is ignored for flat_fee; price comes from rate.
@@ -39,8 +39,8 @@ class FlatFeePricingTest(TestCase):
 
     def test_flat_fee_ignores_active_modifiers_price(self):
         """Phase 1: flat-fee price lives on rate; a legacy flat_fee_price dict is ignored."""
-        svc = ServicePrice.objects.create(
-            name='Setup', algorithm=ServicePrice.FLAT_FEE,
+        svc = ServiceItem.objects.create(
+            name='Setup', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('50.00'), unit_label='job', accounting_category=self.ac,
         )
         # Old code returned Decimal('999.00') here (from _flat_fee_price).
@@ -48,8 +48,8 @@ class FlatFeePricingTest(TestCase):
         self.assertEqual(svc.effective_rate({'flat_fee_price': '999.00'}), Decimal('50.00'))
 
     def test_flat_fee_compute_charge(self):
-        svc = ServicePrice.objects.create(
-            name='Coat plywood', algorithm=ServicePrice.FLAT_FEE,
+        svc = ServiceItem.objects.create(
+            name='Coat plywood', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('30.00'), unit_label='sheet', accounting_category=self.ac,
         )
         self.assertEqual(svc.compute_charge(Decimal('3'), []), Decimal('90.00'))
@@ -58,14 +58,14 @@ class FlatFeePricingTest(TestCase):
 
     def test_get_actual_qty_flat_fee_returns_est_qty(self):
         task = Task.objects.create(
-            job=self.job, name='Tap', service_price=self.flat,
+            job=self.job, name='Tap', service_item=self.flat,
             est_qty=Decimal('50'),
         )
         self.assertEqual(self.flat.get_actual_qty(task), Decimal('50'))
 
     def test_get_actual_qty_flat_fee_falls_back_to_one(self):
         task = Task.objects.create(
-            job=self.job, name='Tap (no qty)', service_price=self.flat,
+            job=self.job, name='Tap (no qty)', service_item=self.flat,
         )
         self.assertEqual(self.flat.get_actual_qty(task), Decimal('1'))
 
@@ -73,7 +73,7 @@ class FlatFeePricingTest(TestCase):
 
     def test_task_compute_amount_flat_fee_price_on_rate(self):
         task = Task.objects.create(
-            job=self.job, name='Tap holes', service_price=self.flat,
+            job=self.job, name='Tap holes', service_item=self.flat,
             est_qty=Decimal('50'),
         )
         # rate=5.00 * est_qty=50 = 250.00
@@ -82,7 +82,7 @@ class FlatFeePricingTest(TestCase):
     def test_plan_task_compute_amount_flat_fee_price_on_rate(self):
         ws = EstWorksheet.objects.create(job=self.job)
         pt = PlanTask.objects.create(
-            est_worksheet=ws, name='Tap', service_price=self.flat,
+            est_worksheet=ws, name='Tap', service_item=self.flat,
             est_qty=Decimal('10'),
         )
         # rate=5.00 * est_qty=10 = 50.00

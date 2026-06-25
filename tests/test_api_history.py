@@ -158,7 +158,7 @@ class JobHistoryCollationTest(BaseTestCase):
     def test_collates_new_object_types_and_labels(self):
         from apps.jobs.models import Job, Task
         job = Job.objects.first()
-        task = Task.objects.create(job=job, name='History test task', service_price_id=1)
+        task = Task.objects.create(job=job, name='History test task', service_item_id=1)
         record_history(
             entry_type='audit', object_type='task', object_id=task.pk,
             changes={'status': {'old': 'pending', 'new': 'complete'}},

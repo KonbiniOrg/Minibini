@@ -148,7 +148,7 @@ class BaseWizardService:
 
     @classmethod
     def _uniform_scheme_bundle(cls, instances):
-        """If every atom is a task sharing one ServicePrice and identical
+        """If every atom is a task sharing one ServiceItem and identical
         `active_modifiers`, return `(units, qty, price)` summarizing the
         bundle — units from the scheme, qty = summed actual quantities,
         price = the common effective rate. Otherwise None, and the caller
@@ -156,16 +156,16 @@ class BaseWizardService:
         task_model = cls._task_model()
         if not instances or not all(isinstance(i, task_model) for i in instances):
             return None
-        if any(i.service_price_id is None for i in instances):
+        if any(i.service_item_id is None for i in instances):
             return None
-        if len({i.service_price_id for i in instances}) != 1:
+        if len({i.service_item_id for i in instances}) != 1:
             return None
         modifier_sets = {
             tuple(sorted(i.active_modifiers or [])) for i in instances
         }
         if len(modifier_sets) != 1:
             return None
-        scheme = instances[0].service_price
+        scheme = instances[0].service_item
         modifiers = instances[0].active_modifiers or []
         actual_qtys = [cls._task_actual_qty(t) for t in instances]
         if any(q is None for q in actual_qtys):
