@@ -7,8 +7,8 @@ testing today and is intended to seed the automated UI test platform later —
 each checklist item maps to an assertion. Keep it current as the pricing UI
 evolves.
 
-**Model (2026-06 ServicePrice reframe + percentage adjustments):** a **Service**
-(`ServicePrice`, the renamed `RateScheme`) is one priced thing the shop charges
+**Model (2026-06 ServiceItem reframe + percentage adjustments):** a **Service**
+(`ServiceItem`, the renamed `RateScheme`) is one priced thing the shop charges
 for. Its `rate` is the price for **every** algorithm — including flat-fee, whose
 price used to live on the task/template. So flat-fee services proliferate (one
 per priced item) and tasks/templates carry **no price of their own**; they read
@@ -39,9 +39,9 @@ phase plans beside it.
 
 A `percentage` Service is meaningless on a task. The backend rejects assigning
 one to a Task/PlanTask/TaskTemplate (HTTP 400) and excludes it from
-`GET /api/service-prices/?task_applicable=true`. **Known gap (verify / likely
+`GET /api/service-items/?task_applicable=true`. **Known gap (verify / likely
 bug):** the task and template Service pickers (`WorkItemForm`,
-`TaskTemplateManager`) currently fetch `/api/service-prices/` *without*
+`TaskTemplateManager`) currently fetch `/api/service-items/` *without*
 `task_applicable=true`, so a percentage Service may still appear in those
 dropdowns — picking one errors only on save. Treat its appearance there as a bug
 to fix (wire the filter), not as intended behavior. See §2 and §9.
@@ -73,7 +73,7 @@ Without these, whole branches below are silent no-ops:
 ## 1. Services manager (Config persona)
 
 Entry: **Settings** (`#/settings`) → the **Catalog** tab → the **Services**
-section (`ServicePriceManager`, heading **"Services"**).
+section (`ServiceItemManager`, heading **"Services"**).
 
 - [ ] **Lives under Catalog.** The Services list is on the **Catalog** tab
   (alongside the material markup and templates) — *not* on the Setup tab.

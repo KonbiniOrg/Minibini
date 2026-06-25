@@ -1,6 +1,6 @@
 # Estimates and Billing
 
-Reference for the estimating side of Minibini: `ServicePrice` as the
+Reference for the estimating side of Minibini: `ServiceItem` as the
 unit of billing identity, supersession, the billable-atom abstraction,
 the estimate wizard, atom carry-over from worksheet to job, and AC
 pass-through. Read alongside:
@@ -24,9 +24,9 @@ pass-through. Read alongside:
 
 This doc owns:
 
-- `ServicePrice` model, modifier algebra, supersession lineage.
+- `ServiceItem` model, modifier algebra, supersession lineage.
 - Billing identity on `Task` / `PlanTask` / `TaskTemplate` (the FK to
-  `ServicePrice` and the `active_modifiers` / `est_qty` / `actual_qty`
+  `ServiceItem` and the `active_modifiers` / `est_qty` / `actual_qty`
   semantics).
 - `Estimate`, `EstimateLineItem`, `EstimateLineItemSource`.
 - `ChangeOrder`, `ChangeOrderLineItem`, the agreement-of-record
@@ -35,7 +35,7 @@ This doc owns:
   billing).
 - `EstimateWizardService`, the wizard endpoints, and the wizard UI.
 - `AtomCarryOverService` — what fires when an Estimate is accepted.
-- AC pass-through rules from ServicePrice → Task / line item.
+- AC pass-through rules from ServiceItem → Task / line item.
 
 It does **not** own:
 
@@ -48,21 +48,21 @@ It does **not** own:
 
 ---
 
-## 2. ServicePrice
+## 2. ServiceItem
 
-`ServicePrice` (`apps/jobs/models.py`, `db_table = 'service_prices'`,
-FK field `service_price`, API `/api/service-prices/`) is the **service
+`ServiceItem` (`apps/jobs/models.py`, `db_table = 'service_items'`,
+FK field `service_item`, API `/api/service-items/`) is the **service
 price list** — the catalog of named, priced services the shop performs.
 It owns the math (rate, algorithm, modifiers), the `AccountingCategory`
 (and therefore taxability / QBO income mapping), and its own version
 lineage. Every `PlanTask`, `Task`, and `TaskTemplate` references exactly
-one `ServicePrice` and inherits the rest.
+one `ServiceItem` and inherits the rest.
 
 ### 2.1 Identity fields
 
 | Field | Type | Notes |
 |---|---|---|
-| `service_price_id` | AutoField PK | |
+| `service_item_id` | AutoField PK | |
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor", "Tap a hole" |
 | `description` | TextField, blank | longer admin explanation |
 | `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `flat_fee`, `percentage` |
@@ -74,30 +74,30 @@ one `ServicePrice` and inherits the rest.
 | `replaced_at` | DateTimeField, nullable | when supersession happened |
 
 `accounting_category_id` is enforced at the application layer in
-`ServicePrice.clean()` (raises `ValidationError`).
+`ServiceItem.clean()` (raises `ValidationError`).
 
 ### 2.2 Algorithms
 
 | Algorithm | Constant | Quantity source | Typical use |
 |---|---|---|---|
-| `elapsed_time` | `ServicePrice.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
-| `entered_qty` | `ServicePrice.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
-| `flat_fee` | `ServicePrice.FLAT_FEE` | the atom's `est_qty` (fallback `Decimal(1)`) | one-off and per-unit priced services (tap a hole, plywood coating, setup fee) |
-| `percentage` | `ServicePrice.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
+| `elapsed_time` | `ServiceItem.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
+| `entered_qty` | `ServiceItem.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
+| `flat_fee` | `ServiceItem.FLAT_FEE` | the atom's `est_qty` (fallback `Decimal(1)`) | one-off and per-unit priced services (tap a hole, plywood coating, setup fee) |
+| `percentage` | `ServiceItem.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
 
 #### The `percentage` algorithm
 
 `percentage` is a **document-level adjustment** — it never backs a `Task`,
-`PlanTask`, or `TaskTemplate`. Calling `ServicePrice.effective_rate()` or
+`PlanTask`, or `TaskTemplate`. Calling `ServiceItem.effective_rate()` or
 `get_actual_qty()` on a percentage service raises `ValueError`; the estimate
 and invoice serializers reject it; `TaskService.create_direct` rejects it;
-and `GET /api/service-prices/?task_applicable=true` excludes it. The
+and `GET /api/service-items/?task_applicable=true` excludes it. The
 `Services` manager in the settings UI still displays percentage types so they
 can be managed; the task-creation pickers never show them.
 
 `rate` holds the **percent value**: `10` means 10%, `-5` means a 5% discount.
 Negative rates are allowed only for `percentage` services (all other
-algorithms must have `rate >= 0`, enforced by `ServicePrice.clean()` and
+algorithms must have `rate >= 0`, enforced by `ServiceItem.clean()` and
 `validate_data.py`).
 
 **`compute_adjustment_amount`** (`apps/core/adjustments.py`) is the helper
@@ -117,7 +117,7 @@ compute_adjustment_amount(adjustment_line, sibling_lines) → Decimal
 4. Result: `(rate / 100) × base_total`, quantized to `Decimal('0.01')`
    (nearest cent).
 
-`ServicePrice.get_actual_qty(task)` resolves the right quantity per
+`ServiceItem.get_actual_qty(task)` resolves the right quantity per
 algorithm:
 
 ```python
@@ -132,16 +132,16 @@ the line item `qty` field (`max_digits=10`) when carried into the invoice
 wizard.
 
 **flat_fee pricing.** `flat_fee` bills `rate × est_qty`. The price is
-`ServicePrice.rate` — the same field used by the other algorithms.
+`ServiceItem.rate` — the same field used by the other algorithms.
 There is no separate per-atom price dict; each distinctly-priced service
-is its own `ServicePrice` row (e.g. "Tap a hole — $1.00", "Plywood
+is its own `ServiceItem` row (e.g. "Tap a hole — $1.00", "Plywood
 coating — $30.00"). A `TaskTemplate` references the appropriate entry;
 `est_qty` carries the billable quantity (e.g. 50 holes) from the
 worksheet to the Task, where it stays editable. It is not
 worker-entered at completion the way `entered_qty`'s `actual_qty` is.
 
 `flat_fee` services require a **positive `rate`** — `validate_data.py`
-raises an error for any flat-fee `ServicePrice` with `rate <= 0`.
+raises an error for any flat-fee `ServiceItem` with `rate <= 0`.
 
 ### 2.3 Modifiers
 
@@ -171,31 +171,31 @@ to `[]`.
 ### 2.4 Effective rate and compute
 
 ```python
-ServicePrice.effective_rate(active_modifiers)
+ServiceItem.effective_rate(active_modifiers)
     flat_fee
         → self.rate
     elapsed_time / entered_qty
         → rate * (1 + sum(m.percent for m in modifiers if m.key in active_modifiers) / 100)
 
-ServicePrice.compute_charge(qty, active_modifiers)
+ServiceItem.compute_charge(qty, active_modifiers)
     → qty * effective_rate(active_modifiers)
 ```
 
-There is no minimum-charge floor on ServicePrice — that field was
+There is no minimum-charge floor on ServiceItem — that field was
 removed.
 
 ### 2.5 Reference checks
 
-`ServicePrice.is_referenced()` returns `True` if any `PlanTask`, `Task`,
+`ServiceItem.is_referenced()` returns `True` if any `PlanTask`, `Task`,
 or `TaskTemplate` points at this service price.
 
-`ServicePrice.reference_counts()` returns:
+`ServiceItem.reference_counts()` returns:
 
 ```python
 {
-    'plan_task_count':     PlanTask.objects.filter(service_price=self).count(),
-    'task_count':          Task.objects.filter(service_price=self).count(),
-    'task_template_count': TaskTemplate.objects.filter(service_price=self).count(),
+    'plan_task_count':     PlanTask.objects.filter(service_item=self).count(),
+    'task_count':          Task.objects.filter(service_item=self).count(),
+    'task_template_count': TaskTemplate.objects.filter(service_item=self).count(),
 }
 ```
 
@@ -205,7 +205,7 @@ Used by both the edit-in-use guard and the outdated-schemes UI.
 
 ## 3. Supersession
 
-Once any work item references a `ServicePrice`, the service price is
+Once any work item references a `ServiceItem`, the service price is
 **frozen** in place. To change rate / modifiers / AC after that, the user
 **supersedes** the entry — creates a new row, leaves the old one
 intact, and links them via `replaced_by` / `replaced_at`. Existing
@@ -214,14 +214,14 @@ active (non-superseded) entries.
 
 ### 3.1 Frozen fields
 
-`ServicePrice.FROZEN_FIELDS`:
+`ServiceItem.FROZEN_FIELDS`:
 
 ```python
 ('name', 'description', 'algorithm', 'rate', 'unit_label',
  'modifiers', 'accounting_category')
 ```
 
-`ServicePrice.clean()` rejects any change to these fields when
+`ServiceItem.clean()` rejects any change to these fields when
 `is_referenced()` is true. The only allowed mutations on a frozen
 entry are `replaced_by` and `replaced_at` (and the `name` rename
 that `supersede()` itself performs — see below).
@@ -232,7 +232,7 @@ typos quickly, and a single rule is easier to reason about.
 ### 3.2 supersede()
 
 ```python
-ServicePrice.supersede(**overrides) → new ServicePrice
+ServiceItem.supersede(**overrides) → new ServiceItem
 ```
 
 In one transaction:
@@ -240,7 +240,7 @@ In one transaction:
 1. Renames `self` in place to `<orig_name> (vN)` where `N` counts
    predecessors in the chain. This frees the unique-name slot for the
    new row without needing a partial-unique index.
-2. Creates a new `ServicePrice` row with all of `self`'s field values,
+2. Creates a new `ServiceItem` row with all of `self`'s field values,
    then applies `**overrides`.
 3. Sets `self.replaced_by = new` and `self.replaced_at = now()`.
 
@@ -256,14 +256,14 @@ on supersede, ever. That's how billing history is preserved.
 
 | Verb + path | Behavior |
 |---|---|
-| `GET /api/service-prices/` | List active entries (`replaced_by IS NULL`) |
-| `GET /api/service-prices/?include_superseded=true` | List all entries |
-| `GET /api/service-prices/?only_superseded=true` | List just superseded |
-| `GET /api/service-prices/{id}/` | Retrieve any entry (active or superseded) |
-| `POST /api/service-prices/` | Create — `CanManageConfig` |
-| `PUT/PATCH /api/service-prices/{id}/` | Edit — **HTTP 409** if referenced (see below) |
-| `POST /api/service-prices/{id}/supersede/` | Create new version, set `replaced_by`/`replaced_at` on the old row — `CanManageConfig` |
-| `DELETE /api/service-prices/{id}/` | Delete — possible only for never-referenced entries (PROTECT cascade) |
+| `GET /api/service-items/` | List active entries (`replaced_by IS NULL`) |
+| `GET /api/service-items/?include_superseded=true` | List all entries |
+| `GET /api/service-items/?only_superseded=true` | List just superseded |
+| `GET /api/service-items/{id}/` | Retrieve any entry (active or superseded) |
+| `POST /api/service-items/` | Create — `CanManageConfig` |
+| `PUT/PATCH /api/service-items/{id}/` | Edit — **HTTP 409** if referenced (see below) |
+| `POST /api/service-items/{id}/supersede/` | Create new version, set `replaced_by`/`replaced_at` on the old row — `CanManageConfig` |
+| `DELETE /api/service-items/{id}/` | Delete — possible only for never-referenced entries (PROTECT cascade) |
 
 Permissions: read is `IsAuthenticated`; all write actions require
 `CanManageConfig`.
@@ -280,7 +280,7 @@ units list (`apps/core/units.get_units_list`).
 ```json
 {
     "detail": "Scheme is referenced; create a new version instead of editing.",
-    "supersede_url": "https://.../api/service-prices/{id}/supersede/",
+    "supersede_url": "https://.../api/service-items/{id}/supersede/",
     "reference_counts": {
         "plan_task_count":     5,
         "task_count":          12,
@@ -295,16 +295,16 @@ and explain *why* an edit was blocked.
 ### 3.5 Template guard
 
 When `TaskTemplate.generate_task(container, est_qty, ...)` runs, it
-checks `template.service_price.replaced_by_id is None`. If the template
+checks `template.service_item.replaced_by_id is None`. If the template
 points at a superseded entry, it raises `SchemeSupersededError`
 (`apps/core/services.py`), which the API translates to **HTTP 409
 Conflict** with a message identifying the template:
 
 > Template "Hourly Labor — assembly" references a superseded
-> ServicePrice. Update the template before adding tasks from it.
+> ServiceItem. Update the template before adding tasks from it.
 
 Same guard fires on `WorksheetService.add_task_from_template` if no
-explicit `service_price_id` override is supplied.
+explicit `service_item_id` override is supplied.
 
 The shop owner is forced to deliberately decide whether the template
 should adopt a new entry or pick a different one. Silent retroactive
@@ -313,14 +313,14 @@ change to template behavior is never acceptable.
 ### 3.6 Picker filtering
 
 All service-price pickers default to active entries only. The
-frontend gets this for free from the `GET /api/service-prices/`
+frontend gets this for free from the `GET /api/service-items/`
 default filter; passing `?include_superseded=true` reveals the full
 set for the outdated-schemes view.
 
 ### 3.7 PROTECT cascade
 
-`replaced_by`, `Task.service_price`, `PlanTask.service_price`, and
-`TaskTemplate.service_price` all use `on_delete=PROTECT`. An entry that
+`replaced_by`, `Task.service_item`, `PlanTask.service_item`, and
+`TaskTemplate.service_item` all use `on_delete=PROTECT`. An entry that
 has entered the lineage is effectively un-deletable — orphaning a
 work item or breaking the supersession chain is structurally
 impossible.
@@ -336,7 +336,7 @@ Recap of the billing fields:
 
 | Field | On TaskBase / Task / PlanTask | Notes |
 |---|---|---|
-| `service_price` | declared on Task and PlanTask | FK to `ServicePrice` (PROTECT). NOT NULL on both. |
+| `service_item` | declared on Task and PlanTask | FK to `ServiceItem` (PROTECT). NOT NULL on both. |
 | `active_modifiers` | declared on Task and PlanTask | JSON list of modifier keys (always a list, never a dict — see §2.3) |
 | `est_qty` | inherited from `TaskBase` | nullable on Task; `PlanTask.clean()` rejects null |
 | `est_worker_time` | inherited from `TaskBase` | DurationField for scheduling |
@@ -350,15 +350,15 @@ Both models implement the uniform atom interface
 ```python
 class Task:
     def compute_amount(self, active_modifiers=None):
-        qty = self.service_price.get_actual_qty(self)  # algorithm-aware
-        charge = self.service_price.compute_charge(qty, self.active_modifiers)
+        qty = self.service_item.get_actual_qty(self)  # algorithm-aware
+        charge = self.service_item.compute_charge(qty, self.active_modifiers)
         return charge.quantize(Decimal('0.01'))
 
 class PlanTask:
     def compute_amount(self, active_modifiers=None):
-        if not self.service_price_id or self.est_qty is None:
+        if not self.service_item_id or self.est_qty is None:
             return Decimal('0.00')
-        charge = self.service_price.compute_charge(self.est_qty, self.active_modifiers)
+        charge = self.service_item.compute_charge(self.est_qty, self.active_modifiers)
         return charge.quantize(Decimal('0.01'))
 ```
 
@@ -379,9 +379,9 @@ to resolve qty:
 | `flat_fee` | `task.est_qty` (fallback `1` when null) |
 
 `effective_rate()` on both returns
-`service_price.effective_rate(self.active_modifiers)`.
+`service_item.effective_rate(self.active_modifiers)`.
 
-`ServicePrice.effective_rate()` for `elapsed_time` / `entered_qty`
+`ServiceItem.effective_rate()` for `elapsed_time` / `entered_qty`
 quantizes to 2 decimal places (cents): a percentage modifier divides by
 100, so `rate × (1 + percent/100)` can carry more than 2 places (e.g.
 `99.99 × 1.05 = 104.9895`). For `flat_fee` it simply returns `self.rate`
@@ -410,7 +410,7 @@ visible for `entered_qty` schemes.
 |---|---|
 | `elapsed_time` | estimated billable hours (often equals `est_worker_time` but doesn't have to) |
 | `entered_qty` | estimated piece / minute count |
-| `flat_fee` | the billable quantity (e.g. number of holes); the charge is `service_price.rate × est_qty` |
+| `flat_fee` | the billable quantity (e.g. number of holes); the charge is `service_item.rate × est_qty` |
 
 `est_qty` is **never** modified by work activity. It stays as the
 estimate. `actual_qty` and Bleps capture what happened. This
@@ -526,7 +526,7 @@ stays until the user explicitly recalculates (see §5.3b). Source atom rows
 
 | Method | Behavior |
 |---|---|
-| `add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=[])` | Creates a new `EstimateLineItem` backed by a PERCENTAGE `ServicePrice` at the end of the estimate's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the estimate is not `draft` or the service is not `PERCENTAGE`. |
+| `add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=[])` | Creates a new `EstimateLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the estimate's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the estimate is not `draft` or the service is not `PERCENTAGE`. |
 | `recalculate_adjustment_line(line)` | Fetches all sibling lines on the same estimate (excluding the adjustment line itself), calls `compute_adjustment_amount`, saves `line.price`, and returns the line. Raises `ValidationError` if the estimate is not `draft`. Once a non-draft estimate is finalized (e.g., transitions to `open`), recalculation is refused — the amount is frozen. |
 
 **API endpoints:**
@@ -568,7 +568,7 @@ accounting_category, taxable_override, tax_rate_override; see
 - `source_template` — nullable FK to `TaskTemplate`. Preserves the
   catalog reference for direct-estimate line items so the carry-over
   service can spawn matching atoms when the estimate is accepted.
-- `adjustment_service` — nullable FK to `ServicePrice` (PROTECT). Set
+- `adjustment_service` — nullable FK to `ServiceItem` (PROTECT). Set
   when this line is a percentage adjustment. A line with
   `adjustment_service_id` set is an **adjustment line**; one without is
   a normal line.
@@ -628,7 +628,7 @@ release claims on the plan side.
 
 A single-atom line item copies the atom's description, units, qty,
 and price across. Multi-atom line items: when every atom is a task
-(`PlanTask` / `Task`) sharing one `ServicePrice` and identical
+(`PlanTask` / `Task`) sharing one `ServiceItem` and identical
 `active_modifiers`, the line is **summarized** — `units` from the
 service price, `qty` = summed quantities (`est_qty` on the estimate side,
 actuals on the invoice side), `price` = the common effective rate.
@@ -808,7 +808,7 @@ worksheet)` core (the same core behind the manual
   `TaskService.create_direct(**pt.copy_fields(), source_plan_task=pt,
   actual_qty=None, allow_superseded_scheme=True)`. `copy_fields()`
   carries `name`, `description`, `sort_order`, `est_worker_time`,
-  `est_qty`, `service_price_id`, `active_modifiers`; `source_plan_task`
+  `est_qty`, `service_item_id`, `active_modifiers`; `source_plan_task`
   is the idempotency hook; `parent_task` stays None (hierarchy emerges in
   execution). The superseded-scheme bypass lets a worksheet built on a
   since-superseded service price still carry over.
@@ -828,7 +828,7 @@ Because the core sets provenance on every atom, using the manual
 without worksheet sources):
 
 - Line items with `source_template` set → spawn a `Task` from the
-  template, copying `template.service_price`, `default_active_modifiers`,
+  template, copying `template.service_item`, `default_active_modifiers`,
   `description`; `est_qty = line_item.qty`.
 - Line items with `price_list_item` set (and no `source_template`) →
   spawn a `Material` on the Job from the PLI.
@@ -879,18 +879,18 @@ receiver-by-receiver behavior.
 ## 10. AccountingCategory pass-through
 
 `AccountingCategory` (`apps/core/models.py`) is required on
-`ServicePrice` (NOT NULL). Every billable concept either references a
-`ServicePrice` (and inherits AC) or carries AC directly (Materials with
+`ServiceItem` (NOT NULL). Every billable concept either references a
+`ServiceItem` (and inherits AC) or carries AC directly (Materials with
 no PLI; Expenses).
 
 ### 10.1 Where AC comes from
 
 | Object | AC source |
 |---|---|
-| `ServicePrice` | own field, required |
-| `Task` | `task.service_price.accounting_category` (via `Task.effective_accounting_category`) |
-| `PlanTask` | `plan_task.service_price.accounting_category` (via `PlanTask.effective_accounting_category`) |
-| `TaskTemplate` | `template.service_price.accounting_category` (via `TaskTemplate.effective_accounting_category`) |
+| `ServiceItem` | own field, required |
+| `Task` | `task.service_item.accounting_category` (via `Task.effective_accounting_category`) |
+| `PlanTask` | `plan_task.service_item.accounting_category` (via `PlanTask.effective_accounting_category`) |
+| `TaskTemplate` | `template.service_item.accounting_category` (via `TaskTemplate.effective_accounting_category`) |
 | `Material` (PLI-linked) | `material.price_list_item.accounting_category` (copy/derivation; materials doc owns this) |
 | `Material` (freeform) | direct on the material |
 | `EstimateLineItem` from atom | derived from the atom's effective AC at line-item creation; snapshot |
@@ -905,7 +905,7 @@ share one.
 
 ### 10.2 What changes when AC moves
 
-`ServicePrice.accounting_category` is in `FROZEN_FIELDS`. Once the
+`ServiceItem.accounting_category` is in `FROZEN_FIELDS`. Once the
 entry is referenced, AC change requires supersession. Existing tasks
 that referenced the old entry keep the old AC; future tasks pick the
 new entry and get the new AC.
@@ -1543,7 +1543,7 @@ transitions the CO `draft → open`.
 
 - **Default service price for worker quick-add** — the worker-side
   `WorkItemForm` flow currently still requires the worker to pick a
-  service price. A `default_worker_service_price` Configuration key
+  service price. A `default_worker_service_item` Configuration key
   that the form would silently default to when the user lacks
   `can_manage_jobs` has been designed but not shipped. Pairs with the
   broader worker-friendly mid-job task creation work.

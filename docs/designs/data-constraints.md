@@ -288,10 +288,10 @@ Depends on: AccountingCategory.
 
 ---
 
-### 1.7 ServicePrice
+### 1.7 ServiceItem
 
-Depends on: AccountingCategory. (`db_table = 'service_prices'`, FK field
-`service_price`, API `/api/service-prices/`.)
+Depends on: AccountingCategory. (`db_table = 'service_items'`, FK field
+`service_item`, API `/api/service-items/`.)
 
 The service price list — a named, priced service the shop performs.
 Describes how a Task/PlanTask/TaskTemplate's billable amount is computed.
@@ -307,7 +307,7 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
   - `flat_fee`: per-unit price; **must be positive** (`validate_data.py`
     raises an error for `rate <= 0`).
   - `elapsed_time` / `entered_qty`: per-unit price; **must be ≥ 0**
-    (`ServicePrice.clean()` raises `ValidationError` for negative values
+    (`ServiceItem.clean()` raises `ValidationError` for negative values
     on these two algorithms).
   - `percentage`: the percent value (e.g. `10` = 10% surcharge; `-5` = 5%
     discount). **Negative values are allowed** only for `percentage`. This
@@ -326,10 +326,10 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
 A `percentage` service can **never** back a `Task`, `PlanTask`, or
 `TaskTemplate`. The application enforces this in multiple places:
 
-- `TaskService.create_direct` rejects a `percentage` service_price.
+- `TaskService.create_direct` rejects a `percentage` service_item.
 - `EstimateLineItemSerializer` / `InvoiceLineItemSerializer` reject it on atom-based lines.
-- `GET /api/service-prices/?task_applicable=true` excludes `percentage` entries from the response.
-- `ServicePrice.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
+- `GET /api/service-items/?task_applicable=true` excludes `percentage` entries from the response.
+- `ServiceItem.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
 
 A `percentage` entry that is **not** referenced by any atom (it can only be
 used as `EstimateLineItem.adjustment_service` or
@@ -475,14 +475,14 @@ only through the shared `job` (one estimate tree per job).
 
 ### 1.10 PlanTask
 
-Depends on: EstWorksheet, ServicePrice.
+Depends on: EstWorksheet, ServiceItem.
 
 The planning-side counterpart to Task. Lives on an EstWorksheet; no
 lifecycle, no hierarchy, no Bleps. Carries billing fields directly so a
 worksheet is a self-contained pricing artefact.
 
 - **est_worksheet** (required FK → EstWorksheet, CASCADE)
-- **service_price** (required FK → ServicePrice, PROTECT)
+- **service_item** (required FK → ServiceItem, PROTECT)
 - **active_modifiers**: JSON list of modifier keys (always a list, default
   `[]`). For `flat_fee` services, this is `[]` — modifiers are percentage
   adjustments only, and flat-fee entries have no percentage modifiers.
@@ -499,7 +499,7 @@ PlanTasks are flat (no `parent_task`). Hierarchy is Job-side only.
 
 ### 1.11 Task
 
-Depends on: Job, ServicePrice, (optionally) User, PlanTask, TaskTemplate.
+Depends on: Job, ServiceItem, (optionally) User, PlanTask, TaskTemplate.
 
 The work-side counterpart to PlanTask. Lives on a Job; carries lifecycle,
 hierarchy, and Bleps.
@@ -526,15 +526,15 @@ Valid transitions:
 #### Fields
 
 - **job** (required FK → Job, CASCADE)
-- **service_price** (required FK → ServicePrice, PROTECT): NOT NULL at DB level
+- **service_item** (required FK → ServiceItem, PROTECT): NOT NULL at DB level
 - **active_modifiers**: JSON list of modifier keys (always a list, never a
-  dict — see ServicePrice §1.7). For `flat_fee` services this is `[]`.
+  dict — see ServiceItem §1.7). For `flat_fee` services this is `[]`.
 - **est_qty** (inherited from `TaskBase`): nullable on Task — both at the DB
   level and the application layer. Unlike `PlanTask`, `Task.clean()` does
   **not** reject null (asymmetric enforcement; pinned by
   `tests/test_plan_task_est_qty_required.py`). For `flat_fee` it is the
-  billable quantity (charge is `service_price.rate × est_qty`), with
-  `ServicePrice.get_actual_qty` falling back to `Decimal('1')` when null.
+  billable quantity (charge is `service_item.rate × est_qty`), with
+  `ServiceItem.get_actual_qty` falling back to `Decimal('1')` when null.
 
   In practice a null `est_qty` can only arise on a task **added directly to
   the Job with the quantity left blank** — specifically the two manual
@@ -711,7 +711,7 @@ Enforced in `Estimate.clean()`.
 - **source_template** (optional FK → TaskTemplate, SET_NULL): preserves the
   catalog ref for direct-estimate lines so carry-over can still create a
   Task at acceptance even with no PlanTask
-- **adjustment_service** (optional FK → ServicePrice, PROTECT): set when
+- **adjustment_service** (optional FK → ServiceItem, PROTECT): set when
   this line is a percentage adjustment. A line with `adjustment_service_id`
   set is an **adjustment line**; `adjustment_service.algorithm` must be
   `percentage`. Cannot coexist with `source_template` or `price_list_item`.
@@ -818,10 +818,10 @@ task/material structures.
 #### TaskTemplate
 
 - **template_name**: max 255 chars; **description**: text
-- **service_price** (required FK → ServicePrice, PROTECT): default service
+- **service_item** (required FK → ServiceItem, PROTECT): default service
   price for generated PlanTasks / Tasks. Superseded entries raise
   `SchemeSupersededError` from `generate_task()`. The template holds **no
-  price** of its own — the price is always read from `service_price.rate`.
+  price** of its own — the price is always read from `service_item.rate`.
 - **default_active_modifiers**: JSON list of modifier keys (always a list,
   never a dict). For `flat_fee` service prices this is `[]`.
 - **default_billable_qty** (required, decimal): used as `est_qty` when
@@ -953,7 +953,7 @@ Enforced in `Invoice.clean()`.
   `BaseLineItem.clean()` compatibility. Source atoms are joined via
   `InvoiceLineItemSource`.
 - **price_list_item** (optional FK → PriceListItem, PROTECT)
-- **adjustment_service** (optional FK → ServicePrice, PROTECT): set when
+- **adjustment_service** (optional FK → ServiceItem, PROTECT): set when
   this line is a percentage adjustment. `adjustment_service.algorithm` must
   be `percentage`. Cannot be combined with `InvoiceLineItemSource` atom
   sources (an adjustment line has no source atoms).
@@ -1484,7 +1484,7 @@ signal calls `AtomCarryOverService.carry_over_for_estimate(estimate)`.
 
 **Effects:**
 - For each PlanTask on the estimate's worksheet → create a Task on the Job
-  (copying `name`, `description`, `service_price_id`, `active_modifiers`,
+  (copying `name`, `description`, `service_item_id`, `active_modifiers`,
   `est_qty`, `est_worker_time`, `sort_order`). `Task.source_plan_task` is
   set; the OneToOne enforces idempotency.
 - For each PlanMaterial on the worksheet → create a Material on the Job
@@ -1719,9 +1719,9 @@ Shipment.
 
 ---
 
-### 2.14 ServicePrice supersession
+### 2.14 ServiceItem supersession
 
-**Trigger:** `ServicePrice.supersede(**overrides)` is called.
+**Trigger:** `ServiceItem.supersede(**overrides)` is called.
 
 **Effects:**
 - The old row is renamed to `"<orig> (v{N})"` where N is the chain depth.
@@ -1730,7 +1730,7 @@ Shipment.
 - The old row's `replaced_by` is set to the new row; `replaced_at` is set
   to `now()`.
 
-**Data constraint:** A ServicePrice with `replaced_by` set must have
+**Data constraint:** A ServiceItem with `replaced_by` set must have
 `replaced_at` set, and vice versa. Templates referencing a superseded
 entry should be updated to point at the new entry; otherwise
 `generate_task()` raises `SchemeSupersededError`.

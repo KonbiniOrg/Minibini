@@ -111,7 +111,7 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 
 **Adjustment fields** (parallel to `EstimateLineItem`):
 
-- `adjustment_service` — nullable FK to `ServicePrice` (PROTECT). Set when
+- `adjustment_service` — nullable FK to `ServiceItem` (PROTECT). Set when
   this line is a percentage adjustment (e.g. rush surcharge, volume discount).
   A line with `adjustment_service_id` set is an **adjustment line**.
 - `adjustment_target_categories` — M2M to `AccountingCategory`. The
@@ -326,7 +326,7 @@ On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeh
 ## Invoice adjustment lines
 
 Percentage adjustments (rush surcharges, volume discounts, etc.) can be added
-as `InvoiceLineItem` rows backed by a `PERCENTAGE` `ServicePrice`. The
+as `InvoiceLineItem` rows backed by a `PERCENTAGE` `ServiceItem`. The
 mechanics mirror the estimate side exactly — see
 `docs/designs/estimates-and-prices.md` §2.2 and §5.3b for the
 `compute_adjustment_amount` helper and the `percentage` algorithm semantics.
@@ -337,7 +337,7 @@ mechanics mirror the estimate side exactly — see
 
 | Method | Behavior |
 |---|---|
-| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServicePrice` at the end of the invoice's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
+| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the invoice's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
 | `recalculate_adjustment_line(line)` | Fetches all sibling lines on the same invoice (excluding the adjustment line itself), calls `compute_adjustment_amount`, saves `line.price`, and returns the line. Raises `ValidationError` if the invoice is not `draft`. Once the invoice is finalized (transitions out of `draft`), recalculation is refused — the amount is frozen at finalize time. |
 
 ### API endpoints

@@ -922,9 +922,9 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ a user can add a PO line for a job and explicitly choose which
   existing pending material it links to (or opt to create a new one), with tests.
 
-- **nealsdata converter mints a zero-rate flat-fee ServicePrice for $0 source lines.** — _added 2026-06-23_
-  After the ServicePrice reframe, the converter (`nealsdata/converter/build.py`,
-  `_match_seed_scheme`) mints one flat-fee `ServicePrice` per distinct price; a
+- **nealsdata converter mints a zero-rate flat-fee ServiceItem for $0 source lines.** — _added 2026-06-23_
+  After the ServiceItem reframe, the converter (`nealsdata/converter/build.py`,
+  `_match_seed_scheme`) mints one flat-fee `ServiceItem` per distinct price; a
   source line priced at $0 yields a `rate=0.00` flat-fee service (seen in
   regenerated `fixtures/large_datasets/nealsmall.json`, pk 18 "Flat Fee $0.00").
   `validate_data` flags flat-fee services with non-positive `rate`, so this is
@@ -932,14 +932,14 @@ IMAP-SMTP machinery and tend to be worked together.
   that skips emitting a flat-fee service when `rate <= 0` (and logs the source
   line) or routes it to a documented sentinel. Dev-data only; not test-path.
   _Done when:_ regenerating the neals fixtures produces no zero-rate flat-fee
-  ServicePrice (or the case is deliberately documented), and `validate_data` is
+  ServiceItem (or the case is deliberately documented), and `validate_data` is
   clean on the regenerated dev data.
 
 - **Percentage-adjustments cleanup bundle (Phase 2 deferred minors).** — _added 2026-06-23_
   Non-blocking follow-ups from the Phase 2 (percentage adjustments) whole-branch
   review, all triaged DEFER. Bundle into one cleanup pass:
   - N+1: add `select_related('adjustment_service')` (and `prefetch_related('adjustment_target_categories')`) to `compose_agreement`'s estimate line query (`apps/estimates/agreement.py`) and to the estimate + invoice line-item querysets feeding `EstimateLineItemSerializer`/`InvoiceLineItemSerializer.get_adjustment_service_detail`.
-  - Dead code: remove the never-run `validate_service_price` on `PlanTaskDetailSerializer` (`apps/api/plan_tasks/serializers.py`, read-only serializer); remove the duplicate local `ValidationError` import inside `ServicePrice.clean()` (`apps/jobs/models.py`, already imported at module top).
+  - Dead code: remove the never-run `validate_service_item` on `PlanTaskDetailSerializer` (`apps/api/plan_tasks/serializers.py`, read-only serializer); remove the duplicate local `ValidationError` import inside `ServiceItem.clean()` (`apps/jobs/models.py`, already imported at module top).
   - Tests: restore the `assertTrue(...exists())` post-condition dropped from `test_discard_draft_rejects_non_draft` (`tests/test_estimates_services.py`); add a `test_effective_rate_rejects_percentage` (mirrors the tested `get_actual_qty` guard); add a `compute_adjustment_amount` case for a null-AC sibling against a non-empty target set; tidy the dead `find` predicate in `AgreementAdjustmentsPanel.test.js` case 4.
   - UX polish: `AgreementAdjustmentsPanel` "Add" re-fetches its own list but not the wizard's line-item columns — add an `onLineItemAdded` prop wired to the wizard's `reloadLineItems` so the new line appears without a manual reload.
   - Future-coupled: when AC-grouping / multi-target adjustments land, revisit the same-percentage-service-twice case (keyed `{#each}` + `already_added` dedup in the panel assume one line per service).
