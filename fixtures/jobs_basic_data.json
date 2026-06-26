@@ -18,7 +18,7 @@
         }
     },
     {
-        "model": "jobs.ratescheme",
+        "model": "jobs.serviceitem",
         "pk": 101,
         "fields": {
             "name": "Std Hourly (JBD)",
@@ -64,7 +64,7 @@
             "name": "Kitchen demolition",
             "description": "",
             "sort_order": null,
-            "rate_scheme": 101,
+            "service_item": 101,
             "active_modifiers": [],
             "actual_qty": null,
             "est_qty": null
@@ -79,7 +79,7 @@
             "name": "Electrical rough-in",
             "description": "",
             "sort_order": null,
-            "rate_scheme": 101,
+            "service_item": 101,
             "active_modifiers": [],
             "actual_qty": null,
             "est_qty": null

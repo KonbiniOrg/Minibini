@@ -41,6 +41,7 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
     accounting_category_name = serializers.SerializerMethodField()
     units = UnitsField()
     sources = InvoiceLineItemSourceSerializer(many=True, read_only=True)
+    adjustment_service_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = InvoiceLineItem
@@ -49,6 +50,8 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
             'qty', 'units', 'description', 'price',
             'accounting_category', 'accounting_category_name',
             'taxable_override', 'tax_rate_override',
+            'adjustment_service', 'adjustment_target_categories',
+            'adjustment_service_detail',
             'sources',
         ]
         read_only_fields = ['line_item_id']
@@ -57,6 +60,16 @@ class InvoiceLineItemSerializer(serializers.ModelSerializer):
         if obj.accounting_category:
             return obj.accounting_category.name
         return None
+
+    def get_adjustment_service_detail(self, obj):
+        if obj.adjustment_service_id is None:
+            return None
+        svc = obj.adjustment_service
+        return {
+            'name': svc.name,
+            'rate': str(svc.rate),
+            'algorithm': svc.algorithm,
+        }
 
 
 class InvoiceSerializer(serializers.ModelSerializer):

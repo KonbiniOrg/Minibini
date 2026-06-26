@@ -2,6 +2,7 @@
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
+  import AdjustmentModal from '../../components/AdjustmentModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
@@ -18,6 +19,8 @@
   let modalOpen = $state(false);
   let modalMode = $state('create');
   let modalItem = $state(null);
+
+  let adjustmentModalOpen = $state(false);
 
   // Per-object gate: atom-holder OR this job's project_manager (server-computed).
   const canManageJobs = $derived(estimate?.can_manage ?? false);
@@ -214,7 +217,11 @@
   <table class="data-table" class:superseded={isSuperseded}>
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
-      <tr><td>Estimate Number</td><td>{estimate.estimate_number}</td></tr>
+      <tr><td>Estimate Number</td><td>{estimate.estimate_number}-{estimate.version}
+        {#if estimate.parent}
+          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
+        {/if}
+      </td></tr>
       <tr>
         <td>Job</td>
         <td>
@@ -235,11 +242,6 @@
           {/if}
         </td>
       </tr>
-      <tr><td>Version</td><td>{estimate.version}
-        {#if estimate.parent}
-          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
-        {/if}
-      </td></tr>
       <tr><td>Status</td><td>{estimate.status}</td></tr>
       <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
       <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
@@ -256,6 +258,7 @@
   {#if canEdit}
     <p>
       <button type="button" onclick={openAddItem}>Add Line Item</button>
+      <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       {#if estimate.worksheet}
         <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Worksheet</a>
       {/if}
@@ -273,6 +276,7 @@
     {lineItems}
     {categories}
     showSource={true}
+    canEdit={canEdit}
     actions={canEdit ? actionsSnippet : null}
   />
 
@@ -288,6 +292,14 @@
     {categories}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
+  />
+
+  <AdjustmentModal
+    open={adjustmentModalOpen}
+    apiBase={`/api/estimates/${estimate.estimate_id}`}
+    {categories}
+    onSaved={() => { adjustmentModalOpen = false; loadEstimate(); }}
+    onClose={() => { adjustmentModalOpen = false; }}
   />
 {/if}
 

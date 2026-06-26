@@ -16,7 +16,7 @@ class TaskActivitySerializerFieldsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         self.u1 = User.objects.create_user(username='taf1', password='x')
         self.u2 = User.objects.create_user(username='taf2', password='x')
 
@@ -58,7 +58,7 @@ class BoardTaskActivityFieldsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         self.u1 = User.objects.create_user(username='btaf1', password='x')
 
     def test_board_serialize_task_includes_activity(self):

@@ -17,6 +17,7 @@
     elapsed_time: 'Based on time worked',
     entered_qty: 'Worker enters quantity',
     flat_fee: 'Fixed charge',
+    percentage: 'Percentage of other lines',
   };
 
   function emptyForm() {
@@ -32,8 +33,8 @@
     error = '';
     try {
       const url = showSuperseded
-        ? '/api/rate-schemes/?include_superseded=true'
-        : '/api/rate-schemes/';
+        ? '/api/service-items/?include_superseded=true'
+        : '/api/service-items/';
       const [schemeResp, catResp, unitsResp] = await Promise.all([
         api.get(url),
         api.get('/api/accounting-categories/'),
@@ -43,7 +44,7 @@
       categories = catResp.results || catResp;
       unitsList = unitsResp;
     } catch (e) {
-      error = e.message || 'Could not load rate schemes.';
+      error = e.message || 'Could not load services.';
     } finally {
       loading = false;
     }
@@ -71,7 +72,7 @@
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
-    editingId = scheme.rate_scheme_id;
+    editingId = scheme.service_item_id;
     supersedingId = null;
     saveError = '';
   }
@@ -86,7 +87,7 @@
       modifiers: [...(scheme.modifiers || [])],
       accounting_category: scheme.accounting_category || '',
     };
-    supersedingId = scheme.rate_scheme_id;
+    supersedingId = scheme.service_item_id;
     editingId = null;
     saveError = '';
   }
@@ -128,11 +129,11 @@
       };
 
       if (supersedingId) {
-        await api.post(`/api/rate-schemes/${supersedingId}/supersede/`, payload);
+        await api.post(`/api/service-items/${supersedingId}/supersede/`, payload);
       } else if (editingId === 'new') {
-        await api.post('/api/rate-schemes/', payload);
+        await api.post('/api/service-items/', payload);
       } else {
-        await api.patch(`/api/rate-schemes/${editingId}/`, payload);
+        await api.patch(`/api/service-items/${editingId}/`, payload);
       }
       editingId = null;
       supersedingId = null;
@@ -151,9 +152,9 @@
   }
 
   async function remove(scheme) {
-    if (!confirm(`Delete rate scheme "${scheme.name}"?`)) return;
+    if (!confirm(`Delete service "${scheme.name}"?`)) return;
     try {
-      await api.delete(`/api/rate-schemes/${scheme.rate_scheme_id}/`);
+      await api.delete(`/api/service-items/${scheme.service_item_id}/`);
       await load();
     } catch (e) {
       error = e.message || 'Could not delete.';
@@ -163,6 +164,8 @@
   // flat_fee schemes carry no modifier catalog: the per-item price rides on
   // the TaskTemplate/Task, and rate is only a fallback default.
   const isFlatFee = $derived(form.algorithm === 'flat_fee');
+  // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
+  const isPercentage = $derived(form.algorithm === 'percentage');
 
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
@@ -176,16 +179,16 @@
   load();
 </script>
 
-<h3>Rate Schemes</h3>
+<h3>Services</h3>
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
 
-{#if !loading && editingId === null && supersedingId === null}
+{#if !loading}
   <p>
     <label>
       <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
-      Show superseded schemes
+      Show superseded services
     </label>
   </p>
   <table class="data-table">
@@ -196,7 +199,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each schemes as s (s.rate_scheme_id)}
+      {#each schemes as s (s.service_item_id)}
         <tr>
           <td>{s.name}</td>
           <td>{ALGORITHM_LABELS[s.algorithm] || s.algorithm}</td>
@@ -223,14 +226,14 @@
       {/each}
     </tbody>
   </table>
-  {#if !showSuperseded}
-    <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
+  {#if !showSuperseded && editingId === null && supersedingId === null}
+    <p><button type="button" onclick={startCreate}>Add Service</button></p>
   {/if}
 {/if}
 
 {#if editingId !== null || supersedingId !== null}
   <fieldset>
-    <legend><strong>{supersedingId ? 'New Version of Rate Scheme' : (editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme')}</strong></legend>
+    <legend><strong>{supersedingId ? 'New Version of Service' : (editingId === 'new' ? 'New Service' : 'Edit Service')}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label>
@@ -249,23 +252,28 @@
         <option value="elapsed_time">Based on time worked</option>
         <option value="entered_qty">Worker enters quantity</option>
         <option value="flat_fee">Fixed charge</option>
+        <option value="percentage">Percentage of other lines</option>
       </select>
     </label></p>
-    <p><label><strong>{isFlatFee ? 'Fallback price *' : 'Rate *'}</strong><br>
-      <input type="number" step="0.01" bind:value={form.rate}>
-    </label>
-    {#if isFlatFee}
-      <small>Flat-fee items set their own price on each Task Template; this
-        value is only used when a task carries no price.</small>
+    <p>
+    {#if isPercentage}
+      <label><strong>Rate (%) *</strong><br>
+        <input type="number" step="0.01" bind:value={form.rate}>
+      </label>
+    {:else}
+      <label><strong>Rate *</strong><br>
+        <input type="number" step="0.01" bind:value={form.rate}>
+      </label>
+      <label><strong>Unit label *</strong><br>
+        <select bind:value={form.unit_label} required>
+          <option value="">-- select --</option>
+          {#each unitsList as u}
+            <option value={u}>{u}</option>
+          {/each}
+        </select>
+      </label>
     {/if}
-    <label><strong>Unit label *</strong><br>
-      <select bind:value={form.unit_label} required>
-        <option value="">-- select --</option>
-        {#each unitsList as u}
-          <option value={u}>{u}</option>
-        {/each}
-      </select>
-    </label></p>
+    </p>
     <p><label><strong>Accounting Category *</strong><br>
       <select bind:value={form.accounting_category} required>
         <option value="">-- select --</option>
@@ -275,7 +283,7 @@
       </select>
     </label></p>
 
-    {#if !isFlatFee}
+    {#if !isFlatFee && !isPercentage}
       <fieldset>
         <legend><strong>Modifiers</strong></legend>
         {#each form.modifiers as mod, i}
@@ -289,7 +297,7 @@
       </fieldset>
     {/if}
 
-    {#if previewTotal && !isFlatFee}
+    {#if previewTotal && !isFlatFee && !isPercentage}
       <p><strong>Preview:</strong>
         {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
       </p>

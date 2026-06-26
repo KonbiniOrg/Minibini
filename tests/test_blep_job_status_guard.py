@@ -31,7 +31,7 @@ class StartWorkJobStatusGuardTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
 
     def _task(self, job):
-        return Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        return Task.objects.create(name='T', job=job, service_item_id=1)
 
     def test_start_work_rejected_on_draft_job(self):
         task = self._task(_job_at(self.contact))
@@ -91,7 +91,7 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
         )
 
     def _task(self, job):
-        return Task.objects.create(name='T', job=job, rate_scheme_id=1)
+        return Task.objects.create(name='T', job=job, service_item_id=1)
 
     def _times(self):
         now = timezone.now()
@@ -179,9 +179,9 @@ class ActualQtyCancelledJobTest(BaseTestCase):
         self.contact = Job.objects.first().contact
 
     def _task(self, job):
-        from apps.jobs.models import RateScheme
-        scheme = RateScheme.objects.first()
-        return Task.objects.create(name='T', job=job, rate_scheme=scheme)
+        from apps.jobs.models import ServiceItem
+        scheme = ServiceItem.objects.first()
+        return Task.objects.create(name='T', job=job, service_item=scheme)
 
     def test_actual_qty_settable_on_cancelled_job(self):
         from decimal import Decimal

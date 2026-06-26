@@ -31,13 +31,14 @@ class InvoiceService:
         kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
         li = InvoiceLineItem(invoice=invoice, **kwargs)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
     def add_line_item_from_pli(invoice_pk, pli_pk, qty):
         """Add a line item from a InventoryItem to a draft invoice."""
         from apps.inventory.models import InventoryItem
+        from apps.core.services import LineItemService
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
@@ -57,7 +58,7 @@ class InvoiceService:
             accounting_category=pli.accounting_category,
         )
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -73,7 +74,7 @@ class InvoiceService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -124,6 +125,47 @@ class InvoiceService:
                 'Cannot modify line items on a non-draft invoice.'
             )
         return LineItemService.delete_line_item_with_renumber(line_item)
+
+    @staticmethod
+    def add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=None):
+        """Add a percentage-adjustment line item to a draft invoice.
+
+        Creates an InvoiceLineItem backed by a PERCENTAGE ServiceItem, sets
+        target categories (empty list = apply to all non-adjustment lines),
+        computes the initial price via ``compute_adjustment_amount``, and
+        returns the saved line.
+
+        Raises ValidationError if the invoice is not draft or the service is
+        not a PERCENTAGE algorithm.
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.jobs.models import ServiceItem
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError('Adjustments can only be added to a draft invoice.')
+        svc = ServiceItem.objects.get(pk=adjustment_service_id)
+        if svc.algorithm != ServiceItem.PERCENTAGE:
+            raise ValidationError('Adjustment line requires a percentage service.')
+        from apps.core.services import LineItemService
+        with transaction.atomic():
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+            line = InvoiceLineItem(
+                invoice=invoice,
+                line_number=max_ln + 1,
+                qty=Decimal('1'),
+                units=svc.unit_label or 'none',
+                description=svc.name,
+                price=Decimal('0.00'),
+                accounting_category=svc.accounting_category,
+                adjustment_service=svc,
+            )
+            line.save()
+            if target_category_ids:
+                line.adjustment_target_categories.set(target_category_ids)
+            LineItemService.save_line_item(line)
+            line.refresh_from_db()
+            return line
 
 
 class InvoiceEmailService:
@@ -332,12 +374,12 @@ class WizardAtomLabels:
     @staticmethod
     def qty_source_label(task):
         """Describe where the billable quantity came from for a Task atom."""
-        from apps.jobs.models import RateScheme
-        scheme = task.rate_scheme
-        if scheme.algorithm == RateScheme.ELAPSED_TIME:
+        from apps.jobs.models import ServiceItem
+        scheme = task.service_item
+        if scheme.algorithm == ServiceItem.ELAPSED_TIME:
             qty = scheme.get_actual_qty(task)
             return f'{qty:.2f} {scheme.unit_label} from bleps'
-        if scheme.algorithm == RateScheme.ENTERED_QTY:
+        if scheme.algorithm == ServiceItem.ENTERED_QTY:
             qty = scheme.get_actual_qty(task)
             return f'{qty} {scheme.unit_label} entered'
         return 'flat fee'
@@ -453,7 +495,7 @@ class InvoiceWizardService(BaseWizardService):
         tasks = (
             Task.objects.filter(job=job)
             .exclude(status=Task.STATUS_CANCELLED)
-            .select_related('rate_scheme')
+            .select_related('service_item')
             .order_by('sort_order', 'pk')
         )
         task_list = []
@@ -466,7 +508,7 @@ class InvoiceWizardService(BaseWizardService):
             atoms.append({
                 'type': 'task',
                 'id': task.pk,
-                'description': f'{task.name} ({task.rate_scheme.name})',
+                'description': f'{task.name} ({task.service_item.name})',
                 'sub_info': WizardAtomLabels.qty_source_label(task),
                 'qty': detail['qty'],
                 'rate': detail['rate'],
@@ -639,7 +681,7 @@ class InvoiceWizardService(BaseWizardService):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
         if isinstance(atom_instance, Task):
-            return atom_instance.rate_scheme.unit_label
+            return atom_instance.service_item.unit_label
         if isinstance(atom_instance, Material):
             if atom_instance.inventory_item_id:
                 return atom_instance.inventory_item.units
@@ -684,4 +726,4 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _task_actual_qty(cls, task):
-        return task.rate_scheme.get_actual_qty(task)
+        return task.service_item.get_actual_qty(task)

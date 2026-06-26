@@ -31,7 +31,7 @@ class NealsDataConverter:
         self._pk_counters = defaultdict(int)
         self.csv_cards = []
         self.ac_by_code = {}        # AccountingCategory code -> pk (from seed)
-        self.scheme_by_name = {}    # RateScheme name -> pk (from seed)
+        self.scheme_by_name = {}    # ServiceItem name -> pk (from seed)
         self.ac_svc_pk = None
         self.ac_mat_pk = None
         self.pli_map = {}
@@ -44,7 +44,7 @@ class NealsDataConverter:
         self.discarded_cards = []
         self.line_items = {}
         self.estimates = {}
-        self.flat_fee_scheme_pk = None  # shared flat-fee scheme (build_seed)
+        self.flat_fee_by_rate = {}      # rate string -> pk (per-price flat-fee schemes)
         self.scheme_algorithm_by_pk = {}  # ratescheme pk -> algorithm (for actuals)
         self.user_by_username = {}      # username -> pk (build_seed assigns user pks)
         self.rotation_user_pks = []     # ordered blep-rotation pool (excludes system)

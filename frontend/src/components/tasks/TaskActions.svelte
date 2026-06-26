@@ -76,7 +76,7 @@
     }
   }
 
-  // Complete has its own flow. A task whose rate scheme needs an actual
+  // Complete has its own flow. A task whose service needs an actual
   // quantity that isn't on record makes the server answer with a prompt
   // signal: `needs_actual_qty` (worker-entered qty) or `needs_time_logged`
   // (elapsed-time task with no logged time).

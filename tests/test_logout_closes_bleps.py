@@ -19,7 +19,7 @@ class LogoutClosesBlepsTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.other = User.objects.create_user(username='logout_other', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
 
     def test_logout_closes_users_open_blep(self):
         # Over-minimum so logout CLOSES it (a sub-minimum blep is cancelled).

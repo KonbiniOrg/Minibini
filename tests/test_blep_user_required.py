@@ -11,7 +11,7 @@ class BlepUserRequiredTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='Task', job=self.job, service_item_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_blep_without_user_fails_validation(self):

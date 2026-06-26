@@ -7,6 +7,7 @@
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import LineItemModal from '../../components/LineItemModal.svelte';
+  import AdjustmentModal from '../../components/AdjustmentModal.svelte';
 
   const { params = {} } = $props();
 
@@ -34,6 +35,7 @@
   let modalOpen = $state(false);
   let modalMode = $state('create');
   let modalItem = $state(null);
+  let adjustmentModalOpen = $state(false);
 
   let lineItems = $derived(
     (invoice?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
@@ -170,6 +172,7 @@
   {#if canEditLineItems}
     <p>
       <button type="button" onclick={openAddItem}>Add Line Item</button>
+      <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       {#if hasBillables}
         <a href={`/invoices/${invoice.invoice_id}/wizard`} use:link>Show Billables</a>
       {/if}
@@ -187,6 +190,7 @@
     {lineItems}
     {categories}
     showSource={true}
+    canEdit={canEditLineItems}
     actions={canEditLineItems ? actionsSnippet : null}
   />
 
@@ -198,6 +202,14 @@
     {categories}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
+  />
+
+  <AdjustmentModal
+    open={adjustmentModalOpen}
+    apiBase={`/api/invoices/${invoice.invoice_id}`}
+    {categories}
+    onSaved={() => { adjustmentModalOpen = false; loadInvoice(); }}
+    onClose={() => { adjustmentModalOpen = false; }}
   />
 {/if}
 

@@ -6,7 +6,7 @@ from apps.jobs.models import Job, Task
 from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
 from apps.core.models import AccountingCategory
 from apps.estimates.models import EstWorksheet
-from apps.jobs.models import PlanTask, RateScheme
+from apps.jobs.models import PlanTask, ServiceItem
 
 
 class MaterialFieldsTest(TestCase):
@@ -17,11 +17,11 @@ class MaterialFieldsTest(TestCase):
             email='test@example.com', work_number='555-0100',
         )
         self.job = Job.objects.create(job_number='JOB-TEST-1', contact=self.contact)
-        self.scheme = RateScheme.objects.create(
-            name='S-mf', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-mf', algorithm=ServiceItem.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
+        self.task = Task.objects.create(job=self.job, name='t', service_item=self.scheme)
 
     def test_material_has_job_consumption_state_restocked_qty(self):
         m = Material.objects.create(
@@ -71,14 +71,14 @@ class PlanMaterialFieldsTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-PLAN-1', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.pmf_ac = AccountingCategory.objects.create(name='pmf-ac', code='PMF-AC')
-        self.pmf_scheme = RateScheme.objects.create(
-            name='S-pmf', algorithm=RateScheme.FLAT_FEE,
+        self.pmf_scheme = ServiceItem.objects.create(
+            name='S-pmf', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.pmf_ac,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='pt1',
-            rate_scheme=self.pmf_scheme, est_qty=Decimal('1'),
+            service_item=self.pmf_scheme, est_qty=Decimal('1'),
         )
 
     def test_plan_material_has_est_worksheet(self):
@@ -110,11 +110,11 @@ class MaterialTaskSetNullTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-TSN-1', contact=self.contact)
         cat = AccountingCategory.objects.create(name='tsn-cat', code='TSN1')
-        scheme = RateScheme.objects.create(
-            name='S-tsn', algorithm=RateScheme.FLAT_FEE,
+        scheme = ServiceItem.objects.create(
+            name='S-tsn', algorithm=ServiceItem.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=cat,
         )
-        self.task = Task.objects.create(job=self.job, name='deletable', rate_scheme=scheme)
+        self.task = Task.objects.create(job=self.job, name='deletable', service_item=scheme)
 
     def test_delete_task_keeps_material_with_null_task_and_original_job(self):
         cat = AccountingCategory.objects.create(name='tsn-mat', code='TSN-MAT')

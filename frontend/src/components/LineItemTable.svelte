@@ -5,7 +5,8 @@
     lineItems = [],
     categories = [],
     showSource = false,
-    actions = null,        // optional snippet `(li, i) => ...` for action buttons
+    canEdit = false,         // true when document is draft + user can edit
+    actions = null,          // optional snippet `(li, i) => ...` for action buttons
   } = $props();
 
   const categoryById = $derived(
@@ -28,6 +29,20 @@
   // Number of leading columns used to compute tfoot colspans (everything
   // before the Total column, counting the Source column when shown).
   let footerColspan = $derived(showSource ? 8 : 7);
+
+  /** Build the adjustment badge label, e.g. "+15% Rush on Labor, Materials" */
+  function adjustmentBadge(li) {
+    if (!li.adjustment_service) return '';
+    const detail = li.adjustment_service_detail;
+    if (!detail) return '';
+    const pct = Number(detail.rate);
+    const sign = pct >= 0 ? '+' : '';
+    const targetNames = (li.adjustment_target_categories || [])
+      .map(pk => categoryById[pk]?.name)
+      .filter(Boolean);
+    const targets = targetNames.length ? ' on ' + targetNames.join(', ') : '';
+    return `${sign}${pct}% ${detail.name}${targets}`;
+  }
 </script>
 
 {#if lineItems.length > 0}
@@ -48,11 +63,17 @@
     </thead>
     <tbody>
       {#each lineItems as li, i}
-        <tr>
+        <tr class:adjustment-row={!!li.adjustment_service}>
           <td>{li.line_number}</td>
           <td>{categoryName(li.accounting_category)}</td>
           <td>{categoryTaxable(li.accounting_category)}</td>
-          <td class="preserve-breaks"><LinkifiedText text={li.description || 'No description'} /></td>
+          <td class="preserve-breaks">
+            {#if li.adjustment_service}
+              <span class="adj-badge">{adjustmentBadge(li)}</span>
+            {:else}
+              <LinkifiedText text={li.description || 'No description'} />
+            {/if}
+          </td>
           {#if showSource}
             <td>
               {#if li.sources?.length}
@@ -63,6 +84,8 @@
                 </ul>
               {:else if li.inventory_item}
                 PLI #{li.inventory_item}
+              {:else if li.adjustment_service}
+                Adjustment
               {:else}
                 No source
               {/if}
@@ -72,7 +95,11 @@
           <td>{li.units || '—'}</td>
           <td>{fmtMoney(li.price)}</td>
           <td>{fmtMoney(lineTotal(li))}</td>
-          {#if actions}<td>{@render actions(li, i)}</td>{/if}
+          {#if actions}
+            <td>
+              {@render actions(li, i)}
+            </td>
+          {/if}
         </tr>
       {/each}
     </tbody>
@@ -101,4 +128,15 @@
   .source-list { margin: 0; padding-left: 1em; list-style: disc; }
   .source-list li { font-size: 0.9em; }
   .src-amt { color: #555; }
+  .adjustment-row { background-color: #f0f7ff; }
+  .adj-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #dbeafe;
+    color: #1e40af;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
 </style>

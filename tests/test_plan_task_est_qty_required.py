@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from apps.jobs.models import PlanTask, RateScheme, Job, Task
+from apps.jobs.models import PlanTask, ServiceItem, Job, Task
 from apps.estimates.models import EstWorksheet
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
@@ -15,8 +15,8 @@ class PlanTaskEstQtyRequiredTest(TestCase):
 
     def setUp(self):
         ac = AccountingCategory.objects.create(name='Labor')
-        self.scheme = RateScheme.objects.create(
-            name='Setup', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='Setup', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('100.00'), unit_label='job',
             accounting_category=ac,
         )
@@ -34,14 +34,14 @@ class PlanTaskEstQtyRequiredTest(TestCase):
         with self.assertRaises(ValidationError) as cm:
             PlanTask.objects.create(
                 est_worksheet=self.ws, name='Bad',
-                rate_scheme=self.scheme, est_qty=None,
+                service_item=self.scheme, est_qty=None,
             )
         self.assertIn('est_qty', cm.exception.message_dict)
 
     def test_plantask_accepts_non_null_est_qty(self):
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Good',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.assertEqual(pt.est_qty, Decimal('1'))
 
@@ -50,7 +50,7 @@ class PlanTaskEstQtyRequiredTest(TestCase):
         # B4 removed the hasattr(self, 'charge') guard, so no TaskCharge needed.
         t = Task.objects.create(
             job=self.job, name='Looser',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=None,
         )
         self.assertIsNone(t.est_qty)

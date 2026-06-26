@@ -3,7 +3,7 @@
   import QBOSyncFailures from '../components/qbo/QBOSyncFailures.svelte';
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
-  import RateSchemeManager from '../components/RateSchemeManager.svelte';
+  import ServiceItemManager from '../components/ServiceItemManager.svelte';
   import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
@@ -115,9 +115,9 @@
 
   <UnitsManager />
 
-  <RateSchemeManager />
-
 {:else if tab === 'catalog'}
+  <ServiceItemManager />
+
   <MaterialMarkupSetting />
 
   <TaskTemplateManager />

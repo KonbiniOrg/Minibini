@@ -230,3 +230,72 @@ class EstimateSendTest(BaseTestCase):
         response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('https://example.com/portal/?token=', response.data['body'])
+
+
+class EstimateAdjustmentLineAPITest(BaseTestCase):
+    """Tests for POST /api/estimates/{id}/adjustment-lines/ and auto-recompute."""
+
+    def setUp(self):
+        super().setUp()
+        from rest_framework.test import APIClient
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        self.labor = AccountingCategory.objects.get(pk=901)
+        self.job = Job.objects.first()
+        self.est = Estimate.objects.create(
+            job=self.job,
+            estimate_number='EST-ADJ-001',
+            status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Line A', price=Decimal('100.00'),
+            accounting_category=self.labor,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, qty=Decimal('1'),
+            units='ea', description='Line B', price=Decimal('40.00'),
+            accounting_category=self.labor,
+        )
+
+    def test_adjustment_line_created_with_correct_price(self):
+        from decimal import Decimal
+        from apps.jobs.models import ServiceItem
+        rush = ServiceItem.objects.create(
+            name='Rush', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('15.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        resp = self.client.post(
+            f'/api/estimates/{self.est.pk}/adjustment-lines/',
+            {'adjustment_service': rush.pk, 'target_category_ids': []},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        # 15% of (100 + 40) = 21.00
+        self.assertEqual(resp.json()['price'], '21.00')
+
+    def test_recalculate_endpoint_removed(self):
+        """The recalculate endpoint no longer exists (adjustments auto-recompute)."""
+        from decimal import Decimal
+        from apps.jobs.models import ServiceItem
+        rush = ServiceItem.objects.create(
+            name='Rush5', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        resp = self.client.post(
+            f'/api/estimates/{self.est.pk}/adjustment-lines/',
+            {'adjustment_service': rush.pk, 'target_category_ids': []},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        lid = resp.json()['line_item_id']
+        r2 = self.client.post(
+            f'/api/estimates/{self.est.pk}/line-items/{lid}/recalculate/',
+            content_type='application/json',
+        )
+        self.assertEqual(r2.status_code, 404)

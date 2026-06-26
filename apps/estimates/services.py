@@ -28,11 +28,11 @@ class EstimateService:
     def create_direct(job, **kwargs):
         """
         Create Estimate directly. Starts in 'draft' status.
-        Estimate number is the job number plus the revision (one estimate tree
-        per job): ``{job_number}-{version}``.
+        Estimate number IS the job number (one estimate tree per job); the
+        revision lives in the separate ``version`` field, not in the number.
         """
         version = kwargs.pop('version', 1)
-        estimate_number = kwargs.pop('estimate_number', f'{job.job_number}-{version}')
+        estimate_number = kwargs.pop('estimate_number', job.job_number)
         return Estimate.objects.create(
             job=job,
             estimate_number=estimate_number,
@@ -45,8 +45,8 @@ class EstimateService:
     def create_for_job(job_pk):
         """Create a new draft Estimate for a job by PK.
 
-        The estimate number derives from the job number plus the revision:
-        ``{job_number}-1`` for the first version.
+        The estimate number IS the job number; the revision lives in the
+        separate ``version`` field.
         """
         from apps.jobs.models import Job
         try:
@@ -56,7 +56,7 @@ class EstimateService:
 
         estimate = Estimate.objects.create(
             job=job,
-            estimate_number=f'{job.job_number}-1',
+            estimate_number=job.job_number,
             version=1,
             status=Estimate.STATUS_DRAFT,
         )
@@ -135,7 +135,7 @@ class EstimateService:
         new_version = parent.version + 1
         new_estimate = Estimate.objects.create(
             job=parent.job,
-            estimate_number=f'{parent.job.job_number}-{new_version}',
+            estimate_number=parent.job.job_number,
             version=new_version,
             status=Estimate.STATUS_DRAFT,
             parent=parent,
@@ -156,7 +156,12 @@ class EstimateService:
                 description=li.description,
                 price=li.price,
                 accounting_category=li.accounting_category,
+                adjustment_service_id=li.adjustment_service_id,
             )
+            # Copy M2M adjustment target categories (empty set is fine — means "all lines")
+            cats = li.adjustment_target_categories.all()
+            if cats:
+                new_li.adjustment_target_categories.set(cats)
             for src in li.sources.all():
                 src.estimate_line_item = new_li
                 src.save()
@@ -225,7 +230,7 @@ class EstimateService:
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -242,7 +247,7 @@ class EstimateService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -300,6 +305,46 @@ class EstimateService:
         estimate.delete()
 
     @staticmethod
+    @transaction.atomic
+    def add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=None):
+        """Add a percentage-adjustment line item to a draft estimate.
+
+        Creates an EstimateLineItem backed by a PERCENTAGE ServiceItem, sets
+        target categories (empty list = apply to all non-adjustment lines),
+        computes the initial price via ``compute_adjustment_amount``, and
+        returns the saved line.
+
+        Raises ValidationError if the estimate is not draft or the service is
+        not a PERCENTAGE algorithm.
+        """
+        from django.db.models import Max
+        from apps.jobs.models import ServiceItem
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Adjustments can only be added to a draft estimate.')
+        svc = ServiceItem.objects.get(pk=adjustment_service_id)
+        if svc.algorithm != ServiceItem.PERCENTAGE:
+            raise ValidationError('Adjustment line requires a percentage service.')
+        max_ln = (EstimateLineItem.objects.filter(estimate=estimate)
+                  .aggregate(Max('line_number'))['line_number__max'] or 0)
+        from apps.core.services import LineItemService
+        line = EstimateLineItem(
+            estimate=estimate,
+            line_number=max_ln + 1,
+            qty=Decimal('1'),
+            units=svc.unit_label or 'none',
+            description=svc.name,
+            price=Decimal('0.00'),
+            accounting_category=svc.accounting_category,
+            adjustment_service=svc,
+        )
+        line.save()
+        if target_category_ids:
+            line.adjustment_target_categories.set(target_category_ids)
+        LineItemService.save_line_item(line)
+        line.refresh_from_db()
+        return line
+
+    @staticmethod
     def add_line_item_from_pli(estimate_pk, pli_pk, qty):
         """Add a line item from a InventoryItem to a draft estimate."""
         try:
@@ -313,7 +358,8 @@ class EstimateService:
         except InventoryItem.DoesNotExist:
             raise NotFoundError(f'InventoryItem {pli_pk} not found')
 
-        li = EstimateLineItem.objects.create(
+        from apps.core.services import LineItemService
+        li = EstimateLineItem(
             estimate=estimate,
             inventory_item=pli,
             description=pli.description,
@@ -322,6 +368,7 @@ class EstimateService:
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
+        LineItemService.save_line_item(li)
         return li
 
 
@@ -803,7 +850,7 @@ class WorksheetService:
     @staticmethod
     def add_task_from_template(
         worksheet_pk, template_pk,
-        rate_scheme_id=None,
+        service_item_id=None,
         active_modifiers=None,
         est_qty=None,
         est_worker_time=None,
@@ -830,21 +877,21 @@ class WorksheetService:
         except TaskTemplate.DoesNotExist:
             raise NotFoundError(f'TaskTemplate {template_pk} not found')
 
-        # Guard: refuse to use a template whose RateScheme has been superseded.
-        # Only fires when the caller is relying on the template's rate_scheme
+        # Guard: refuse to use a template whose ServiceItem has been superseded.
+        # Only fires when the caller is relying on the template's service_item
         # (i.e. they didn't supply an explicit override).
-        if rate_scheme_id is None and tt.rate_scheme_id and tt.rate_scheme.replaced_by_id is not None:
+        if service_item_id is None and tt.service_item_id and tt.service_item.replaced_by_id is not None:
             from apps.core.services import SchemeSupersededError
             raise SchemeSupersededError(
                 f'Template "{tt.template_name}" references a superseded '
-                f'RateScheme. Update the template before adding tasks from it.'
+                f'ServiceItem. Update the template before adding tasks from it.'
             )
 
         task = PlanTask.objects.create(
             name=name if name else tt.template_name,
             description=description if description is not None else tt.description,
             est_worksheet=ws,
-            rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
+            service_item_id=service_item_id if service_item_id is not None else tt.service_item_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
             est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
             est_worker_time=est_worker_time,
@@ -863,9 +910,9 @@ class WorksheetService:
             raise ValidationError(
                 'Cannot add tasks to a worksheet whose estimate has been sent.'
             )
-        if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
+        if not kwargs.get('service_item_id') and not kwargs.get('service_item'):
             raise ValidationError(
-                {'rate_scheme': 'A RateScheme is required to add a task.'}
+                {'service_item': 'A ServiceItem is required to add a task.'}
             )
         task = PlanTask(est_worksheet=ws, **kwargs)
         task.full_clean()
@@ -937,7 +984,7 @@ class EstimateWizardService(BaseWizardService):
 
         return Estimate.objects.create(
             job=worksheet.job,
-            estimate_number=f'{worksheet.job.job_number}-1',
+            estimate_number=worksheet.job.job_number,
             version=1,
             status=Estimate.STATUS_DRAFT,
         )
@@ -976,7 +1023,7 @@ class EstimateWizardService(BaseWizardService):
     def _atom_units(atom_instance):
         """Return the units label for an atom.
 
-        PlanTask: from rate_scheme.unit_label (or 'none' if no scheme).
+        PlanTask: from service_item.unit_label (or 'none' if no scheme).
         PlanMaterial: from the atom's own units field (which is populated
                       from the linked PLI at create time via _populate_from_pli,
                       so PLI-linked PMs reflect the PLI's units; freeform PMs
@@ -985,8 +1032,8 @@ class EstimateWizardService(BaseWizardService):
         from apps.jobs.models import PlanTask
         from apps.inventory.models import PlanMaterial
         if isinstance(atom_instance, PlanTask):
-            if atom_instance.rate_scheme_id:
-                return atom_instance.rate_scheme.unit_label
+            if atom_instance.service_item_id:
+                return atom_instance.service_item.unit_label
             return 'none'
         if isinstance(atom_instance, PlanMaterial):
             return atom_instance.units or 'none'
@@ -1056,7 +1103,7 @@ class EstimateWizardService(BaseWizardService):
         atoms = []
 
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
+            'service_item', 'service_item__accounting_category',
         ):
             key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
             state_info = claims.get(key, default_state)
@@ -1125,7 +1172,7 @@ class EstimateWizardService(BaseWizardService):
 
         # PlanTasks
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
+            'service_item', 'service_item__accounting_category',
         ):
             if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
                 continue
@@ -1169,6 +1216,13 @@ class EstimateWizardService(BaseWizardService):
             )
             created_count += 1
 
+        # This bulk path bypasses LineItemService.save_line_item, so recompute
+        # any percentage-adjustment lines once after the batch (a single
+        # end-of-batch recompute is the right granularity for a bulk op).
+        if created_count:
+            from apps.core.adjustments import recompute_adjustments
+            recompute_adjustments(EstimateLineItem.objects.filter(estimate=estimate))
+
         return {'estimate': estimate, 'created_count': created_count}
 
     # ── BaseWizardService hooks ────────────────────────────────────────
@@ -1202,7 +1256,7 @@ class EstimateWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        if task.rate_scheme_id and task.est_qty is not None:
+        if task.service_item_id and task.est_qty is not None:
             return task.est_qty, task.effective_rate()
         return Decimal('1'), total_price
 

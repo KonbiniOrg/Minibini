@@ -22,7 +22,7 @@ Per-model field checks:
                    W  draft/submitted/rejected: stray start_date
                    W  completed/cancelled/rejected: missing completed_date
                    W  non-terminal: stray completed_date
-  RateScheme       E  valid algorithm value
+  ServiceItem       E  valid algorithm value
                    E  missing accounting_category
                    E  replaced_by/replaced_at must be set together
   Estimate         E  valid status value
@@ -119,7 +119,7 @@ class Command(BaseCommand):
         self.check_contacts()
         self.check_businesses()
         self.check_jobs()
-        self.check_rate_schemes()
+        self.check_service_items()
         self.check_estimates()
         self.check_worksheets()
         self.check_tasks()
@@ -327,6 +327,7 @@ class Command(BaseCommand):
 
     def check_tasks(self):
         from apps.jobs.models import Task, PlanTask
+        from apps.estimates.models import TaskTemplate
         valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
         # Tasks now belong directly to a Job (post-WorkOrder-removal).
         for t in Task.objects.select_related('job').all():
@@ -334,10 +335,25 @@ class Command(BaseCommand):
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
             if t.status not in valid_task_statuses:
                 self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
+            if isinstance(t.active_modifiers, dict):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
+                )
         # Plan tasks: PlanTask is worksheet-only
         for t in PlanTask.objects.select_related('est_worksheet').all():
             if not t.est_worksheet_id:
                 self.errors.append(f'PlanTask {t.pk} ({t.name}): not attached to an EstWorksheet')
+            if isinstance(t.active_modifiers, dict):
+                self.errors.append(
+                    f'PlanTask {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
+                )
+        # TaskTemplates: default_active_modifiers must be a list
+        for tt in TaskTemplate.objects.all():
+            if isinstance(tt.default_active_modifiers, dict):
+                self.errors.append(
+                    f'TaskTemplate {tt.pk} ({tt.template_name}): '
+                    f'default_active_modifiers is a dict; must be a list of keys'
+                )
 
     # ── Materials ─────────────────────────────────────────────
 
@@ -472,25 +488,33 @@ class Command(BaseCommand):
             if inv.status not in valid_statuses:
                 self.errors.append(f'Invoice {inv.invoice_number}: invalid status "{inv.status}"')
 
-    # ── Rate Schemes ──────────────────────────────────────────
+    # ── Service Prices ────────────────────────────────────────
 
-    def check_rate_schemes(self):
-        from apps.jobs.models import RateScheme
-        valid_algorithms = {a[0] for a in RateScheme.ALGORITHM_CHOICES}
-        for rs in RateScheme.objects.select_related('accounting_category').all():
+    def check_service_items(self):
+        from apps.jobs.models import ServiceItem
+        valid_algorithms = {a[0] for a in ServiceItem.ALGORITHM_CHOICES}
+        for rs in ServiceItem.objects.select_related('accounting_category').all():
             if rs.algorithm not in valid_algorithms:
                 self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
+                    f'ServiceItem {rs.pk} ({rs.name}): invalid algorithm "{rs.algorithm}"'
                 )
             if not rs.accounting_category_id:
                 self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): missing accounting_category'
+                    f'ServiceItem {rs.pk} ({rs.name}): missing accounting_category'
                 )
             # replaced_by and replaced_at are set together by supersede()
             if bool(rs.replaced_by_id) != bool(rs.replaced_at):
                 self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
+                    f'ServiceItem {rs.pk} ({rs.name}): replaced_by and replaced_at '
                     f'must both be set or both be null'
+                )
+            if rs.algorithm == ServiceItem.FLAT_FEE and (rs.rate is None or rs.rate <= 0):
+                self.errors.append(
+                    f'ServiceItem {rs.pk} ({rs.name}): flat-fee service must have a positive rate'
+                )
+            if rs.algorithm != ServiceItem.PERCENTAGE and rs.rate is not None and rs.rate < 0:
+                self.errors.append(
+                    f'ServiceItem {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
                 )
 
     # ── Deliverables ──────────────────────────────────────────

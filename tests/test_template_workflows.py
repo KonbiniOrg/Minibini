@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from apps.contacts.models import Contact
 from apps.core.models import Configuration, AccountingCategory, AppState
-from apps.jobs.models import Job, Task, RateScheme
+from apps.jobs.models import Job, Task, ServiceItem
 from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, TaskTemplate
 from apps.jobs.services import TaskService
 from apps.estimates.services import EstimateService
@@ -48,7 +48,9 @@ class EstimateCreationWorkflowTest(TestCase):
 
         self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.job, self.job)
-        self.assertEqual(estimate.estimate_number, f'{self.job.job_number}-1')
+        # estimate_number IS the job number; the revision lives in `version`.
+        self.assertEqual(estimate.estimate_number, self.job.job_number)
+        self.assertEqual(estimate.version, 1)
 
 
 class TaskCreationWorkflowTest(TestCase):
@@ -64,7 +66,7 @@ class TaskCreationWorkflowTest(TestCase):
         )
         self.user = User.objects.create_user(username="testuser")
         self.ac = AccountingCategory.objects.create(code='X-tw', name='X-tw')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='S-tw', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -76,7 +78,7 @@ class TaskCreationWorkflowTest(TestCase):
             name="Test Task",
             assignee=self.user,
             est_worker_time=timedelta(hours=1),
-            rate_scheme_id=self.scheme.pk,
+            service_item_id=self.scheme.pk,
         )
 
         self.assertEqual(task.job, self.job)
@@ -87,7 +89,7 @@ class TaskCreationWorkflowTest(TestCase):
         """Test Task creation from active TaskTemplate."""
         template = TaskTemplate.objects.create(
             template_name="Test Task Template",
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
             is_active=True
         )
@@ -101,7 +103,7 @@ class TaskCreationWorkflowTest(TestCase):
         """Test Task creation from inactive template is rejected."""
         template = TaskTemplate.objects.create(
             template_name="Inactive Template",
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
             is_active=False
         )
@@ -112,28 +114,28 @@ class TaskCreationWorkflowTest(TestCase):
         self.assertIn("is not active", str(context.exception))
 
     def test_task_template_with_scheme(self):
-        """Test TaskTemplate carries billing via rate_scheme."""
+        """Test TaskTemplate carries billing via service_item."""
         template = TaskTemplate.objects.create(
             template_name="Labor Template",
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
             description="Standard labor template with pricing",
             is_active=True
         )
 
-        self.assertEqual(template.rate_scheme, self.scheme)
+        self.assertEqual(template.service_item, self.scheme)
 
         # Sanity check: can create task from this template
         TaskService.create_from_template(template, self.job)
 
     def test_task_template_minimal_fields(self):
-        """TaskTemplate requires only name, rate_scheme, and default_billable_qty."""
+        """TaskTemplate requires only name, service_item, and default_billable_qty."""
         template = TaskTemplate.objects.create(
             template_name="Simple Template",
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
             is_active=True
         )
 
-        self.assertEqual(template.rate_scheme, self.scheme)
+        self.assertEqual(template.service_item, self.scheme)
         self.assertEqual(template.default_billable_qty, Decimal('1.00'))

@@ -18,7 +18,7 @@ class CancelWorkAPITest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(job=self.job, name='T', rate_scheme_id=1)
+        self.task = Task.objects.create(job=self.job, name='T', service_item_id=1)
 
     def test_cancel_work_deletes_blep_and_reverts_task(self):
         self.client.post(f'/api/tasks/{self.task.pk}/start-work/')
