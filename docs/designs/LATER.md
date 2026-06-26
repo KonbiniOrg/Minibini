@@ -944,3 +944,52 @@ IMAP-SMTP machinery and tend to be worked together.
   - UX polish: `AgreementAdjustmentsPanel` "Add" re-fetches its own list but not the wizard's line-item columns — add an `onLineItemAdded` prop wired to the wizard's `reloadLineItems` so the new line appears without a manual reload.
   - Future-coupled: when AC-grouping / multi-target adjustments land, revisit the same-percentage-service-twice case (keyed `{#each}` + `already_added` dedup in the panel assume one line per service).
   _Done when:_ the bundle is swept and the full suite + frontend gate stay green.
+
+- **"Add Manual Task" modal: offer "Save as Template based on this task".** — _added 2026-06-25_
+  The worksheet's Add Manual Task flow already builds a PlanTask from a ServiceItem
+  (+ qty + selected modifiers + name/description). Add an option to save that
+  configured task as a `TaskTemplate` (a reusable preset) directly from the modal —
+  capturing ServiceItem + default qty + default modifiers + name. Turns ad-hoc task
+  authoring into reusable presets without a separate template-builder trip; aligns
+  with the planning-consolidation direction (templates = presets that expand into
+  atoms — see `docs/plans/2026-06-24-planning-billing-consolidation-draft.md`).
+  _Done when:_ from the Add Manual Task modal the user can create a TaskTemplate from
+  the task they just configured, and it appears in the template catalog.
+
+- **Terminology: rename worksheet / estimate / wizard for the consolidated flow.** — _added 2026-06-25_
+  Under the planning-consolidation direction (worksheet = the single authoring
+  surface; estimate = a frozen customer-facing projection), reconsider the
+  user-facing names: **Worksheet → "Estimate"** (it's where you build the estimate),
+  the current frozen **Estimate → "Customer View"**, and the **wizard →
+  "Consolidate Lines"** (its actual job is grouping atoms into lines). UI
+  labels/terminology only — internal model names can stay. Revisit with
+  `docs/plans/2026-06-24-planning-billing-consolidation-draft.md` (§11 already flags
+  the worksheet-naming question).
+  _Done when:_ the consolidation design settles on user-facing names and the UI is
+  relabeled (or the idea is explicitly dropped).
+
+- **BUG (investigate): Shift & Blep start times display ~1 hour early, unmodified.** — _added 2026-06-25_
+  Observed in browser review: a Shift's and a Blep's `start_time` came through about
+  **one hour earlier** than the actual time, with no edit made to the record. A
+  one-hour (not whole-timezone) offset smells like a **timezone / DST** handling
+  issue (naive-vs-aware datetime, or a standard-vs-daylight conversion) in
+  serialization or display — note it's currently DST. Suspects: `Shift.save()` /
+  `Blep.save()` `floor_to_minute` (`apps/core/timeutils.py`), the blep/shift
+  serializers, or the SPA's time rendering. This is a genuine bug — promote to a
+  proper issue/spec once reproduced; logged here per request so it isn't lost.
+  _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
+  with a regression test pinning the timezone behavior.
+
+- **Sweep for bare string literals that should be class constants.** — _added 2026-06-25_
+  Recurring smell: status / algorithm / type values hardcoded as bare strings
+  (e.g. `'completed'`, `'flat_fee'`, `'percentage'`, `'draft'`) instead of the
+  model's **class constant** (`Job.STATUS_COMPLETED`, `ServiceItem.FLAT_FEE`,
+  `ServiceItem.PERCENTAGE`, `Estimate.STATUS_DRAFT`). Per CLAUDE.md "Status
+  Constants" rule + the code-review checklist. Periodically grep `apps/` (and JS
+  where the value is mirrored, e.g. `algorithm === 'percentage'`) for bare
+  choice-value literals and swap in the constant — watch the recent
+  ServiceItem / percentage-adjustments code especially. Legitimate exceptions:
+  migration files and migration-safe helpers (e.g. `flat_fee_reframe.py`
+  intentionally uses the literal `'flat_fee'` so it works against historical models).
+  _Done when:_ a sweep finds no bare choice/status/algorithm literals where a class
+  constant exists (remaining ones are the deliberate migration-safe cases).
