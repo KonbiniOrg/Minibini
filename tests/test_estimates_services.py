@@ -175,19 +175,20 @@ class EstimateServiceCreateTest(EstimatesTestBase):
         with self.assertRaises(NotFoundError):
             EstimateService.create_for_job(99999)
 
-    def test_estimate_number_is_job_number_with_revision(self):
-        """Estimate numbers derive from the job number plus the revision:
-        {job_number}-{version}, including revision 1."""
+    def test_estimate_number_is_just_the_job_number(self):
+        """The estimate_number IS the job number; the revision lives in the
+        separate `version` field, not baked into the number."""
         est = EstimateService.create_for_job(self.job.pk)
-        self.assertEqual(est.estimate_number, f'{self.job.job_number}-1')
+        self.assertEqual(est.estimate_number, self.job.job_number)
         self.assertEqual(est.version, 1)
 
-    def test_revision_number_increments_revision_suffix(self):
+    def test_revision_keeps_number_and_increments_version(self):
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='x', price=Decimal('1.00'))
         EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         new_est = EstimateService.revise_estimate(est.pk)
-        self.assertEqual(new_est.estimate_number, f'{self.job.job_number}-2')
+        # Number is unchanged (same job); the revision is in `version`.
+        self.assertEqual(new_est.estimate_number, self.job.job_number)
         self.assertEqual(new_est.version, 2)
 
 

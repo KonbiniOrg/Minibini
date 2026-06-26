@@ -28,11 +28,11 @@ class EstimateService:
     def create_direct(job, **kwargs):
         """
         Create Estimate directly. Starts in 'draft' status.
-        Estimate number is the job number plus the revision (one estimate tree
-        per job): ``{job_number}-{version}``.
+        Estimate number IS the job number (one estimate tree per job); the
+        revision lives in the separate ``version`` field, not in the number.
         """
         version = kwargs.pop('version', 1)
-        estimate_number = kwargs.pop('estimate_number', f'{job.job_number}-{version}')
+        estimate_number = kwargs.pop('estimate_number', job.job_number)
         return Estimate.objects.create(
             job=job,
             estimate_number=estimate_number,
@@ -45,8 +45,8 @@ class EstimateService:
     def create_for_job(job_pk):
         """Create a new draft Estimate for a job by PK.
 
-        The estimate number derives from the job number plus the revision:
-        ``{job_number}-1`` for the first version.
+        The estimate number IS the job number; the revision lives in the
+        separate ``version`` field.
         """
         from apps.jobs.models import Job
         try:
@@ -56,7 +56,7 @@ class EstimateService:
 
         estimate = Estimate.objects.create(
             job=job,
-            estimate_number=f'{job.job_number}-1',
+            estimate_number=job.job_number,
             version=1,
             status=Estimate.STATUS_DRAFT,
         )
@@ -135,7 +135,7 @@ class EstimateService:
         new_version = parent.version + 1
         new_estimate = Estimate.objects.create(
             job=parent.job,
-            estimate_number=f'{parent.job.job_number}-{new_version}',
+            estimate_number=parent.job.job_number,
             version=new_version,
             status=Estimate.STATUS_DRAFT,
             parent=parent,
@@ -984,7 +984,7 @@ class EstimateWizardService(BaseWizardService):
 
         return Estimate.objects.create(
             job=worksheet.job,
-            estimate_number=f'{worksheet.job.job_number}-1',
+            estimate_number=worksheet.job.job_number,
             version=1,
             status=Estimate.STATUS_DRAFT,
         )

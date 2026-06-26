@@ -493,8 +493,8 @@ in `architecture-and-conventions.md` §9; it runs daily.
 
 1. Validates parent is **not** in `draft` (drafts edit in place).
 2. Creates a new `Estimate` with `parent=self`,
-   `version=self.version+1`, status `draft`, and `estimate_number`
-   `{job_number}-{new_version}` (see §5.4).
+   `version=self.version+1`, status `draft`, and the same `estimate_number`
+   as the parent (the job number — the revision is the `version`, see §5.4).
 3. Copies line items field-by-field and **moves** each line's
    `EstimateLineItemSource` rows onto the revision (reassigns the FK, not a
    copy — the source `unique_together` forbids two claims on one atom). So a
@@ -550,13 +550,17 @@ estimate-origin lines. CO-origin lines always have falsey adjustment fields
 ### 5.4 Document numbering
 
 One estimate tree per job, so the estimate's identity *is* the job's: the
-`estimate_number` is the **job number plus the revision** —
-`{job_number}-{version}`, including revision 1 (e.g. `JOB-2026-0001-1`,
-`-2`, …). It is set by `EstimateService.create_for_job` /
-`create_direct` / `EstimateWizardService.open_for_worksheet` at creation
-and by `revise_estimate` on each revision. The customer tracks one number
-across the conversation. (The old `estimate_number_sequence` /
-`estimate_counter` Configuration keys are no longer used for estimates.)
+`estimate_number` **is just the job number** (e.g. `JOB-2026-0001`), the same
+across every revision. The revision lives in the separate `version` field — it
+is **not** baked into the number. It is set by `EstimateService.create_for_job`
+/ `create_direct` / `EstimateWizardService.open_for_worksheet` at creation and
+by `revise_estimate` on each revision (which sets the same number, bumps
+`version`). The `unique_together = ['estimate_number', 'version']` constraint
+keeps revisions distinct. The customer tracks one number across the
+conversation; the UI shows the revision by displaying `{estimate_number}-{version}`
+(e.g. `JOB-2026-0001-2`) — that dash-joined form is a *display* concatenation,
+not the stored value. (The old `estimate_number_sequence` / `estimate_counter`
+Configuration keys are no longer used for estimates.)
 
 ---
 

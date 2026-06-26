@@ -48,7 +48,9 @@ class EstimateCreationWorkflowTest(TestCase):
 
         self.assertEqual(estimate.status, Estimate.STATUS_DRAFT)
         self.assertEqual(estimate.job, self.job)
-        self.assertEqual(estimate.estimate_number, f'{self.job.job_number}-1')
+        # estimate_number IS the job number; the revision lives in `version`.
+        self.assertEqual(estimate.estimate_number, self.job.job_number)
+        self.assertEqual(estimate.version, 1)
 
 
 class TaskCreationWorkflowTest(TestCase):
