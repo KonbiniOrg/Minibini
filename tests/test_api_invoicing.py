@@ -545,7 +545,7 @@ class ComposeAgreementAdjustmentTest(BaseTestCase):
 # ---------------------------------------------------------------------------
 
 class InvoiceAdjustmentServiceTest(BaseTestCase):
-    """InvoiceService.add_adjustment_line / recalculate_adjustment_line."""
+    """InvoiceService.add_adjustment_line and auto-recompute."""
 
     def setUp(self):
         super().setUp()
@@ -553,7 +553,7 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
         self.invoice = Invoice.objects.create(
             job=self.adj_job, status=Invoice.STATUS_DRAFT,
         )
-        # seed a base line so recalculate has something to sum
+        # seed a base line so recompute has something to sum
         InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
             qty=Decimal('1'), units='hours',
@@ -607,19 +607,6 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
                 adjustment_service_id=flat_svc.pk,
             )
 
-    def test_recalculate_adjustment_line_rejects_non_draft(self):
-        from django.core.exceptions import ValidationError
-        from apps.invoicing.services import InvoiceService
-        line = InvoiceService.add_adjustment_line(
-            self.invoice,
-            adjustment_service_id=self.adj_svc.pk,
-        )
-        Invoice.objects.filter(pk=self.invoice.pk).update(status=Invoice.STATUS_OPEN)
-        self.invoice.refresh_from_db()
-        line.refresh_from_db()
-        with self.assertRaises(ValidationError):
-            InvoiceService.recalculate_adjustment_line(line)
-
 
 # ---------------------------------------------------------------------------
 # Task 7: Invoice API actions for adjustments
@@ -627,7 +614,6 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
 
 class InvoiceAdjustmentAPITest(BaseTestCase):
     """POST /api/invoices/{id}/adjustment-lines/ and
-    POST /api/invoices/{id}/line-items/{lid}/recalculate/ and
     GET  /api/invoices/{id}/agreement-adjustments/"""
 
     def setUp(self):
@@ -639,7 +625,7 @@ class InvoiceAdjustmentAPITest(BaseTestCase):
         self.invoice = Invoice.objects.create(
             job=self.adj_job, status=Invoice.STATUS_DRAFT,
         )
-        # seed a base line for recalculate to sum
+        # seed a base line for adjustment to sum
         self.base_li = InvoiceLineItem.objects.create(
             invoice=self.invoice, line_number=1,
             qty=Decimal('1'), units='hours',
@@ -669,7 +655,8 @@ class InvoiceAdjustmentAPITest(BaseTestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    def test_recalculate_returns_200(self):
+    def test_recalculate_endpoint_removed(self):
+        """The recalculate endpoint no longer exists (adjustments auto-recompute)."""
         from apps.invoicing.services import InvoiceService
         adj_line = InvoiceService.add_adjustment_line(
             self.invoice,
@@ -679,19 +666,7 @@ class InvoiceAdjustmentAPITest(BaseTestCase):
         resp = self.client.post(
             f'/api/invoices/{self.invoice.pk}/line-items/{adj_line.pk}/recalculate/',
         )
-        self.assertEqual(resp.status_code, 200, resp.data)
-
-    def test_recalculate_non_draft_returns_409(self):
-        from apps.invoicing.services import InvoiceService
-        adj_line = InvoiceService.add_adjustment_line(
-            self.invoice,
-            adjustment_service_id=self.adj_svc.pk,
-        )
-        Invoice.objects.filter(pk=self.invoice.pk).update(status=Invoice.STATUS_OPEN)
-        resp = self.client.post(
-            f'/api/invoices/{self.invoice.pk}/line-items/{adj_line.pk}/recalculate/',
-        )
-        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.status_code, 404)
 
     def test_agreement_adjustments_lists_adjustments(self):
         resp = self.client.get(

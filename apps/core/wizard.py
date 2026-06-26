@@ -210,6 +210,14 @@ class BaseWizardService:
             source_pk=instance.pk,
         )
 
+    @classmethod
+    def _recompute_adjustments(cls, container):
+        """Recompute all percentage-adjustment lines on the container document."""
+        from apps.core.adjustments import recompute_adjustments
+        recompute_adjustments(
+            cls._line_item_model().objects.filter(**{cls.container_attr: container})
+        )
+
     # ── public: line items from atoms ──────────────────────────────────
     @classmethod
     def add_atoms_to_new_line_item(cls, container, atoms):
@@ -259,6 +267,7 @@ class BaseWizardService:
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 
+        cls._recompute_adjustments(container)
         return line_item
 
     @classmethod
@@ -282,6 +291,8 @@ class BaseWizardService:
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 
+        container = getattr(line_item, cls.container_attr)
+        cls._recompute_adjustments(container)
         return line_item
 
     @classmethod
@@ -291,7 +302,8 @@ class BaseWizardService:
         remain. Returns {'line_item_deleted': bool}."""
         from apps.core.services import LineItemService
 
-        cls._validate_draft(getattr(line_item, cls.container_attr))
+        container = getattr(line_item, cls.container_attr)
+        cls._validate_draft(container)
 
         old_sum = cls._sum_sources(line_item)
         was_in_sync = cls._is_in_sync(line_item, old_sum)
@@ -302,9 +314,11 @@ class BaseWizardService:
 
             if remaining == 0:
                 LineItemService.delete_line_item_with_renumber(line_item)
+                cls._recompute_adjustments(container)
                 return {'line_item_deleted': True}
 
             if was_in_sync:
                 cls._resync_in_sync_line_item(line_item)
 
+        cls._recompute_adjustments(container)
         return {'line_item_deleted': False}

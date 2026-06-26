@@ -20,6 +20,12 @@ class InvoiceService:
             )
 
     @staticmethod
+    def _recompute_adjustments(invoice):
+        """Recompute all percentage-adjustment lines on the invoice."""
+        from apps.core.adjustments import recompute_adjustments
+        recompute_adjustments(InvoiceLineItem.objects.filter(invoice=invoice))
+
+    @staticmethod
     def add_line_item(invoice_pk, **kwargs):
         """Add a manual line item to a draft invoice."""
         try:
@@ -32,6 +38,7 @@ class InvoiceService:
         li = InvoiceLineItem(invoice=invoice, **kwargs)
         li.full_clean()
         li.save()
+        InvoiceService._recompute_adjustments(invoice)
         return li
 
     @staticmethod
@@ -58,6 +65,7 @@ class InvoiceService:
         )
         li.full_clean()
         li.save()
+        InvoiceService._recompute_adjustments(invoice)
         return li
 
     @staticmethod
@@ -74,6 +82,7 @@ class InvoiceService:
             setattr(li, field, value)
         li.full_clean()
         li.save()
+        InvoiceService._recompute_adjustments(li.invoice)
         return li
 
     @staticmethod
@@ -123,7 +132,10 @@ class InvoiceService:
             raise ValidationError(
                 'Cannot modify line items on a non-draft invoice.'
             )
-        return LineItemService.delete_line_item_with_renumber(line_item)
+        invoice = line_item.invoice
+        result = LineItemService.delete_line_item_with_renumber(line_item)
+        InvoiceService._recompute_adjustments(invoice)
+        return result
 
     @staticmethod
     def add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=None):
@@ -160,23 +172,9 @@ class InvoiceService:
             )
             if target_category_ids:
                 line.adjustment_target_categories.set(target_category_ids)
-            return InvoiceService.recalculate_adjustment_line(line)
-
-    @staticmethod
-    def recalculate_adjustment_line(line):
-        """Recompute the price of a percentage-adjustment line from its siblings.
-
-        Raises ValidationError if the parent invoice is not draft.
-        Returns the saved line with updated price.
-        """
-        from apps.core.adjustments import compute_adjustment_amount
-        invoice = line.invoice
-        if invoice.status != Invoice.STATUS_DRAFT:
-            raise ValidationError('Cannot recalculate on a non-draft invoice.')
-        siblings = InvoiceLineItem.objects.filter(invoice=invoice).exclude(pk=line.pk)
-        line.price = compute_adjustment_amount(line, siblings)
-        line.save()
-        return line
+            InvoiceService._recompute_adjustments(invoice)
+            line.refresh_from_db()
+            return line
 
 
 class InvoiceEmailService:

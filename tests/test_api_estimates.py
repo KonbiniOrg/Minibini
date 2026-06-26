@@ -233,8 +233,7 @@ class EstimateSendTest(BaseTestCase):
 
 
 class EstimateAdjustmentLineAPITest(BaseTestCase):
-    """Tests for POST /api/estimates/{id}/adjustment-lines/ and
-    POST /api/estimates/{id}/line-items/{lid}/recalculate/."""
+    """Tests for POST /api/estimates/{id}/adjustment-lines/ and auto-recompute."""
 
     def setUp(self):
         super().setUp()
@@ -262,7 +261,7 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
             accounting_category=self.labor,
         )
 
-    def test_adjustment_line_endpoints(self):
+    def test_adjustment_line_created_with_correct_price(self):
         from decimal import Decimal
         from apps.jobs.models import ServiceItem
         rush = ServiceItem.objects.create(
@@ -276,19 +275,15 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 201)
-        lid = resp.json()['line_item_id']
-        r2 = self.client.post(
-            f'/api/estimates/{self.est.pk}/line-items/{lid}/recalculate/',
-            content_type='application/json',
-        )
-        self.assertEqual(r2.status_code, 200)
+        # 15% of (100 + 40) = 21.00
+        self.assertEqual(resp.json()['price'], '21.00')
 
-    def test_adjustment_line_recalculate_409_on_non_draft(self):
-        """recalculate returns 409 when the estimate is not a draft."""
+    def test_recalculate_endpoint_removed(self):
+        """The recalculate endpoint no longer exists (adjustments auto-recompute)."""
         from decimal import Decimal
         from apps.jobs.models import ServiceItem
         rush = ServiceItem.objects.create(
-            name='Rush4', algorithm=ServiceItem.PERCENTAGE,
+            name='Rush5', algorithm=ServiceItem.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.labor,
         )
@@ -299,10 +294,8 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
         )
         self.assertEqual(resp.status_code, 201)
         lid = resp.json()['line_item_id']
-        # Force to non-draft
-        Estimate.objects.filter(pk=self.est.pk).update(status=Estimate.STATUS_OPEN)
         r2 = self.client.post(
             f'/api/estimates/{self.est.pk}/line-items/{lid}/recalculate/',
             content_type='application/json',
         )
-        self.assertEqual(r2.status_code, 409)
+        self.assertEqual(r2.status_code, 404)

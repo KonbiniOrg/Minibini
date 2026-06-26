@@ -171,14 +171,6 @@
     handleReorder(ids);
   }
 
-  async function handleRecalculate(li) {
-    try {
-      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/recalculate/`);
-      await loadEstimate();
-    } catch (e) {
-      alert(e.message || 'Could not recalculate adjustment.');
-    }
-  }
 
 </script>
 
@@ -285,7 +277,6 @@
     {categories}
     showSource={true}
     canEdit={canEdit}
-    onRecalculate={canEdit ? handleRecalculate : null}
     actions={canEdit ? actionsSnippet : null}
   />
 

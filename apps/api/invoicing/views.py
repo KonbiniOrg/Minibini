@@ -265,33 +265,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response(InvoiceLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
 
-    @action(
-        detail=True, methods=['post'],
-        url_path=r'line-items/(?P<lid>[^/.]+)/recalculate',
-    )
-    def recalculate(self, request, pk=None, lid=None):
-        """Recompute a percentage-adjustment line's price from its siblings.
-
-        Returns 200 with the serialized line item on success.
-        Returns 404 if the line item doesn't exist on this invoice.
-        Returns 409 if the invoice is not draft.
-        """
-        from django.core.exceptions import ValidationError as DjangoValidationError
-        from apps.invoicing.models import InvoiceLineItem
-        from apps.invoicing.services import InvoiceService
-        invoice = self.get_object()
-        try:
-            line = InvoiceLineItem.objects.get(pk=lid, invoice=invoice)
-        except InvoiceLineItem.DoesNotExist:
-            return Response({'detail': 'Line item not found.'}, status=status.HTTP_404_NOT_FOUND)
-        try:
-            InvoiceService.recalculate_adjustment_line(line)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_409_CONFLICT)
-        line.refresh_from_db()
-        return Response(InvoiceLineItemSerializer(line).data, status=status.HTTP_200_OK)
-
     @action(detail=True, methods=['get'], url_path='agreement-adjustments')
     def agreement_adjustments(self, request, pk=None):
         """Return the adjustment lines from the job's accepted estimate agreement,

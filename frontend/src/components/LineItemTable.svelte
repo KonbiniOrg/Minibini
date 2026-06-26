@@ -6,7 +6,6 @@
     categories = [],
     showSource = false,
     canEdit = false,         // true when document is draft + user can edit
-    onRecalculate = null,    // (li) => void — called when Recalculate is clicked
     actions = null,          // optional snippet `(li, i) => ...` for action buttons
   } = $props();
 
@@ -99,13 +98,6 @@
           {#if actions}
             <td>
               {@render actions(li, i)}
-              {#if li.adjustment_service && canEdit && onRecalculate}
-                <button type="button" onclick={() => onRecalculate(li)}>Recalculate</button>
-              {/if}
-            </td>
-          {:else if li.adjustment_service && canEdit && onRecalculate}
-            <td>
-              <button type="button" onclick={() => onRecalculate(li)}>Recalculate</button>
             </td>
           {/if}
         </tr>

@@ -726,7 +726,7 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
 # --- Adjustment line service methods ---
 
 class EstimateAdjustmentLineServiceTest(EstimatesTestBase):
-    """Tests for EstimateService.add_adjustment_line and recalculate_adjustment_line."""
+    """Tests for EstimateService.add_adjustment_line and auto-recompute."""
 
     def setUp(self):
         super().setUp()
@@ -744,7 +744,7 @@ class EstimateAdjustmentLineServiceTest(EstimatesTestBase):
             accounting_category=self.labor,
         )
 
-    def test_add_and_recalculate_adjustment(self):
+    def test_add_adjustment_line_computes_price(self):
         rush = ServiceItem.objects.create(
             name='Rush', algorithm=ServiceItem.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%',
@@ -777,17 +777,3 @@ class EstimateAdjustmentLineServiceTest(EstimatesTestBase):
         with self.assertRaises(ValidationError):
             EstimateService.add_adjustment_line(
                 self.est, adjustment_service_id=non_pct.pk)
-
-    def test_recalculate_rejects_non_draft(self):
-        rush = ServiceItem.objects.create(
-            name='Rush3', algorithm=ServiceItem.PERCENTAGE,
-            rate=Decimal('10.00'), unit_label='%',
-            accounting_category=self.labor,
-        )
-        line = EstimateService.add_adjustment_line(
-            self.est, adjustment_service_id=rush.pk)
-        Estimate.objects.filter(pk=self.est.pk).update(status=Estimate.STATUS_OPEN)
-        self.est.refresh_from_db()
-        line.estimate = self.est
-        with self.assertRaises(ValidationError):
-            EstimateService.recalculate_adjustment_line(line)

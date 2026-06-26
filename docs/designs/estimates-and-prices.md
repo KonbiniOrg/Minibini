@@ -515,26 +515,31 @@ keeps revisions distinct.
 `revise_estimate` preserves adjustment lines exactly like normal lines:
 `adjustment_service_id` and the `adjustment_target_categories` M2M set are
 both copied onto the new revision's line items. The revision's adjustment line
-amounts are **not** automatically recalculated on copy — the inherited amount
-stays until the user explicitly recalculates (see §5.3b). Source atom rows
-(`EstimateLineItemSource`) are moved onto the new line items as usual (see
-§5.3).
+amounts are frozen at the inherited values until a line-item change triggers
+auto-recompute (see §5.3b). Source atom rows (`EstimateLineItemSource`) are
+moved onto the new line items as usual (see §5.3).
 
 ### 5.3b Adjustment line services and endpoints
 
-`EstimateService` (`apps/estimates/services.py`) provides two static methods:
+**Auto-recompute:** Adjustment lines recompute automatically on every line-item
+mutation — `add_line_item`, `update_line_item`, `delete_line_item`,
+`add_line_item_from_pli`, `add_adjustment_line`, and all three wizard
+atom-mutation methods. There is no manual recalculate step. Freeze is implicit:
+all mutations are draft-gated, so once an estimate leaves `draft` the stored
+price is frozen automatically.
+
+`EstimateService` (`apps/estimates/services.py`) provides:
 
 | Method | Behavior |
 |---|---|
-| `add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=[])` | Creates a new `EstimateLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the estimate's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the estimate is not `draft` or the service is not `PERCENTAGE`. |
-| `recalculate_adjustment_line(line)` | Fetches all sibling lines on the same estimate (excluding the adjustment line itself), calls `compute_adjustment_amount`, saves `line.price`, and returns the line. Raises `ValidationError` if the estimate is not `draft`. Once a non-draft estimate is finalized (e.g., transitions to `open`), recalculation is refused — the amount is frozen. |
+| `add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=[])` | Creates a new `EstimateLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the estimate's line list, calls `_recompute_adjustments`, and returns the saved line. Raises `ValidationError` if the estimate is not `draft` or the service is not `PERCENTAGE`. |
+| `_recompute_adjustments(estimate)` | Internal helper. Calls `recompute_adjustments()` over all `EstimateLineItem` rows for the estimate. Called after every line-item mutation. |
 
 **API endpoints:**
 
 | Verb + path | Behavior |
 |---|---|
-| `POST /api/estimates/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item. Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageJobs` (or the job's PM). |
-| `POST /api/estimates/{id}/line-items/{lid}/recalculate/` | Recomputes the adjustment line's price. Returns 200 with the line item. Returns 404 if the line doesn't exist; returns 409 if the estimate is not draft. Permission: `CanManageJobs` (or the job's PM). |
+| `POST /api/estimates/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item (price already computed). Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageJobs` (or the job's PM). |
 
 **`compose_agreement` surfacing.** `compose_agreement(job)` line dicts carry
 `is_adjustment` (bool), `adjustment_service_id`, `percent` (the rate, or

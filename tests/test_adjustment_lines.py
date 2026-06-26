@@ -1,15 +1,23 @@
 """
-Tests for compute_adjustment_amount helper in apps.core.adjustments.
+Tests for compute_adjustment_amount helper in apps.core.adjustments,
+and for auto-recompute of percentage-adjustment lines on every line-item mutation.
 
-Covers:
+compute_adjustment_amount covers:
   (a) Empty target-category set -> sum ALL non-adjustment siblings (15% of 140 = 21.00)
   (b) Target-category set filters to one category (15% of 100 = 15.00)
   (c) Negative percent (discount) -> negative dollar amount (-10% of 140 = -14.00)
   (d) Other adjustment siblings must NOT be included in the subtotal base
+
+Auto-recompute covers:
+  - recompute_adjustments helper
+  - EstimateService: add_line_item, update_line_item, delete_line_item, add_adjustment_line
+  - InvoiceService: add_line_item, update_line_item, delete_line_item, add_adjustment_line
+  - EstimateWizardService: add_atoms_to_new_line_item triggers recompute
 """
 from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
+from apps.core.adjustments import recompute_adjustments
 from apps.jobs.models import ServiceItem
 
 
@@ -133,3 +141,260 @@ class ComputeAdjustmentAmountTest(TestCase):
         # line 3 is an adjustment so it must be excluded from the base; result = 15% of 140 = 21.00
         result = compute_adjustment_amount(adj, siblings)
         self.assertEqual(result, Decimal('21.00'))
+
+
+# ---------------------------------------------------------------------------
+# recompute_adjustments helper
+# ---------------------------------------------------------------------------
+
+class RecomputeAdjustmentsHelperTest(TestCase):
+    """Direct tests of recompute_adjustments helper."""
+    fixtures = ['unit_test_data.json']
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.estimates.models import Estimate, EstimateLineItem
+        from apps.jobs.services import JobService
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-RH', name='Labor-RH', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='RH', last_name='Test', email='rh@t.com', work_number='555-1111',
+        )
+        self.job = JobService.create_job(name='RH Job', contact=self.contact)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-RH-001', status=Estimate.STATUS_DRAFT,
+        )
+        self.base = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Base', price=Decimal('100.00'),
+            accounting_category=self.cat,
+        )
+        self.pct_svc = ServiceItem.objects.create(
+            name='RushRH', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        self.adj = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, qty=Decimal('1'),
+            units='%', description='Rush 10%', price=Decimal('0.00'),
+            adjustment_service=self.pct_svc,
+        )
+
+    def test_recompute_updates_stale_adjustment(self):
+        """recompute_adjustments sets adj price to 10% of base (0 -> 10)."""
+        updated = recompute_adjustments(
+            __import__('apps.estimates.models', fromlist=['EstimateLineItem'])
+            .EstimateLineItem.objects.filter(estimate=self.est)
+        )
+        self.assertEqual(updated, 1)
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('10.00'))
+
+    def test_recompute_skips_already_correct_adjustment(self):
+        """Returns 0 when adjustment is already at the correct price."""
+        self.adj.price = Decimal('10.00')
+        self.adj.save()
+        updated = recompute_adjustments(
+            __import__('apps.estimates.models', fromlist=['EstimateLineItem'])
+            .EstimateLineItem.objects.filter(estimate=self.est)
+        )
+        self.assertEqual(updated, 0)
+
+
+# ---------------------------------------------------------------------------
+# EstimateService auto-recompute
+# ---------------------------------------------------------------------------
+
+class EstimateAutoRecomputeTest(TestCase):
+    """Estimate service auto-recomputes adjustments on every line-item mutation."""
+    fixtures = ['unit_test_data.json']
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.estimates.models import Estimate, EstimateLineItem
+        from apps.estimates.services import EstimateService
+        from apps.jobs.services import JobService
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-EA', name='Labor-EA', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='EA', last_name='Test', email='ea@t.com', work_number='555-2222',
+        )
+        self.job = JobService.create_job(name='EA Job', contact=self.contact)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-EA-001', status=Estimate.STATUS_DRAFT,
+        )
+        self.base = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Base', price=Decimal('200.00'),
+            accounting_category=self.cat,
+        )
+        self.pct_svc = ServiceItem.objects.create(
+            name='Rush-EA', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        from apps.estimates.services import EstimateService
+        self.adj = EstimateService.add_adjustment_line(
+            self.est, adjustment_service_id=self.pct_svc.pk,
+        )
+        # 10% of 200 = 20
+        self.assertEqual(self.adj.price, Decimal('20.00'))
+
+    def test_add_line_item_updates_adjustment(self):
+        """Adding a base line triggers recompute: adj = 10% of (200 + 50) = 25."""
+        from apps.estimates.services import EstimateService
+        EstimateService.add_line_item(
+            self.est.pk, description='Extra', qty=Decimal('1'),
+            units='ea', price=Decimal('50.00'),
+            accounting_category=self.cat,
+        )
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('25.00'))
+
+    def test_update_line_item_updates_adjustment(self):
+        """Updating a base line's price triggers recompute: adj = 10% of 300 = 30."""
+        from apps.estimates.services import EstimateService
+        EstimateService.update_line_item(self.base.pk, price=Decimal('300.00'))
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('30.00'))
+
+    def test_delete_line_item_updates_adjustment(self):
+        """Deleting the only base line triggers recompute: adj = 10% of 0 = 0."""
+        from apps.estimates.services import EstimateService
+        EstimateService.delete_line_item(self.base.pk)
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('0.00'))
+
+
+# ---------------------------------------------------------------------------
+# InvoiceService auto-recompute
+# ---------------------------------------------------------------------------
+
+class InvoiceAutoRecomputeTest(TestCase):
+    """Invoice service auto-recomputes adjustments on every line-item mutation."""
+    fixtures = ['unit_test_data.json']
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        from apps.invoicing.services import InvoiceService
+        from apps.jobs.models import Job
+        from apps.jobs.services import JobService
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-IA', name='Labor-IA', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='IA', last_name='Test', email='ia@t.com', work_number='555-3333',
+        )
+        self.job = JobService.create_job(name='IA Job', contact=self.contact)
+        Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_APPROVED)
+        self.job.refresh_from_db()
+
+        self.invoice = Invoice.objects.create(
+            job=self.job, status=Invoice.STATUS_DRAFT,
+        )
+        self.base = InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=1, qty=Decimal('1'),
+            units='ea', description='Base', price=Decimal('200.00'),
+            accounting_category=self.cat,
+        )
+        self.pct_svc = ServiceItem.objects.create(
+            name='LateFee-IA', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('5.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        from apps.invoicing.services import InvoiceService
+        self.adj = InvoiceService.add_adjustment_line(
+            self.invoice, adjustment_service_id=self.pct_svc.pk,
+        )
+        # 5% of 200 = 10
+        self.assertEqual(self.adj.price, Decimal('10.00'))
+
+    def test_add_line_item_updates_adjustment(self):
+        """Adding a base line triggers recompute: adj = 5% of (200 + 100) = 15."""
+        from apps.invoicing.services import InvoiceService
+        InvoiceService.add_line_item(
+            self.invoice.pk, description='Extra', qty=Decimal('1'),
+            units='ea', price=Decimal('100.00'),
+            accounting_category=self.cat,
+        )
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('15.00'))
+
+    def test_update_line_item_updates_adjustment(self):
+        """Updating a base line's price triggers recompute: adj = 5% of 400 = 20."""
+        from apps.invoicing.services import InvoiceService
+        InvoiceService.update_line_item(self.base.pk, price=Decimal('400.00'))
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('20.00'))
+
+    def test_delete_line_item_updates_adjustment(self):
+        """Deleting the only base line triggers recompute: adj = 5% of 0 = 0."""
+        from apps.invoicing.services import InvoiceService
+        InvoiceService.delete_line_item(self.base.pk)
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('0.00'))
+
+
+# ---------------------------------------------------------------------------
+# EstimateWizardService auto-recompute
+# ---------------------------------------------------------------------------
+
+class EstimateWizardAutoRecomputeTest(TestCase):
+    """EstimateWizardService.add_atoms_to_new_line_item recomputes adjustments."""
+    fixtures = ['unit_test_data.json']
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.estimates.models import EstWorksheet
+        from apps.estimates.services import EstimateService, EstimateWizardService
+        from apps.jobs.models import PlanTask
+        from apps.jobs.services import JobService
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-WZ', name='Labor-WZ', taxable=False,
+        )
+        self.contact = Contact.objects.create(
+            first_name='WZ', last_name='Test', email='wz@t.com', work_number='555-4444',
+        )
+        self.job = JobService.create_job(name='WZ Job', contact=self.contact)
+        self.ws = EstWorksheet.objects.create(job=self.job)
+
+        flat_svc = ServiceItem.objects.create(
+            name='FlatWZ', algorithm=ServiceItem.FLAT_FEE,
+            rate=Decimal('100.00'), unit_label='hr',
+            accounting_category=self.cat,
+        )
+        self.pt = PlanTask.objects.create(
+            name='Wiring', est_worksheet=self.ws,
+            service_item=flat_svc, est_qty=Decimal('1'),
+        )
+
+        self.est = EstimateWizardService.open_for_worksheet(self.ws)
+
+        pct_svc = ServiceItem.objects.create(
+            name='WizRush', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        self.adj = EstimateService.add_adjustment_line(
+            self.est, adjustment_service_id=pct_svc.pk,
+        )
+        # No base lines yet -> adj = 0
+        self.assertEqual(self.adj.price, Decimal('0.00'))
+
+    def test_add_atoms_to_new_line_item_recomputes_adjustment(self):
+        """Adding an atom via the wizard recomputes existing adjustment lines."""
+        from apps.estimates.services import EstimateWizardService
+        line_item = EstimateWizardService.add_atoms_to_new_line_item(
+            self.est, [{'type': 'plan_task', 'id': self.pt.pk}],
+        )
+        self.assertIsNotNone(line_item.pk)
+        self.adj.refresh_from_db()
+        # 10% of $100 (flat fee)
+        self.assertEqual(self.adj.price, Decimal('10.00'))

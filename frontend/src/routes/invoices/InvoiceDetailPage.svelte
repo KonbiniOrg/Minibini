@@ -109,15 +109,6 @@
   }
 
 
-  async function handleRecalculate(li) {
-    try {
-      await api.post(`/api/invoices/${invoice.invoice_id}/line-items/${li.line_item_id}/recalculate/`);
-      await loadInvoice();
-    } catch (e) {
-      alert(e.message || 'Could not recalculate adjustment.');
-    }
-  }
-
   function fmtDate(iso) {
     if (!iso) return '';
     return new Date(iso).toLocaleString();
@@ -200,7 +191,6 @@
     {categories}
     showSource={true}
     canEdit={canEditLineItems}
-    onRecalculate={canEditLineItems ? handleRecalculate : null}
     actions={canEditLineItems ? actionsSnippet : null}
   />
 

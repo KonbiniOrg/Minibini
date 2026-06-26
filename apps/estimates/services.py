@@ -218,6 +218,12 @@ class EstimateService:
         return new_estimate
 
     @staticmethod
+    def _recompute_adjustments(estimate):
+        """Recompute all percentage-adjustment lines on the estimate."""
+        from apps.core.adjustments import recompute_adjustments
+        recompute_adjustments(EstimateLineItem.objects.filter(estimate=estimate))
+
+    @staticmethod
     def add_line_item(estimate_pk, **kwargs):
         """Add a manual line item to a draft estimate."""
         try:
@@ -231,6 +237,7 @@ class EstimateService:
         li = EstimateLineItem(estimate=estimate, **kwargs)
         li.full_clean()
         li.save()
+        EstimateService._recompute_adjustments(estimate)
         return li
 
     @staticmethod
@@ -248,6 +255,7 @@ class EstimateService:
             setattr(li, field, value)
         li.full_clean()
         li.save()
+        EstimateService._recompute_adjustments(li.estimate)
         return li
 
     @staticmethod
@@ -292,7 +300,10 @@ class EstimateService:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
             )
-        return LineItemService.delete_line_item_with_renumber(li)
+        estimate = li.estimate
+        result = LineItemService.delete_line_item_with_renumber(li)
+        EstimateService._recompute_adjustments(estimate)
+        return result
 
     @staticmethod
     def discard_draft(estimate):
@@ -338,22 +349,8 @@ class EstimateService:
         )
         if target_category_ids:
             line.adjustment_target_categories.set(target_category_ids)
-        return EstimateService.recalculate_adjustment_line(line)
-
-    @staticmethod
-    def recalculate_adjustment_line(line):
-        """Recompute the price of a percentage-adjustment line from its siblings.
-
-        Raises ValidationError if the parent estimate is not draft.
-        Returns the saved line with updated price.
-        """
-        from apps.core.adjustments import compute_adjustment_amount
-        estimate = line.estimate
-        if estimate.status != Estimate.STATUS_DRAFT:
-            raise ValidationError('Cannot recalculate on a non-draft estimate.')
-        siblings = EstimateLineItem.objects.filter(estimate=estimate).exclude(pk=line.pk)
-        line.price = compute_adjustment_amount(line, siblings)
-        line.save()
+        EstimateService._recompute_adjustments(estimate)
+        line.refresh_from_db()
         return line
 
     @staticmethod
@@ -379,6 +376,7 @@ class EstimateService:
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
+        EstimateService._recompute_adjustments(estimate)
         return li
 
 

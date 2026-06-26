@@ -95,7 +95,7 @@ describe('EstimateDetailPage adjustment affordances', () => {
     expect(await findByRole('dialog')).toBeInTheDocument();
   });
 
-  it('shows Recalculate button on a draft adjustment line', async () => {
+  it('does NOT show a Recalculate button on a draft adjustment line (auto-recompute)', async () => {
     const adjLine = {
       line_item_id: 99, line_number: 1, description: 'Rush 15%',
       qty: 1, price: '10.00', units: 'none', accounting_category: null,
@@ -103,39 +103,10 @@ describe('EstimateDetailPage adjustment affordances', () => {
       sources: [],
     };
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [adjLine] }));
-    const { findByRole } = render(EstimateDetailPage, {
-      props: { params: { id: '7' } },
-    });
-    expect(await findByRole('button', { name: /recalculate/i })).toBeInTheDocument();
-  });
-
-  it('does NOT show Recalculate button on non-draft even when can_manage', async () => {
-    const adjLine = {
-      line_item_id: 99, line_number: 1, description: 'Rush 15%',
-      qty: 1, price: '10.00', units: 'none', accounting_category: null,
-      adjustment_service: ADJ_SERVICE, target_categories: [],
-      sources: [],
-    };
-    mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [adjLine] }));
     const { findByText, queryByRole } = render(EstimateDetailPage, {
       props: { params: { id: '7' } },
     });
     await findByText('Line Items');
     expect(queryByRole('button', { name: /recalculate/i })).not.toBeInTheDocument();
-  });
-
-  it('POSTs to recalculate endpoint when Recalculate is clicked', async () => {
-    const adjLine = {
-      line_item_id: 99, line_number: 1, description: 'Rush 15%',
-      qty: 1, price: '10.00', units: 'none', accounting_category: null,
-      adjustment_service: ADJ_SERVICE, target_categories: [],
-      sources: [],
-    };
-    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [adjLine] }));
-    const { findByRole } = render(EstimateDetailPage, {
-      props: { params: { id: '7' } },
-    });
-    await fireEvent.click(await findByRole('button', { name: /recalculate/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items/99/recalculate/');
   });
 });

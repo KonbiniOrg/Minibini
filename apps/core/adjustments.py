@@ -2,6 +2,24 @@
 from decimal import Decimal
 
 
+def recompute_adjustments(line_items):
+    """Recompute every percentage-adjustment line's price from its current
+    siblings. `line_items` = all line items on ONE document (iterable/queryset).
+    Saves each adjustment line whose price changed. Returns count updated."""
+    lines = list(line_items)
+    updated = 0
+    for adj in lines:
+        if not getattr(adj, 'adjustment_service_id', None):
+            continue
+        siblings = [li for li in lines if li.pk != adj.pk]
+        new_price = compute_adjustment_amount(adj, siblings)
+        if adj.price != new_price:
+            adj.price = new_price
+            adj.save()
+            updated += 1
+    return updated
+
+
 def compute_adjustment_amount(adjustment_line, sibling_lines):
     """Return the dollar amount for a percentage-adjustment line item.
 

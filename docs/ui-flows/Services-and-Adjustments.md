@@ -27,11 +27,9 @@ phase plans beside it.
 - **Worker** — no permission atoms. Adds/completes tasks (picking a Service for
   the task); cannot manage Services and cannot add adjustments.
 - **Jobs / PM** — holds `can_manage_jobs`, **or** is the Job's `project_manager`
-  (scoped to that job). Can add/recalculate adjustments on that job's **draft
-  estimates**.
-- **Financials** — holds `can_manage_financials`. Can add/recalculate
-  adjustments on **draft invoices** and use the invoice wizard's Agreement
-  Adjustments panel.
+  (scoped to that job). Can add adjustments on that job's **draft estimates**.
+- **Financials** — holds `can_manage_financials`. Can add adjustments on
+  **draft invoices** and use the invoice wizard's Agreement Adjustments panel.
 - **Config** — holds `can_manage_config`. Creates/edits/supersedes **Services**
   in Settings.
 
@@ -135,16 +133,17 @@ estimate is `draft`.
   **base (non-adjustment) lines only** — adding a second adjustment never changes
   the first, and neither sums the other.
 
-## 4. Recalculate & freeze (estimate)
+## 4. Auto-recompute & freeze (estimate)
 
-- [ ] **Recalculate after editing a base line.** With the rush line present, edit
-  a base line (e.g. bump the Labor line to qty 3 = $150, base now $190) → the
-  rush amount is now stale. Click the adjustment row's **Recalculate** →
-  it updates to **$28.50** (15% of $190).
+- [ ] **Auto-recompute after editing a base line.** With the rush line present,
+  edit a base line (e.g. bump the Labor line to qty 3 = $150, base now $190) →
+  upon save the adjustment immediately updates to **$28.50** (15% of $190) with
+  no further action required.
+- [ ] **Auto-recompute on add/delete.** Add a new base line → the adjustment
+  recomputes. Delete a base line → the adjustment recomputes. No manual step.
 - [ ] **Freeze on send.** Send the estimate (it leaves `draft`). The
-  **Recalculate** button and **Add Adjustment** disappear; the adjustment amount
-  is now frozen. *(If a stale browser tab still posts a recalculate, the server
-  refuses with **HTTP 409**.)*
+  **Add Adjustment** button disappears; the adjustment amount is now frozen
+  (line-item edits are blocked once non-draft, so the freeze is automatic).
 
 ## 5. Estimate detail — how an adjustment line reads
 
@@ -173,9 +172,9 @@ Adjustment** shows only when `can_manage_financials` **and** the invoice is
 
 - [ ] **Add / target / discount.** Same **"Add Percentage Adjustment"** modal,
   same badge, same `percent × targeted-subtotal` math, negative = discount.
-- [ ] **Recalculate while draft; freeze on send.** Same **Recalculate** button;
-  after the invoice leaves `draft` the controls disappear and a stale recalculate
-  is refused (**409**).
+- [ ] **Auto-recompute while draft; freeze on send.** The adjustment
+  auto-recomputes on any base-line change while the invoice is draft; after the
+  invoice leaves `draft` the controls disappear and the stored amount is frozen.
 - [ ] **Permission split.** A `can_manage_jobs`-only user does **not** get Add
   Adjustment on an **invoice** (that's financials); a `can_manage_financials`
   user does.
@@ -205,12 +204,13 @@ and it works **whether or not the invoice was built from the estimate**.
 ## 9. Guards & permissions (the most-missed, highest-value)
 
 - [ ] **Add Adjustment hidden when not draft.** Estimate `open`/accepted or
-  invoice non-draft → no **Add Adjustment**, no **Recalculate**.
+  invoice non-draft → no **Add Adjustment** button.
 - [ ] **Add Adjustment hidden for the wrong persona.** Worker sees neither control
-  on estimates or invoices; a `can_manage_jobs`-only user sees them on estimates
+  on estimates or invoices; a `can_manage_jobs`-only user sees it on estimates
   but not invoices; financials the reverse.
-- [ ] **Recalculate refused server-side on non-draft (409).** Even if a control is
-  forced, the server refuses to recompute a frozen document.
+- [ ] **Auto-recompute has no client-visible button.** There is no Recalculate
+  button; adjustments update silently on every line-item mutation. Line-item edits
+  are blocked on non-draft documents, so frozen state is enforced by the draft gate.
 - [ ] **Percentage Service rejected on a task (400).** Assigning a percentage
   Service to a task/template is refused by the server (and should be hidden from
   the picker — §2 known gap).
@@ -227,7 +227,7 @@ and it works **whether or not the invoice was built from the estimate**.
 | Reframe | flat-fee shows one Rate field · task/template show service rate read-only (no price input) · modifiers only on time/qty |
 | Adjustment scope | whole-order (empty target) · single category · multi-category · no stacking |
 | Sign | positive (rush) · negative (discount) |
-| Lifecycle | add (draft) · recalculate (draft) · freeze on send/finalize · revision preserves |
+| Lifecycle | add (draft) · auto-recompute on every mutation (draft) · freeze on send/finalize · revision preserves |
 | Surface | estimate detail · invoice detail · invoice wizard Agreement panel (path-independent) · NOT atom pool |
 | Persona | worker (none) · jobs/PM (estimate) · financials (invoice) · config (Services manager) |
 | Guards | non-draft hides controls + 409 on recalc · percentage rejected on task (400) + picker filter (known gap) · negative-rate non-percentage rejected |

@@ -86,7 +86,7 @@ describe('InvoiceDetailPage adjustment affordances', () => {
     expect(await findByRole('dialog')).toBeInTheDocument();
   });
 
-  it('shows Recalculate button on a draft adjustment line', async () => {
+  it('does NOT show a Recalculate button on a draft adjustment line (auto-recompute)', async () => {
     const adjLine = {
       line_item_id: 88, line_number: 1, description: 'Late Fee 5%',
       qty: 1, price: '5.00', units: 'none', accounting_category: null,
@@ -94,39 +94,10 @@ describe('InvoiceDetailPage adjustment affordances', () => {
       sources: [],
     };
     mockApi(makeInvoice({ status: 'draft', line_items: [adjLine] }));
-    const { findByRole } = render(InvoiceDetailPage, {
-      props: { params: { id: '3' } },
-    });
-    expect(await findByRole('button', { name: /recalculate/i })).toBeInTheDocument();
-  });
-
-  it('does NOT show Recalculate on a non-draft adjustment line', async () => {
-    const adjLine = {
-      line_item_id: 88, line_number: 1, description: 'Late Fee 5%',
-      qty: 1, price: '5.00', units: 'none', accounting_category: null,
-      adjustment_service: ADJ_SERVICE, target_categories: [],
-      sources: [],
-    };
-    mockApi(makeInvoice({ status: 'open', line_items: [adjLine] }));
     const { findByText, queryByRole } = render(InvoiceDetailPage, {
       props: { params: { id: '3' } },
     });
     await findByText('Line Items');
     expect(queryByRole('button', { name: /recalculate/i })).not.toBeInTheDocument();
-  });
-
-  it('POSTs to recalculate endpoint when Recalculate is clicked', async () => {
-    const adjLine = {
-      line_item_id: 88, line_number: 1, description: 'Late Fee 5%',
-      qty: 1, price: '5.00', units: 'none', accounting_category: null,
-      adjustment_service: ADJ_SERVICE, target_categories: [],
-      sources: [],
-    };
-    mockApi(makeInvoice({ status: 'draft', line_items: [adjLine] }));
-    const { findByRole } = render(InvoiceDetailPage, {
-      props: { params: { id: '3' } },
-    });
-    await fireEvent.click(await findByRole('button', { name: /recalculate/i }));
-    expect(api.post).toHaveBeenCalledWith('/api/invoices/3/line-items/88/recalculate/');
   });
 });

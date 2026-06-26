@@ -333,19 +333,24 @@ mechanics mirror the estimate side exactly — see
 
 ### Service methods
 
-`InvoiceService` (`apps/invoicing/services.py`) provides two static methods:
+**Auto-recompute:** Adjustment lines recompute automatically on every line-item
+mutation — `add_line_item`, `update_line_item`, `delete_line_item`,
+`add_line_item_from_pli`, and `add_adjustment_line`. There is no manual
+recalculate step. Freeze is implicit: all mutations are draft-gated, so once
+an invoice leaves `draft` the stored price is frozen automatically.
+
+`InvoiceService` (`apps/invoicing/services.py`) provides:
 
 | Method | Behavior |
 |---|---|
-| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the invoice's line list, calls `recalculate_adjustment_line`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
-| `recalculate_adjustment_line(line)` | Fetches all sibling lines on the same invoice (excluding the adjustment line itself), calls `compute_adjustment_amount`, saves `line.price`, and returns the line. Raises `ValidationError` if the invoice is not `draft`. Once the invoice is finalized (transitions out of `draft`), recalculation is refused — the amount is frozen at finalize time. |
+| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the invoice's line list, calls `_recompute_adjustments`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
+| `_recompute_adjustments(invoice)` | Internal helper. Calls `recompute_adjustments()` over all `InvoiceLineItem` rows for the invoice. Called after every line-item mutation. |
 
 ### API endpoints
 
 | Verb + path | Behavior |
 |---|---|
-| `POST /api/invoices/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item. Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageFinancials`. |
-| `POST /api/invoices/{id}/line-items/{lid}/recalculate/` | Recomputes the adjustment line's price. Returns 200 with the line item. Returns 404 if the line doesn't exist; returns 409 if the invoice is not draft. Permission: `CanManageFinancials`. |
+| `POST /api/invoices/{id}/adjustment-lines/` | Body: `{adjustment_service: <PK>, target_category_ids: [<AC PKs>]}`. Returns 201 with the serialized line item (price already computed). Returns 400 if not draft or service is not PERCENTAGE. Permission: `CanManageFinancials`. |
 | `GET /api/invoices/{id}/agreement-adjustments/` | Returns `{adjustments: [{adjustment_service_id, description, percent, target_category_ids, already_added}, ...]}` — the adjustment lines from the job's accepted-estimate agreement (via `compose_agreement`), annotated with whether this invoice already has a matching adjustment line. This endpoint is **path-independent**: it reads the agreement, not the wizard atom pool, so it works regardless of how line items were added. Permission: `CanManageFinancials`. |
 
 ### Agreement-adjustments panel (invoice wizard / detail page)

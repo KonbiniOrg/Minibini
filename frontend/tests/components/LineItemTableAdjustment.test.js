@@ -96,40 +96,19 @@ describe('LineItemTable adjustment row rendering', () => {
     expect(badge.textContent).not.toMatch(/undefined/i);
   });
 
-  it('shows Recalculate button for adjustment line when canEdit is true', () => {
-    const onRecalculate = vi.fn();
-    const lineItems = [makeAdjLine()];
-    const { getByRole } = render(LineItemTable, {
-      props: { lineItems, categories: CATEGORIES, canEdit: true, onRecalculate },
-    });
-    expect(getByRole('button', { name: /recalculate/i })).toBeInTheDocument();
-  });
-
-  it('does NOT show Recalculate button when canEdit is false', () => {
+  it('does NOT show a Recalculate button for an adjustment line (auto-recompute)', () => {
     const lineItems = [makeAdjLine()];
     const { queryByRole } = render(LineItemTable, {
-      props: { lineItems, categories: CATEGORIES, canEdit: false },
+      props: { lineItems, categories: CATEGORIES, canEdit: true },
     });
     expect(queryByRole('button', { name: /recalculate/i })).not.toBeInTheDocument();
   });
 
-  it('does NOT show Recalculate button for a regular (non-adjustment) line even when canEdit', () => {
-    const onRecalculate = vi.fn();
-    const lineItems = [makeRegularLine()];
+  it('does NOT show a Recalculate button even when actions are provided', () => {
+    const lineItems = [makeAdjLine()];
     const { queryByRole } = render(LineItemTable, {
-      props: { lineItems, categories: CATEGORIES, canEdit: true, onRecalculate },
+      props: { lineItems, categories: CATEGORIES, canEdit: true },
     });
     expect(queryByRole('button', { name: /recalculate/i })).not.toBeInTheDocument();
-  });
-
-  it('calls onRecalculate with the line item when Recalculate is clicked', async () => {
-    const { fireEvent } = await import('@testing-library/svelte');
-    const onRecalculate = vi.fn();
-    const adjLine = makeAdjLine();
-    const { getByRole } = render(LineItemTable, {
-      props: { lineItems: [adjLine], categories: CATEGORIES, canEdit: true, onRecalculate },
-    });
-    await fireEvent.click(getByRole('button', { name: /recalculate/i }));
-    expect(onRecalculate).toHaveBeenCalledWith(adjLine);
   });
 });
