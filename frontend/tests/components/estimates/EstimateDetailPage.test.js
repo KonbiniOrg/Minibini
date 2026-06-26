@@ -78,3 +78,16 @@ describe('EstimateDetailPage per-object can_manage gating', () => {
     expect(queryByText('Add Line Item')).not.toBeInTheDocument();
   });
 });
+
+describe('EstimateDetailPage number/version display', () => {
+  it('appends the version to the estimate number with a dash and drops the Version row', async () => {
+    user.set({ permissions: [] });
+    mockApi(makeEstimate({ estimate_number: 'EST-7', version: 2 }));
+    const { container, findByText, queryByText } = render(EstimateDetailPage, {
+      props: { params: { id: '7' } },
+    });
+    await findByText('Estimate Number');
+    expect(container.textContent).toContain('EST-7-2');
+    expect(queryByText('Version')).toBeNull();
+  });
+});

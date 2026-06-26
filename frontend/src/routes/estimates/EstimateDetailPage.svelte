@@ -225,7 +225,11 @@
   <table class="data-table" class:superseded={isSuperseded}>
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
-      <tr><td>Estimate Number</td><td>{estimate.estimate_number}</td></tr>
+      <tr><td>Estimate Number</td><td>{estimate.estimate_number}-{estimate.version}
+        {#if estimate.parent}
+          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
+        {/if}
+      </td></tr>
       <tr>
         <td>Job</td>
         <td>
@@ -246,11 +250,6 @@
           {/if}
         </td>
       </tr>
-      <tr><td>Version</td><td>{estimate.version}
-        {#if estimate.parent}
-          (<a href={`/estimates/${estimate.parent}`} use:link>Parent</a>)
-        {/if}
-      </td></tr>
       <tr><td>Status</td><td>{estimate.status}</td></tr>
       <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
       <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
