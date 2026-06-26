@@ -5,6 +5,13 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('jobs', '0046_alter_serviceprice_algorithm'),
+        # Must run AFTER the cross-app FKs that target 'jobs.serviceprice'
+        # (adjustment_service on estimate/invoice line items). RenameModel below
+        # then retargets them to ServiceItem. Without these deps a fresh
+        # `migrate` can run this rename first and fail to resolve
+        # 'jobs.serviceprice'.
+        ('estimates', '0027_estimatelineitem_adjustment_service_and_more'),
+        ('invoicing', '0015_invoicelineitem_adjustment_service_and_more'),
     ]
 
     operations = [

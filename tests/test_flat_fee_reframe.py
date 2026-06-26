@@ -25,7 +25,7 @@ class FlatFeeReframeTest(TestCase):
         t1 = self._template('1.00')
         t2 = self._template('30.00')
         t3 = self._template('1.00')  # same price as t1 -> shares minted service
-        worklist = reframe_flat_fee_prices(ServiceItem, Task, PlanTask, TaskTemplate)
+        worklist = reframe_flat_fee_prices(ServiceItem, Task, PlanTask, TaskTemplate, fk_field='service_item')
         t1.refresh_from_db(); t2.refresh_from_db(); t3.refresh_from_db()
         self.assertEqual(t1.service_item.rate, Decimal('1.00'))
         self.assertEqual(t2.service_item.rate, Decimal('30.00'))
@@ -36,5 +36,5 @@ class FlatFeeReframeTest(TestCase):
 
     def test_logs_unresolved_zero_price(self):
         bad = self._template('0')
-        worklist = reframe_flat_fee_prices(ServiceItem, Task, PlanTask, TaskTemplate)
+        worklist = reframe_flat_fee_prices(ServiceItem, Task, PlanTask, TaskTemplate, fk_field='service_item')
         self.assertTrue(any(r[0] == 'TaskTemplate' and r[1] == bad.pk for r in worklist))
