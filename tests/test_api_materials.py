@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase, APIClient
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, RateScheme
+from apps.jobs.models import Job, ServiceItem
 from apps.inventory.models import InventoryItem, Material
 from apps.contacts.models import Contact, Business
 
@@ -169,8 +169,8 @@ class MaterialAssignTaskApiTest(APITestCase):
 
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='c', code='MASGN1')
-        self.scheme = RateScheme.objects.create(
-            name='S-masgn', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-masgn', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.user = User.objects.create_user('masgn_u', password='p')
@@ -180,11 +180,11 @@ class MaterialAssignTaskApiTest(APITestCase):
         contact.business = biz; contact.save()
         self.job = Job.objects.create(job_number='JOB-ASGN-1', contact=contact)
         from apps.jobs.models import Task
-        self.task_a = Task.objects.create(name='A', job=self.job, rate_scheme=self.scheme)
-        self.task_b = Task.objects.create(name='B', job=self.job, rate_scheme=self.scheme)
-        self.task_done = Task.objects.create(name='Done', job=self.job, status='complete', rate_scheme=self.scheme)
+        self.task_a = Task.objects.create(name='A', job=self.job, service_item=self.scheme)
+        self.task_b = Task.objects.create(name='B', job=self.job, service_item=self.scheme)
+        self.task_done = Task.objects.create(name='Done', job=self.job, status='complete', service_item=self.scheme)
         self.other_job = Job.objects.create(job_number='JOB-ASGN-2', contact=contact)
-        self.other_task = Task.objects.create(name='Other', job=self.other_job, rate_scheme=self.scheme)
+        self.other_task = Task.objects.create(name='Other', job=self.other_job, service_item=self.scheme)
 
     def _make(self, task=None):
         from apps.inventory.services import MaterialService

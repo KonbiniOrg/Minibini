@@ -6,7 +6,7 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.models import Estimate, EstimateLineItem, EstimateLineItemSource, EstWorksheet
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.jobs.models import Job, PlanTask, ServiceItem
 
 
 class EstimateLineItemSourceTest(TestCase):
@@ -23,13 +23,13 @@ class EstimateLineItemSourceTest(TestCase):
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.estimate = Estimate.objects.create(job=self.job, status=Estimate.STATUS_DRAFT, estimate_number='EST-2026-0001')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('95'),
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME, rate=Decimal('95'),
             unit_label='hour', accounting_category=self.cat,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Setup',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
         )
         self.plan_material = PlanMaterial.objects.create(

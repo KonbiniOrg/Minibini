@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.jobs.models import Job, PlanTask, ServiceItem
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.inventory.models import InventoryItem
@@ -34,15 +34,15 @@ class MaterialTestBase(TestCase):
         self.scheme_ac = AccountingCategory.objects.create(
             name='Material-scheme', code='MAT-SCHEME',
         )
-        self.scheme = RateScheme.objects.create(
-            name='S-mat', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-mat', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.scheme_ac,
         )
         self.task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install shelving',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
         )
         self.category = AccountingCategory.objects.create(

@@ -37,8 +37,19 @@ core) plus a single `apps/api/` app that owns the REST layer.
 
 ### 2.2 Service layer
 
-Every model write goes through a service method in `apps/<app>/services.py`.
-API viewsets never call `.save()` or `.delete()` on a tracked model directly.
+**All model CRUD goes through the service layer.** Every create, update, and
+delete of a tracked model happens inside a service method in
+`apps/<app>/services.py`. No other layer — viewsets, the wizard, management
+commands, PDF/email code — calls `Model.save()`, `.delete()`, or
+`.objects.create()` on a tracked model directly. The point isn't ceremony: it's
+that a single write path lets cross-cutting side effects be **guaranteed instead
+of remembered**. Example: every line-item write routes through `LineItemService`
+(§4), whose `save_line_item` / `delete_line_item_with_renumber` recompute the
+document's percentage-adjustment lines, so an adjustment can never go stale no
+matter who edited a line (a viewset, the wizard, a future caller). Sanctioned
+exceptions: migrations, fixtures/seed loaders, and test `setUp` may write models
+directly; a bulk service method may batch its writes and recompute once at the
+end (e.g. `EstimateWizardService.send_all_atoms_to_estimate`).
 
 **Rules:**
 
@@ -69,7 +80,7 @@ class NotFoundError(ServiceError):
     """Raised when a requested object does not exist."""
 
 class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded RateScheme is used."""
+    """Raised when a template referencing a superseded ServiceItem is used."""
 ```
 
 A typical create:
@@ -472,6 +483,21 @@ Always go through `LineItemService.delete_line_item_with_renumber()`
 (or the entity service's `delete_line_item`, which delegates to it),
 because plain delete leaves gaps in `line_number`. See CLAUDE.md
 "Code Conventions" for the rule.
+
+**Line item create/update: route through `LineItemService.save_line_item()`.**
+Mirroring the delete rule, every line-item create and update — in the entity
+services *and* in the wizard (`BaseWizardService`) — saves via
+`LineItemService.save_line_item(line_item)` instead of calling
+`line_item.save()` directly. That method saves the row, then recomputes any
+percentage-adjustment lines on the parent document (container resolved via
+`get_parent_container`), so adjustments stay correct after any line change with
+no manual "recalculate" step. `recompute_adjustments` writes the adjustment
+rows with a raw `.save()`, so there is no recursion. The wizard still owns
+creating its `…LineItemSource` rows (those aren't line items); only the
+line-item writes go through the chokepoint. The two sanctioned bypasses both
+stay correct: `send_all_atoms_to_estimate` bulk-creates then recomputes once at
+the end; `revise_estimate` is a faithful copy of an existing revision (adjustment
+prices carry over already correct).
 
 ---
 

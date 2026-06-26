@@ -19,7 +19,7 @@ from django.core.exceptions import ValidationError
 
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Job, Task, RateScheme
+from apps.jobs.models import Job, Task, ServiceItem
 from apps.jobs.services import TaskService, TaskLifecycleService
 from apps.inventory.models import Material
 from apps.inventory.services import MaterialService
@@ -64,7 +64,7 @@ def _pending_task(job, scheme):
     return Task.objects.create(
         job=job,
         name='Test Task',
-        rate_scheme=scheme,
+        service_item=scheme,
         status=Task.STATUS_PENDING,
     )
 
@@ -74,7 +74,7 @@ def _blocked_task(job, scheme):
     task = Task.objects.create(
         job=job,
         name='Blocked Task',
-        rate_scheme=scheme,
+        service_item=scheme,
         status=Task.STATUS_BLOCKED,
     )
     return task
@@ -85,7 +85,7 @@ def _in_progress_task(job, scheme):
     return Task.objects.create(
         job=job,
         name='In Progress Task',
-        rate_scheme=scheme,
+        service_item=scheme,
         status=Task.STATUS_IN_PROGRESS,
     )
 
@@ -112,7 +112,7 @@ class OnHoldGuardBase(BaseTestCase):
     """
     Base for all on_hold guard tests.
 
-    Fixture provides: a Contact, a RateScheme with pk=1, a User 'admin',
+    Fixture provides: a Contact, a ServiceItem with pk=1, a User 'admin',
     and AccountingCategories.
     """
 
@@ -121,8 +121,8 @@ class OnHoldGuardBase(BaseTestCase):
         self.contact = Contact.objects.first()
         # Prefer a FLAT_FEE scheme so we don't need bleps to complete tasks.
         self.scheme = (
-            RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
-            or RateScheme.objects.first()
+            ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
+            or ServiceItem.objects.first()
         )
         self.user = User.objects.get(username='admin')
         from apps.core.models import AccountingCategory
@@ -140,9 +140,9 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
         # complete_task checks algorithm before the guard fires only if we call
         # the guard first. Until the guard is in place, we need a FLAT_FEE
         # scheme so TaskTimeRequired doesn't mask the missing ValidationError.
-        flat_fee = RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
+        flat_fee = ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
         if flat_fee is None:
-            self.skipTest('No FLAT_FEE RateScheme in fixture.')
+            self.skipTest('No FLAT_FEE ServiceItem in fixture.')
         self.scheme = flat_fee
 
     def test_complete_task_blocked_on_on_hold_job(self):
@@ -220,7 +220,7 @@ class CreateDirectTaskOnHoldTest(OnHoldGuardBase):
             TaskService.create_direct(
                 job,
                 name='New Task',
-                rate_scheme_id=self.scheme.pk,
+                service_item_id=self.scheme.pk,
             )
         self.assertIn('on hold', str(ctx.exception).lower())
 
@@ -229,7 +229,7 @@ class CreateDirectTaskOnHoldTest(OnHoldGuardBase):
         task = TaskService.create_direct(
             job,
             name='New Task',
-            rate_scheme_id=self.scheme.pk,
+            service_item_id=self.scheme.pk,
         )
         self.assertIsNotNone(task.pk)
         self.assertEqual(task.job, job)
@@ -272,16 +272,16 @@ class ReorderTasksOnHoldTest(OnHoldGuardBase):
 
     def test_reorder_tasks_blocked_on_on_hold_job(self):
         job = _on_hold_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
+        t1 = Task.objects.create(job=job, name='T1', service_item=self.scheme, sort_order=1)
+        t2 = Task.objects.create(job=job, name='T2', service_item=self.scheme, sort_order=2)
         with self.assertRaises(ValidationError) as ctx:
             TaskService.reorder_tasks(t1.pk, 'down')
         self.assertIn('on hold', str(ctx.exception).lower())
 
     def test_reorder_tasks_allowed_on_in_progress_job(self):
         job = _in_progress_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
+        t1 = Task.objects.create(job=job, name='T1', service_item=self.scheme, sort_order=1)
+        t2 = Task.objects.create(job=job, name='T2', service_item=self.scheme, sort_order=2)
         TaskService.reorder_tasks(t1.pk, 'down')
         t1.refresh_from_db()
         t2.refresh_from_db()
@@ -311,13 +311,13 @@ class CreateFromTemplateOnHoldTest(OnHoldGuardBase):
 
     def _get_flat_fee_template(self):
         from apps.estimates.models import TaskTemplate
-        scheme = RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
+        scheme = ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
         if scheme is None:
-            self.skipTest('No FLAT_FEE RateScheme in fixture.')
+            self.skipTest('No FLAT_FEE ServiceItem in fixture.')
         tmpl, _ = TaskTemplate.objects.get_or_create(
             template_name='Guard Test Template',
             defaults={
-                'rate_scheme': scheme,
+                'service_item': scheme,
                 'default_billable_qty': Decimal('1'),
                 'is_active': True,
             },

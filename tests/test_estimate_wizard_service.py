@@ -60,7 +60,7 @@ class ClaimConflictExceptionTest(TestCase):
 
 from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
 from apps.inventory.models import PlanMaterial
-from apps.jobs.models import PlanTask, RateScheme
+from apps.jobs.models import PlanTask, ServiceItem
 
 
 class GetSourcePoolTest(TestCase):
@@ -75,15 +75,15 @@ class GetSourcePoolTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
 
         # PlanTask atom with billing fields (no separate PlanCharge needed)
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            service_item=self.scheme, est_qty=Decimal('2'),
         )
 
         # PlanMaterial atom (task-less)
@@ -140,14 +140,14 @@ class GetSourcePoolTest(TestCase):
         """Bug regression: PlanTasks should appear in the source pool even when
         no separate PlanCharge POST has fired — the billing fields are on the
         PlanTask itself now."""
-        scheme = RateScheme.objects.create(
-            name='Hourly Test', algorithm=RateScheme.ENTERED_QTY,
+        scheme = ServiceItem.objects.create(
+            name='Hourly Test', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Inline Task',
-            rate_scheme=scheme, est_qty=Decimal('3.0'),
+            service_item=scheme, est_qty=Decimal('3.0'),
         )
 
         pool = EstimateWizardService.get_source_pool(self.ws)
@@ -172,13 +172,13 @@ class AddAtomsToNewLineItemTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Setup',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            service_item=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -274,17 +274,17 @@ class AddAtomsToExistingLineItemTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.pt2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='B',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
@@ -337,17 +337,17 @@ class RemoveAtomsFromLineItemTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt1 = PlanTask.objects.create(
             est_worksheet=self.ws, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.pt2 = PlanTask.objects.create(
             est_worksheet=self.ws, name='B',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
@@ -434,11 +434,11 @@ class RemoveAtomsFromLineItemTest(TestCase):
         # self.li is line 1 (from setUp). Add two more line items so we have 1, 2, 3.
         pt3 = PlanTask.objects.create(
             est_worksheet=self.ws, name='C',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         pt4 = PlanTask.objects.create(
             est_worksheet=self.ws, name='D',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         li2 = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate, [{'type': 'plan_task', 'id': pt3.pk}],
@@ -473,13 +473,13 @@ class SendAllAtomsTest(TestCase):
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
+            service_item=self.scheme, est_qty=Decimal('2'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
@@ -521,6 +521,24 @@ class SendAllAtomsTest(TestCase):
         )
         self.assertEqual(totals, [Decimal('15.00'), Decimal('200.00')])
 
+    def test_send_all_recomputes_existing_adjustment(self):
+        """A percentage adjustment added before send-all is recomputed against
+        the base lines send-all creates (the bulk path recomputes once at end)."""
+        from apps.estimates.services import EstimateService
+        estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        rush = ServiceItem.objects.create(
+            name='Rush', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10'), unit_label='none', accounting_category=self.cat,
+        )
+        adj = EstimateService.add_adjustment_line(
+            estimate, adjustment_service_id=rush.pk, target_category_ids=[],
+        )
+        self.assertEqual(adj.price, Decimal('0.00'))  # no base lines yet
+        EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        adj.refresh_from_db()
+        # base = $200 (task) + $15 (material) = $215; 10% = $21.50
+        self.assertEqual(adj.price, Decimal('21.50'))
+
     def test_qty_and_price_split_per_atom(self):
         """Per-unit qty/price must reflect the source atom, not collapse to 1×total."""
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
@@ -544,15 +562,15 @@ class SendAllAtomsTest(TestCase):
         """A worker-entered-time task whose rate+modifier yields >2 decimals
         (99.99 × 1.05 = 104.9895) must carry to an EstimateLineItem without
         tripping the price DecimalField's 2-place validation."""
-        scheme = RateScheme.objects.create(
-            name='Worker Time', algorithm=RateScheme.ENTERED_QTY,
+        scheme = ServiceItem.objects.create(
+            name='Worker Time', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('99.99'), unit_label='hour',
             modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 5}],
             accounting_category=self.cat,
         )
         pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Rushed work',
-            rate_scheme=scheme, est_qty=Decimal('2'),
+            service_item=scheme, est_qty=Decimal('2'),
             active_modifiers=['rush'],
         )
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
@@ -568,7 +586,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
     def setUp(self):
         super().setUp()
         from apps.contacts.models import Contact
-        from apps.jobs.models import Job, PlanTask, RateScheme
+        from apps.jobs.models import Job, PlanTask, ServiceItem
         from apps.inventory.models import PlanMaterial
         from apps.estimates.models import EstWorksheet
         from apps.core.models import AccountingCategory, Configuration
@@ -585,13 +603,13 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         self.job = Job.objects.create(job_number='J-desc', contact=contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='D', name='D')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='Hourly-d', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Cut sign blank',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         self.pm = PlanMaterial.objects.create(
             est_worksheet=self.ws, description='3/4" plywood',

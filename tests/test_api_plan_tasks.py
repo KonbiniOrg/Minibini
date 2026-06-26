@@ -4,7 +4,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 from django.test import TestCase
 from apps.core.models import AccountingCategory, User
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.jobs.models import Job, PlanTask, ServiceItem
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet
 
@@ -25,8 +25,8 @@ class PlanTaskAPITest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-pt', name='Labor PT')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly PT', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly PT', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
@@ -34,7 +34,7 @@ class PlanTaskAPITest(TestCase):
             est_worksheet=self.worksheet,
             name='Install shelves',
             description='Wall-mount 3 shelves',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
         )
 
@@ -101,15 +101,15 @@ class WorksheetNestedPlanTaskTest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-pt2', name='Labor PT2')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly PT2', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly PT2', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Sand floor',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
         )
 
@@ -153,8 +153,8 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-ewt', name='Labor EWT')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly EWT', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly EWT', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('75.00'), unit_label='hour',
             accounting_category=self.cat,
         )
@@ -165,7 +165,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
             f'/api/est-worksheets/{self.worksheet.pk}/tasks/',
             {
                 'name': 'Fit panels',
-                'rate_scheme': self.scheme.pk,
+                'service_item': self.scheme.pk,
                 'est_qty': '3.00',
                 'est_worker_time': 'PT2H30M',
             },
@@ -181,7 +181,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Polish surface',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
             est_worker_time=timedelta(hours=1),
         )
@@ -197,7 +197,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Detail task',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('2'),
             est_worker_time=timedelta(minutes=45),
         )
@@ -211,7 +211,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         from apps.estimates.models import TaskTemplate
         tt = TaskTemplate.objects.create(
             template_name='Cut pieces',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('4'),
         )
         response = self.client.post(
@@ -225,3 +225,36 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         plan_task = PlanTask.objects.get(pk=response.data['plan_task_id'])
         self.assertEqual(plan_task.est_worker_time, timedelta(hours=1))
+
+
+class PercentageServicePlanTaskRejectionTest(TestCase):
+    """A ServiceItem with algorithm=PERCENTAGE must be rejected when assigning
+    to a PlanTask via the worksheet tasks endpoint."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='pct_ws_mgr', password='testpass',
+        )
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.user = User.objects.get(pk=self.user.pk)
+        self.client.force_authenticate(user=self.user)
+        contact = Contact.objects.create(first_name='Pct', last_name='Ws')
+        self.job = Job.objects.create(
+            job_number='PCT-WS-001', name='Pct Ws Job', contact=contact,
+        )
+        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        ac = AccountingCategory.objects.create(code='LAB-pws', name='Labor PWS')
+        self.rush = ServiceItem.objects.create(
+            name='Rush WS', algorithm=ServiceItem.PERCENTAGE, rate=Decimal('15'),
+            unit_label='%', accounting_category=ac,
+        )
+
+    def test_cannot_assign_percentage_service_to_plan_task(self):
+        resp = self.client.post(
+            f'/api/est-worksheets/{self.worksheet.pk}/tasks/',
+            {'name': 'y', 'service_item': self.rush.pk, 'est_qty': '1'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400, resp.data)

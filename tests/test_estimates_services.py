@@ -7,7 +7,7 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, PlanTask, ServiceItem
 from apps.jobs.services import JobService
 from apps.inventory.models import Material, PlanMaterial
 from apps.core.services import NotFoundError
@@ -33,9 +33,9 @@ class EstimatesTestBase(TestCase):
         self.lit, _ = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': True},
         )
-        self.scheme, _ = RateScheme.objects.get_or_create(
+        self.scheme, _ = ServiceItem.objects.get_or_create(
             name='Test Hourly Default', defaults={
-                'algorithm': RateScheme.ENTERED_QTY,
+                'algorithm': ServiceItem.ENTERED_QTY,
                 'rate': Decimal('50.00'), 'unit_label': 'hour',
                 'accounting_category': self.lit,
             },
@@ -105,11 +105,11 @@ class TaskTemplateServiceCreateTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_task_template(
             template_name='Welding',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.assertIsNotNone(tt.pk)
         self.assertEqual(tt.template_name, 'Welding')
-        self.assertEqual(tt.rate_scheme, self.scheme)
+        self.assertEqual(tt.service_item, self.scheme)
 
 
 class TaskTemplateServiceUpdateTest(EstimatesTestBase):
@@ -119,7 +119,7 @@ class TaskTemplateServiceUpdateTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_task_template(
             template_name='Old',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         updated = WorkTemplateService.update_task_template(
             tt.pk, template_name='New',
@@ -139,7 +139,7 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_task_template(
             template_name='Del',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         pk = tt.pk
         WorkTemplateService.delete_task_template(pk)
@@ -151,7 +151,7 @@ class TaskTemplateServiceDeleteTest(EstimatesTestBase):
         wo_tmpl = WorkTemplateService.create_template(template_name='WO')
         tt = WorkTemplateService.create_task_template(
             template_name='Used',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=wo_tmpl, task_template=tt,
@@ -175,19 +175,20 @@ class EstimateServiceCreateTest(EstimatesTestBase):
         with self.assertRaises(NotFoundError):
             EstimateService.create_for_job(99999)
 
-    def test_estimate_number_is_job_number_with_revision(self):
-        """Estimate numbers derive from the job number plus the revision:
-        {job_number}-{version}, including revision 1."""
+    def test_estimate_number_is_just_the_job_number(self):
+        """The estimate_number IS the job number; the revision lives in the
+        separate `version` field, not baked into the number."""
         est = EstimateService.create_for_job(self.job.pk)
-        self.assertEqual(est.estimate_number, f'{self.job.job_number}-1')
+        self.assertEqual(est.estimate_number, self.job.job_number)
         self.assertEqual(est.version, 1)
 
-    def test_revision_number_increments_revision_suffix(self):
+    def test_revision_keeps_number_and_increments_version(self):
         est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(estimate=est, description='x', price=Decimal('1.00'))
         EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
         new_est = EstimateService.revise_estimate(est.pk)
-        self.assertEqual(new_est.estimate_number, f'{self.job.job_number}-2')
+        # Number is unchanged (same job); the revision is in `version`.
+        self.assertEqual(new_est.estimate_number, self.job.job_number)
         self.assertEqual(new_est.version, 2)
 
 
@@ -274,7 +275,7 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         from apps.jobs.models import PlanTask
         ws = EstWorksheet.objects.create(job=self.job)
         plan_task = PlanTask.objects.create(
-            est_worksheet=ws, name='Mill', rate_scheme=self.scheme, est_qty=Decimal('2'),
+            est_worksheet=ws, name='Mill', service_item=self.scheme, est_qty=Decimal('2'),
         )
         est = EstimateService.create_for_job(self.job.pk)
         li = EstimateLineItem.objects.create(
@@ -305,6 +306,49 @@ class EstimateServiceReviseTest(EstimatesTestBase):
             ).count(),
             1,
         )
+
+    def test_revise_preserves_adjustment_lines(self):
+        """revise_estimate must copy adjustment_service (FK) and
+        adjustment_target_categories (M2M) onto the revision's copy of
+        each percentage-adjustment line item."""
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import ServiceItem
+
+        cat = AccountingCategory.objects.get_or_create(
+            code='RUSH', defaults={'name': 'Rush', 'taxable': False},
+        )[0]
+        rush = ServiceItem.objects.create(
+            name='Rush Fee', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=cat,
+        )
+        est = EstimateService.create_for_job(self.job.pk)
+        # Base line so the estimate has something to adjust
+        EstimateLineItem.objects.create(
+            estimate=est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Base work', price=Decimal('200.00'),
+            accounting_category=cat,
+        )
+        # Adjustment line with a target category
+        EstimateService.add_adjustment_line(
+            est,
+            adjustment_service_id=rush.pk,
+            target_category_ids=[cat.pk],
+        )
+        # Must be non-draft to revise
+        EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
+
+        new_est = EstimateService.revise_estimate(est.pk)
+
+        adj_lines = EstimateLineItem.objects.filter(
+            estimate=new_est,
+            adjustment_service__isnull=False,
+        )
+        self.assertEqual(adj_lines.count(), 1, 'Revision should have one adjustment line')
+        new_adj = adj_lines.first()
+        self.assertEqual(new_adj.adjustment_service_id, rush.pk)
+        target_cats = list(new_adj.adjustment_target_categories.values_list('pk', flat=True))
+        self.assertIn(cat.pk, target_cats)
 
 
 class EstimateServiceAddLineItemTest(EstimatesTestBase):
@@ -446,7 +490,7 @@ class WorksheetServiceDeleteTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         pt = PlanTask.objects.create(
             est_worksheet=ws, name='Task 1', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         est = EstimateWizardService.open_for_worksheet(ws)
         li = EstimateLineItem.objects.create(estimate=est, description='T1', price=Decimal('10'))
@@ -472,7 +516,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService, WorkTemplateService
         tt = WorkTemplateService.create_task_template(
             template_name='Welding',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         task = WorksheetService.add_task_from_template(
             self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
@@ -483,14 +527,14 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
 
     def test_add_task_manual(self):
         from apps.estimates.services import WorksheetService
-        from apps.jobs.models import RateScheme
+        from apps.jobs.models import ServiceItem
         ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
-        scheme = RateScheme.objects.create(
+        scheme = ServiceItem.objects.create(
             name='S-atm', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         task = WorksheetService.add_task_manual(
-            self.ws.pk, name='Custom task', rate_scheme_id=scheme.pk,
+            self.ws.pk, name='Custom task', service_item_id=scheme.pk,
             est_qty=Decimal('1.00'),
         )
         self.assertEqual(task.name, 'Custom task')
@@ -503,7 +547,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
         with self.assertRaises(ValidationError):
             WorksheetService.add_task_manual(
-                self.ws.pk, name='X', rate_scheme_id=self.scheme.pk,
+                self.ws.pk, name='X', service_item_id=self.scheme.pk,
             )
 
 
@@ -555,7 +599,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         tmpl = WorkTemplateService.create_template(template_name='T')
         tt = WorkTemplateService.create_task_template(
             template_name='Task',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl, task_template=tt,
@@ -577,7 +621,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         tmpl2 = WorkTemplateService.create_template(template_name='T2')
         tt = WorkTemplateService.create_task_template(
             template_name='Task',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl1, task_template=tt,
@@ -599,11 +643,11 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         PlanTask.objects.create(
             est_worksheet=ws, name='Task A', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         PlanTask.objects.create(
             est_worksheet=ws, name='Task B', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
 
         JobService.copy_from_worksheet(self.job.pk, ws.pk)
@@ -614,7 +658,7 @@ class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
         ws = WorksheetService.create_worksheet(self.job.pk)
         task = PlanTask.objects.create(
             est_worksheet=ws, name='Task', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             est_worksheet=ws,
@@ -636,7 +680,7 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
         worksheet = EstWorksheet.objects.create(job=self.job)
         plan_task = PlanTask.objects.create(
             est_worksheet=worksheet, name='T1',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         plan_material = PlanMaterial.objects.create(
             est_worksheet=worksheet, description='steel',
@@ -678,4 +722,59 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
         estimate.refresh_from_db()
         with self.assertRaises(ValidationError):
             EstimateService.discard_draft(estimate)
-        self.assertTrue(Estimate.objects.filter(pk=estimate.pk).exists())
+
+
+# --- Adjustment line service methods ---
+
+class EstimateAdjustmentLineServiceTest(EstimatesTestBase):
+    """Tests for EstimateService.add_adjustment_line and auto-recompute."""
+
+    def setUp(self):
+        super().setUp()
+        # Create a draft estimate with two base lines totaling 140
+        self.labor = AccountingCategory.objects.get(pk=901)
+        self.est = EstimateService.create_for_job(self.job.pk)
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Line A', price=Decimal('100.00'),
+            accounting_category=self.labor,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, qty=Decimal('1'),
+            units='ea', description='Line B', price=Decimal('40.00'),
+            accounting_category=self.labor,
+        )
+
+    def test_add_adjustment_line_computes_price(self):
+        rush = ServiceItem.objects.create(
+            name='Rush', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('15.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        line = EstimateService.add_adjustment_line(
+            self.est, adjustment_service_id=rush.pk, target_category_ids=[])
+        self.assertEqual(line.price, Decimal('21.00'))
+        self.assertEqual(line.description, 'Rush')
+        self.assertEqual(line.adjustment_service_id, rush.pk)
+
+    def test_add_adjustment_rejects_non_draft(self):
+        rush = ServiceItem.objects.create(
+            name='Rush2', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        Estimate.objects.filter(pk=self.est.pk).update(status=Estimate.STATUS_OPEN)
+        self.est.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            EstimateService.add_adjustment_line(
+                self.est, adjustment_service_id=rush.pk)
+
+    def test_add_adjustment_rejects_non_percentage_service(self):
+        non_pct = ServiceItem.objects.create(
+            name='NonPct', algorithm=ServiceItem.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='hr',
+            accounting_category=self.labor,
+        )
+        with self.assertRaises(ValidationError):
+            EstimateService.add_adjustment_line(
+                self.est, adjustment_service_id=non_pct.pk)

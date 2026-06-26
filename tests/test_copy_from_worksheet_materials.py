@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.jobs.models import Job, PlanTask, ServiceItem
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import InventoryItem, PlanMaterial, Material, Earmark
 from apps.jobs.services import JobService
@@ -20,14 +20,14 @@ class CopyFromWorksheetMaterialsTest(TestCase):
         self.src_job = Job.objects.create(job_number='JOB-SRC-1', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.src_job)
         self.scheme_ac = AccountingCategory.objects.create(name='cfwm-ac', code='CFWM-AC')
-        self.scheme = RateScheme.objects.create(
-            name='S-cfwm', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-cfwm', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.scheme_ac,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='pt',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.pt, est_worksheet=self.ws,

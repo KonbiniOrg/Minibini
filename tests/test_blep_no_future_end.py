@@ -19,7 +19,7 @@ class NoFutureEndTimeTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
         self.user = User.objects.create_user(username='nofuture_worker', password='x')
         now = timezone.now()
         Shift.objects.create(

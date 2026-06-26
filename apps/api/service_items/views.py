@@ -3,17 +3,17 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.api.permissions import CanManageConfig
-from apps.jobs.models import RateScheme
-from .serializers import RateSchemeSerializer
+from apps.jobs.models import ServiceItem
+from .serializers import ServiceItemSerializer
 
 
-class RateSchemeViewSet(viewsets.ModelViewSet):
-    queryset = RateScheme.objects.all().order_by('name')
-    serializer_class = RateSchemeSerializer
+class ServiceItemViewSet(viewsets.ModelViewSet):
+    queryset = ServiceItem.objects.all().order_by('name')
+    serializer_class = ServiceItemSerializer
     lookup_field = 'pk'
 
     def get_queryset(self):
-        qs = RateScheme.objects.all().order_by('name')
+        qs = ServiceItem.objects.all().order_by('name')
         if self.action == 'list':
             include = self.request.query_params.get('include_superseded') == 'true'
             only = self.request.query_params.get('only_superseded') == 'true'
@@ -21,6 +21,8 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(replaced_by__isnull=False)
             elif not include:
                 qs = qs.filter(replaced_by__isnull=True)
+            if self.request.query_params.get('task_applicable') == 'true':
+                qs = qs.exclude(algorithm=ServiceItem.PERCENTAGE)
         return qs
 
     def get_permissions(self):
@@ -31,7 +33,7 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         instance.delete()
-        return Response({'message': f'Rate scheme "{instance.name}" deleted.'})
+        return Response({'message': f'Service item "{instance.name}" deleted.'})
 
     def _block_if_referenced(self, instance, request):
         if instance.is_referenced():
@@ -39,7 +41,7 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
                 {
                     'detail': 'Scheme is referenced; create a new version instead of editing.',
                     'supersede_url': request.build_absolute_uri(
-                        f'/api/rate-schemes/{instance.pk}/supersede/'
+                        f'/api/service-items/{instance.pk}/supersede/'
                     ),
                     'reference_counts': instance.reference_counts(),
                 },
@@ -76,11 +78,11 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
         # the old row before inserting the new one, so the DB won't collide,
         # but without instance= the serializer would reject same-name payloads
         # before reaching the model.
-        serializer = RateSchemeSerializer(old, data=request.data)
+        serializer = ServiceItemSerializer(old, data=request.data)
         serializer.is_valid(raise_exception=True)
         overrides = {k: v for k, v in serializer.validated_data.items()}
         new = old.supersede(**overrides)
         return Response(
-            RateSchemeSerializer(new).data,
+            ServiceItemSerializer(new).data,
             status=status.HTTP_201_CREATED,
         )

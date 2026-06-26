@@ -12,13 +12,13 @@ class WizardPerTaskAtomsTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory, User
-        from apps.jobs.models import RateScheme, Job, Task, Blep
+        from apps.jobs.models import ServiceItem, Job, Task, Blep
         from apps.invoicing.models import Invoice
         from apps.contacts.models import Business, Contact
 
         self.user = User.objects.create_user(username='pta_user', password='pw')
         self.ac = AccountingCategory.objects.create(code='X-pta', name='X-pta')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='Hourly-pta', algorithm='elapsed_time', rate=Decimal('60'),
             unit_label='hours', accounting_category=self.ac,
         )
@@ -31,7 +31,7 @@ class WizardPerTaskAtomsTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-pta', contact=contact)
-        self.task = Task.objects.create(job=self.job, name='Build-pta', rate_scheme=self.scheme)
+        self.task = Task.objects.create(job=self.job, name='Build-pta', service_item=self.scheme)
         # 30 minutes of work = $30 (60/hr × 0.5)
         now = timezone.now()
         Blep.objects.create(
@@ -86,11 +86,11 @@ class WizardTaskAtomHelpersTest(WizardPerTaskAtomsTest):
 
 class WizardReadsTaskDirectlyTest(TestCase):
     """Phase B: wizard atom rendering uses task.compute_amount and
-    task.rate_scheme, not task.charge.*."""
+    task.service_item, not task.charge.*."""
 
     def setUp(self):
         from apps.core.models import AccountingCategory, Configuration
-        from apps.jobs.models import RateScheme, Job, Task
+        from apps.jobs.models import ServiceItem, Job, Task
         from apps.invoicing.models import Invoice
         from apps.contacts.models import Contact, Business
 
@@ -105,14 +105,14 @@ class WizardReadsTaskDirectlyTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-WIZ', contact=contact, status=Job.STATUS_APPROVED,
         )
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('5.00'), unit_label='piece',
             accounting_category=ac,
         )
         self.task = Task.objects.create(
             job=self.job, name='Polish',
-            rate_scheme=self.scheme, active_modifiers=[],
+            service_item=self.scheme, active_modifiers=[],
             est_qty=Decimal('12'), actual_qty=Decimal('12'),
         )
         self.invoice = Invoice.objects.create(

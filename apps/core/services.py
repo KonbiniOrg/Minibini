@@ -48,7 +48,7 @@ class NotFoundError(ServiceError):
 
 
 class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded RateScheme is used."""
+    """Raised when a template referencing a superseded ServiceItem is used."""
     pass
 
 
@@ -951,10 +951,22 @@ class LineItemService:
         return getattr(line_item, parent_field_name)
 
     @classmethod
+    def save_line_item(cls, line_item):
+        """Single write path for a line item: save it, then recompute any
+        percentage-adjustment lines on its parent document. Use this instead of
+        calling line_item.save() directly so adjustments never go stale."""
+        from apps.core.adjustments import recompute_adjustments
+        line_item.save()
+        container = cls.get_parent_container(line_item)
+        recompute_adjustments(cls.get_line_items_for_container(container, type(line_item)))
+        return line_item
+
+    @classmethod
     @transaction.atomic
     def delete_line_item_with_renumber(cls, line_item):
         """
         Delete a line item and renumber remaining items in the container.
+        Also recomputes any percentage-adjustment lines after deletion.
 
         Callers must validate container status before calling this method.
 
@@ -964,12 +976,14 @@ class LineItemService:
         Returns:
             tuple: (parent_container, deleted_line_number)
         """
-        # Get parent container
+        from apps.core.adjustments import recompute_adjustments
+
+        # Get parent container and model BEFORE deletion
         parent_container = cls.get_parent_container(line_item)
+        line_item_model = cls.get_line_item_model(line_item)
 
         # Store info before deletion
         deleted_line_number = line_item.line_number
-        line_item_model = cls.get_line_item_model(line_item)
         parent_field_name = line_item.get_parent_field_name()
 
         # Delete the line item
@@ -985,6 +999,9 @@ class LineItemService:
             if item.line_number != index:
                 item.line_number = index
                 item.save()
+
+        # Recompute adjustments after deletion and renumber
+        recompute_adjustments(cls.get_line_items_for_container(parent_container, line_item_model))
 
         return parent_container, deleted_line_number
 

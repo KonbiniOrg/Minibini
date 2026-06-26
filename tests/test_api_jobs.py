@@ -7,7 +7,7 @@ from django.test import TestCase
 from tests.base import BaseTestCase
 from apps.core.models import User, AccountingCategory, Configuration, AppState
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, PlanTask, ServiceItem
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate,
     TemplateTaskAssociation,
@@ -151,15 +151,15 @@ class JobTaskSubResourceTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-T-001', name='Task Job', contact=self.contact,
         )
-        from apps.jobs.models import RateScheme
+        from apps.jobs.models import ServiceItem
         ac = AccountingCategory.objects.create(code='JT-AC', name='Job Task AC')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='Job Task Scheme', algorithm='flat_fee',
             rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
         )
 
     def test_list_tasks_on_job(self):
-        Task.objects.create(job=self.job, name='First task', rate_scheme=self.scheme)
+        Task.objects.create(job=self.job, name='First task', service_item=self.scheme)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
@@ -168,18 +168,18 @@ class JobTaskSubResourceTest(TestCase):
     def test_create_task_on_job(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'New task', 'rate_scheme': self.scheme.pk},
+            {'name': 'New task', 'service_item': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
-        # rate_scheme set directly on Task (no TaskCharge)
-        self.assertEqual(t.rate_scheme_id, self.scheme.pk)
+        # service_item set directly on Task (no TaskCharge)
+        self.assertEqual(t.service_item_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Original', service_item=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},
@@ -190,7 +190,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(task.name, 'Renamed')
 
     def test_delete_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Goner', service_item=self.scheme)
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('message', response.data)
@@ -200,7 +200,7 @@ class JobTaskSubResourceTest(TestCase):
         other_job = Job.objects.create(
             job_number='C2-T-002', name='Other', contact=self.contact,
         )
-        task = Task.objects.create(job=other_job, name='Theirs', rate_scheme=self.scheme)
+        task = Task.objects.create(job=other_job, name='Theirs', service_item=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'nope'},
@@ -213,14 +213,14 @@ class JobTaskSubResourceTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'Worker task', 'rate_scheme': self.scheme.pk},
+            {'name': 'Worker task', 'service_item': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
 
     def test_update_task_allowed_for_worker(self):
         # Editing a task is open to any authenticated user.
-        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Original', service_item=self.scheme)
         worker = User.objects.create_user(username='jt_worker_edit', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.patch(
@@ -234,7 +234,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_delete_task_allowed_for_worker_without_bleps(self):
         # Deleting a blep-less, not-started task is open to any authenticated user.
-        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Goner', service_item=self.scheme)
         worker = User.objects.create_user(username='jt_worker_del', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
@@ -246,7 +246,7 @@ class JobTaskSubResourceTest(TestCase):
         # a worker deleting a task that has time entries gets a 400.
         from apps.jobs.models import Blep
         from django.utils import timezone
-        task = Task.objects.create(job=self.job, name='Worked', rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Worked', service_item=self.scheme)
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
         worker = User.objects.create_user(username='jt_worker_blep', password='pass')
         self.client.force_authenticate(user=worker)
@@ -255,7 +255,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertTrue(Task.objects.filter(pk=task.pk).exists())
 
     def test_list_tasks_any_authenticated(self):
-        Task.objects.create(job=self.job, name='Read me', rate_scheme=self.scheme)
+        Task.objects.create(job=self.job, name='Read me', service_item=self.scheme)
         worker = User.objects.create_user(username='jt_reader', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -270,7 +270,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_reorder_tasks_still_denied_for_worker(self):
         # reorder-tasks also stays manager-or-PM via the fall-through.
-        task = Task.objects.create(job=self.job, name='Reorder me', rate_scheme=self.scheme)
+        task = Task.objects.create(job=self.job, name='Reorder me', service_item=self.scheme)
         worker = User.objects.create_user(username='jt_worker_ro', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
@@ -293,12 +293,12 @@ class JobSerializerNestingTest(TestCase):
             job_number='C2-N-001', name='Nesting Job', contact=self.contact,
         )
         ac = AccountingCategory.objects.create(code='NEST-AC', name='Nest AC')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='S-nest', algorithm='flat_fee',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        Task.objects.create(job=self.job, name='A task', rate_scheme=self.scheme)
-        Task.objects.create(job=self.job, name='B task', rate_scheme=self.scheme)
+        Task.objects.create(job=self.job, name='A task', service_item=self.scheme)
+        Task.objects.create(job=self.job, name='B task', service_item=self.scheme)
 
     def test_retrieve_nests_tasks(self):
         response = self.client.get(f'/api/jobs/{self.job.pk}/')
@@ -320,7 +320,7 @@ class JobListQueryCountTest(TestCase):
             template_name='QC Template',
         )
         ac = AccountingCategory.objects.create(code='QC-AC', name='QC AC')
-        self.scheme = RateScheme.objects.create(
+        self.scheme = ServiceItem.objects.create(
             name='S-qc', algorithm='flat_fee',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
@@ -333,8 +333,8 @@ class JobListQueryCountTest(TestCase):
                 name=f'QC Job {i}',
                 contact=self.contact,
             )
-            Task.objects.create(job=job, name=f'Task A {i}', rate_scheme=self.scheme)
-            Task.objects.create(job=job, name=f'Task B {i}', rate_scheme=self.scheme)
+            Task.objects.create(job=job, name=f'Task A {i}', service_item=self.scheme)
+            Task.objects.create(job=job, name=f'Task B {i}', service_item=self.scheme)
 
     def _list_query_count(self):
         from django.test.utils import CaptureQueriesContext
@@ -410,13 +410,13 @@ class JobPopulateFromTemplateTest(TestCase):
             template_name='Kitchen',
         )
         cat = AccountingCategory.objects.create(name='Labor')
-        self.scheme = RateScheme.objects.create(
-            name='S-poptpl', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-poptpl', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=cat,
         )
         self.task_template = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -467,14 +467,14 @@ class JobCopyFromWorksheetTest(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         ac = AccountingCategory.objects.create(code='CWAJ-AC', name='cwaj-ac')
-        self.scheme = RateScheme.objects.create(
-            name='S-cwaj', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-cwaj', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinet',
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
@@ -537,13 +537,13 @@ class JobReorderTasksTest(TestCase):
             job_number='C2-R-001', name='R Job', contact=self.contact,
         )
         ac = AccountingCategory.objects.create(code='REORD-AC', name='reord-ac')
-        self.scheme = RateScheme.objects.create(
-            name='S-reord', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-reord', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        self.a = Task.objects.create(job=self.job, name='A', sort_order=0, rate_scheme=self.scheme)
-        self.b = Task.objects.create(job=self.job, name='B', sort_order=1, rate_scheme=self.scheme)
-        self.c = Task.objects.create(job=self.job, name='C', sort_order=2, rate_scheme=self.scheme)
+        self.a = Task.objects.create(job=self.job, name='A', sort_order=0, service_item=self.scheme)
+        self.b = Task.objects.create(job=self.job, name='B', sort_order=1, service_item=self.scheme)
+        self.c = Task.objects.create(job=self.job, name='C', sort_order=2, service_item=self.scheme)
 
     def test_reorder_down(self):
         response = self.client.post(
@@ -593,8 +593,8 @@ class JobPatchValidationErrorTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(first_name='T', last_name='C')
         ac = AccountingCategory.objects.create(code='PV-AC', name='pv-ac')
-        from apps.jobs.models import RateScheme
-        self.scheme = RateScheme.objects.create(
+        from apps.jobs.models import ServiceItem
+        self.scheme = ServiceItem.objects.create(
             name='S-pv', algorithm='flat_fee',
             rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
         )
@@ -617,7 +617,7 @@ class JobPatchValidationErrorTest(TestCase):
         from django.utils import timezone
 
         job = self._in_progress_job()
-        task = Task.objects.create(job=job, name='Active task', rate_scheme=self.scheme)
+        task = Task.objects.create(job=job, name='Active task', service_item=self.scheme)
         # Create an open blep (no end_time)
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
 
@@ -652,15 +652,15 @@ class JobAddFromTemplateTest(TestCase):
             job_number='C2-AFT-001', name='AFT Job', contact=self.contact,
         )
         ac = AccountingCategory.objects.create(code='AFT-AC', name='aft-ac')
-        self.scheme = RateScheme.objects.create(
-            name='S-aft', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-aft', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         self.template = TaskTemplate.objects.create(
             template_name='Paint room',
             description='Paint all walls',
             is_active=True,
-            rate_scheme=self.scheme,
+            service_item=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
 
@@ -727,12 +727,12 @@ class JobDetailInvoiceFieldTest(TestCase):
             defaults={'value': 'INV-{year}-{counter:04d}'},
         )
         AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
-        self.scheme = RateScheme.objects.create(
-            name='S-invf', algorithm=RateScheme.FLAT_FEE,
+        self.scheme = ServiceItem.objects.create(
+            name='S-invf', algorithm=ServiceItem.FLAT_FEE,
             rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Invoiceable Task', rate_scheme=self.scheme,
+            job=self.job, name='Invoiceable Task', service_item=self.scheme,
         )
         self.material = Material.objects.create(
             job=self.job,

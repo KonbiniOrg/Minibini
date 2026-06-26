@@ -7,7 +7,7 @@ from typing import Dict, List
 
 
 def load_seed_records(seed_path, models=('core.user', 'core.accountingcategory',
-                                         'jobs.ratescheme')):
+                                         'jobs.serviceitem')):
     """Return records for `models` from a Django fixture JSON, verbatim.
 
     Each record is returned as its original dict (pk present or absent —

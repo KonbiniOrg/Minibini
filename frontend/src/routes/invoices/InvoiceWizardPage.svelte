@@ -4,6 +4,7 @@
   import { link } from 'svelte-spa-router';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import WizardSourcePool from '../../components/invoices/WizardSourcePool.svelte';
+  import AgreementAdjustmentsPanel from '../../components/invoices/AgreementAdjustmentsPanel.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
   import WizardActions from '../../components/wizards/WizardActions.svelte';
 
@@ -188,6 +189,7 @@
         >Add Here</button>
       </div>
       <button type="button" onclick={addManualLineItem}>+ Manual</button>
+      <AgreementAdjustmentsPanel invoiceId={invoice.invoice_id} />
     </div>
   </div>
 

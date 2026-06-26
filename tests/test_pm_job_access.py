@@ -222,7 +222,7 @@ class EstimatePMAccessTest(BaseTestCase):
 
 
 from decimal import Decimal
-from apps.jobs.models import PlanTask, RateScheme
+from apps.jobs.models import PlanTask, ServiceItem
 from apps.core.models import AccountingCategory
 
 
@@ -238,14 +238,14 @@ class PlanTaskPMAccessTest(BaseTestCase):
         )
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='LAB-pm-pt', name='Labor PM PT')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly PM PT', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly PM PT', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             est_worksheet=self.ws, name='Cut',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
+            service_item=self.scheme, est_qty=Decimal('1'),
         )
 
     def _client(self, user):
@@ -374,15 +374,15 @@ class TaskAndContactGuardTest(BaseTestCase):
             job_number='JOB-TK-0001', name='TK', status=Job.STATUS_DRAFT,
             contact=self.contact, project_manager=self.pm,
         )
-        # Task.rate_scheme is NOT NULL at the DB level; supply one.
+        # Task.service_item is NOT NULL at the DB level; supply one.
         self.cat = AccountingCategory.objects.create(code='LAB-tk', name='Labor TK')
-        self.scheme = RateScheme.objects.create(
-            name='Hourly TK', algorithm=RateScheme.ENTERED_QTY,
+        self.scheme = ServiceItem.objects.create(
+            name='Hourly TK', algorithm=ServiceItem.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Mill', rate_scheme=self.scheme, sort_order=1,
+            job=self.job, name='Mill', service_item=self.scheme, sort_order=1,
         )
 
     def _client(self, user):
@@ -420,7 +420,7 @@ class TaskAssignPMAccessTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import Task, RateScheme
+        from apps.jobs.models import Task, ServiceItem
         from apps.core.models import AccountingCategory
         from decimal import Decimal
         self.contact = Contact.objects.first()
@@ -431,12 +431,12 @@ class TaskAssignPMAccessTest(BaseTestCase):
             contact=self.contact, project_manager=self.pm,
         )
         ac = AccountingCategory.objects.create(code='ASG-AC', name='ASG AC')
-        scheme = RateScheme.objects.create(
+        scheme = ServiceItem.objects.create(
             name='ASG-S', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         self.task = Task.objects.create(
-            job=self.job, name='T', rate_scheme=scheme, sort_order=1,
+            job=self.job, name='T', service_item=scheme, sort_order=1,
         )
 
     def _client(self, user):
