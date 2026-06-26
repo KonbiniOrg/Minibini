@@ -521,6 +521,24 @@ class SendAllAtomsTest(TestCase):
         )
         self.assertEqual(totals, [Decimal('15.00'), Decimal('200.00')])
 
+    def test_send_all_recomputes_existing_adjustment(self):
+        """A percentage adjustment added before send-all is recomputed against
+        the base lines send-all creates (the bulk path recomputes once at end)."""
+        from apps.estimates.services import EstimateService
+        estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        rush = ServiceItem.objects.create(
+            name='Rush', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10'), unit_label='none', accounting_category=self.cat,
+        )
+        adj = EstimateService.add_adjustment_line(
+            estimate, adjustment_service_id=rush.pk, target_category_ids=[],
+        )
+        self.assertEqual(adj.price, Decimal('0.00'))  # no base lines yet
+        EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        adj.refresh_from_db()
+        # base = $200 (task) + $15 (material) = $215; 10% = $21.50
+        self.assertEqual(adj.price, Decimal('21.50'))
+
     def test_qty_and_price_split_per_atom(self):
         """Per-unit qty/price must reflect the source atom, not collapse to 1×total."""
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)

@@ -1216,6 +1216,13 @@ class EstimateWizardService(BaseWizardService):
             )
             created_count += 1
 
+        # This bulk path bypasses LineItemService.save_line_item, so recompute
+        # any percentage-adjustment lines once after the batch (a single
+        # end-of-batch recompute is the right granularity for a bulk op).
+        if created_count:
+            from apps.core.adjustments import recompute_adjustments
+            recompute_adjustments(EstimateLineItem.objects.filter(estimate=estimate))
+
         return {'estimate': estimate, 'created_count': created_count}
 
     # ── BaseWizardService hooks ────────────────────────────────────────
