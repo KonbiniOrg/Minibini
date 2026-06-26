@@ -179,7 +179,8 @@ class BaseWizardService:
         """After a source-set change on an in-sync line item, re-derive its
         units/qty/price. If the sources form a uniform same-scheme task
         bundle, summarize; otherwise keep qty and recompute the per-unit
-        price. Saves the line item."""
+        price. Saves the line item via LineItemService.save_line_item."""
+        from apps.core.services import LineItemService
         instances = [src.resolve() for src in line_item.sources.all()]
         summary = cls._uniform_scheme_bundle(instances)
         if summary is not None:
@@ -187,7 +188,7 @@ class BaseWizardService:
         else:
             new_sum = cls._sum_sources(line_item)
             line_item.price = cls._expected_per_unit(new_sum, line_item.qty)
-        line_item.save()
+        LineItemService.save_line_item(line_item)
 
     # ── claim-conflict helper ──────────────────────────────────────────
     @classmethod
@@ -208,14 +209,6 @@ class BaseWizardService:
             **{cls.source_fk: line_item},
             source_type=cls._atom_source_type(instance),
             source_pk=instance.pk,
-        )
-
-    @classmethod
-    def _recompute_adjustments(cls, container):
-        """Recompute all percentage-adjustment lines on the container document."""
-        from apps.core.adjustments import recompute_adjustments
-        recompute_adjustments(
-            cls._line_item_model().objects.filter(**{cls.container_attr: container})
         )
 
     # ── public: line items from atoms ──────────────────────────────────
@@ -252,9 +245,10 @@ class BaseWizardService:
                 qty = Decimal('1')
                 price = total_price
 
+        from apps.core.services import LineItemService
         try:
             with transaction.atomic():
-                line_item = cls._line_item_model().objects.create(
+                line_item = cls._line_item_model()(
                     **{cls.container_attr: container},
                     description=description,
                     qty=qty,
@@ -262,12 +256,12 @@ class BaseWizardService:
                     price=price,
                     accounting_category=category,
                 )
+                LineItemService.save_line_item(line_item)
                 for instance in instances:
                     cls._create_source(line_item, instance)
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 
-        cls._recompute_adjustments(container)
         return line_item
 
     @classmethod
@@ -282,17 +276,25 @@ class BaseWizardService:
         for inst in instances:
             cls._assert_atom_billable(inst)
 
+        from apps.core.services import LineItemService
+        from apps.core.adjustments import recompute_adjustments
         try:
             with transaction.atomic():
                 for instance in instances:
                     cls._create_source(line_item, instance)
                 if was_in_sync:
+                    # _resync_in_sync_line_item calls save_line_item, which recomputes
                     cls._resync_in_sync_line_item(line_item)
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 
-        container = getattr(line_item, cls.container_attr)
-        cls._recompute_adjustments(container)
+        if not was_in_sync:
+            # Price was overridden (no resync/save), but the source set changed;
+            # still need to recompute any adjustment lines on the document.
+            container = getattr(line_item, cls.container_attr)
+            recompute_adjustments(
+                LineItemService.get_line_items_for_container(container, type(line_item))
+            )
         return line_item
 
     @classmethod
@@ -301,6 +303,7 @@ class BaseWizardService:
         preserves an overridden price; deletes the line item if no sources
         remain. Returns {'line_item_deleted': bool}."""
         from apps.core.services import LineItemService
+        from apps.core.adjustments import recompute_adjustments
 
         container = getattr(line_item, cls.container_attr)
         cls._validate_draft(container)
@@ -313,12 +316,17 @@ class BaseWizardService:
             remaining = line_item.sources.count()
 
             if remaining == 0:
+                # delete_line_item_with_renumber now recomputes internally
                 LineItemService.delete_line_item_with_renumber(line_item)
-                cls._recompute_adjustments(container)
                 return {'line_item_deleted': True}
 
             if was_in_sync:
+                # _resync_in_sync_line_item calls save_line_item, which recomputes
                 cls._resync_in_sync_line_item(line_item)
 
-        cls._recompute_adjustments(container)
+        if not was_in_sync:
+            # Price overridden; no resync/save happened, but adjustments may need refresh.
+            recompute_adjustments(
+                LineItemService.get_line_items_for_container(container, type(line_item))
+            )
         return {'line_item_deleted': False}

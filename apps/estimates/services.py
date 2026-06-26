@@ -218,12 +218,6 @@ class EstimateService:
         return new_estimate
 
     @staticmethod
-    def _recompute_adjustments(estimate):
-        """Recompute all percentage-adjustment lines on the estimate."""
-        from apps.core.adjustments import recompute_adjustments
-        recompute_adjustments(EstimateLineItem.objects.filter(estimate=estimate))
-
-    @staticmethod
     def add_line_item(estimate_pk, **kwargs):
         """Add a manual line item to a draft estimate."""
         try:
@@ -236,8 +230,7 @@ class EstimateService:
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
         li.full_clean()
-        li.save()
-        EstimateService._recompute_adjustments(estimate)
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -254,8 +247,7 @@ class EstimateService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         li.full_clean()
-        li.save()
-        EstimateService._recompute_adjustments(li.estimate)
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -300,10 +292,7 @@ class EstimateService:
             raise ValidationError(
                 'Cannot modify line items on a non-draft estimate.'
             )
-        estimate = li.estimate
-        result = LineItemService.delete_line_item_with_renumber(li)
-        EstimateService._recompute_adjustments(estimate)
-        return result
+        return LineItemService.delete_line_item_with_renumber(li)
 
     @staticmethod
     def discard_draft(estimate):
@@ -337,7 +326,8 @@ class EstimateService:
             raise ValidationError('Adjustment line requires a percentage service.')
         max_ln = (EstimateLineItem.objects.filter(estimate=estimate)
                   .aggregate(Max('line_number'))['line_number__max'] or 0)
-        line = EstimateLineItem.objects.create(
+        from apps.core.services import LineItemService
+        line = EstimateLineItem(
             estimate=estimate,
             line_number=max_ln + 1,
             qty=Decimal('1'),
@@ -347,9 +337,10 @@ class EstimateService:
             accounting_category=svc.accounting_category,
             adjustment_service=svc,
         )
+        line.save()
         if target_category_ids:
             line.adjustment_target_categories.set(target_category_ids)
-        EstimateService._recompute_adjustments(estimate)
+        LineItemService.save_line_item(line)
         line.refresh_from_db()
         return line
 
@@ -367,7 +358,8 @@ class EstimateService:
         except InventoryItem.DoesNotExist:
             raise NotFoundError(f'InventoryItem {pli_pk} not found')
 
-        li = EstimateLineItem.objects.create(
+        from apps.core.services import LineItemService
+        li = EstimateLineItem(
             estimate=estimate,
             inventory_item=pli,
             description=pli.description,
@@ -376,7 +368,7 @@ class EstimateService:
             price=pli.selling_price,
             accounting_category=pli.accounting_category,
         )
-        EstimateService._recompute_adjustments(estimate)
+        LineItemService.save_line_item(li)
         return li
 
 

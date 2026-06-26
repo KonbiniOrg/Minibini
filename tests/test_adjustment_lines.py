@@ -398,3 +398,64 @@ class EstimateWizardAutoRecomputeTest(TestCase):
         self.adj.refresh_from_db()
         # 10% of $100 (flat fee)
         self.assertEqual(self.adj.price, Decimal('10.00'))
+
+
+# ---------------------------------------------------------------------------
+# LineItemService.save_line_item chokepoint
+# ---------------------------------------------------------------------------
+
+class SaveLineItemChokePointTest(TestCase):
+    """LineItemService.save_line_item is the single write path: it saves the
+    line item and then recomputes percentage-adjustment siblings."""
+    fixtures = ['unit_test_data.json']
+
+    def setUp(self):
+        from apps.contacts.models import Contact
+        from apps.estimates.models import Estimate, EstimateLineItem
+        from apps.core.services import LineItemService
+
+        self.cat = AccountingCategory.objects.create(
+            code='LAB-CK', name='Labor-CK', taxable=False,
+        )
+        contact = Contact.objects.create(
+            first_name='CK', last_name='Test', email='ck@t.com', work_number='555-9999',
+        )
+        from apps.jobs.services import JobService
+        job = JobService.create_job(name='CK Job', contact=contact)
+        self.est = Estimate.objects.create(
+            job=job, estimate_number='EST-CK-001', status=Estimate.STATUS_DRAFT,
+        )
+        # A base line at $100
+        self.base = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Base', price=Decimal('100.00'),
+            accounting_category=self.cat,
+        )
+        # A 10% adjustment line (price=0 initially)
+        pct_svc = ServiceItem.objects.create(
+            name='Rush-CK', algorithm=ServiceItem.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.cat,
+        )
+        self.adj = EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, qty=Decimal('1'),
+            units='%', description='Rush-CK', price=Decimal('0.00'),
+            accounting_category=self.cat, adjustment_service=pct_svc,
+        )
+
+    def test_save_line_item_recomputes_adjustments(self):
+        """Writing a line item via LineItemService.save_line_item recomputes adjustments."""
+        from apps.estimates.models import EstimateLineItem
+        from apps.core.services import LineItemService
+
+        new_line = EstimateLineItem(
+            estimate=self.est, line_number=3, qty=Decimal('1'),
+            units='ea', description='Extra', price=Decimal('50.00'),
+            accounting_category=self.cat,
+        )
+        LineItemService.save_line_item(new_line)
+        self.assertIsNotNone(new_line.pk)
+
+        # Adjustment should now be 10% of (100 + 50) = 15
+        self.adj.refresh_from_db()
+        self.assertEqual(self.adj.price, Decimal('15.00'))

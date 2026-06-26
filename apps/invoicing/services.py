@@ -20,12 +20,6 @@ class InvoiceService:
             )
 
     @staticmethod
-    def _recompute_adjustments(invoice):
-        """Recompute all percentage-adjustment lines on the invoice."""
-        from apps.core.adjustments import recompute_adjustments
-        recompute_adjustments(InvoiceLineItem.objects.filter(invoice=invoice))
-
-    @staticmethod
     def add_line_item(invoice_pk, **kwargs):
         """Add a manual line item to a draft invoice."""
         try:
@@ -37,14 +31,14 @@ class InvoiceService:
         kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
         li = InvoiceLineItem(invoice=invoice, **kwargs)
         li.full_clean()
-        li.save()
-        InvoiceService._recompute_adjustments(invoice)
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
     def add_line_item_from_pli(invoice_pk, pli_pk, qty):
         """Add a line item from a InventoryItem to a draft invoice."""
         from apps.inventory.models import InventoryItem
+        from apps.core.services import LineItemService
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
@@ -64,8 +58,7 @@ class InvoiceService:
             accounting_category=pli.accounting_category,
         )
         li.full_clean()
-        li.save()
-        InvoiceService._recompute_adjustments(invoice)
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -81,8 +74,7 @@ class InvoiceService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         li.full_clean()
-        li.save()
-        InvoiceService._recompute_adjustments(li.invoice)
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -132,10 +124,7 @@ class InvoiceService:
             raise ValidationError(
                 'Cannot modify line items on a non-draft invoice.'
             )
-        invoice = line_item.invoice
-        result = LineItemService.delete_line_item_with_renumber(line_item)
-        InvoiceService._recompute_adjustments(invoice)
-        return result
+        return LineItemService.delete_line_item_with_renumber(line_item)
 
     @staticmethod
     def add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=None):
@@ -157,10 +146,11 @@ class InvoiceService:
         svc = ServiceItem.objects.get(pk=adjustment_service_id)
         if svc.algorithm != ServiceItem.PERCENTAGE:
             raise ValidationError('Adjustment line requires a percentage service.')
+        from apps.core.services import LineItemService
         with transaction.atomic():
             max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
                       .aggregate(Max('line_number'))['line_number__max'] or 0)
-            line = InvoiceLineItem.objects.create(
+            line = InvoiceLineItem(
                 invoice=invoice,
                 line_number=max_ln + 1,
                 qty=Decimal('1'),
@@ -170,9 +160,10 @@ class InvoiceService:
                 accounting_category=svc.accounting_category,
                 adjustment_service=svc,
             )
+            line.save()
             if target_category_ids:
                 line.adjustment_target_categories.set(target_category_ids)
-            InvoiceService._recompute_adjustments(invoice)
+            LineItemService.save_line_item(line)
             line.refresh_from_db()
             return line
 
