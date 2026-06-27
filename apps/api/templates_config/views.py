@@ -9,7 +9,7 @@ from apps.estimates.models import WorkTemplate, ServiceItem
 from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
-from apps.api.permissions import CanManageConfig
+from apps.api.permissions import CanManageConfig, CanManageJobsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
 from .serializers import (
@@ -116,6 +116,9 @@ class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
+        if self.action == 'create':
+            # Inline "save to catalog" while plan-building — not config-gated.
+            return [IsAuthenticated(), CanManageJobsOrConfig()]
         return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):

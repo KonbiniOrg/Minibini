@@ -17,6 +17,30 @@ beforeEach(() => {
 });
 
 describe('WorkItemForm', () => {
+  it('also POSTs a ServiceItem when "Save to catalog" is checked (manual create)', async () => {
+    const onSaved = vi.fn();
+    const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, onSaved },
+    });
+    await fireEvent.change(await findByLabelText(/Service/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Custom Polish' } });
+    await fireEvent.input(getByLabelText(/Estimated qty/i), { target: { value: '2' } });
+    await fireEvent.click(getByLabelText(/save to catalog/i));
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const catalogCalls = api.post.mock.calls.filter((c) => c[0] === '/api/service-items/');
+    expect(catalogCalls.length).toBe(1);
+    expect(catalogCalls[0][1]).toEqual(expect.objectContaining({ template_name: 'Custom Polish' }));
+    expect(String(catalogCalls[0][1].rate_scheme)).toBe('1');
+  });
+
+  it('does not show "Save to catalog" when editing', async () => {
+    const { queryByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, isEdit: true,
+        item: { name: 'X', rate_scheme: 1, active_modifiers: [], est_qty: '1' } },
+    });
+    expect(queryByLabelText(/save to catalog/i)).not.toBeInTheDocument();
+  });
+
   it('requires a name', async () => {
     const { findByRole, getByText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },

@@ -51,6 +51,22 @@ class ServiceItemAPITest(BaseTestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201)
 
+    def test_create_allowed_for_jobs_atom_without_config(self):
+        # Inline "save to catalog" must work for a plan-builder (can_manage_jobs)
+        # who lacks can_manage_config.
+        from django.contrib.auth.models import Permission
+        from apps.jobs.models import RateScheme
+        u = User.objects.create_user(username='planbuilder', password='x')
+        u.user_permissions.add(Permission.objects.get(codename='can_manage_jobs'))
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=u.pk))
+        scheme = RateScheme.objects.get(pk=1)
+        resp = client.post('/api/service-items/', {
+            'template_name': 'Inline Saved', 'description': '', 'units': 'hours',
+            'rate_scheme': scheme.pk, 'default_billable_qty': '1.00',
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+
     def test_search_filters_service_items_by_name_or_description(self):
         from apps.jobs.models import RateScheme
         scheme = RateScheme.objects.get(pk=1)

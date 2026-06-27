@@ -27,6 +27,8 @@
   let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
   let busy = $state(false);
   let error = $state('');
+  let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
+  let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
 
   let schemes = $state([]);
   let loading = $state(true);
@@ -70,6 +72,8 @@
         rateSchemeId = '';
       }
     }
+    saveToCatalog = false;
+    taskCreated = false;
     error = '';
   });
 
@@ -215,7 +219,20 @@
         } else {
           url = `/api/jobs/${contextId}/tasks/`;
         }
-        await api.post(url, payload);
+        // taskCreated guards a double create if the optional catalog save fails + retry.
+        if (!taskCreated) {
+          await api.post(url, payload);
+          taskCreated = true;
+        }
+        if (saveToCatalog) {
+          await api.post('/api/service-items/', {
+            template_name: name,
+            description,
+            rate_scheme: rateSchemeId,
+            default_active_modifiers: activeModifiers,
+            default_billable_qty: estQty || '1',
+          });
+        }
       }
       onSaved();
     } catch (e) {
@@ -326,6 +343,15 @@
             <small>HH:MM or decimal hours (1.5 = 1h30m)</small>
           </label>
         </p>
+
+        {#if mode === 'manual' && !isEdit}
+          <p>
+            <label>
+              <input type="checkbox" bind:checked={saveToCatalog}>
+              Save to catalog (reuse this as a service item)
+            </label>
+          </p>
+        {/if}
 
         <div class="buttons">
           <button type="button" onclick={save} disabled={busy}>Save</button>
