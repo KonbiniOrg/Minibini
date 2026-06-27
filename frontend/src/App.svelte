@@ -16,7 +16,6 @@
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobEditPage from './routes/jobs/JobEditPage.svelte';
   import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
-  import CreateWorksheetPage from './routes/jobs/CreateWorksheetPage.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InventoryListPage from './routes/inventory/InventoryListPage.svelte';
@@ -79,7 +78,6 @@
     '/jobs/:id': JobDetailPage,
     '/jobs/:id/edit': JobEditPage,
     '/jobs/:id/duplicate': DuplicateJobPage,
-    '/jobs/:id/create-worksheet': CreateWorksheetPage,
     '/jobs/:id/tasklist': JobTaskListPage,
     '/jobs/:id/history': JobHistoryPage,
     '/jobs/:jobId/shipments': JobShipmentsPage,

@@ -278,7 +278,8 @@ describe('JobDetail — Start Estimate button (Task 3)', () => {
     expect(queryByText('Create Estimate')).not.toBeInTheDocument();
   });
 
-  it('navigates to #/jobs/{id}/create-worksheet when "Start Estimate" is clicked', async () => {
+  it('creates a worksheet and navigates straight to the Plan when "Start Estimate" is clicked', async () => {
+    api.post.mockResolvedValue({ est_worksheet_id: 7 });
     const { getByText } = render(JobDetail, {
       props: {
         job: startableJob,
@@ -289,7 +290,8 @@ describe('JobDetail — Start Estimate button (Task 3)', () => {
     await openEstimateSection(getByText);
     const btn = getByText('Start Estimate');
     await fireEvent.click(btn);
-    expect(window.location.hash).toBe('#/jobs/42/create-worksheet');
+    expect(api.post).toHaveBeenCalledWith('/api/est-worksheets/', { job: 42 });
+    await vi.waitFor(() => expect(window.location.hash).toBe('#/worksheets/7'));
   });
 
   it('does NOT fire POST /api/estimates/ when "Start Estimate" is clicked', async () => {

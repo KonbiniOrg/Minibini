@@ -318,8 +318,19 @@
     !currentWorksheet
   );
 
-  function startEstimate() {
-    window.location.hash = `/jobs/${job.job_id}/create-worksheet`;
+  let startingEstimate = $state(false);
+  async function startEstimate() {
+    startingEstimate = true;
+    try {
+      // Worksheet creation is idempotent (one Plan per job), so this is safe to
+      // POST directly and land on the Plan — no intermediate template-choice page.
+      const ws = await api.post('/api/est-worksheets/', { job: job.job_id });
+      window.location.hash = `/worksheets/${ws.est_worksheet_id}`;
+    } catch (e) {
+      alert(e.message || 'Failed to start estimate.');
+    } finally {
+      startingEstimate = false;
+    }
   }
 
   async function createChangeOrder() {
@@ -571,8 +582,8 @@
         <span class="top-bar-title">ESTIMATE</span>
         <span class="top-bar-actions">
           {#if canStartEstimate}
-            <button type="button" onclick={startEstimate}>
-              Start Estimate
+            <button type="button" onclick={startEstimate} disabled={startingEstimate}>
+              {startingEstimate ? 'Starting…' : 'Start Estimate'}
             </button>
           {/if}
           {#if currentWorksheet && estimateView === 'plan'}
