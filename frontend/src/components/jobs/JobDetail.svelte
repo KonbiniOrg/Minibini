@@ -465,7 +465,7 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
+  const VALID_SECTIONS = ['estimate', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -474,17 +474,30 @@
     }
     if (shipmentCount > 0 && hasOutstandingDeliverables) return 'shipments';
     if (jobTasks.length > 0) return 'tasks';
-    if (estimates?.results?.length > 0) return 'estimates';
-    if (worksheets?.results?.length > 0) return 'worksheets';
-    return 'worksheets';
+    if (estimates?.results?.length > 0 || worksheets?.results?.length > 0) return 'estimate';
+    return 'estimate';
   }
 
   function readStoredSection(id) {
     try {
       const v = sessionStorage.getItem(storageKey(id));
+      // Migrate old section keys to the unified 'estimate' pillar
+      if (v === 'worksheets' || v === 'estimates') return 'estimate';
       return VALID_SECTIONS.includes(v) ? v : null;
     } catch { return null; }
   }
+
+  // Toggle inside the Estimate pillar: 'plan' | 'client-view'
+  // Default: 'plan' when there is no live estimate or it is draft; 'client-view' once sent/frozen.
+  // Computed from the raw prop (not a $derived) so it only sets the initial default, not re-deriving
+  // on every data update (which would override the user's manual toggle choice).
+  const PLAN_DEFAULT_STATUSES = new Set(['draft', 'superseded', null, undefined]);
+  function initialEstimateView() {
+    const estList = [...(estimates?.results || [])].sort((a, b) => a.version - b.version);
+    const liveEst = estList.findLast(e => e.status !== 'superseded') || estList[estList.length - 1] || null;
+    return (!liveEst || PLAN_DEFAULT_STATUSES.has(liveEst?.status)) ? 'plan' : 'client-view';
+  }
+  let estimateView = $state(initialEstimateView());
 
   let userSection = $state(null);
   let activeSection = $derived(userSection ?? readStoredSection(job.job_id) ?? getDefaultSection());
@@ -542,144 +555,31 @@
 
 <!-- HORIZONTAL ACCORDION -->
 <div class="accordion">
-  <!-- Worksheet -->
-  {#if activeSection !== 'worksheets'}
-    <div class="pillar pillar-ws"
-         role="button" tabindex="0"
-         onclick={() => openSection('worksheets')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('worksheets')}>
-      <span class="label-v">Worksheet</span>
-      <span class="pillar-count">{worksheetList.length}</span>
-    </div>
-  {:else}
-    <div class="open open-ws">
-      <div class="top-bar top-bar-ws">
-        <span class="top-bar-title">
-          WORKSHEET
-          {#if !displayedWorksheet} · None{/if}
-        </span>
-        <span class="top-bar-actions">
-          {#if displayedWorksheet}
-            <a href="#/worksheets/{displayedWorksheet.est_worksheet_id}">Open full worksheet →</a>
-          {/if}
-          {#if canManageJobs && !currentWorksheet && job.status === 'draft'}
-            <a href="#/jobs/{job.job_id}/create-worksheet">Create Worksheet</a>
-          {/if}
-        </span>
-      </div>
-      <div class="body">
-        {#if displayedWorksheet}
-          {@const wsTasks = (displayedWorksheet.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))}
-          {@const taskless = displayedWorksheet.taskless_materials || []}
-          {#if wsTasks.length === 0 && taskless.length === 0}
-            <p class="empty-msg">Worksheet has no tasks or materials.</p>
-          {:else}
-            <table class="ws-readonly">
-              <colgroup>
-                <col>
-                <col class="col-qty">
-                <col class="col-units">
-                <col class="col-money">
-                <col class="col-money">
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th class="text-right">Qty</th>
-                  <th>Units</th>
-                  <th class="text-right">Price</th>
-                  <th class="text-right">Ext</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each wsTasks as task}
-                  <tr class="task-row">
-                    <td class="name">{task.name}{#if task.description}<span class="dim"> — {task.description}</span>{/if}</td>
-                    <td class="text-right">{task.est_qty ?? '—'}</td>
-                    <td>{task.units || ''}</td>
-                    <td class="text-right">{fmt(unitPrice(task))}</td>
-                    <td class="text-right">{fmt(task.amount)}</td>
-                  </tr>
-                  {#each (task.plan_materials || []) as mat}
-                    <tr class="material-row">
-                      <td class="indent preserve-breaks"><span class="marker">●</span> {mat.description || '(no description)'}</td>
-                      <td class="text-right">{mat.quantity ?? '—'}</td>
-                      <td>{mat.units || ''}</td>
-                      <td class="text-right">{fmt(mat.sell_price)}</td>
-                      <td class="text-right">{fmt(materialTotal(mat))}</td>
-                    </tr>
-                  {/each}
-                {/each}
-              </tbody>
-            </table>
-
-            {#if taskless.length > 0}
-              <div class="ml-heading">Materials not assigned to a task</div>
-              <table class="ml-readonly">
-                <colgroup>
-                  <col>
-                  <col class="col-qty">
-                  <col class="col-units">
-                  <col class="col-money">
-                  <col class="col-money">
-                </colgroup>
-                <tbody>
-                  {#each taskless as mat}
-                    <tr>
-                      <td class="preserve-breaks">{mat.description || '(no description)'}</td>
-                      <td class="text-right">{mat.quantity ?? '—'}</td>
-                      <td>{mat.units || ''}</td>
-                      <td class="text-right">{fmt(mat.sell_price)}</td>
-                      <td class="text-right">{fmt(materialTotal(mat))}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-
-            <div class="ws-total">
-              <span class="ws-total-label">Total</span>
-              <span class="ws-total-value">{fmt(worksheetGrandTotal)}</span>
-            </div>
-          {/if}
-        {:else}
-          <p class="empty-msg">No worksheet for this job.</p>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Estimates + Change Orders (unified version timeline) -->
-  {#if activeSection !== 'estimates'}
+  <!-- Estimate (merged Plan + Client View pillar) -->
+  {#if activeSection !== 'estimate'}
     <div class="pillar pillar-est"
          role="button" tabindex="0"
-         onclick={() => openSection('estimates')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('estimates')}>
-      <span class="label-v">Estimates</span>
-      <span class="pillar-count">{versionTimeline.length}</span>
+         onclick={() => openSection('estimate')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('estimate')}>
+      <span class="label-v">Estimate</span>
+      <span class="pillar-count">{worksheetList.length + versionTimeline.length}</span>
     </div>
   {:else}
     <div class="open open-est">
       <div class="top-bar top-bar-est">
-        <span class="top-bar-title">
-          {#if displayedVersion?.kind === 'co'}
-            CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {changeOrderDisplayStatus(displayedVersion.co, changeOrders)}
-          {:else if displayedEstimate}
-            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate)}
-          {:else}
-            ESTIMATE · None
-          {/if}
-        </span>
+        <span class="top-bar-title">ESTIMATE</span>
         <span class="top-bar-actions">
-          {#if displayedVersion?.kind === 'co'}
-            <a href="#/change-orders/{displayedVersion.co.change_order_id}">View Change Order</a>
-          {:else if displayedEstimate}
-            <a href="#/estimates/{displayedEstimate.estimate_id}">View Full Estimate</a>
-          {/if}
           {#if canStartEstimate}
             <button type="button" onclick={startEstimate}>
               Start Estimate
             </button>
+          {/if}
+          {#if currentWorksheet && estimateView === 'plan'}
+            <a href="#/worksheets/{currentWorksheet.est_worksheet_id}">Open Plan →</a>
+          {:else if estimateView === 'client-view' && displayedVersion?.kind === 'co'}
+            <a href="#/change-orders/{displayedVersion.co.change_order_id}">Open →</a>
+          {:else if estimateView === 'client-view' && displayedEstimate}
+            <a href="#/estimates/{displayedEstimate.estimate_id}">Open →</a>
           {/if}
           {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
             <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
@@ -688,15 +588,115 @@
           {/if}
         </span>
       </div>
-      {#if versionTimeline.length > 1}
-        <div class="est-tabs">
-          {#each versionTimeline as ver}
-            {#if ver.kind === 'estimate'}
-              <button
-                type="button"
-                class="est-tab"
-                class:active={ver.key === (displayedVersion?.key)}
-                onclick={() => { selectedVersionKey = ver.key; }}
+
+      <!-- Plan / Client View toggle -->
+      <div class="est-view-toggle">
+        <button
+          type="button"
+          aria-pressed={estimateView === 'plan'}
+          class:active={estimateView === 'plan'}
+          onclick={() => { estimateView = 'plan'; }}
+        >Plan</button>
+        <button
+          type="button"
+          aria-pressed={estimateView === 'client-view'}
+          class:active={estimateView === 'client-view'}
+          onclick={() => { estimateView = 'client-view'; }}
+        >Client View</button>
+      </div>
+
+      {#if estimateView === 'plan'}
+        <!-- Plan (worksheet) side -->
+        <div class="body">
+          {#if !currentWorksheet}
+            <p class="empty-msg">No plan for this job yet.</p>
+          {:else}
+            {@const wsTasks = (displayedWorksheet?.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))}
+            {@const taskless = displayedWorksheet?.taskless_materials || []}
+            {#if wsTasks.length === 0 && taskless.length === 0}
+              <p class="empty-msg">Plan has no tasks or materials.</p>
+            {:else}
+              <table class="ws-readonly">
+                <colgroup>
+                  <col>
+                  <col class="col-qty">
+                  <col class="col-units">
+                  <col class="col-money">
+                  <col class="col-money">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th class="text-right">Qty</th>
+                    <th>Units</th>
+                    <th class="text-right">Price</th>
+                    <th class="text-right">Ext</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each wsTasks as task}
+                    <tr class="task-row">
+                      <td class="name">{task.name}{#if task.description}<span class="dim"> — {task.description}</span>{/if}</td>
+                      <td class="text-right">{task.est_qty ?? '—'}</td>
+                      <td>{task.units || ''}</td>
+                      <td class="text-right">{fmt(unitPrice(task))}</td>
+                      <td class="text-right">{fmt(task.amount)}</td>
+                    </tr>
+                    {#each (task.plan_materials || []) as mat}
+                      <tr class="material-row">
+                        <td class="indent preserve-breaks"><span class="marker">●</span> {mat.description || '(no description)'}</td>
+                        <td class="text-right">{mat.quantity ?? '—'}</td>
+                        <td>{mat.units || ''}</td>
+                        <td class="text-right">{fmt(mat.sell_price)}</td>
+                        <td class="text-right">{fmt(materialTotal(mat))}</td>
+                      </tr>
+                    {/each}
+                  {/each}
+                </tbody>
+              </table>
+
+              {#if taskless.length > 0}
+                <div class="ml-heading">Materials not assigned to a task</div>
+                <table class="ml-readonly">
+                  <colgroup>
+                    <col>
+                    <col class="col-qty">
+                    <col class="col-units">
+                    <col class="col-money">
+                    <col class="col-money">
+                  </colgroup>
+                  <tbody>
+                    {#each taskless as mat}
+                      <tr>
+                        <td class="preserve-breaks">{mat.description || '(no description)'}</td>
+                        <td class="text-right">{mat.quantity ?? '—'}</td>
+                        <td>{mat.units || ''}</td>
+                        <td class="text-right">{fmt(mat.sell_price)}</td>
+                        <td class="text-right">{fmt(materialTotal(mat))}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              {/if}
+
+              <div class="ws-total">
+                <span class="ws-total-label">Total</span>
+                <span class="ws-total-value">{fmt(worksheetGrandTotal)}</span>
+              </div>
+            {/if}
+          {/if}
+        </div>
+      {:else}
+        <!-- Client View (estimate + COs) side -->
+        {#if versionTimeline.length > 1}
+          <div class="est-tabs">
+            {#each versionTimeline as ver}
+              {#if ver.kind === 'estimate'}
+                <button
+                  type="button"
+                  class="est-tab"
+                  class:active={ver.key === (displayedVersion?.key)}
+                  onclick={() => { selectedVersionKey = ver.key; }}
               >
                 {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({estimateDisplayStatus(ver.est)})</span>
               </button>
@@ -711,11 +711,59 @@
             {/if}
           {/each}
         </div>
-      {/if}
-      <div class="body">
-        {#if displayedVersion?.kind === 'co'}
-          <!-- CO effective agreement view (Option A): base estimate lines with CO deltas applied -->
-          {#if coEffectiveLines.length > 0}
+        {/if}
+        <div class="body">
+          {#if displayedVersion?.kind === 'co'}
+            <!-- CO effective agreement view (Option A): base estimate lines with CO deltas applied -->
+            {#if coEffectiveLines.length > 0}
+              <table class="est-table">
+                <colgroup>
+                  <col class="col-num">
+                  <col>
+                  <col class="col-qty">
+                  <col class="col-units">
+                  <col class="col-money">
+                  <col class="col-money">
+                </colgroup>
+                <thead><tr>
+                  <th>#</th><th>Description</th>
+                  <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
+                </tr></thead>
+                <tbody>
+                  {#each coEffectiveLines as li}
+                    <tr class:co-line-changed={li.coTouched === 'changed'} class:co-line-added={li.coTouched === 'added'}>
+                      <td>{li.line_number}</td>
+                      <td>
+                        {li.description}
+                        {#if li.coTouched}
+                          <span class="co-tag">{coCountOnEstimate > 1 ? `CO-${li.coOrdinal}` : 'CO'}</span>
+                        {/if}
+                      </td>
+                      <td class="text-right">{li.qty}</td>
+                      <td>{li.units || 'none'}</td>
+                      <td class="text-right">${Number(li.price).toFixed(2)}</td>
+                      <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+              <div class="est-footer">
+                <div class="est-meta">
+                  <span class="meta-bit">
+                    <span class="meta-label">Change Order</span>
+                    <span class="meta-value">{displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`}</span>
+                  </span>
+                  <span class="pill pill-co-{displayedVersion.co.status}">{displayedVersion.co.status}</span>
+                </div>
+                <div class="est-totals">
+                  <div class="t-label">Total</div>
+                  <div class="t-value grand">${coEffectiveTotal.toFixed(2)}</div>
+                </div>
+              </div>
+            {:else}
+              <p class="empty-msg">No effective lines (CO has no base estimate or all lines removed).</p>
+            {/if}
+          {:else if displayedEstimate?.line_items?.length > 0}
             <table class="est-table">
               <colgroup>
                 <col class="col-num">
@@ -730,15 +778,10 @@
                 <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
               </tr></thead>
               <tbody>
-                {#each coEffectiveLines as li}
-                  <tr class:co-line-changed={li.coTouched === 'changed'} class:co-line-added={li.coTouched === 'added'}>
+                {#each displayedEstimate.line_items as li}
+                  <tr>
                     <td>{li.line_number}</td>
-                    <td>
-                      {li.description}
-                      {#if li.coTouched}
-                        <span class="co-tag">{coCountOnEstimate > 1 ? `CO-${li.coOrdinal}` : 'CO'}</span>
-                      {/if}
-                    </td>
+                    <td>{li.description}</td>
                     <td class="text-right">{li.qty}</td>
                     <td>{li.units || 'none'}</td>
                     <td class="text-right">${Number(li.price).toFixed(2)}</td>
@@ -749,77 +792,35 @@
             </table>
             <div class="est-footer">
               <div class="est-meta">
-                <span class="meta-bit">
-                  <span class="meta-label">Change Order</span>
-                  <span class="meta-value">{displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`}</span>
-                </span>
-                <span class="pill pill-co-{displayedVersion.co.status}">{displayedVersion.co.status}</span>
+                {#if displayedEstimate.sent_date}
+                  <span class="meta-bit"><span class="meta-label">Sent</span> <span class="meta-value">{fmtDate(displayedEstimate.sent_date)}</span></span>
+                {/if}
+                {#if displayedEstimate.closed_date && displayedEstimate.status === 'accepted'}
+                  <span class="meta-bit"><span class="meta-label">Accepted</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if displayedEstimate.closed_date && displayedEstimate.status === 'rejected'}
+                  <span class="meta-bit"><span class="meta-label">Rejected</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if displayedEstimate.closed_date && displayedEstimate.status === 'superseded'}
+                  <span class="meta-bit"><span class="meta-label">Superseded</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if displayedEstimate.closed_date && displayedEstimate.status === 'expired'}
+                  <span class="meta-bit"><span class="meta-label">Expired</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if !displayedEstimate.sent_date && displayedEstimate.created_date}
+                  <span class="meta-bit"><span class="meta-label">Started</span> <span class="meta-value">{fmtDate(displayedEstimate.created_date)}</span></span>
+                {/if}
               </div>
               <div class="est-totals">
                 <div class="t-label">Total</div>
-                <div class="t-value grand">${coEffectiveTotal.toFixed(2)}</div>
+                <div class="t-value grand">
+                  ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
+                </div>
               </div>
             </div>
+          {:else if displayedEstimate}
+            <p class="empty-msg">Client View has no line items.</p>
           {:else}
-            <p class="empty-msg">No effective lines (CO has no base estimate or all lines removed).</p>
+            <p class="empty-msg">No Client View yet.</p>
           {/if}
-        {:else if displayedEstimate?.line_items?.length > 0}
-          <table class="est-table">
-            <colgroup>
-              <col class="col-num">
-              <col>
-              <col class="col-qty">
-              <col class="col-units">
-              <col class="col-money">
-              <col class="col-money">
-            </colgroup>
-            <thead><tr>
-              <th>#</th><th>Description</th>
-              <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
-            </tr></thead>
-            <tbody>
-              {#each displayedEstimate.line_items as li}
-                <tr>
-                  <td>{li.line_number}</td>
-                  <td>{li.description}</td>
-                  <td class="text-right">{li.qty}</td>
-                  <td>{li.units || 'none'}</td>
-                  <td class="text-right">${Number(li.price).toFixed(2)}</td>
-                  <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-          <div class="est-footer">
-            <div class="est-meta">
-              {#if displayedEstimate.sent_date}
-                <span class="meta-bit"><span class="meta-label">Sent</span> <span class="meta-value">{fmtDate(displayedEstimate.sent_date)}</span></span>
-              {/if}
-              {#if displayedEstimate.closed_date && displayedEstimate.status === 'accepted'}
-                <span class="meta-bit"><span class="meta-label">Accepted</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'rejected'}
-                <span class="meta-bit"><span class="meta-label">Rejected</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'superseded'}
-                <span class="meta-bit"><span class="meta-label">Superseded</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'expired'}
-                <span class="meta-bit"><span class="meta-label">Expired</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if !displayedEstimate.sent_date && displayedEstimate.created_date}
-                <span class="meta-bit"><span class="meta-label">Started</span> <span class="meta-value">{fmtDate(displayedEstimate.created_date)}</span></span>
-              {/if}
-            </div>
-            <div class="est-totals">
-              <div class="t-label">Total</div>
-              <div class="t-value grand">
-                ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
-              </div>
-            </div>
-          </div>
-        {:else if displayedEstimate}
-          <p class="empty-msg">Estimate has no line items.</p>
-        {:else}
-          <p class="empty-msg">No estimates yet.</p>
-        {/if}
-      </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -1600,6 +1601,33 @@
   .ml-readonly col.col-units { width: 70px; }
   .ml-readonly col.col-money { width: 110px; }
   .ml-readonly .text-right { font-variant-numeric: tabular-nums; }
+
+  /* Plan / Client View toggle */
+  .est-view-toggle {
+    display: flex;
+    gap: 0;
+    background: #ddd6fe;
+    padding: 6px 16px;
+    border-bottom: 1px solid #c4b5fd;
+    flex: 0 0 auto;
+  }
+  .est-view-toggle button {
+    padding: 4px 14px;
+    border: 1px solid #c4b5fd;
+    background: transparent;
+    color: #3730a3;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .est-view-toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .est-view-toggle button:last-child  { border-radius: 0 6px 6px 0; margin-left: -1px; }
+  .est-view-toggle button.active,
+  .est-view-toggle button[aria-pressed="true"] {
+    background: #c4b5fd;
+    font-weight: 700;
+  }
 
   /* Estimate tabs */
   .est-tabs {
