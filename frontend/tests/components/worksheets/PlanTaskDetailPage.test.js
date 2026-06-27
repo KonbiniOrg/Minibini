@@ -37,7 +37,7 @@ function mockApi(task) {
     if (url.startsWith('/api/jobs/')) {
       return Promise.resolve({ job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null });
     }
-    if (url.startsWith('/api/task-templates/')) return Promise.resolve({ results: [] });
+    if (url.startsWith('/api/service-items/')) return Promise.resolve({ results: [] });
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
     return Promise.resolve({});
   });

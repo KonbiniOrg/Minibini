@@ -198,7 +198,7 @@
           ? `/api/est-worksheets/${contextId}/add-from-template/`
           : `/api/jobs/${contextId}/add-from-template/`;
         await api.post(url, {
-          task_template_id: Number(templateId),
+          service_item_id: Number(templateId),
           name,
           description,
           est_qty: estQty || null,

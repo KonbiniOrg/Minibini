@@ -24,7 +24,7 @@
     error = '';
     try {
       const [tmplResp, schemeResp, allSchemeResp] = await Promise.all([
-        api.get('/api/task-templates/'),
+        api.get('/api/service-items/'),
         api.get('/api/rate-schemes/'),
         api.get('/api/rate-schemes/?include_superseded=true'),
       ]);
@@ -95,9 +95,9 @@
         is_active: form.is_active,
       };
       if (editingId === 'new') {
-        await api.post('/api/task-templates/', payload);
+        await api.post('/api/service-items/', payload);
       } else {
-        await api.patch(`/api/task-templates/${editingId}/`, payload);
+        await api.patch(`/api/service-items/${editingId}/`, payload);
       }
       editingId = null;
       await load();
@@ -117,7 +117,7 @@
   async function remove(tmpl) {
     if (!confirm(`Delete template "${tmpl.template_name}"?`)) return;
     try {
-      await api.delete(`/api/task-templates/${tmpl.template_id}/`);
+      await api.delete(`/api/service-items/${tmpl.template_id}/`);
       await load();
     } catch (e) {
       error = e.message || 'Could not delete.';

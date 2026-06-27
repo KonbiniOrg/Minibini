@@ -4,7 +4,7 @@ import { render, fireEvent } from '@testing-library/svelte';
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
-import TaskTemplateManager from '@/components/TaskTemplateManager.svelte';
+import ServiceItemManager from '@/components/ServiceItemManager.svelte';
 
 const TMPL = { template_id: 1, template_name: 'Welding', rate_scheme: 1, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
 const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', rate_scheme: 2, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
@@ -17,7 +17,7 @@ beforeEach(() => {
   api.post.mockReset();
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
-    if (url === '/api/task-templates/') return Promise.resolve({ results: [TMPL, FLAT_FEE_TMPL] });
+    if (url === '/api/service-items/') return Promise.resolve({ results: [TMPL, FLAT_FEE_TMPL] });
     if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [HOURLY_SCHEME, FLAT_FEE_SCHEME] });
     return Promise.resolve({ results: [] });
   });
@@ -25,20 +25,20 @@ beforeEach(() => {
   api.delete.mockResolvedValue({});
 });
 
-describe('TaskTemplateManager', () => {
+describe('ServiceItemManager', () => {
   it('loads and lists templates', async () => {
-    const { findByText } = render(TaskTemplateManager);
+    const { findByText } = render(ServiceItemManager);
     expect(await findByText('Welding')).toBeInTheDocument();
   });
 
   it('shows "Service" column header (not "Rate Scheme")', async () => {
-    const { findByText, queryByText } = render(TaskTemplateManager);
+    const { findByText, queryByText } = render(ServiceItemManager);
     await findByText('Welding'); // wait for load
     expect(queryByText('Rate Scheme')).not.toBeInTheDocument();
   });
 
   it('form labels service selector as "Service" (not "Rate Scheme")', async () => {
-    const { findByRole, queryByLabelText } = render(TaskTemplateManager);
+    const { findByRole, queryByLabelText } = render(ServiceItemManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
     // Should NOT have a "Rate Scheme" label
     expect(queryByLabelText(/Rate Scheme/)).not.toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('TaskTemplateManager', () => {
   });
 
   it('does not show a flat_fee_price input for flat-fee service', async () => {
-    const { findByRole, getByLabelText, queryByLabelText } = render(TaskTemplateManager);
+    const { findByRole, getByLabelText, queryByLabelText } = render(ServiceItemManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
     // Select the flat-fee service
     await fireEvent.change(getByLabelText(/Service/), { target: { value: '2' } });
@@ -56,12 +56,12 @@ describe('TaskTemplateManager', () => {
   });
 
   it('saves flat-fee template with active_modifiers as a list (not a dict)', async () => {
-    const { findByRole, getByLabelText, getByRole } = render(TaskTemplateManager);
+    const { findByRole, getByLabelText, getByRole } = render(ServiceItemManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Painting' } });
     await fireEvent.change(getByLabelText(/Service/), { target: { value: '2' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/task-templates/', expect.objectContaining({
+    expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({
       template_name: 'Painting',
       default_active_modifiers: expect.any(Array),
     }));
@@ -71,19 +71,19 @@ describe('TaskTemplateManager', () => {
   });
 
   it('creates a template', async () => {
-    const { findByRole, getByLabelText, getByRole } = render(TaskTemplateManager);
+    const { findByRole, getByLabelText, getByRole } = render(ServiceItemManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Painting' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/task-templates/', expect.objectContaining({ template_name: 'Painting' }));
+    expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({ template_name: 'Painting' }));
   });
 
   it('deletes a template after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const { findAllByRole } = render(TaskTemplateManager);
+    const { findAllByRole } = render(ServiceItemManager);
     const deleteButtons = await findAllByRole('button', { name: 'Delete' });
     await fireEvent.click(deleteButtons[0]);
-    expect(api.delete).toHaveBeenCalledWith('/api/task-templates/1/');
+    expect(api.delete).toHaveBeenCalledWith('/api/service-items/1/');
     confirmSpy.mockRestore();
   });
 });

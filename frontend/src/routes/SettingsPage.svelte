@@ -4,7 +4,7 @@
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
-  import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
+  import ServiceItemManager from '../components/ServiceItemManager.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
@@ -120,7 +120,7 @@
 
   <MaterialMarkupSetting />
 
-  <TaskTemplateManager />
+  <ServiceItemManager />
 
   <h3>Work templates</h3>
   <p><em>Not yet implemented in Svelte.</em></p>

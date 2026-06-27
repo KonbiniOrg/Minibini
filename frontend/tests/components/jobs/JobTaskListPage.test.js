@@ -22,7 +22,7 @@ function mockApi(jobOverrides = {}) {
   api.get.mockReset();
   api.get.mockImplementation((url) => {
     if (url.startsWith('/api/jobs/3/')) return Promise.resolve(job);
-    if (url.startsWith('/api/task-templates/')) return Promise.resolve([]);
+    if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
     if (url.startsWith('/api/contacts/')) return Promise.resolve({});
     return Promise.resolve([]);

@@ -52,7 +52,7 @@
 
   function isReferenced(s) {
     const c = s.reference_counts || {};
-    return ((c.plan_task_count || 0) + (c.task_count || 0) + (c.task_template_count || 0)) > 0;
+    return ((c.plan_task_count || 0) + (c.task_count || 0) + (c.service_item_count || 0)) > 0;
   }
 
   function startCreate() {
@@ -162,7 +162,7 @@
   }
 
   // flat_fee schemes carry no modifier catalog: the per-item price rides on
-  // the TaskTemplate/Task, and rate is only a fallback default.
+  // the ServiceItem/Task, and rate is only a fallback default.
   const isFlatFee = $derived(form.algorithm === 'flat_fee');
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
@@ -213,7 +213,7 @@
                 {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
                 | References: {s.reference_counts?.plan_task_count || 0} plan tasks,
                 {s.reference_counts?.task_count || 0} tasks,
-                {s.reference_counts?.task_template_count || 0} templates
+                {s.reference_counts?.service_item_count || 0} templates
               </small>
             {:else if isReferenced(s)}
               <button type="button" onclick={() => startSupersede(s)}>Create new version</button>

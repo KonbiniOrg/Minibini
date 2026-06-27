@@ -74,7 +74,7 @@
 
   async function loadTemplates() {
     try {
-      const resp = await api.get('/api/task-templates/?page_size=100');
+      const resp = await api.get('/api/service-items/?page_size=100');
       templates = resp.results || resp;
     } catch (e) {
       templates = [];
