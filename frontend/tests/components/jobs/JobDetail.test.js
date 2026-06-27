@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { flushSync } from 'svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
@@ -329,5 +330,51 @@ describe('JobDetail — Start Estimate button (Task 3)', () => {
     });
     await openEstimateSection(getByText);
     expect(queryByText('Start Estimate')).not.toBeInTheDocument();
+  });
+});
+
+// ── estimateView reset on job navigation ───────────────────────────────────
+
+describe('JobDetail — estimateView resets on job navigation', () => {
+  const worksheets = { results: [{ est_worksheet_id: 7, tasks: [], taskless_materials: [] }] };
+
+  function makeEstimates(status) {
+    return {
+      results: [{
+        estimate_id: 1,
+        estimate_number: 'EST-1',
+        version: 1,
+        status,
+        line_items: [],
+        is_amended: false,
+      }],
+    };
+  }
+
+  it('resets estimateView to Plan when navigating from a job with accepted estimate to one with a draft', async () => {
+    // Job A: accepted estimate → should default to Client View
+    const jobA = {
+      job_id: 101, job_number: 'JOB-101', name: 'Job A', status: 'in_progress', can_manage: true,
+    };
+    const { queryByRole, getByText, rerender } = render(JobDetail, {
+      props: { job: jobA, worksheets, estimates: makeEstimates('accepted') },
+    });
+
+    // Open the Estimate pillar and confirm we're on Client View
+    await fireEvent.click(getByText('Estimate'));
+    expect(queryByRole('button', { name: 'Client View' })).toHaveAttribute('aria-pressed', 'true');
+
+    // Job B: only a draft estimate → should reset to Plan
+    const jobB = {
+      job_id: 102, job_number: 'JOB-102', name: 'Job B', status: 'draft', can_manage: true,
+    };
+    await rerender({ job: jobB, worksheets, estimates: makeEstimates('draft') });
+    flushSync();
+
+    // Re-open the Estimate pillar on Job B (section resets on nav)
+    await fireEvent.click(getByText('Estimate'));
+
+    // estimateView should have been reset to 'plan' by the job.job_id effect
+    expect(queryByRole('button', { name: 'Plan' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

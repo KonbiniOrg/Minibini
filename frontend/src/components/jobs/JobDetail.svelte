@@ -510,6 +510,7 @@
     selectedVersionKey = null;
     selectedInvoiceId = null;
     selectedPoId = null;
+    estimateView = initialEstimateView();
   });
 
   function openSection(s) {
@@ -1462,7 +1463,6 @@
     opacity: 0.85;
     font-variant-numeric: tabular-nums;
   }
-  .pillar-ws    { background: #0d9488; }
   .pillar-est   { background: #4f46e5; }
   .pillar-tasks { background: #b45309; }
   .pillar-mat   { background: #ca8a04; }
@@ -1488,7 +1488,6 @@
     justify-content: space-between;
     gap: 16px;
   }
-  .top-bar-ws    { background: #0d9488; }
   .top-bar-est   { background: #4f46e5; }
   .top-bar-tasks { background: #b45309; }
   .top-bar-mat   { background: #ca8a04; }
