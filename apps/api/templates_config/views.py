@@ -100,7 +100,18 @@ class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     queryset = ServiceItem.objects.all().order_by('template_name')
     serializer_class = ServiceItemSerializer
     lookup_field = 'pk'
-    destroy_response_message = 'Task template deleted.'
+    destroy_response_message = 'Service item deleted.'
+
+    def get_queryset(self):
+        qs = ServiceItem.objects.all().order_by('template_name')
+        if self.action == 'list':
+            search = self.request.query_params.get('search', '').strip()
+            if search:
+                from django.db.models import Q
+                qs = qs.filter(
+                    Q(template_name__icontains=search) | Q(description__icontains=search)
+                )
+        return qs
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):

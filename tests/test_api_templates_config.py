@@ -51,6 +51,20 @@ class ServiceItemAPITest(BaseTestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201)
 
+    def test_search_filters_service_items_by_name_or_description(self):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.get(pk=1)
+        for name, desc in [('CNC Routing', 'router pass'), ('Hand Sanding', 'finish work')]:
+            self.client.post('/api/service-items/', {
+                'template_name': name, 'description': desc, 'units': 'hours',
+                'rate_scheme': scheme.pk, 'default_billable_qty': '1.00',
+            }, format='json')
+        resp = self.client.get('/api/service-items/?search=cnc')
+        self.assertEqual(resp.status_code, 200)
+        names = [r['template_name'] for r in (resp.data.get('results') if isinstance(resp.data, dict) else resp.data)]
+        self.assertIn('CNC Routing', names)
+        self.assertNotIn('Hand Sanding', names)
+
 
 class ConfigurationAPITest(BaseTestCase):
 
