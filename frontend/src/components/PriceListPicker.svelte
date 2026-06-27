@@ -98,6 +98,9 @@
     padding: 10px 14px; border-bottom: 1px solid #eee;
   }
   .plp-body { padding: 12px 14px; position: relative; }
+  /* Widen the search box to ~2x a default text input. Scoped under .plp-body so
+     other SearchPicker instances elsewhere are unaffected. */
+  .plp-body :global(input[type="text"]) { width: 40ch; max-width: 100%; }
   .plp-footer { padding: 10px 14px; border-top: 1px solid #eee; }
 
   /* Row layout inside SearchPicker's dropdown button (which is display:block,
