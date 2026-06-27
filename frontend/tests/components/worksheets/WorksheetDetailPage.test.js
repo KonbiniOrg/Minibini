@@ -36,7 +36,7 @@ function mockApi(worksheet, extraGetImpl) {
     if (url.startsWith('/api/jobs/')) {
       return Promise.resolve({ job_id: worksheet.job, job_number: 'JOB-9', name: 'Job', contact: null });
     }
-    if (url.startsWith('/api/service-items/')) return Promise.resolve({ results: [] });
+    if (url.startsWith('/api/service-items/')) return extraGetImpl ? extraGetImpl(url) : Promise.resolve({ results: [] });
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
     if (extraGetImpl) return extraGetImpl(url);
     return Promise.resolve({});
@@ -103,14 +103,18 @@ describe('WorksheetDetailPage two-action add surface', () => {
     expect(screen.queryByRole('button', { name: /^add material$/i })).not.toBeInTheDocument();
   });
 
-  it('opening Price List, typing a query, and choosing a service opens the task form seeded with the service name', async () => {
+  it('opening Price List, typing a query, and choosing a saved-work item opens the template form seeded with its name', async () => {
+    // Add Line searches the saved-work catalog (ServiceItems); picking one opens the
+    // template-mode form pre-filled (it saves via add-from-template).
     const SERVICE = {
-      rate_scheme_id: 1, name: 'CNC Cutting', algorithm: 'ELAPSED_TIME',
-      rate: '90.00', unit_label: 'hr', modifiers: [], description: '',
+      template_id: 1, template_name: 'CNC Cutting', description: 'router pass',
+      rate_scheme: 5, default_active_modifiers: [], default_billable_qty: '1.00',
+      rate_scheme_detail: { rate_scheme_id: 5, name: 'Machine time', rate: '90.00', unit_label: 'hr', algorithm: 'elapsed_time' },
     };
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeWorksheet({ can_manage: true, editable: true }), (url) => {
-      if (url.includes('rate-schemes')) return Promise.resolve({ results: [SERVICE], count: 1 });
+      if (url.includes('service-items')) return Promise.resolve({ results: [SERVICE], count: 1 });
+      if (url.includes('rate-schemes')) return Promise.resolve({ results: [SERVICE.rate_scheme_detail], count: 1 });
       if (url.includes('inventory')) return Promise.resolve({ results: [], count: 0 });
       return Promise.resolve({});
     });
@@ -122,12 +126,11 @@ describe('WorksheetDetailPage two-action add surface', () => {
     // New picker shows nothing until you type — type a query first
     const searchInput = await screen.findByPlaceholderText(/search/i);
     await fireEvent.input(searchInput, { target: { value: 'CNC' } });
-    // Wait for the result to appear (findByText waits past the 250ms debounce)
+    // Wait for the result to appear (findByRole waits past the 250ms debounce)
     const row = await screen.findByRole('button', { name: /CNC Cutting/ });
     // Pick the row via mouseDown (SearchPicker listens on mousedown)
     await fireEvent.mouseDown(row);
-    // The WorkItemForm should now be open showing the service as a header
-    expect(await screen.findByText(/Service:/)).toBeInTheDocument();
-    expect(screen.getByText(/CNC Cutting/)).toBeInTheDocument();
+    // The template-mode WorkItemForm opens with the name pre-filled from the saved-work item
+    expect(await screen.findByDisplayValue('CNC Cutting')).toBeInTheDocument();
   });
 });

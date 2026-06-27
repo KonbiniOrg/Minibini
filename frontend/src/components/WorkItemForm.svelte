@@ -12,6 +12,7 @@
     isEdit = false,
     templates = [],
     rateScheme = null, // optional pre-selected RateScheme (manual mode only)
+    presetTemplateId = null, // optional pre-selected ServiceItem id (template mode only)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -61,7 +62,7 @@
       name = ''; description = '';
       activeModifiers = [];
       estQty = ''; estWorkerTime = '';
-      templateId = '';
+      templateId = (mode === 'template' && presetTemplateId != null) ? String(presetTemplateId) : '';
       lastFilledTemplateId = '';
       if (mode === 'manual' && rateScheme) {
         rateSchemeId = rateScheme.rate_scheme_id;

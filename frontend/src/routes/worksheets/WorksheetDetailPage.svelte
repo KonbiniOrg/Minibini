@@ -33,6 +33,7 @@
 
   let priceListPickerOpen = $state(false);
   let taskModalRateScheme = $state(null);
+  let taskModalPresetTemplateId = $state(null);
   let materialModalInventoryItem = $state(null);
 
   // Permission half is the server-computed per-object `can_manage` (atom-holder
@@ -125,9 +126,12 @@
   function handlePriceListSelect({ kind, item }) {
     priceListPickerOpen = false;
     if (kind === 'service') {
+      // Picked a saved-work ServiceItem -> open the template-mode form pre-filled,
+      // which saves via add-from-template (estimator sets qty before it lands).
       taskModalTask = null;
-      taskModalMode = 'manual';
-      taskModalRateScheme = item;
+      taskModalMode = 'template';
+      taskModalPresetTemplateId = item.template_id;
+      taskModalRateScheme = null;
       taskModalOpen = true;
     } else {
       // kind === 'material'
@@ -139,6 +143,16 @@
       // store it so the modal receives it
       materialModalInventoryItem = item;
     }
+  }
+
+  function handlePriceListCustomTask() {
+    // Free text not in the catalog, billed as work: manual form, user attaches a RateScheme.
+    priceListPickerOpen = false;
+    taskModalTask = null;
+    taskModalMode = 'manual';
+    taskModalRateScheme = null;
+    taskModalPresetTemplateId = null;
+    taskModalOpen = true;
   }
 
   function handlePriceListFreeform() {
@@ -154,6 +168,7 @@
     taskModalTask = task;
     taskModalMode = 'manual';
     taskModalRateScheme = null;
+    taskModalPresetTemplateId = null;
     taskModalOpen = true;
   }
 
@@ -171,6 +186,7 @@
     taskModalOpen = false;
     taskModalTask = null;
     taskModalRateScheme = null;
+    taskModalPresetTemplateId = null;
     reload();
   }
 
@@ -380,6 +396,7 @@
   <PriceListPicker
     open={priceListPickerOpen}
     onselect={handlePriceListSelect}
+    oncustomtask={handlePriceListCustomTask}
     onfreeform={handlePriceListFreeform}
     onclose={() => { priceListPickerOpen = false; }}
   />
@@ -393,8 +410,9 @@
     isEdit={!!taskModalTask}
     {templates}
     rateScheme={taskModalRateScheme}
+    presetTemplateId={taskModalPresetTemplateId}
     onSaved={handleTaskSaved}
-    onClose={() => { taskModalOpen = false; taskModalRateScheme = null; }}
+    onClose={() => { taskModalOpen = false; taskModalRateScheme = null; taskModalPresetTemplateId = null; }}
   />
 
   <PlanMaterialModal

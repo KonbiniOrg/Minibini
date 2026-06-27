@@ -7,13 +7,28 @@ from apps.inventory.models import TemplateMaterialAssociation
 
 
 class ServiceItemSerializer(serializers.ModelSerializer):
+    # Read-only rate snapshot so the Add Line picker can show price/unit per row
+    # without a second fetch (the saved-work item prices via its RateScheme).
+    rate_scheme_detail = serializers.SerializerMethodField()
+
     class Meta:
         model = ServiceItem
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
-            'rate_scheme', 'default_active_modifiers', 'default_billable_qty',
+            'rate_scheme', 'rate_scheme_detail',
+            'default_active_modifiers', 'default_billable_qty',
         ]
         read_only_fields = ['template_id']
+
+    def get_rate_scheme_detail(self, obj):
+        rs = getattr(obj, 'rate_scheme', None)
+        if not rs:
+            return None
+        return {
+            'rate_scheme_id': rs.rate_scheme_id, 'name': rs.name,
+            'rate': str(rs.rate), 'unit_label': rs.unit_label,
+            'algorithm': rs.algorithm,
+        }
 
     def validate_rate_scheme(self, value):
         from apps.jobs.models import RateScheme

@@ -7,12 +7,12 @@
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
-  let { open = false, onselect = null, onfreeform = null, onclose = null } = $props();
+  let { open = false, onselect = null, oncustomtask = null, onfreeform = null, onclose = null } = $props();
 
   const search = async (q) => {
     const enc = encodeURIComponent(q);
     const [svc, inv] = await Promise.all([
-      api.get(`/api/rate-schemes/?task_applicable=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
+      api.get(`/api/service-items/?search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
       api.get(`/api/inventory/?is_active=true&is_catalog=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
     ]);
     const svcRows = svc.results || svc;
@@ -20,11 +20,11 @@
     const rows = [
       ...svcRows.map((s) => ({
         kind: 'service',
-        id: s.rate_scheme_id,
-        label: s.name,
+        id: s.template_id,
+        label: s.template_name,
         sub: s.description || '',
-        price: s.rate,
-        unit: s.unit_label,
+        price: s.rate_scheme_detail?.rate,
+        unit: s.rate_scheme_detail?.unit_label,
         item: s,
       })),
       ...invRows.map((m) => ({
@@ -77,6 +77,7 @@
       </div>
 
       <div class="plp-footer">
+        <button type="button" onclick={oncustomtask}>Add custom task</button>
         <button type="button" onclick={onfreeform}>Add freeform material</button>
       </div>
     </div>

@@ -5,13 +5,13 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
 import { api } from '@/lib/api.js';
 import PriceListPicker from '@/components/PriceListPicker.svelte';
 
+// A saved-work ServiceItem (the Add Line "service" source), priced via its RateScheme.
 const SVC_ITEM = {
-  rate_scheme_id: 11,
-  name: 'CNC Routing',
+  template_id: 11,
+  template_name: 'CNC Routing',
   description: 'Router pass',
-  algorithm: 'elapsed_time',
-  rate: '75.00',
-  unit_label: 'hr',
+  rate_scheme: 5,
+  rate_scheme_detail: { rate_scheme_id: 5, name: 'Machine time', rate: '75.00', unit_label: 'hr', algorithm: 'elapsed_time' },
 };
 
 const INV_ITEM = {
@@ -26,7 +26,7 @@ const INV_ITEM = {
 
 function mockApiForQuery() {
   api.get.mockImplementation((url) => {
-    if (url.includes('/api/rate-schemes/')) {
+    if (url.includes('/api/service-items/')) {
       return Promise.resolve({ results: [SVC_ITEM], count: 1 });
     }
     if (url.includes('/api/inventory/')) {
@@ -36,60 +36,51 @@ function mockApiForQuery() {
   });
 }
 
+const baseProps = () => ({
+  open: true, onselect: vi.fn(), oncustomtask: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn(),
+});
+
 beforeEach(() => { api.get.mockReset(); });
 
 describe('PriceListPicker', () => {
   it('renders nothing fetched or shown before typing', async () => {
     api.get.mockResolvedValue({ results: [], count: 0 });
-    const { queryByText, queryByRole } = render(PriceListPicker, {
-      props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
-    });
-    // No results shown and no API calls made before the user types anything
+    const { queryByText, queryByRole } = render(PriceListPicker, { props: baseProps() });
     expect(api.get).not.toHaveBeenCalled();
     expect(queryByText('CNC Routing')).toBeNull();
     expect(queryByText('BOLT-14')).toBeNull();
     expect(queryByRole('listbox')).toBeNull();
   });
 
-  it('shows service and material results after typing (waits past debounce)', async () => {
+  it('shows saved-work and material results after typing (waits past debounce)', async () => {
     mockApiForQuery();
-    const { getByPlaceholderText, findByText } = render(PriceListPicker, {
-      props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const { getByPlaceholderText, findByText } = render(PriceListPicker, { props: baseProps() });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'cnc' } });
-    // findByText polls until the element appears (waits past the 250ms debounce)
     expect(await findByText('CNC Routing')).toBeInTheDocument();
     expect(await findByText('BOLT-14')).toBeInTheDocument();
   });
 
   it('shows each row unit to the right of the price', async () => {
     mockApiForQuery();
-    const { getByPlaceholderText, findByText } = render(PriceListPicker, {
-      props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const { getByPlaceholderText, findByText } = render(PriceListPicker, { props: baseProps() });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'c' } });
     expect(await findByText('/ hr')).toBeInTheDocument();
     expect(await findByText('/ ea')).toBeInTheDocument();
   });
 
-  it('calls rate-schemes with task_applicable=true and search param', async () => {
+  it('searches the saved-work catalog (service-items) with the search param', async () => {
     mockApiForQuery();
-    const { getByPlaceholderText } = render(PriceListPicker, {
-      props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const { getByPlaceholderText } = render(PriceListPicker, { props: baseProps() });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
     await new Promise((r) => setTimeout(r, 300));
-    const svcCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/rate-schemes/'));
+    const svcCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/service-items/'));
     expect(svcCalls.length).toBeGreaterThan(0);
-    expect(svcCalls[0][0]).toContain('task_applicable=true');
     expect(svcCalls[0][0]).toContain('search=bolt');
   });
 
   it('calls inventory with is_active=true, is_catalog=true and search param', async () => {
     mockApiForQuery();
-    const { getByPlaceholderText } = render(PriceListPicker, {
-      props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const { getByPlaceholderText } = render(PriceListPicker, { props: baseProps() });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
     await new Promise((r) => setTimeout(r, 300));
     const invCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/inventory/'));
@@ -99,50 +90,50 @@ describe('PriceListPicker', () => {
     expect(invCalls[0][0]).toContain('search=bolt');
   });
 
-  it('emits onselect with {kind, item} when a service row is picked via mousedown', async () => {
+  it('emits onselect with {kind:service, the ServiceItem} when a saved-work row is picked', async () => {
     mockApiForQuery();
-    const onselect = vi.fn();
-    const { getByPlaceholderText, findByRole } = render(PriceListPicker, {
-      props: { open: true, onselect, onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const props = baseProps();
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'cnc' } });
     const btn = await findByRole('button', { name: /CNC Routing/ });
     await fireEvent.mouseDown(btn);
-    expect(onselect).toHaveBeenCalledWith({
+    expect(props.onselect).toHaveBeenCalledWith({
       kind: 'service',
-      item: expect.objectContaining({ rate_scheme_id: 11, name: 'CNC Routing' }),
+      item: expect.objectContaining({ template_id: 11, template_name: 'CNC Routing' }),
     });
   });
 
   it('emits onselect with {kind:material, item} when an inventory row is picked', async () => {
     mockApiForQuery();
-    const onselect = vi.fn();
-    const { getByPlaceholderText, findByRole } = render(PriceListPicker, {
-      props: { open: true, onselect, onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const props = baseProps();
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
     const btn = await findByRole('button', { name: /BOLT-14/ });
     await fireEvent.mouseDown(btn);
-    expect(onselect).toHaveBeenCalledWith({
+    expect(props.onselect).toHaveBeenCalledWith({
       kind: 'material',
       item: expect.objectContaining({ inventory_item_id: 22, code: 'BOLT-14' }),
     });
   });
 
+  it('emits oncustomtask when the custom-task footer button is clicked', async () => {
+    const props = baseProps();
+    const { findByText } = render(PriceListPicker, { props });
+    const btn = await findByText(/custom task/i);
+    await fireEvent.click(btn);
+    expect(props.oncustomtask).toHaveBeenCalled();
+  });
+
   it('emits onfreeform when the freeform footer button is clicked', async () => {
-    const onfreeform = vi.fn();
-    const { findByText } = render(PriceListPicker, {
-      props: { open: true, onselect: vi.fn(), onfreeform, onclose: vi.fn() },
-    });
+    const props = baseProps();
+    const { findByText } = render(PriceListPicker, { props });
     const btn = await findByText(/freeform/i);
     await fireEvent.click(btn);
-    expect(onfreeform).toHaveBeenCalled();
+    expect(props.onfreeform).toHaveBeenCalled();
   });
 
   it('does not render when open=false', () => {
-    const { queryByText } = render(PriceListPicker, {
-      props: { open: false, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
-    });
+    const { queryByText } = render(PriceListPicker, { props: { ...baseProps(), open: false } });
     expect(queryByText(/Add item/)).toBeNull();
   });
 });
