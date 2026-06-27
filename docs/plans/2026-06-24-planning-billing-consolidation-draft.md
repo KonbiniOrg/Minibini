@@ -249,13 +249,16 @@ So there are **two add actions**, not one-per-source:
 - **Add from template** *(presets level)* — pick a `TaskTemplate` (→ one PlanTask,
   with modifier selection) or a `WorkTemplate` (→ several PlanTasks + PlanMaterials).
 - **Add from Price List** *(primitives level)* — **one unified picker** over both
-  primitive catalogs (ServiceItems + InventoryItems), tagged by type and
-  searchable. Selection creates the right atom, with the type-specific follow-up:
+  primitive catalogs (ServiceItems + InventoryItems) as a **type-ahead** search
+  (untagged — no visible Service/Material badges; selection just creates the right
+  atom), with the type-specific follow-up:
   - ServiceItem → `PlanTask` (+ qty, + modifier selection, + optional
     name/description override). A hand-built PlanTask *must* reference a ServiceItem
     (no priceless tasks). The modifier menu lives on the ServiceItem; the selection
     lands on the PlanTask's `active_modifiers`.
-  - InventoryItem → `PlanMaterial` (+ qty).
+  - InventoryItem → `PlanMaterial` (+ qty). Plus a **freeform material** entry
+    (description + units + price + AC) for a material *not* in the inventory list —
+    services have no freeform equivalent (a task must reference a ServiceItem).
 
 This is the answer to "three is already a lot": the primitives collapse behind one
 picker. It's a **front-end consolidation, not a backend merge** — ServiceItem and
@@ -423,8 +426,9 @@ question entirely.)
 
 - **Add-surface (§8) — decided: "Add from Price List."** More common/recognizable
   than "Catalog," despite the `PriceListItem`→`InventoryItem` history (UI-only
-  label). Minor open: one tagged searchable list vs. a type filter — lean one
-  tagged list.
+  label). The picker is a **type-ahead, untagged** list (trying it without visible
+  Service/Material badges — selection just creates the right atom); a
+  **freeform-material** entry covers materials not in the inventory list.
 - **Plan vs. Client View — decided: stay separate (§2.1).** Two different objects
   (`EstWorksheet`, `Estimate`); one Plan backs *many* Client Views (revisions that
   supersede; multiple open allowed). No merge.
