@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
@@ -26,7 +26,7 @@ function makeWorksheet(overrides = {}) {
   };
 }
 
-function mockApi(worksheet) {
+function mockApi(worksheet, extraGetImpl) {
   api.get.mockReset();
   api.get.mockImplementation((url) => {
     if (url === `/api/est-worksheets/${worksheet.est_worksheet_id}/`) {
@@ -38,6 +38,7 @@ function mockApi(worksheet) {
     }
     if (url.startsWith('/api/task-templates/')) return Promise.resolve({ results: [] });
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+    if (extraGetImpl) return extraGetImpl(url);
     return Promise.resolve({});
   });
 }
@@ -56,7 +57,7 @@ describe('WorksheetDetailPage per-object can_manage gating', () => {
       props: { params: { id: '5' } },
     });
 
-    expect(await findByText('Add Manual Task')).toBeInTheDocument();
+    expect(await findByText('Add from Price List')).toBeInTheDocument();
     expect(getByText('Delete worksheet')).toBeInTheDocument();
   });
 
@@ -72,5 +73,44 @@ describe('WorksheetDetailPage per-object can_manage gating', () => {
     await findByText('frozen');
     expect(queryByText('Add Manual Task')).not.toBeInTheDocument();
     expect(queryByText('Delete worksheet')).not.toBeInTheDocument();
+  });
+});
+
+describe('WorksheetDetailPage two-action add surface', () => {
+  it('shows two add actions: Template and Price List (not Manual Task / Material)', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeWorksheet({ can_manage: true, editable: true }));
+
+    render(WorksheetDetailPage, { props: { params: { id: '5' } } });
+
+    expect(await screen.findByRole('button', { name: /add from price list/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add from template/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add manual task/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^add material$/i })).not.toBeInTheDocument();
+  });
+
+  it('opening Price List and choosing a service opens the task form seeded with the service name', async () => {
+    const SERVICE = {
+      service_item_id: 1, name: 'CNC Cutting', algorithm: 'ELAPSED_TIME',
+      rate: '90.00', unit_label: 'hr', modifiers: [],
+    };
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeWorksheet({ can_manage: true, editable: true }), (url) => {
+      if (url.includes('service-items')) return Promise.resolve([SERVICE]);
+      if (url.includes('inventory')) return Promise.resolve([]);
+      return Promise.resolve({});
+    });
+
+    render(WorksheetDetailPage, { props: { params: { id: '5' } } });
+
+    // Open the picker
+    await fireEvent.click(await screen.findByRole('button', { name: /add from price list/i }));
+    // The picker should appear and show the service
+    await screen.findByText('CNC Cutting');
+    // Click the service row
+    await fireEvent.click(screen.getByText('CNC Cutting'));
+    // The WorkItemForm should now be open showing the service as a header
+    expect(await screen.findByText(/Service:/)).toBeInTheDocument();
+    expect(screen.getByText(/CNC Cutting/)).toBeInTheDocument();
   });
 });

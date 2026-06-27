@@ -4,6 +4,7 @@
   import WorksheetTaskTable from '../../components/WorksheetTaskTable.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import PlanMaterialModal from '../../components/PlanMaterialModal.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
   import { formatQtyUnits } from '../../lib/format.js';
@@ -29,6 +30,10 @@
 
   let materials = $state([]);
   let selectedTaskId = $state(null);
+
+  let priceListPickerOpen = $state(false);
+  let taskModalServiceItem = $state(null);
+  let materialModalInventoryItem = $state(null);
 
   // Permission half is the server-computed per-object `can_manage` (atom-holder
   // OR this job's project_manager); state half is the estimate-driven
@@ -107,21 +112,48 @@
     }
   });
 
-  function openAddManualTask() {
-    taskModalTask = null;
-    taskModalMode = 'manual';
-    taskModalOpen = true;
-  }
-
   function openAddTemplateTask() {
     taskModalTask = null;
     taskModalMode = 'template';
     taskModalOpen = true;
   }
 
+  function openPriceListPicker() {
+    priceListPickerOpen = true;
+  }
+
+  function handlePriceListSelect({ kind, item }) {
+    priceListPickerOpen = false;
+    if (kind === 'service') {
+      taskModalTask = null;
+      taskModalMode = 'manual';
+      taskModalServiceItem = item;
+      taskModalOpen = true;
+    } else {
+      // kind === 'material'
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalMode = 'create';
+      materialModalOpen = true;
+      // inventoryItem pre-seed is passed via prop below
+      // store it so the modal receives it
+      materialModalInventoryItem = item;
+    }
+  }
+
+  function handlePriceListFreeform() {
+    priceListPickerOpen = false;
+    materialModalMaterial = null;
+    materialModalTaskId = null;
+    materialModalMode = 'create';
+    materialModalInventoryItem = null;
+    materialModalOpen = true;
+  }
+
   function openEditTask(task) {
     taskModalTask = task;
     taskModalMode = 'manual';
+    taskModalServiceItem = null;
     taskModalOpen = true;
   }
 
@@ -138,20 +170,15 @@
   function handleTaskSaved() {
     taskModalOpen = false;
     taskModalTask = null;
+    taskModalServiceItem = null;
     reload();
-  }
-
-  function openAddMaterial() {
-    materialModalMaterial = null;
-    materialModalTaskId = null;
-    materialModalMode = 'create';
-    materialModalOpen = true;
   }
 
   function openEditMaterial(mat, task = null) {
     materialModalMaterial = mat;
     materialModalTaskId = task ? task.plan_task_id : null;
     materialModalMode = 'edit';
+    materialModalInventoryItem = null;
     materialModalOpen = true;
   }
 
@@ -159,6 +186,7 @@
     materialModalMaterial = null;
     materialModalTaskId = task.plan_task_id;
     materialModalMode = 'create';
+    materialModalInventoryItem = null;
     materialModalOpen = true;
   }
 
@@ -180,6 +208,7 @@
     materialModalOpen = false;
     materialModalMaterial = null;
     materialModalTaskId = null;
+    materialModalInventoryItem = null;
     reload();
   }
 
@@ -273,9 +302,8 @@
     <span class="ws-title">Worksheet</span>
     {#if !canEdit}<span class="status-badge status-frozen">frozen</span>{/if}
     {#if canEdit}
-      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
-      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
-      <button type="button" onclick={openAddMaterial}>Add Material</button>
+      <button type="button" onclick={openAddTemplateTask}>Add from Template</button>
+      <button type="button" onclick={openPriceListPicker}>Add from Price List</button>
       <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
         {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
       </button>
@@ -349,6 +377,13 @@
     <DeliverablesSection jobId={worksheet.job} canManage={worksheet.can_manage} />
   {/if}
 
+  <PriceListPicker
+    open={priceListPickerOpen}
+    onselect={handlePriceListSelect}
+    onfreeform={handlePriceListFreeform}
+    onclose={() => { priceListPickerOpen = false; }}
+  />
+
   <WorkItemForm
     open={taskModalOpen}
     mode={taskModalMode}
@@ -357,8 +392,9 @@
     item={taskModalTask}
     isEdit={!!taskModalTask}
     {templates}
+    serviceItem={taskModalServiceItem}
     onSaved={handleTaskSaved}
-    onClose={() => { taskModalOpen = false; }}
+    onClose={() => { taskModalOpen = false; taskModalServiceItem = null; }}
   />
 
   <PlanMaterialModal
@@ -368,8 +404,9 @@
     worksheetId={worksheet.est_worksheet_id}
     planTaskId={materialModalTaskId}
     {categories}
+    inventoryItem={materialModalInventoryItem}
     onSaved={handleMaterialSaved}
-    onClose={() => { materialModalOpen = false; }}
+    onClose={() => { materialModalOpen = false; materialModalInventoryItem = null; }}
   />
 {/if}
 
