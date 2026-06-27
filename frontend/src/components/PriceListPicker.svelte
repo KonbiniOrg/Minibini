@@ -78,12 +78,13 @@
   ul { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; border: 1px solid #e0e0e0; }
   li button {
     width: 100%; text-align: left; background: none; border: none;
-    padding: 8px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline;
+    padding: 8px 10px; cursor: pointer; display: flex; gap: 12px; align-items: baseline;
   }
   li button:hover { background: #f5f5f5; }
-  .label { font-weight: 500; flex: 1 0 auto; }
-  .sub { color: #666; font-size: 0.875rem; flex: 2; }
-  .price { color: #333; font-size: 0.875rem; white-space: nowrap; }
+  /* fixed-width label column so every row's description starts at the same x */
+  .label { font-weight: 500; flex: 0 0 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { color: #666; font-size: 0.875rem; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .price { color: #333; font-size: 0.875rem; white-space: nowrap; margin-left: auto; }
   footer { border-top: 1px solid #e0e0e0; padding-top: 8px; }
   footer button { background: none; border: none; cursor: pointer; color: #555; padding: 4px 0; }
   footer button:hover { color: #000; }
