@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, screen } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
 
@@ -73,5 +73,34 @@ describe('WorkItemForm', () => {
       name: 'Cut', service_item: 1, est_worker_time: null,
     }));
     expect(onSaved).toHaveBeenCalled();
+  });
+});
+
+const SERVICE_WITH_MODIFIER = {
+  service_item_id: 1,
+  name: 'CNC Cutting',
+  algorithm: 'ELAPSED_TIME',
+  rate: '90.00',
+  unit_label: 'hr',
+  modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
+};
+
+describe('WorkItemForm with a pre-selected serviceItem', () => {
+  it('shows the chosen service as a header and hides the internal service selector', async () => {
+    render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, serviceItem: SERVICE_WITH_MODIFIER },
+    });
+    // The chosen service name should appear as a read-only header
+    expect(await screen.findByText(/CNC Cutting/)).toBeInTheDocument();
+    // The internal service <select> (labelled "Service *") should not be rendered
+    expect(screen.queryByLabelText(/Service/)).not.toBeInTheDocument();
+  });
+
+  it('renders the pre-selected service modifier choices', async () => {
+    render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, serviceItem: SERVICE_WITH_MODIFIER },
+    });
+    // The modifier label should be visible
+    expect(await screen.findByText(/Rush/)).toBeInTheDocument();
   });
 });

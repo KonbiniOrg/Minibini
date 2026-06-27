@@ -11,6 +11,7 @@
     item = null,     // for edit mode; null for create
     isEdit = false,
     templates = [],
+    serviceItem = null, // optional pre-selected ServiceItem (manual mode only)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -58,10 +59,15 @@
       templateId = '';
     } else {
       name = ''; description = '';
-      serviceItemId = ''; activeModifiers = [];
+      activeModifiers = [];
       estQty = ''; estWorkerTime = '';
       templateId = '';
       lastFilledTemplateId = '';
+      if (mode === 'manual' && serviceItem) {
+        serviceItemId = serviceItem.service_item_id;
+      } else {
+        serviceItemId = '';
+      }
     }
     error = '';
   });
@@ -87,7 +93,9 @@
   });
 
   const selectedScheme = $derived(
-    schemes.find(s => s.service_item_id === Number(serviceItemId)) || null
+    (mode === 'manual' && serviceItem && serviceItem.service_item_id === Number(serviceItemId))
+      ? serviceItem
+      : (schemes.find(s => s.service_item_id === Number(serviceItemId)) || null)
   );
 
   const estQtyRequired = $derived(context === 'worksheet');
@@ -245,16 +253,20 @@
         {/if}
 
         {#if mode === 'manual'}
-          <p>
-            <label><strong>Service *</strong><br>
-              <select bind:value={serviceItemId}>
-                <option value="">-- select --</option>
-                {#each schemes as s (s.service_item_id)}
-                  <option value={s.service_item_id}>{s.name}</option>
-                {/each}
-              </select>
-            </label>
-          </p>
+          {#if serviceItem}
+            <p><strong>Service:</strong> {serviceItem.name}</p>
+          {:else}
+            <p>
+              <label><strong>Service *</strong><br>
+                <select bind:value={serviceItemId}>
+                  <option value="">-- select --</option>
+                  {#each schemes as s (s.service_item_id)}
+                    <option value={s.service_item_id}>{s.name}</option>
+                  {/each}
+                </select>
+              </label>
+            </p>
+          {/if}
         {/if}
 
         <p>
