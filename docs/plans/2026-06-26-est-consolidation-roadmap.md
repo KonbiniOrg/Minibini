@@ -1,61 +1,71 @@
 # Estimate Consolidation — phase roadmap
 
-Index of the implementation plans that execute the design draft
-`2026-06-24-planning-billing-consolidation-draft.md` (its §14 sequencing). Phases 1–2
-are **shipped** on `feature/est-consolidation`; Phases 3–10 are **planned, awaiting
-review** (written 2026-06-26 overnight). One doc per phase.
+Index of the implementation plans executing the design draft
+`2026-06-24-planning-billing-consolidation-draft.md`. **Phases 1–3 are shipped** on
+`feature/est-consolidation`; the rest are planned.
+
+> ⚠️ **2026-06-27 design revision — read this first.** The design draft was reworked:
+> - **Naming swap.** The rate card reverts `ServiceItem` → **`RateScheme`**; the
+>   saved-work-item `TaskTemplate` → **`ServiceItem`** (the *salable concept* you add).
+> - **Add model.** One **"Add Line"** action: type → type-ahead over **ServiceItems
+>   (saved work) + InventoryItems (goods)** → pick (→ PlanTask / PlanMaterial); free
+>   text → modal fork into **work** (attach a `RateScheme` via a plain select) or a
+>   **one-off material** (freeform, direct price). A `RateScheme` is the *rate you
+>   attach*, never a thing you search.
+> - **Line concept.** Every line = a salable concept + qty + price; price source
+>   differs (materials: our **purchase price** + auto markup; work: the RateScheme
+>   **sell** rate).
+> - **The rename is now proposed as an EARLY phase** (Phase 0), reversing the earlier
+>   "defer all renames" stance.
+>
+> **The phase docs below — especially 6–10 — predate this revision** and use the OLD
+> names + add-model. Read them through the design draft; their names/specifics are
+> stale until refreshed. The built **Phase-1 picker is superseded** (rebuild to "Add
+> Line").
 
 ## Status
 
-| # | Phase | Doc | Status | Touches | Migration? |
-|---|---|---|---|---|---|
-| 1 | Add-from-Price-List picker (+ backend-search rework) | `2026-06-26-phase1-add-from-price-list.md` | **DONE** | frontend (+2 backend filters) | no |
-| 2 | Estimating starts on the Plan (Start Estimate; idempotent worksheet) | `2026-06-26-phase2-plan-first-and-express.md` | **DONE** | backend + frontend | no |
-| 3 | UI vocabulary + single-view Estimate pillar | `2026-06-26-phase3-vocabulary-and-estimate-pillar.md` | planned | frontend | no |
-| 4 | Re-projection "underlying changed" marker | `2026-06-26-phase4-reprojection-change-marker.md` | planned | backend + frontend | **yes** (snapshot) |
-| 5 | Combined Tasks & Materials pillar | `2026-06-26-phase5-combined-tasks-materials-pillar.md` | planned | frontend | no |
-| 6 | Remove direct line authoring + Phase B carry-over | `2026-06-26-phase6-remove-direct-line-authoring.md` | planned | backend + frontend | no |
-| 7 | Slim line-item fields | `2026-06-26-phase7-slim-line-item-fields.md` | planned | backend | **yes** |
-| 8 | Job-scoped, auto-applied adjustments | `2026-06-26-phase8-job-scoped-adjustments.md` | planned | backend + frontend | **yes** |
-| 9 | Seed data (nealsdata) to the new shape | `2026-06-26-phase9-seed-data-update.md` | planned | data/build | (fresh build) |
-| 10 | Rewrite the durable docs | `2026-06-26-phase10-docs-rewrite.md` | planned | docs only | no |
+| # | Phase | Doc | Status |
+|---|---|---|---|
+| 0 | **RateScheme/ServiceItem rename** (rate card `ServiceItem`→`RateScheme`; `TaskTemplate`→`ServiceItem`) | _(plan TBD — write next)_ | **CONFIRMED — do FIRST** |
+| 1 | **"Add Line"** (rework of the built picker) | `phase1-add-from-price-list.md` | built picker shipped; **rework spec written** (search ServiceItems[saved work] + InventoryItems; free-text → attach RateScheme / one-off material; drop template default qty). **Next functional phase, after Phase 0.** |
+| 2 | Estimating starts on the Plan | `phase2-plan-first-and-express.md` | **DONE** (+ later: Start Estimate creates the Plan directly; create-worksheet page removed) |
+| 3 | UI vocabulary + single-view Estimate pillar | `phase3-vocabulary-and-estimate-pillar.md` | **DONE** |
+| 4 | Re-projection "underlying changed" marker | `phase4-reprojection-change-marker.md` | planned (migration) |
+| 5 | Combined Tasks & Materials pillar | `phase5-combined-tasks-materials-pillar.md` | planned |
+| 6 | Remove direct line authoring + Phase B | `phase6-remove-direct-line-authoring.md` | planned — **predates 06-27** |
+| 7 | Slim line-item fields | `phase7-slim-line-item-fields.md` | planned — **predates 06-27** (migration) |
+| 8 | Job-scoped adjustments | `phase8-job-scoped-adjustments.md` | planned — **predates 06-27**, least-decided |
+| 9 | Seed data (nealsdata) | `phase9-seed-data-update.md` | planned — **predates 06-27** |
+| 10 | Rewrite the durable docs | `phase10-docs-rewrite.md` | planned — **predates 06-27**, last |
 
-## Dependencies (suggested order)
-- **3, 4, 5** are largely independent frontend/feature work and can go in any order
-  (3 and 5 both heavily edit `JobDetail.svelte` — sequence them, don't parallelize).
-- **6 → 7**: remove the *use* of `source_template`/line-`inventory_item` (6) before
-  removing the *fields* (7).
-- **8** (job-scoped adjustments) is the biggest and least-decided; it can run after
-  the projection is stable (post-6). It changes adjustment data shape.
-- **9** (seed) runs after the model changes (6–8) so it matches the final shape.
-- **10** (docs) runs last, documenting what actually shipped.
+## Dependencies / suggested order
+- **Phase 0 (the rename) first** if we accept the early-rename proposal — then
+  everything below reads with the right names. Confirm before it leapfrogs functional
+  work.
+- **Rework the Phase-1 picker** into "Add Line" (search ServiceItems[saved work] +
+  InventoryItems; free-text → attach a RateScheme, or a one-off material) — supersedes
+  the built picker. Sequence relative to Phase 0 (do the rename first so the picker is
+  built with the right names).
+- 3 ✅; 5 (edits `JobDetail`); 4 independent; **6 → 7** (remove field *use* before the
+  fields); 8 after projection is stable; 9 after the model changes; 10 last.
 
-So a reasonable execution order: **3, 5, 4, 6, 7, 8, 9, 10** — but 3/5 intersect the
-user's own `JobDetail`/process rework, so confirm before starting those.
+## Where to focus review
+- **Naming swap (Phase 0) — CONFIRMED, do first.** Then the "Add Line" rework
+  (Phase 1) uses the new names. Phase 0 plan to be written next.
+- **Phase 8** (adjustments) still wants a design pass before it's turnkey; **Phase 6**
+  manual-line removal; **Phase 7** `inventory_item` Option A vs B (lean A).
 
-## Where to focus the review (the real open decisions)
-- **Phase 3 & 5 intersect your in-progress process/modal rework of `JobDetail`** —
-  decide whether you want me to do these or you do them, to avoid collisions.
-- **Phase 4** — snapshot location (per-source vs per-line); ship correctness core
-  (Tasks 1–3) before the reconcile UX (4–5)?
-- **Phase 6** — are you OK losing the manual/free-form line *now* (design accepts it
-  as a deliberate gap; Fee atom is the deferred clean fix)?
-- **Phase 7** — `inventory_item` Option A (leave the shared field, stop using on
-  est/invoice) vs Option B (relocate to Change-Order only). Lean A.
-- **Phase 8** — the whole shape (JobAdjustment model, materialize vs compute-on-read,
-  per-document waive, retiring the agreement panel). This one wants a design pass
-  with you before it's turned into a turnkey plan.
+## Deferred (design draft §15)
+- Fee atom (one-off charges); billing groups (N work atoms → one fixed line);
+  invoice-only / finer adjustment controls (§13).
 
-## Deferred (not phased — design draft §15)
-- The **Fee** atom (one-off charges, Expense's revenue twin).
-- **Billing groups** (N work atoms → one fixed line, e.g. the Setup fee).
-- Invoice-only adjustments / finer adjustment controls (design §13).
-
-## Constraints that apply to every phase
-- Never write the dev DB (test DB only; `--keepdb` for fast iteration, but run a
-  **fresh build** after any migration — `feedback_fresh_db_after_migrations`). One
-  test process at a time. Frontend: `cd frontend && npm run test:run`.
-- Backend object/db-table **renames stay deferred** to a final naming pass; UI uses
-  the target labels (Plan / Client View / Estimate / Price List). Backend↔UI mapping:
-  `EstWorksheet`=Plan, `Estimate`=Client View.
+## Constraints (every phase)
+- Never write the dev DB (test DB only; **fresh build after any migration** —
+  `feedback_fresh_db_after_migrations`). One test process at a time. Frontend:
+  `cd frontend && npm run test:run`.
+- The **RateScheme/ServiceItem rename moves early** (Phase 0). The other renames stay
+  deferred: `EstWorksheet`→Plan and `Estimate`→Client View are UI *labels* today;
+  table renames can wait. Mapping: backend `EstWorksheet` = Plan, `Estimate` = Client
+  View.
 - Nothing merged/pushed/PR'd automatically (per the user's standing instruction).

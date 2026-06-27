@@ -965,16 +965,11 @@ IMAP-SMTP machinery and tend to be worked together.
   - Future-coupled: when AC-grouping / multi-target adjustments land, revisit the same-percentage-service-twice case (keyed `{#each}` + `already_added` dedup in the panel assume one line per service).
   _Done when:_ the bundle is swept and the full suite + frontend gate stay green.
 
-- **"Add Manual Task" modal: offer "Save as Template based on this task".** — _added 2026-06-25_
-  The worksheet's Add Manual Task flow already builds a PlanTask from a ServiceItem
-  (+ qty + selected modifiers + name/description). Add an option to save that
-  configured task as a `TaskTemplate` (a reusable preset) directly from the modal —
-  capturing ServiceItem + default qty + default modifiers + name. Turns ad-hoc task
-  authoring into reusable presets without a separate template-builder trip; aligns
-  with the planning-consolidation direction (templates = presets that expand into
-  atoms — see `docs/plans/2026-06-24-planning-billing-consolidation-draft.md`).
-  _Done when:_ from the Add Manual Task modal the user can create a TaskTemplate from
-  the task they just configured, and it appears in the template catalog.
+- ~~**"Add Manual Task" modal: offer "Save as Template based on this task".**~~ —
+  _graduated 2026-06-27 to the "Add Line" rework (Phase 1)._ Inline "save this
+  free-text task to the **ServiceItems** catalog" (post-rename: `TaskTemplate` →
+  `ServiceItem`) is now a Phase-1 task, including decoupling the catalog *create* from
+  `can_manage_config`. See `docs/plans/2026-06-26-phase1-add-from-price-list.md`.
 
 - **Terminology: rename worksheet / estimate / wizard for the consolidated flow.** — _added 2026-06-25_
   Under the planning-consolidation direction (worksheet = the single authoring

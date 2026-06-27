@@ -1,5 +1,10 @@
 # Phase 10 — Rewrite the durable docs to the consolidated model
 
+> ⚠️ **Predates the 2026-06-27 design revision.** Use the current names when rewriting
+> the durable docs: rate card = **`RateScheme`** (reverted from `ServiceItem`), salable
+> work item = **`ServiceItem`** (was `TaskTemplate`); add surface = "Add Line". Source
+> of truth: `2026-06-24-planning-billing-consolidation-draft.md`.
+
 > Design draft §14 step 9. Documentation only — no code. Do this **last**, once
 > Phases 3–9 have settled, so the docs describe what actually shipped.
 

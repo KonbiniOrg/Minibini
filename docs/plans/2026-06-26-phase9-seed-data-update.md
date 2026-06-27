@@ -1,5 +1,11 @@
 # Phase 9 — Update the seed data (nealsdata) to the consolidated shape
 
+> ⚠️ **Predates the 2026-06-27 design revision.** Names here use the OLD mapping (rate
+> card = `ServiceItem`, work catalog = `TaskTemplate`); the design draft now swaps
+> these (rate card → `RateScheme`, saved work item → `ServiceItem`). Read against
+> `2026-06-24-planning-billing-consolidation-draft.md`; re-derive specifics when
+> executing.
+
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
 > Design draft §12 ("Migration: none — regenerate from the source spreadsheets") +
 > §14 step 8. **Do this AFTER the model changes (Phases 6–8) so the seed matches the

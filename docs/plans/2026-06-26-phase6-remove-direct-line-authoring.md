@@ -1,5 +1,12 @@
 # Phase 6 — Documents become pure projections (remove direct line authoring + Phase B)
 
+> ⚠️ **Predates the 2026-06-27 design revision.** Names here use the OLD mapping (rate
+> card = `ServiceItem`, work catalog = `TaskTemplate`); the design draft now swaps
+> these (rate card → `RateScheme`, saved work item → `ServiceItem`) and reshapes the
+> add surface ("Add Line"). Read against
+> `2026-06-24-planning-billing-consolidation-draft.md`; re-derive specifics when
+> executing.
+
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
 > Design draft §5.2/§5.3/§5.4 + §14 step 5. Backend + frontend. **Both estimate and
 > invoice change together** (design's "do not fork" rule).

@@ -1,5 +1,12 @@
 # Phase 7 — Slim the frozen line-item models
 
+> ⚠️ **Predates the 2026-06-27 design revision.** Names here use the OLD mapping (rate
+> card = `ServiceItem`, work catalog = `TaskTemplate`); the design draft now swaps
+> these (rate card → `RateScheme`, saved work item → `ServiceItem`) and reshapes the
+> add surface ("Add Line"). Read against
+> `2026-06-24-planning-billing-consolidation-draft.md`; re-derive specifics when
+> executing.
+
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
 > Design draft §5.5 + §14 step 6. Backend (migrations). **Do Phase 6 first** — these
 > fields must have no readers before removal.

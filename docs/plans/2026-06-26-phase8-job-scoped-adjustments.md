@@ -1,5 +1,11 @@
 # Phase 8 — Job-scoped, auto-applied adjustments
 
+> ⚠️ **Predates the 2026-06-27 design revision.** "Percentage ServiceItem" here is now
+> a **percentage `RateScheme`** (rate card reverts `ServiceItem`→`RateScheme`;
+> `TaskTemplate`→`ServiceItem`). The add surface is now "Add Line". Read against
+> `2026-06-24-planning-billing-consolidation-draft.md`; this phase was already
+> "shape + decisions," so re-derive specifics when executing.
+
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
 > Design draft §10 + §13. **This phase is the least-decided one — treat it as
 > "shape + decisions to make with the user before execution," not a turnkey plan.**
