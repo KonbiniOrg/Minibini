@@ -108,7 +108,7 @@ describe('WorksheetDetailPage two-action add surface', () => {
     // template-mode form pre-filled (it saves via add-from-template).
     const SERVICE = {
       template_id: 1, template_name: 'CNC Cutting', description: 'router pass',
-      rate_scheme: 5, default_active_modifiers: [], default_billable_qty: '1.00',
+      rate_scheme: 5, default_active_modifiers: [],
       rate_scheme_detail: { rate_scheme_id: 5, name: 'Machine time', rate: '90.00', unit_label: 'hr', algorithm: 'elapsed_time' },
     };
     user.set({ permissions: ['can_manage_jobs'] });

@@ -18,7 +18,6 @@ class TemplateSupersededGuardTest(BaseTestCase):
         )
         self.template = ServiceItem.objects.create(
             template_name='T-tsg', rate_scheme=self.old_scheme,
-            default_billable_qty=Decimal('1'),
         )
         self.new_scheme = self.old_scheme.supersede(name='N-tsg')
         contact = Contact.objects.create(
@@ -66,7 +65,6 @@ class TemplateSupersededAPITest(BaseTestCase):
         )
         self.template = ServiceItem.objects.create(
             template_name='T-tsga', rate_scheme=self.old_scheme,
-            default_billable_qty=Decimal('1'),
         )
         self.new_scheme = self.old_scheme.supersede(name='N-tsga')
         contact = Contact.objects.create(

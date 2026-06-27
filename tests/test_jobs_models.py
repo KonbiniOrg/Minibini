@@ -598,7 +598,6 @@ class ServiceItemModelTest(TestCase):
             description="Standard electrical installation task",
             is_active=True,
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
 
         from apps.estimates.models import TemplateTaskAssociation
@@ -619,7 +618,6 @@ class ServiceItemModelTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Plumbing Setup",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(str(template), "Plumbing Setup")
 
@@ -627,7 +625,6 @@ class ServiceItemModelTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Default Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         self.assertTrue(template.is_active)
         self.assertEqual(template.description, "")
@@ -637,7 +634,6 @@ class ServiceItemModelTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Simple Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         # units/rate dropped from ServiceItem; billing now lives on rate_scheme
         self.assertEqual(template.rate_scheme, self.scheme)
@@ -646,7 +642,6 @@ class ServiceItemModelTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Standalone Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(template.work_templates.count(), 0)
 
@@ -656,17 +651,14 @@ class ServiceItemModelTest(TestCase):
         service_item1 = ServiceItem.objects.create(
             template_name="First Task",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         service_item2 = ServiceItem.objects.create(
             template_name="Second Task",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         service_item3 = ServiceItem.objects.create(
             template_name="Third Task",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
 
         TemplateTaskAssociation.objects.create(
@@ -709,7 +701,6 @@ class ServiceItemModelTest(TestCase):
             template = ServiceItem.objects.create(
                 template_name=f"Task {i+1}",
                 rate_scheme=self.scheme,
-                default_billable_qty=Decimal('1.00'),
             )
             service_items.append(template)
 

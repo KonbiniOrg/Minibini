@@ -212,7 +212,6 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         tt = ServiceItem.objects.create(
             template_name='Cut pieces',
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('4'),
         )
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',

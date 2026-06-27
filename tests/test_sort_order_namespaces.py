@@ -69,11 +69,11 @@ class GenerateTaskSortOrderTest(TestCase):
         wot = WorkTemplate.objects.create(template_name='Test Template')
         tt1 = ServiceItem.objects.create(
             template_name='Sand',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         tt2 = ServiceItem.objects.create(
             template_name='Clean',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         # Use non-sequential sort_orders to verify they pass through
         TemplateTaskAssociation.objects.create(

@@ -30,7 +30,6 @@ class TemplateMaterialAssociationModelTests(TestCase):
         cls.wt = WorkTemplate.objects.create(template_name='WT')
         cls.tt = ServiceItem.objects.create(
             template_name='TT', rate_scheme=cls.scheme,
-            default_billable_qty=Decimal('1'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
             work_template=cls.wt, service_item=cls.tt,
@@ -100,7 +99,6 @@ class TemplateMaterialAssociationApiTests(APITestCase):
         cls.wt = WorkTemplate.objects.create(template_name='WT-API')
         cls.tt = ServiceItem.objects.create(
             template_name='TT-API', rate_scheme=cls.scheme,
-            default_billable_qty=Decimal('1'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
             work_template=cls.wt, service_item=cls.tt,
@@ -249,7 +247,6 @@ class CrossTemplateValidationTests(APITestCase):
         cls.wt2 = WorkTemplate.objects.create(template_name='WT2')
         cls.tt = ServiceItem.objects.create(
             template_name='TT', rate_scheme=cls.scheme,
-            default_billable_qty=Decimal('1'),
         )
         cls.tta_on_wt2 = TemplateTaskAssociation.objects.create(
             work_template=cls.wt2, service_item=cls.tt,

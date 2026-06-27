@@ -255,10 +255,10 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.task_tmpl_1 = ServiceItem.objects.create(
             template_name='Cut',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
+            rate_scheme=self.scheme)
         self.task_tmpl_2 = ServiceItem.objects.create(
             template_name='Weld',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
+            rate_scheme=self.scheme)
         TemplateTaskAssociation.objects.create(
             work_template=self.template, service_item=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)

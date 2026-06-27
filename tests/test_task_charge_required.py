@@ -19,7 +19,6 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         )
         self.template = ServiceItem.objects.create(
             template_name='T-tcr', rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1'),
         )
         contact = Contact.objects.create(
             first_name='F', last_name='L', email='f-tcr@l.test',

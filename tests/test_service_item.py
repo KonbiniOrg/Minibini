@@ -243,14 +243,12 @@ class ServiceItemRateSchemeTest(BaseTestCase):
             template_name='Assembly',
             rate_scheme=self.scheme,
             default_active_modifiers=['messy'],
-            default_billable_qty=Decimal('4.00'),
         )
         self.assertEqual(tmpl.rate_scheme, self.scheme)
         self.assertEqual(tmpl.default_active_modifiers, ['messy'])
-        self.assertEqual(tmpl.default_billable_qty, Decimal('4.00'))
 
     def test_service_item_without_rate_scheme_rejected(self):
-        """Phase B: rate_scheme and default_billable_qty are NOT NULL."""
+        """Phase B: rate_scheme is NOT NULL."""
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
             ServiceItem.objects.create(template_name='Legacy Template')
@@ -260,7 +258,6 @@ class ServiceItemRateSchemeTest(BaseTestCase):
             template_name='Assembly',
             rate_scheme=self.scheme,
             default_active_modifiers=['messy'],
-            default_billable_qty=Decimal('4.00'),
         )
         from django.contrib.auth import get_user_model
         User = get_user_model()
@@ -272,7 +269,6 @@ class ServiceItemRateSchemeTest(BaseTestCase):
         data = resp.json()
         self.assertEqual(data['rate_scheme'], self.scheme.pk)
         self.assertEqual(data['default_active_modifiers'], ['messy'])
-        self.assertEqual(data['default_billable_qty'], '4.00')
 
 
 class RateSchemeSupersessionFieldsTest(BaseTestCase):
@@ -350,7 +346,6 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         )
         ServiceItem.objects.create(
             template_name='tt', rate_scheme=s,
-            default_billable_qty=Decimal('1'),
         )
         self.assertTrue(s.is_referenced())
 

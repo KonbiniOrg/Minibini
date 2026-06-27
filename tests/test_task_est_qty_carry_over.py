@@ -63,7 +63,6 @@ class TaskEstQtyCarryOverTest(TestCase):
         template = ServiceItem.objects.create(
             template_name='Setup',
             rate_scheme=scheme,
-            default_billable_qty=Decimal('1'),
         )
         task = template.generate_task(self.job, est_qty=Decimal('3'))
         self.assertEqual(task.est_qty, Decimal('3'))
@@ -79,7 +78,6 @@ class TaskEstQtyCarryOverTest(TestCase):
         template = ServiceItem.objects.create(
             template_name='Default Template Name',
             rate_scheme=scheme,
-            default_billable_qty=Decimal('1'),
         )
         template.description = 'Default template description'
         template.save()

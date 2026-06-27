@@ -18,7 +18,6 @@ class FlatFeeReframeTest(TestCase):
         return ServiceItem.objects.create(
             template_name='t', rate_scheme=self.shared,
             default_active_modifiers={'flat_fee_price': str(price)},
-            default_billable_qty=Decimal('1'),
         )
 
     def test_mints_per_price_service_and_repoints(self):

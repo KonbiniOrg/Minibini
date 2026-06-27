@@ -29,7 +29,7 @@ class TestTemplateTaskAssociation(TestCase):
         wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
         tt = ServiceItem.objects.create(
             template_name="Sand",
-            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=scheme,
         )
 
         assoc = TemplateTaskAssociation.objects.create(
@@ -49,7 +49,7 @@ class TestTemplateTaskAssociation(TestCase):
         wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
         tt = ServiceItem.objects.create(
             template_name="Sand",
-            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=scheme,
         )
 
         TemplateTaskAssociation.objects.create(work_template=wot, service_item=tt, est_qty=1)
@@ -67,6 +67,6 @@ class TestTemplateTaskAssociation(TestCase):
         )
         tt = ServiceItem(
             template_name='Setup', rate_scheme=svc,
-            default_active_modifiers=[], default_billable_qty=Decimal('1'),
+            default_active_modifiers=[],
         )
         tt.full_clean()  # must not raise

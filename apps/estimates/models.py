@@ -473,10 +473,6 @@ class ServiceItem(models.Model):
         default=list, blank=True,
         help_text="Pre-checked modifier keys from the scheme"
     )
-    default_billable_qty = models.DecimalField(
-        max_digits=10, decimal_places=2,
-        help_text="Typical estimated billable quantity"
-    )
 
     # Relationships
     work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='service_items')

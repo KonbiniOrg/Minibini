@@ -14,7 +14,7 @@
   function emptyForm() {
     return {
       template_name: '', description: '', rate_scheme: '',
-      default_active_modifiers: [], default_billable_qty: '',
+      default_active_modifiers: [],
       is_active: true,
     };
   }
@@ -65,7 +65,6 @@
       description: tmpl.description || '',
       rate_scheme: tmpl.rate_scheme || '',
       default_active_modifiers: Array.isArray(dm) ? [...dm] : [],
-      default_billable_qty: tmpl.default_billable_qty || '',
       is_active: tmpl.is_active,
     };
     editingId = tmpl.template_id;
@@ -91,7 +90,6 @@
         description: form.description,
         rate_scheme: form.rate_scheme || null,
         default_active_modifiers: form.default_active_modifiers,
-        default_billable_qty: form.default_billable_qty || null,
         is_active: form.is_active,
       };
       if (editingId === 'new') {
@@ -135,7 +133,7 @@
 {#if !loading && editingId === null}
   <table class="data-table">
     <thead>
-      <tr><th>Name</th><th>Service</th><th>Default Qty</th><th>Active</th><th></th></tr>
+      <tr><th>Name</th><th>Service</th><th>Active</th><th></th></tr>
     </thead>
     <tbody>
       {#each templates as t (t.template_id)}
@@ -148,7 +146,6 @@
               <br><strong style="color:#a8071a">WARNING: Service is superseded — update before next use</strong>
             {/if}
           </td>
-          <td>{t.default_billable_qty || '—'}</td>
           <td>{t.is_active ? 'Yes' : 'No'}</td>
           <td>
             <button type="button" onclick={() => startEdit(t)}>Edit</button>
@@ -194,9 +191,6 @@
           {/each}
         </fieldset>
       {/if}
-      <p><label><strong>Default estimated qty ({selectedScheme.unit_label}s)</strong><br>
-        <input type="number" step="0.01" bind:value={form.default_billable_qty}>
-      </label></p>
     {/if}
 
     <p><label>

@@ -227,7 +227,6 @@ class ComprehensiveModelIntegrationTest(TestCase):
         service_item = ServiceItem.objects.create(
             template_name="Planning Task Template",
             rate_scheme=scheme,
-            default_billable_qty=Decimal('1.00'),
         )
 
         self.assertEqual(task.job, job)

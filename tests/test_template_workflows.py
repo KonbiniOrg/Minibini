@@ -90,7 +90,6 @@ class TaskCreationWorkflowTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Test Task Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
             is_active=True
         )
 
@@ -104,7 +103,6 @@ class TaskCreationWorkflowTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Inactive Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
             is_active=False
         )
 
@@ -118,7 +116,6 @@ class TaskCreationWorkflowTest(TestCase):
         template = ServiceItem.objects.create(
             template_name="Labor Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
             description="Standard labor template with pricing",
             is_active=True
         )
@@ -129,13 +126,11 @@ class TaskCreationWorkflowTest(TestCase):
         TaskService.create_from_template(template, self.job)
 
     def test_service_item_minimal_fields(self):
-        """ServiceItem requires only name, rate_scheme, and default_billable_qty."""
+        """ServiceItem requires only name and rate_scheme."""
         template = ServiceItem.objects.create(
             template_name="Simple Template",
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
             is_active=True
         )
 
         self.assertEqual(template.rate_scheme, self.scheme)
-        self.assertEqual(template.default_billable_qty, Decimal('1.00'))

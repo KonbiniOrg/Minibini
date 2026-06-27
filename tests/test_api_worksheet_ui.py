@@ -283,7 +283,6 @@ class AddFromTemplateTest(TestCase):
             template_name='Standard Sanding',
             description='Sand and prep surfaces',
             rate_scheme=self.template_scheme,
-            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_from_template_success(self):
@@ -397,7 +396,6 @@ class AddFromTemplateTest(TestCase):
             template_name='Template With Defaults',
             description='Has billing defaults',
             rate_scheme=scheme,
-            default_billable_qty=Decimal('3.0'),
             default_active_modifiers=['rush'],
         )
 

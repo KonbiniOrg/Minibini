@@ -47,7 +47,6 @@ class ServiceItemAPITest(BaseTestCase):
             'description': 'Created via API',
             'units': 'hours',
             'rate_scheme': scheme.pk,
-            'default_billable_qty': '1.00',
         }, format='json')
         self.assertEqual(response.status_code, 201)
 
@@ -63,7 +62,7 @@ class ServiceItemAPITest(BaseTestCase):
         scheme = RateScheme.objects.get(pk=1)
         resp = client.post('/api/service-items/', {
             'template_name': 'Inline Saved', 'description': '', 'units': 'hours',
-            'rate_scheme': scheme.pk, 'default_billable_qty': '1.00',
+            'rate_scheme': scheme.pk,
         }, format='json')
         self.assertEqual(resp.status_code, 201)
 
@@ -73,7 +72,7 @@ class ServiceItemAPITest(BaseTestCase):
         for name, desc in [('CNC Routing', 'router pass'), ('Hand Sanding', 'finish work')]:
             self.client.post('/api/service-items/', {
                 'template_name': name, 'description': desc, 'units': 'hours',
-                'rate_scheme': scheme.pk, 'default_billable_qty': '1.00',
+                'rate_scheme': scheme.pk,
             }, format='json')
         resp = self.client.get('/api/service-items/?search=cnc')
         self.assertEqual(resp.status_code, 200)
@@ -120,6 +119,5 @@ class PercentageServiceServiceItemRejectionTest(BaseTestCase):
         resp = self.client.post('/api/service-items/', {
             'template_name': 'Rush Template',
             'rate_scheme': self.rush.pk,
-            'default_billable_qty': '1.00',
         }, format='json')
         self.assertEqual(resp.status_code, 400, resp.data)

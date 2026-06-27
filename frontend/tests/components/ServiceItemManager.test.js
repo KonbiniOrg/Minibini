@@ -6,8 +6,8 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import ServiceItemManager from '@/components/ServiceItemManager.svelte';
 
-const TMPL = { template_id: 1, template_name: 'Welding', rate_scheme: 1, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
-const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', rate_scheme: 2, default_billable_qty: '', is_active: true, default_active_modifiers: [] };
+const TMPL = { template_id: 1, template_name: 'Welding', rate_scheme: 1, is_active: true, default_active_modifiers: [] };
+const FLAT_FEE_TMPL = { template_id: 2, template_name: 'Flat Weld', rate_scheme: 2, is_active: true, default_active_modifiers: [] };
 
 const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
 const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };

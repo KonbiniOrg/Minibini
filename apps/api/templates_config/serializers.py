@@ -16,7 +16,7 @@ class ServiceItemSerializer(serializers.ModelSerializer):
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
             'rate_scheme', 'rate_scheme_detail',
-            'default_active_modifiers', 'default_billable_qty',
+            'default_active_modifiers',
         ]
         read_only_fields = ['template_id']
 

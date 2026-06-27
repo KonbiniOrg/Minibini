@@ -153,7 +153,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         tt = ServiceItem.objects.create(
             template_name='Countertop', is_active=True,
-            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=scheme,
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,

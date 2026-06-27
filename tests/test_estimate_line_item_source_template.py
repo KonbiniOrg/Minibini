@@ -25,7 +25,7 @@ class EstimateLineItemSourceTemplateTest(TestCase):
         )
         self.template = ServiceItem.objects.create(
             template_name='Setup',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
 
     def test_source_template_can_be_null(self):

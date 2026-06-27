@@ -67,7 +67,6 @@ class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
         self.template = ServiceItem.objects.create(
             template_name='T-gtw', rate_scheme=self.scheme,
             default_active_modifiers=['m1'],
-            default_billable_qty=Decimal('5'),
         )
         # NOTE: actual schema requires Business.business_name + default_contact FK,
         # and Contact.email. Build pair: Contact first, then Business with
@@ -138,7 +137,6 @@ class EffectiveACPropertyTest(BaseTestCase):
         from apps.estimates.models import ServiceItem
         tt = ServiceItem.objects.create(
             template_name='tt-eac', rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1'),
         )
         self.assertEqual(tt.effective_accounting_category, self.scheme_ac)
 

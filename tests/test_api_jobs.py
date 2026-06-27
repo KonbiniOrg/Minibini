@@ -416,7 +416,7 @@ class JobPopulateFromTemplateTest(TestCase):
         )
         self.service_item = ServiceItem.objects.create(
             template_name='Countertop', is_active=True,
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -661,7 +661,6 @@ class JobAddFromTemplateTest(TestCase):
             description='Paint all walls',
             is_active=True,
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
 
     def test_add_from_template_success(self):

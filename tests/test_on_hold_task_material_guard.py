@@ -318,7 +318,6 @@ class CreateFromTemplateOnHoldTest(OnHoldGuardBase):
             template_name='Guard Test Template',
             defaults={
                 'rate_scheme': scheme,
-                'default_billable_qty': Decimal('1'),
                 'is_active': True,
             },
         )

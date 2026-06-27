@@ -85,7 +85,6 @@ class ValidateDataRateSchemeTest(TestCase):
             template_name='Bad Template',
             rate_scheme=sp,
             default_active_modifiers=[],
-            default_billable_qty=Decimal('1.00'),
         )
         ServiceItem.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
         output = self._run()

@@ -32,7 +32,6 @@ class _Setup(TestCase):
         cls.wt = WorkTemplate.objects.create(template_name='T')
         cls.tt = ServiceItem.objects.create(
             template_name='Cut', rate_scheme=cls.scheme,
-            default_billable_qty=Decimal('20'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
             work_template=cls.wt, service_item=cls.tt,

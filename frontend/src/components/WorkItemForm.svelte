@@ -91,9 +91,7 @@
     name = selectedTemplate.template_name || '';
     description = selectedTemplate.description || '';
     loadModifiers(selectedTemplate.default_active_modifiers);
-    if (selectedTemplate.default_billable_qty) {
-      estQty = selectedTemplate.default_billable_qty;
-    }
+    estQty = '1'; // templates no longer carry a default qty; estimator sets the magnitude
     rateSchemeId = selectedTemplate.rate_scheme ?? '';
   });
 
@@ -230,7 +228,6 @@
             description,
             rate_scheme: rateSchemeId,
             default_active_modifiers: activeModifiers,
-            default_billable_qty: estQty || '1',
           });
         }
       }

@@ -105,7 +105,7 @@ class ServiceItemServiceCreateTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_service_item(
             template_name='Welding',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         self.assertIsNotNone(tt.pk)
         self.assertEqual(tt.template_name, 'Welding')
@@ -119,7 +119,7 @@ class ServiceItemServiceUpdateTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_service_item(
             template_name='Old',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         updated = WorkTemplateService.update_service_item(
             tt.pk, template_name='New',
@@ -139,7 +139,7 @@ class ServiceItemServiceDeleteTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tt = WorkTemplateService.create_service_item(
             template_name='Del',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         pk = tt.pk
         WorkTemplateService.delete_service_item(pk)
@@ -151,7 +151,7 @@ class ServiceItemServiceDeleteTest(EstimatesTestBase):
         wo_tmpl = WorkTemplateService.create_template(template_name='WO')
         tt = WorkTemplateService.create_service_item(
             template_name='Used',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         TemplateTaskAssociation.objects.create(
             work_template=wo_tmpl, service_item=tt,
@@ -516,7 +516,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         from apps.estimates.services import WorksheetService, WorkTemplateService
         tt = WorkTemplateService.create_service_item(
             template_name='Welding',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         task = WorksheetService.add_task_from_template(
             self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
@@ -599,7 +599,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         tmpl = WorkTemplateService.create_template(template_name='T')
         tt = WorkTemplateService.create_service_item(
             template_name='Task',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl, service_item=tt,
@@ -621,7 +621,7 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         tmpl2 = WorkTemplateService.create_template(template_name='T2')
         tt = WorkTemplateService.create_service_item(
             template_name='Task',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         assoc = TemplateTaskAssociation.objects.create(
             work_template=tmpl1, service_item=tt,

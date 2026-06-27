@@ -214,7 +214,6 @@ class ServiceItemSerializerNoACTest(BaseTestCase):
         )
         self.template = ServiceItem.objects.create(
             template_name='T-tts', rate_scheme=scheme,
-            default_billable_qty=Decimal('1'),
         )
 
     def test_template_payload_omits_accounting_category(self):

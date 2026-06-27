@@ -81,7 +81,6 @@ class TaskDescriptionFromTemplateTests(TestCase):
             template_name='Painting',
             description='Apply two coats of primer and paint',
             rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
 
     def test_generate_task_copies_description_from_template(self):

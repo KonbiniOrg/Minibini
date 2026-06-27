@@ -918,7 +918,7 @@ class WorksheetService:
             est_worksheet=ws,
             rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
             active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
-            est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
+            est_qty=est_qty if est_qty is not None else Decimal('1'),
             est_worker_time=est_worker_time,
         )
         return task

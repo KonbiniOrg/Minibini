@@ -134,7 +134,6 @@ class CarryOverFromDirectLineItemsTest(TestCase):
         )
         self.template = ServiceItem.objects.create(
             template_name='Setup', rate_scheme=self.scheme,
-            default_billable_qty=Decimal('1.00'),
         )
         self.pli = InventoryItem.objects.create(
             code='STEEL', description='steel rod', units='ft',
