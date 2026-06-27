@@ -512,6 +512,26 @@ page stays whole.
   _Done when:_ the pipeline card's worksheet indicator reflects the worksheet's real (derived)
   state and never shows "Draft" against a sent/frozen estimate.
 
+- **Adjustment amount on a superseded estimate looks inconsistent (possible doubling).** — _added 2026-06-27_
+  Observed in dev data: estimate **110** (superseded by estimate **116**) shows a **$44**
+  percentage adjustment where, for consistency with that estimate's own line values, it
+  should be **$22**. $44 ≈ 2×$22 smells like a **doubling**. Adjustments are document-scoped
+  today: `compute_adjustment_amount` (`apps/core/adjustments.py`) = `(rate/100) × Σ(non-adjustment
+  sibling totals in the target-category set)`, re-run by `recompute_adjustments` via
+  `LineItemService.save_line_item` after any line mutation; and `revise_estimate`
+  (`apps/estimates/services.py` ~L149–153) **copies** `adjustment_service` + re-sets the
+  `adjustment_target_categories` M2M onto the new revision. Things to check: (a) whether a
+  superseded estimate's adjustment line is **frozen** at supersession or still gets
+  recomputed against a changed/duplicated sibling set; (b) whether `revise_estimate` double-counts
+  (e.g. the adjustment computed over a sibling set that includes copied/duplicated lines, or the
+  M2M set applied twice); (c) whether the value is simply stale vs. the displayed lines. Capture
+  est 110 / 116's line items + the adjustment's `adjustment_service.rate` and target categories
+  when investigating. NOTE: this whole area is slated to change in **Phase 8** (job-scoped,
+  auto-applied adjustments — `docs/plans/2026-06-26-phase8-job-scoped-adjustments.md`); decide
+  whether to fix the document-scoped bug now or fold the check into that rework.
+  _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
+  with the doubling explained.
+
 ---
 
 ## Email
