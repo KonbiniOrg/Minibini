@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from tests.base import BaseTestCase
-from apps.jobs.models import ServiceItem, Task
+from apps.jobs.models import RateScheme, Task
 
 User = get_user_model()
 
@@ -21,9 +21,9 @@ class TaskBillingFieldsAPITest(TestCase):
 
         from apps.core.models import AccountingCategory
         self.ac = AccountingCategory.objects.create(code='LAB', name='Labor')
-        self.scheme = ServiceItem.objects.create(
+        self.scheme = RateScheme.objects.create(
             name='CNC Router',
-            algorithm=ServiceItem.ENTERED_QTY,
+            algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('4.00'),
             unit_label='minute',
             modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
@@ -34,7 +34,7 @@ class TaskBillingFieldsAPITest(TestCase):
         from apps.jobs.models import Job
         contact = Contact.objects.create(first_name='Test', last_name='Contact')
         self.job = Job.objects.create(name='Test Job', contact=contact, job_number='JOB-TEST-001')
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item=self.scheme)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme=self.scheme)
 
         self.client.login(username='manager', password='testpass')
 
@@ -44,20 +44,20 @@ class TaskBillingFieldsAPITest(TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertNotIn('charge', body)
-        # service_item and active_modifiers are now top-level
-        self.assertIn('service_item', body)
+        # rate_scheme and active_modifiers are now top-level
+        self.assertIn('rate_scheme', body)
         self.assertIn('active_modifiers', body)
 
     def test_task_serializer_includes_billing_top_level(self):
         """GET /api/tasks/{id}/ Phase B: billing fields from Task are exposed top-level."""
-        self.task.service_item = self.scheme
+        self.task.rate_scheme = self.scheme
         self.task.active_modifiers = ['messy']
         self.task.save()
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertNotIn('charge', body)
-        self.assertEqual(body['service_item'], self.scheme.pk)
+        self.assertEqual(body['rate_scheme'], self.scheme.pk)
         self.assertEqual(body['active_modifiers'], ['messy'])
 
 
@@ -68,14 +68,14 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import ServiceItem, Job, Task
+        from apps.jobs.models import RateScheme, Job, Task
         from apps.contacts.models import Business, Contact
         self.user = User.objects.create_user('u-tnf', 'u-tnf@x.test', 'pw')
         perm = Permission.objects.get(codename='can_manage_jobs')
         self.user.user_permissions.add(perm)
         self.client.force_login(self.user)
         ac = AccountingCategory.objects.create(code='X-tnf', name='X-tnf')
-        self.scheme = ServiceItem.objects.create(
+        self.scheme = RateScheme.objects.create(
             name='S-tnf', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
@@ -88,7 +88,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-tnf', contact=contact)
-        self.task = Task.objects.create(job=self.job, name='T-tnf', service_item=self.scheme)
+        self.task = Task.objects.create(job=self.job, name='T-tnf', rate_scheme=self.scheme)
 
     def test_task_list_omits_legacy_fields(self):
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -101,7 +101,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
             self.assertNotIn(legacy, first)
         # Phase B: charge nest is gone; billing fields are now top-level
         self.assertNotIn('charge', first)
-        self.assertIn('service_item', first)
+        self.assertIn('rate_scheme', first)
         self.assertIn('est_qty', first)
 
     def test_task_detail_omits_legacy_fields(self):
@@ -112,7 +112,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
             self.assertNotIn(legacy, body)
         # Phase B: charge nest is gone; billing fields are now top-level
         self.assertNotIn('charge', body)
-        self.assertIn('service_item', body)
+        self.assertIn('rate_scheme', body)
         self.assertIn('est_qty', body)
 
 
@@ -124,7 +124,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import ServiceItem, Job, Task, PlanTask, Blep
+        from apps.jobs.models import RateScheme, Job, Task, PlanTask, Blep
         from apps.estimates.models import EstWorksheet
         from apps.contacts.models import Contact
         from datetime import timedelta
@@ -136,11 +136,11 @@ class TaskTimeFieldsTest(BaseTestCase):
         self.client.force_login(self.user)
 
         ac = AccountingCategory.objects.create(code='X-time', name='X-time')
-        self.elapsed_scheme = ServiceItem.objects.create(
+        self.elapsed_scheme = RateScheme.objects.create(
             name='Hourly-time', algorithm='elapsed_time', rate=Decimal('60'),
             unit_label='hr', accounting_category=ac,
         )
-        self.flat_scheme = ServiceItem.objects.create(
+        self.flat_scheme = RateScheme.objects.create(
             name='Flat-time', algorithm='flat_fee', rate=Decimal('100'),
             unit_label='ea', accounting_category=ac,
         )
@@ -152,11 +152,11 @@ class TaskTimeFieldsTest(BaseTestCase):
         # Phase B: est_qty is set directly on the Task (not read via source_plan_task).
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet, name='Cut',
-            service_item=self.elapsed_scheme, est_qty=Decimal('4.0'),
+            rate_scheme=self.elapsed_scheme, est_qty=Decimal('4.0'),
         )
         self.elapsed_task = Task.objects.create(
             job=self.job, name='Cut', source_plan_task=self.plan_task,
-            est_qty=Decimal('4.0'), service_item=self.elapsed_scheme,
+            est_qty=Decimal('4.0'), rate_scheme=self.elapsed_scheme,
         )
 
         # 1 hour 30 minutes of work logged (1.5h)
@@ -168,7 +168,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
 
         # Flat-fee task with no plan source
-        self.flat_task = Task.objects.create(job=self.job, name='Setup', service_item=self.flat_scheme)
+        self.flat_task = Task.objects.create(job=self.job, name='Setup', rate_scheme=self.flat_scheme)
         Blep.objects.create(
             task=self.flat_task, user=self.user,
             start_time=now - timedelta(minutes=30),
@@ -203,17 +203,17 @@ class TaskTemplateSerializerNoACTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory, User
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         from apps.estimates.models import TaskTemplate
         self.user = User.objects.create_user('u-tts', 'u-tts@x.test', 'pw')
         self.client.force_login(self.user)
         ac = AccountingCategory.objects.create(code='X-tts', name='X-tts')
-        scheme = ServiceItem.objects.create(
+        scheme = RateScheme.objects.create(
             name='S-tts', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='T-tts', service_item=scheme,
+            template_name='T-tts', rate_scheme=scheme,
             default_billable_qty=Decimal('1'),
         )
 
@@ -221,4 +221,4 @@ class TaskTemplateSerializerNoACTest(BaseTestCase):
         resp = self.client.get(f'/api/task-templates/{self.template.pk}/')
         body = resp.json()
         self.assertNotIn('accounting_category', body)
-        self.assertIn('service_item', body)
+        self.assertIn('rate_scheme', body)

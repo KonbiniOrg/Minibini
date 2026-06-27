@@ -8,7 +8,7 @@ from apps.inventory.models import (
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
-from apps.jobs.models import Job, PlanTask, ServiceItem, Task
+from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
 
 class _Setup(TestCase):
@@ -17,7 +17,7 @@ class _Setup(TestCase):
         Configuration.objects.create(key='units_list', value='["none","sheets","ea"]')
         cls.cat = AccountingCategory.objects.create(code='MAT', name='Materials')
         cls.contact = Contact.objects.create(first_name='J', last_name='D', email='j@d.com')
-        cls.scheme = ServiceItem.objects.create(
+        cls.scheme = RateScheme.objects.create(
             name='Hourly', rate=Decimal('100'), unit_label='hour',
             accounting_category=cls.cat,
         )
@@ -31,7 +31,7 @@ class _Setup(TestCase):
         )
         cls.wt = WorkTemplate.objects.create(template_name='T')
         cls.tt = TaskTemplate.objects.create(
-            template_name='Cut', service_item=cls.scheme,
+            template_name='Cut', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('20'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(

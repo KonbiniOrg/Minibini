@@ -17,7 +17,7 @@ class BlepShiftIntegrationTest(BaseTestCase):
         # active job; the workflow path to get there is irrelevant to this test.
         Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_IN_PROGRESS)
         self.job.refresh_from_db()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
 
     def test_live_start_auto_clocks_in(self):
         self.assertIsNone(ShiftService.open_shift_for(self.user))

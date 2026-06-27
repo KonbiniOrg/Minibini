@@ -18,7 +18,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
 from apps.core.adjustments import recompute_adjustments
-from apps.jobs.models import ServiceItem
+from apps.jobs.models import RateScheme
 
 
 class AdjustmentFieldsTest(TestCase):
@@ -73,16 +73,16 @@ class ComputeAdjustmentAmountTest(TestCase):
             accounting_category=self.materials,
         )
 
-        # A 15% percentage ServiceItem (rush surcharge)
-        self.rush_svc = ServiceItem.objects.create(
-            name='Rush-adj', algorithm=ServiceItem.PERCENTAGE,
+        # A 15% percentage RateScheme (rush surcharge)
+        self.rush_svc = RateScheme.objects.create(
+            name='Rush-adj', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%',
             accounting_category=self.labor,
         )
 
-        # A -10% percentage ServiceItem (discount)
-        self.discount_svc = ServiceItem.objects.create(
-            name='Discount-adj', algorithm=ServiceItem.PERCENTAGE,
+        # A -10% percentage RateScheme (discount)
+        self.discount_svc = RateScheme.objects.create(
+            name='Discount-adj', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('-10.00'), unit_label='%',
             accounting_category=self.labor,
         )
@@ -171,8 +171,8 @@ class RecomputeAdjustmentsHelperTest(TestCase):
             units='ea', description='Base', price=Decimal('100.00'),
             accounting_category=self.cat,
         )
-        self.pct_svc = ServiceItem.objects.create(
-            name='RushRH', algorithm=ServiceItem.PERCENTAGE,
+        self.pct_svc = RateScheme.objects.create(
+            name='RushRH', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -232,8 +232,8 @@ class EstimateAutoRecomputeTest(TestCase):
             units='ea', description='Base', price=Decimal('200.00'),
             accounting_category=self.cat,
         )
-        self.pct_svc = ServiceItem.objects.create(
-            name='Rush-EA', algorithm=ServiceItem.PERCENTAGE,
+        self.pct_svc = RateScheme.objects.create(
+            name='Rush-EA', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -303,8 +303,8 @@ class InvoiceAutoRecomputeTest(TestCase):
             units='ea', description='Base', price=Decimal('200.00'),
             accounting_category=self.cat,
         )
-        self.pct_svc = ServiceItem.objects.create(
-            name='LateFee-IA', algorithm=ServiceItem.PERCENTAGE,
+        self.pct_svc = RateScheme.objects.create(
+            name='LateFee-IA', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('5.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -365,20 +365,20 @@ class EstimateWizardAutoRecomputeTest(TestCase):
         self.job = JobService.create_job(name='WZ Job', contact=self.contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
 
-        flat_svc = ServiceItem.objects.create(
-            name='FlatWZ', algorithm=ServiceItem.FLAT_FEE,
+        flat_svc = RateScheme.objects.create(
+            name='FlatWZ', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('100.00'), unit_label='hr',
             accounting_category=self.cat,
         )
         self.pt = PlanTask.objects.create(
             name='Wiring', est_worksheet=self.ws,
-            service_item=flat_svc, est_qty=Decimal('1'),
+            rate_scheme=flat_svc, est_qty=Decimal('1'),
         )
 
         self.est = EstimateWizardService.open_for_worksheet(self.ws)
 
-        pct_svc = ServiceItem.objects.create(
-            name='WizRush', algorithm=ServiceItem.PERCENTAGE,
+        pct_svc = RateScheme.objects.create(
+            name='WizRush', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -432,8 +432,8 @@ class SaveLineItemChokePointTest(TestCase):
             accounting_category=self.cat,
         )
         # A 10% adjustment line (price=0 initially)
-        pct_svc = ServiceItem.objects.create(
-            name='Rush-CK', algorithm=ServiceItem.PERCENTAGE,
+        pct_svc = RateScheme.objects.create(
+            name='Rush-CK', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )

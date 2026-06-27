@@ -63,7 +63,7 @@ class AtomCarryOverService:
             name=template.template_name,
             description=template.description or '',
             source_template=template,
-            service_item=template.service_item,
+            rate_scheme=template.rate_scheme,
             active_modifiers=copy_active_modifiers(template.default_active_modifiers),
             est_qty=line_item.qty,
             est_worker_time=None,

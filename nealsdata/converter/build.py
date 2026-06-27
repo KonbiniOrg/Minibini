@@ -113,7 +113,7 @@ def build_seed(c):
         c._pk_counters['jobs.serviceitem'] = max(
             c._pk_counters['jobs.serviceitem'], max_rs_pk)
 
-    # Per-price flat-fee ServiceItems are minted on demand in _match_seed_scheme
+    # Per-price flat-fee RateSchemes are minted on demand in _match_seed_scheme
     # (one per distinct rate). c.flat_fee_by_rate caches rate string → pk.
     c.flat_fee_by_rate = {}
 
@@ -944,24 +944,24 @@ def build_estimates(c):
         c.estimates[base] = base_estimates
 
 
-# Default ServiceItem for tasks with no more specific keyword match.
+# Default RateScheme for tasks with no more specific keyword match.
 _CHECKLIST_DEFAULT_SCHEME = 'Shop labor'
 
 
 def _scheme_pk(c, scheme_name):
-    """Resolve a seed ServiceItem name to its pk, falling back to Shop labor."""
+    """Resolve a seed RateScheme name to its pk, falling back to Shop labor."""
     return (c.scheme_by_name.get(scheme_name)
             or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
 
 
 def _match_seed_scheme(c, algorithm, rate):
-    """Match a line's (algorithm, rate) to a seed ServiceItem.
+    """Match a line's (algorithm, rate) to a seed RateScheme.
 
     Returns (scheme_pk, active_modifiers). Time/qty lines match the nearest
     seed scheme of that algorithm when within ~10% of its rate. Anything
     that doesn't fit — and every flat-fee line, since the only flat-fee
     seed scheme (Delivery1) is delivery-specific — gets a per-price
-    ServiceItem minted on demand (one per distinct rate), with the price
+    RateScheme minted on demand (one per distinct rate), with the price
     on `rate` and `active_modifiers` as an empty list.
     """
     if algorithm != 'flat_fee':
@@ -979,7 +979,7 @@ def _match_seed_scheme(c, algorithm, rate):
             tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
             if abs(near_rate - rate) <= tolerance:
                 return nearest['pk'], []
-    # Doesn't fit a seed scheme: mint or reuse a per-price flat-fee ServiceItem.
+    # Doesn't fit a seed scheme: mint or reuse a per-price flat-fee RateScheme.
     rate_str = f'{rate:.2f}'
     if rate_str not in c.flat_fee_by_rate:
         ff_pk = c.next_pk('jobs.serviceitem')
@@ -1000,10 +1000,10 @@ def _match_seed_scheme(c, algorithm, rate):
 
 
 def _fallback_scheme(c, li):
-    """ServiceItem pk + active_modifiers for an estimate-line-item-derived task.
+    """RateScheme pk + active_modifiers for an estimate-line-item-derived task.
 
     Keyword rule first; otherwise match a seed scheme by rate, or create a
-    per-price flat-fee ServiceItem (rate=price) and return it with an empty
+    per-price flat-fee RateScheme (rate=price) and return it with an empty
     modifier list. Returns (scheme_pk, active_modifiers).
     """
     keyword_name = P.checklist_scheme_name(li['description'])
@@ -1129,7 +1129,7 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
-            'service_item':      scheme_pk,
+            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          None,
@@ -1167,7 +1167,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
-            'service_item':      scheme_pk,
+            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
@@ -1262,7 +1262,7 @@ def assign_est_quantities(c):
         if f['model'] != 'jobs.task':
             continue
         fields = f['fields']
-        algo = c.scheme_algorithm_by_pk.get(fields.get('service_item'))
+        algo = c.scheme_algorithm_by_pk.get(fields.get('rate_scheme'))
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
         elif algo == 'flat_fee':
@@ -1325,7 +1325,7 @@ def _build_plan_checklist_tasks(c, base_ref, ws_pk, items, start_sort=0):
         pt_pk = c.next_pk('jobs.plantask')
         c.add_fixture('jobs.plantask', pt_pk, {
             'est_worksheet':    ws_pk,
-            'service_item':      scheme_pk,
+            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          '1.00',
@@ -1349,7 +1349,7 @@ def _build_plan_line_item_tasks(c, base_ref, ws_pk, task_lines, start_sort=0):
         pt_pk = c.next_pk('jobs.plantask')
         c.add_fixture('jobs.plantask', pt_pk, {
             'est_worksheet':    ws_pk,
-            'service_item':      scheme_pk,
+            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
@@ -2124,7 +2124,7 @@ def build_bleps_and_shifts(c):
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
         # EVERY complete task — even an old finished one too old to get a blep
         # (the horizon skip below) — so nothing can invoice at zero.
-        if c.scheme_algorithm_by_pk.get(fields.get('service_item')) == 'entered_qty':
+        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))

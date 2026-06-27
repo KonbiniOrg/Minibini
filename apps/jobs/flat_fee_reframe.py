@@ -3,14 +3,14 @@
 # HISTORICAL MIGRATION HELPER — invoked by data migration
 # jobs/0045_reframe_flat_fee_prices, which runs at a point in the migration
 # history where the atom FK field on Task/PlanTask/TaskTemplate is named
-# `service_price` (the later jobs/0047 rename to `service_item` has NOT happened
+# `service_price` (the later jobs/0047 rename to `rate_scheme` has NOT happened
 # yet at 0045's point). That's why the FK field name is a PARAMETER (`fk_field`)
 # defaulting to `service_price`: the migration uses the default; only current-
-# model callers (the unit test) pass `service_item`.
+# model callers (the unit test) pass `rate_scheme`.
 #
-# DO NOT hardcode/sweep this to `service_item` — a blanket rename once did, and
+# DO NOT hardcode/sweep this to `rate_scheme` — a blanket rename once did, and
 # it broke `migrate` on a fresh database (FieldError: the historical model has
-# no `service_item`).
+# no `rate_scheme`).
 from decimal import Decimal
 
 FLAT_FEE = 'flat_fee'
@@ -30,7 +30,7 @@ def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *,
 
     `fk_field` is the atom→service FK field name. It defaults to `service_price`,
     the name at migration jobs/0045's point in history (the migration calls this
-    with the default); current-model callers pass `service_item`. Uses the
+    with the default); current-model callers pass `rate_scheme`. Uses the
     literal 'flat_fee', never model constants. Returns a worklist of
     (model_name, pk, reason) for rows that couldn't be resolved.
     """

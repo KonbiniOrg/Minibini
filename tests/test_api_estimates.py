@@ -263,9 +263,9 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
 
     def test_adjustment_line_created_with_correct_price(self):
         from decimal import Decimal
-        from apps.jobs.models import ServiceItem
-        rush = ServiceItem.objects.create(
-            name='Rush', algorithm=ServiceItem.PERCENTAGE,
+        from apps.jobs.models import RateScheme
+        rush = RateScheme.objects.create(
+            name='Rush', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%',
             accounting_category=self.labor,
         )
@@ -281,9 +281,9 @@ class EstimateAdjustmentLineAPITest(BaseTestCase):
     def test_recalculate_endpoint_removed(self):
         """The recalculate endpoint no longer exists (adjustments auto-recompute)."""
         from decimal import Decimal
-        from apps.jobs.models import ServiceItem
-        rush = ServiceItem.objects.create(
-            name='Rush5', algorithm=ServiceItem.PERCENTAGE,
+        from apps.jobs.models import RateScheme
+        rush = RateScheme.objects.create(
+            name='Rush5', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.labor,
         )

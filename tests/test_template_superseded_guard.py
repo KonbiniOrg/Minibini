@@ -8,16 +8,16 @@ class TemplateSupersededGuardTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import ServiceItem, Job
+        from apps.jobs.models import RateScheme, Job
         from apps.estimates.models import TaskTemplate, EstWorksheet
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tsg', name='X-tsg')
-        self.old_scheme = ServiceItem.objects.create(
+        self.old_scheme = RateScheme.objects.create(
             name='O-tsg', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='T-tsg', service_item=self.old_scheme,
+            template_name='T-tsg', rate_scheme=self.old_scheme,
             default_billable_qty=Decimal('1'),
         )
         self.new_scheme = self.old_scheme.supersede(name='N-tsg')
@@ -52,7 +52,7 @@ class TemplateSupersededAPITest(BaseTestCase):
         super().setUp()
         from apps.core.models import User, AccountingCategory
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import ServiceItem, Job
+        from apps.jobs.models import RateScheme, Job
         from apps.estimates.models import TaskTemplate
         from apps.contacts.models import Business, Contact
         self.user = User.objects.create_user('admin-tsg', 'admin-tsg@x.test', 'pw')
@@ -60,12 +60,12 @@ class TemplateSupersededAPITest(BaseTestCase):
         self.user.user_permissions.add(perm)
         self.client.force_login(self.user)
         self.ac = AccountingCategory.objects.create(code='X-tsga', name='X-tsga')
-        self.old_scheme = ServiceItem.objects.create(
+        self.old_scheme = RateScheme.objects.create(
             name='O-tsga', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.template = TaskTemplate.objects.create(
-            template_name='T-tsga', service_item=self.old_scheme,
+            template_name='T-tsga', rate_scheme=self.old_scheme,
             default_billable_qty=Decimal('1'),
         )
         self.new_scheme = self.old_scheme.supersede(name='N-tsga')

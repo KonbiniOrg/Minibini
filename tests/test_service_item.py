@@ -1,29 +1,29 @@
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from tests.base import BaseTestCase
-from apps.jobs.models import ServiceItem
+from apps.jobs.models import RateScheme
 from apps.estimates.models import TaskTemplate
 from apps.core.models import AccountingCategory
 
 
-class ServiceItemModelTest(BaseTestCase):
-    """Test creation of ServiceItem instances for all 3 algorithm types."""
+class RateSchemeModelTest(BaseTestCase):
+    """Test creation of RateScheme instances for all 3 algorithm types."""
 
     def setUp(self):
         super().setUp()
         self.ac = AccountingCategory.objects.create(code='RSM', name='RSM')
 
     def test_create_elapsed_time_scheme(self):
-        scheme = ServiceItem.objects.create(
+        scheme = RateScheme.objects.create(
             name='Standard Labor',
             description='Billed per hour worked',
-            algorithm=ServiceItem.ELAPSED_TIME,
+            algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('75.00'),
             unit_label='hour',
             accounting_category=self.ac,
         )
         self.assertEqual(scheme.name, 'Standard Labor')
-        self.assertEqual(scheme.algorithm, ServiceItem.ELAPSED_TIME)
+        self.assertEqual(scheme.algorithm, RateScheme.ELAPSED_TIME)
         self.assertEqual(scheme.rate, Decimal('75.00'))
         self.assertEqual(scheme.unit_label, 'hour')
         self.assertEqual(scheme.modifiers, [])
@@ -33,50 +33,50 @@ class ServiceItemModelTest(BaseTestCase):
             {'key': 'messy', 'label': 'Messy job', 'percent': 10},
             {'key': 'doublestick', 'label': 'Double-stick tape', 'percent': 5},
         ]
-        scheme = ServiceItem.objects.create(
+        scheme = RateScheme.objects.create(
             name='Vinyl Application',
-            algorithm=ServiceItem.ENTERED_QTY,
+            algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('4.00'),
             unit_label='sq ft',
             modifiers=modifiers,
             accounting_category=self.ac,
         )
-        self.assertEqual(scheme.algorithm, ServiceItem.ENTERED_QTY)
+        self.assertEqual(scheme.algorithm, RateScheme.ENTERED_QTY)
         self.assertEqual(len(scheme.modifiers), 2)
         self.assertEqual(scheme.modifiers[0]['key'], 'messy')
 
     def test_create_flat_fee_scheme(self):
-        scheme = ServiceItem.objects.create(
+        scheme = RateScheme.objects.create(
             name='Setup Fee',
-            algorithm=ServiceItem.FLAT_FEE,
+            algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('50.00'),
             unit_label='job',
             accounting_category=self.ac,
         )
-        self.assertEqual(scheme.algorithm, ServiceItem.FLAT_FEE)
+        self.assertEqual(scheme.algorithm, RateScheme.FLAT_FEE)
         self.assertEqual(str(scheme), 'Setup Fee')
 
     def test_name_unique(self):
-        ServiceItem.objects.create(
+        RateScheme.objects.create(
             name='Unique Scheme',
-            algorithm=ServiceItem.FLAT_FEE,
+            algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('10.00'),
             unit_label='job',
             accounting_category=self.ac,
         )
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
-            ServiceItem.objects.create(
+            RateScheme.objects.create(
                 name='Unique Scheme',
-                algorithm=ServiceItem.FLAT_FEE,
+                algorithm=RateScheme.FLAT_FEE,
                 rate=Decimal('10.00'),
                 unit_label='job',
                 accounting_category=self.ac,
             )
 
 
-class ServiceItemComputeTest(BaseTestCase):
-    """Test compute methods on ServiceItem."""
+class RateSchemeComputeTest(BaseTestCase):
+    """Test compute methods on RateScheme."""
 
     def setUp(self):
         super().setUp()
@@ -85,17 +85,17 @@ class ServiceItemComputeTest(BaseTestCase):
             {'key': 'messy', 'label': 'Messy job', 'percent': 10},
             {'key': 'doublestick', 'label': 'Double-stick tape', 'percent': 5},
         ]
-        self.scheme = ServiceItem.objects.create(
+        self.scheme = RateScheme.objects.create(
             name='Vinyl Application',
-            algorithm=ServiceItem.ENTERED_QTY,
+            algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('4.00'),
             unit_label='sq ft',
             modifiers=self.modifiers,
             accounting_category=self.ac,
         )
-        self.flat_scheme = ServiceItem.objects.create(
+        self.flat_scheme = RateScheme.objects.create(
             name='Setup Fee',
-            algorithm=ServiceItem.FLAT_FEE,
+            algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('50.00'),
             unit_label='job',
             accounting_category=self.ac,
@@ -130,9 +130,9 @@ class ServiceItemComputeTest(BaseTestCase):
         # / >2-place product (99.99 × 1.05 = 104.9895). effective_rate is a
         # per-unit money value that becomes a line item price (max 2 decimals),
         # so it must trim to cents at the source — not just at scattered callers.
-        scheme = ServiceItem.objects.create(
+        scheme = RateScheme.objects.create(
             name='Cents Rate',
-            algorithm=ServiceItem.ENTERED_QTY,
+            algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('99.99'),
             unit_label='sq ft',
             modifiers=[{'key': 'surcharge', 'label': 'Surcharge', 'percent': 5}],
@@ -154,9 +154,9 @@ class ServiceItemComputeTest(BaseTestCase):
         from datetime import datetime, timedelta
         from django.utils import timezone as tz
 
-        labor_scheme = ServiceItem.objects.create(
+        labor_scheme = RateScheme.objects.create(
             name='Labor Rate',
-            algorithm=ServiceItem.ELAPSED_TIME,
+            algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('75.00'),
             unit_label='hour',
             accounting_category=self.ac,
@@ -180,9 +180,9 @@ class ServiceItemComputeTest(BaseTestCase):
         that overflows the line item qty field (max_digits=10)."""
         from datetime import timedelta
 
-        labor_scheme = ServiceItem.objects.create(
+        labor_scheme = RateScheme.objects.create(
             name='Labor Rate Quantized',
-            algorithm=ServiceItem.ELAPSED_TIME,
+            algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('75.00'),
             unit_label='hour',
             accounting_category=self.ac,
@@ -225,40 +225,40 @@ class ServiceItemComputeTest(BaseTestCase):
         self.assertIsInstance(result, list)
 
 
-class TaskTemplateServiceItemTest(BaseTestCase):
+class TaskTemplateRateSchemeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.ac = AccountingCategory.objects.create(code='TTRS', name='TTRS')
-        self.scheme = ServiceItem.objects.create(
+        self.scheme = RateScheme.objects.create(
             name='Hourly Labor Test',
-            algorithm=ServiceItem.ELAPSED_TIME,
+            algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('45.00'),
             unit_label='hour',
             modifiers=[{'key': 'messy', 'label': 'Messy', 'percent': 10}],
             accounting_category=self.ac,
         )
 
-    def test_task_template_with_service_item(self):
+    def test_task_template_with_rate_scheme(self):
         tmpl = TaskTemplate.objects.create(
             template_name='Assembly',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
             default_active_modifiers=['messy'],
             default_billable_qty=Decimal('4.00'),
         )
-        self.assertEqual(tmpl.service_item, self.scheme)
+        self.assertEqual(tmpl.rate_scheme, self.scheme)
         self.assertEqual(tmpl.default_active_modifiers, ['messy'])
         self.assertEqual(tmpl.default_billable_qty, Decimal('4.00'))
 
-    def test_task_template_without_service_item_rejected(self):
-        """Phase B: service_item and default_billable_qty are NOT NULL."""
+    def test_task_template_without_rate_scheme_rejected(self):
+        """Phase B: rate_scheme and default_billable_qty are NOT NULL."""
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
             TaskTemplate.objects.create(template_name='Legacy Template')
 
-    def test_task_template_api_includes_service_item(self):
+    def test_task_template_api_includes_rate_scheme(self):
         tmpl = TaskTemplate.objects.create(
             template_name='Assembly',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
             default_active_modifiers=['messy'],
             default_billable_qty=Decimal('4.00'),
         )
@@ -270,16 +270,16 @@ class TaskTemplateServiceItemTest(BaseTestCase):
         resp = self.client.get(f'/api/task-templates/{tmpl.pk}/')
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data['service_item'], self.scheme.pk)
+        self.assertEqual(data['rate_scheme'], self.scheme.pk)
         self.assertEqual(data['default_active_modifiers'], ['messy'])
         self.assertEqual(data['default_billable_qty'], '4.00')
 
 
-class ServiceItemSupersessionFieldsTest(BaseTestCase):
+class RateSchemeSupersessionFieldsTest(BaseTestCase):
     def test_scheme_has_replaced_by_and_replaced_at_fields(self):
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         ac = AccountingCategory.objects.first()
-        scheme = ServiceItem.objects.create(
+        scheme = RateScheme.objects.create(
             name='X', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=ac,
         )
@@ -288,7 +288,7 @@ class ServiceItemSupersessionFieldsTest(BaseTestCase):
         self.assertIsNone(scheme.replaced_at)
 
 
-class ServiceItemIsReferencedTest(BaseTestCase):
+class RateSchemeIsReferencedTest(BaseTestCase):
     fixtures = []  # clean slate
 
     def setUp(self):
@@ -297,15 +297,15 @@ class ServiceItemIsReferencedTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='X', name='X')
 
     def test_unreferenced_scheme_is_not_referenced(self):
-        from apps.jobs.models import ServiceItem
-        s = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        s = RateScheme.objects.create(
             name='unref', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.assertFalse(s.is_referenced())
 
     def test_scheme_with_planTask_is_referenced(self):
-        from apps.jobs.models import ServiceItem, PlanTask
+        from apps.jobs.models import RateScheme, PlanTask
         from apps.estimates.models import EstWorksheet
         from apps.contacts.models import Contact, Business
         from apps.jobs.models import Job
@@ -315,47 +315,47 @@ class ServiceItemIsReferencedTest(BaseTestCase):
         contact.save()
         job = Job.objects.create(job_number='J1', contact=contact)
         ws = EstWorksheet.objects.create(job=job)
-        s = ServiceItem.objects.create(
+        s = RateScheme.objects.create(
             name='ref', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         PlanTask.objects.create(
-            est_worksheet=ws, name='t', service_item=s,
+            est_worksheet=ws, name='t', rate_scheme=s,
             est_qty=Decimal('1'),
         )
         self.assertTrue(s.is_referenced())
 
     def test_scheme_with_task_is_referenced(self):
-        """Phase B: is_referenced checks Task.service_item, not TaskCharge."""
-        from apps.jobs.models import ServiceItem, Task, Job
+        """Phase B: is_referenced checks Task.rate_scheme, not TaskCharge."""
+        from apps.jobs.models import RateScheme, Task, Job
         from apps.contacts.models import Contact, Business
         contact = Contact.objects.create(first_name='F', last_name='L', email='f2@l.test')
         biz = Business.objects.create(business_name='B', default_contact=contact)
         contact.business = biz
         contact.save()
         job = Job.objects.create(job_number='J2', contact=contact)
-        s = ServiceItem.objects.create(
+        s = RateScheme.objects.create(
             name='refTC', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        Task.objects.create(job=job, name='t', service_item=s)
+        Task.objects.create(job=job, name='t', rate_scheme=s)
         self.assertTrue(s.is_referenced())
 
     def test_scheme_with_taskTemplate_is_referenced(self):
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         from apps.estimates.models import TaskTemplate
-        s = ServiceItem.objects.create(
+        s = RateScheme.objects.create(
             name='refTT', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         TaskTemplate.objects.create(
-            template_name='tt', service_item=s,
+            template_name='tt', rate_scheme=s,
             default_billable_qty=Decimal('1'),
         )
         self.assertTrue(s.is_referenced())
 
 
-class ServiceItemSupersedeMethodTest(BaseTestCase):
+class RateSchemeSupersedeMethodTest(BaseTestCase):
     fixtures = []
 
     def setUp(self):
@@ -364,9 +364,9 @@ class ServiceItemSupersedeMethodTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='X', name='X')
 
     def test_supersede_creates_new_scheme_and_links_old(self):
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         from django.utils import timezone
-        old = ServiceItem.objects.create(
+        old = RateScheme.objects.create(
             name='Old', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -387,8 +387,8 @@ class ServiceItemSupersedeMethodTest(BaseTestCase):
         self.assertIsNone(new.replaced_at)
 
     def test_supersede_on_already_superseded_raises(self):
-        from apps.jobs.models import ServiceItem
-        old = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
             name='Old', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -397,8 +397,8 @@ class ServiceItemSupersedeMethodTest(BaseTestCase):
             old.supersede(name='V3')
 
     def test_supersede_does_not_share_modifiers_list_with_new_scheme(self):
-        from apps.jobs.models import ServiceItem
-        old = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
             name='Old', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
             modifiers=[{'key': 'm1', 'label': 'M1', 'percent': 10}],
@@ -408,7 +408,7 @@ class ServiceItemSupersedeMethodTest(BaseTestCase):
         self.assertEqual(len(old.modifiers), 1)
 
 
-class ServiceItemVersionedSupersedeTest(BaseTestCase):
+class RateSchemeVersionedSupersedeTest(BaseTestCase):
     fixtures = []
 
     def setUp(self):
@@ -423,8 +423,8 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
           - new row is created with the original name
           - the unique constraint on name is preserved at the DB level.
         """
-        from apps.jobs.models import ServiceItem
-        old = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
             name='Standard Labor', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -435,10 +435,10 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
         self.assertEqual(old.replaced_by_id, new.pk)
         # Name stays globally unique — verify the row count for each name is 1.
         self.assertEqual(
-            ServiceItem.objects.filter(name='Standard Labor').count(), 1,
+            RateScheme.objects.filter(name='Standard Labor').count(), 1,
         )
         self.assertEqual(
-            ServiceItem.objects.filter(name='Standard Labor (v1)').count(), 1,
+            RateScheme.objects.filter(name='Standard Labor (v1)').count(), 1,
         )
 
     def test_second_supersede_increments_to_v2(self):
@@ -446,8 +446,8 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
         Superseding a chain of length 1 (i.e. there's already a (v1)
         predecessor) tags the next retired row (v2).
         """
-        from apps.jobs.models import ServiceItem
-        a = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        a = RateScheme.objects.create(
             name='Job A', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -468,8 +468,8 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
         old row still gets the (vN) suffix — consistency wins over
         cosmetics, per spec.
         """
-        from apps.jobs.models import ServiceItem
-        old = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
             name='Hourly', algorithm='flat_fee', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -485,8 +485,8 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
         appends another suffix. No smart-stripping; the chain history
         is the source of truth, the suffix is a label.
         """
-        from apps.jobs.models import ServiceItem
-        old = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
             name='Quirky (v1)', algorithm='flat_fee', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -499,11 +499,11 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
         """
         Belt-and-braces: confirm the modifier-list copy still doesn't
         alias after the algorithm change. (Mirrors a pre-existing test
-        in ServiceItemSupersedeMethodTest, but worth keeping for the
+        in RateSchemeSupersedeMethodTest, but worth keeping for the
         new code path.)
         """
-        from apps.jobs.models import ServiceItem
-        old = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        old = RateScheme.objects.create(
             name='Mod', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
             modifiers=[{'key': 'm1', 'label': 'M1', 'percent': 10}],
@@ -514,7 +514,7 @@ class ServiceItemVersionedSupersedeTest(BaseTestCase):
         self.assertEqual(len(old.modifiers), 1)
 
 
-class ServiceItemFreezeOnReferenceTest(BaseTestCase):
+class RateSchemeFreezeOnReferenceTest(BaseTestCase):
     fixtures = []
 
     def setUp(self):
@@ -523,7 +523,7 @@ class ServiceItemFreezeOnReferenceTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='X', name='X')
 
     def _make_referenced_scheme(self):
-        from apps.jobs.models import ServiceItem, PlanTask, Job
+        from apps.jobs.models import RateScheme, PlanTask, Job
         from apps.estimates.models import EstWorksheet
         from apps.contacts.models import Contact, Business
         # NOTE: real model schema requires Business.business_name + default_contact
@@ -540,19 +540,19 @@ class ServiceItemFreezeOnReferenceTest(BaseTestCase):
         contact.save()
         job = Job.objects.create(job_number='J-frz', contact=contact)
         ws = EstWorksheet.objects.create(job=job)
-        s = ServiceItem.objects.create(
+        s = RateScheme.objects.create(
             name='S-frz', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         PlanTask.objects.create(
-            est_worksheet=ws, name='t', service_item=s,
+            est_worksheet=ws, name='t', rate_scheme=s,
             est_qty=Decimal('1'),
         )
         return s
 
     def test_unreferenced_scheme_can_be_edited(self):
-        from apps.jobs.models import ServiceItem
-        s = ServiceItem.objects.create(
+        from apps.jobs.models import RateScheme
+        s = RateScheme.objects.create(
             name='U-frz', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
@@ -570,19 +570,19 @@ class ServiceItemFreezeOnReferenceTest(BaseTestCase):
 
     def test_supersede_still_works_on_referenced_scheme(self):
         s = self._make_referenced_scheme()
-        # Pass a new name to avoid the unique-name constraint on ServiceItem.name.
+        # Pass a new name to avoid the unique-name constraint on RateScheme.name.
         new = s.supersede(name='S-frz-v2', rate=Decimal('99'))
         s.refresh_from_db()
         self.assertEqual(s.replaced_by, new)
 
 
-class ServiceItemRequiresACTest(BaseTestCase):
+class RateSchemeRequiresACTest(BaseTestCase):
     fixtures = []
 
     def test_full_clean_rejects_missing_ac(self):
         from django.core.exceptions import ValidationError
-        from apps.jobs.models import ServiceItem
-        s = ServiceItem(
+        from apps.jobs.models import RateScheme
+        s = RateScheme(
             name='NoAC', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea',
         )
@@ -591,7 +591,7 @@ class ServiceItemRequiresACTest(BaseTestCase):
         self.assertIn('accounting_category', cm.exception.message_dict)
 
 
-class ServiceItemIsReferencedTaskTest(BaseTestCase):
+class RateSchemeIsReferencedTaskTest(BaseTestCase):
     fixtures = []
 
     def setUp(self):
@@ -600,12 +600,12 @@ class ServiceItemIsReferencedTaskTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='BIRT', name='BIRT')
 
     def test_is_referenced_counts_task_not_taskcharge(self):
-        """After Phase B, ServiceItem.is_referenced checks Task instead of TaskCharge."""
-        from apps.jobs.models import Task, ServiceItem, Job
+        """After Phase B, RateScheme.is_referenced checks Task instead of TaskCharge."""
+        from apps.jobs.models import Task, RateScheme, Job
         from apps.contacts.models import Contact, Business
 
-        scheme = ServiceItem.objects.create(
-            name='Test B2', algorithm=ServiceItem.FLAT_FEE,
+        scheme = RateScheme.objects.create(
+            name='Test B2', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('10.00'), unit_label='job',
             accounting_category=self.ac,
         )
@@ -619,7 +619,7 @@ class ServiceItemIsReferencedTaskTest(BaseTestCase):
         job = Job.objects.create(
             job_number='JOB-T1-B2', contact=contact, status=Job.STATUS_DRAFT,
         )
-        Task.objects.create(job=job, name='Direct', service_item=scheme)
+        Task.objects.create(job=job, name='Direct', rate_scheme=scheme)
 
         self.assertTrue(scheme.is_referenced())
         counts = scheme.reference_counts()
@@ -627,7 +627,7 @@ class ServiceItemIsReferencedTaskTest(BaseTestCase):
         self.assertNotIn('task_charge_count', counts)
 
 
-class ServiceItemPercentageAlgorithmTest(BaseTestCase):
+class RateSchemePercentageAlgorithmTest(BaseTestCase):
     fixtures = []
 
     def setUp(self):
@@ -635,27 +635,27 @@ class ServiceItemPercentageAlgorithmTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='PCT', name='PCT')
 
     def test_percentage_allows_negative_rate(self):
-        from apps.jobs.models import ServiceItem
-        svc = ServiceItem(
-            name='Discount', algorithm=ServiceItem.PERCENTAGE,
+        from apps.jobs.models import RateScheme
+        svc = RateScheme(
+            name='Discount', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('-10.00'), unit_label='%', accounting_category=self.ac,
         )
         svc.full_clean()  # must not raise
 
     def test_non_percentage_rejects_negative_rate(self):
         from django.core.exceptions import ValidationError
-        from apps.jobs.models import ServiceItem
-        svc = ServiceItem(
-            name='Bad', algorithm=ServiceItem.ELAPSED_TIME,
+        from apps.jobs.models import RateScheme
+        svc = RateScheme(
+            name='Bad', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('-5.00'), unit_label='hour', accounting_category=self.ac,
         )
         with self.assertRaises(ValidationError):
             svc.full_clean()
 
     def test_get_actual_qty_rejects_percentage(self):
-        from apps.jobs.models import ServiceItem
-        svc = ServiceItem.objects.create(
-            name='Rush', algorithm=ServiceItem.PERCENTAGE,
+        from apps.jobs.models import RateScheme
+        svc = RateScheme.objects.create(
+            name='Rush', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%', accounting_category=self.ac,
         )
         with self.assertRaises(ValueError):

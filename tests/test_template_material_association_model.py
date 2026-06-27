@@ -10,16 +10,16 @@ from apps.estimates.models import (
     WorkTemplate, TaskTemplate, TemplateTaskAssociation,
 )
 from apps.core.models import AccountingCategory, User
-from apps.jobs.models import ServiceItem
+from apps.jobs.models import RateScheme
 
 
 class TemplateMaterialAssociationModelTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.cat = AccountingCategory.objects.create(code='C', name='Cat')
-        cls.scheme = ServiceItem.objects.create(
+        cls.scheme = RateScheme.objects.create(
             name='Hourly', rate=Decimal('50'), unit_label='hour',
-            algorithm=ServiceItem.ELAPSED_TIME,
+            algorithm=RateScheme.ELAPSED_TIME,
             accounting_category=cls.cat,
         )
         cls.pli = InventoryItem.objects.create(
@@ -29,7 +29,7 @@ class TemplateMaterialAssociationModelTests(TestCase):
         )
         cls.wt = WorkTemplate.objects.create(template_name='WT')
         cls.tt = TaskTemplate.objects.create(
-            template_name='TT', service_item=cls.scheme,
+            template_name='TT', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('1'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
@@ -88,7 +88,7 @@ class TemplateMaterialAssociationApiTests(APITestCase):
             Permission.objects.get(codename='can_manage_config'),
         )
         cls.cat = AccountingCategory.objects.create(code='TMAAPI', name='Cat')
-        cls.scheme = ServiceItem.objects.create(
+        cls.scheme = RateScheme.objects.create(
             name='H', rate=Decimal('50'), unit_label='hour',
             accounting_category=cls.cat,
         )
@@ -99,7 +99,7 @@ class TemplateMaterialAssociationApiTests(APITestCase):
         )
         cls.wt = WorkTemplate.objects.create(template_name='WT-API')
         cls.tt = TaskTemplate.objects.create(
-            template_name='TT-API', service_item=cls.scheme,
+            template_name='TT-API', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('1'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
@@ -233,9 +233,9 @@ class CrossTemplateValidationTests(APITestCase):
             Permission.objects.get(codename='can_manage_config'),
         )
         cls.cat = AccountingCategory.objects.create(code='X', name='X')
-        from apps.jobs.models import ServiceItem
-        cls.scheme = ServiceItem.objects.create(
-            name='H', algorithm=ServiceItem.ELAPSED_TIME,
+        from apps.jobs.models import RateScheme
+        cls.scheme = RateScheme.objects.create(
+            name='H', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour',
             accounting_category=cls.cat,
         )
@@ -248,7 +248,7 @@ class CrossTemplateValidationTests(APITestCase):
         cls.wt1 = WorkTemplate.objects.create(template_name='WT1')
         cls.wt2 = WorkTemplate.objects.create(template_name='WT2')
         cls.tt = TaskTemplate.objects.create(
-            template_name='TT', service_item=cls.scheme,
+            template_name='TT', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('1'),
         )
         cls.tta_on_wt2 = TemplateTaskAssociation.objects.create(

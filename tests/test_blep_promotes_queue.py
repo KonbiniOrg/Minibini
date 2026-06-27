@@ -2,7 +2,7 @@ from datetime import timedelta
 from tests.base import BaseTestCase
 from apps.core.models import User
 from apps.contacts.models import Contact
-from apps.jobs.models import Task, ServiceItem
+from apps.jobs.models import Task, RateScheme
 from apps.jobs.services import JobService, TaskLifecycleService
 
 
@@ -19,10 +19,10 @@ class BlepStartPromotesQueueTest(BaseTestCase):
         )
         contact = Contact.objects.first()
         self.job = JobService.create_job(contact=contact, description='Test job')
-        rs = ServiceItem.objects.first()
+        rs = RateScheme.objects.first()
         self.tasks = [
             Task.objects.create(
-                job=self.job, assignee=self.user, service_item=rs,
+                job=self.job, assignee=self.user, rate_scheme=rs,
                 name=f'T{i}', est_worker_time=timedelta(minutes=60),
                 worker_queue=i, status=Task.STATUS_PENDING,
             )

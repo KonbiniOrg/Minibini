@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, Task, ServiceItem
+from apps.jobs.models import Job, PlanTask, Task, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial, Material
 from apps.inventory.models import InventoryItem
@@ -34,8 +34,8 @@ class ConsumeMaterialTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.scheme = ServiceItem.objects.create(
-            name='S-qoh2', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-qoh2', algorithm=RateScheme.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -43,7 +43,7 @@ class ConsumeMaterialTest(TestCase):
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         self.plywood = InventoryItem.objects.create(
             code='PLY.75',
@@ -159,8 +159,8 @@ class CompleteTaskAdjustmentTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.scheme = ServiceItem.objects.create(
-            name='S-qoh3', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-qoh3', algorithm=RateScheme.FLAT_FEE,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -168,7 +168,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         self.plywood = InventoryItem.objects.create(
             code='PLY.75',

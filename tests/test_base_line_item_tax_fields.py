@@ -189,7 +189,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
         )
 
         # The related_name pattern is %(class)s_items
-        service_items = self.service_type.estimatelineitem_items.all()
-        self.assertEqual(service_items.count(), 2)
-        self.assertIn(line_item1, service_items)
-        self.assertIn(line_item2, service_items)
+        rate_schemes = self.service_type.estimatelineitem_items.all()
+        self.assertEqual(rate_schemes.count(), 2)
+        self.assertIn(line_item1, rate_schemes)
+        self.assertIn(line_item2, rate_schemes)

@@ -26,7 +26,7 @@ from apps.api.templates_config.views import (
     WorkTemplateViewSet, TaskTemplateViewSet,
     AccountingCategoryViewSet, settings_view, units_view,
 )
-from apps.api.service_items.views import ServiceItemViewSet
+from apps.api.rate_schemes.views import RateSchemeViewSet
 from apps.api.change_orders.views import ChangeOrderViewSet
 from apps.api.shifts.views import (ShiftViewSet, ShiftChangeRequestViewSet,
                                    BlepChangeRequestViewSet)
@@ -57,7 +57,7 @@ def api_root(request):
         'task-templates': '/api/task-templates/',
         'settings': '/api/settings/',
         'accounting-categories': '/api/accounting-categories/',
-        'service-items': '/api/service-items/',
+        'rate-schemes': '/api/rate-schemes/',
     })
 
 
@@ -82,7 +82,7 @@ router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
 router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
-router.register(r'service-items', ServiceItemViewSet, basename='service-item')
+router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
 router.register(r'change-orders', ChangeOrderViewSet, basename='change-order')
 router.register(r'shifts', ShiftViewSet, basename='shift')
 router.register(r'shift-change-requests', ShiftChangeRequestViewSet, basename='shift-change-request')

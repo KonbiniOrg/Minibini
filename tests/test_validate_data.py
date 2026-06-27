@@ -3,12 +3,12 @@ from io import StringIO
 from django.test import TestCase
 from django.core.management import call_command
 from apps.core.models import AccountingCategory
-from apps.jobs.models import ServiceItem, Job, Task, PlanTask
+from apps.jobs.models import RateScheme, Job, Task, PlanTask
 from apps.contacts.models import Contact
 from apps.estimates.models import EstWorksheet
 
 
-class ValidateDataServiceItemTest(TestCase):
+class ValidateDataRateSchemeTest(TestCase):
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
@@ -20,8 +20,8 @@ class ValidateDataServiceItemTest(TestCase):
 
     def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None):
         if algorithm is None:
-            algorithm = ServiceItem.FLAT_FEE
-        return ServiceItem.objects.create(
+            algorithm = RateScheme.FLAT_FEE
+        return RateScheme.objects.create(
             name=name, algorithm=algorithm,
             rate=rate, unit_label='each', accounting_category=self.ac,
         )
@@ -34,16 +34,16 @@ class ValidateDataServiceItemTest(TestCase):
     # ── Flat-fee rate checks ──────────────────────────────────────
 
     def test_flags_zero_rate_flat_fee(self):
-        ServiceItem.objects.create(
-            name='Bad flat', algorithm=ServiceItem.FLAT_FEE,
+        RateScheme.objects.create(
+            name='Bad flat', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('0.00'), unit_label='each', accounting_category=self.ac,
         )
         output = self._run()
         self.assertIn('flat-fee', output.lower())
 
     def test_flags_negative_rate_flat_fee(self):
-        ServiceItem.objects.create(
-            name='Neg rate flat', algorithm=ServiceItem.FLAT_FEE,
+        RateScheme.objects.create(
+            name='Neg rate flat', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('-5.00'), unit_label='each', accounting_category=self.ac,
         )
         output = self._run()
@@ -61,7 +61,7 @@ class ValidateDataServiceItemTest(TestCase):
         job = self._make_job('J-VDT-002')
         # Bypass full_clean to force a dict into the JSONField
         Task.objects.filter(pk=Task.objects.create(
-            name='Bad task', job=job, service_item=sp,
+            name='Bad task', job=job, rate_scheme=sp,
             active_modifiers=[],
         ).pk).update(active_modifiers={'key': 'val'})
         output = self._run()
@@ -72,7 +72,7 @@ class ValidateDataServiceItemTest(TestCase):
         job = self._make_job('J-VDT-003')
         ws = EstWorksheet.objects.create(job=job)
         PlanTask.objects.filter(pk=PlanTask.objects.create(
-            name='Bad plan task', est_worksheet=ws, service_item=sp,
+            name='Bad plan task', est_worksheet=ws, rate_scheme=sp,
             active_modifiers=[], est_qty=Decimal('1.00'),
         ).pk).update(active_modifiers={'key': 'val'})
         output = self._run()
@@ -83,7 +83,7 @@ class ValidateDataServiceItemTest(TestCase):
         sp = self._make_sp(name='Sp-tt')
         tt = TaskTemplate.objects.create(
             template_name='Bad Template',
-            service_item=sp,
+            rate_scheme=sp,
             default_active_modifiers=[],
             default_billable_qty=Decimal('1.00'),
         )
@@ -94,18 +94,18 @@ class ValidateDataServiceItemTest(TestCase):
     # ── Negative rate / percentage checks ───────────────────────
 
     def test_negative_rate_only_allowed_for_percentage(self):
-        """A percentage ServiceItem with a negative rate (discount) is OK."""
-        ServiceItem.objects.create(
-            name='disc', algorithm=ServiceItem.PERCENTAGE,
+        """A percentage RateScheme with a negative rate (discount) is OK."""
+        RateScheme.objects.create(
+            name='disc', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('-10'), unit_label='%', accounting_category=self.ac,
         )
         output = self._run()
         self.assertNotIn('disc', output)
 
     def test_negative_rate_non_percentage_is_flagged(self):
-        """A non-percentage ServiceItem with a negative rate is an error."""
-        ServiceItem.objects.create(
-            name='bad-elapsed', algorithm=ServiceItem.ELAPSED_TIME,
+        """A non-percentage RateScheme with a negative rate is an error."""
+        RateScheme.objects.create(
+            name='bad-elapsed', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('-5.00'), unit_label='hr', accounting_category=self.ac,
         )
         output = self._run()
@@ -116,7 +116,7 @@ class ValidateDataServiceItemTest(TestCase):
         sp = self._make_sp(name='Sp-list')
         job = self._make_job('J-VDT-004')
         Task.objects.create(
-            name='Good task', job=job, service_item=sp,
+            name='Good task', job=job, rate_scheme=sp,
             active_modifiers=['mod1'],
         )
         output = self._run()

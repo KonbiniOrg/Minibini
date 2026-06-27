@@ -5,14 +5,14 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Material, InventoryItem
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 
 
 class ConsumeMaterialUniformityTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='cu', code='CU1')
-        self.scheme = ServiceItem.objects.create(
-            name='S-cu', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-cu', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.contact = Contact.objects.create(
@@ -20,7 +20,7 @@ class ConsumeMaterialUniformityTest(TestCase):
             email='consume@test.com',
         )
         self.job = Job.objects.create(job_number='JOB-CU-1', contact=self.contact)
-        self.task = Task.objects.create(job=self.job, name='t', service_item=self.scheme)
+        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
         self.pli = InventoryItem.objects.create(
             code='CU-I', accounting_category=self.cat,
             is_catalog=True, qty_on_hand=Decimal('20'),

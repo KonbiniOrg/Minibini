@@ -10,20 +10,20 @@ from rest_framework.test import APIClient
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.core.models import User, AccountingCategory
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import TaskService
 from apps.contacts.models import Contact
 from apps.inventory.models import Material, InventoryItem
 
 
 def _make_scheme(name_suffix=''):
-    """Create a minimal flat-fee ServiceItem for tests that don't care about billing."""
+    """Create a minimal flat-fee RateScheme for tests that don't care about billing."""
     code = f'TST{name_suffix[:4]}'.upper()
     ac, _ = AccountingCategory.objects.get_or_create(
         code=code, defaults={'name': f'Test AC {name_suffix}'},
     )
-    return ServiceItem.objects.create(
-        name=f'S-tst-{name_suffix}', algorithm=ServiceItem.FLAT_FEE,
+    return RateScheme.objects.create(
+        name=f'S-tst-{name_suffix}', algorithm=RateScheme.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -46,7 +46,7 @@ class MaterialCRUDTest(TestCase):
         self.task = Task.objects.create(
             job=self.job,
             name='Install countertop',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         self.category = AccountingCategory.objects.create(
             name='General', code='GEN',
@@ -180,7 +180,7 @@ class MaterialCRUDTest(TestCase):
     def test_material_wrong_task(self):
         """Material on a different task should not be accessible."""
         task2 = Task.objects.create(
-            job=self.job, name='Other task', service_item=self.scheme,
+            job=self.job, name='Other task', rate_scheme=self.scheme,
         )
         response = self.client.patch(
             f'/api/tasks/{task2.pk}/materials/{self.material.pk}/',
@@ -208,7 +208,7 @@ class SubtaskCRUDTest(TestCase):
         self.parent_task = Task.objects.create(
             job=self.job,
             name='Parent task',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
 
     def test_list_subtasks_empty(self):
@@ -221,7 +221,7 @@ class SubtaskCRUDTest(TestCase):
             job=self.job,
             parent_task=self.parent_task,
             name='Child task',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         response = self.client.get(f'/api/tasks/{self.parent_task.pk}/subtasks/')
         self.assertEqual(response.status_code, 200)
@@ -231,7 +231,7 @@ class SubtaskCRUDTest(TestCase):
     def test_create_subtask(self):
         response = self.client.post(
             f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'New subtask', 'est_qty': '3.00', 'service_item': self.scheme.pk},
+            {'name': 'New subtask', 'est_qty': '3.00', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -246,7 +246,7 @@ class SubtaskCRUDTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'Worker subtask', 'est_qty': '1.00', 'service_item': self.scheme.pk},
+            {'name': 'Worker subtask', 'est_qty': '1.00', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -255,7 +255,7 @@ class SubtaskCRUDTest(TestCase):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/tasks/{self.parent_task.pk}/subtasks/',
-            {'name': 'Fail', 'est_qty': '1.00', 'service_item': self.scheme.pk},
+            {'name': 'Fail', 'est_qty': '1.00', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
@@ -279,7 +279,7 @@ class TerminalTaskGuardTest(TestCase):
 
     def _make_task(self, task_status):
         return Task.objects.create(
-            job=self.job, name='A task', status=task_status, service_item=self.scheme,
+            job=self.job, name='A task', status=task_status, rate_scheme=self.scheme,
         )
 
     def test_cannot_add_material_to_complete_task(self):
@@ -383,20 +383,20 @@ class TaskSerializerFlattenTest(TestCase):
         )
 
     def test_task_serializer_flattens_billing_fields(self):
-        """Phase B: service_item, active_modifiers, est_qty, est_worker_time,
+        """Phase B: rate_scheme, active_modifiers, est_qty, est_worker_time,
         actual_qty are top-level fields. 'charge' is no longer in the payload."""
         from decimal import Decimal
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
 
         ac = AccountingCategory.objects.create(name='Labor')
-        scheme = ServiceItem.objects.create(
-            name='Hourly', algorithm=ServiceItem.ELAPSED_TIME,
+        scheme = RateScheme.objects.create(
+            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour',
             accounting_category=ac,
         )
         Task.objects.create(
             job=self.job, name='Test',
-            service_item=scheme, active_modifiers=['rush'],
+            rate_scheme=scheme, active_modifiers=['rush'],
             est_qty=Decimal('5'),
         )
         resp = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -404,19 +404,19 @@ class TaskSerializerFlattenTest(TestCase):
         body = resp.json()
         payload = body['results'] if isinstance(body, dict) and 'results' in body else body
         row = next(t for t in payload if t['name'] == 'Test')
-        self.assertEqual(row['service_item'], scheme.pk)
+        self.assertEqual(row['rate_scheme'], scheme.pk)
         self.assertEqual(row['active_modifiers'], ['rush'])
         self.assertEqual(row['est_qty'], '5.00')
         self.assertIsNone(row['actual_qty'])
         self.assertNotIn('charge', row)
 
     def test_post_task_accepts_flat_billing_fields(self):
-        """POST /api/jobs/<id>/tasks/ accepts service_item, active_modifiers,
+        """POST /api/jobs/<id>/tasks/ accepts rate_scheme, active_modifiers,
         est_qty, est_worker_time, actual_qty as direct fields (not nested in
         'actuals')."""
         from decimal import Decimal
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
 
         perm = Permission.objects.get(codename='can_manage_jobs')
         self.user.user_permissions.add(perm)
@@ -424,15 +424,15 @@ class TaskSerializerFlattenTest(TestCase):
         self.client.force_authenticate(user=User.objects.get(pk=self.user.pk))
 
         ac = AccountingCategory.objects.create(name='Labor2')
-        scheme = ServiceItem.objects.create(
-            name='Hourly2', algorithm=ServiceItem.ELAPSED_TIME,
+        scheme = RateScheme.objects.create(
+            name='Hourly2', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hour',
             accounting_category=ac,
         )
         payload = {
             'name': 'Bench work',
             'description': 'Test',
-            'service_item': scheme.pk,
+            'rate_scheme': scheme.pk,
             'active_modifiers': [],
             'est_qty': '5.00',
             'est_worker_time': 'PT5H',
@@ -443,7 +443,7 @@ class TaskSerializerFlattenTest(TestCase):
         )
         self.assertEqual(resp.status_code, 201)
         task = Task.objects.get(pk=resp.json()['task_id'])
-        self.assertEqual(task.service_item_id, scheme.pk)
+        self.assertEqual(task.rate_scheme_id, scheme.pk)
         self.assertEqual(task.est_qty, Decimal('5.00'))
         self.assertIsNotNone(task.est_worker_time)
         self.assertIsNone(task.actual_qty)
@@ -472,7 +472,7 @@ class TaskListInvoiceFieldTest(TestCase):
         self.scheme = _make_scheme('tli')
         self.category = AccountingCategory.objects.create(name='G', code='GTLI')
         self.task = Task.objects.create(
-            job=self.job, name='Parent', service_item=self.scheme,
+            job=self.job, name='Parent', rate_scheme=self.scheme,
         )
         self.material = Material.objects.create(
             job=self.job, task=self.task, description='Slab',
@@ -480,7 +480,7 @@ class TaskListInvoiceFieldTest(TestCase):
             accounting_category=self.category,
         )
         self.subtask = Task.objects.create(
-            job=self.job, name='Child', service_item=self.scheme,
+            job=self.job, name='Child', rate_scheme=self.scheme,
             parent_task=self.task,
         )
 

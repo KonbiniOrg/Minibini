@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, ServiceItem
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet
 from apps.inventory.models import PlanMaterial
 from apps.contacts.models import Contact, Business
@@ -26,14 +26,14 @@ class PlanMaterialsApiTest(APITestCase):
         self.job = Job.objects.create(job_number='JOB-PM-1', contact=contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme_ac = AccountingCategory.objects.create(name='pmapi-sc', code='PMAPI-SC')
-        self.scheme = ServiceItem.objects.create(
-            name='S-pmapi', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-pmapi', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
         )
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Task 1',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
 

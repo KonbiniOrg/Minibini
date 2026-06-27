@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from apps.core.models import User, Configuration, AccountingCategory, AppState
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, Blep, ServiceItem
+from apps.jobs.models import Job, Task, Blep, RateScheme
 from apps.inventory.models import Material, InventoryItem
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 
@@ -31,13 +31,13 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly-ils', algorithm=ServiceItem.ELAPSED_TIME,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-ils', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Labor', service_item=self.scheme,
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         Blep.objects.create(
@@ -73,7 +73,7 @@ class InvoiceLineItemSerializerSourcesTest(TestCase):
         long-form description) so the wizard line item card shows something
         between the arrow and the X."""
         # setUp already claims self.task; create a second task for this test.
-        other_task = Task.objects.create(job=self.job, name='Cleanup', service_item=self.scheme)
+        other_task = Task.objects.create(job=self.job, name='Cleanup', rate_scheme=self.scheme)
         task_li = InvoiceLineItem.objects.create(
             invoice=self.invoice,
             description='', qty=Decimal('1'), price=Decimal('0.00'),
@@ -112,13 +112,13 @@ class SourcePoolEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly-spe', algorithm=ServiceItem.ELAPSED_TIME,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-spe', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Labor', service_item=self.scheme,
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
@@ -177,13 +177,13 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly-lifa', algorithm=ServiceItem.ELAPSED_TIME,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-lifa', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Labor', service_item=self.scheme,
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         start = timezone.now() - timezone.timedelta(hours=2)
         self.blep = Blep.objects.create(
@@ -264,14 +264,14 @@ class AddAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly-aae', algorithm=ServiceItem.ELAPSED_TIME,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-aae', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50
         self.task = Task.objects.create(
-            job=self.job, name='Labor', service_item=self.scheme,
+            job=self.job, name='Labor', rate_scheme=self.scheme,
         )
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
@@ -279,7 +279,7 @@ class AddAtomsEndpointTest(TestCase):
         )
         # task2 with a 1h blep — task atom = $25
         self.task2 = Task.objects.create(
-            job=self.job, name='Cleanup', service_item=self.scheme,
+            job=self.job, name='Cleanup', rate_scheme=self.scheme,
         )
         Blep.objects.create(
             task=self.task2, user=self.user,
@@ -350,19 +350,19 @@ class RemoveAtomsEndpointTest(TestCase):
         self.client.login(username='test', password='pw')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly-rae', algorithm=ServiceItem.ELAPSED_TIME,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-rae', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('25.00'), unit_label='hours',
             accounting_category=self.category,
         )
         # task1 with a 2h blep — task atom = $50
-        self.task1 = Task.objects.create(job=self.job, name='Labor 1', service_item=self.scheme)
+        self.task1 = Task.objects.create(job=self.job, name='Labor 1', rate_scheme=self.scheme)
         start = timezone.now() - timezone.timedelta(hours=4)
         Blep.objects.create(
             task=self.task1, user=self.user, start_time=start, end_time=start + timezone.timedelta(hours=2),
         )
         # task2 with a 1h blep — task atom = $25
-        self.task2 = Task.objects.create(job=self.job, name='Labor 2', service_item=self.scheme)
+        self.task2 = Task.objects.create(job=self.job, name='Labor 2', rate_scheme=self.scheme)
         Blep.objects.create(
             task=self.task2, user=self.user,
             start_time=start + timezone.timedelta(hours=3),

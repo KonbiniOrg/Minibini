@@ -11,13 +11,13 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
         model = TaskTemplate
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
-            'service_item', 'default_active_modifiers', 'default_billable_qty',
+            'rate_scheme', 'default_active_modifiers', 'default_billable_qty',
         ]
         read_only_fields = ['template_id']
 
-    def validate_service_item(self, value):
-        from apps.jobs.models import ServiceItem
-        if value and value.algorithm == ServiceItem.PERCENTAGE:
+    def validate_rate_scheme(self, value):
+        from apps.jobs.models import RateScheme
+        if value and value.algorithm == RateScheme.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )

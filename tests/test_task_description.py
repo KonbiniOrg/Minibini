@@ -12,7 +12,7 @@ those views are being deleted as part of the broader HTML-view sunset.
 """
 
 from django.test import TestCase
-from apps.jobs.models import Job, PlanTask, ServiceItem
+from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.estimates.models import EstWorksheet, TaskTemplate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
@@ -20,8 +20,8 @@ from decimal import Decimal
 
 
 def _make_scheme(suffix, ac):
-    return ServiceItem.objects.create(
-        name=f'S-td-{suffix}', algorithm=ServiceItem.FLAT_FEE,
+    return RateScheme.objects.create(
+        name=f'S-td-{suffix}', algorithm=RateScheme.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -46,7 +46,7 @@ class TaskDescriptionModelTests(TestCase):
             name='Described Task',
             description='This is a task description',
             est_worksheet=self.worksheet,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
         task.refresh_from_db()
@@ -57,7 +57,7 @@ class TaskDescriptionModelTests(TestCase):
         task = PlanTask.objects.create(
             name='No Description Task',
             est_worksheet=self.worksheet,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
         task.refresh_from_db()
@@ -80,7 +80,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
         self.task_template = TaskTemplate.objects.create(
             template_name='Painting',
             description='Apply two coats of primer and paint',
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
 

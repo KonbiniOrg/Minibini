@@ -8,7 +8,7 @@ InventoryService.create_earmarks_for_job().
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask, ServiceItem
+from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
     TaskTemplate, TemplateTaskAssociation,
@@ -20,8 +20,8 @@ from apps.jobs.services import JobService
 def _make_scheme(suffix):
     from apps.core.models import AccountingCategory
     ac = AccountingCategory.objects.create(code=f'AEM-{suffix}', name=f'aem-{suffix}')
-    return ServiceItem.objects.create(
-        name=f'S-aem-{suffix}', algorithm=ServiceItem.FLAT_FEE,
+    return RateScheme.objects.create(
+        name=f'S-aem-{suffix}', algorithm=RateScheme.FLAT_FEE,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -62,7 +62,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build cabinets', sort_order=1,
-            service_item=self.scheme, est_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
     def test_earmarks_created_on_copy_from_worksheet(self):
@@ -95,7 +95,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         plan_task_b = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Install trim', sort_order=2,
-            service_item=self.scheme, est_qty=Decimal('1'),
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,
@@ -153,7 +153,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         )
         tt = TaskTemplate.objects.create(
             template_name='Countertop', is_active=True,
-            service_item=scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
@@ -196,7 +196,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         self.plan_task = PlanTask.objects.create(
             est_worksheet=self.worksheet,
             name='Build stuff', sort_order=1,
-            service_item=self.eanc_scheme, est_qty=Decimal('1'),
+            rate_scheme=self.eanc_scheme, est_qty=Decimal('1'),
         )
         PlanMaterial.objects.create(
             plan_task=self.plan_task, est_worksheet=self.worksheet,

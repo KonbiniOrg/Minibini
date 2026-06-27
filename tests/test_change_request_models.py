@@ -22,7 +22,7 @@ class ChangeRequestModelTest(BaseTestCase):
 
     def test_blep_change_request_carries_task(self):
         job = Job.objects.first()
-        task = Task.objects.create(name='T', job=job, service_item_id=1)
+        task = Task.objects.create(name='T', job=job, rate_scheme_id=1)
         r = BlepChangeRequest.objects.create(
             requester=self.user, requested_start=self.now, requested_end=self.now,
             reason='wrong end time', task=task,

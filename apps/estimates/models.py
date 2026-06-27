@@ -464,8 +464,8 @@ class TaskTemplate(models.Model):
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    service_item = models.ForeignKey(
-        'jobs.ServiceItem',
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
         on_delete=models.PROTECT,
         help_text="Default billing scheme for tasks from this template"
     )
@@ -495,7 +495,7 @@ class TaskTemplate(models.Model):
 
     @property
     def effective_accounting_category(self):
-        return self.service_item.accounting_category
+        return self.rate_scheme.accounting_category
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None,
@@ -515,10 +515,10 @@ class TaskTemplate(models.Model):
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
-        if self.service_item_id and self.service_item.replaced_by_id is not None:
+        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
             raise SchemeSupersededError(
                 f'Template "{self.template_name}" references a superseded '
-                f'ServiceItem. Update the template before adding tasks from it.'
+                f'RateScheme. Update the template before adding tasks from it.'
             )
 
         resolved_name = name if name else self.template_name
@@ -536,7 +536,7 @@ class TaskTemplate(models.Model):
                     description=resolved_description,
                     assignee=assignee,
                     sort_order=sort_order,
-                    service_item=self.service_item,
+                    rate_scheme=self.rate_scheme,
                     active_modifiers=resolved_modifiers,
                     est_qty=est_qty,
                     est_worker_time=est_worker_time,
@@ -547,7 +547,7 @@ class TaskTemplate(models.Model):
                 est_worksheet=container,
                 name=resolved_name,
                 description=resolved_description,
-                service_item=self.service_item,
+                rate_scheme=self.rate_scheme,
                 active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
@@ -566,7 +566,7 @@ class EstimateLineItem(BaseLineItem):
         help_text='TaskTemplate this line item was created from (preserves catalog ref for direct-estimate carry-over).',
     )
     adjustment_service = models.ForeignKey(
-        'jobs.ServiceItem', on_delete=models.PROTECT,
+        'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
     )

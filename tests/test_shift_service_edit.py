@@ -13,7 +13,7 @@ class ShiftEditTest(BaseTestCase):
         self.user = User.objects.create_user(username='edit_u', password='x')
         self.mgr = User.objects.create_user(username='edit_mgr', password='x', is_superuser=True)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         # Floor to the whole minute: Shift/Blep save() now stores minute-granular
         # times, so test expectations derived from self.now must land on a minute
         # boundary to compare equal to the stored values.
