@@ -303,7 +303,7 @@
     {#if !canEdit}<span class="status-badge status-frozen">frozen</span>{/if}
     {#if canEdit}
       <button type="button" onclick={openAddTemplateTask}>Add from Template</button>
-      <button type="button" onclick={openPriceListPicker}>Add from Price List</button>
+      <button type="button" onclick={openPriceListPicker}>Add line item</button>
       <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
         {sendingAll ? 'Sending…' : 'Show Client View'}
       </button>

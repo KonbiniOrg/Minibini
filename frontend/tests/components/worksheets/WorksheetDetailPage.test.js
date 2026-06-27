@@ -57,7 +57,7 @@ describe('WorksheetDetailPage per-object can_manage gating', () => {
       props: { params: { id: '5' } },
     });
 
-    expect(await findByText('Add from Price List')).toBeInTheDocument();
+    expect(await findByText('Add line item')).toBeInTheDocument();
     expect(getByText('Delete Plan')).toBeInTheDocument();
   });
 
@@ -97,7 +97,7 @@ describe('WorksheetDetailPage two-action add surface', () => {
 
     render(WorksheetDetailPage, { props: { params: { id: '5' } } });
 
-    expect(await screen.findByRole('button', { name: /add from price list/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /add line item/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add from template/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add manual task/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^add material$/i })).not.toBeInTheDocument();
@@ -118,7 +118,7 @@ describe('WorksheetDetailPage two-action add surface', () => {
     render(WorksheetDetailPage, { props: { params: { id: '5' } } });
 
     // Open the picker
-    await fireEvent.click(await screen.findByRole('button', { name: /add from price list/i }));
+    await fireEvent.click(await screen.findByRole('button', { name: /add line item/i }));
     // New picker shows nothing until you type — type a query first
     const searchInput = await screen.findByPlaceholderText(/search/i);
     await fireEvent.input(searchInput, { target: { value: 'CNC' } });
