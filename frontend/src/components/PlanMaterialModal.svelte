@@ -11,6 +11,7 @@
     planTaskId = null,
     worksheetId = null,
     categories = [],
+    inventoryItem = null, // optional: pre-selected InventoryItem from the price list picker
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -42,6 +43,19 @@
         accountingCategory = material.accounting_category ?? '';
         pliUnitCost = pliLocked ? (material.unit_cost ?? null) : null;
         pliSellPrice = pliLocked ? (material.sell_price ?? null) : null;
+      } else if (inventoryItem) {
+        // Pre-seeded from the price list picker — bind and lock to the chosen catalog item.
+        pliId = inventoryItem.inventory_item_id;
+        description = inventoryItem.description || '';
+        units = inventoryItem.units || 'none';
+        unitCost = inventoryItem.purchase_price ?? '';
+        sellPrice = inventoryItem.selling_price ?? '';
+        pliUnitCost = inventoryItem.purchase_price ?? null;
+        pliSellPrice = inventoryItem.selling_price ?? null;
+        if (inventoryItem.accounting_category) accountingCategory = inventoryItem.accounting_category;
+        else accountingCategory = '';
+        pliLocked = true;
+        quantity = '';
       } else {
         description = '';
         quantity = '';
@@ -171,11 +185,13 @@
     <div class="modal">
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 
+      {#if !inventoryItem}
       <p>
         <label><strong>Inventory Item</strong><br>
           <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
         </label>
       </p>
+      {/if}
 
       {#if pliLocked}
         <p style="background:#fff7e6;border:1px solid #ffc53d;padding:8px;">
