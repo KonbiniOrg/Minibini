@@ -11,6 +11,7 @@ const SVC_ITEM = {
   description: 'Router pass',
   algorithm: 'elapsed_time',
   rate: '75.00',
+  unit_label: 'hr',
 };
 
 const INV_ITEM = {
@@ -18,6 +19,7 @@ const INV_ITEM = {
   code: 'BOLT-14',
   description: 'Hex bolt',
   selling_price: '0.50',
+  units: 'ea',
   is_catalog: true,
   is_active: true,
 };
@@ -58,6 +60,16 @@ describe('PriceListPicker', () => {
     // findByText polls until the element appears (waits past the 250ms debounce)
     expect(await findByText('CNC Routing')).toBeInTheDocument();
     expect(await findByText('BOLT-14')).toBeInTheDocument();
+  });
+
+  it('shows each row unit to the right of the price', async () => {
+    mockApiForQuery();
+    const { getByPlaceholderText, findByText } = render(PriceListPicker, {
+      props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
+    });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'c' } });
+    expect(await findByText('/ hr')).toBeInTheDocument();
+    expect(await findByText('/ ea')).toBeInTheDocument();
   });
 
   it('calls service-items with task_applicable=true and search param', async () => {

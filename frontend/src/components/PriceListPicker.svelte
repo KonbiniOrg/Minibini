@@ -24,6 +24,7 @@
         label: s.name,
         sub: s.description || '',
         price: s.rate,
+        unit: s.unit_label,
         item: s,
       })),
       ...invRows.map((m) => ({
@@ -32,6 +33,7 @@
         label: m.code,
         sub: m.description || '',
         price: m.selling_price,
+        unit: m.units,
         item: m,
       })),
     ];
@@ -68,6 +70,7 @@
               {#if r.price != null}
                 <span class="plp-row-price">${Number(r.price).toFixed(2)}</span>
               {/if}
+              {#if r.unit}<span class="plp-row-unit">/ {r.unit}</span>{/if}
             </span>
           {/snippet}
         </SearchPicker>
@@ -106,4 +109,5 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .plp-row-price { margin-left: auto; font-size: 12px; color: #444; white-space: nowrap; }
+  .plp-row-unit { font-size: 12px; color: #777; white-space: nowrap; }
 </style>
