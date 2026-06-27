@@ -1,7 +1,9 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
+from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
-from apps.estimates.models import EstWorksheet
+from apps.estimates.models import EstWorksheet, WorkTemplate
+from apps.estimates.services import WorksheetService
 from apps.inventory.models import PlanMaterial
 from apps.jobs.models import Job, PlanTask, ServiceItem
 
@@ -13,6 +15,11 @@ class WorksheetAPITest(BaseTestCase):
         self.client = APIClient()
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
+        # A fresh job with no worksheet — used by idempotency tests.
+        contact = Contact.objects.first()
+        self.job = Job.objects.create(contact=contact, job_number='JOB-WS-IDEM-1')
+        # WorkTemplate pk=1 from the fixture has TemplateTaskAssociations.
+        self.work_template = WorkTemplate.objects.get(pk=1)
 
     def test_list_worksheets(self):
         response = self.client.get('/api/est-worksheets/')
@@ -110,3 +117,29 @@ class WorksheetAPITest(BaseTestCase):
         ws = EstWorksheet.objects.create(job=job)
         payload = self.client.get(f'/api/est-worksheets/{ws.pk}/').json()
         self.assertTrue(payload['deletable'])
+
+    # --- Idempotency tests (Task 1) ---
+
+    def test_get_or_create_worksheet_idempotent(self):
+        ws1, c1 = WorksheetService.get_or_create_worksheet(self.job.pk)
+        ws2, c2 = WorksheetService.get_or_create_worksheet(self.job.pk)
+        self.assertTrue(c1)
+        self.assertFalse(c2)
+        self.assertEqual(ws1.pk, ws2.pk)
+        self.assertEqual(EstWorksheet.objects.filter(job=self.job).count(), 1)
+
+    def test_post_worksheet_twice_does_not_duplicate(self):
+        self.client.post('/api/est-worksheets/', {'job': self.job.pk}, format='json')
+        self.client.post('/api/est-worksheets/', {'job': self.job.pk}, format='json')
+        self.assertEqual(EstWorksheet.objects.filter(job=self.job).count(), 1)
+
+    def test_post_with_template_on_existing_plan_does_not_re_scaffold(self):
+        self.client.post('/api/est-worksheets/', {'job': self.job.pk}, format='json')
+        before = PlanTask.objects.filter(est_worksheet__job=self.job).count()
+        self.client.post(
+            '/api/est-worksheets/',
+            {'job': self.job.pk, 'template': self.work_template.pk},
+            format='json',
+        )
+        after = PlanTask.objects.filter(est_worksheet__job=self.job).count()
+        self.assertEqual(before, after)  # existing Plan returned; template ignored

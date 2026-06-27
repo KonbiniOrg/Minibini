@@ -72,8 +72,8 @@ class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanT
         job = data.get('job')
         job_pk = job.pk if hasattr(job, 'pk') else job
         template = data.pop('template', None)
-        ws = WorksheetService.create_worksheet(job_pk)
-        if template:
+        ws, created = WorksheetService.get_or_create_worksheet(job_pk)
+        if created and template:
             task_pairing = template.generate_tasks_for_worksheet(ws)
             template.generate_materials_for_worksheet(ws, task_pairing=task_pairing)
         serializer.instance = ws

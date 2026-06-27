@@ -814,6 +814,31 @@ class WorksheetService:
         return ws
 
     @staticmethod
+    def get_or_create_worksheet(job_pk, **kwargs):
+        """Return the job's latest worksheet (created=False) or create a new one (created=True).
+
+        "Latest" is determined by est_worksheet_id descending, matching the
+        frontend's currentWorksheet derivation.  A job never gets a second Plan
+        through this path — idempotent by design.
+        """
+        from apps.jobs.models import Job
+        try:
+            job = Job.objects.get(pk=job_pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {job_pk} not found')
+        existing = (
+            EstWorksheet.objects
+            .filter(job=job)
+            .order_by('-est_worksheet_id')
+            .first()
+        )
+        if existing is not None:
+            return existing, False
+        ws = EstWorksheet(job=job, **kwargs)
+        ws.save()
+        return ws, True
+
+    @staticmethod
     def has_claimed_atoms(worksheet):
         """True if any of the worksheet's plan tasks/materials are claimed by an
         estimate line item source. Such a worksheet can't be deleted until those
