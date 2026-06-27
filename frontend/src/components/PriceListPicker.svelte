@@ -62,11 +62,13 @@
           placeholder="Search services or materials…"
         >
           {#snippet row(r)}
-            <span class="plp-row-label">{r.label}</span>
-            <span class="plp-row-sub">{r.sub}</span>
-            {#if r.price != null}
-              <span class="plp-row-price">${Number(r.price).toFixed(2)}</span>
-            {/if}
+            <span class="plp-row">
+              <span class="plp-row-label">{r.label}</span>
+              <span class="plp-row-sub">{r.sub}</span>
+              {#if r.price != null}
+                <span class="plp-row-price">${Number(r.price).toFixed(2)}</span>
+              {/if}
+            </span>
           {/snippet}
         </SearchPicker>
       </div>
@@ -95,7 +97,9 @@
   .plp-body { padding: 12px 14px; position: relative; }
   .plp-footer { padding: 10px 14px; border-top: 1px solid #eee; }
 
-  /* Row layout inside SearchPicker's dropdown button */
+  /* Row layout inside SearchPicker's dropdown button (which is display:block,
+     so the row needs its own flex container for the columns to align) */
+  .plp-row { display: flex; gap: 12px; align-items: baseline; width: 100%; }
   .plp-row-label { flex: 0 0 12rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .plp-row-sub {
     flex: 1 1 auto; min-width: 0; color: #666; font-size: 12px;
