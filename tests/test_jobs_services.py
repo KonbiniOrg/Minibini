@@ -7,7 +7,7 @@ from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
     Estimate, EstWorksheet,
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, InventoryItem
 from apps.inventory.services import InventoryService
@@ -253,17 +253,17 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.template = WorkTemplate.objects.create(template_name='Standard Build')
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
-        self.task_tmpl_1 = TaskTemplate.objects.create(
+        self.task_tmpl_1 = ServiceItem.objects.create(
             template_name='Cut',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
-        self.task_tmpl_2 = TaskTemplate.objects.create(
+        self.task_tmpl_2 = ServiceItem.objects.create(
             template_name='Weld',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
         TemplateTaskAssociation.objects.create(
-            work_template=self.template, task_template=self.task_tmpl_1,
+            work_template=self.template, service_item=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)
         TemplateTaskAssociation.objects.create(
-            work_template=self.template, task_template=self.task_tmpl_2,
+            work_template=self.template, service_item=self.task_tmpl_2,
             est_qty=Decimal('3.00'), sort_order=2)
 
     def test_generates_tasks_from_template(self):
@@ -283,7 +283,7 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.assertEqual(weld_task.name, 'Weld')
         self.assertEqual(weld_task.rate_scheme, self.scheme)
 
-    def test_skips_inactive_task_templates(self):
+    def test_skips_inactive_service_items(self):
         self.task_tmpl_2.is_active = False
         self.task_tmpl_2.save()
 

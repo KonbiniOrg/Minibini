@@ -7,7 +7,7 @@ from django.test import TestCase
 from apps.core.models import User, AccountingCategory
 from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.contacts.models import Contact
-from apps.estimates.models import EstWorksheet, TaskTemplate
+from apps.estimates.models import EstWorksheet, ServiceItem
 from apps.inventory.models import PlanMaterial, InventoryItem
 
 
@@ -279,7 +279,7 @@ class AddFromTemplateTest(TestCase):
             rate=Decimal('2.50'), unit_label='sqft',
             accounting_category=self.category,
         )
-        self.task_template = TaskTemplate.objects.create(
+        self.service_item = ServiceItem.objects.create(
             template_name='Standard Sanding',
             description='Sand and prep surfaces',
             rate_scheme=self.template_scheme,
@@ -289,7 +289,7 @@ class AddFromTemplateTest(TestCase):
     def test_add_from_template_success(self):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
-            {'task_template_id': self.task_template.pk, 'est_qty': '100.00'},
+            {'service_item_id': self.service_item.pk, 'est_qty': '100.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -316,7 +316,7 @@ class AddFromTemplateTest(TestCase):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
             {
-                'task_template_id': self.task_template.pk,
+                'service_item_id': self.service_item.pk,
                 'rate_scheme': scheme.rate_scheme_id,
                 'est_qty': '8.00',
                 'active_modifiers': ['overtime'],
@@ -331,7 +331,7 @@ class AddFromTemplateTest(TestCase):
     def test_add_from_template_default_qty(self):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
-            {'task_template_id': self.task_template.pk},
+            {'service_item_id': self.service_item.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -343,7 +343,7 @@ class AddFromTemplateTest(TestCase):
     def test_add_from_template_missing_template(self):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
-            {'task_template_id': 99999, 'est_qty': '1.00'},
+            {'service_item_id': 99999, 'est_qty': '1.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
@@ -356,14 +356,14 @@ class AddFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('task_template_id', response.data)
+        self.assertIn('service_item_id', response.data)
 
     def test_add_from_template_requires_can_manage_jobs(self):
         viewer = User.objects.create_user(username='tmplviewer', password='testpass')
         self.client.force_authenticate(user=viewer)
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
-            {'task_template_id': self.task_template.pk, 'est_qty': '1.00'},
+            {'service_item_id': self.service_item.pk, 'est_qty': '1.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
@@ -378,7 +378,7 @@ class AddFromTemplateTest(TestCase):
         Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
-            {'task_template_id': self.task_template.pk, 'est_qty': '1.00'},
+            {'service_item_id': self.service_item.pk, 'est_qty': '1.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
@@ -393,7 +393,7 @@ class AddFromTemplateTest(TestCase):
             rate=Decimal('45.00'), unit_label='hour',
             accounting_category=self.category,
         )
-        template_with_defaults = TaskTemplate.objects.create(
+        template_with_defaults = ServiceItem.objects.create(
             template_name='Template With Defaults',
             description='Has billing defaults',
             rate_scheme=scheme,
@@ -403,7 +403,7 @@ class AddFromTemplateTest(TestCase):
 
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
-            {'task_template_id': template_with_defaults.pk},  # NO billing fields
+            {'service_item_id': template_with_defaults.pk},  # NO billing fields
             format='json',
         )
         self.assertEqual(response.status_code, 201)

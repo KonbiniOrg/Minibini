@@ -2,7 +2,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from tests.base import BaseTestCase
 from apps.jobs.models import RateScheme
-from apps.estimates.models import TaskTemplate
+from apps.estimates.models import ServiceItem
 from apps.core.models import AccountingCategory
 
 
@@ -225,7 +225,7 @@ class RateSchemeComputeTest(BaseTestCase):
         self.assertIsInstance(result, list)
 
 
-class TaskTemplateRateSchemeTest(BaseTestCase):
+class ServiceItemRateSchemeTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.ac = AccountingCategory.objects.create(code='TTRS', name='TTRS')
@@ -238,8 +238,8 @@ class TaskTemplateRateSchemeTest(BaseTestCase):
             accounting_category=self.ac,
         )
 
-    def test_task_template_with_rate_scheme(self):
-        tmpl = TaskTemplate.objects.create(
+    def test_service_item_with_rate_scheme(self):
+        tmpl = ServiceItem.objects.create(
             template_name='Assembly',
             rate_scheme=self.scheme,
             default_active_modifiers=['messy'],
@@ -249,14 +249,14 @@ class TaskTemplateRateSchemeTest(BaseTestCase):
         self.assertEqual(tmpl.default_active_modifiers, ['messy'])
         self.assertEqual(tmpl.default_billable_qty, Decimal('4.00'))
 
-    def test_task_template_without_rate_scheme_rejected(self):
+    def test_service_item_without_rate_scheme_rejected(self):
         """Phase B: rate_scheme and default_billable_qty are NOT NULL."""
         from django.db import IntegrityError
         with self.assertRaises(IntegrityError):
-            TaskTemplate.objects.create(template_name='Legacy Template')
+            ServiceItem.objects.create(template_name='Legacy Template')
 
-    def test_task_template_api_includes_rate_scheme(self):
-        tmpl = TaskTemplate.objects.create(
+    def test_service_item_api_includes_rate_scheme(self):
+        tmpl = ServiceItem.objects.create(
             template_name='Assembly',
             rate_scheme=self.scheme,
             default_active_modifiers=['messy'],
@@ -267,7 +267,7 @@ class TaskTemplateRateSchemeTest(BaseTestCase):
         user = User.objects.first()
         self.client.force_login(user)
 
-        resp = self.client.get(f'/api/task-templates/{tmpl.pk}/')
+        resp = self.client.get(f'/api/service-items/{tmpl.pk}/')
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['rate_scheme'], self.scheme.pk)
@@ -343,12 +343,12 @@ class RateSchemeIsReferencedTest(BaseTestCase):
 
     def test_scheme_with_taskTemplate_is_referenced(self):
         from apps.jobs.models import RateScheme
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         s = RateScheme.objects.create(
             name='refTT', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        TaskTemplate.objects.create(
+        ServiceItem.objects.create(
             template_name='tt', rate_scheme=s,
             default_billable_qty=Decimal('1'),
         )

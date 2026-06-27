@@ -310,11 +310,11 @@ class AssignTaskOnHoldTest(OnHoldGuardBase):
 class CreateFromTemplateOnHoldTest(OnHoldGuardBase):
 
     def _get_flat_fee_template(self):
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         scheme = RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
         if scheme is None:
             self.skipTest('No FLAT_FEE RateScheme in fixture.')
-        tmpl, _ = TaskTemplate.objects.get_or_create(
+        tmpl, _ = ServiceItem.objects.get_or_create(
             template_name='Guard Test Template',
             defaults={
                 'rate_scheme': scheme,

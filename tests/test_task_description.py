@@ -13,7 +13,7 @@ those views are being deleted as part of the broader HTML-view sunset.
 
 from django.test import TestCase
 from apps.jobs.models import Job, PlanTask, RateScheme
-from apps.estimates.models import EstWorksheet, TaskTemplate
+from apps.estimates.models import EstWorksheet, ServiceItem
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from decimal import Decimal
@@ -77,7 +77,7 @@ class TaskDescriptionFromTemplateTests(TestCase):
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = _make_scheme('dft', self.accounting_category)
-        self.task_template = TaskTemplate.objects.create(
+        self.service_item = ServiceItem.objects.create(
             template_name='Painting',
             description='Apply two coats of primer and paint',
             rate_scheme=self.scheme,
@@ -85,8 +85,8 @@ class TaskDescriptionFromTemplateTests(TestCase):
         )
 
     def test_generate_task_copies_description_from_template(self):
-        """TaskTemplate.generate_task() should copy description to the new task."""
-        task = self.task_template.generate_task(
+        """ServiceItem.generate_task() should copy description to the new task."""
+        task = self.service_item.generate_task(
             self.worksheet, est_qty=Decimal('100.00')
         )
         self.assertEqual(task.description, 'Apply two coats of primer and paint')

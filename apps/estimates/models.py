@@ -341,11 +341,11 @@ class WorkTemplate(models.Model):
         for instance in range(1, quantity + 1):
             associations = TemplateTaskAssociation.objects.filter(
                 work_template=self,
-                task_template__is_active=True,
-            ).order_by('sort_order', 'task_template__template_name')
+                service_item__is_active=True,
+            ).order_by('sort_order', 'service_item__template_name')
 
             for association in associations:
-                task = association.task_template.generate_task(
+                task = association.service_item.generate_task(
                     worksheet,
                     est_qty=association.est_qty,
                     product_instance=instance if quantity > 1 else None,
@@ -356,7 +356,7 @@ class WorkTemplate(models.Model):
         return generated
 
     def generate_tasks_for_job(self, job, quantity=1):
-        """Generate Tasks on a Job from this template's TaskTemplates.
+        """Generate Tasks on a Job from this template's ServiceItems.
 
         Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
         so generate_materials_for_job can pair generated Materials with their
@@ -367,11 +367,11 @@ class WorkTemplate(models.Model):
         for instance in range(1, quantity + 1):
             associations = TemplateTaskAssociation.objects.filter(
                 work_template=self,
-                task_template__is_active=True,
-            ).order_by('sort_order', 'task_template__template_name')
+                service_item__is_active=True,
+            ).order_by('sort_order', 'service_item__template_name')
 
             for association in associations:
-                task = association.task_template.generate_task(
+                task = association.service_item.generate_task(
                     job,
                     est_qty=association.est_qty,
                     product_instance=instance if quantity > 1 else None,
@@ -441,9 +441,9 @@ class WorkTemplate(models.Model):
 
 
 class TemplateTaskAssociation(models.Model):
-    """Association between WorkTemplate and TaskTemplate with ordering."""
+    """Association between WorkTemplate and ServiceItem with ordering."""
     work_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
-    task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
+    service_item = models.ForeignKey('ServiceItem', on_delete=models.CASCADE)
 
     # Quantity and ordering
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, default=1)
@@ -451,14 +451,14 @@ class TemplateTaskAssociation(models.Model):
 
     class Meta:
         db_table = 'template_task_assoc'
-        unique_together = ['work_template', 'task_template']
+        unique_together = ['work_template', 'service_item']
         ordering = ['sort_order']
 
     def __str__(self):
-        return f"{self.work_template.template_name} -> {self.task_template.template_name}"
+        return f"{self.work_template.template_name} -> {self.service_item.template_name}"
 
 
-class TaskTemplate(models.Model):
+class ServiceItem(models.Model):
     """Template for creating Tasks with predefined settings"""
 
     template_id = models.AutoField(primary_key=True)
@@ -479,13 +479,13 @@ class TaskTemplate(models.Model):
     )
 
     # Relationships
-    work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
+    work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='service_items')
 
     created_date = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        db_table = 'task_templates'
+        db_table = 'service_items'
 
     def __str__(self):
         return self.template_name
@@ -560,10 +560,10 @@ class EstimateLineItem(BaseLineItem):
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
     source_template = models.ForeignKey(
-        'estimates.TaskTemplate',
+        'estimates.ServiceItem',
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        help_text='TaskTemplate this line item was created from (preserves catalog ref for direct-estimate carry-over).',
+        help_text='ServiceItem this line item was created from (preserves catalog ref for direct-estimate carry-over).',
     )
     adjustment_service = models.ForeignKey(
         'jobs.RateScheme', on_delete=models.PROTECT,
@@ -654,7 +654,7 @@ class ChangeOrderLineItem(BaseLineItem):
         related_name='co_amendments',
     )
     source_template = models.ForeignKey(
-        'estimates.TaskTemplate',
+        'estimates.ServiceItem',
         on_delete=models.SET_NULL,
         null=True, blank=True,
     )

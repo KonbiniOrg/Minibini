@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from datetime import timedelta
 from decimal import Decimal
 from apps.jobs.models import Job, Task, Blep, RateScheme
-from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, TaskTemplate
+from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, ServiceItem
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
 
@@ -574,7 +574,7 @@ class WorkTemplateModelTest(TestCase):
         self.assertEqual(template.description, "")
 
 
-class TaskTemplateModelTest(TestCase):
+class ServiceItemModelTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test Customer', last_name='', email='test.customer@test.com')
         self.job = Job.objects.create(
@@ -592,8 +592,8 @@ class TaskTemplateModelTest(TestCase):
         )
         self.scheme = _make_scheme('ttm')
 
-    def test_task_template_creation(self):
-        template = TaskTemplate.objects.create(
+    def test_service_item_creation(self):
+        template = ServiceItem.objects.create(
             template_name="Electrical Installation",
             description="Standard electrical installation task",
             is_active=True,
@@ -604,7 +604,7 @@ class TaskTemplateModelTest(TestCase):
         from apps.estimates.models import TemplateTaskAssociation
         association = TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
-            task_template=template,
+            service_item=template,
             est_qty=Decimal('12.00')
         )
 
@@ -615,16 +615,16 @@ class TaskTemplateModelTest(TestCase):
         self.assertTrue(template.is_active)
         self.assertIsNotNone(template.created_date)
 
-    def test_task_template_str_method(self):
-        template = TaskTemplate.objects.create(
+    def test_service_item_str_method(self):
+        template = ServiceItem.objects.create(
             template_name="Plumbing Setup",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
         self.assertEqual(str(template), "Plumbing Setup")
 
-    def test_task_template_defaults(self):
-        template = TaskTemplate.objects.create(
+    def test_service_item_defaults(self):
+        template = ServiceItem.objects.create(
             template_name="Default Template",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
@@ -633,17 +633,17 @@ class TaskTemplateModelTest(TestCase):
         self.assertEqual(template.description, "")
         self.assertEqual(template.work_templates.count(), 0)
 
-    def test_task_template_new_fields_optional(self):
-        template = TaskTemplate.objects.create(
+    def test_service_item_new_fields_optional(self):
+        template = ServiceItem.objects.create(
             template_name="Simple Template",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        # units/rate dropped from TaskTemplate; billing now lives on rate_scheme
+        # units/rate dropped from ServiceItem; billing now lives on rate_scheme
         self.assertEqual(template.rate_scheme, self.scheme)
 
-    def test_task_template_without_work_template(self):
-        template = TaskTemplate.objects.create(
+    def test_service_item_without_work_template(self):
+        template = ServiceItem.objects.create(
             template_name="Standalone Template",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
@@ -653,17 +653,17 @@ class TaskTemplateModelTest(TestCase):
     def test_template_task_association_sort_order(self):
         from apps.estimates.models import TemplateTaskAssociation
 
-        task_template1 = TaskTemplate.objects.create(
+        service_item1 = ServiceItem.objects.create(
             template_name="First Task",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        task_template2 = TaskTemplate.objects.create(
+        service_item2 = ServiceItem.objects.create(
             template_name="Second Task",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )
-        task_template3 = TaskTemplate.objects.create(
+        service_item3 = ServiceItem.objects.create(
             template_name="Third Task",
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
@@ -671,19 +671,19 @@ class TaskTemplateModelTest(TestCase):
 
         TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
-            task_template=task_template1,
+            service_item=service_item1,
             est_qty=Decimal('1.00'),
             sort_order=1
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
-            task_template=task_template2,
+            service_item=service_item2,
             est_qty=Decimal('2.00'),
             sort_order=2
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.work_template,
-            task_template=task_template3,
+            service_item=service_item3,
             est_qty=Decimal('3.00'),
             sort_order=3
         )
@@ -692,9 +692,9 @@ class TaskTemplateModelTest(TestCase):
             work_template=self.work_template
         ).order_by('sort_order')
 
-        self.assertEqual(ordered_associations[0].task_template, task_template1)
-        self.assertEqual(ordered_associations[1].task_template, task_template2)
-        self.assertEqual(ordered_associations[2].task_template, task_template3)
+        self.assertEqual(ordered_associations[0].service_item, service_item1)
+        self.assertEqual(ordered_associations[1].service_item, service_item2)
+        self.assertEqual(ordered_associations[2].service_item, service_item3)
 
         self.assertEqual(ordered_associations[0].sort_order, 1)
         self.assertEqual(ordered_associations[1].sort_order, 2)
@@ -704,16 +704,16 @@ class TaskTemplateModelTest(TestCase):
         from apps.estimates.models import TemplateTaskAssociation
         from django.db import models as db_models
 
-        task_templates = []
+        service_items = []
         for i in range(5):
-            template = TaskTemplate.objects.create(
+            template = ServiceItem.objects.create(
                 template_name=f"Task {i+1}",
                 rate_scheme=self.scheme,
                 default_billable_qty=Decimal('1.00'),
             )
-            task_templates.append(template)
+            service_items.append(template)
 
-        for i, task_template in enumerate(task_templates):
+        for i, service_item in enumerate(service_items):
             max_sort_order = TemplateTaskAssociation.objects.filter(
                 work_template=self.work_template
             ).aggregate(db_models.Max('sort_order'))['sort_order__max']
@@ -721,7 +721,7 @@ class TaskTemplateModelTest(TestCase):
 
             TemplateTaskAssociation.objects.create(
                 work_template=self.work_template,
-                task_template=task_template,
+                service_item=service_item,
                 est_qty=Decimal('1.00'),
                 sort_order=next_sort_order
             )
@@ -733,4 +733,4 @@ class TaskTemplateModelTest(TestCase):
         self.assertEqual(associations.count(), 5)
         for i, association in enumerate(associations):
             self.assertEqual(association.sort_order, i + 1)
-            self.assertEqual(association.task_template.template_name, f"Task {i+1}")
+            self.assertEqual(association.service_item.template_name, f"Task {i+1}")

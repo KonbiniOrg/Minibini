@@ -2,7 +2,7 @@
 #
 # HISTORICAL MIGRATION HELPER — invoked by data migration
 # jobs/0045_reframe_flat_fee_prices, which runs at a point in the migration
-# history where the atom FK field on Task/PlanTask/TaskTemplate is named
+# history where the atom FK field on Task/PlanTask/ServiceItem is named
 # `service_price` (the later jobs/0047 rename to `rate_scheme` has NOT happened
 # yet at 0045's point). That's why the FK field name is a PARAMETER (`fk_field`)
 # defaulting to `service_price`: the migration uses the default; only current-
@@ -24,7 +24,7 @@ def _price_of(active_modifiers):
     return None
 
 
-def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *,
+def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, ServiceItem, *,
                             fk_field='service_price', log=print):
     """Best-effort: relocate per-atom flat_fee_price onto dedicated ServicePrice rows.
 
@@ -55,7 +55,7 @@ def reframe_flat_fee_prices(ServicePrice, Task, PlanTask, TaskTemplate, *,
 
     for model, attr in ((Task, 'active_modifiers'),
                         (PlanTask, 'active_modifiers'),
-                        (TaskTemplate, 'default_active_modifiers')):
+                        (ServiceItem, 'default_active_modifiers')):
         for obj in model.objects.select_related(fk_field).all():
             svc = getattr(obj, fk_field)
             if not svc or svc.algorithm != FLAT_FEE:

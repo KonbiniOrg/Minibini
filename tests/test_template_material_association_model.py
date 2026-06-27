@@ -7,7 +7,7 @@ from apps.inventory.models import (
     InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.core.models import AccountingCategory, User
 from apps.jobs.models import RateScheme
@@ -28,12 +28,12 @@ class TemplateMaterialAssociationModelTests(TestCase):
             accounting_category=cls.cat,
         )
         cls.wt = WorkTemplate.objects.create(template_name='WT')
-        cls.tt = TaskTemplate.objects.create(
+        cls.tt = ServiceItem.objects.create(
             template_name='TT', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('1'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
-            work_template=cls.wt, task_template=cls.tt,
+            work_template=cls.wt, service_item=cls.tt,
             est_qty=Decimal('1'), sort_order=0,
         )
 
@@ -98,12 +98,12 @@ class TemplateMaterialAssociationApiTests(APITestCase):
             accounting_category=cls.cat,
         )
         cls.wt = WorkTemplate.objects.create(template_name='WT-API')
-        cls.tt = TaskTemplate.objects.create(
+        cls.tt = ServiceItem.objects.create(
             template_name='TT-API', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('1'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
-            work_template=cls.wt, task_template=cls.tt,
+            work_template=cls.wt, service_item=cls.tt,
             est_qty=Decimal('1'),
         )
 
@@ -247,12 +247,12 @@ class CrossTemplateValidationTests(APITestCase):
         # Two WorkTemplates; the TTA we'll try to use lives on the OTHER one.
         cls.wt1 = WorkTemplate.objects.create(template_name='WT1')
         cls.wt2 = WorkTemplate.objects.create(template_name='WT2')
-        cls.tt = TaskTemplate.objects.create(
+        cls.tt = ServiceItem.objects.create(
             template_name='TT', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('1'),
         )
         cls.tta_on_wt2 = TemplateTaskAssociation.objects.create(
-            work_template=cls.wt2, task_template=cls.tt,
+            work_template=cls.wt2, service_item=cls.tt,
             est_qty=Decimal('1'),
         )
 

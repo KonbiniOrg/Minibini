@@ -5,7 +5,7 @@ from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
 from apps.estimates.carry_over import AtomCarryOverService
-from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, TaskTemplate
+from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet, ServiceItem
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Earmark, Material, PlanMaterial, InventoryItem
 from apps.jobs.models import Job, PlanTask, RateScheme, Task
@@ -132,7 +132,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='Setup', rate_scheme=self.scheme,
             default_billable_qty=Decimal('1.00'),
         )

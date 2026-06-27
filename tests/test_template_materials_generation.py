@@ -6,7 +6,7 @@ from apps.inventory.models import (
     Material, PlanMaterial, InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.jobs.models import Job, PlanTask, RateScheme, Task
 
@@ -30,12 +30,12 @@ class _Setup(TestCase):
             name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
         )
         cls.wt = WorkTemplate.objects.create(template_name='T')
-        cls.tt = TaskTemplate.objects.create(
+        cls.tt = ServiceItem.objects.create(
             template_name='Cut', rate_scheme=cls.scheme,
             default_billable_qty=Decimal('20'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
-            work_template=cls.wt, task_template=cls.tt,
+            work_template=cls.wt, service_item=cls.tt,
             est_qty=Decimal('20'), sort_order=0,
         )
 

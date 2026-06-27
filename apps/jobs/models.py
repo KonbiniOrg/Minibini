@@ -336,10 +336,10 @@ class Task(TaskBase):
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
     source_template = models.ForeignKey(
-        'estimates.TaskTemplate',
+        'estimates.ServiceItem',
         on_delete=models.SET_NULL,
         null=True, blank=True,
-        help_text="TaskTemplate this task was created from"
+        help_text="ServiceItem this task was created from"
     )
     source_plan_task = models.OneToOneField(
         'jobs.PlanTask',
@@ -586,23 +586,23 @@ class RateScheme(models.Model):
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any PlanTask, Task, or TaskTemplate points at this scheme."""
-        from apps.estimates.models import TaskTemplate
+        """True if any PlanTask, Task, or ServiceItem points at this scheme."""
+        from apps.estimates.models import ServiceItem
         if PlanTask.objects.filter(rate_scheme=self).exists():
             return True
         if Task.objects.filter(rate_scheme=self).exists():
             return True
-        if TaskTemplate.objects.filter(rate_scheme=self).exists():
+        if ServiceItem.objects.filter(rate_scheme=self).exists():
             return True
         return False
 
     def reference_counts(self):
         """Return reference counts for the outdated-schemes UI."""
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         return {
             'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
             'task_count': Task.objects.filter(rate_scheme=self).count(),
-            'task_template_count': TaskTemplate.objects.filter(rate_scheme=self).count(),
+            'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
         }
 
     def supersede(self, **overrides):

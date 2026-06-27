@@ -645,7 +645,7 @@
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 1,
         "fields": {
             "template_name": "Site Preparation",
@@ -657,7 +657,7 @@
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 2,
         "fields": {
             "template_name": "Material Delivery",
@@ -669,7 +669,7 @@
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 3,
         "fields": {
             "template_name": "Electrical Installation",
@@ -681,7 +681,7 @@
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 4,
         "fields": {
             "template_name": "Construction Work",
@@ -697,7 +697,7 @@
         "pk": 1,
         "fields": {
             "work_template": 1,
-            "task_template": 1,
+            "service_item": 1,
             "est_qty": "1.00",
             "sort_order": 1
         }
@@ -707,7 +707,7 @@
         "pk": 2,
         "fields": {
             "work_template": 1,
-            "task_template": 2,
+            "service_item": 2,
             "est_qty": "2.00",
             "sort_order": 2
         }
@@ -717,7 +717,7 @@
         "pk": 3,
         "fields": {
             "work_template": 1,
-            "task_template": 3,
+            "service_item": 3,
             "est_qty": "150.00",
             "sort_order": 3
         }
@@ -727,7 +727,7 @@
         "pk": 4,
         "fields": {
             "work_template": 1,
-            "task_template": 4,
+            "service_item": 4,
             "est_qty": "200.00",
             "sort_order": 4
         }

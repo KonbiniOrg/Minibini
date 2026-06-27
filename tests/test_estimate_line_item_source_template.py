@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
-from apps.estimates.models import Estimate, EstimateLineItem, TaskTemplate
+from apps.estimates.models import Estimate, EstimateLineItem, ServiceItem
 from apps.jobs.models import Job, RateScheme
 
 
@@ -23,7 +23,7 @@ class EstimateLineItemSourceTemplateTest(TestCase):
             name='S-elist', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='Setup',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
@@ -36,7 +36,7 @@ class EstimateLineItemSourceTemplateTest(TestCase):
         )
         self.assertIsNone(li.source_template)
 
-    def test_source_template_fk_to_task_template(self):
+    def test_source_template_fk_to_service_item(self):
         li = EstimateLineItem.objects.create(
             estimate=self.estimate,
             qty=Decimal('1'), units='hours', price=Decimal('95.00'),

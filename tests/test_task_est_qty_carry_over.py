@@ -3,7 +3,7 @@ from django.test import TestCase
 
 from apps.jobs.models import Task, PlanTask, RateScheme, Job
 from apps.jobs.services import JobService
-from apps.estimates.models import EstWorksheet, TaskTemplate
+from apps.estimates.models import EstWorksheet, ServiceItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
@@ -60,7 +60,7 @@ class TaskEstQtyCarryOverTest(TestCase):
             rate=Decimal('100'), unit_label='job',
             accounting_category=self.ac,
         )
-        template = TaskTemplate.objects.create(
+        template = ServiceItem.objects.create(
             template_name='Setup',
             rate_scheme=scheme,
             default_billable_qty=Decimal('1'),
@@ -76,7 +76,7 @@ class TaskEstQtyCarryOverTest(TestCase):
             rate=Decimal('75'), unit_label='hour',
             accounting_category=self.ac,
         )
-        template = TaskTemplate.objects.create(
+        template = ServiceItem.objects.create(
             template_name='Default Template Name',
             rate_scheme=scheme,
             default_billable_qty=Decimal('1'),

@@ -57,14 +57,14 @@ class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory
         from apps.jobs.models import RateScheme, Job
-        from apps.estimates.models import TaskTemplate, EstWorksheet
+        from apps.estimates.models import ServiceItem, EstWorksheet
         from apps.contacts.models import Business, Contact
         ac = AccountingCategory.objects.create(code='X', name='X')
         self.scheme = RateScheme.objects.create(
             name='S-gtw', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='T-gtw', rate_scheme=self.scheme,
             default_active_modifiers=['m1'],
             default_billable_qty=Decimal('5'),
@@ -135,8 +135,8 @@ class EffectiveACPropertyTest(BaseTestCase):
         self.assertEqual(t.effective_accounting_category, self.scheme_ac)
 
     def test_taskTemplate_effective_ac_comes_from_scheme(self):
-        from apps.estimates.models import TaskTemplate
-        tt = TaskTemplate.objects.create(
+        from apps.estimates.models import ServiceItem
+        tt = ServiceItem.objects.create(
             template_name='tt-eac', rate_scheme=self.scheme,
             default_billable_qty=Decimal('1'),
         )

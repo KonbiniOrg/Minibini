@@ -1,13 +1,13 @@
 """
 Tests for the simplified templating system.
-Tests TemplateTaskAssociation. (TaskTemplate.accounting_category was
+Tests TemplateTaskAssociation. (ServiceItem.accounting_category was
 dropped in B6; the effective category is now derived from rate_scheme.)
 """
 from decimal import Decimal
 from django.test import TestCase
 
 from apps.jobs.models import RateScheme
-from apps.estimates.models import TaskTemplate, WorkTemplate, TemplateTaskAssociation
+from apps.estimates.models import ServiceItem, WorkTemplate, TemplateTaskAssociation
 from apps.core.models import AccountingCategory
 from django.db import IntegrityError
 
@@ -27,19 +27,19 @@ class TestTemplateTaskAssociation(TestCase):
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
         scheme = _make_scheme('ad', lit)
         wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
-        tt = TaskTemplate.objects.create(
+        tt = ServiceItem.objects.create(
             template_name="Sand",
             rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
 
         assoc = TemplateTaskAssociation.objects.create(
             work_template=wot,
-            task_template=tt,
+            service_item=tt,
             est_qty=1,
         )
 
         self.assertEqual(assoc.work_template, wot)
-        self.assertEqual(assoc.task_template, tt)
+        self.assertEqual(assoc.service_item, tt)
         self.assertEqual(assoc.est_qty, 1)
 
     def test_association_unique_per_template(self):
@@ -47,25 +47,25 @@ class TestTemplateTaskAssociation(TestCase):
         lit = AccountingCategory.objects.create(name="Labor", code="LBR")
         scheme = _make_scheme('aup', lit)
         wot = WorkTemplate.objects.create(template_name="Cabinet Refinish")
-        tt = TaskTemplate.objects.create(
+        tt = ServiceItem.objects.create(
             template_name="Sand",
             rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
 
-        TemplateTaskAssociation.objects.create(work_template=wot, task_template=tt, est_qty=1)
+        TemplateTaskAssociation.objects.create(work_template=wot, service_item=tt, est_qty=1)
 
         with self.assertRaises(IntegrityError):
-            TemplateTaskAssociation.objects.create(work_template=wot, task_template=tt, est_qty=2)
+            TemplateTaskAssociation.objects.create(work_template=wot, service_item=tt, est_qty=2)
 
     def test_flat_fee_template_needs_no_price_in_modifiers(self):
-        """A flat-fee TaskTemplate with empty default_active_modifiers validates cleanly."""
+        """A flat-fee ServiceItem with empty default_active_modifiers validates cleanly."""
         ac = AccountingCategory.objects.create(name="Setup AC", code="STP")
         svc = RateScheme.objects.create(
             name='Setup fee', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('100.00'), unit_label='job',
             accounting_category=ac,
         )
-        tt = TaskTemplate(
+        tt = ServiceItem(
             template_name='Setup', rate_scheme=svc,
             default_active_modifiers=[], default_billable_qty=Decimal('1'),
         )

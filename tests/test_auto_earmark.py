@@ -11,7 +11,7 @@ from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
-    TaskTemplate, TemplateTaskAssociation,
+    ServiceItem, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
 from apps.jobs.services import JobService
@@ -151,13 +151,13 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         self.template = WorkTemplate.objects.create(
             template_name='Quick',
         )
-        tt = TaskTemplate.objects.create(
+        tt = ServiceItem.objects.create(
             template_name='Countertop', is_active=True,
             rate_scheme=scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
-            task_template=tt, est_qty=1, sort_order=1,
+            service_item=tt, est_qty=1, sort_order=1,
         )
 
     def test_no_earmarks_from_template_with_no_materials(self):

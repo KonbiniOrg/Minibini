@@ -208,8 +208,8 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
 
     def test_add_from_template_accepts_est_worker_time(self):
         """POST /api/est-worksheets/{id}/add-from-template/ accepts est_worker_time."""
-        from apps.estimates.models import TaskTemplate
-        tt = TaskTemplate.objects.create(
+        from apps.estimates.models import ServiceItem
+        tt = ServiceItem.objects.create(
             template_name='Cut pieces',
             rate_scheme=self.scheme,
             default_billable_qty=Decimal('4'),
@@ -217,7 +217,7 @@ class WorksheetPlanTaskEstWorkerTimeTest(TestCase):
         response = self.client.post(
             f'/api/est-worksheets/{self.worksheet.pk}/add-from-template/',
             {
-                'task_template_id': tt.pk,
+                'service_item_id': tt.pk,
                 'est_worker_time': 'PT1H',
             },
             format='json',

@@ -11,7 +11,7 @@ from django.db import transaction
 
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
     ChangeOrder,
 )
 from apps.core.services import NumberGenerationService, NotFoundError
@@ -676,7 +676,7 @@ class ChangeOrderEmailService:
 
 
 class WorkTemplateService:
-    """Service for WorkTemplate and TaskTemplate CRUD."""
+    """Service for WorkTemplate and ServiceItem CRUD."""
 
     # --- WorkTemplate ---
 
@@ -710,23 +710,23 @@ class WorkTemplateService:
             raise NotFoundError(f'WorkTemplate {pk} not found')
         tmpl.delete()
 
-    # --- TaskTemplate ---
+    # --- ServiceItem ---
 
     @staticmethod
-    def create_task_template(**kwargs):
-        """Create a new TaskTemplate."""
-        tt = TaskTemplate(**kwargs)
+    def create_service_item(**kwargs):
+        """Create a new ServiceItem."""
+        tt = ServiceItem(**kwargs)
         tt.full_clean()
         tt.save()
         return tt
 
     @staticmethod
-    def update_task_template(pk, **kwargs):
-        """Update an existing TaskTemplate by PK."""
+    def update_service_item(pk, **kwargs):
+        """Update an existing ServiceItem by PK."""
         try:
-            tt = TaskTemplate.objects.get(pk=pk)
-        except TaskTemplate.DoesNotExist:
-            raise NotFoundError(f'TaskTemplate {pk} not found')
+            tt = ServiceItem.objects.get(pk=pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {pk} not found')
         for field, value in kwargs.items():
             setattr(tt, field, value)
         tt.full_clean()
@@ -734,13 +734,13 @@ class WorkTemplateService:
         return tt
 
     @staticmethod
-    def delete_task_template(pk):
-        """Delete a TaskTemplate if not used in any WorkTemplate."""
+    def delete_service_item(pk):
+        """Delete a ServiceItem if not used in any WorkTemplate."""
         try:
-            tt = TaskTemplate.objects.get(pk=pk)
-        except TaskTemplate.DoesNotExist:
-            raise NotFoundError(f'TaskTemplate {pk} not found')
-        if TemplateTaskAssociation.objects.filter(task_template=tt).exists():
+            tt = ServiceItem.objects.get(pk=pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {pk} not found')
+        if TemplateTaskAssociation.objects.filter(service_item=tt).exists():
             raise ValidationError(
                 f'Task Template "{tt.template_name}" cannot be deleted '
                 f'because it is used in one or more Work Order Templates.'
@@ -882,7 +882,7 @@ class WorksheetService:
         name=None,
         description=None,
     ):
-        """Add a PlanTask to a draft worksheet from a TaskTemplate.
+        """Add a PlanTask to a draft worksheet from a ServiceItem.
 
         Optional overrides:
           name        – if truthy, replaces template_name; empty string falls back to template default.
@@ -898,9 +898,9 @@ class WorksheetService:
                 'Cannot add tasks to a worksheet whose estimate has been sent.'
             )
         try:
-            tt = TaskTemplate.objects.get(pk=template_pk)
-        except TaskTemplate.DoesNotExist:
-            raise NotFoundError(f'TaskTemplate {template_pk} not found')
+            tt = ServiceItem.objects.get(pk=template_pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {template_pk} not found')
 
         # Guard: refuse to use a template whose RateScheme has been superseded.
         # Only fires when the caller is relying on the template's rate_scheme

@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from apps.jobs.models import Job, Task, Blep, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
-    Estimate, WorkTemplate, TaskTemplate,
+    Estimate, WorkTemplate, ServiceItem,
     EstWorksheet, EstimateLineItem,
 )
 from apps.inventory.models import InventoryItem
@@ -827,7 +827,7 @@ class TaskService:
     @staticmethod
     def create_from_template(template, job, assignee=None, est_qty=None):
         """
-        Create Task from TaskTemplate. Writes billing fields directly on Task.
+        Create Task from ServiceItem. Writes billing fields directly on Task.
         """
         from apps.core.services import SchemeSupersededError
 

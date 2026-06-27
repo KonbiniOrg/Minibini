@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.estimates.models import (
     Estimate, EstimateLineItem, EstWorksheet,
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
@@ -96,14 +96,14 @@ class WorkTemplateServiceDeleteTest(EstimatesTestBase):
             WorkTemplateService.delete_template(99999)
 
 
-# --- TaskTemplate CRUD ---
+# --- ServiceItem CRUD ---
 
-class TaskTemplateServiceCreateTest(EstimatesTestBase):
-    """Tests for WorkTemplateService.create_task_template."""
+class ServiceItemServiceCreateTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.create_service_item."""
 
-    def test_create_task_template(self):
+    def test_create_service_item(self):
         from apps.estimates.services import WorkTemplateService
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Welding',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
@@ -112,52 +112,52 @@ class TaskTemplateServiceCreateTest(EstimatesTestBase):
         self.assertEqual(tt.rate_scheme, self.scheme)
 
 
-class TaskTemplateServiceUpdateTest(EstimatesTestBase):
-    """Tests for WorkTemplateService.update_task_template."""
+class ServiceItemServiceUpdateTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.update_service_item."""
 
-    def test_update_task_template(self):
+    def test_update_service_item(self):
         from apps.estimates.services import WorkTemplateService
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Old',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
-        updated = WorkTemplateService.update_task_template(
+        updated = WorkTemplateService.update_service_item(
             tt.pk, template_name='New',
         )
         self.assertEqual(updated.template_name, 'New')
 
-    def test_update_task_template_not_found(self):
+    def test_update_service_item_not_found(self):
         from apps.estimates.services import WorkTemplateService
         with self.assertRaises(NotFoundError):
-            WorkTemplateService.update_task_template(99999, template_name='X')
+            WorkTemplateService.update_service_item(99999, template_name='X')
 
 
-class TaskTemplateServiceDeleteTest(EstimatesTestBase):
-    """Tests for WorkTemplateService.delete_task_template."""
+class ServiceItemServiceDeleteTest(EstimatesTestBase):
+    """Tests for WorkTemplateService.delete_service_item."""
 
-    def test_delete_unused_task_template(self):
+    def test_delete_unused_service_item(self):
         from apps.estimates.services import WorkTemplateService
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Del',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         pk = tt.pk
-        WorkTemplateService.delete_task_template(pk)
-        self.assertFalse(TaskTemplate.objects.filter(pk=pk).exists())
+        WorkTemplateService.delete_service_item(pk)
+        self.assertFalse(ServiceItem.objects.filter(pk=pk).exists())
 
-    def test_delete_used_task_template_raises(self):
+    def test_delete_used_service_item_raises(self):
         """Cannot delete a task template used in a work order template."""
         from apps.estimates.services import WorkTemplateService
         wo_tmpl = WorkTemplateService.create_template(template_name='WO')
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Used',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
-            work_template=wo_tmpl, task_template=tt,
+            work_template=wo_tmpl, service_item=tt,
         )
         with self.assertRaises(ValidationError):
-            WorkTemplateService.delete_task_template(tt.pk)
+            WorkTemplateService.delete_service_item(tt.pk)
 
 
 # --- EstimateService CRUD/status ---
@@ -514,7 +514,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
 
     def test_add_task_from_template(self):
         from apps.estimates.services import WorksheetService, WorkTemplateService
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Welding',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
@@ -597,12 +597,12 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
     def test_delete_unbundled_association(self):
         from apps.estimates.services import WorkTemplateService
         tmpl = WorkTemplateService.create_template(template_name='T')
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Task',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         assoc = TemplateTaskAssociation.objects.create(
-            work_template=tmpl, task_template=tt,
+            work_template=tmpl, service_item=tt,
             sort_order=1,
         )
         pk = assoc.pk
@@ -619,12 +619,12 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
         from apps.estimates.services import WorkTemplateService
         tmpl1 = WorkTemplateService.create_template(template_name='T1')
         tmpl2 = WorkTemplateService.create_template(template_name='T2')
-        tt = WorkTemplateService.create_task_template(
+        tt = WorkTemplateService.create_service_item(
             template_name='Task',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         assoc = TemplateTaskAssociation.objects.create(
-            work_template=tmpl1, task_template=tt,
+            work_template=tmpl1, service_item=tt,
             sort_order=1,
         )
         with self.assertRaises(NotFoundError):

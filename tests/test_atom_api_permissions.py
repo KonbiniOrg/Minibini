@@ -92,7 +92,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/businesses/',
         '/api/payment-terms/',
         '/api/work-templates/',
-        '/api/task-templates/',
+        '/api/service-items/',
         '/api/accounting-categories/',
         '/api/inventory/',
         '/api/invoices/',
@@ -133,7 +133,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         ('post', '/api/jobs/1/notes/', {'text': 'test note'}),
         ('post', '/api/contacts/1/notes/', {'text': 'test note'}),
         ('post', '/api/businesses/1/notes/', {'text': 'test note'}),
-        ('post', '/api/jobs/1/add-from-template/', {'task_template_id': 1}),
+        ('post', '/api/jobs/1/add-from-template/', {'service_item_id': 1}),
         # Adding a task to a job is open to any authenticated user.
         ('post', '/api/jobs/1/tasks/', {'name': 'New'}),
         # Editing and deleting a task are open to any authenticated user.
@@ -456,9 +456,9 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
         ('post', '/api/work-templates/', {'template_name': 'Test'}),
         ('patch', '/api/work-templates/1/', {'template_name': 'Updated'}),
         ('delete', '/api/work-templates/1/', None),
-        ('post', '/api/task-templates/', {'template_name': 'Test'}),
-        ('patch', '/api/task-templates/1/', {'template_name': 'Updated'}),
-        ('delete', '/api/task-templates/1/', None),
+        ('post', '/api/service-items/', {'template_name': 'Test'}),
+        ('patch', '/api/service-items/1/', {'template_name': 'Updated'}),
+        ('delete', '/api/service-items/1/', None),
         ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ('patch', '/api/accounting-categories/1/', {'name': 'Updated'}),
         ('delete', '/api/accounting-categories/1/', None),
@@ -495,7 +495,7 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
         user = self.users['can_manage_jobs']
         sample = [
             ('post', '/api/work-templates/', {'template_name': 'Test'}),
-            ('post', '/api/task-templates/', {'template_name': 'Test'}),
+            ('post', '/api/service-items/', {'template_name': 'Test'}),
             ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ]
         for method, url, data in sample:

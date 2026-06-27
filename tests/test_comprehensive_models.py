@@ -8,7 +8,7 @@ from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration, AccountingCategory
 from apps.jobs.models import Job, Task, Blep, RateScheme
-from apps.estimates.models import Estimate, TaskTemplate
+from apps.estimates.models import Estimate, ServiceItem
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
 from apps.estimates.models import EstimateLineItem
@@ -224,7 +224,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             name="Planning Task",
             rate_scheme=scheme,
         )
-        task_template = TaskTemplate.objects.create(
+        service_item = ServiceItem.objects.create(
             template_name="Planning Task Template",
             rate_scheme=scheme,
             default_billable_qty=Decimal('1.00'),

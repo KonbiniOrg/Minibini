@@ -102,23 +102,23 @@ class EstWorksheetViewSet(JobScopedPermissionMixin, StatusTransitionMixin, PlanT
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
         worksheet = self.get_object()
-        task_template_id = request.data.get('task_template_id')
+        service_item_id = request.data.get('service_item_id')
         est_qty = request.data.get('est_qty')
         rate_scheme = request.data.get('rate_scheme')
         active_modifiers = request.data.get('active_modifiers')
         est_worker_time = request.data.get('est_worker_time')
         name = request.data.get('name') or None
         description = request.data.get('description')  # None means "not provided"
-        if not task_template_id:
+        if not service_item_id:
             return Response(
-                {'task_template_id': ['This field is required.']},
+                {'service_item_id': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
             from decimal import Decimal
             task = WorksheetService.add_task_from_template(
                 worksheet.pk,
-                task_template_id,
+                service_item_id,
                 rate_scheme_id=int(rate_scheme) if rate_scheme else None,
                 active_modifiers=active_modifiers,
                 est_qty=(

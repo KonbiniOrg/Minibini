@@ -10,14 +10,14 @@ class TaskCreationProducesChargeTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory
         from apps.jobs.models import RateScheme, Job
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tcr', name='X-tcr')
         self.scheme = RateScheme.objects.create(
             name='S-tcr', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='T-tcr', rate_scheme=self.scheme,
             default_billable_qty=Decimal('1'),
         )

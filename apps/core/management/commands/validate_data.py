@@ -327,7 +327,7 @@ class Command(BaseCommand):
 
     def check_tasks(self):
         from apps.jobs.models import Task, PlanTask
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
         # Tasks now belong directly to a Job (post-WorkOrder-removal).
         for t in Task.objects.select_related('job').all():
@@ -347,11 +347,11 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'PlanTask {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
                 )
-        # TaskTemplates: default_active_modifiers must be a list
-        for tt in TaskTemplate.objects.all():
+        # ServiceItems: default_active_modifiers must be a list
+        for tt in ServiceItem.objects.all():
             if isinstance(tt.default_active_modifiers, dict):
                 self.errors.append(
-                    f'TaskTemplate {tt.pk} ({tt.template_name}): '
+                    f'ServiceItem {tt.pk} ({tt.template_name}): '
                     f'default_active_modifiers is a dict; must be a list of keys'
                 )
 

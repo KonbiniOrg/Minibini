@@ -1,14 +1,14 @@
 from rest_framework import serializers
 from apps.estimates.models import (
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.core.models import Configuration, AccountingCategory
 from apps.inventory.models import TemplateMaterialAssociation
 
 
-class TaskTemplateSerializer(serializers.ModelSerializer):
+class ServiceItemSerializer(serializers.ModelSerializer):
     class Meta:
-        model = TaskTemplate
+        model = ServiceItem
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
             'rate_scheme', 'default_active_modifiers', 'default_billable_qty',
@@ -25,12 +25,12 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
 
 
 class TemplateAssociationSerializer(serializers.ModelSerializer):
-    task_template = TaskTemplateSerializer(read_only=True)
+    service_item = ServiceItemSerializer(read_only=True)
 
     class Meta:
         model = TemplateTaskAssociation
         fields = [
-            'id', 'task_template', 'est_qty', 'sort_order',
+            'id', 'service_item', 'est_qty', 'sort_order',
         ]
         read_only_fields = ['id']
 

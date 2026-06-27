@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import models
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.estimates.services import WorkTemplateService, WorksheetService
 from apps.jobs.models import Job, PlanTask, RateScheme
@@ -131,19 +131,19 @@ class TemplateServiceReorderTest(BundlingTestBase):
         self.tmpl = WorkTemplateService.create_template(
             template_name='Test Template',
         )
-        self.tt1 = WorkTemplateService.create_task_template(
+        self.tt1 = WorkTemplateService.create_service_item(
             template_name='TT1',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
-        self.tt2 = WorkTemplateService.create_task_template(
+        self.tt2 = WorkTemplateService.create_service_item(
             template_name='TT2',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         self.a1 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt1, sort_order=1,
+            work_template=self.tmpl, service_item=self.tt1, sort_order=1,
         )
         self.a2 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt2, sort_order=2,
+            work_template=self.tmpl, service_item=self.tt2, sort_order=2,
         )
 
     def test_reorder_items(self):

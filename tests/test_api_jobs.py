@@ -9,7 +9,7 @@ from apps.core.models import User, AccountingCategory, Configuration, AppState
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task, PlanTask, RateScheme
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate,
+    EstWorksheet, WorkTemplate, ServiceItem,
     TemplateTaskAssociation,
 )
 from apps.inventory.models import PlanMaterial, Material
@@ -414,13 +414,13 @@ class JobPopulateFromTemplateTest(TestCase):
             name='S-poptpl', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=cat,
         )
-        self.task_template = TaskTemplate.objects.create(
+        self.service_item = ServiceItem.objects.create(
             template_name='Countertop', is_active=True,
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
-            task_template=self.task_template,
+            service_item=self.service_item,
             est_qty=2, sort_order=1,
         )
 
@@ -656,7 +656,7 @@ class JobAddFromTemplateTest(TestCase):
             name='S-aft', algorithm=RateScheme.FLAT_FEE,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='Paint room',
             description='Paint all walls',
             is_active=True,
@@ -667,7 +667,7 @@ class JobAddFromTemplateTest(TestCase):
     def test_add_from_template_success(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk, 'est_qty': '100.00'},
+            {'service_item_id': self.template.pk, 'est_qty': '100.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
@@ -677,7 +677,7 @@ class JobAddFromTemplateTest(TestCase):
     def test_add_from_template_default_qty(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk},
+            {'service_item_id': self.template.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
@@ -689,12 +689,12 @@ class JobAddFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('task_template_id', response.data)
+        self.assertIn('service_item_id', response.data)
 
     def test_add_from_template_not_found(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': 99999},
+            {'service_item_id': 99999},
             format='json',
         )
         self.assertEqual(response.status_code, 404)
@@ -703,7 +703,7 @@ class JobAddFromTemplateTest(TestCase):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk},
+            {'service_item_id': self.template.pk},
             format='json',
         )
         self.assertIn(response.status_code, [401, 403])

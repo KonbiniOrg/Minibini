@@ -1,7 +1,7 @@
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, Configuration, AccountingCategory
-from apps.estimates.models import WorkTemplate, TaskTemplate
+from apps.estimates.models import WorkTemplate, ServiceItem
 
 
 class WorkTemplateAPITest(BaseTestCase):
@@ -27,7 +27,7 @@ class WorkTemplateAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 404)
 
 
-class TaskTemplateAPITest(BaseTestCase):
+class ServiceItemAPITest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
@@ -35,14 +35,14 @@ class TaskTemplateAPITest(BaseTestCase):
         self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
 
-    def test_list_task_templates(self):
-        response = self.client.get('/api/task-templates/')
+    def test_list_service_items(self):
+        response = self.client.get('/api/service-items/')
         self.assertEqual(response.status_code, 200)
 
-    def test_create_task_template(self):
+    def test_create_service_item(self):
         from apps.jobs.models import RateScheme
         scheme = RateScheme.objects.get(pk=1)  # from fixture
-        response = self.client.post('/api/task-templates/', {
+        response = self.client.post('/api/service-items/', {
             'template_name': 'API Test Template',
             'description': 'Created via API',
             'units': 'hours',
@@ -69,9 +69,9 @@ class ConfigurationAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
 
 
-class PercentageServiceTaskTemplateRejectionTest(BaseTestCase):
+class PercentageServiceServiceItemRejectionTest(BaseTestCase):
     """A RateScheme with algorithm=PERCENTAGE must be rejected when assigning
-    to a TaskTemplate — percentage services are document-level adjustments only."""
+    to a ServiceItem — percentage services are document-level adjustments only."""
 
     def setUp(self):
         super().setUp()
@@ -86,8 +86,8 @@ class PercentageServiceTaskTemplateRejectionTest(BaseTestCase):
             unit_label='%', accounting_category=ac,
         )
 
-    def test_cannot_assign_percentage_service_to_task_template(self):
-        resp = self.client.post('/api/task-templates/', {
+    def test_cannot_assign_percentage_service_to_service_item(self):
+        resp = self.client.post('/api/service-items/', {
             'template_name': 'Rush Template',
             'rate_scheme': self.rush.pk,
             'default_billable_qty': '1.00',

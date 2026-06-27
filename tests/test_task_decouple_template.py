@@ -1,7 +1,7 @@
 """
-Tests for decoupling PlanTask from TaskTemplate.
+Tests for decoupling PlanTask from ServiceItem.
 
-NOTE: As of B6, PlanTask/Task/TaskTemplate no longer have direct
+NOTE: As of B6, PlanTask/Task/ServiceItem no longer have direct
 accounting_category fields — the effective category is derived from
 the linked RateScheme. The original AC-on-task tests have been
 removed. The HTML-view subclasses (TaskDetailAccountingCategoryTests)

@@ -11,7 +11,7 @@ from apps.jobs.models import Job, Task
 from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
-from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
+from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, ServiceItem
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
@@ -354,23 +354,23 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
         job = self.get_object()
-        task_template_id = request.data.get('task_template_id')
+        service_item_id = request.data.get('service_item_id')
         est_qty_raw = request.data.get('est_qty')
         name = request.data.get('name') or None
         description = request.data.get('description')  # None means "not provided"
         active_modifiers = request.data.get('active_modifiers')  # None means use template default
         est_worker_time = request.data.get('est_worker_time') or None
 
-        if not task_template_id:
+        if not service_item_id:
             return Response(
-                {'task_template_id': ['This field is required.']},
+                {'service_item_id': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            template = TaskTemplate.objects.get(pk=task_template_id)
-        except TaskTemplate.DoesNotExist:
+            template = ServiceItem.objects.get(pk=service_item_id)
+        except ServiceItem.DoesNotExist:
             return Response(
-                {'task_template_id': ['Task template not found.']},
+                {'service_item_id': ['Task template not found.']},
                 status=status.HTTP_404_NOT_FOUND,
             )
         try:

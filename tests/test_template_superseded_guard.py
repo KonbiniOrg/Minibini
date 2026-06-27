@@ -9,14 +9,14 @@ class TemplateSupersededGuardTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory
         from apps.jobs.models import RateScheme, Job
-        from apps.estimates.models import TaskTemplate, EstWorksheet
+        from apps.estimates.models import ServiceItem, EstWorksheet
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tsg', name='X-tsg')
         self.old_scheme = RateScheme.objects.create(
             name='O-tsg', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='T-tsg', rate_scheme=self.old_scheme,
             default_billable_qty=Decimal('1'),
         )
@@ -53,7 +53,7 @@ class TemplateSupersededAPITest(BaseTestCase):
         from apps.core.models import User, AccountingCategory
         from django.contrib.auth.models import Permission
         from apps.jobs.models import RateScheme, Job
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         from apps.contacts.models import Business, Contact
         self.user = User.objects.create_user('admin-tsg', 'admin-tsg@x.test', 'pw')
         perm = Permission.objects.get(codename='can_manage_jobs')
@@ -64,7 +64,7 @@ class TemplateSupersededAPITest(BaseTestCase):
             name='O-tsga', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='T-tsga', rate_scheme=self.old_scheme,
             default_billable_qty=Decimal('1'),
         )
@@ -82,7 +82,7 @@ class TemplateSupersededAPITest(BaseTestCase):
     def test_add_from_template_with_superseded_scheme_returns_409(self):
         resp = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk, 'est_qty': '1'},
+            {'service_item_id': self.template.pk, 'est_qty': '1'},
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 409)

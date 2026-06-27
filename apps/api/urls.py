@@ -23,7 +23,7 @@ from apps.api.jobs.board_views import (
 from apps.api.home.views import current_blep_view, home_view
 from apps.api.stubs import stub_501
 from apps.api.templates_config.views import (
-    WorkTemplateViewSet, TaskTemplateViewSet,
+    WorkTemplateViewSet, ServiceItemViewSet,
     AccountingCategoryViewSet, settings_view, units_view,
 )
 from apps.api.rate_schemes.views import RateSchemeViewSet
@@ -54,7 +54,7 @@ def api_root(request):
         'plan-tasks': '/api/plan-tasks/',
         'emails': '/api/emails/',
         'work-templates': '/api/work-templates/',
-        'task-templates': '/api/task-templates/',
+        'service-items': '/api/service-items/',
         'settings': '/api/settings/',
         'accounting-categories': '/api/accounting-categories/',
         'rate-schemes': '/api/rate-schemes/',
@@ -80,7 +80,7 @@ router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'plan-tasks', PlanTaskViewSet, basename='plan-task')
 router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
-router.register(r'task-templates', TaskTemplateViewSet, basename='task-template')
+router.register(r'service-items', ServiceItemViewSet, basename='service-item')
 router.register(r'accounting-categories', AccountingCategoryViewSet, basename='accounting-category')
 router.register(r'rate-schemes', RateSchemeViewSet, basename='rate-scheme')
 router.register(r'change-orders', ChangeOrderViewSet, basename='change-order')

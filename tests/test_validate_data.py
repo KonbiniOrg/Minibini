@@ -78,16 +78,16 @@ class ValidateDataRateSchemeTest(TestCase):
         output = self._run()
         self.assertIn('active_modifiers', output.lower())
 
-    def test_flags_dict_default_active_modifiers_on_task_template(self):
-        from apps.estimates.models import TaskTemplate
+    def test_flags_dict_default_active_modifiers_on_service_item(self):
+        from apps.estimates.models import ServiceItem
         sp = self._make_sp(name='Sp-tt')
-        tt = TaskTemplate.objects.create(
+        tt = ServiceItem.objects.create(
             template_name='Bad Template',
             rate_scheme=sp,
             default_active_modifiers=[],
             default_billable_qty=Decimal('1.00'),
         )
-        TaskTemplate.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
+        ServiceItem.objects.filter(pk=tt.pk).update(default_active_modifiers={'key': 'val'})
         output = self._run()
         self.assertIn('default_active_modifiers', output.lower())
 

@@ -29,7 +29,7 @@ class FullURLTreeTest(BaseTestCase):
             '/api/inventory/',
             '/api/emails/',
             '/api/work-templates/',
-            '/api/task-templates/',
+            '/api/service-items/',
             '/api/accounting-categories/',
             '/api/settings/',
         ]

@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.jobs.models import PlanTask, Job, RateScheme
-from apps.estimates.models import EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation
+from apps.estimates.models import EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
 
@@ -67,21 +67,21 @@ class GenerateTaskSortOrderTest(TestCase):
     def test_generated_tasks_get_association_sort_order(self):
         """Tasks should get the association's sort_order."""
         wot = WorkTemplate.objects.create(template_name='Test Template')
-        tt1 = TaskTemplate.objects.create(
+        tt1 = ServiceItem.objects.create(
             template_name='Sand',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
-        tt2 = TaskTemplate.objects.create(
+        tt2 = ServiceItem.objects.create(
             template_name='Clean',
             rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'),
         )
         # Use non-sequential sort_orders to verify they pass through
         TemplateTaskAssociation.objects.create(
-            work_template=wot, task_template=tt1,
+            work_template=wot, service_item=tt1,
             est_qty=1, sort_order=5
         )
         TemplateTaskAssociation.objects.create(
-            work_template=wot, task_template=tt2,
+            work_template=wot, service_item=tt2,
             est_qty=1, sort_order=10
         )
 

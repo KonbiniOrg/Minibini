@@ -197,14 +197,14 @@ class TaskTimeFieldsTest(BaseTestCase):
         self.assertIsNone(flat['est_qty'])
 
 
-class TaskTemplateSerializerNoACTest(BaseTestCase):
+class ServiceItemSerializerNoACTest(BaseTestCase):
     fixtures = []
 
     def setUp(self):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from apps.jobs.models import RateScheme
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         self.user = User.objects.create_user('u-tts', 'u-tts@x.test', 'pw')
         self.client.force_login(self.user)
         ac = AccountingCategory.objects.create(code='X-tts', name='X-tts')
@@ -212,13 +212,13 @@ class TaskTemplateSerializerNoACTest(BaseTestCase):
             name='S-tts', algorithm='flat_fee', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='T-tts', rate_scheme=scheme,
             default_billable_qty=Decimal('1'),
         )
 
     def test_template_payload_omits_accounting_category(self):
-        resp = self.client.get(f'/api/task-templates/{self.template.pk}/')
+        resp = self.client.get(f'/api/service-items/{self.template.pk}/')
         body = resp.json()
         self.assertNotIn('accounting_category', body)
         self.assertIn('rate_scheme', body)
