@@ -23,6 +23,10 @@ class ServiceItemViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(replaced_by__isnull=True)
             if self.request.query_params.get('task_applicable') == 'true':
                 qs = qs.exclude(algorithm=ServiceItem.PERCENTAGE)
+            search = self.request.query_params.get('search', '').strip()
+            if search:
+                from django.db.models import Q
+                qs = qs.filter(Q(name__icontains=search) | Q(description__icontains=search))
         return qs
 
     def get_permissions(self):

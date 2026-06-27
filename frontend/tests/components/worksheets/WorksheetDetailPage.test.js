@@ -89,15 +89,15 @@ describe('WorksheetDetailPage two-action add surface', () => {
     expect(screen.queryByRole('button', { name: /^add material$/i })).not.toBeInTheDocument();
   });
 
-  it('opening Price List and choosing a service opens the task form seeded with the service name', async () => {
+  it('opening Price List, typing a query, and choosing a service opens the task form seeded with the service name', async () => {
     const SERVICE = {
       service_item_id: 1, name: 'CNC Cutting', algorithm: 'ELAPSED_TIME',
-      rate: '90.00', unit_label: 'hr', modifiers: [],
+      rate: '90.00', unit_label: 'hr', modifiers: [], description: '',
     };
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeWorksheet({ can_manage: true, editable: true }), (url) => {
-      if (url.includes('service-items')) return Promise.resolve([SERVICE]);
-      if (url.includes('inventory')) return Promise.resolve([]);
+      if (url.includes('service-items')) return Promise.resolve({ results: [SERVICE], count: 1 });
+      if (url.includes('inventory')) return Promise.resolve({ results: [], count: 0 });
       return Promise.resolve({});
     });
 
@@ -105,10 +105,13 @@ describe('WorksheetDetailPage two-action add surface', () => {
 
     // Open the picker
     await fireEvent.click(await screen.findByRole('button', { name: /add from price list/i }));
-    // The picker should appear and show the service
-    await screen.findByText('CNC Cutting');
-    // Click the service row
-    await fireEvent.click(screen.getByText('CNC Cutting'));
+    // New picker shows nothing until you type — type a query first
+    const searchInput = await screen.findByPlaceholderText(/search/i);
+    await fireEvent.input(searchInput, { target: { value: 'CNC' } });
+    // Wait for the result to appear (findByText waits past the 250ms debounce)
+    const row = await screen.findByRole('button', { name: /CNC Cutting/ });
+    // Pick the row via mouseDown (SearchPicker listens on mousedown)
+    await fireEvent.mouseDown(row);
     // The WorkItemForm should now be open showing the service as a header
     expect(await screen.findByText(/Service:/)).toBeInTheDocument();
     expect(screen.getByText(/CNC Cutting/)).toBeInTheDocument();

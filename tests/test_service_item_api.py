@@ -459,3 +459,52 @@ class ServiceItemTaskApplicableFilterTest(TestCase):
         items = body.get('results', body)
         algos = {r['algorithm'] for r in items}
         self.assertNotIn('percentage', algos)
+
+
+class ServiceItemSearchFilterTest(TestCase):
+    """GET /api/service-items/?search= must filter by name or description."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import ServiceItem
+        self.user = get_user_model().objects.create_user(
+            username='u-srch', password='testpass',
+        )
+        self.client.force_login(self.user)
+        self.ac = AccountingCategory.objects.create(code='SRCH', name='SRCH')
+        self.cnc = ServiceItem.objects.create(
+            name='CNC Routing', description='Router pass on CNC bed',
+            algorithm=ServiceItem.ELAPSED_TIME, rate=Decimal('75.00'),
+            unit_label='hr', accounting_category=self.ac,
+        )
+        self.design = ServiceItem.objects.create(
+            name='Design Fee', description='Graphic design work',
+            algorithm=ServiceItem.FLAT_FEE, rate=Decimal('150.00'),
+            unit_label='ea', accounting_category=self.ac,
+        )
+
+    def _ids(self, resp):
+        body = resp.json()
+        items = body.get('results', body)
+        return [r['service_item_id'] for r in items]
+
+    def test_search_by_name_returns_match(self):
+        resp = self.client.get('/api/service-items/?search=CNC')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertIn(self.cnc.pk, ids)
+        self.assertNotIn(self.design.pk, ids)
+
+    def test_search_no_match_excludes_item(self):
+        resp = self.client.get('/api/service-items/?search=xyznonexistent')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertNotIn(self.cnc.pk, ids)
+        self.assertNotIn(self.design.pk, ids)
+
+    def test_search_by_description(self):
+        resp = self.client.get('/api/service-items/?search=Graphic')
+        self.assertEqual(resp.status_code, 200)
+        ids = self._ids(resp)
+        self.assertIn(self.design.pk, ids)
+        self.assertNotIn(self.cnc.pk, ids)

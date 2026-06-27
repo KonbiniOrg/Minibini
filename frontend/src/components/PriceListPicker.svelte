@@ -1,91 +1,105 @@
 <script>
+  // Dual-source picker for the worksheet/estimate atom-add flow.
+  // Shows service items (task-applicable) and catalog inventory items together,
+  // driven by backend search (no initial list — results appear after typing).
+  // Props mirror the consumption side in WorksheetDetailPage / estimate forms.
+  import SearchPicker from './SearchPicker.svelte';
   import { api } from '../lib/api.js';
+  import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
-  let { open = false, onselect, onfreeform, onclose } = $props();
+  let { open = false, onselect = null, onfreeform = null, onclose = null } = $props();
 
-  let services = $state([]);
-  let materials = $state([]);
-  let q = $state('');
-  let loaded = $state(false);
-
-  async function load() {
+  const search = async (q) => {
+    const enc = encodeURIComponent(q);
     const [svc, inv] = await Promise.all([
-      api.get('/api/service-items/?task_applicable=true'),
-      api.get('/api/inventory/?is_active=true'),
+      api.get(`/api/service-items/?task_applicable=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
+      api.get(`/api/inventory/?is_active=true&is_catalog=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
     ]);
-    services = (svc.results || svc).map((s) => ({
-      kind: 'service', id: s.service_item_id, label: s.name,
-      sub: s.description || '', price: s.rate, item: s,
-    }));
-    materials = (inv.results || inv)
-      .filter((m) => m.is_catalog)
-      .map((m) => ({
-        kind: 'material', id: m.inventory_item_id, label: m.code,
-        sub: m.description || '', price: m.selling_price, item: m,
-      }));
-    loaded = true;
-  }
+    const svcRows = svc.results || svc;
+    const invRows = inv.results || inv;
+    const rows = [
+      ...svcRows.map((s) => ({
+        kind: 'service',
+        id: s.service_item_id,
+        label: s.name,
+        sub: s.description || '',
+        price: s.rate,
+        item: s,
+      })),
+      ...invRows.map((m) => ({
+        kind: 'material',
+        id: m.inventory_item_id,
+        label: m.code,
+        sub: m.description || '',
+        price: m.selling_price,
+        item: m,
+      })),
+    ];
+    return {
+      rows,
+      total: (svc.count ?? svcRows.length) + (inv.count ?? invRows.length),
+    };
+  };
 
-  $effect(() => { if (open && !loaded) load(); });
-
-  const rows = $derived(
-    [...services, ...materials].filter((r) => {
-      const t = q.trim().toLowerCase();
-      return !t || r.label.toLowerCase().includes(t) || r.sub.toLowerCase().includes(t);
-    })
-  );
+  const rowLabel = (r) => r.label;
+  const resolveLabel = () => Promise.resolve(null);
 </script>
 
 {#if open}
-  <div class="overlay" role="dialog" aria-label="Add from Price List">
-    <div class="modal">
-      <header>
-        <h3>Add from Price List</h3>
-        <button type="button" onclick={() => onclose?.()}>Close</button>
-      </header>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input type="search" placeholder="Search price list…" bind:value={q} autofocus />
-      <ul>
-        {#each rows as r (r.kind + r.id)}
-          <li>
-            <button type="button" onclick={() => onselect?.({ kind: r.kind, item: r.item })}>
-              <span class="label">{r.label}</span>
-              {#if r.sub}<span class="sub">{r.sub}</span>{/if}
-              {#if r.price}<span class="price">${r.price}</span>{/if}
-            </button>
-          </li>
-        {/each}
-      </ul>
-      <footer>
-        <button type="button" onclick={() => onfreeform?.()}>+ Freeform material</button>
-      </footer>
+  <div class="plp-overlay" role="dialog" aria-modal="true">
+    <div class="plp-modal">
+      <div class="plp-header">
+        <strong>Add item</strong>
+        <button type="button" onclick={onclose}>Close</button>
+      </div>
+
+      <div class="plp-body">
+        <SearchPicker
+          {search}
+          {resolveLabel}
+          {rowLabel}
+          onPick={(r) => onselect?.({ kind: r.kind, item: r.item })}
+          placeholder="Search services or materials…"
+        >
+          {#snippet row(r)}
+            <span class="plp-row-label">{r.label}</span>
+            <span class="plp-row-sub">{r.sub}</span>
+            {#if r.price != null}
+              <span class="plp-row-price">${Number(r.price).toFixed(2)}</span>
+            {/if}
+          {/snippet}
+        </SearchPicker>
+      </div>
+
+      <div class="plp-footer">
+        <button type="button" onclick={onfreeform}>Add freeform material</button>
+      </div>
     </div>
   </div>
 {/if}
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
+  .plp-overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 80px; z-index: var(--z-modal);
   }
-  .modal {
-    background: white; padding: 16px; max-width: 560px; width: 90%;
-    border: 1px solid #ccc; display: flex; flex-direction: column; gap: 10px;
+  .plp-modal {
+    background: white; border: 1px solid #ccc; width: 560px; max-width: 95vw;
+    display: flex; flex-direction: column;
   }
-  header { display: flex; align-items: center; justify-content: space-between; }
-  h3 { margin: 0; }
-  input[type="search"] { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 1rem; }
-  ul { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; border: 1px solid #e0e0e0; }
-  li button {
-    width: 100%; text-align: left; background: none; border: none;
-    padding: 8px 10px; cursor: pointer; display: flex; gap: 12px; align-items: baseline;
+  .plp-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid #eee;
   }
-  li button:hover { background: #f5f5f5; }
-  /* fixed-width label column so every row's description starts at the same x */
-  .label { font-weight: 500; flex: 0 0 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { color: #666; font-size: 0.875rem; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .price { color: #333; font-size: 0.875rem; white-space: nowrap; margin-left: auto; }
-  footer { border-top: 1px solid #e0e0e0; padding-top: 8px; }
-  footer button { background: none; border: none; cursor: pointer; color: #555; padding: 4px 0; }
-  footer button:hover { color: #000; }
+  .plp-body { padding: 12px 14px; position: relative; }
+  .plp-footer { padding: 10px 14px; border-top: 1px solid #eee; }
+
+  /* Row layout inside SearchPicker's dropdown button */
+  .plp-row-label { flex: 0 0 12rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plp-row-sub {
+    flex: 1 1 auto; min-width: 0; color: #666; font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .plp-row-price { margin-left: auto; font-size: 12px; color: #444; white-space: nowrap; }
 </style>
