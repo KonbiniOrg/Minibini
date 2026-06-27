@@ -153,13 +153,13 @@
     <JobHeader {job} {contact} />
   {/if}
   <div class="toolbar">
-    <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to estimate</a>
-    <span class="page-title">Worksheet: {estimate.estimate_number}</span>
+    <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to Client View</a>
+    <span class="page-title">Customize Client View: {estimate.estimate_number}</span>
   </div>
 
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
     <div>
-      <h3>Source pool (worksheet atoms)</h3>
+      <h3>Source pool (plan atoms)</h3>
       <WizardSourcePool {sourcePool} bind:selectedAtoms />
     </div>
     <div>

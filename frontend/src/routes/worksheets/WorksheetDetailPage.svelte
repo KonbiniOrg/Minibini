@@ -278,7 +278,7 @@
   );
 
   async function handleDeleteWorksheet() {
-    if (!confirm('Delete this worksheet? Its plan tasks and materials will be removed.')) return;
+    if (!confirm('Delete this plan? Its plan tasks and materials will be removed.')) return;
     try {
       await api.delete(`/api/est-worksheets/${worksheet.est_worksheet_id}/`);
       push(`/jobs/${worksheet.job}`);
@@ -299,15 +299,15 @@
 
   <div class="toolbar">
     <a href={`/jobs/${worksheet.job}`} use:link class="back-link">&laquo; back to overview</a>
-    <span class="ws-title">Worksheet</span>
+    <span class="ws-title">Plan</span>
     {#if !canEdit}<span class="status-badge status-frozen">frozen</span>{/if}
     {#if canEdit}
       <button type="button" onclick={openAddTemplateTask}>Add from Template</button>
       <button type="button" onclick={openPriceListPicker}>Add from Price List</button>
       <button type="button" onclick={sendAllAtoms} disabled={sendingAll}>
-        {sendingAll ? 'Sending…' : 'Send all atoms to estimate'}
+        {sendingAll ? 'Sending…' : 'Show Client View'}
       </button>
-      <button type="button" onclick={openWizard}>Open wizard to group atoms</button>
+      <button type="button" onclick={openWizard}>Customize Client View</button>
     {/if}
     <span class="meta">Created {new Date(worksheet.created_date).toLocaleDateString()}</span>
   </div>
@@ -368,7 +368,7 @@
   {#if canDelete}
     <p class="delete-row">
       <button type="button" class="delete-btn" onclick={handleDeleteWorksheet}>
-        Delete worksheet
+        Delete Plan
       </button>
     </p>
   {/if}

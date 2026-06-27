@@ -58,7 +58,7 @@ describe('WorksheetDetailPage per-object can_manage gating', () => {
     });
 
     expect(await findByText('Add from Price List')).toBeInTheDocument();
-    expect(getByText('Delete worksheet')).toBeInTheDocument();
+    expect(getByText('Delete Plan')).toBeInTheDocument();
   });
 
   it('hides edit affordances when can_manage is false even with the global atom', async () => {
@@ -72,7 +72,21 @@ describe('WorksheetDetailPage per-object can_manage gating', () => {
     // frozen badge renders once load completes, confirming the page rendered
     await findByText('frozen');
     expect(queryByText('Add Manual Task')).not.toBeInTheDocument();
-    expect(queryByText('Delete worksheet')).not.toBeInTheDocument();
+    expect(queryByText('Delete Plan')).not.toBeInTheDocument();
+  });
+
+  it('uses new vocabulary labels: Plan title, Show Client View, Customize Client View', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeWorksheet({ can_manage: true, editable: true }));
+
+    render(WorksheetDetailPage, { props: { params: { id: '5' } } });
+
+    expect(await screen.findByText('Plan')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show client view/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /customize client view/i })).toBeInTheDocument();
+    expect(screen.queryByText('Worksheet')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /send all atoms to estimate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open wizard to group atoms/i })).not.toBeInTheDocument();
   });
 });
 

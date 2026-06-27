@@ -233,7 +233,7 @@
         </td>
       </tr>
       <tr>
-        <td>Worksheet</td>
+        <td>Plan</td>
         <td>
           {#if estimate.worksheet}
             <a href={`/worksheets/${estimate.worksheet}`} use:link>#{estimate.worksheet}</a>
@@ -260,7 +260,7 @@
       <button type="button" onclick={openAddItem}>Add Line Item</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       {#if estimate.worksheet}
-        <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Worksheet</a>
+        <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>
       {/if}
     </p>
   {/if}
