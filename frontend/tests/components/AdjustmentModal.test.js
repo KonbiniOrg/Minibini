@@ -9,9 +9,9 @@ import { api } from '@/lib/api.js';
 import AdjustmentModal from '@/components/AdjustmentModal.svelte';
 
 const SERVICES = [
-  { service_item_id: 1, name: 'Rush', algorithm: 'percentage', rate: '15.00' },
-  { service_item_id: 2, name: 'Discount', algorithm: 'percentage', rate: '-10.00' },
-  { service_item_id: 3, name: 'Hourly', algorithm: 'elapsed_time', rate: '75.00' },
+  { rate_scheme_id: 1, name: 'Rush', algorithm: 'percentage', rate: '15.00' },
+  { rate_scheme_id: 2, name: 'Discount', algorithm: 'percentage', rate: '-10.00' },
+  { rate_scheme_id: 3, name: 'Hourly', algorithm: 'elapsed_time', rate: '75.00' },
 ];
 const CATEGORIES = [
   { id: 10, code: 'LAB', name: 'Labor', taxable: false },
@@ -23,7 +23,7 @@ beforeEach(() => {
   api.post.mockReset();
 
   api.get.mockImplementation((url) => {
-    if (url.includes('service-items')) return Promise.resolve({ results: SERVICES });
+    if (url.includes('rate-schemes')) return Promise.resolve({ results: SERVICES });
     return Promise.resolve({ results: [] });
   });
   api.post.mockResolvedValue({ line_item_id: 99 });

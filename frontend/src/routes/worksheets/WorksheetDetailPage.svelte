@@ -32,7 +32,7 @@
   let selectedTaskId = $state(null);
 
   let priceListPickerOpen = $state(false);
-  let taskModalServiceItem = $state(null);
+  let taskModalRateScheme = $state(null);
   let materialModalInventoryItem = $state(null);
 
   // Permission half is the server-computed per-object `can_manage` (atom-holder
@@ -127,7 +127,7 @@
     if (kind === 'service') {
       taskModalTask = null;
       taskModalMode = 'manual';
-      taskModalServiceItem = item;
+      taskModalRateScheme = item;
       taskModalOpen = true;
     } else {
       // kind === 'material'
@@ -153,7 +153,7 @@
   function openEditTask(task) {
     taskModalTask = task;
     taskModalMode = 'manual';
-    taskModalServiceItem = null;
+    taskModalRateScheme = null;
     taskModalOpen = true;
   }
 
@@ -170,7 +170,7 @@
   function handleTaskSaved() {
     taskModalOpen = false;
     taskModalTask = null;
-    taskModalServiceItem = null;
+    taskModalRateScheme = null;
     reload();
   }
 
@@ -392,9 +392,9 @@
     item={taskModalTask}
     isEdit={!!taskModalTask}
     {templates}
-    serviceItem={taskModalServiceItem}
+    rateScheme={taskModalRateScheme}
     onSaved={handleTaskSaved}
-    onClose={() => { taskModalOpen = false; taskModalServiceItem = null; }}
+    onClose={() => { taskModalOpen = false; taskModalRateScheme = null; }}
   />
 
   <PlanMaterialModal

@@ -11,14 +11,14 @@
     item = null,     // for edit mode; null for create
     isEdit = false,
     templates = [],
-    serviceItem = null, // optional pre-selected ServiceItem (manual mode only)
+    rateScheme = null, // optional pre-selected RateScheme (manual mode only)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
   let templateId = $state('');
   let lastFilledTemplateId = $state('');
-  let serviceItemId = $state('');
+  let rateSchemeId = $state('');
   let name = $state('');
   let description = $state('');
   let activeModifiers = $state([]);
@@ -32,7 +32,7 @@
 
   onMount(async () => {
     try {
-      const resp = await api.get('/api/service-items/');
+      const resp = await api.get('/api/rate-schemes/');
       schemes = resp.results || resp;
     } catch (e) {
       error = e.message || 'Could not load services.';
@@ -52,7 +52,7 @@
     if (isEdit && item) {
       name = item.name || '';
       description = item.description || '';
-      serviceItemId = item.service_item ?? '';
+      rateSchemeId = item.rate_scheme ?? '';
       loadModifiers(item.active_modifiers);
       estQty = item.est_qty ?? '';
       estWorkerTime = formatDuration(item.est_worker_time);
@@ -63,10 +63,10 @@
       estQty = ''; estWorkerTime = '';
       templateId = '';
       lastFilledTemplateId = '';
-      if (mode === 'manual' && serviceItem) {
-        serviceItemId = serviceItem.service_item_id;
+      if (mode === 'manual' && rateScheme) {
+        rateSchemeId = rateScheme.rate_scheme_id;
       } else {
-        serviceItemId = '';
+        rateSchemeId = '';
       }
     }
     error = '';
@@ -89,13 +89,13 @@
     if (selectedTemplate.default_billable_qty) {
       estQty = selectedTemplate.default_billable_qty;
     }
-    serviceItemId = selectedTemplate.service_item ?? '';
+    rateSchemeId = selectedTemplate.rate_scheme ?? '';
   });
 
   const selectedScheme = $derived(
-    (mode === 'manual' && serviceItem && serviceItem.service_item_id === Number(serviceItemId))
-      ? serviceItem
-      : (schemes.find(s => s.service_item_id === Number(serviceItemId)) || null)
+    (mode === 'manual' && rateScheme && rateScheme.rate_scheme_id === Number(rateSchemeId))
+      ? rateScheme
+      : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
 
   const estQtyRequired = $derived(context === 'worksheet');
@@ -165,7 +165,7 @@
       error = 'Please pick a template.';
       return;
     }
-    if (mode === 'manual' && !serviceItemId) {
+    if (mode === 'manual' && !rateSchemeId) {
       error = 'Please pick a service.';
       return;
     }
@@ -182,7 +182,7 @@
       const payload = {
         name,
         description,
-        service_item: serviceItemId,
+        rate_scheme: rateSchemeId,
         active_modifiers: activeModifiers,
         est_qty: estQty || null,
         est_worker_time: estWorkerTimeISO,
@@ -253,15 +253,15 @@
         {/if}
 
         {#if mode === 'manual'}
-          {#if serviceItem}
-            <p><strong>Service:</strong> {serviceItem.name}</p>
+          {#if rateScheme}
+            <p><strong>Service:</strong> {rateScheme.name}</p>
           {:else}
             <p>
               <label><strong>Service *</strong><br>
-                <select bind:value={serviceItemId}>
+                <select bind:value={rateSchemeId}>
                   <option value="">-- select --</option>
-                  {#each schemes as s (s.service_item_id)}
-                    <option value={s.service_item_id}>{s.name}</option>
+                  {#each schemes as s (s.rate_scheme_id)}
+                    <option value={s.rate_scheme_id}>{s.name}</option>
                   {/each}
                 </select>
               </label>

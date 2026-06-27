@@ -4,17 +4,17 @@ import { render, fireEvent } from '@testing-library/svelte';
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
 import { api } from '@/lib/api.js';
-import ServiceItemManager from '@/components/ServiceItemManager.svelte';
+import RateSchemeManager from '@/components/RateSchemeManager.svelte';
 
-const SCHEME = { service_item_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
-const FLAT_FEE_SCHEME = { service_item_id: 2, name: 'Flat Weld', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [], reference_counts: {} };
+const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
+const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Flat Weld', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [], reference_counts: {} };
 
 beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.delete.mockReset();
   api.get.mockImplementation((url) => {
-    if (url.startsWith('/api/service-items/')) return Promise.resolve({ results: [SCHEME] });
+    if (url.startsWith('/api/rate-schemes/')) return Promise.resolve({ results: [SCHEME] });
     if (url === '/api/accounting-categories/') return Promise.resolve({ results: [{ id: 1, code: 'C1', name: 'Labor' }] });
     if (url === '/api/settings/units/') return Promise.resolve(['none', 'hr']);
     return Promise.resolve({ results: [] });
@@ -23,25 +23,25 @@ beforeEach(() => {
   api.delete.mockResolvedValue({});
 });
 
-describe('ServiceItemManager', () => {
+describe('RateSchemeManager', () => {
   it('loads and lists schemes', async () => {
-    const { findByText } = render(ServiceItemManager);
+    const { findByText } = render(RateSchemeManager);
     expect(await findByText('Hourly')).toBeInTheDocument();
   });
 
   it('shows "Services" as the section heading', async () => {
-    const { findByRole } = render(ServiceItemManager);
+    const { findByRole } = render(RateSchemeManager);
     expect(await findByRole('heading', { name: 'Services' })).toBeInTheDocument();
   });
 
   it('has an "Add Service" button (not "Add Rate Scheme")', async () => {
-    const { findByRole, queryByRole } = render(ServiceItemManager);
+    const { findByRole, queryByRole } = render(RateSchemeManager);
     expect(await findByRole('button', { name: 'Add Service' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'Add Rate Scheme' })).not.toBeInTheDocument();
   });
 
   it('creates a scheme with rate field for flat-fee algorithm', async () => {
-    const { findByRole, getByLabelText, getByRole } = render(ServiceItemManager);
+    const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
     // Switch to flat-fee
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'flat_fee' } });
@@ -49,19 +49,19 @@ describe('ServiceItemManager', () => {
     expect(getByLabelText(/Rate/)).toBeInTheDocument();
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Quick Fix' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({ name: 'Quick Fix', algorithm: 'flat_fee' }));
+    expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/', expect.objectContaining({ name: 'Quick Fix', algorithm: 'flat_fee' }));
   });
 
   it('creates a scheme', async () => {
-    const { findByRole, getByLabelText, getByRole } = render(ServiceItemManager);
+    const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Premium' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({ name: 'Premium' }));
+    expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/', expect.objectContaining({ name: 'Premium' }));
   });
 
   it('keeps the existing-services list visible while adding a new one', async () => {
-    const { findByRole, getByText, queryByRole } = render(ServiceItemManager);
+    const { findByRole, getByText, queryByRole } = render(RateSchemeManager);
     // Existing service is listed before adding.
     expect(await findByRole('button', { name: 'Add Service' })).toBeInTheDocument();
     expect(getByText('Hourly')).toBeInTheDocument();
@@ -75,14 +75,14 @@ describe('ServiceItemManager', () => {
 
   it('deletes an unreferenced scheme after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const { findByRole } = render(ServiceItemManager);
+    const { findByRole } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Delete' }));
-    expect(api.delete).toHaveBeenCalledWith('/api/service-items/1/');
+    expect(api.delete).toHaveBeenCalledWith('/api/rate-schemes/1/');
     confirmSpy.mockRestore();
   });
 
   it('percentage algorithm: shows rate field (negative allowed), AC selector, and hides modifier editor', async () => {
-    const { findByRole, getByLabelText, queryByText } = render(ServiceItemManager);
+    const { findByRole, getByLabelText, queryByText } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'percentage' } });
 

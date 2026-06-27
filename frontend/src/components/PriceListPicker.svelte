@@ -12,7 +12,7 @@
   const search = async (q) => {
     const enc = encodeURIComponent(q);
     const [svc, inv] = await Promise.all([
-      api.get(`/api/service-items/?task_applicable=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
+      api.get(`/api/rate-schemes/?task_applicable=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
       api.get(`/api/inventory/?is_active=true&is_catalog=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
     ]);
     const svcRows = svc.results || svc;
@@ -20,7 +20,7 @@
     const rows = [
       ...svcRows.map((s) => ({
         kind: 'service',
-        id: s.service_item_id,
+        id: s.rate_scheme_id,
         label: s.name,
         sub: s.description || '',
         price: s.rate,

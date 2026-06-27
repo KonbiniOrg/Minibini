@@ -27,7 +27,7 @@
 
   async function loadServices() {
     try {
-      const resp = await api.get('/api/service-items/?page_size=100');
+      const resp = await api.get('/api/rate-schemes/?page_size=100');
       const all = resp.results || resp;
       services = all.filter(s => s.algorithm === 'percentage');
     } catch (_) {
@@ -78,7 +78,7 @@
         >
           <option value="">-- Select a service --</option>
           {#each services as svc}
-            <option value={svc.service_item_id}>
+            <option value={svc.rate_scheme_id}>
               {svc.name} ({svc.rate}%)
             </option>
           {/each}

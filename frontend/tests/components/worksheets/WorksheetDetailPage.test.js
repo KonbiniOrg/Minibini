@@ -105,12 +105,12 @@ describe('WorksheetDetailPage two-action add surface', () => {
 
   it('opening Price List, typing a query, and choosing a service opens the task form seeded with the service name', async () => {
     const SERVICE = {
-      service_item_id: 1, name: 'CNC Cutting', algorithm: 'ELAPSED_TIME',
+      rate_scheme_id: 1, name: 'CNC Cutting', algorithm: 'ELAPSED_TIME',
       rate: '90.00', unit_label: 'hr', modifiers: [], description: '',
     };
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeWorksheet({ can_manage: true, editable: true }), (url) => {
-      if (url.includes('service-items')) return Promise.resolve({ results: [SERVICE], count: 1 });
+      if (url.includes('rate-schemes')) return Promise.resolve({ results: [SERVICE], count: 1 });
       if (url.includes('inventory')) return Promise.resolve({ results: [], count: 0 });
       return Promise.resolve({});
     });

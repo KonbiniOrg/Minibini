@@ -6,8 +6,8 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.f
 import { api } from '@/lib/api.js';
 import WorkItemForm from '@/components/WorkItemForm.svelte';
 
-const HOURLY_SCHEME = { service_item_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
-const FLAT_FEE_SCHEME = { service_item_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
+const HOURLY_SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [] };
+const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Quick Fix', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [] };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -70,14 +70,14 @@ describe('WorkItemForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
-      name: 'Cut', service_item: 1, est_worker_time: null,
+      name: 'Cut', rate_scheme: 1, est_worker_time: null,
     }));
     expect(onSaved).toHaveBeenCalled();
   });
 });
 
 const SERVICE_WITH_MODIFIER = {
-  service_item_id: 1,
+  rate_scheme_id: 1,
   name: 'CNC Cutting',
   algorithm: 'ELAPSED_TIME',
   rate: '90.00',
@@ -85,10 +85,10 @@ const SERVICE_WITH_MODIFIER = {
   modifiers: [{ key: 'rush', label: 'Rush', percent: 15 }],
 };
 
-describe('WorkItemForm with a pre-selected serviceItem', () => {
+describe('WorkItemForm with a pre-selected rateScheme', () => {
   it('shows the chosen service as a header and hides the internal service selector', async () => {
     render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, serviceItem: SERVICE_WITH_MODIFIER },
+      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, rateScheme: SERVICE_WITH_MODIFIER },
     });
     // The chosen service name should appear as a read-only header
     expect(await screen.findByText(/CNC Cutting/)).toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('WorkItemForm with a pre-selected serviceItem', () => {
 
   it('renders the pre-selected service modifier choices', async () => {
     render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, serviceItem: SERVICE_WITH_MODIFIER },
+      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, rateScheme: SERVICE_WITH_MODIFIER },
     });
     // The modifier label should be visible
     expect(await screen.findByText(/Rush/)).toBeInTheDocument();

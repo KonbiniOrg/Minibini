@@ -6,7 +6,7 @@ import { api } from '@/lib/api.js';
 import PriceListPicker from '@/components/PriceListPicker.svelte';
 
 const SVC_ITEM = {
-  service_item_id: 11,
+  rate_scheme_id: 11,
   name: 'CNC Routing',
   description: 'Router pass',
   algorithm: 'elapsed_time',
@@ -26,7 +26,7 @@ const INV_ITEM = {
 
 function mockApiForQuery() {
   api.get.mockImplementation((url) => {
-    if (url.includes('/api/service-items/')) {
+    if (url.includes('/api/rate-schemes/')) {
       return Promise.resolve({ results: [SVC_ITEM], count: 1 });
     }
     if (url.includes('/api/inventory/')) {
@@ -72,14 +72,14 @@ describe('PriceListPicker', () => {
     expect(await findByText('/ ea')).toBeInTheDocument();
   });
 
-  it('calls service-items with task_applicable=true and search param', async () => {
+  it('calls rate-schemes with task_applicable=true and search param', async () => {
     mockApiForQuery();
     const { getByPlaceholderText } = render(PriceListPicker, {
       props: { open: true, onselect: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn() },
     });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
     await new Promise((r) => setTimeout(r, 300));
-    const svcCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/service-items/'));
+    const svcCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/rate-schemes/'));
     expect(svcCalls.length).toBeGreaterThan(0);
     expect(svcCalls[0][0]).toContain('task_applicable=true');
     expect(svcCalls[0][0]).toContain('search=bolt');
@@ -110,7 +110,7 @@ describe('PriceListPicker', () => {
     await fireEvent.mouseDown(btn);
     expect(onselect).toHaveBeenCalledWith({
       kind: 'service',
-      item: expect.objectContaining({ service_item_id: 11, name: 'CNC Routing' }),
+      item: expect.objectContaining({ rate_scheme_id: 11, name: 'CNC Routing' }),
     });
   });
 
