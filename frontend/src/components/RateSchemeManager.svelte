@@ -179,7 +179,7 @@
   load();
 </script>
 
-<h3>Services</h3>
+<h3>Rate Schemes</h3>
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
@@ -227,13 +227,13 @@
     </tbody>
   </table>
   {#if !showSuperseded && editingId === null && supersedingId === null}
-    <p><button type="button" onclick={startCreate}>Add Service</button></p>
+    <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
   {/if}
 {/if}
 
 {#if editingId !== null || supersedingId !== null}
   <fieldset>
-    <legend><strong>{supersedingId ? 'New Version of Service' : (editingId === 'new' ? 'New Service' : 'Edit Service')}</strong></legend>
+    <legend><strong>{supersedingId ? 'New Version of Rate Scheme' : (editingId === 'new' ? 'New Rate Scheme' : 'Edit Rate Scheme')}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label>

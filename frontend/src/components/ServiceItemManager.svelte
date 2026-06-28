@@ -125,7 +125,7 @@
   load();
 </script>
 
-<h3>Task Templates</h3>
+<h3>Service Items</h3>
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
@@ -133,7 +133,7 @@
 {#if !loading && editingId === null}
   <table class="data-table">
     <thead>
-      <tr><th>Name</th><th>Service</th><th>Active</th><th></th></tr>
+      <tr><th>Name</th><th>Rate Scheme</th><th>Active</th><th></th></tr>
     </thead>
     <tbody>
       {#each templates as t (t.template_id)}
@@ -143,7 +143,7 @@
           <td>
             {scheme ? scheme.name : '—'}
             {#if isSuperseded(t)}
-              <br><strong style="color:#a8071a">WARNING: Service is superseded — update before next use</strong>
+              <br><strong style="color:#a8071a">WARNING: Rate Scheme is superseded — update before next use</strong>
             {/if}
           </td>
           <td>{t.is_active ? 'Yes' : 'No'}</td>
@@ -155,19 +155,19 @@
       {/each}
     </tbody>
   </table>
-  <p><button type="button" onclick={startCreate}>Add Template</button></p>
+  <p><button type="button" onclick={startCreate}>Add Service Item</button></p>
 {/if}
 
 {#if editingId !== null}
   <fieldset>
-    <legend><strong>{editingId === 'new' ? 'New Task Template' : 'Edit Task Template'}</strong></legend>
+    <legend><strong>{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.template_name} style="width:100%;box-sizing:border-box;">
     </label></p>
     <p><label><strong>Description</strong><br>
       <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
     </label></p>
-    <p><label><strong>Service</strong><br>
+    <p><label><strong>Rate Scheme</strong><br>
       <select bind:value={form.rate_scheme}>
         <option value="">-- None --</option>
         {#each schemes as s (s.rate_scheme_id)}
@@ -177,7 +177,7 @@
     </label></p>
 
     {#if selectedScheme}
-      <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from service)</small></p>
+      <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
       {#if selectedScheme.algorithm !== 'flat_fee' && selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
         <fieldset>
           <legend><strong>Default Modifiers</strong></legend>

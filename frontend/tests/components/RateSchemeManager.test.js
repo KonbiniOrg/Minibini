@@ -29,20 +29,20 @@ describe('RateSchemeManager', () => {
     expect(await findByText('Hourly')).toBeInTheDocument();
   });
 
-  it('shows "Services" as the section heading', async () => {
+  it('shows "Rate Schemes" as the section heading', async () => {
     const { findByRole } = render(RateSchemeManager);
-    expect(await findByRole('heading', { name: 'Services' })).toBeInTheDocument();
+    expect(await findByRole('heading', { name: 'Rate Schemes' })).toBeInTheDocument();
   });
 
-  it('has an "Add Service" button (not "Add Rate Scheme")', async () => {
+  it('has an "Add Rate Scheme" button (not "Add Service")', async () => {
     const { findByRole, queryByRole } = render(RateSchemeManager);
-    expect(await findByRole('button', { name: 'Add Service' })).toBeInTheDocument();
-    expect(queryByRole('button', { name: 'Add Rate Scheme' })).not.toBeInTheDocument();
+    expect(await findByRole('button', { name: 'Add Rate Scheme' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Add Service' })).not.toBeInTheDocument();
   });
 
   it('creates a scheme with rate field for flat-fee algorithm', async () => {
     const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
     // Switch to flat-fee
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'flat_fee' } });
     // Should have a Rate field (not a separate flat_fee_price)
@@ -54,23 +54,23 @@ describe('RateSchemeManager', () => {
 
   it('creates a scheme', async () => {
     const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Premium' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/', expect.objectContaining({ name: 'Premium' }));
   });
 
-  it('keeps the existing-services list visible while adding a new one', async () => {
+  it('keeps the existing-schemes list visible while adding a new one', async () => {
     const { findByRole, getByText, queryByRole } = render(RateSchemeManager);
-    // Existing service is listed before adding.
-    expect(await findByRole('button', { name: 'Add Service' })).toBeInTheDocument();
+    // Existing scheme is listed before adding.
+    expect(await findByRole('button', { name: 'Add Rate Scheme' })).toBeInTheDocument();
     expect(getByText('Hourly')).toBeInTheDocument();
     // Open the add form — the list must NOT be suppressed.
-    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
     expect(getByText('Hourly')).toBeInTheDocument();           // existing rows still shown
     expect(await findByRole('button', { name: 'Save' })).toBeInTheDocument(); // form is open
-    // The Add Service button is hidden while the form is open (no double-add).
-    expect(queryByRole('button', { name: 'Add Service' })).not.toBeInTheDocument();
+    // The Add Rate Scheme button is hidden while the form is open (no double-add).
+    expect(queryByRole('button', { name: 'Add Rate Scheme' })).not.toBeInTheDocument();
   });
 
   it('deletes an unreferenced scheme after confirmation', async () => {
@@ -83,7 +83,7 @@ describe('RateSchemeManager', () => {
 
   it('percentage algorithm: shows rate field (negative allowed), AC selector, and hides modifier editor', async () => {
     const { findByRole, getByLabelText, queryByText } = render(RateSchemeManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Service' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
     await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'percentage' } });
 
     // Rate field is present

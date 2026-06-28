@@ -26,40 +26,36 @@ beforeEach(() => {
 });
 
 describe('ServiceItemManager', () => {
-  it('loads and lists templates', async () => {
+  it('loads and lists service items', async () => {
     const { findByText } = render(ServiceItemManager);
     expect(await findByText('Welding')).toBeInTheDocument();
   });
 
-  it('shows "Service" column header (not "Rate Scheme")', async () => {
-    const { findByText, queryByText } = render(ServiceItemManager);
-    await findByText('Welding'); // wait for load
-    expect(queryByText('Rate Scheme')).not.toBeInTheDocument();
+  it('shows "Rate Scheme" column header (not "Service")', async () => {
+    const { findByRole } = render(ServiceItemManager);
+    expect(await findByRole('columnheader', { name: 'Rate Scheme' })).toBeInTheDocument();
   });
 
-  it('form labels service selector as "Service" (not "Rate Scheme")', async () => {
+  it('form labels the rate-scheme selector as "Rate Scheme"', async () => {
     const { findByRole, queryByLabelText } = render(ServiceItemManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
-    // Should NOT have a "Rate Scheme" label
-    expect(queryByLabelText(/Rate Scheme/)).not.toBeInTheDocument();
-    // Should have a "Service" label
-    expect(queryByLabelText(/Service/)).toBeInTheDocument();
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
+    expect(queryByLabelText(/Rate Scheme/)).toBeInTheDocument();
   });
 
-  it('does not show a flat_fee_price input for flat-fee service', async () => {
+  it('does not show a flat_fee_price input for a flat-fee rate scheme', async () => {
     const { findByRole, getByLabelText, queryByLabelText } = render(ServiceItemManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
-    // Select the flat-fee service
-    await fireEvent.change(getByLabelText(/Service/), { target: { value: '2' } });
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
+    // Select the flat-fee rate scheme
+    await fireEvent.change(getByLabelText(/Rate Scheme/), { target: { value: '2' } });
     // No flat fee price input should appear
     expect(queryByLabelText(/[Ff]lat fee/)).not.toBeInTheDocument();
   });
 
-  it('saves flat-fee template with active_modifiers as a list (not a dict)', async () => {
+  it('saves a service item with active_modifiers as a list (not a dict)', async () => {
     const { findByRole, getByLabelText, getByRole } = render(ServiceItemManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Painting' } });
-    await fireEvent.change(getByLabelText(/Service/), { target: { value: '2' } });
+    await fireEvent.change(getByLabelText(/Rate Scheme/), { target: { value: '2' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({
       template_name: 'Painting',
@@ -70,15 +66,15 @@ describe('ServiceItemManager', () => {
     expect(Array.isArray(call[1].default_active_modifiers)).toBe(true);
   });
 
-  it('creates a template', async () => {
+  it('creates a service item', async () => {
     const { findByRole, getByLabelText, getByRole } = render(ServiceItemManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Template' }));
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Painting' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({ template_name: 'Painting' }));
   });
 
-  it('deletes a template after confirmation', async () => {
+  it('deletes a service item after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { findAllByRole } = render(ServiceItemManager);
     const deleteButtons = await findAllByRole('button', { name: 'Delete' });
