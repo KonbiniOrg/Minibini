@@ -29,6 +29,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
+    reprojection_state = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
@@ -38,9 +39,13 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'adjustment_service', 'adjustment_target_categories',
             'adjustment_service_detail',
-            'sources',
+            'sources', 'reprojection_state',
         ]
         read_only_fields = ['line_item_id']
+
+    def get_reprojection_state(self, obj):
+        from apps.estimates.services import EstimateWizardService
+        return EstimateWizardService.reprojection_state(obj)
 
     def get_adjustment_service_detail(self, obj):
         if obj.adjustment_service_id is None:

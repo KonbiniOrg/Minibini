@@ -248,6 +248,11 @@ class EstimateService:
             setattr(li, field, value)
         li.full_clean()
         LineItemService.save_line_item(li)
+        # Editing a projected line re-baselines its snapshot to the atoms' current
+        # values: an "underlying changed" line, once the user touches it, drops back
+        # to plain "overridden" and the marker clears (implicit "keep mine" on edit).
+        if li.projection_snapshot:
+            EstimateWizardService._snapshot_line_item(li)
         return li
 
     @staticmethod
@@ -997,6 +1002,85 @@ class EstimateWizardService(BaseWizardService):
         line_item.projection_snapshot = snap
         line_item.save(update_fields=['projection_snapshot'])
 
+    @classmethod
+    def reprojection_state(cls, line_item):
+        """Per-line drift state vs the captured projection_snapshot. Returns one of:
+        None — hand-added line (no atom sources / no snapshot);
+        'in_sync' — line still tracks its atoms (price == summed atom amounts);
+        'overridden' — line hand-edited, atoms unchanged since the snapshot;
+        'underlying_changed' — a source atom's billing fields drifted since the snapshot;
+        'underlying_removed' — a snapshotted source atom no longer exists.
+        """
+        snap = line_item.projection_snapshot or {}
+        if not snap:
+            return None
+        sources = list(line_item.sources.all())
+        current_keys = {f'{s.source_type}:{s.source_pk}' for s in sources}
+        # A snapshot key with no matching source row means that atom was removed.
+        if any(k not in current_keys for k in snap):
+            return 'underlying_removed'
+        drifted = False
+        for s in sources:
+            baseline = snap.get(f'{s.source_type}:{s.source_pk}')
+            if baseline is None:
+                drifted = True  # source added after the snapshot was taken
+                continue
+            try:
+                inst = s.resolve()
+            except Exception:
+                return 'underlying_removed'
+            if cls._atom_snapshot(inst) != baseline:
+                drifted = True
+        # 'overridden' = line hand-edited away from what the SNAPSHOT projected (not
+        # vs the current atom — an untouched line whose atom drifted is still in_sync
+        # and auto-updates on re-projection). The marker only fires for overridden+drift.
+        overridden = cls._line_is_overridden(line_item, snap)
+        if overridden and drifted:
+            return 'underlying_changed'
+        if overridden:
+            return 'overridden'
+        return 'in_sync'
+
+    @classmethod
+    def _line_is_overridden(cls, line_item, snap):
+        """True if the line's billing fields differ from the snapshot's projection.
+        Single-source: compare the four fields to the source's baseline. Multi-source:
+        compare price to the summed snapshot amounts / qty (heuristic)."""
+        sources = list(line_item.sources.all())
+        if len(sources) == 1:
+            b = snap.get(f'{sources[0].source_type}:{sources[0].source_pk}')
+            if not b:
+                return True
+            return (
+                line_item.description != b['description']
+                or line_item.qty != Decimal(b['qty'])
+                or line_item.price != Decimal(b['price'])
+                or line_item.accounting_category_id != b['accounting_category']
+            )
+        total = Decimal('0')
+        for s in sources:
+            b = snap.get(f'{s.source_type}:{s.source_pk}')
+            if b:
+                total += Decimal(b['qty']) * Decimal(b['price'])
+        if not line_item.qty:
+            return True
+        return line_item.price != (total / line_item.qty).quantize(Decimal('0.01'))
+
+    @staticmethod
+    def _apply_atom_to_line(line_item, atom):
+        """Set a line's billing fields from its single source atom (1:1 projection)."""
+        from apps.jobs.models import PlanTask
+        total = atom.compute_amount().quantize(Decimal('0.01'))
+        qty, price = EstimateWizardService._atom_qty_and_price(atom, total)
+        line_item.description = atom.name if isinstance(atom, PlanTask) else atom.description
+        line_item.qty = qty
+        line_item.units = EstimateWizardService._atom_units(atom)
+        line_item.price = price
+        line_item.accounting_category = (
+            atom.effective_accounting_category if isinstance(atom, PlanTask)
+            else atom.accounting_category
+        )
+
     @staticmethod
     def open_for_worksheet(worksheet):
         """Return the job's draft Estimate, creating one if none exists.
@@ -1201,71 +1285,59 @@ class EstimateWizardService(BaseWizardService):
         estimate = EstimateWizardService.open_for_worksheet(worksheet)
         EstimateWizardService._validate_draft(estimate)
 
-        # Build set of currently-claimed (type, pk) pairs, scoped to this job's estimates
-        claimed = set(
-            EstimateLineItemSource.objects
+        # Map currently-claimed (type, pk) -> source row, scoped to this job's estimates.
+        claims = {
+            (s.source_type, s.source_pk): s
+            for s in EstimateLineItemSource.objects
             .filter(estimate_line_item__estimate__job=worksheet.job)
-            .values_list('source_type', 'source_pk')
-        )
+            .select_related('estimate_line_item')
+        }
 
         created_count = 0
+        updated_count = 0
 
-        # PlanTasks
+        def project(atom, source_type):
+            nonlocal created_count, updated_count
+            src = claims.get((source_type, atom.pk))
+            if src is None:
+                li = EstimateLineItem(estimate=estimate)
+                EstimateWizardService._apply_atom_to_line(li, atom)
+                li.save()
+                EstimateLineItemSource.objects.create(
+                    estimate_line_item=li, source_type=source_type, source_pk=atom.pk,
+                )
+                EstimateWizardService._snapshot_line_item(li)
+                created_count += 1
+                return
+            # Re-projection: refresh a single-source line that still tracks its atom
+            # (in_sync) from the atom; leave overridden / changed / removed lines for
+            # the user to reconcile.
+            li = src.estimate_line_item
+            if (li.sources.count() == 1
+                    and EstimateWizardService.reprojection_state(li) == 'in_sync'):
+                EstimateWizardService._apply_atom_to_line(li, atom)
+                li.save()
+                EstimateWizardService._snapshot_line_item(li)
+                updated_count += 1
+
         for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
             'rate_scheme', 'rate_scheme__accounting_category',
         ):
-            if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
-                continue
-            total = pt.compute_amount().quantize(Decimal('0.01'))
-            qty, price = EstimateWizardService._atom_qty_and_price(pt, total)
-            li = EstimateLineItem.objects.create(
-                estimate=estimate,
-                description=pt.name,
-                qty=qty,
-                units=EstimateWizardService._atom_units(pt),
-                price=price,
-                accounting_category=pt.effective_accounting_category,
-            )
-            EstimateLineItemSource.objects.create(
-                estimate_line_item=li,
-                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-                source_pk=pt.pk,
-            )
-            EstimateWizardService._snapshot_line_item(li)
-            created_count += 1
+            project(pt, EstimateLineItemSource.SOURCE_PLAN_TASK)
 
-        # PlanMaterials
         for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
             'accounting_category', 'inventory_item',
         ):
-            if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
-                continue
-            total = pm.compute_amount().quantize(Decimal('0.01'))
-            qty, price = EstimateWizardService._atom_qty_and_price(pm, total)
-            li = EstimateLineItem.objects.create(
-                estimate=estimate,
-                description=pm.description,
-                qty=qty,
-                units=EstimateWizardService._atom_units(pm),
-                price=price,
-                accounting_category=pm.accounting_category,
-            )
-            EstimateLineItemSource.objects.create(
-                estimate_line_item=li,
-                source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
-                source_pk=pm.pk,
-            )
-            EstimateWizardService._snapshot_line_item(li)
-            created_count += 1
+            project(pm, EstimateLineItemSource.SOURCE_PLAN_MATERIAL)
 
         # This bulk path bypasses LineItemService.save_line_item, so recompute
-        # any percentage-adjustment lines once after the batch (a single
-        # end-of-batch recompute is the right granularity for a bulk op).
-        if created_count:
+        # any percentage-adjustment lines once after the batch.
+        if created_count or updated_count:
             from apps.core.adjustments import recompute_adjustments
             recompute_adjustments(EstimateLineItem.objects.filter(estimate=estimate))
 
-        return {'estimate': estimate, 'created_count': created_count}
+        return {'estimate': estimate, 'created_count': created_count,
+                'updated_count': updated_count}
 
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod

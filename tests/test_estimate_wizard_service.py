@@ -222,6 +222,88 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(
             li.projection_snapshot[f'plan_task:{self.pt.pk}']['description'], 'Setup')
 
+    # ── reprojection_state (Task 2) ──────────────────────────────────────
+    def _project_task_line(self):
+        return EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'plan_task', 'id': self.pt.pk}])
+
+    def test_reprojection_state_in_sync_after_projection(self):
+        li = self._project_task_line()
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'in_sync')
+
+    def test_reprojection_state_overridden_when_line_hand_edited(self):
+        from apps.core.services import LineItemService
+        li = self._project_task_line()
+        li.price = Decimal('999.00')  # hand-edit price away from the atom-derived value
+        LineItemService.save_line_item(li)
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'overridden')
+
+    def test_reprojection_state_in_sync_when_untouched_atom_drifts(self):
+        # An untouched (never-overridden) line whose atom drifts stays in_sync —
+        # it auto-updates on re-projection; no review marker.
+        li = self._project_task_line()
+        self.pt.name = 'Setup CHANGED'
+        self.pt.save()
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'in_sync')
+
+    def test_reprojection_state_underlying_changed_when_overridden_and_atom_drifts(self):
+        from apps.core.services import LineItemService
+        li = self._project_task_line()
+        li.description = 'My label'  # hand-edit (override)
+        LineItemService.save_line_item(li)
+        self.pt.name = 'Setup CHANGED'  # then the atom drifts
+        self.pt.save()
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'underlying_changed')
+
+    def test_reprojection_state_underlying_removed_when_atom_deleted(self):
+        li = self._project_task_line()
+        self.pt.delete()
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'underlying_removed')
+
+    def test_reprojection_state_none_for_hand_added_line(self):
+        from apps.estimates.models import EstimateLineItem
+        li = EstimateLineItem.objects.create(
+            estimate=self.estimate, description='manual', qty=Decimal('1'),
+            units='none', price=Decimal('10.00'))
+        self.assertIsNone(EstimateWizardService.reprojection_state(li))
+
+    # ── re-projection updates in_sync lines, leaves overridden (Task 3) ──
+    def test_reprojection_updates_in_sync_line_after_atom_change(self):
+        li = self._project_task_line()
+        self.pt.name = 'Setup CHANGED'
+        self.pt.est_qty = Decimal('5')
+        self.pt.save()
+        EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        li.refresh_from_db()
+        self.assertEqual(li.description, 'Setup CHANGED')
+        self.assertEqual(li.qty, Decimal('5'))
+
+    def test_reprojection_leaves_overridden_line_untouched(self):
+        from apps.core.services import LineItemService
+        li = self._project_task_line()
+        li.description = 'custom'
+        LineItemService.save_line_item(li)
+        self.pt.name = 'Setup CHANGED'
+        self.pt.save()
+        EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        li.refresh_from_db()
+        self.assertEqual(li.description, 'custom')
+
+    # ── editing a line re-baselines its snapshot (Task 3, user rule) ─────
+    def test_edit_rebaselines_snapshot_clearing_underlying_changed(self):
+        from apps.core.services import LineItemService
+        from apps.estimates.services import EstimateService
+        li = self._project_task_line()
+        li.description = 'custom'  # override
+        LineItemService.save_line_item(li)
+        self.pt.name = 'Setup CHANGED'  # atom drift -> underlying_changed
+        self.pt.save()
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'underlying_changed')
+        # Editing the line again re-baselines the snapshot -> drops to 'overridden'.
+        EstimateService.update_line_item(li.line_item_id, description='custom2')
+        li.refresh_from_db()
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'overridden')
+
     def test_uniform_category_kept(self):
         # Both atoms in same category
         pm_same_cat = PlanMaterial.objects.create(
