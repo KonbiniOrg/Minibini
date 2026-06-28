@@ -55,12 +55,12 @@ describe('EstimateWizardPage vocabulary labels', () => {
     expect(screen.queryByText(/worksheet atoms/i)).not.toBeInTheDocument();
   });
 
-  it('labels the back link "back to Client View"', async () => {
+  it('shows both back links: "back to Client View" and "back to Estimate"', async () => {
     mockApi(makeEstimate());
 
     render(EstimateWizardPage, { props: { params: { id: '11' } } });
 
     expect(await screen.findByText(/back to client view/i)).toBeInTheDocument();
-    expect(screen.queryByText(/back to estimate/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/back to estimate/i)).toBeInTheDocument();
   });
 });
