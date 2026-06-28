@@ -1030,6 +1030,10 @@ IMAP-SMTP machinery and tend to be worked together.
   reflects the blep from the start call and never reconciles it against the server's
   silent discard on clock-out. _Fix direction:_ have the clock-out / close response
   report which open bleps were discarded as sub-minimum (or have the UI refetch
-  open/recent bleps after clock-out) so the front end drops the phantom. _Done when:_
-  clocking out under the minimum after an auto-clock-in start leaves no blep visible in
-  the UI, matching the (already-correct) DB state.
+  open/recent bleps after clock-out) so the front end drops the phantom. **Likely folds
+  into the planned push-notification / live-refresh work** — a shared mechanism so pages
+  affected by work elsewhere can refresh themselves (still future); this phantom blep is
+  one instance of UI state drifting from the server, so fix it as part of that effort
+  rather than as a one-off. _Done when:_ clocking out under the minimum after an
+  auto-clock-in start leaves no blep visible in the UI, matching the (already-correct)
+  DB state.
