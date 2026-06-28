@@ -335,12 +335,6 @@ class Task(TaskBase):
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
-    source_template = models.ForeignKey(
-        'estimates.ServiceItem',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        help_text="ServiceItem this task was created from"
-    )
     source_plan_task = models.OneToOneField(
         'jobs.PlanTask',
         on_delete=models.SET_NULL,

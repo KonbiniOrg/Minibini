@@ -1512,7 +1512,7 @@ class BlepShiftSynthesisTest(unittest.TestCase):
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': status, 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
-            'source_template': None, 'source_plan_task': None, 'sort_order': sort_order,
+            'source_plan_task': None, 'sort_order': sort_order,
         })
 
     def _m(self, c, model):
@@ -1640,7 +1640,7 @@ class EstQuantityHeuristicTest(unittest.TestCase):
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': 'complete', 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
-            'source_template': None, 'source_plan_task': None, 'sort_order': 1,
+            'source_plan_task': None, 'sort_order': 1,
         })
 
     def _qty(self, c, pk):

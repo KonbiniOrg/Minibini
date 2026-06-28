@@ -144,13 +144,11 @@ class EstimateService:
         # Copy line items, MOVING each line's source rows (atom claims) onto the
         # revision so it stays worksheet-backed and the atom remains claimed
         # exactly once. (Copying the rows would violate EstimateLineItemSource's
-        # unique_together on the atom.) source_template is copied too so a
-        # catalog-backed line keeps its origin for carry-over.
+        # unique_together on the atom.)
         for li in EstimateLineItem.objects.filter(estimate=parent):
             new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
                 inventory_item=li.inventory_item,
-                source_template=li.source_template,
                 qty=li.qty,
                 units=li.units,
                 description=li.description,

@@ -555,12 +555,6 @@ class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
-    source_template = models.ForeignKey(
-        'estimates.ServiceItem',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        help_text='ServiceItem this line item was created from (preserves catalog ref for direct-estimate carry-over).',
-    )
     adjustment_service = models.ForeignKey(
         'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
@@ -648,11 +642,6 @@ class ChangeOrderLineItem(BaseLineItem):
         on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='co_amendments',
-    )
-    source_template = models.ForeignKey(
-        'estimates.ServiceItem',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
     )
     inventory_item = models.ForeignKey(
         'inventory.InventoryItem',

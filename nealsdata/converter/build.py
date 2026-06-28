@@ -919,7 +919,6 @@ def build_estimates(c):
                 li_pk = c.next_pk('estimates.estimatelineitem')
                 c.add_fixture('estimates.estimatelineitem', li_pk, {
                     'estimate':          est_pk,
-                    'source_template':   None,
                     'inventory_item':   None,
                     'line_number':       line_number,
                     'qty':               f'{qty:.2f}',
@@ -1141,7 +1140,6 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      parent_pk,
-            'source_template':  None,
             'source_plan_task': None,
             'sort_order':       sort_order,
         })
@@ -1179,7 +1177,6 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      None,
-            'source_template':  None,
             'source_plan_task': None,
             'sort_order':       sort_order,
         })

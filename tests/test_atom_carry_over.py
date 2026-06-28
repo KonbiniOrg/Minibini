@@ -143,16 +143,6 @@ class DirectLineItemsDoNotCarryOverTest(TestCase):
             accounting_category=self.cat,
         )
 
-    def test_line_item_with_template_ref_creates_no_task(self):
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, qty=Decimal('2'), units='hours',
-            price=Decimal('100'), description='Setup',
-            accounting_category=self.cat,
-            source_template=self.template,
-        )
-        AtomCarryOverService.carry_over_for_estimate(self.estimate)
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
-
     def test_line_item_with_inventory_ref_creates_no_material(self):
         EstimateLineItem.objects.create(
             estimate=self.estimate, qty=Decimal('3'), units='ft',
