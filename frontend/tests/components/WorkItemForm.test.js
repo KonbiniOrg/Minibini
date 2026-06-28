@@ -22,7 +22,7 @@ describe('WorkItemForm', () => {
     const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, onSaved },
     });
-    await fireEvent.change(await findByLabelText(/Service/), { target: { value: '1' } });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Custom Polish' } });
     await fireEvent.input(getByLabelText(/Estimated qty/i), { target: { value: '2' } });
     await fireEvent.click(getByLabelText(/save to catalog/i));
@@ -49,21 +49,18 @@ describe('WorkItemForm', () => {
     expect(getByText('Name is required.')).toBeInTheDocument();
   });
 
-  it('labels the service selector as "Service" (not "Rate scheme")', async () => {
-    const { findByLabelText, queryByLabelText } = render(WorkItemForm, {
+  it('labels the rate-scheme selector as "Rate Scheme"', async () => {
+    const { findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
     });
-    // "Service" label should be present
-    expect(await findByLabelText(/Service/)).toBeInTheDocument();
-    // "Rate scheme" label should NOT appear
-    expect(queryByLabelText(/[Rr]ate scheme/)).not.toBeInTheDocument();
+    expect(await findByLabelText(/Rate Scheme/)).toBeInTheDocument();
   });
 
   it('does not show a flat_fee_price input when a flat-fee service is selected', async () => {
     const { findByLabelText, queryByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
     });
-    await fireEvent.change(await findByLabelText(/Service/), { target: { value: '2' } });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
     // No flat fee price input should appear
     expect(queryByLabelText(/[Ff]lat fee/)).not.toBeInTheDocument();
   });
@@ -73,7 +70,7 @@ describe('WorkItemForm', () => {
     const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
     });
-    await fireEvent.change(await findByLabelText(/Service/), { target: { value: '2' } });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '2' } });
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Fix It' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/tasks/', expect.objectContaining({
@@ -89,7 +86,7 @@ describe('WorkItemForm', () => {
     const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
     });
-    await fireEvent.change(await findByLabelText(/Service/), { target: { value: '1' } });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
@@ -116,8 +113,8 @@ describe('WorkItemForm with a pre-selected rateScheme', () => {
     });
     // The chosen service name should appear as a read-only header
     expect(await screen.findByText(/CNC Cutting/)).toBeInTheDocument();
-    // The internal service <select> (labelled "Service *") should not be rendered
-    expect(screen.queryByLabelText(/Service/)).not.toBeInTheDocument();
+    // The internal rate-scheme <select> (labelled "Rate Scheme *") should not be rendered
+    expect(screen.queryByLabelText(/Rate Scheme/)).not.toBeInTheDocument();
   });
 
   it('renders the pre-selected service modifier choices', async () => {

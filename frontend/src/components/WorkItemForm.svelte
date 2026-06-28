@@ -38,7 +38,7 @@
       const resp = await api.get('/api/rate-schemes/');
       schemes = resp.results || resp;
     } catch (e) {
-      error = e.message || 'Could not load services.';
+      error = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
     }
@@ -169,7 +169,7 @@
       return;
     }
     if (mode === 'manual' && !rateSchemeId) {
-      error = 'Please pick a service.';
+      error = 'Please pick a rate scheme.';
       return;
     }
 
@@ -252,7 +252,7 @@
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
       {#if loading}
-        <p>Loading services…</p>
+        <p>Loading rate schemes…</p>
       {:else}
         {#if !isEdit && mode === 'template'}
           <p>
@@ -269,10 +269,10 @@
 
         {#if mode === 'manual'}
           {#if rateScheme}
-            <p><strong>Service:</strong> {rateScheme.name}</p>
+            <p><strong>Rate Scheme:</strong> {rateScheme.name}</p>
           {:else}
             <p>
-              <label><strong>Service *</strong><br>
+              <label><strong>Rate Scheme *</strong><br>
                 <select bind:value={rateSchemeId}>
                   <option value="">-- select --</option>
                   {#each schemes as s (s.rate_scheme_id)}
@@ -298,14 +298,14 @@
         {#if selectedScheme}
           {#if mode === 'template'}
             <p>
-              <strong>Service:</strong> {selectedScheme.name} —
+              <strong>Rate Scheme:</strong> {selectedScheme.name} —
               ${selectedScheme.rate}/{selectedScheme.unit_label}
               <small>(from template)</small>
             </p>
           {:else}
             <p>
               <strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label}
-              <small>(from service)</small>
+              <small>(from rate scheme)</small>
             </p>
           {/if}
           {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
