@@ -103,7 +103,7 @@ cancelled invoice frees its claimed atoms back to the pool.
 
 ### InvoiceLineItem
 
-Inherits `BaseLineItem` (description, qty, units, price, accounting_category, taxable_override, etc. — see `apps/core/models.py`). Has no direct `task` FK; `task` is exposed as a `@property` returning `None` purely so `BaseLineItem.clean()`'s "task XOR price_list_item" rule passes. Source linkage is via the `InvoiceLineItemSource` join table.
+Inherits `BaseLineItem` (description, qty, units, price, accounting_category, taxable_override, etc. — see `apps/core/models.py`). Has no direct `task` FK; `task` is exposed as a `@property` returning `None` purely so `BaseLineItem.clean()`'s "task XOR inventory_item" rule passes. Source linkage is via the `InvoiceLineItemSource` join table.
 
 `db_table = 'invoice_li'`. Parent field name (for `LineItemMixin`) is `invoice`.
 
@@ -111,7 +111,7 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 
 **Adjustment fields** (parallel to `EstimateLineItem`):
 
-- `adjustment_service` — nullable FK to `ServiceItem` (PROTECT). Set when
+- `adjustment_service` — nullable FK to `RateScheme` (PROTECT). Set when
   this line is a percentage adjustment (e.g. rush surcharge, volume discount).
   A line with `adjustment_service_id` set is an **adjustment line**.
 - `adjustment_target_categories` — M2M to `AccountingCategory`. The
@@ -311,7 +311,7 @@ All wizard endpoints require `IsAuthenticated` + `CanManageFinancials` (`Invoice
 
 Footer actions use `frontend/src/components/wizards/WizardActions.svelte` — also shared.
 
-`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard detail view of an invoice. It shares the same **JobHeader** band as the atom-pull wizard page. On `draft` invoices, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte` (the shared modal also used on the estimate detail page). Adding a line item offers a toggle between **manual entry** and **"From Price List"** (catalog mode, which POSTs `{price_list_item, qty}` and copies description/units/selling_price/accounting_category from the PLI). Editing an existing line item edits its fields only, with no catalog toggle.
+`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard detail view of an invoice. It shares the same **JobHeader** band as the atom-pull wizard page. On `draft` invoices, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte` (the shared modal also used on the estimate detail page). Adding a line item offers a toggle between **manual entry** and **"From Price List"** (catalog mode, which POSTs `{inventory_item, qty}` and copies description/units/selling_price/accounting_category from the PLI). Editing an existing line item edits its fields only, with no catalog toggle.
 
 A **"Show Billables"** link is shown on the detail page only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`). If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the link is absent.
 
@@ -326,7 +326,7 @@ On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeh
 ## Invoice adjustment lines
 
 Percentage adjustments (rush surcharges, volume discounts, etc.) can be added
-as `InvoiceLineItem` rows backed by a `PERCENTAGE` `ServiceItem`. The
+as `InvoiceLineItem` rows backed by a `PERCENTAGE` `RateScheme`. The
 mechanics mirror the estimate side exactly — see
 `docs/designs/estimates-and-prices.md` §2.2 and §5.3b for the
 `compute_adjustment_amount` helper and the `percentage` algorithm semantics.
@@ -343,7 +343,7 @@ an invoice leaves `draft` the stored price is frozen automatically.
 
 | Method | Behavior |
 |---|---|
-| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the invoice's line list, calls `_recompute_adjustments`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
+| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `RateScheme` at the end of the invoice's line list, calls `_recompute_adjustments`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
 | `_recompute_adjustments(invoice)` | Internal helper. Calls `recompute_adjustments()` over all `InvoiceLineItem` rows for the invoice. Called after every line-item mutation. |
 
 ### API endpoints
@@ -507,7 +507,7 @@ Tracks two kinds of business expenses:
 | `reference_number` | CharField(50), blank | Check number, confirmation number, etc. Always optional. |
 | `job` | FK Job (SET_NULL, nullable, `expenses`) | **The cost anchor.** `null` = overhead. Job P&L groups expenses by this directly. `SET_NULL` mirrors `material` (the financial record outlives a hard-deleted job, becoming overhead). |
 | `material` | FK Material (SET_NULL, nullable, `expenses`) | The ONE consumable material this expense *created* (cost-expense mode), or null. Expenses never link an existing material. `material.job` must equal `job`. |
-| `stock_pli` / `stock_qty` | FK PriceListItem (inventoried) + Decimal | Stock-receipt mode: an inventoried purchase that bumped QOH. Mutually exclusive with `material`; `amount` is not job-costed (cost-at-consumption). |
+| `stock_pli` / `stock_qty` | FK InventoryItem (inventoried) + Decimal | Stock-receipt mode: an inventoried purchase that bumped QOH. Mutually exclusive with `material`; `amount` is not job-costed (cost-at-consumption). |
 | `status` | CharField — see machine | Default `submitted`. |
 | `qbo_id` | CharField(50), blank | Set when the QBO push succeeds (company-paid only — personal expenses' QBO IDs live on their reimbursement batch). |
 | `qbo_sync_error` | TextField, blank | |
@@ -648,10 +648,10 @@ The previous `can_approve_expenses` permission atom is retired. `apps/api/permis
 
 `Expense.material` is the optional job-costing link. When an expense is linked to a Material, the Material is "expense-bound" — see `docs/designs/materials-inventory-and-purchasing.md` for `Material.is_expense_bound` and `MaterialService.consume`.
 
-`ExpenseService.submit` accepts an optional `new_material={'job_id', 'description', 'quantity', 'price', 'price_list_item_id'}` payload that creates a Material on the expense's job inline:
+`ExpenseService.submit` accepts an optional `new_material={'job_id', 'description', 'quantity', 'price', 'inventory_item_id'}` payload that creates a Material on the expense's job inline:
 
 - Calls `MaterialService.create_on_job(job=..., task=None, ...)` — the material has no parent task. The "Materials (no task)" bucket from the wizard's source pool surfaces these.
-- If a `PriceListItem` is provided and `is_inventoried`, calls `InventoryService.receive_ad_hoc_purchase(material)` to record the receipt.
+- If a `InventoryItem` is provided and `is_inventoried`, calls `InventoryService.receive_ad_hoc_purchase(material)` to record the receipt.
 - Whole flow runs in one transaction with the `Expense.save()`.
 
 ### `purchased_by` vs. `entered_by`

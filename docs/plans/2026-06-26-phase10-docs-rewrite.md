@@ -1,5 +1,20 @@
 # Phase 10 — Rewrite the durable docs to the consolidated model
 
+> **STATUS 2026-06-27 — done for the consolidated-so-far state.** Applied to
+> `docs/designs/`: the rename swept (rate-card `ServiceItem`→`RateScheme`,
+> saved-work `TaskTemplate`→`ServiceItem`, `PriceListItem`→`InventoryItem`,
+> `service_item`/`task_template`/`price_list_item` FK fields, `/api/service-items/`
+> ↔ `/api/rate-schemes/`, `adjustment_service` field name preserved); removed
+> `source_template` and `default_billable_qty` references; rewrote the Phase-B /
+> direct-estimate carry-over prose (gone) and the estimate Client-View authoring
+> (now atoms-only — reorder + "out of sync with atoms" only, editing via the
+> wizard, `POST .../line-items/` → 405); updated the catalog-create permission
+> (`CanManageJobsOrConfig`). **Deferred:** deeper rewrites of the invoice and
+> adjustment sections — those describe behavior still tied to the deferred
+> invoice-projection and job-scoped-adjustment (Phase 8) work, so they stay at
+> current-state with a "deferred consolidation" note rather than being rewritten
+> to a target that doesn't exist yet.
+
 > **Revised 2026-06-27.** Document what actually **shipped**, not what was
 > planned-then-changed. Specifically: rate card = **`RateScheme`** / saved-work =
 > **`ServiceItem`**; the **"Add Line"** surface (+ inline "save to catalog", create

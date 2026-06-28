@@ -33,11 +33,11 @@ Index of the implementation plans executing the design draft
 | 3 | UI vocabulary + single-view Estimate pillar | `phase3-vocabulary-and-estimate-pillar.md` | **DONE** |
 | 4 | Re-projection / out-of-sync flag | `phase4-reprojection-change-marker.md` | **DONE, then SIMPLIFIED** — shipped snapshot-based states + re-pull/keep-mine, then reverted (per user) to a **live "out of sync with atoms" check** on Client View + wizard; no snapshot (migration 0034 removed) |
 | 5 | Combined Tasks & Materials pillar | `phase5-combined-tasks-materials-pillar.md` | **DONE** |
-| 6 | Remove direct line authoring + Phase B | `phase6-remove-direct-line-authoring.md` | **revised 06-27 — NEXT**; estimate-only (**invoice deferred**) |
-| 7 | Slim line-item fields | `phase7-slim-line-item-fields.md` | revised 06-27 (migration); estimate-side `source_template` only — `inventory_item` deferred with invoicing |
-| 8 | Job-scoped adjustments | `phase8-job-scoped-adjustments.md` | revised 06-27, least-decided |
-| 9 | Seed data (nealsdata) | `phase9-seed-data-update.md` | revised 06-27 (rename already in nealsdata; shape + regen left) |
-| 10 | Rewrite the durable docs | `phase10-docs-rewrite.md` | revised 06-27, last |
+| 6 | Remove direct line authoring + Phase B | `phase6-remove-direct-line-authoring.md` | **DONE** (cceca311; estimate-only — invoice authoring deferred) |
+| 7 | Slim line-item fields | `phase7-slim-line-item-fields.md` | **DONE** (e43e6942; `source_template` removed from EstimateLineItem/ChangeOrderLineItem/Task — fully dead provenance; gate 3719 OK. `inventory_item` deferred with invoicing) |
+| 8 | Job-scoped adjustments | `phase8-job-scoped-adjustments.md` | **DEFERRED with invoicing** (06-27 — a real feature needing a design pass, not cleanup; revisit alongside invoice consolidation) |
+| 9 | Seed data (nealsdata) | `phase9-seed-data-update.md` | **DONE via per-phase sweeps** (builder/seed already at current shape; adjustments-shape deferred with Phase 8; full regen-from-spreadsheets is the user's step) |
+| 10 | Rewrite the durable docs | `phase10-docs-rewrite.md` | **DONE for the consolidated-so-far state** (rename swept; `source_template`/`default_billable_qty` removed; estimate atoms-only + out-of-sync + reorder-only Client View; catalog-create permission). Deeper invoice/adjustment-section rewrites deferred with Phases 6-invoice/8 |
 
 ## Dependencies / suggested order
 - **Phase 0 (the rename) first** if we accept the early-rename proposal — then

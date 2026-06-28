@@ -80,7 +80,7 @@ class NotFoundError(ServiceError):
     """Raised when a requested object does not exist."""
 
 class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded ServiceItem is used."""
+    """Raised when a template referencing a superseded RateScheme is used."""
 ```
 
 A typical create:
@@ -156,7 +156,7 @@ apps/api/
     history/                 # HistoryEntrySerializer (no urls of its own;
                              #  feeds live on Job/Contact/Business viewsets)
     home/                    # home dashboard, current blep band
-    inventory/               # PriceListItem, Material
+    inventory/               # InventoryItem, Material
     invoicing/               # Invoice
     jobs/                    # Job + board views
     plan_tasks/              # PlanTask (worksheet-side tasks)
@@ -166,7 +166,7 @@ apps/api/
     search/                  # SearchService dispatch
     shifts/                  # Shift + clock-in/out + change-requests + report
     tasks/                   # Task (job-side tasks)
-    templates_config/        # WorkTemplate, TaskTemplate, AccountingCategory,
+    templates_config/        # WorkTemplate, ServiceItem, AccountingCategory,
                              #  settings, units
     time_tracking/           # urls only — re-exports apps.api.shifts.urls
                              #  (mounted at /api/shifts/); time-tracking/{status,active} still 501
@@ -254,7 +254,7 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > it's complete. If you bound a result deliberately, say so in the UI; never let
 > it look like "everything" when it's the first 100. Known instances fixed by
 > page-walking: `InventoryListPage` (2026-06). Fixed by server-side-search
-> rework (2026-06): `InventoryItemPicker` (formerly `PriceListItemPicker`),
+> rework (2026-06): `InventoryItemPicker` (formerly `InventoryItemPicker`),
 > email-association pickers (jobs/POs/bills).
 
 #### Type-ahead pickers: `SearchPicker` + per-entity wrappers
@@ -296,7 +296,7 @@ All in `apps/api/mixins.py`.
 | `PlanTaskMixin` | EstWorksheetViewSet | Adds `tasks/`, `tasks/{id}/` actions for `PlanTask` (worksheet-side). |
 | `PlanTaskBundleMixin` | n/a | Backwards-compat alias for `PlanTaskMixin`; remove after callers update. |
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
-| `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `JSONDestroyMixin` | JobViewSet, BillViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 | `JobScopedPermissionMixin` | JobViewSet, EstWorksheetViewSet, EstimateViewSet, PlanTaskViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
 | `JobScopedCanManageMixin` | Job/EstWorksheet/Estimate/PlanTaskDetail/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
@@ -385,9 +385,9 @@ a runtime error in the SPA.
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
 - `JobViewSet` — `JSONDestroyMixin`
 - `BillViewSet` — `JSONDestroyMixin`
-- `PriceListItemViewSet` — `JSONDestroyMixin`
+- `InventoryItemViewSet` — `JSONDestroyMixin`
 - `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
-- `TaskTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `ServiceItemViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
 - `AccountingCategoryViewSet` — `JSONDestroyMixin`
 - `MaterialViewSet` — returns 405 (top-level material delete is disallowed)
 - `UserViewSet` — raises `MethodNotAllowed` (use deactivate)
@@ -463,7 +463,7 @@ The mixin then exposes:
 | Verb + path | Mixin method | Calls |
 |---|---|---|
 | `GET /{id}/line-items/` | `line_items` | direct query, ordered by `line_number` |
-| `POST /{id}/line-items/` | `line_items` | `service.add_line_item_from_pli` if `price_list_item` is supplied without manual fields, else `service.add_line_item` |
+| `POST /{id}/line-items/` | `line_items` | `service.add_line_item_from_pli` if `inventory_item` is supplied without manual fields, else `service.add_line_item` |
 | `PATCH /{id}/line-items/{item_id}/` | `line_item_detail` | `service.update_line_item` |
 | `DELETE /{id}/line-items/{item_id}/` | `line_item_detail` | `service.delete_line_item` |
 | `POST /{id}/line-items/reorder/` | `reorder_line_items` | `service.reorder_line_items` |
@@ -474,7 +474,7 @@ enforces its own status guard (typically draft only); the mixin doesn't
 know what statuses are editable.
 
 `BaseLineItem.save()` has a `_populate_from_pli` safety net that fills
-in description/units/price/category from a linked `PriceListItem` if
+in description/units/price/category from a linked `InventoryItem` if
 they're missing — the model's last line of defence in case some new
 code path bypasses the service.
 

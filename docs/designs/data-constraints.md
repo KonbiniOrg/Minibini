@@ -272,7 +272,7 @@ with `default_contact` pointing to that Contact, then update the Contact's
 
 ---
 
-### 1.6 PriceListItem
+### 1.6 InventoryItem
 
 Depends on: AccountingCategory.
 
@@ -288,13 +288,13 @@ Depends on: AccountingCategory.
 
 ---
 
-### 1.7 ServiceItem
+### 1.7 RateScheme
 
-Depends on: AccountingCategory. (`db_table = 'service_items'`, FK field
-`service_item`, API `/api/service-items/`.)
+Depends on: AccountingCategory. (`db_table = 'rate_schemes'`, FK field
+`rate_scheme`, API `/api/rate-schemes/`.)
 
 The service price list — a named, priced service the shop performs.
-Describes how a Task/PlanTask/TaskTemplate's billable amount is computed.
+Describes how a Task/PlanTask/ServiceItem's billable amount is computed.
 Once any atom references an entry, it is effectively immutable; edits must
 go through `supersede()`, which forks a new entry and renames the old row.
 See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
@@ -307,7 +307,7 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
   - `flat_fee`: per-unit price; **must be positive** (`validate_data.py`
     raises an error for `rate <= 0`).
   - `elapsed_time` / `entered_qty`: per-unit price; **must be ≥ 0**
-    (`ServiceItem.clean()` raises `ValidationError` for negative values
+    (`RateScheme.clean()` raises `ValidationError` for negative values
     on these two algorithms).
   - `percentage`: the percent value (e.g. `10` = 10% surcharge; `-5` = 5%
     discount). **Negative values are allowed** only for `percentage`. This
@@ -324,12 +324,12 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
 #### `percentage` algorithm — applicability constraints
 
 A `percentage` service can **never** back a `Task`, `PlanTask`, or
-`TaskTemplate`. The application enforces this in multiple places:
+`ServiceItem`. The application enforces this in multiple places:
 
-- `TaskService.create_direct` rejects a `percentage` service_item.
+- `TaskService.create_direct` rejects a `percentage` rate_scheme.
 - `EstimateLineItemSerializer` / `InvoiceLineItemSerializer` reject it on atom-based lines.
-- `GET /api/service-items/?task_applicable=true` excludes `percentage` entries from the response.
-- `ServiceItem.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
+- `GET /api/rate-schemes/?task_applicable=true` excludes `percentage` entries from the response.
+- `RateScheme.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
 
 A `percentage` entry that is **not** referenced by any atom (it can only be
 used as `EstimateLineItem.adjustment_service` or
@@ -338,7 +338,7 @@ is therefore always un-frozen and can be superseded freely.
 
 #### Frozen fields
 
-Once any PlanTask, Task, or TaskTemplate references an entry, the fields
+Once any PlanTask, Task, or ServiceItem references an entry, the fields
 `name`, `description`, `algorithm`, `rate`, `unit_label`, `modifiers`, and
 `accounting_category` are frozen (`FROZEN_FIELDS`). `clean()` rejects edits.
 The only legitimate mutations on a referenced entry are
@@ -475,14 +475,14 @@ only through the shared `job` (one estimate tree per job).
 
 ### 1.10 PlanTask
 
-Depends on: EstWorksheet, ServiceItem.
+Depends on: EstWorksheet, RateScheme.
 
 The planning-side counterpart to Task. Lives on an EstWorksheet; no
 lifecycle, no hierarchy, no Bleps. Carries billing fields directly so a
 worksheet is a self-contained pricing artefact.
 
 - **est_worksheet** (required FK → EstWorksheet, CASCADE)
-- **service_item** (required FK → ServiceItem, PROTECT)
+- **rate_scheme** (required FK → RateScheme, PROTECT)
 - **active_modifiers**: JSON list of modifier keys (always a list, default
   `[]`). For `flat_fee` services, this is `[]` — modifiers are percentage
   adjustments only, and flat-fee entries have no percentage modifiers.
@@ -499,7 +499,7 @@ PlanTasks are flat (no `parent_task`). Hierarchy is Job-side only.
 
 ### 1.11 Task
 
-Depends on: Job, ServiceItem, (optionally) User, PlanTask, TaskTemplate.
+Depends on: Job, RateScheme, (optionally) User, PlanTask, ServiceItem.
 
 The work-side counterpart to PlanTask. Lives on a Job; carries lifecycle,
 hierarchy, and Bleps.
@@ -526,15 +526,15 @@ Valid transitions:
 #### Fields
 
 - **job** (required FK → Job, CASCADE)
-- **service_item** (required FK → ServiceItem, PROTECT): NOT NULL at DB level
+- **rate_scheme** (required FK → RateScheme, PROTECT): NOT NULL at DB level
 - **active_modifiers**: JSON list of modifier keys (always a list, never a
-  dict — see ServiceItem §1.7). For `flat_fee` services this is `[]`.
+  dict — see RateScheme §1.7). For `flat_fee` services this is `[]`.
 - **est_qty** (inherited from `TaskBase`): nullable on Task — both at the DB
   level and the application layer. Unlike `PlanTask`, `Task.clean()` does
   **not** reject null (asymmetric enforcement; pinned by
   `tests/test_plan_task_est_qty_required.py`). For `flat_fee` it is the
-  billable quantity (charge is `service_item.rate × est_qty`), with
-  `ServiceItem.get_actual_qty` falling back to `Decimal('1')` when null.
+  billable quantity (charge is `rate_scheme.rate × est_qty`), with
+  `RateScheme.get_actual_qty` falling back to `Decimal('1')` when null.
 
   In practice a null `est_qty` can only arise on a task **added directly to
   the Job with the quantity left blank** — specifically the two manual
@@ -548,11 +548,7 @@ Valid transitions:
     - worksheet carry-over (`AtomCarryOverService._carry_over_plan_tasks`,
       `JobService.copy_from_worksheet`) copies `PlanTask.est_qty`, which
       `PlanTask.clean()` forces non-null
-    - direct-estimate line-item carry-over
-      (`_create_task_from_line_item`) uses `line_item.qty` (`BaseLineItem.qty`
-      is `default=0.00`, not nullable)
-    - `TaskService.create_from_template` defaults to the template's
-      `default_billable_qty` (NOT NULL)
+    - `TaskService.create_from_template` defaults to `Decimal('1')`
     - the job-side `add-from-template` API defaults a blank to `Decimal('1')`;
       bulk template expansion uses `TemplateTaskAssociation.est_qty`
       (`default=1`)
@@ -566,7 +562,6 @@ Valid transitions:
 - **assignee** (optional FK → User, SET_NULL): setting it requires a
   non-zero `est_worker_time` (see that field)
 - **parent_task** (optional FK → self, CASCADE)
-- **source_template** (optional FK → TaskTemplate, SET_NULL)
 - **source_plan_task** (optional OneToOne → PlanTask, SET_NULL): set by
   carry-over; enforces idempotency.
 - **sort_order**: auto-assigned per Job on save
@@ -706,15 +701,12 @@ Enforced in `Estimate.clean()`.
 - **estimate** (required FK → Estimate, CASCADE)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule
   is skipped on subclasses lacking that field.
-- **price_list_item** (optional FK → PriceListItem, PROTECT): set when the
+- **inventory_item** (optional FK → InventoryItem, PROTECT): set when the
   line bills a freeform PLI rather than a plan-side atom
-- **source_template** (optional FK → TaskTemplate, SET_NULL): preserves the
-  catalog ref for direct-estimate lines so carry-over can still create a
-  Task at acceptance even with no PlanTask
-- **adjustment_service** (optional FK → ServiceItem, PROTECT): set when
+- **adjustment_service** (optional FK → RateScheme, PROTECT): set when
   this line is a percentage adjustment. A line with `adjustment_service_id`
   set is an **adjustment line**; `adjustment_service.algorithm` must be
-  `percentage`. Cannot coexist with `source_template` or `price_list_item`.
+  `percentage`. Cannot coexist with `inventory_item`.
 - **adjustment_target_categories** (M2M → AccountingCategory, blank):
   the categories the adjustment applies to. Empty = all non-adjustment lines.
   Must only be set when `adjustment_service` is set.
@@ -792,15 +784,14 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **change_order** (required FK → ChangeOrder, CASCADE)
 - **action** (CharField, required): one of `add`, `remove`, `replace`
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
-- **source_template** (optional FK → TaskTemplate, SET_NULL): catalog provenance
-- **price_list_item** (optional FK → PriceListItem, SET_NULL)
+- **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 
 See `docs/designs/estimates-and-prices.md`.
 
 ---
 
-### 1.14 WorkTemplate / TaskTemplate / TemplateTaskAssociation / TemplateMaterialAssociation
+### 1.14 WorkTemplate / ServiceItem / TemplateTaskAssociation / TemplateMaterialAssociation
 
 The template system used to populate Jobs and EstWorksheets with reusable
 task/material structures.
@@ -815,38 +806,34 @@ task/material structures.
   cascades cleanly through its TemplateTaskAssociation and
   TemplateMaterialAssociation rows.
 
-#### TaskTemplate
+#### ServiceItem
 
 - **template_name**: max 255 chars; **description**: text
-- **service_item** (required FK → ServiceItem, PROTECT): default service
+- **rate_scheme** (required FK → RateScheme, PROTECT): default service
   price for generated PlanTasks / Tasks. Superseded entries raise
   `SchemeSupersededError` from `generate_task()`. The template holds **no
-  price** of its own — the price is always read from `service_item.rate`.
+  price** of its own — the price is always read from `rate_scheme.rate`.
 - **default_active_modifiers**: JSON list of modifier keys (always a list,
   never a dict). For `flat_fee` service prices this is `[]`.
-- **default_billable_qty** (required, decimal): used as `est_qty` when
-  generating
 - **work_templates**: M2M via `TemplateTaskAssociation`
 - **is_active**: boolean, default True — the soft-delete flag.
   `WorkTemplate.generate_tasks_for_worksheet` and `generate_tasks_for_job`
-  filter associations by `task_template__is_active=True`, and the
-  TaskTemplate picker UI hides inactive entries. Soft-delete (not
-  hard-delete) is the intended path because `Task.source_template` and
-  `EstimateLineItem.source_template` are `SET_NULL` FKs — hard-deleting
-  a TaskTemplate would lose the catalog reference on every Task and
-  EstimateLineItem that originated from it.
+  filter associations by `service_item__is_active=True`, and the
+  ServiceItem picker UI hides inactive entries. Soft-delete (not
+  hard-delete) is the intended path so historical references to a retired
+  ServiceItem are preserved.
 
 #### TemplateTaskAssociation
 
-- **work_template**, **task_template**: CASCADE FKs
+- **work_template**, **service_item**: CASCADE FKs
 - **est_qty**: decimal, default 1 (quantity passed to `generate_task()`)
 - **sort_order**: integer, default 0
-- `unique_together = ['work_template', 'task_template']`
+- `unique_together = ['work_template', 'service_item']`
 
 #### TemplateMaterialAssociation
 
 - **work_template** (FK → WorkTemplate, CASCADE)
-- **price_list_item** (required FK → PriceListItem, PROTECT) — templates
+- **inventory_item** (required FK → InventoryItem, PROTECT) — templates
   carry no freeform materials; everything goes through the PLI catalog
 - **template_task_association** (optional FK → TemplateTaskAssociation,
   SET_NULL): if set, generated material attaches to the corresponding
@@ -866,14 +853,14 @@ Real-side and plan-side material rows; both extend `MaterialBase` (abstract).
 - **quantity**: decimal, default 0 (non-negative)
 - **units**: max 50 chars, default 'none'
 - **unit_cost**, **sell_price**: decimals, default 0
-- **price_list_item** (optional FK → PriceListItem, SET_NULL)
+- **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **accounting_category** (required FK → AccountingCategory, PROTECT)
 
 On save, `_populate_from_pli()` fills `description`, `units`, `unit_cost`,
 `sell_price`, `accounting_category` from the linked PLI. A PLI-linked
 Material/PlanMaterial is effectively immutable for description/units/AC
 (pricing carve-out — see `docs/designs/materials-inventory-and-purchasing.md`).
-Either a description or a `price_list_item` must be present.
+Either a description or a `inventory_item` must be present.
 
 #### PlanMaterial
 
@@ -952,8 +939,8 @@ Enforced in `Invoice.clean()`.
 - No `task` FK — the `task` property returns `None` for
   `BaseLineItem.clean()` compatibility. Source atoms are joined via
   `InvoiceLineItemSource`.
-- **price_list_item** (optional FK → PriceListItem, PROTECT)
-- **adjustment_service** (optional FK → ServiceItem, PROTECT): set when
+- **inventory_item** (optional FK → InventoryItem, PROTECT)
+- **adjustment_service** (optional FK → RateScheme, PROTECT): set when
   this line is a percentage adjustment. `adjustment_service.algorithm` must
   be `percentage`. Cannot be combined with `InvoiceLineItemSource` atom
   sources (an adjustment line has no source atoms).
@@ -1041,7 +1028,7 @@ line item ordered (`Material.po_line_item`).
   "service PO" feature. No flow currently populates it; the field is
   null on every PO line. Defined directly on the subclass, not on
   `BaseLineItem`.
-- **price_list_item** (optional FK → PriceListItem, PROTECT)
+- **inventory_item** (optional FK → InventoryItem, PROTECT)
 - **line_number**: auto-generated sequentially per PO if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 - **qty_received**: decimal, default 0 (populated by receive actions)
@@ -1116,8 +1103,8 @@ Only `draft` Bills can be deleted.
   from the source PO line); since PO-line `task` is always null today,
   this field is null in practice too. Defined directly on the subclass,
   not on `BaseLineItem`.
-- **price_list_item** (optional FK → PriceListItem, PROTECT)
-- Cannot have both **task** and **price_list_item** set (mutually exclusive
+- **inventory_item** (optional FK → InventoryItem, PROTECT)
+- Cannot have both **task** and **inventory_item** set (mutually exclusive
   per `BaseLineItem.clean()`)
 - **line_number**: auto-generated sequentially per bill if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work) values
@@ -1126,19 +1113,19 @@ Only `draft` Bills can be deleted.
 
 ### 1.19 Earmark
 
-Depends on: PriceListItem, Job.
+Depends on: InventoryItem, Job.
 
 A per-PLI-per-Job aggregate row representing the inventory committed to a
-Job. There is exactly one row per `(price_list_item, job)`; quantity reflects
+Job. There is exactly one row per `(inventory_item, job)`; quantity reflects
 the running sum of Material commitments minus consumption/restock.
 
-- **price_list_item** (required FK → PriceListItem, CASCADE): PLI should be
+- **inventory_item** (required FK → InventoryItem, CASCADE): PLI should be
   inventoried (`is_inventoried=True`); a non-inventoried PLI never reaches
   `_mutate_earmark`
 - **job** (required FK → Job, CASCADE)
 - **quantity**: must be positive (> 0). Rows with `quantity <= 0` are deleted
   by `_mutate_earmark`. Warn if quantity exceeds PLI's `qty_on_hand`.
-- `unique_together = [('price_list_item', 'job')]`
+- `unique_together = [('inventory_item', 'job')]`
 - `InventoryService._mutate_earmark` is the SOLE writer. Direct
   `Earmark.objects.create` calls outside that method (or
   `release_earmarks_for_job`) violate the invariant.
@@ -1158,9 +1145,9 @@ See §2.6 and `docs/designs/materials-inventory-and-purchasing.md`.
 
 ### 1.20 InventoryAdjustment
 
-Depends on: PriceListItem.
+Depends on: InventoryItem.
 
-- **price_list_item** (required FK → PriceListItem, CASCADE): warn if PLI is
+- **inventory_item** (required FK → InventoryItem, CASCADE): warn if PLI is
   not inventoried
 - **quantity_change**: decimal (can be positive or negative)
 - **reason**: text, default ''
@@ -1484,16 +1471,15 @@ signal calls `AtomCarryOverService.carry_over_for_estimate(estimate)`.
 
 **Effects:**
 - For each PlanTask on the estimate's worksheet → create a Task on the Job
-  (copying `name`, `description`, `service_item_id`, `active_modifiers`,
+  (copying `name`, `description`, `rate_scheme_id`, `active_modifiers`,
   `est_qty`, `est_worker_time`, `sort_order`). `Task.source_plan_task` is
   set; the OneToOne enforces idempotency.
 - For each PlanMaterial on the worksheet → create a Material on the Job
   (task-bound if the PlanMaterial was attached to a PlanTask, floating
   otherwise) via `MaterialService.create_on_job`, which also fires §2.6.
-- For direct-estimate line items with `source_template` set and no source
-  row → create a Task on the Job from the TaskTemplate.
-- For direct-estimate line items with `price_list_item` set and no source
-  row → create a Material on the Job.
+(Direct-estimate line-item carry-over was removed in the 2026-06
+consolidation — estimate lines are a pure projection of the Plan, so only the
+worksheet atoms above carry over.)
 
 **Data constraint:** An `accepted` Estimate should have matching atoms on
 its Job. `Task.source_plan_task` and `Material.source_plan_material`
@@ -1550,7 +1536,7 @@ Implemented in `JobService.maybe_complete_if_resolved` (`apps/jobs/services.py`)
 
 ### 2.6 Inventoried Material on Job → Earmark created
 
-**Trigger:** A Material with an inventoried `price_list_item` is created on a
+**Trigger:** A Material with an inventoried `inventory_item` is created on a
 Job — via any path (direct add, template populate, worksheet copy, PO line
 creation, expense submission).
 
@@ -1719,9 +1705,9 @@ Shipment.
 
 ---
 
-### 2.14 ServiceItem supersession
+### 2.14 RateScheme supersession
 
-**Trigger:** `ServiceItem.supersede(**overrides)` is called.
+**Trigger:** `RateScheme.supersede(**overrides)` is called.
 
 **Effects:**
 - The old row is renamed to `"<orig> (v{N})"` where N is the chain depth.
@@ -1730,7 +1716,7 @@ Shipment.
 - The old row's `replaced_by` is set to the new row; `replaced_at` is set
   to `now()`.
 
-**Data constraint:** A ServiceItem with `replaced_by` set must have
+**Data constraint:** A RateScheme with `replaced_by` set must have
 `replaced_at` set, and vice versa. Templates referencing a superseded
 entry should be updated to point at the new entry; otherwise
 `generate_task()` raises `SchemeSupersededError`.

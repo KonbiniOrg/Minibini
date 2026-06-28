@@ -266,7 +266,7 @@ A new Job has no Tasks. There are four ways to populate it:
 |---|---|---|---|
 | From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
 | From a worksheet | `POST /api/jobs/{id}/copy-from-worksheet` | `JobService.copy_from_worksheet` → `materialize_worksheet_onto_job` | Copies `PlanTask`→`Task` (+ their `PlanMaterial`→`Material`) via the shared core; sets provenance, idempotent, creates earmarks. Same core as estimate-acceptance carry-over |
-| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `TaskTemplate.generate_task` | One task from a `TaskTemplate`; available to any authenticated user (workers can self-serve) |
+| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One task from a `ServiceItem`; available to any authenticated user (workers can self-serve) |
 | Direct task creation | `POST /api/jobs/{id}/tasks` | `TaskService.create_direct` | One task at a time; freeform |
 
 A populate-from-estimate path is also exposed (`POST /api/jobs/{id}/populate-from-estimate`) but is currently a thin wrapper — most workflows go through copy-from-worksheet because the worksheet carries the planning data the estimate doesn't preserve.
@@ -319,12 +319,12 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
   old worksheet or estimate.
 - **Tasks** are copied with billing fields intact but execution state
   fully reset: `status=pending`, no bleps, no assignee, `actual_qty=None`,
-  `worker_queue=None`, `blocked_reason=''`, and `source_template` /
-  `source_plan_task` cleared. Carried: `name`, `description`,
+  `worker_queue=None`, `blocked_reason=''`, and `source_plan_task`
+  cleared. Carried: `name`, `description`,
   `sort_order`, `est_worker_time`, `est_qty`, `rate_scheme`,
   `active_modifiers` (via `copy_active_modifiers`).
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
-  `sell_price`, `price_list_item`, `accounting_category`, and their task
+  `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
   reset: `consumption_state=pending`, `restocked_qty=0`,
   `po_line_item=None`, `source_plan_material=None`.
@@ -825,17 +825,16 @@ worksheets (creating PlanTasks) and Jobs directly (creating Tasks).
 | Model | Path | Role |
 |---|---|---|
 | `WorkTemplate` | `apps/estimates/models.py` | Worksheet- or Job-shaped template; carries optional `base_price` |
-| `TaskTemplate` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`, `default_billable_qty`. For a `flat_fee` scheme, `default_active_modifiers` holds the per-item price as `{"flat_fee_price": str}` — `TaskTemplate.clean()` requires it to be positive. See `estimates-and-prices.md` §2.2. |
-| `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and TaskTemplate; carries `est_qty` and `sort_order` |
+| `ServiceItem` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`. For a `flat_fee` scheme, `default_active_modifiers` holds the per-item price as `{"flat_fee_price": str}` — `ServiceItem.clean()` requires it to be positive. See `estimates-and-prices.md` §2.2. |
+| `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and ServiceItem; carries `est_qty` and `sort_order` |
 | `TemplateMaterialAssociation` | `apps/inventory` | Links materials to a WorkTemplate; covered in the Materials doc |
 
-`TaskTemplate.is_active` is the soft-delete flag for task templates.
+`ServiceItem.is_active` is the soft-delete flag for task templates.
 `WorkTemplate.generate_tasks_for_worksheet`,
-`generate_tasks_for_job`, and the TaskTemplate picker UI all filter on
-`task_template__is_active=True`. Hard-deleting a TaskTemplate would
-SET_NULL the `source_template` FK on every `Task` and
-`EstimateLineItem` that originated from it (losing the catalog
-reference), so soft-delete is the intended path.
+`generate_tasks_for_job`, and the ServiceItem picker UI all filter on
+`service_item__is_active=True`. Soft-delete (not hard-delete) is the
+intended path so historical references to a retired ServiceItem are
+preserved.
 
 `WorkTemplate` has no `is_active` field. Templates are hard-deleted —
 nothing else in the system holds a back-reference to a WorkTemplate, so
@@ -845,7 +844,7 @@ Worksheet, Task, or Material.
 
 ### 7.2 generate_task
 
-`TaskTemplate.generate_task(container, est_qty, ...)`
+`ServiceItem.generate_task(container, est_qty, ...)`
 (`apps/estimates/models.py`) is the polymorphic creator. It reads
 the container's type and creates the right kind of task:
 
@@ -1119,7 +1118,7 @@ Route: `#/worksheets/:id` → `WorksheetDetailPage.svelte`.
 | `WorksheetDetailPage.svelte` | Page shell; fetches `GET /api/est-worksheets/{id}/`; owns modal state |
 | `WorksheetTaskTable.svelte` | Main table — PlanTasks with PlanMaterials nested as sub-rows; grand total footer |
 | `WorkItemForm.svelte` | Modal for creating / editing PlanTasks (freeform or from template). The single modal that replaced the old PlanTaskModal / TaskModal / SubtaskModal — same component is reused on the Job/Task side for subtasks |
-| `PlanMaterialModal.svelte` | Modal for creating / editing PlanMaterials; auto-fills and disables price fields when a PriceListItem is picked |
+| `PlanMaterialModal.svelte` | Modal for creating / editing PlanMaterials; auto-fills and disables price fields when a InventoryItem is picked |
 | `InventoryItemPicker.svelte` | Reusable type-ahead picker for picking an `InventoryItem`. Built on `SearchPicker`; uses server-side `?search=` (code, description). Accepts a `params` prop for additional filters; "None (freeform)" option via the `header` snippet. Reused on the Materials side and PO line-item form. |
 
 Editing is gated to `can_manage_jobs` and **editable** worksheets — the

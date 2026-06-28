@@ -1,5 +1,16 @@
 # Phase 9 — Update the seed data (nealsdata) to the consolidated shape
 
+> **STATUS 2026-06-27 — effectively complete via the per-phase sweeps.** The builder
+> (`nealsdata/converter/build.py`) and committed seeds emit the current shape:
+> RateScheme/ServiceItem labels (Phase 0), no `default_billable_qty` (Phase 1), no
+> `source_template` (Phase 7); `inventory_item` is intentionally kept (deferred with
+> invoicing). The neals builder/fixture tests pass against the live models. The one
+> remaining task — emitting adjustments in the **job-scoped** shape — is **deferred
+> with Phase 8**; the seed keeps today's per-document adjustment shape until then. A
+> full regenerate-from-spreadsheets (`convert_neals_data.py`) is the user's step
+> (needs the source `.xlsx`); the committed `nealseed.json`/`nealsmall.json` were kept
+> consistent by the per-phase edits.
+
 > **Revised 2026-06-27.** The rename is done AND already largely reflected in
 > `nealsdata/`: the Phase-0 sweep plus the lowercase `jobs.serviceitem` →
 > `jobs.ratescheme` fix mean the converter/builders now emit `RateScheme` /

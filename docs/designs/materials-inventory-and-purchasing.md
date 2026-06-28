@@ -30,7 +30,7 @@ The data model splits into three layers:
 
 | Layer | Models | Purpose |
 |---|---|---|
-| Inventory | `InventoryItem` (was `PriceListItem`) | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
+| Inventory | `InventoryItem` (was `InventoryItem`) | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
 | Plan & instance | `MaterialBase` (abstract) → `PlanMaterial`, `Material`, `TemplateMaterialAssociation` | Materials live on Worksheets (`PlanMaterial`), Jobs (`Material`), or Templates (`TemplateMaterialAssociation`) |
 | Procurement | `PurchaseOrder`, `PurchaseOrderLineItem`, `Bill`, `BillLineItem`, `BillPayment` | Order goods from vendors, receive them, record vendor invoices, record payments against bills |
 
@@ -60,14 +60,14 @@ Files:
 
 `apps/inventory/models.py` — `InventoryItem`, `db_table='inventory_item'`.
 
-> **2026-06 catalog-vs-lots reframe.** The model was `PriceListItem`
+> **2026-06 catalog-vs-lots reframe.** The model was `InventoryItem`
 > (`db_table='price_list'`) and the flag was `is_inventoried`. The reframe
 > renamed both and flipped the model: **quantity tracking is now universal** —
 > every physical thing in the shop is tracked while it's here — and a catalog
 > flag distinguishes *types* you reorder from one-time *lots*. A follow-up
 > completed the rename so nothing says "price_list" anymore: the API route is now
 > `/api/inventory/`, the FK field on Material/Earmark/line items is `inventory_item`,
-> and the PK is `inventory_item_id` (all formerly `price_list_item*`). See
+> and the PK is `inventory_item_id` (all formerly `inventory_item*`). See
 > `docs/plans/2026-06-14-inventory-catalog-vs-lots-spec.md`.
 
 Every physical item flows through this one table — catalog items that estimates,
@@ -536,10 +536,10 @@ Configuration value: JSON array of strings
 
 ### Models with a `units` field
 
-- `PriceListItem.units`
+- `InventoryItem.units`
 - `MaterialBase.units` (on `PlanMaterial`, `Material`)
 - `BaseLineItem.units` (on every line item subclass)
-- `Task.units`, `TaskTemplate.units`
+- `Task.units`, `ServiceItem.units`
 
 `MaterialBase._populate_from_pli` copies `units` from the linked PLI
 when the value is `'none'` or empty.
@@ -567,7 +567,7 @@ when the value is `'none'` or empty.
 `apps/inventory/models.py` — `TemplateMaterialAssociation`,
 `db_table='template_material_assoc'`.
 
-Pins a `PriceListItem` to a `WorkTemplate`, optionally pairing to a
+Pins a `InventoryItem` to a `WorkTemplate`, optionally pairing to a
 `TemplateTaskAssociation` so the generated PlanMaterial/Material
 attaches to the corresponding generated PlanTask/Task.
 
@@ -1171,7 +1171,7 @@ Inventory-item CRUD + browse UI is the SPA `#/inventory` page
 (`routes/inventory/InventoryListPage.svelte`), plus the markup config under
 Settings → Catalog. Item pickers across the SPA use
 `frontend/src/components/InventoryItemPicker.svelte` (renamed from
-`PriceListItemPicker`), built on `SearchPicker`.
+`InventoryItemPicker`), built on `SearchPicker`.
 
 `InventoryItemPicker` queries server-side `?search=` (`code` and
 `description`) as the user types. Accepts a `params` prop for additional
