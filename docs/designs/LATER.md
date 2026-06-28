@@ -1019,3 +1019,17 @@ IMAP-SMTP machinery and tend to be worked together.
   for job/worksheet/subtask), or a shared inner form both wrap. _Done when:_ one modal
   (or shared form) serves both PlanMaterial and Material, with the component tests for
   both consolidated and green.
+
+- **Phantom blep in the UI after a sub-minimum auto-clock-in start.** — _added 2026-06-28_
+  _(Low priority — rarely if ever happens in practice.)_ Scenario: a user who is **not**
+  clocked in starts a blep (which auto-clocks them in **and** creates the open blep),
+  then clocks out **before** `blep_minimum_minutes` has elapsed. The backend is correct
+  — the clock-out close path (`BlepService._resolve_open_blep` → `_cancel_blep`, the
+  under-minimum full-undo in `apps/jobs/services.py`) **deletes** the open blep, so no
+  row is created. But the SPA still shows the blep as created: the UI optimistically
+  reflects the blep from the start call and never reconciles it against the server's
+  silent discard on clock-out. _Fix direction:_ have the clock-out / close response
+  report which open bleps were discarded as sub-minimum (or have the UI refetch
+  open/recent bleps after clock-out) so the front end drops the phantom. _Done when:_
+  clocking out under the minimum after an auto-clock-in start leaves no blep visible in
+  the UI, matching the (already-correct) DB state.
