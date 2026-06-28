@@ -1008,3 +1008,14 @@ IMAP-SMTP machinery and tend to be worked together.
   intentionally uses the literal `'flat_fee'` so it works against historical models).
   _Done when:_ a sweep finds no bare choice/status/algorithm literals where a class
   constant exists (remaining ones are the deliberate migration-safe cases).
+
+- **DRY: combine the two near-identical material modals.** — _added 2026-06-27_
+  `frontend/src/components/PlanMaterialModal.svelte` (PlanMaterial, on the Plan/
+  worksheet) and `frontend/src/components/MaterialModal.svelte` (real Material, on the
+  Job) are highly similar — same fields (description, qty, units, price, AC),
+  inventory-item pre-seed, and freeform path — differing mainly in the API base /
+  parent (worksheet plan-material vs job material) and a few field names. Worth
+  collapsing into one shared modal parameterized by context (like `WorkItemForm` does
+  for job/worksheet/subtask), or a shared inner form both wrap. _Done when:_ one modal
+  (or shared form) serves both PlanMaterial and Material, with the component tests for
+  both consolidated and green.
