@@ -17,6 +17,7 @@ function makeEstimate(overrides = {}) {
     estimate_id: 11,
     estimate_number: 'EST-11',
     job: 9,
+    worksheet: 22,
     status: 'draft',
     can_manage: true,
     ...overrides,
@@ -60,7 +61,9 @@ describe('EstimateWizardPage vocabulary labels', () => {
 
     render(EstimateWizardPage, { props: { params: { id: '11' } } });
 
-    expect(await screen.findByText(/back to client view/i)).toBeInTheDocument();
-    expect(await screen.findByText(/back to estimate/i)).toBeInTheDocument();
+    const cv = await screen.findByText(/back to client view/i);
+    const est = await screen.findByText(/back to estimate/i);
+    expect(cv.getAttribute('href')).toBe('/estimates/11');
+    expect(est.getAttribute('href')).toBe('/worksheets/22'); // the Plan, not the job
   });
 });

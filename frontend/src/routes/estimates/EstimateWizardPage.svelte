@@ -154,7 +154,7 @@
   {/if}
   <div class="toolbar">
     <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to Client View</a>
-    <a href={`/jobs/${estimate.job}`} use:link class="back-link">&laquo; back to Estimate</a>
+    <a href={`/worksheets/${estimate.worksheet}`} use:link class="back-link">&laquo; back to Estimate</a>
     <span class="page-title">Customize Client View: {estimate.estimate_number}</span>
   </div>
 
