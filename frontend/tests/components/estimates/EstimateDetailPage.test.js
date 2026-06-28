@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -111,47 +111,26 @@ describe('EstimateDetailPage vocabulary labels', () => {
   });
 });
 
-describe('EstimateDetailPage reprojection marker (Phase 4)', () => {
-  const flaggedLine = (state) => ({
+describe('EstimateDetailPage out-of-sync indicator', () => {
+  // Live check: line price vs the sum of its atoms' computed_amount.
+  const line = (outOfSync) => ({
     line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
-    price: '100.00', accounting_category: null, sources: [], reprojection_state: state,
-    reprojection_changes:
-      state === 'underlying_changed'
-        ? [{ description: 'CNC Routing', removed: false, changes: [{ field: 'qty', old: '2', new: '5' }] }]
-        : state === 'underlying_removed'
-        ? [{ description: 'CNC Routing', removed: true, changes: [] }]
-        : [],
+    price: outOfSync ? '10' : '5', accounting_category: null,
+    sources: [{ source_id: 9, source_type: 'plan_task', source_pk: 4, description: 'atom', computed_amount: '10' }],
   });
 
-  it('shows the "underlying changed" marker pointing to Customize, with Keep mine (no Re-pull)', async () => {
+  it('flags a line whose price no longer matches its atoms', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft',
-      line_items: [flaggedLine('underlying_changed')] }));
-    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
-    expect(await findByText(/underlying changed/)).toBeInTheDocument();
-    expect(await findByText(/CNC Routing/)).toBeInTheDocument(); // the specific drifted atom
-    expect(await findByText(/customize client view/i)).toBeInTheDocument();
-    expect(await findByText('Keep mine')).toBeInTheDocument();
-    expect(queryByText('Re-pull')).toBeNull();
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [line(true)] }));
+    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    expect(await findByText(/out of sync with atoms/)).toBeInTheDocument();
   });
 
-  it('removed line shows Keep mine but no Re-pull', async () => {
+  it('does not flag a line that matches its atoms', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft',
-      line_items: [flaggedLine('underlying_removed')] }));
-    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
-    expect(await findByText(/underlying removed/)).toBeInTheDocument();
-    expect(await findByText('Keep mine')).toBeInTheDocument();
-    expect(queryByText('Re-pull')).toBeNull();
-  });
-
-  it('does not show the marker for an in_sync line', async () => {
-    user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft',
-      line_items: [flaggedLine('in_sync')] }));
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [line(false)] }));
     const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
     await findByText('Cut');
-    expect(queryByText('Re-pull')).toBeNull();
-    expect(queryByText('Keep mine')).toBeNull();
+    expect(queryByText(/out of sync/)).toBeNull();
   });
 });

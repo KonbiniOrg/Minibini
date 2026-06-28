@@ -146,27 +146,6 @@
     }
   }
 
-  function reprojSummary(li) {
-    // "CNC Routing (qty, price); Bolt (removed)" — names the atom(s) that drifted.
-    const fieldLabel = (f) => (f === 'accounting_category' ? 'category' : f);
-    return (li.reprojection_changes || []).map((c) => {
-      const name = c.description || 'item';
-      if (c.removed) return `${name} (removed)`;
-      const fields = (c.changes || []).map((ch) => fieldLabel(ch.field)).join(', ');
-      return fields ? `${name} (${fields})` : name;
-    }).join('; ');
-  }
-
-  async function keepMine(li) {
-    // Reconcile: keep my values; re-baseline the snapshot so the marker clears.
-    try {
-      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/keep-mine/`);
-      await loadEstimate();
-    } catch (e) {
-      alert(e.message || 'Could not update line item.');
-    }
-  }
-
   async function handleReorder(itemIds) {
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/reorder/`, {
@@ -192,6 +171,17 @@
     handleReorder(ids);
   }
 
+  function lineOutOfSync(li) {
+    // Live check (no stored snapshot): does the saved line price still match the
+    // current atoms? Fires for both hand-edits and atom changes — we just flag the
+    // mismatch and let the user decide what to do (e.g. adjust in Customize).
+    if (!li.sources || li.sources.length === 0) return false;
+    const sum = li.sources.reduce((s, src) => s + (parseFloat(src.computed_amount) || 0), 0);
+    const qty = parseFloat(li.qty) || 0;
+    if (qty <= 0) return false;
+    const expected = Math.round((sum / qty) * 100) / 100;
+    return Math.abs((parseFloat(li.price) || 0) - expected) > 0.001;
+  }
 
 </script>
 
@@ -291,15 +281,8 @@
     <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
     <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
     <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
-    {#if li.reprojection_state === 'underlying_changed' || li.reprojection_state === 'underlying_removed'}
-      <div class="reproject-flag">
-        <span class="reproject-marker">
-          {li.reprojection_state === 'underlying_removed' ? 'underlying removed' : 'underlying changed'}{#if reprojSummary(li)}: {reprojSummary(li)}{/if} — adjust in
-          {#if estimate.worksheet}<a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>{:else}Customize Client View{/if}
-          if needed
-        </span>
-        <button type="button" onclick={() => keepMine(li)}>Keep mine</button>
-      </div>
+    {#if lineOutOfSync(li)}
+      <span class="out-of-sync" title="The line no longer matches its atoms; adjust in Customize Client View if needed.">⚠ out of sync with atoms</span>
     {/if}
   {/snippet}
 
@@ -337,8 +320,7 @@
 <style>
   .error { color: #a8071a; }
   .superseded { opacity: 0.6; }
-  .reproject-flag { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .reproject-marker { color: #a8071a; font-size: 12px; font-weight: 600; }
+  .out-of-sync { color: #a55; font-size: 12px; font-weight: 600; margin-left: 6px; }
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 

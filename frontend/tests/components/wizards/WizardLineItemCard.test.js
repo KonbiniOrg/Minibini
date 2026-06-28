@@ -41,14 +41,14 @@ describe('WizardLineItemCard', () => {
     expect(api.delete).toHaveBeenCalledWith('/api/estimates/3/line-items/7/');
   });
 
-  it('flags an overridden bundled price', () => {
-    // sources sum 10 over qty 2 → expected $5/unit, but saved price is $10 → overridden
+  it('flags a bundled price that is out of sync with its atoms', () => {
+    // sources sum 10 over qty 2 → expected $5/unit, but saved price is $10 → out of sync
     const { getByText } = render(WizardLineItemCard, {
       props: {
         lineItem: lineItem({ price: '10', sources: [{ source_id: 9, description: 'atom', computed_amount: '10' }] }),
         apiBase: '/api/estimates/3',
       },
     });
-    expect(getByText(/overridden/)).toBeInTheDocument();
+    expect(getByText(/out of sync with atoms/)).toBeInTheDocument();
   });
 });
