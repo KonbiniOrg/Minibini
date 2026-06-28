@@ -236,6 +236,9 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
 
     @action(detail=True, methods=['post'], url_path='copy-from-worksheet')
     def copy_from_worksheet(self, request, pk=None):
+        # The job-state guard (must be approved/in_progress) lives in the shared
+        # JobService.materialize_worksheet_onto_job core; it raises ValidationError,
+        # caught below and returned as 400.
         job = self.get_object()
         worksheet_pk = request.data.get('worksheet_id')
         if not worksheet_pk:

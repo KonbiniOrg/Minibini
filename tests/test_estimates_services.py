@@ -602,6 +602,12 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
 class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
     """Tests for JobService.copy_from_worksheet."""
 
+    def setUp(self):
+        super().setUp()
+        # carry-over requires an approved job; walk the state machine to get there
+        JobService.update_status(self.job.pk, Job.STATUS_SUBMITTED)
+        JobService.update_status(self.job.pk, Job.STATUS_APPROVED)
+
     def test_copy_tasks(self):
         from apps.estimates.services import WorksheetService
         ws = WorksheetService.create_worksheet(self.job.pk)

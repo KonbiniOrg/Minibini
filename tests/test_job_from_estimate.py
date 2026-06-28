@@ -34,6 +34,7 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
         self.contact = Contact.objects.create(first_name='E2E', last_name='Test')
         self.job = Job.objects.create(
             job_number='E2E-001', name='E2E Job', contact=self.contact,
+            status=Job.STATUS_APPROVED,
         )
         self.template = WorkTemplate.objects.create(
             template_name='Kitchen Job Template',

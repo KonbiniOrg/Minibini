@@ -273,7 +273,8 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
             plan_task=pt, est_worksheet=ws,
             description='x', quantity=Decimal('3'), inventory_item=pli,
         )
-        dst = Job.objects.create(job_number='JOB-NOP-DST', contact=contact)
+        dst = Job.objects.create(job_number='JOB-NOP-DST', contact=contact,
+                                 status=Job.STATUS_APPROVED)
         JobService.copy_from_worksheet(dst.pk, ws.pk)
         before = {(e.inventory_item_id, e.job_id): e.quantity for e in Earmark.objects.filter(job=dst)}
         InventoryService.create_earmarks_for_job(dst)

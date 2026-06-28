@@ -18,7 +18,7 @@ class TaskEstQtyCarryOverTest(TestCase):
         c.business = biz
         c.save()
         self.job = Job.objects.create(
-            job_number='JOB-CO1', contact=c, status=Job.STATUS_DRAFT,
+            job_number='JOB-CO1', contact=c, status=Job.STATUS_APPROVED,
         )
         self.ws = EstWorksheet.objects.create(job=self.job)
 

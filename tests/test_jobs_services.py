@@ -314,6 +314,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
     def setUp(self):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
+        _walk_to(self.job, Job.STATUS_APPROVED)  # carry-over requires an approved job
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
@@ -430,6 +431,7 @@ class JobServiceCopyFromWorksheetTest(JobsTestBase):
             accounting_category=self.lit)
 
         new_job = JobService.create_job(name='Copy Target', contact=self.contact)
+        _walk_to(new_job, Job.STATUS_APPROVED)
         JobService.copy_from_worksheet(new_job.pk, self.worksheet.pk)
 
         task_mat = Material.objects.get(job=new_job, task__isnull=False)

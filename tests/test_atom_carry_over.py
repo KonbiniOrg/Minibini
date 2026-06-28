@@ -22,7 +22,7 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         self.job = Job.objects.create(
-            contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001',
+            contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001',
         )
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
@@ -167,7 +167,7 @@ class CarryOverUsesPlanTaskDirectlyTest(TestCase):
             first_name='A', last_name='B', email='a@b.com', mobile_number='555-1',
         )
         self.job = Job.objects.create(
-            contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002',
+            contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0002',
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.estimate = EstimateWizardService.open_for_worksheet(self.worksheet)

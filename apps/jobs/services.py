@@ -638,7 +638,17 @@ class JobService:
         scheme has since been superseded. Ends with the aggregate earmark sweep.
 
         Returns ``{'tasks_created': int, 'materials_created': int}``.
+
+        Safety precondition: the job must be ``approved`` or ``in_progress``. The
+        estimate-acceptance path approves the job *before* this runs, and the manual
+        button is gone — so any caller reaching here on an earlier-state job is a bug,
+        and we refuse rather than silently materialize tasks onto an unapproved job.
         """
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            raise ValidationError(
+                'Tasks can only be copied from the Plan once the job is approved '
+                'or in progress.'
+            )
         from apps.jobs.models import PlanTask, Task
         from apps.inventory.models import PlanMaterial, Material
         from apps.inventory.services import InventoryService, MaterialService

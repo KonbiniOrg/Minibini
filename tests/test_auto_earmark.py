@@ -42,6 +42,7 @@ class EarmarkOnCopyFromWorksheetTest(TestCase):
         self.contact.save()
         self.job = Job.objects.create(
             job_number='J-AEM-001', contact=self.contact,
+            status=Job.STATUS_APPROVED,
         )
         from apps.core.models import AccountingCategory
         self.category = AccountingCategory.objects.create(name='Material', code='MAT')

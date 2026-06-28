@@ -22,6 +22,10 @@ class AtomCarryOverService:
         Returns: {'tasks_created': int, 'materials_created': int}
         """
         job = estimate.job
+        # The acceptance flow approves the job via a sibling signal (estimate_status_
+        # changed_for_job) just before this one fires; refresh so we see the committed
+        # status, not the stale cached instance, before materialize's state guard.
+        job.refresh_from_db()
 
         from apps.estimates.models import EstWorksheet
         from apps.jobs.services import JobService

@@ -464,6 +464,7 @@ class JobCopyFromWorksheetTest(TestCase):
         self.contact = Contact.objects.create(first_name='T', last_name='C')
         self.job = Job.objects.create(
             job_number='C2-CW-001', name='CW Job', contact=self.contact,
+            status=Job.STATUS_APPROVED,
         )
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         ac = AccountingCategory.objects.create(code='CWAJ-AC', name='cwaj-ac')
@@ -497,6 +498,25 @@ class JobCopyFromWorksheetTest(TestCase):
         task = self.job.tasks.first()
         self.assertEqual(task.name, 'Build cabinet')
         self.assertEqual(task.materials.count(), 1)
+
+    def test_copy_from_worksheet_requires_approved_or_in_progress(self):
+        # A job that hasn't been approved yet cannot copy tasks from the Plan
+        # (an approved job copies automatically via carry-over).
+        draft_job = Job.objects.create(
+            job_number='C2-CW-DRAFT', name='Draft CW Job', contact=self.contact,
+        )  # default status = draft
+        ws = EstWorksheet.objects.create(job=draft_job)
+        PlanTask.objects.create(
+            est_worksheet=ws, name='X', rate_scheme=self.scheme, est_qty=Decimal('1'),
+        )
+        response = self.client.post(
+            f'/api/jobs/{draft_job.pk}/copy-from-worksheet/',
+            {'worksheet_id': ws.pk},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('approved', response.data['detail'].lower())
+        self.assertEqual(draft_job.tasks.count(), 0)
 
     def test_copy_from_worksheet_missing(self):
         response = self.client.post(

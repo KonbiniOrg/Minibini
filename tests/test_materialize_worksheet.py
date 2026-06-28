@@ -28,7 +28,8 @@ class MaterializeWorksheetTest(TestCase):
         self.scheme = _make_scheme('core')
         self.contact = Contact.objects.create(
             first_name='T', last_name='C', email='mw@test.com')
-        self.job = Job.objects.create(job_number='JOB-MW', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-MW', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.pli = InventoryItem.objects.create(
             code='MW-PLI', accounting_category=self.ac, is_catalog=True,

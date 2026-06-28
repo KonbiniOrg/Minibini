@@ -35,7 +35,8 @@ class CopyFromWorksheetMaterialsTest(TestCase):
         )
 
     def test_task_attached_materials_copy_with_earmark_upsert(self):
-        dst = Job.objects.create(job_number='JOB-DST-1', contact=self.contact)
+        dst = Job.objects.create(job_number='JOB-DST-1', contact=self.contact,
+                                 status=Job.STATUS_APPROVED)
         JobService.copy_from_worksheet(dst.pk, self.ws.pk)
         mats = Material.objects.filter(job=dst, task__isnull=False)
         self.assertEqual(mats.count(), 1)
@@ -50,7 +51,8 @@ class CopyFromWorksheetMaterialsTest(TestCase):
             plan_task=None, est_worksheet=self.ws,
             description='loose', quantity=Decimal('2'), inventory_item=self.pli,
         )
-        dst = Job.objects.create(job_number='JOB-DST-2', contact=self.contact)
+        dst = Job.objects.create(job_number='JOB-DST-2', contact=self.contact,
+                                 status=Job.STATUS_APPROVED)
         JobService.copy_from_worksheet(dst.pk, self.ws.pk)
         loose = Material.objects.filter(job=dst, task__isnull=True)
         self.assertEqual(loose.count(), 1)

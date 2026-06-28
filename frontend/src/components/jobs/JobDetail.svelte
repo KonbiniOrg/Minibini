@@ -454,25 +454,6 @@
     }
   }
 
-  let populating = $state(false);
-  let populateError = $state('');
-
-  async function copyFromWorksheet() {
-    if (!currentWorksheet) return;
-    populating = true;
-    populateError = '';
-    try {
-      await api.post(`/api/jobs/${job.job_id}/copy-from-worksheet/`, {
-        worksheet_id: currentWorksheet.est_worksheet_id,
-      });
-      if (onStatusChange) onStatusChange();
-    } catch (e) {
-      populateError = e.data?.detail || e.message || 'Could not copy tasks from Plan.';
-    } finally {
-      populating = false;
-    }
-  }
-
   // All materials on this job (for the Materials section)
   let jobMaterials = $derived(job.materials || []);
 
@@ -894,16 +875,10 @@
           TASKS &amp; MATERIALS · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}, {jobMaterials.length} material{jobMaterials.length === 1 ? '' : 's'}{#if looseExpenses.length}, {looseExpenses.length} expense{looseExpenses.length === 1 ? '' : 's'}{/if}
         </span>
         <span class="top-bar-actions">
-          {#if canManageJobs && currentWorksheet && !hasTasks}
-            <button type="button" onclick={copyFromWorksheet} disabled={populating}>
-              {populating ? 'Copying…' : 'Copy tasks from Plan'}
-            </button>
-          {/if}
           <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
         </span>
       </div>
       <div class="body">
-        {#if populateError}<p class="empty-msg"><em>{populateError}</em></p>{/if}
         {#if enriching && enrichedTasks.length === 0}
           <p class="empty-msg">Loading…</p>
         {:else if jobTasks.length === 0 && jobMaterials.length === 0 && looseExpenses.length === 0}

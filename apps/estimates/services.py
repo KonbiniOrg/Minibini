@@ -63,8 +63,16 @@ class EstimateService:
         return estimate
 
     @staticmethod
+    @transaction.atomic
     def update_status(pk, new_status, actor=None):
         """Update estimate status. Model validates transitions.
+
+        Atomic: accepting an estimate fires a synchronous signal cascade
+        (``estimate.save()`` → job-status update(s) → atom carry-over → earmarking).
+        Wrapping the whole thing in one transaction keeps that cascade all-or-nothing
+        — a failure partway (e.g. the carry-over's job-state guard, or any DB error)
+        rolls back the status change too, instead of leaving a half-accepted estimate
+        (job approved but no tasks carried over, or tasks without earmarks).
 
         When ``actor`` is given (a dict describing a customer who acted via
         the portal link, e.g. ``{'contact_id': N, 'email': str,
