@@ -466,7 +466,7 @@
       });
       if (onStatusChange) onStatusChange();
     } catch (e) {
-      populateError = e.data?.detail || e.message || 'Could not copy tasks from worksheet.';
+      populateError = e.data?.detail || e.message || 'Could not copy tasks from Plan.';
     } finally {
       populating = false;
     }
@@ -854,7 +854,7 @@
         <span class="top-bar-actions">
           {#if canManageJobs && currentWorksheet && !hasTasks}
             <button type="button" onclick={copyFromWorksheet} disabled={populating}>
-              {populating ? 'Copying…' : 'Copy tasks from worksheet'}
+              {populating ? 'Copying…' : 'Copy tasks from Plan'}
             </button>
           {/if}
           <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
