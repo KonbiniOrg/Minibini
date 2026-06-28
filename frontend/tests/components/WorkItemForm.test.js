@@ -41,6 +41,13 @@ describe('WorkItemForm', () => {
     expect(queryByLabelText(/save to catalog/i)).not.toBeInTheDocument();
   });
 
+  it('pre-fills the name from presetName on a manual (custom-task) create', async () => {
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, presetName: 'Special weld' },
+    });
+    expect(await findByLabelText(/Name/)).toHaveValue('Special weld');
+  });
+
   it('requires a name', async () => {
     const { findByRole, getByText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5 },

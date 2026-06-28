@@ -25,6 +25,13 @@ const INVENTORY_ITEM = {
 };
 
 describe('PlanMaterialModal', () => {
+  it('pre-fills the description from presetDescription on a freeform create', async () => {
+    const { findByLabelText } = render(PlanMaterialModal, {
+      props: { open: true, mode: 'create', planTaskId: 4, presetDescription: '3/4 plywood', onSaved: vi.fn() },
+    });
+    expect(await findByLabelText(/Description/)).toHaveValue('3/4 plywood');
+  });
+
   it('creates a freeform plan material on a plan task', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole } = render(PlanMaterialModal, {

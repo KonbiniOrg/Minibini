@@ -116,20 +116,22 @@ describe('PriceListPicker', () => {
     });
   });
 
-  it('emits oncustomtask when the custom-task footer button is clicked', async () => {
+  it('emits oncustomtask with the typed query when the custom-task button is clicked', async () => {
     const props = baseProps();
-    const { findByText } = render(PriceListPicker, { props });
+    const { findByText, getByPlaceholderText } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Special weld' } });
     const btn = await findByText(/custom task/i);
     await fireEvent.click(btn);
-    expect(props.oncustomtask).toHaveBeenCalled();
+    expect(props.oncustomtask).toHaveBeenCalledWith('Special weld');
   });
 
-  it('emits onfreeform when the freeform footer button is clicked', async () => {
+  it('emits onfreeform with the typed query when the freeform button is clicked', async () => {
     const props = baseProps();
-    const { findByText } = render(PriceListPicker, { props });
+    const { findByText, getByPlaceholderText } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
     const btn = await findByText(/freeform/i);
     await fireEvent.click(btn);
-    expect(props.onfreeform).toHaveBeenCalled();
+    expect(props.onfreeform).toHaveBeenCalledWith('3/4 plywood');
   });
 
   it('does not render when open=false', () => {

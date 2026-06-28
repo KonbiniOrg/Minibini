@@ -13,6 +13,7 @@
     templates = [],
     rateScheme = null, // optional pre-selected RateScheme (manual mode only)
     presetTemplateId = null, // optional pre-selected ServiceItem id (template mode only)
+    presetName = '', // optional pre-fill for the name (manual / custom-task create only)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -61,7 +62,7 @@
       estWorkerTime = formatDuration(item.est_worker_time);
       templateId = '';
     } else {
-      name = ''; description = '';
+      name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
       estQty = ''; estWorkerTime = '';
       templateId = (mode === 'template' && presetTemplateId != null) ? String(presetTemplateId) : '';

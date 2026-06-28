@@ -8,6 +8,7 @@
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
   let { open = false, onselect = null, oncustomtask = null, onfreeform = null, onclose = null } = $props();
+  let pickerQuery = $state('');
 
   const search = async (q) => {
     const enc = encodeURIComponent(q);
@@ -57,6 +58,7 @@
 
       <div class="plp-body">
         <SearchPicker
+          bind:query={pickerQuery}
           {search}
           {resolveLabel}
           {rowLabel}
@@ -77,8 +79,8 @@
       </div>
 
       <div class="plp-footer">
-        <button type="button" onclick={oncustomtask}>Add custom task</button>
-        <button type="button" onclick={onfreeform}>Add freeform material</button>
+        <button type="button" onclick={() => oncustomtask?.(pickerQuery)}>Add custom task</button>
+        <button type="button" onclick={() => onfreeform?.(pickerQuery)}>Add freeform material</button>
       </div>
     </div>
   </div>

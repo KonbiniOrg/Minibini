@@ -34,7 +34,9 @@
   let priceListPickerOpen = $state(false);
   let taskModalRateScheme = $state(null);
   let taskModalPresetTemplateId = $state(null);
+  let taskModalPresetName = $state('');
   let materialModalInventoryItem = $state(null);
+  let materialModalPresetDescription = $state('');
 
   // Permission half is the server-computed per-object `can_manage` (atom-holder
   // OR this job's project_manager); state half is the estimate-driven
@@ -131,6 +133,7 @@
       taskModalTask = null;
       taskModalMode = 'template';
       taskModalPresetTemplateId = item.template_id;
+      taskModalPresetName = '';
       taskModalRateScheme = null;
       taskModalOpen = true;
     } else {
@@ -142,25 +145,30 @@
       // inventoryItem pre-seed is passed via prop below
       // store it so the modal receives it
       materialModalInventoryItem = item;
+      materialModalPresetDescription = '';
     }
   }
 
-  function handlePriceListCustomTask() {
-    // Free text not in the catalog, billed as work: manual form, user attaches a RateScheme.
+  function handlePriceListCustomTask(name = '') {
+    // Free text not in the catalog, billed as work: manual form, user attaches a
+    // RateScheme; whatever they typed in the picker pre-fills the task name.
     priceListPickerOpen = false;
     taskModalTask = null;
     taskModalMode = 'manual';
     taskModalRateScheme = null;
     taskModalPresetTemplateId = null;
+    taskModalPresetName = name || '';
     taskModalOpen = true;
   }
 
-  function handlePriceListFreeform() {
+  function handlePriceListFreeform(description = '') {
+    // One-off material; whatever the user typed in the picker pre-fills the description.
     priceListPickerOpen = false;
     materialModalMaterial = null;
     materialModalTaskId = null;
     materialModalMode = 'create';
     materialModalInventoryItem = null;
+    materialModalPresetDescription = description || '';
     materialModalOpen = true;
   }
 
@@ -169,6 +177,7 @@
     taskModalMode = 'manual';
     taskModalRateScheme = null;
     taskModalPresetTemplateId = null;
+    taskModalPresetName = '';
     taskModalOpen = true;
   }
 
@@ -187,6 +196,7 @@
     taskModalTask = null;
     taskModalRateScheme = null;
     taskModalPresetTemplateId = null;
+    taskModalPresetName = '';
     reload();
   }
 
@@ -195,6 +205,7 @@
     materialModalTaskId = task ? task.plan_task_id : null;
     materialModalMode = 'edit';
     materialModalInventoryItem = null;
+    materialModalPresetDescription = '';
     materialModalOpen = true;
   }
 
@@ -203,6 +214,7 @@
     materialModalTaskId = task.plan_task_id;
     materialModalMode = 'create';
     materialModalInventoryItem = null;
+    materialModalPresetDescription = '';
     materialModalOpen = true;
   }
 
@@ -225,6 +237,7 @@
     materialModalMaterial = null;
     materialModalTaskId = null;
     materialModalInventoryItem = null;
+    materialModalPresetDescription = '';
     reload();
   }
 
@@ -411,8 +424,9 @@
     {templates}
     rateScheme={taskModalRateScheme}
     presetTemplateId={taskModalPresetTemplateId}
+    presetName={taskModalPresetName}
     onSaved={handleTaskSaved}
-    onClose={() => { taskModalOpen = false; taskModalRateScheme = null; taskModalPresetTemplateId = null; }}
+    onClose={() => { taskModalOpen = false; taskModalRateScheme = null; taskModalPresetTemplateId = null; taskModalPresetName = ''; }}
   />
 
   <PlanMaterialModal
@@ -423,8 +437,9 @@
     planTaskId={materialModalTaskId}
     {categories}
     inventoryItem={materialModalInventoryItem}
+    presetDescription={materialModalPresetDescription}
     onSaved={handleMaterialSaved}
-    onClose={() => { materialModalOpen = false; materialModalInventoryItem = null; }}
+    onClose={() => { materialModalOpen = false; materialModalInventoryItem = null; materialModalPresetDescription = ''; }}
   />
 {/if}
 

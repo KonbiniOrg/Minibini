@@ -12,6 +12,7 @@
     worksheetId = null,
     categories = [],
     inventoryItem = null, // optional: pre-selected InventoryItem from the price list picker
+    presetDescription = '', // optional: pre-fill description for a freeform create (picker query)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -57,7 +58,7 @@
         pliLocked = true;
         quantity = '';
       } else {
-        description = '';
+        description = presetDescription || '';
         quantity = '';
         units = 'none';
         unitCost = '';
@@ -191,12 +192,6 @@
           <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
         </label>
       </p>
-      {/if}
-
-      {#if pliLocked}
-        <p style="background:#fff7e6;border:1px solid #ffc53d;padding:8px;">
-          Linked to an inventory item. Delete and re-add as freeform to change description, units, or category.
-        </p>
       {/if}
 
       <p>
