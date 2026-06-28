@@ -200,22 +200,24 @@ class EstimateLineItemStatusCheckTest(BaseTestCase):
         return est
 
     def test_create_rejected_on_open_estimate(self):
+        # Phase 6: estimate line creation is removed entirely (405), regardless of status.
         est = self._make_estimate(status=Estimate.STATUS_OPEN)
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
             {'description': 'New item', 'qty': 1, 'price': 10},
             format='json',
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 405)
 
-    def test_create_allowed_on_draft_estimate(self):
+    def test_create_rejected_on_draft_estimate(self):
+        # Phase 6: even on a draft, lines come from atoms — no direct create.
         est = self._make_estimate(status=Estimate.STATUS_DRAFT)
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
             {'description': 'New item', 'qty': 1, 'price': 10},
             format='json',
         )
-        self.assertIn(response.status_code, [200, 201])
+        self.assertEqual(response.status_code, 405)
 
     def test_update_rejected_on_open_estimate(self):
         est = self._make_estimate(status=Estimate.STATUS_OPEN)

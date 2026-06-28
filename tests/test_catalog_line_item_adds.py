@@ -34,7 +34,8 @@ class CatalogLineItemAddTest(TestCase):
             selling_price=Decimal('42.50'), accounting_category=self.category,
         )
 
-    def test_estimate_catalog_add_copies_pli_fields(self):
+    def test_estimate_catalog_add_rejected(self):
+        # Phase 6: estimate lines come from atoms — catalog/PLI direct add is removed.
         est = Estimate.objects.create(
             job=self.job, estimate_number='EST-2026-0001', status=Estimate.STATUS_DRAFT,
         )
@@ -42,10 +43,7 @@ class CatalogLineItemAddTest(TestCase):
             f'/api/estimates/{est.pk}/line-items/',
             {'inventory_item': self.pli.pk, 'qty': '3'}, format='json',
         )
-        self.assertIn(resp.status_code, [200, 201])
-        self.assertEqual(resp.data['inventory_item'], self.pli.pk)
-        self.assertEqual(resp.data['description'], 'Standard widget')
-        self.assertEqual(Decimal(resp.data['price']), Decimal('42.50'))
+        self.assertEqual(resp.status_code, 405)
 
     def test_invoice_catalog_add_copies_pli_fields(self):
         inv = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)

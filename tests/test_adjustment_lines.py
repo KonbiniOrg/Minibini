@@ -245,13 +245,16 @@ class EstimateAutoRecomputeTest(TestCase):
         self.assertEqual(self.adj.price, Decimal('20.00'))
 
     def test_add_line_item_updates_adjustment(self):
-        """Adding a base line triggers recompute: adj = 10% of (200 + 50) = 25."""
-        from apps.estimates.services import EstimateService
-        EstimateService.add_line_item(
-            self.est.pk, description='Extra', qty=Decimal('1'),
-            units='ea', price=Decimal('50.00'),
-            accounting_category=self.cat,
+        """Adding a base line triggers recompute: adj = 10% of (200 + 50) = 25.
+        (Phase 6 removed manual add_line_item; lines are saved via LineItemService —
+        the same path the wizard/projection uses, which recomputes adjustments.)"""
+        from apps.core.services import LineItemService
+        from apps.estimates.models import EstimateLineItem
+        li = EstimateLineItem(
+            estimate=self.est, description='Extra', qty=Decimal('1'),
+            units='ea', price=Decimal('50.00'), accounting_category=self.cat,
         )
+        LineItemService.save_line_item(li)
         self.adj.refresh_from_db()
         self.assertEqual(self.adj.price, Decimal('25.00'))
 

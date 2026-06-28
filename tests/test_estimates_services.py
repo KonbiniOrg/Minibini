@@ -351,44 +351,8 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         self.assertIn(cat.pk, target_cats)
 
 
-class EstimateServiceAddLineItemTest(EstimatesTestBase):
-    """Tests for EstimateService.add_line_item and add_line_item_from_pli."""
-
-    def setUp(self):
-        super().setUp()
-        self.est = EstimateService.create_for_job(self.job.pk)
-
-    def test_add_line_item_manual(self):
-        li = EstimateService.add_line_item(
-            self.est.pk, description='Custom work',
-            qty=Decimal('2.00'), units='hours',
-            price=Decimal('50.00'), accounting_category=self.lit,
-        )
-        self.assertEqual(li.estimate, self.est)
-        self.assertEqual(li.description, 'Custom work')
-
-    def test_add_line_item_from_pli(self):
-        from apps.inventory.models import InventoryItem
-        pli = InventoryItem.objects.create(
-            code='WLD-001', description='Welding rod', units='ea',
-            purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
-            accounting_category=self.lit,
-        )
-        li = EstimateService.add_line_item_from_pli(
-            self.est.pk, pli.pk, qty=Decimal('20.00'),
-        )
-        self.assertEqual(li.inventory_item, pli)
-        self.assertEqual(li.price, Decimal('10.00'))
-        self.assertEqual(li.description, 'Welding rod')
-
-    def test_add_line_item_to_non_draft_raises(self):
-        EstimateLineItem.objects.create(estimate=self.est, description='Test item', price=Decimal('100.00'))
-        EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
-        with self.assertRaises(ValidationError):
-            EstimateService.add_line_item(
-                self.est.pk, description='X', qty=1, units='ea',
-                price=Decimal('1.00'), accounting_category=self.lit,
-            )
+# EstimateServiceAddLineItemTest removed in Phase 6 — EstimateService.add_line_item /
+# add_line_item_from_pli are gone (estimate lines come only from atoms).
 
 
 class EstimateServiceReorderLineItemTest(EstimatesTestBase):

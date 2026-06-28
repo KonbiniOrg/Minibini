@@ -217,21 +217,9 @@ class EstimateService:
                 JobService.update_status(job.pk, Job.STATUS_DRAFT)
         return new_estimate
 
-    @staticmethod
-    def add_line_item(estimate_pk, **kwargs):
-        """Add a manual line item to a draft estimate."""
-        try:
-            estimate = Estimate.objects.get(pk=estimate_pk)
-        except Estimate.DoesNotExist:
-            raise NotFoundError(f'Estimate {estimate_pk} not found')
-        if estimate.status != Estimate.STATUS_DRAFT:
-            raise ValidationError('Can only add line items to draft estimates.')
-        from apps.core.services import LineItemService
-        kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
-        li = EstimateLineItem(estimate=estimate, **kwargs)
-        li.full_clean()
-        LineItemService.save_line_item(li)
-        return li
+    # NOTE: direct line authoring (manual add_line_item + add_line_item_from_pli) was
+    # removed in Phase 6 — estimate lines come only from atoms (the wizard / Show
+    # Client View). Editing/deleting/reordering existing lines + adjustments remain.
 
     @staticmethod
     def update_line_item(line_item_id, **kwargs):
@@ -343,33 +331,6 @@ class EstimateService:
         LineItemService.save_line_item(line)
         line.refresh_from_db()
         return line
-
-    @staticmethod
-    def add_line_item_from_pli(estimate_pk, pli_pk, qty):
-        """Add a line item from a InventoryItem to a draft estimate."""
-        try:
-            estimate = Estimate.objects.get(pk=estimate_pk)
-        except Estimate.DoesNotExist:
-            raise NotFoundError(f'Estimate {estimate_pk} not found')
-        if estimate.status != Estimate.STATUS_DRAFT:
-            raise ValidationError('Can only add line items to draft estimates.')
-        try:
-            pli = InventoryItem.objects.get(pk=pli_pk)
-        except InventoryItem.DoesNotExist:
-            raise NotFoundError(f'InventoryItem {pli_pk} not found')
-
-        from apps.core.services import LineItemService
-        li = EstimateLineItem(
-            estimate=estimate,
-            inventory_item=pli,
-            description=pli.description,
-            qty=qty,
-            units=pli.units,
-            price=pli.selling_price,
-            accounting_category=pli.accounting_category,
-        )
-        LineItemService.save_line_item(li)
-        return li
 
 
 class EstimateEmailService:

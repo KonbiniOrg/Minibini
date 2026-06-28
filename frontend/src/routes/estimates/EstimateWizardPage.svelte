@@ -52,17 +52,6 @@
     }
   }
 
-  async function addManualLineItem() {
-    try {
-      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/`, {
-        description: '', qty: '1', units: 'each', price: '0.00',
-      });
-      await reloadAfterAction();
-    } catch (e) {
-      alert(e.message || 'Failed to add manual line item');
-    }
-  }
-
   async function loadAll() {
     loading = true;
     error = null;
@@ -183,7 +172,6 @@
           title={canAddHere ? 'Create a new line item from selected atoms' : 'Select atoms first'}
         >Add Here</button>
       </div>
-      <button type="button" onclick={addManualLineItem}>+ Manual</button>
     </div>
   </div>
 

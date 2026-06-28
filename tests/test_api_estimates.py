@@ -43,7 +43,8 @@ class EstimateAPITest(BaseTestCase):
             }, format='json')
             self.assertEqual(response.status_code, 200)
 
-    def test_add_line_item(self):
+    def test_manual_line_item_create_rejected(self):
+        # Phase 6: estimate lines come from atoms — direct line authoring is removed.
         estimate = Estimate.objects.first()
         response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
             'qty': '2.00',
@@ -51,7 +52,7 @@ class EstimateAPITest(BaseTestCase):
             'description': 'API test item',
             'price': '100.00',
         }, format='json')
-        self.assertIn(response.status_code, [200, 201])
+        self.assertEqual(response.status_code, 405)
 
     def test_list_line_items(self):
         estimate = Estimate.objects.first()

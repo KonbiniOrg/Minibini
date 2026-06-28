@@ -62,7 +62,7 @@ describe('EstimateDetailPage per-object can_manage gating', () => {
       props: { params: { id: '7' } },
     });
 
-    expect(await findByText('Add Line Item')).toBeInTheDocument();
+    expect(await findByText('Add Adjustment')).toBeInTheDocument();
   });
 
   it('hides edit affordances when can_manage is false even with the global atom', async () => {
@@ -75,7 +75,7 @@ describe('EstimateDetailPage per-object can_manage gating', () => {
 
     // page renders (Line Items heading) once load completes
     await findByText('Line Items');
-    expect(queryByText('Add Line Item')).not.toBeInTheDocument();
+    expect(queryByText('Add Adjustment')).not.toBeInTheDocument();
   });
 });
 

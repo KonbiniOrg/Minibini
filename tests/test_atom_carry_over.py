@@ -112,7 +112,9 @@ class CarryOverFromWorksheetAtomsTest(TestCase):
         self.assertEqual(earmark.quantity, Decimal('7'))
 
 
-class CarryOverFromDirectLineItemsTest(TestCase):
+class DirectLineItemsDoNotCarryOverTest(TestCase):
+    """Phase B removed: direct-estimate line items (even with template/inventory refs)
+    no longer originate atoms on the Job — documents are pure projections of the Plan."""
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
@@ -141,7 +143,7 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             accounting_category=self.cat,
         )
 
-    def test_creates_task_from_template_ref(self):
+    def test_line_item_with_template_ref_creates_no_task(self):
         EstimateLineItem.objects.create(
             estimate=self.estimate, qty=Decimal('2'), units='hours',
             price=Decimal('100'), description='Setup',
@@ -149,11 +151,9 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             source_template=self.template,
         )
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
-        tasks = Task.objects.filter(job=self.job)
-        self.assertEqual(tasks.count(), 1)
-        self.assertEqual(tasks.first().source_template, self.template)
+        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
 
-    def test_creates_material_from_pli_ref(self):
+    def test_line_item_with_inventory_ref_creates_no_material(self):
         EstimateLineItem.objects.create(
             estimate=self.estimate, qty=Decimal('3'), units='ft',
             price=Decimal('5'), description='steel rod',
@@ -161,18 +161,6 @@ class CarryOverFromDirectLineItemsTest(TestCase):
             inventory_item=self.pli,
         )
         AtomCarryOverService.carry_over_for_estimate(self.estimate)
-        materials = Material.objects.filter(job=self.job)
-        self.assertEqual(materials.count(), 1)
-        self.assertEqual(materials.first().inventory_item, self.pli)
-
-    def test_skips_purely_manual_line_items(self):
-        EstimateLineItem.objects.create(
-            estimate=self.estimate, qty=Decimal('1'), units='each',
-            price=Decimal('500'), description='one-off bespoke thing',
-            accounting_category=self.cat,
-        )
-        AtomCarryOverService.carry_over_for_estimate(self.estimate)
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
         self.assertEqual(Material.objects.filter(job=self.job).count(), 0)
 
 

@@ -118,12 +118,6 @@
     return d.toLocaleString();
   }
 
-  function openAddItem() {
-    modalItem = null;
-    modalMode = 'create';
-    modalOpen = true;
-  }
-
   function openEditItem(li) {
     modalItem = li;
     modalMode = 'edit';
@@ -268,7 +262,6 @@
   <h3>Line Items</h3>
   {#if canEdit}
     <p>
-      <button type="button" onclick={openAddItem}>Add Line Item</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       {#if estimate.worksheet}
         <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>
