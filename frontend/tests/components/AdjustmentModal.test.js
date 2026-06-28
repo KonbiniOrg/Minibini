@@ -75,7 +75,7 @@ describe('AdjustmentModal', () => {
     });
 
     await findByRole('dialog');
-    const select = await findByLabelText(/service/i);
+    const select = await findByLabelText(/rate/i);
     await fireEvent.change(select, { target: { value: '1' } });
     await fireEvent.click(getByRole('button', { name: /add adjustment/i }));
 
@@ -100,7 +100,7 @@ describe('AdjustmentModal', () => {
 
     await findByRole('dialog');
 
-    const select = await findByLabelText(/service/i);
+    const select = await findByLabelText(/rate/i);
     await fireEvent.change(select, { target: { value: '1' } });
 
     // Select the Labor category checkbox
@@ -134,7 +134,7 @@ describe('AdjustmentModal', () => {
     await fireEvent.click(getByRole('button', { name: /add adjustment/i }));
 
     expect(api.post).not.toHaveBeenCalled();
-    expect(await findByText(/please choose a percentage service/i)).toBeInTheDocument();
+    expect(await findByText(/please choose a rate/i)).toBeInTheDocument();
   });
 
   it('calls onClose when Cancel is clicked', async () => {
