@@ -1,64 +1,77 @@
-# Services & Adjustments — UI flow
+# Rate Schemes & Adjustments — UI flow
 
-**Purpose:** A from-the-user's-perspective walkthrough of the **Services** price
-list (formerly "Rate Schemes") and the **percentage adjustments** (rush fees /
-discounts) that ride on estimate and invoice line items. It guides manual/user
-testing today and is intended to seed the automated UI test platform later —
-each checklist item maps to an assertion. Keep it current as the pricing UI
-evolves.
+> **Renamed (2026-06).** This area used to be called "Services." The pricing
+> model was renamed **twice**: the priced thing was `RateScheme` → renamed to
+> `ServiceItem` (the "reframe") → renamed **back to `RateScheme`**, while the old
+> `TaskTemplate` saved-work catalog took over the `ServiceItem` name. So **today**:
+> the priced thing is a **Rate Scheme** (`RateScheme`, `/api/rate-schemes/`), and the
+> reusable saved-work catalog is a **Service Item** (`ServiceItem`, formerly
+> `TaskTemplate`, `/api/service-items/`). This doc covers Rate Schemes + adjustments;
+> the Service Item catalog and the "Add Line" picker are touched only where they
+> intersect. (Filename kept as `Services-and-Adjustments.md`.)
 
-**Model (2026-06 ServiceItem reframe + percentage adjustments):** a **Service**
-(`ServiceItem`, the renamed `RateScheme`) is one priced thing the shop charges
-for. Its `rate` is the price for **every** algorithm — including flat-fee, whose
-price used to live on the task/template. So flat-fee services proliferate (one
-per priced item) and tasks/templates carry **no price of their own**; they read
-it from the linked Service. A fourth algorithm, **`percentage`**, is a
-*document adjustment*: its `rate` is a percent (negative = discount), it never
-backs a Task, and it is applied to a draft estimate or invoice as its own line
-whose amount = `percent × (sum of the other lines it targets)`, scoped by
-accounting category. The amount **recalculates while the document is a draft and
-freezes when the document is sent/finalized**. Agreement adjustments surface in
-the invoice wizard so they can't be missed when billing. See
-`docs/plans/2026-06-23-service-price-list-and-percentage-adjustments.md` and the
-phase plans beside it.
+**Purpose:** A from-the-user's-perspective walkthrough of the **Rate Schemes** price
+list and the **percentage adjustments** (rush fees / discounts) that ride on estimate
+and invoice line items. It guides manual/user testing today and is intended to seed the
+automated UI test platform later — each checklist item maps to an assertion. Keep it
+current as the pricing UI evolves.
+
+**Model:** a **Rate Scheme** (`RateScheme`) is one priced thing the shop charges for.
+Its `rate` is the price for **every** algorithm — including flat-fee, whose price used
+to live on the task. So flat-fee rate schemes proliferate (one per priced item) and
+tasks carry **no price of their own**; they read it from the linked Rate Scheme. A
+**Service Item** (`ServiceItem`, the saved-work catalog) is a separate thing: a reusable
+task definition that bundles a name + default modifiers + a Rate Scheme, added to a Plan
+via **Add Line**. A fourth Rate Scheme algorithm, **`percentage`**, is a *document
+adjustment*: its `rate` is a percent (negative = discount), it never backs a Task, and it
+is applied to a draft estimate or invoice as its own line whose amount =
+`percent × (sum of the other lines it targets)`, scoped by accounting category. The
+amount **recalculates while the document is a draft and freezes when the document is
+sent/finalized**. Agreement adjustments surface in the invoice wizard so they can't be
+missed when billing. See `docs/designs/estimates-and-prices.md` and the consolidation
+phase plans in `docs/plans/`.
 
 ## Personas
 
-- **Worker** — no permission atoms. Adds/completes tasks (picking a Service for
-  the task); cannot manage Services and cannot add adjustments.
+- **Worker** — no permission atoms. Adds/completes tasks (picking a Rate Scheme for
+  the task); cannot manage Rate Schemes and cannot add adjustments.
 - **Jobs / PM** — holds `can_manage_jobs`, **or** is the Job's `project_manager`
   (scoped to that job). Can add adjustments on that job's **draft estimates**.
 - **Financials** — holds `can_manage_financials`. Can add adjustments on
   **draft invoices** and use the invoice wizard's Agreement Adjustments panel.
-- **Config** — holds `can_manage_config`. Creates/edits/supersedes **Services**
-  in Settings.
+- **Config** — holds `can_manage_config`. Creates/edits/supersedes **Rate Schemes**
+  (and Service Items) in Settings → Catalog. *(Creating a Service Item is also allowed
+  for `can_manage_jobs` — the inline "save to catalog" while plan-building — but Rate
+  Schemes are config-only.)*
 
-## Dev note — these are document-only
+## Dev note — percentage rate schemes are document-only
 
-A `percentage` Service is meaningless on a task. The backend rejects assigning
-one to a Task/PlanTask/TaskTemplate (HTTP 400) and excludes it from
-`GET /api/service-items/?task_applicable=true`. **Known gap (verify / likely
-bug):** the task and template Service pickers (`WorkItemForm`,
-`TaskTemplateManager`) currently fetch `/api/service-items/` *without*
-`task_applicable=true`, so a percentage Service may still appear in those
-dropdowns — picking one errors only on save. Treat its appearance there as a bug
-to fix (wire the filter), not as intended behavior. See §2 and §9.
+A `percentage` Rate Scheme is meaningless on a task. The backend rejects assigning one
+to a Task/PlanTask (HTTP 400) and excludes it from
+`GET /api/rate-schemes/?task_applicable=true`. **Known gap (verify / likely bug):** the
+task rate picker (`WorkItemForm`) and the Service Item form's rate picker
+(`ServiceItemManager`) currently fetch `/api/rate-schemes/` *without*
+`task_applicable=true`, so a percentage Rate Scheme may still appear in those dropdowns —
+picking one errors only on save. Treat its appearance there as a bug to fix (wire the
+filter), not as intended behavior. See §2 and §9.
 
 ## Prerequisites (test-data setup)
 
 Without these, whole branches below are silent no-ops:
 
-- [ ] **A Service of each task algorithm** — one `elapsed_time` (e.g. "CNC
+- [ ] **A Rate Scheme of each task algorithm** — one `elapsed_time` (e.g. "CNC
   Router", rate 85/hour), one `entered_qty`, and one **`flat_fee`** (e.g. "Std
   Setup Fee", rate 50/job). The flat-fee one is needed for the price-on-rate
   reframe checks (§1, §2).
-- [ ] **A `percentage` "Rush" Service** (rate **15**) and a **`percentage`
-  "Discount" Service** (rate **-10**). Without these, no adjustment can be added.
+- [ ] **A `percentage` "Rush" Rate Scheme** (rate **15**) and a **`percentage`
+  "Discount" Rate Scheme** (rate **-10**). Without these, no adjustment can be added.
 - [ ] **At least two AccountingCategories** (e.g. **Labor** and **Materials**) so
   category-scoped targeting is observable.
 - [ ] **A draft Estimate** with line items spanning both categories — e.g. a
   **Labor** line `qty 2 × $50 = $100` and a **Materials** line `qty 1 × $40 =
   $40` (base subtotal **$140**). Adjustment math in §3 assumes these numbers.
+  *(Estimate lines are now a projection of the Plan — author them via the worksheet /
+  "Customize Client View" wizard, not directly on the estimate; see §3 note.)*
 - [ ] **An accepted Estimate that carries a percentage adjustment**, plus a
   **draft Invoice** on the same Job — required for the agreement-surfacing /
   wizard panel (§8).
@@ -68,59 +81,62 @@ Without these, whole branches below are silent no-ops:
 
 ---
 
-## 1. Services manager (Config persona)
+## 1. Rate Schemes manager (Config persona)
 
-Entry: **Settings** (`#/settings`) → the **Catalog** tab → the **Services**
-section (`ServiceItemManager`, heading **"Services"**).
+Entry: **Settings** (`#/settings`) → the **Catalog** tab → the **Rate Schemes**
+section (`RateSchemeManager`, heading **"Rate Schemes"**).
 
-- [ ] **Lives under Catalog.** The Services list is on the **Catalog** tab
-  (alongside the material markup and templates) — *not* on the Setup tab.
-- [ ] **List + add.** The heading reads **Services** (not "Rate Schemes").
-  **Add Service** opens the create form (legend **"New Service"**).
-- [ ] **List stays visible while adding.** After **Add Service**, the existing
-  services remain listed above the form (the list is not suppressed); the
-  **Add Service** button is hidden while the form is open.
-- [ ] **Flat-fee has a single price field.** Create a Service with algorithm
+- [ ] **Lives under Catalog.** The Rate Schemes list is on the **Catalog** tab
+  (alongside the **Service Items** catalog and the material markup) — *not* on the
+  Setup tab.
+- [ ] **List + add.** The heading reads **Rate Schemes**. **Add Rate Scheme** opens
+  the create form (legend **"New Rate Scheme"**).
+- [ ] **List stays visible while adding.** After **Add Rate Scheme**, the existing
+  rate schemes remain listed above the form (the list is not suppressed); the
+  **Add Rate Scheme** button is hidden while the form is open.
+- [ ] **Flat-fee has a single price field.** Create a Rate Scheme with algorithm
   **"Fixed charge"** → there is **one Rate field** (no separate "flat-fee
   price"); enter the price there. Save → it lists with that rate.
 - [ ] **Percentage type.** Choose algorithm **"Percentage of other lines"** → the
   form shows a **"Rate (%)"** field, **no modifier menu**, and **no unit/quantity
   fields**; the AccountingCategory selector stays. Save a "Rush" at **15**.
-- [ ] **Negative percent (discount) allowed.** Create/save a percentage Service
+- [ ] **Negative percent (discount) allowed.** Create/save a percentage Rate Scheme
   with **Rate (%) = -10** → saves (no "must be ≥ 0" block). *(Honest note: a
   negative rate is **only** accepted for percentage; a negative rate on any other
   algorithm is rejected.)*
-- [ ] **Supersede a referenced Service.** Editing a Service that's already in use
-  surfaces a **"New Version of Service"** path (supersession) rather than an
+- [ ] **Supersede a referenced Rate Scheme.** Editing a Rate Scheme that's already in
+  use surfaces a **"New Version of Rate Scheme"** path (supersession) rather than an
   in-place edit of frozen fields — the old version stays, work keeps its price.
 
-## 2. A Service in the task & template forms (reframe + applicability)
+## 2. A Rate Scheme in the task & Service Item forms (reframe + applicability)
 
 Entry: task list **Add Work Item** (`#/jobs/{id}/tasklist`, `WorkItemForm`); and
-**Settings → Templates** (`TaskTemplateManager`).
+**Settings → Catalog → Service Items** (`ServiceItemManager`).
 
-- [ ] **No flat-fee price input.** Select a **flat-fee** Service in the task (or
-  template) form → there is **no** per-task/per-template price field; instead the
-  form shows the Service's price read-only: **"Rate: $50/job (from service)"**.
-- [ ] **Modifiers only for time/qty.** A flat-fee Service shows **no modifier
-  checkboxes**; an `elapsed_time`/`entered_qty` Service still shows its modifier
+- [ ] **No flat-fee price input.** Select a **flat-fee** Rate Scheme in the task (or
+  Service Item) form → there is **no** per-task price field; instead the form shows the
+  Rate Scheme's price read-only: **"Rate: $50/job (from rate scheme)"**.
+- [ ] **Modifiers only for time/qty.** A flat-fee Rate Scheme shows **no modifier
+  checkboxes**; an `elapsed_time`/`entered_qty` Rate Scheme still shows its modifier
   menu.
-- [ ] **Guard — percentage not selectable for a task.** A **percentage** Service
-  should **not** appear in the task/template Service picker. *(Known gap, §Dev
+- [ ] **Guard — percentage not selectable for a task.** A **percentage** Rate Scheme
+  should **not** appear in the task / Service Item rate picker. *(Known gap, §Dev
   note: it may currently appear because the picker omits `?task_applicable=true`.
   If it appears, that's a bug.)* If one is somehow selected and saved, the server
-  **rejects it with a 400** ("Percentage services … cannot bill a task").
+  **rejects it with a 400** ("Percentage … cannot bill a task").
 
 ## 3. Add an adjustment to a draft estimate (Jobs / PM persona)
 
-Entry: estimate detail (`#/estimates/{id}`) on a **draft** estimate. The
+Entry: estimate detail / Client View (`#/estimates/{id}`) on a **draft** estimate. The
 **Add Adjustment** button shows only when `can_manage_jobs` (or PM) **and** the
-estimate is `draft`.
+estimate is `draft`. *(Note: the Client View no longer has an "Add Line Item" button —
+base lines come from the Plan via the wizard; **Add Adjustment** is the one authoring
+control here, alongside reorder arrows and the "out of sync with atoms" marker.)*
 
-- [ ] **Open the modal.** **Add Adjustment** opens **"Add Percentage
-  Adjustment"** with a **"Percentage Service"** picker (lists only percentage
-  Services) and a **"Target Categories"** checklist labeled *"leave all unchecked
-  to apply to all"*.
+- [ ] **Open the modal.** **Add Adjustment** opens **"Add Percentage Adjustment"**
+  with a **rate dropdown** (placeholder **"-- Select a rate --"**, lists only
+  percentage Rate Schemes) and a **"Target Categories"** checklist labeled *"leave all
+  unchecked to apply to all"*.
 - [ ] **Whole-order rush (empty target).** Pick **Rush (15%)**, leave all
   categories unchecked → **Add Adjustment**. A new line appears at the **bottom**
   with badge **"+15% Rush"** and amount **$21.00** (15% of the $140 base).
@@ -136,11 +152,11 @@ estimate is `draft`.
 ## 4. Auto-recompute & freeze (estimate)
 
 - [ ] **Auto-recompute after editing a base line.** With the rush line present,
-  edit a base line (e.g. bump the Labor line to qty 3 = $150, base now $190) →
-  upon save the adjustment immediately updates to **$28.50** (15% of $190) with
-  no further action required.
-- [ ] **Auto-recompute on add/delete.** Add a new base line → the adjustment
-  recomputes. Delete a base line → the adjustment recomputes. No manual step.
+  change a base line via the wizard (e.g. bump the Labor line to qty 3 = $150, base now
+  $190) → the adjustment immediately updates to **$28.50** (15% of $190) with no further
+  action required.
+- [ ] **Auto-recompute on add/delete.** Add a new base line (wizard) → the adjustment
+  recomputes. Remove a base line → the adjustment recomputes. No manual step.
 - [ ] **Freeze on send.** Send the estimate (it leaves `draft`). The
   **Add Adjustment** button disappears; the adjustment amount is now frozen
   (line-item edits are blocked once non-draft, so the freeze is automatic).
@@ -152,8 +168,8 @@ estimate is `draft`.
   than a normal description.
 - [ ] **Sorted last.** Adjustment lines render **after** all base lines.
 - [ ] **Badge is legible (regression guard).** The badge shows the **percent and
-  Service name and category names** — never `NaN%` or `undefined`. *(This was a
-  real bug: the line serializes the service as an id; the row resolves the
+  Rate Scheme name and category names** — never `NaN%` or `undefined`. *(This was a
+  real bug: the line serializes the rate scheme as an id; the row resolves the
   display from `adjustment_service_detail` + the category list. If you see
   `NaN%`/`undefined`, report it.)*
 
@@ -161,7 +177,7 @@ estimate is `draft`.
 
 - [ ] **Revise carries the adjustment.** From an `open` estimate that has a rush
   line, **Revise Estimate** → the new draft revision still contains the rush
-  adjustment line with the **same Service and the same target categories** (it is
+  adjustment line with the **same Rate Scheme and the same target categories** (it is
   not silently dropped).
 
 ## 7. Invoice adjustments (Financials persona)
@@ -211,11 +227,11 @@ and it works **whether or not the invoice was built from the estimate**.
 - [ ] **Auto-recompute has no client-visible button.** There is no Recalculate
   button; adjustments update silently on every line-item mutation. Line-item edits
   are blocked on non-draft documents, so frozen state is enforced by the draft gate.
-- [ ] **Percentage Service rejected on a task (400).** Assigning a percentage
-  Service to a task/template is refused by the server (and should be hidden from
+- [ ] **Percentage Rate Scheme rejected on a task (400).** Assigning a percentage
+  Rate Scheme to a task is refused by the server (and should be hidden from
   the picker — §2 known gap).
 - [ ] **Negative rate only for percentage.** Saving a negative rate on a
-  non-percentage Service is rejected.
+  non-percentage Rate Scheme is rejected.
 
 ---
 
@@ -223,12 +239,12 @@ and it works **whether or not the invoice was built from the estimate**.
 
 | Dimension | Cases |
 |---|---|
-| Service algorithm | elapsed_time · entered_qty · flat_fee (price on `rate`) · **percentage** |
-| Reframe | flat-fee shows one Rate field · task/template show service rate read-only (no price input) · modifiers only on time/qty |
+| Rate Scheme algorithm | elapsed_time · entered_qty · flat_fee (price on `rate`) · **percentage** |
+| Reframe | flat-fee shows one Rate field · task/Service-Item forms show rate scheme rate read-only (no price input) · modifiers only on time/qty |
 | Adjustment scope | whole-order (empty target) · single category · multi-category · no stacking |
 | Sign | positive (rush) · negative (discount) |
 | Lifecycle | add (draft) · auto-recompute on every mutation (draft) · freeze on send/finalize · revision preserves |
-| Surface | estimate detail · invoice detail · invoice wizard Agreement panel (path-independent) · NOT atom pool |
-| Persona | worker (none) · jobs/PM (estimate) · financials (invoice) · config (Services manager) |
-| Guards | non-draft hides controls + 409 on recalc · percentage rejected on task (400) + picker filter (known gap) · negative-rate non-percentage rejected |
-| Display | badge shows percent + service + categories (no `NaN%`/`undefined`) · adjustment row distinct · sorted last |
+| Surface | estimate detail/Client View · invoice detail · invoice wizard Agreement panel (path-independent) · NOT atom pool |
+| Persona | worker (none) · jobs/PM (estimate) · financials (invoice) · config (Rate Schemes manager) |
+| Guards | non-draft hides controls · percentage rejected on task (400) + picker filter (known gap) · negative-rate non-percentage rejected |
+| Display | badge shows percent + rate scheme + categories (no `NaN%`/`undefined`) · adjustment row distinct · sorted last |
