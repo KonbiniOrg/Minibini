@@ -406,7 +406,9 @@ class AddFromTemplateTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['rate_scheme'], scheme.rate_scheme_id)
-        self.assertEqual(response.data['est_qty'], '3.00')
+        # Templates no longer carry a default qty (dropped in Phase 1) — generation
+        # seeds qty=1; rate_scheme + modifiers are still inherited from the template.
+        self.assertEqual(response.data['est_qty'], '1.00')
         self.assertEqual(response.data['active_modifiers'], ['rush'])
 
 

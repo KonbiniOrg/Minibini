@@ -67,7 +67,7 @@ def _revision_index(row):
 
 
 def build_seed(c):
-    """Emit core.user, core.accountingcategory and jobs.serviceitem records
+    """Emit core.user, core.accountingcategory and jobs.ratescheme records
     verbatim from the nealseed fixture.
 
     The records are appended to c.fixture_data exactly as they appear in
@@ -75,7 +75,7 @@ def build_seed(c):
     assigns them on load). Indexes the seed data for downstream builders:
       - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
       - c.scheme_by_name
-    Also advances the jobs.serviceitem pk counter past the seeded schemes so
+    Also advances the jobs.ratescheme pk counter past the seeded schemes so
     any derived (cloned) scheme gets a fresh pk.
     """
     from nealsdata.converter.loaders import load_seed_records
@@ -101,7 +101,7 @@ def build_seed(c):
         c.fixture_data.append(rec)
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
-        elif model == 'jobs.serviceitem':
+        elif model == 'jobs.ratescheme':
             c.scheme_by_name[fields['name']] = rec.get('pk')
             c.scheme_algorithm_by_pk[rec.get('pk')] = fields.get('algorithm')
             if isinstance(rec.get('pk'), int):
@@ -110,8 +110,8 @@ def build_seed(c):
     c.ac_svc_pk = c.ac_by_code.get('SVC')
     c.ac_mat_pk = c.ac_by_code.get('MTL')
     if max_rs_pk:
-        c._pk_counters['jobs.serviceitem'] = max(
-            c._pk_counters['jobs.serviceitem'], max_rs_pk)
+        c._pk_counters['jobs.ratescheme'] = max(
+            c._pk_counters['jobs.ratescheme'], max_rs_pk)
 
     # Per-price flat-fee RateSchemes are minted on demand in _match_seed_scheme
     # (one per distinct rate). c.flat_fee_by_rate caches rate string → pk.
@@ -967,7 +967,7 @@ def _match_seed_scheme(c, algorithm, rate):
     if algorithm != 'flat_fee':
         candidates = [
             f for f in c.fixture_data
-            if f['model'] == 'jobs.serviceitem'
+            if f['model'] == 'jobs.ratescheme'
             and f['fields'].get('algorithm') == algorithm
             and f['pk'] not in c.flat_fee_by_rate.values()
         ]
@@ -982,8 +982,8 @@ def _match_seed_scheme(c, algorithm, rate):
     # Doesn't fit a seed scheme: mint or reuse a per-price flat-fee RateScheme.
     rate_str = f'{rate:.2f}'
     if rate_str not in c.flat_fee_by_rate:
-        ff_pk = c.next_pk('jobs.serviceitem')
-        c.add_fixture('jobs.serviceitem', ff_pk, {
+        ff_pk = c.next_pk('jobs.ratescheme')
+        c.add_fixture('jobs.ratescheme', ff_pk, {
             'name':                f'Flat Fee ${rate_str}',
             'description':         f'Fixed charge; rate = ${rate_str}.',
             'algorithm':           'flat_fee',

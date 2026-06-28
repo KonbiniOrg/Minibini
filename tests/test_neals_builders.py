@@ -51,7 +51,7 @@ class BaseBuildersTest(unittest.TestCase):
                  for f in self._models('core.accountingcategory')}
         self.assertIn('SVC', codes)
         self.assertIn('MTL', codes)
-        self.assertGreater(len(self._models('jobs.serviceitem')), 0)
+        self.assertGreater(len(self._models('jobs.ratescheme')), 0)
         # build_seed indexes the seed data for downstream builders
         self.assertEqual(self.c.ac_by_code.get('SVC'), self.c.ac_svc_pk)
         self.assertIn('Shop labor', self.c.scheme_by_name)
@@ -93,7 +93,7 @@ class BaseBuildersTest(unittest.TestCase):
         cfg = next(f for f in self._models('core.configuration')
                    if f['pk'] == 'units_list')
         units = set(json.loads(cfg['fields']['value']))
-        for f in self._models('jobs.serviceitem'):
+        for f in self._models('jobs.ratescheme'):
             label = f['fields']['unit_label']
             self.assertIn(
                 label, units,
@@ -388,9 +388,9 @@ class AtomDerivationTest(unittest.TestCase):
 
     def test_derives_ratescheme_task_material_deliverable(self):
         build.derive_atoms(self.c)
-        self.assertGreater(len(self._models('jobs.serviceitem')), 0)
+        self.assertGreater(len(self._models('jobs.ratescheme')), 0)
         self.assertGreater(len(self._models('jobs.task')), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.serviceitem')}
+        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
         for t in self._models('jobs.task'):
             self.assertIn(t['fields']['rate_scheme'], rs_pks)
 
@@ -422,7 +422,7 @@ class AtomDerivationTest(unittest.TestCase):
         # (rate = the fee amount) and carry an empty list active_modifiers.
         # No shared zero-rate 'Flat Fee' scheme should be emitted.
         build.derive_atoms(self.c)
-        ff_schemes = [f for f in self._models('jobs.serviceitem')
+        ff_schemes = [f for f in self._models('jobs.ratescheme')
                       if f['fields'].get('algorithm') == 'flat_fee']
         # No zero-rate shared catch-all scheme.
         for f in ff_schemes:
@@ -703,7 +703,7 @@ class PlanSideAtomsTest(unittest.TestCase):
         # at the DB level. Every emitted PlanTask must satisfy both.
         plantasks = self._models('jobs.plantask')
         self.assertGreater(len(plantasks), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.serviceitem')}
+        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
         ws_pks = {f['pk'] for f in self._models('estimates.estworksheet')}
         for pt in plantasks:
             self.assertIsNotNone(pt['fields'].get('est_qty'),

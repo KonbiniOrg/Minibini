@@ -493,9 +493,12 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
 
     def test_wrong_atom_manage_jobs_denied_template_writes(self):
         user = self.users['can_manage_jobs']
+        # NOTE: ServiceItem (saved-work catalog) *create* is intentionally NOT
+        # config-gated — a plan-builder (can_manage_jobs) may save to the catalog
+        # inline (see CanManageJobsOrConfig + test_api_templates_config). So
+        # /api/service-items/ POST is allowed and excluded from this denied set.
         sample = [
             ('post', '/api/work-templates/', {'template_name': 'Test'}),
-            ('post', '/api/service-items/', {'template_name': 'Test'}),
             ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ]
         for method, url, data in sample:
