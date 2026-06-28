@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -108,5 +108,52 @@ describe('EstimateDetailPage vocabulary labels', () => {
     // Old labels gone
     expect(queryByText('Worksheet')).not.toBeInTheDocument();
     expect(queryByText('Show Worksheet')).not.toBeInTheDocument();
+  });
+});
+
+describe('EstimateDetailPage reprojection marker (Phase 4)', () => {
+  const flaggedLine = (state) => ({
+    line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+    price: '100.00', accounting_category: null, sources: [], reprojection_state: state,
+  });
+
+  it('shows the "underlying changed" marker + Re-pull / Keep mine on a flagged line', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft',
+      line_items: [flaggedLine('underlying_changed')] }));
+    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    expect(await findByText(/underlying changed/)).toBeInTheDocument();
+    expect(await findByText('Re-pull')).toBeInTheDocument();
+    expect(await findByText('Keep mine')).toBeInTheDocument();
+  });
+
+  it('Re-pull POSTs the re-pull endpoint', async () => {
+    api.post.mockResolvedValue({});
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft',
+      line_items: [flaggedLine('underlying_changed')] }));
+    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await fireEvent.click(await findByText('Re-pull'));
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items/1/re-pull/');
+  });
+
+  it('removed line shows Keep mine but no Re-pull', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft',
+      line_items: [flaggedLine('underlying_removed')] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    expect(await findByText(/underlying removed/)).toBeInTheDocument();
+    expect(await findByText('Keep mine')).toBeInTheDocument();
+    expect(queryByText('Re-pull')).toBeNull();
+  });
+
+  it('does not show the marker for an in_sync line', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft',
+      line_items: [flaggedLine('in_sync')] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await findByText('Cut');
+    expect(queryByText('Re-pull')).toBeNull();
+    expect(queryByText('Keep mine')).toBeNull();
   });
 });

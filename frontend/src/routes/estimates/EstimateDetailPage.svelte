@@ -146,6 +146,26 @@
     }
   }
 
+  async function repull(li) {
+    // Reconcile: take the fresh projection from the line's atoms.
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/re-pull/`);
+      await loadEstimate();
+    } catch (e) {
+      alert(e.message || 'Could not re-pull line item.');
+    }
+  }
+
+  async function keepMine(li) {
+    // Reconcile: keep my values; re-baseline the snapshot so the marker clears.
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/keep-mine/`);
+      await loadEstimate();
+    } catch (e) {
+      alert(e.message || 'Could not update line item.');
+    }
+  }
+
   async function handleReorder(itemIds) {
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/reorder/`, {
@@ -270,6 +290,19 @@
     <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
     <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
     <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
+    {#if li.reprojection_state === 'underlying_changed' || li.reprojection_state === 'underlying_removed'}
+      <div class="reproject-flag">
+        <span class="reproject-marker">
+          {li.reprojection_state === 'underlying_removed'
+            ? 'underlying removed'
+            : 'underlying changed — review'}
+        </span>
+        {#if li.reprojection_state === 'underlying_changed'}
+          <button type="button" onclick={() => repull(li)}>Re-pull</button>
+        {/if}
+        <button type="button" onclick={() => keepMine(li)}>Keep mine</button>
+      </div>
+    {/if}
   {/snippet}
 
   <LineItemTable
@@ -306,6 +339,8 @@
 <style>
   .error { color: #a8071a; }
   .superseded { opacity: 0.6; }
+  .reproject-flag { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .reproject-marker { color: #a8071a; font-size: 12px; font-weight: 600; }
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 

@@ -183,6 +183,42 @@ class EstimateViewSet(
             'line_item': EstimateLineItemSerializer(line_item).data,
         })
 
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/re-pull',
+    )
+    def repull_line_item(self, request, pk=None, line_item_pk=None):
+        """Reconcile a flagged line: take the fresh projection from its atoms."""
+        estimate = self.get_object()
+        try:
+            EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
+        except EstimateLineItem.DoesNotExist:
+            return Response({'error': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            li = EstimateWizardService.repull_line_item(line_item_pk)
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        li.refresh_from_db()
+        return Response(EstimateLineItemSerializer(li).data)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'line-items/(?P<line_item_pk>[^/.]+)/keep-mine',
+    )
+    def keep_mine_line_item(self, request, pk=None, line_item_pk=None):
+        """Reconcile a flagged line: keep my values, re-baseline the snapshot."""
+        estimate = self.get_object()
+        try:
+            EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
+        except EstimateLineItem.DoesNotExist:
+            return Response({'error': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            li = EstimateWizardService.keep_mine_line_item(line_item_pk)
+        except DjangoValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        li.refresh_from_db()
+        return Response(EstimateLineItemSerializer(li).data)
+
     @action(detail=True, methods=['post'], url_path='adjustment-lines')
     def adjustment_lines(self, request, pk=None):
         """Add a percentage-adjustment line item to a draft estimate.

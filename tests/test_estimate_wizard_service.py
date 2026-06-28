@@ -304,6 +304,46 @@ class AddAtomsToNewLineItemTest(TestCase):
         li.refresh_from_db()
         self.assertEqual(EstimateWizardService.reprojection_state(li), 'overridden')
 
+    # ── reconcile: re-pull / keep-mine (Task 4) ──────────────────────────
+    def _overridden_then_drifted(self):
+        from apps.core.services import LineItemService
+        li = self._project_task_line()
+        li.description = 'custom'
+        LineItemService.save_line_item(li)
+        self.pt.name = 'Setup CHANGED'
+        self.pt.save()
+        return li
+
+    def test_repull_takes_atom_values_and_clears_flag(self):
+        li = self._overridden_then_drifted()
+        EstimateWizardService.repull_line_item(li.line_item_id)
+        li.refresh_from_db()
+        self.assertEqual(li.description, 'Setup CHANGED')  # fresh projection from the atom
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'in_sync')
+
+    def test_keep_mine_keeps_values_and_clears_flag(self):
+        li = self._overridden_then_drifted()
+        EstimateWizardService.keep_mine_line_item(li.line_item_id)
+        li.refresh_from_db()
+        self.assertEqual(li.description, 'custom')  # my value kept
+        self.assertEqual(EstimateWizardService.reprojection_state(li), 'overridden')
+
+    def test_repull_on_removed_atom_drops_dangling_source(self):
+        li = self._project_task_line()
+        self.pt.delete()  # -> underlying_removed
+        EstimateWizardService.repull_line_item(li.line_item_id)
+        li.refresh_from_db()
+        self.assertEqual(li.sources.count(), 0)
+        self.assertIsNone(EstimateWizardService.reprojection_state(li))
+
+    def test_reconcile_blocked_on_non_draft_estimate(self):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.estimates.models import Estimate
+        li = self._project_task_line()
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        with self.assertRaises(DjangoValidationError):
+            EstimateWizardService.keep_mine_line_item(li.line_item_id)
+
     def test_uniform_category_kept(self):
         # Both atoms in same category
         pm_same_cat = PlanMaterial.objects.create(

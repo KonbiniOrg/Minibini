@@ -1081,6 +1081,53 @@ class EstimateWizardService(BaseWizardService):
             else atom.accounting_category
         )
 
+    @classmethod
+    def _drop_dangling_sources(cls, line_item):
+        """Delete source rows whose atom no longer resolves (underlying removed)."""
+        for src in list(line_item.sources.all()):
+            try:
+                src.resolve()
+            except Exception:
+                src.delete()
+
+    @classmethod
+    def _get_draft_line(cls, line_item_id):
+        from apps.estimates.models import EstimateLineItem
+        try:
+            li = EstimateLineItem.objects.get(pk=line_item_id)
+        except EstimateLineItem.DoesNotExist:
+            raise NotFoundError(f'EstimateLineItem {line_item_id} not found')
+        if li.estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only reconcile line items on draft estimates.')
+        return li
+
+    @classmethod
+    def repull_line_item(cls, line_item_id):
+        """Reconcile: take the fresh projection — re-derive the line from its atoms
+        and reset the snapshot. Dangling (removed-atom) sources are dropped first."""
+        from apps.core.services import LineItemService
+        li = cls._get_draft_line(line_item_id)
+        cls._drop_dangling_sources(li)
+        sources = list(li.sources.all())
+        if len(sources) == 1:
+            cls._apply_atom_to_line(li, sources[0].resolve())
+            LineItemService.save_line_item(li)
+            cls._snapshot_line_item(li)
+        elif len(sources) > 1:
+            cls._resync_in_sync_line_item(li)  # re-derives bundle + re-snapshots
+        else:
+            cls._snapshot_line_item(li)  # no atoms left → empties the snapshot
+        return li
+
+    @classmethod
+    def keep_mine_line_item(cls, line_item_id):
+        """Reconcile: keep the line's current values; re-baseline the snapshot to the
+        atoms' current values so the marker clears. Dangling sources are dropped."""
+        li = cls._get_draft_line(line_item_id)
+        cls._drop_dangling_sources(li)
+        cls._snapshot_line_item(li)
+        return li
+
     @staticmethod
     def open_for_worksheet(worksheet):
         """Return the job's draft Estimate, creating one if none exists.
