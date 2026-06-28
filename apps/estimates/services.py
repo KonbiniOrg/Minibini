@@ -1066,6 +1066,38 @@ class EstimateWizardService(BaseWizardService):
             return True
         return line_item.price != (total / line_item.qty).quantize(Decimal('0.01'))
 
+    @classmethod
+    def reprojection_changes(cls, line_item):
+        """Per-source detail of what drifted vs the snapshot, for the marker. Returns
+        a list of {'description', 'removed': bool, 'changes': [{field, old, new}]}.
+        Empty when nothing drifted (in_sync / overridden-clean / hand-added)."""
+        snap = line_item.projection_snapshot or {}
+        if not snap:
+            return []
+        by_key = {f'{s.source_type}:{s.source_pk}': s for s in line_item.sources.all()}
+        fields = ('description', 'qty', 'price', 'accounting_category')
+        out = []
+        # Removed atoms: a snapshot key with no current source row.
+        for key, base in snap.items():
+            if key not in by_key:
+                out.append({'description': base.get('description'), 'removed': True, 'changes': []})
+        for key, src in by_key.items():
+            base = snap.get(key)
+            if base is None:
+                continue
+            try:
+                cur = cls._atom_snapshot(src.resolve())
+            except Exception:
+                out.append({'description': base.get('description'), 'removed': True, 'changes': []})
+                continue
+            changes = [
+                {'field': f, 'old': base.get(f), 'new': cur.get(f)}
+                for f in fields if cur.get(f) != base.get(f)
+            ]
+            if changes:
+                out.append({'description': cur.get('description'), 'removed': False, 'changes': changes})
+        return out
+
     @staticmethod
     def _apply_atom_to_line(line_item, atom):
         """Set a line's billing fields from its single source atom (1:1 projection)."""

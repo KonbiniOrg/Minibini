@@ -344,6 +344,28 @@ class AddAtomsToNewLineItemTest(TestCase):
         with self.assertRaises(DjangoValidationError):
             EstimateWizardService.keep_mine_line_item(li.line_item_id)
 
+    # ── reprojection_changes: which atom + which fields (per-atom detail) ──
+    def test_reprojection_changes_names_the_drifted_atom_and_field(self):
+        li = self._overridden_then_drifted()  # overridden, then pt.name -> 'Setup CHANGED'
+        changes = EstimateWizardService.reprojection_changes(li)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]['description'], 'Setup CHANGED')
+        self.assertFalse(changes[0]['removed'])
+        self.assertIn('description', [c['field'] for c in changes[0]['changes']])
+
+    def test_reprojection_changes_flags_removed_atom(self):
+        li = self._project_task_line()
+        name = self.pt.name
+        self.pt.delete()
+        changes = EstimateWizardService.reprojection_changes(li)
+        self.assertEqual(len(changes), 1)
+        self.assertTrue(changes[0]['removed'])
+        self.assertEqual(changes[0]['description'], name)
+
+    def test_reprojection_changes_empty_for_in_sync_line(self):
+        li = self._project_task_line()
+        self.assertEqual(EstimateWizardService.reprojection_changes(li), [])
+
     def test_uniform_category_kept(self):
         # Both atoms in same category
         pm_same_cat = PlanMaterial.objects.create(

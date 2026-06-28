@@ -115,6 +115,12 @@ describe('EstimateDetailPage reprojection marker (Phase 4)', () => {
   const flaggedLine = (state) => ({
     line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
     price: '100.00', accounting_category: null, sources: [], reprojection_state: state,
+    reprojection_changes:
+      state === 'underlying_changed'
+        ? [{ description: 'CNC Routing', removed: false, changes: [{ field: 'qty', old: '2', new: '5' }] }]
+        : state === 'underlying_removed'
+        ? [{ description: 'CNC Routing', removed: true, changes: [] }]
+        : [],
   });
 
   it('shows the "underlying changed" marker pointing to Customize, with Keep mine (no Re-pull)', async () => {
@@ -123,6 +129,7 @@ describe('EstimateDetailPage reprojection marker (Phase 4)', () => {
       line_items: [flaggedLine('underlying_changed')] }));
     const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
     expect(await findByText(/underlying changed/)).toBeInTheDocument();
+    expect(await findByText(/CNC Routing/)).toBeInTheDocument(); // the specific drifted atom
     expect(await findByText(/customize client view/i)).toBeInTheDocument();
     expect(await findByText('Keep mine')).toBeInTheDocument();
     expect(queryByText('Re-pull')).toBeNull();

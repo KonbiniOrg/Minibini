@@ -146,6 +146,17 @@
     }
   }
 
+  function reprojSummary(li) {
+    // "CNC Routing (qty, price); Bolt (removed)" — names the atom(s) that drifted.
+    const fieldLabel = (f) => (f === 'accounting_category' ? 'category' : f);
+    return (li.reprojection_changes || []).map((c) => {
+      const name = c.description || 'item';
+      if (c.removed) return `${name} (removed)`;
+      const fields = (c.changes || []).map((ch) => fieldLabel(ch.field)).join(', ');
+      return fields ? `${name} (${fields})` : name;
+    }).join('; ');
+  }
+
   async function keepMine(li) {
     // Reconcile: keep my values; re-baseline the snapshot so the marker clears.
     try {
@@ -283,7 +294,7 @@
     {#if li.reprojection_state === 'underlying_changed' || li.reprojection_state === 'underlying_removed'}
       <div class="reproject-flag">
         <span class="reproject-marker">
-          {li.reprojection_state === 'underlying_removed' ? 'underlying removed' : 'underlying changed'} — adjust in
+          {li.reprojection_state === 'underlying_removed' ? 'underlying removed' : 'underlying changed'}{#if reprojSummary(li)}: {reprojSummary(li)}{/if} — adjust in
           {#if estimate.worksheet}<a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>{:else}Customize Client View{/if}
           if needed
         </span>
