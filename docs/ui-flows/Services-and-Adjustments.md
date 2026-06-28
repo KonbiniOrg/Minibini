@@ -31,6 +31,21 @@ sent/finalized**. Agreement adjustments surface in the invoice wizard so they ca
 missed when billing. See `docs/designs/estimates-and-prices.md` and the consolidation
 phase plans in `docs/plans/`.
 
+> **Scope — what to test now vs. what's coming (Phase 8 deferred).** Today,
+> adjustments are **document-scoped**: you add one per **draft estimate** and again per
+> **draft invoice** (the **Add Adjustment** button, §3/§7), and the invoice wizard's
+> **Agreement Adjustments** panel (§8) pulls the accepted estimate's adjustments onto an
+> invoice. **That is the current, shippable behavior this doc covers — test it as
+> written.** **Phase 8 ("job-scoped, auto-applied adjustments") is deferred and NOT
+> built yet.** When it lands it will move the adjustment *definition* to the **Job**
+> (define a rush/discount once on the job → it auto-applies to every estimate and
+> invoice, re-evaluated against each document's own lines, waivable per document) and
+> will **replace** both the per-document **Add Adjustment** flow and the
+> Agreement-Adjustments panel. So if you're wondering "why is the adjustment on the
+> document and not the Job?" — that's correct for now; the Job-level model is future
+> work. Everything else in this session (the rename, the atoms-only estimate, removal of
+> direct line authoring) **is** built and reflected here.
+
 ## Personas
 
 - **Worker** — no permission atoms. Adds/completes tasks (picking a Rate Scheme for
@@ -201,6 +216,10 @@ Entry: from invoice detail, **Show Billables** → invoice wizard
 (`#/invoices/{id}/wizard`). This surfaces adjustments from the **agreement of
 record** (the accepted estimate + accepted change orders) so they aren't missed —
 and it works **whether or not the invoice was built from the estimate**.
+
+> *This whole panel is the current document-scoped carry-over mechanism and is
+> slated to be **replaced** by Phase 8's job-scoped auto-apply (deferred). Test it as
+> written for now.*
 
 - [ ] **Panel lists agreement adjustments.** With an accepted estimate that
   carried a rush adjustment, the wizard shows an **"Agreement Adjustments"** panel
