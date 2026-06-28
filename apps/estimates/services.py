@@ -982,6 +982,21 @@ class EstimateWizardService(BaseWizardService):
     source_fk = 'estimate_line_item'
     claim_conflict_exc = EstimateClaimConflict
 
+    @classmethod
+    def _snapshot_line_item(cls, line_item):
+        """Capture each source atom's current billing fields so re-projection can
+        detect drift later. Keyed 'source_type:source_pk'; unresolvable atoms are
+        skipped (they surface as 'underlying_removed' from the missing snapshot key)."""
+        snap = {}
+        for src in line_item.sources.all():
+            try:
+                inst = src.resolve()
+            except Exception:
+                continue
+            snap[f'{src.source_type}:{src.source_pk}'] = cls._atom_snapshot(inst)
+        line_item.projection_snapshot = snap
+        line_item.save(update_fields=['projection_snapshot'])
+
     @staticmethod
     def open_for_worksheet(worksheet):
         """Return the job's draft Estimate, creating one if none exists.
@@ -1216,6 +1231,7 @@ class EstimateWizardService(BaseWizardService):
                 source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
                 source_pk=pt.pk,
             )
+            EstimateWizardService._snapshot_line_item(li)
             created_count += 1
 
         # PlanMaterials
@@ -1239,6 +1255,7 @@ class EstimateWizardService(BaseWizardService):
                 source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
                 source_pk=pm.pk,
             )
+            EstimateWizardService._snapshot_line_item(li)
             created_count += 1
 
         # This bulk path bypasses LineItemService.save_line_item, so recompute

@@ -201,6 +201,27 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(li.sources.count(), 1)
         self.assertEqual(li.sources.first().source_pk, self.pt.pk)
 
+    def test_projection_snapshot_captured_for_new_line(self):
+        li = EstimateWizardService.add_atoms_to_new_line_item(
+            self.estimate, [{'type': 'plan_task', 'id': self.pt.pk}])
+        li.refresh_from_db()
+        key = f'plan_task:{self.pt.pk}'
+        self.assertIn(key, li.projection_snapshot)
+        snap = li.projection_snapshot[key]
+        self.assertEqual(snap['description'], 'Setup')
+        self.assertEqual(snap['accounting_category'], self.cat.pk)
+        self.assertIn('qty', snap)
+        self.assertIn('price', snap)
+
+    def test_send_all_atoms_captures_snapshot_per_line(self):
+        from apps.estimates.models import EstimateLineItemSource
+        EstimateWizardService.send_all_atoms_to_estimate(self.ws)
+        src = EstimateLineItemSource.objects.get(
+            source_type='plan_task', source_pk=self.pt.pk)
+        li = src.estimate_line_item
+        self.assertEqual(
+            li.projection_snapshot[f'plan_task:{self.pt.pk}']['description'], 'Setup')
+
     def test_uniform_category_kept(self):
         # Both atoms in same category
         pm_same_cat = PlanMaterial.objects.create(

@@ -189,6 +189,27 @@ class BaseWizardService:
             new_sum = cls._sum_sources(line_item)
             line_item.price = cls._expected_per_unit(new_sum, line_item.qty)
         LineItemService.save_line_item(line_item)
+        cls._snapshot_line_item(line_item)
+
+    # ── projection snapshot (drift detection; estimate wizard overrides) ──
+    @classmethod
+    def _atom_snapshot(cls, instance):
+        """The atom's billing-relevant fields, as strings for stable JSON diffing."""
+        total = cls._atom_computed_amount(instance)
+        qty, price = cls._atom_qty_and_price(instance, total)
+        cat = cls._atom_category(instance)
+        return {
+            'description': cls._atom_description(instance),
+            'qty': str(qty),
+            'price': str(price),
+            'accounting_category': cat.pk if cat else None,
+        }
+
+    @classmethod
+    def _snapshot_line_item(cls, line_item):
+        """No-op hook. Subclasses that detect underlying-atom drift override this
+        to persist a per-source snapshot of the atoms' billing fields."""
+        pass
 
     # ── claim-conflict helper ──────────────────────────────────────────
     @classmethod
@@ -259,6 +280,7 @@ class BaseWizardService:
                 LineItemService.save_line_item(line_item)
                 for instance in instances:
                     cls._create_source(line_item, instance)
+                cls._snapshot_line_item(line_item)
         except IntegrityError:
             raise cls._claim_conflict(atoms)
 

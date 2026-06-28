@@ -570,6 +570,13 @@ class EstimateLineItem(BaseLineItem):
         'core.AccountingCategory', blank=True, related_name='+',
         help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
     )
+    projection_snapshot = models.JSONField(
+        default=dict, blank=True,
+        help_text='Per-source snapshot of the atom billing fields (description, qty, '
+                  'price, accounting_category) captured at projection/sync time, keyed '
+                  '"source_type:source_pk". Used to detect underlying-atom drift on '
+                  're-projection. Empty for hand-added (sourceless) lines.',
+    )
 
     class Meta:
         db_table = 'est_li'
