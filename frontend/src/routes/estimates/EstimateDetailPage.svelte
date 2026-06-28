@@ -1,7 +1,6 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
-  import LineItemModal from '../../components/LineItemModal.svelte';
   import AdjustmentModal from '../../components/AdjustmentModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
@@ -16,9 +15,6 @@
   let loading = $state(true);
   let error = $state('');
 
-  let modalOpen = $state(false);
-  let modalMode = $state('create');
-  let modalItem = $state(null);
 
   let adjustmentModalOpen = $state(false);
 
@@ -116,28 +112,6 @@
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleString();
-  }
-
-  function openEditItem(li) {
-    modalItem = li;
-    modalMode = 'edit';
-    modalOpen = true;
-  }
-
-  function handleSaved() {
-    modalOpen = false;
-    modalItem = null;
-    loadEstimate();
-  }
-
-  async function handleDeleteItem(li) {
-    // No confirm: draft-only line edit, re-addable by hand.
-    try {
-      await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
-      await loadEstimate();
-    } catch (e) {
-      alert(e.message || 'Could not delete line item.');
-    }
   }
 
   async function handleReorder(itemIds) {
@@ -270,10 +244,9 @@
   {/if}
 
   {#snippet actionsSnippet(li, i)}
-    <button type="button" onclick={() => openEditItem(li)}>Edit</button>
+    <!-- Reorder only on the Client View; all editing goes through Customize Client View. -->
     <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
     <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
-    <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
     {#if lineOutOfSync(li)}
       <span class="out-of-sync" title="The line no longer matches its atoms; adjust in Customize Client View if needed.">⚠ out of sync with atoms</span>
     {/if}
@@ -290,16 +263,6 @@
   {#if estimate.job}
     <DeliverablesSection jobId={estimate.job} canManage={estimate.can_manage} />
   {/if}
-
-  <LineItemModal
-    open={modalOpen}
-    mode={modalMode}
-    apiBase={`/api/estimates/${estimate.estimate_id}`}
-    item={modalItem}
-    {categories}
-    onSaved={handleSaved}
-    onClose={() => { modalOpen = false; }}
-  />
 
   <AdjustmentModal
     open={adjustmentModalOpen}

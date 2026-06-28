@@ -134,3 +134,17 @@ describe('EstimateDetailPage out-of-sync indicator', () => {
     expect(queryByText(/out of sync/)).toBeNull();
   });
 });
+
+describe('EstimateDetailPage line-item actions', () => {
+  it('has no Edit/Delete buttons on line items (editing goes through Customize)', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
+      { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+        price: '5', accounting_category: null, sources: [] },
+    ] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await findByText('Cut');
+    expect(queryByText('Edit')).toBeNull();
+    expect(queryByText('Delete')).toBeNull();
+  });
+});
