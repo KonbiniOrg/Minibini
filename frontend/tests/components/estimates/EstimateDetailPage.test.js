@@ -117,24 +117,15 @@ describe('EstimateDetailPage reprojection marker (Phase 4)', () => {
     price: '100.00', accounting_category: null, sources: [], reprojection_state: state,
   });
 
-  it('shows the "underlying changed" marker + Re-pull / Keep mine on a flagged line', async () => {
+  it('shows the "underlying changed" marker pointing to Customize, with Keep mine (no Re-pull)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft',
       line_items: [flaggedLine('underlying_changed')] }));
-    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
     expect(await findByText(/underlying changed/)).toBeInTheDocument();
-    expect(await findByText('Re-pull')).toBeInTheDocument();
+    expect(await findByText(/customize client view/i)).toBeInTheDocument();
     expect(await findByText('Keep mine')).toBeInTheDocument();
-  });
-
-  it('Re-pull POSTs the re-pull endpoint', async () => {
-    api.post.mockResolvedValue({});
-    user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft',
-      line_items: [flaggedLine('underlying_changed')] }));
-    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
-    await fireEvent.click(await findByText('Re-pull'));
-    expect(api.post).toHaveBeenCalledWith('/api/estimates/7/line-items/1/re-pull/');
+    expect(queryByText('Re-pull')).toBeNull();
   });
 
   it('removed line shows Keep mine but no Re-pull', async () => {
