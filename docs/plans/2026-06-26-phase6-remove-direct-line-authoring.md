@@ -1,87 +1,96 @@
-# Phase 6 — Documents become pure projections (remove direct line authoring + Phase B)
+# Phase 6 — The Estimate (Client View) becomes a pure projection (remove direct line authoring + Phase B)
 
-> ⚠️ **Predates the 2026-06-27 design revision.** Names here use the OLD mapping (rate
-> card = `ServiceItem`, work catalog = `TaskTemplate`); the design draft now swaps
-> these (rate card → `RateScheme`, saved work item → `ServiceItem`) and reshapes the
-> add surface ("Add Line"). Read against
-> `2026-06-24-planning-billing-consolidation-draft.md`; re-derive specifics when
-> executing.
+> **Revised 2026-06-27** to match what's been built. Changes from the original:
+> - **Names updated:** rate card = `RateScheme`, saved-work catalog = `ServiceItem`
+>   (the Phase-0 rename is done). "Add from Price List" is now **"Add Line"** on the
+>   Plan; goods are `InventoryItem`.
+> - **Estimate-only now; invoice parity deferred.** Per the user's call, we focus on
+>   getting the **estimate (Client View)** right first and leave the **invoice**
+>   equivalent for a later phase. This is a deliberate, temporary departure from the
+>   design's "estimate and invoice change together (don't fork)" rule — we fork on
+>   purpose and reunify when invoicing is tackled.
+> - **Reprojection is a live check, not a snapshot.** The earlier snapshot/
+>   reconcile/`reprojection_state` model was removed; a line that no longer matches
+>   its atoms is flagged live ("⚠ out of sync with atoms") on both the Client View
+>   and the wizard. Nothing in this phase reintroduces snapshots.
 
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
-> Design draft §5.2/§5.3/§5.4 + §14 step 5. Backend + frontend. **Both estimate and
-> invoice change together** (design's "do not fork" rule).
+> Design draft §5.2/§5.3/§5.4 + §14 step 5. Backend + frontend.
 
-**Goal:** Stop letting a unit of work *originate* on a customer document. Remove the
-**"Add Line Item"** authoring (manual entry + "From Price List"/PLI) on the
-**Client View (estimate)** and the equivalent **manual line** on the **Invoice**;
-and remove the dormant **Phase B** carry-over (line-item → Task/Material). Lines
-come only from atoms (the wizard / Show Client View) plus **adjustments** (which
-stay for now). Editing *existing* projected lines (re-price, rename, regroup) and
-reordering **stay** — design §8 "trust the user."
+**Goal:** Stop letting a unit of work *originate* on the customer **Estimate (Client
+View)**. Remove the **"Add Line Item"** authoring (manual entry + the price-list/PLI
+variant) on `EstimateDetailPage` and the wizard's "Create Manual Line Item"; and
+remove the dormant **Phase B** carry-over (line-item → Task/Material). Estimate lines
+then come only from **atoms** (the wizard / "Show Client View" projection) plus
+**adjustments** (which stay for now). Editing *existing* projected lines (re-price,
+rename, regroup) and reordering **stay** — design §8 "trust the user."
 
-**Depends on:** Phases 1–2 (atoms-first flow exists) so removing authoring doesn't
-strand users. **Sets up** Phase 7 (slim fields): once nothing authors via
-`source_template` / line `inventory_item` and Phase B is gone, those fields have no
-readers.
+**Depends on:** Phases 1–2 (atoms-first Plan flow exists, incl. the Plan's one-off
+paths — see Decisions) so removing Client-View authoring doesn't strand users.
+**Sets up** Phase 7 (slim fields) — but only the *estimate-side* readers go away here
+(invoice still authors lines, so its `inventory_item` usage remains until the
+deferred invoice phase; Phase 7 must account for that).
 
 ## Global constraints
-- No model field removal here (that's Phase 7) — this removes *usage*. So no
-  migrations in this phase. Never write the dev DB; backend tests on test DB, one
-  process. Svelte 5 runes. Frontend `npm run test:run`.
+- No model field removal here (that's Phase 7) — this removes *usage*. No migrations.
+  Never write the dev DB; backend tests on the test DB, one process. Svelte 5 runes;
+  frontend `npm run test:run`. **Gate on the real `OK`/`FAILED` summary, never a
+  piped exit code** (see CLAUDE.md).
 - **Keep**: the wizard (atoms→lines), `update_line_item`/`delete_line_item`/reorder
-  on existing lines, **Add Adjustment** (document-scoped until Phase 8), Phase A
-  carry-over, Change Orders (CO lines are direct-authored deltas — untouched).
+  on existing estimate lines, **Add Adjustment** (document-scoped until Phase 8),
+  Phase A carry-over, Change Orders (CO lines are direct-authored deltas — untouched).
+- **Do NOT touch invoicing in this phase** (deferred — see below).
 
-## Reference (from exploration)
-- Estimate authoring: `frontend/src/routes/estimates/EstimateDetailPage.svelte` "Add
-  Line Item" → `LineItemModal.svelte` (manual + PLI); endpoints `POST
-  /api/estimates/{id}/line-items/` (manual) and the PLI variant; services
-  `EstimateService.add_line_item` and `add_line_item_from_pli` (~services.py L361).
-  Wizard "Create Manual Line Item" in `EstimateWizardPage.svelte`.
-- Invoice authoring: `InvoiceService.add_line_item` (manual); `addManualLineItem()`
-  in `frontend/src/routes/invoices/InvoiceWizardPage.svelte`.
-- Phase B: `apps/estimates/carry_over.py` `AtomCarryOverService.carry_over_for_estimate`
-  — Phase A (materialize worksheet, ~L29–41) then **Phase B** (~L43–50:
-  `_create_task_from_line_item` via `source_template`, `_create_material_from_line_item`
-  via `inventory_item`). Invoked by the `estimate_accepted` signal
-  (`apps/estimates/signals.py` ~L109).
-- Tests: `tests/test_atom_carry_over.py` (Phase A + `CarryOverFromDirectLineItemsTest`
-  = Phase B), `tests/test_api_estimates.py` (line-item CRUD), invoice wizard tests.
+## Reference (from exploration; re-verify at execution)
+- Estimate authoring (REMOVE): `frontend/src/routes/estimates/EstimateDetailPage.svelte`
+  "Add Line Item" → `LineItemModal.svelte`; endpoints `POST /api/estimates/{id}/line-items/`
+  (manual) and the PLI variant; services `EstimateService.add_line_item` and
+  `add_line_item_from_pli` (`apps/estimates/services.py`). Wizard "Create Manual Line
+  Item" in `EstimateWizardPage.svelte`.
+- Phase B (REMOVE): `apps/estimates/carry_over.py` — Phase A (materialize worksheet)
+  then **Phase B** (`_create_task_from_line_item` via `source_template`,
+  `_create_material_from_line_item` via `inventory_item`). Invoked by the
+  `estimate_accepted` signal (`apps/estimates/signals.py`).
+- Tests: `tests/test_atom_carry_over.py` (Phase A + the Phase-B `CarryOverFromDirectLineItemsTest`),
+  `tests/test_api_estimates.py` (line-item CRUD).
+- Invoice authoring (DEFERRED — leave as-is): `InvoiceService.add_line_item`,
+  `addManualLineItem()` in `InvoiceWizardPage.svelte`.
 
 ## Tasks (TDD)
 
 ### Task 1 — Remove Phase B carry-over
 Delete the Phase-B loop + `_create_task_from_line_item` + `_create_material_from_line_item`
 from `carry_over.py`; `carry_over_for_estimate` keeps only Phase A. Remove/replace
-the `CarryOverFromDirectLineItemsTest` cases; keep Phase A tests green. (This drops
-the `line-item → Task` idea entirely.)
+the `CarryOverFromDirectLineItemsTest` cases; keep Phase A tests green.
 
 ### Task 2 — Remove estimate direct line authoring
 Remove `EstimateService.add_line_item` (manual) and `add_line_item_from_pli`, their
-endpoints, and the "Add Line Item"/LineItemModal UI on `EstimateDetailPage` + the
+endpoints, and the "Add Line Item"/`LineItemModal` UI on `EstimateDetailPage` + the
 wizard's "Create Manual Line Item". Keep `update_line_item`, `delete_line_item`,
 reorder, and **Add Adjustment**. Update/remove the corresponding tests.
 
-### Task 3 — Remove invoice direct line authoring (parity)
-Mirror Task 2 on the invoice: remove `InvoiceService.add_line_item` (manual) +
-`addManualLineItem()` in the invoice wizard; keep edit/delete/reorder + adjustments
-+ the atoms wizard. Update tests.
+### Task 3 — Sweep + gate (estimate scope)
+Grep for remaining callers/links to the removed estimate paths (serializers, routes,
+fixtures, components). Full backend + frontend suites green (read the real summary).
 
-### Task 4 — Sweep + gate
-Grep for any remaining callers/links to the removed paths (serializers, routes,
-fixtures, other components). Full backend + frontend suites green.
+## Deferred to a later "invoice projection" phase (NOT now)
+- Removing invoice direct line authoring (`InvoiceService.add_line_item`,
+  `addManualLineItem()`) for parity, and reunifying estimate+invoice behavior.
+- Any invoice-side field slimming that depends on it.
 
 ## Out of scope
-- Removing the now-unused model fields (`source_template`, line `inventory_item`) —
-  **Phase 7**.
-- Converting adjustments to job-scoped — **Phase 8** (they stay document-scoped,
-  still addable, here).
+- Removing now-unused model fields (`source_template`, line `inventory_item`) — **Phase 7**
+  (and only the estimate-side readers are gone after this phase; invoice still reads
+  `inventory_item` until the deferred invoice phase).
+- Converting adjustments to job-scoped — **Phase 8** (they stay document-scoped here).
 
-## Decisions to confirm
-- **One-off / free-form lines:** removing manual + PLI authoring also removes the
-  only way to type an arbitrary line. The design accepts this as a deliberate gap
-  (§6.3; fallback = a `flat_fee` ServiceItem carried as a Task; clean fix = the
-  deferred Fee atom). Confirm you're OK losing the manual-line escape hatch now, or
-  whether to keep a minimal manual line until the Fee atom lands.
-- Whether to keep the per-task "+mat" and worksheet-side adds (yes — those are
-  *atom* authoring on the Plan, not document authoring; untouched).
+## Decisions
+- **One-off / free-form lines — resolved on the Plan.** Phase 1 added, on the **Plan**,
+  an **"Add custom task"** (type a description + attach a `RateScheme`) and an
+  **"Add freeform material"** (one-off `PlanMaterial`: qty + units + direct price + AC).
+  So arbitrary work/goods can still be authored — as **atoms on the Plan** — and then
+  projected. Removing manual authoring on the **Client View** therefore doesn't strip
+  the escape hatch; it just moves authoring to the Plan where it belongs. (The deferred
+  **Fee** atom, design §15.1, remains the clean home for a pure one-off charge.)
+- Per-task "+mat" and worksheet-side adds stay (those are *atom* authoring on the Plan,
+  not document authoring).

@@ -1,15 +1,18 @@
 # Phase 7 — Slim the frozen line-item models
 
-> ⚠️ **Predates the 2026-06-27 design revision.** Names here use the OLD mapping (rate
-> card = `ServiceItem`, work catalog = `TaskTemplate`); the design draft now swaps
-> these (rate card → `RateScheme`, saved work item → `ServiceItem`) and reshapes the
-> add surface ("Add Line"). Read against
-> `2026-06-24-planning-billing-consolidation-draft.md`; re-derive specifics when
-> executing.
+> **Revised 2026-06-27.** The rename is done (rate card = `RateScheme`, saved-work =
+> `ServiceItem`). **Scope reduced to the estimate side:** because invoice direct-line
+> authoring is now deferred (see Phase 6), the **shared `inventory_item` field on
+> `BaseLineItem` still has invoice-side readers and cannot be removed yet** — so this
+> phase removes only `EstimateLineItem.source_template` (whose readers are gone once
+> Phase 6 drops Phase B + estimate authoring). `inventory_item` removal moves to the
+> deferred invoice-projection phase. Note `default_billable_qty` was already dropped
+> (Phase 1), and reprojection is a live "out of sync" check (no snapshot fields to
+> remove). Re-derive specifics when executing.
 
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
-> Design draft §5.5 + §14 step 6. Backend (migrations). **Do Phase 6 first** — these
-> fields must have no readers before removal.
+> Design draft §5.5 + §14 step 6. Backend (migrations). **Do Phase 6 first** — the
+> target field(s) must have no readers before removal.
 
 **Goal:** Make `EstimateLineItem` / `InvoiceLineItem` pure frozen rows. Remove
 `source_template` from `EstimateLineItem`, and remove the **authoring/carry-over use

@@ -1,9 +1,14 @@
 # Phase 10 — Rewrite the durable docs to the consolidated model
 
-> ⚠️ **Predates the 2026-06-27 design revision.** Use the current names when rewriting
-> the durable docs: rate card = **`RateScheme`** (reverted from `ServiceItem`), salable
-> work item = **`ServiceItem`** (was `TaskTemplate`); add surface = "Add Line". Source
-> of truth: `2026-06-24-planning-billing-consolidation-draft.md`.
+> **Revised 2026-06-27.** Document what actually **shipped**, not what was
+> planned-then-changed. Specifically: rate card = **`RateScheme`** / saved-work =
+> **`ServiceItem`**; the **"Add Line"** surface (+ inline "save to catalog", create
+> not config-gated via `CanManageJobsOrConfig`); **dropped** template
+> `default_billable_qty`; the single **Estimate pillar** [Plan | Client View]; the
+> **combined Tasks & Materials pillar**; and reprojection as a **live "out of sync
+> with atoms" check** — the snapshot / reconcile / `reprojection_state` model was
+> built and then **removed**, so do NOT document it. Source of truth:
+> `2026-06-24-planning-billing-consolidation-draft.md`.
 
 > Design draft §14 step 9. Documentation only — no code. Do this **last**, once
 > Phases 3–9 have settled, so the docs describe what actually shipped.
@@ -11,9 +16,9 @@
 **Goal:** Bring the durable `docs/designs/` references (and `ui-flows`) in line with
 the consolidated model: the Plan / Client View / Estimate vocabulary, atoms-only
 authoring (documents are pure projections), the two-action add surface + Price List,
-the single-view Estimate pillar + re-projection marker, the combined Tasks &
-Materials pillar, removed direct line authoring + Phase B, slimmed line items, and
-job-scoped adjustments.
+the single-view Estimate pillar + the live "out of sync with atoms" flag, the
+combined Tasks & Materials pillar, removed direct line authoring (estimate; invoice
+deferred) + Phase B, slimmed line items, and job-scoped adjustments.
 
 **Depends on:** whatever of Phases 3–9 actually shipped (document the real end
 state, not the plan).
@@ -26,8 +31,8 @@ state, not the plan).
 
 ## Targets (from CLAUDE.md's topic-doc table)
 - `docs/designs/estimates-and-prices.md` — Plan/Client View, atoms→projection, the
-  Price List add surface, ServiceItem, adjustments (job-scoped), re-projection
-  marker, supersession (one Plan → many Client Views).
+  Add Line surface, ServiceItem (saved work) + RateScheme (rate card), adjustments
+  (job-scoped), the live out-of-sync flag, supersession (one Plan → many Client Views).
 - `docs/designs/jobs-tasks-and-worksheets.md` — the Plan (worksheet) as build view,
   "Start Estimate" entry, get-or-create (one Plan per job), the combined Tasks &
   Materials pillar, the Estimate pillar toggle.

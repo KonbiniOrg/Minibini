@@ -1,10 +1,11 @@
 # Phase 9 — Update the seed data (nealsdata) to the consolidated shape
 
-> ⚠️ **Predates the 2026-06-27 design revision.** Names here use the OLD mapping (rate
-> card = `ServiceItem`, work catalog = `TaskTemplate`); the design draft now swaps
-> these (rate card → `RateScheme`, saved work item → `ServiceItem`). Read against
-> `2026-06-24-planning-billing-consolidation-draft.md`; re-derive specifics when
-> executing.
+> **Revised 2026-06-27.** The rename is done AND already largely reflected in
+> `nealsdata/`: the Phase-0 sweep plus the lowercase `jobs.serviceitem` →
+> `jobs.ratescheme` fix mean the converter/builders now emit `RateScheme` /
+> `ServiceItem` labels. So this phase is no longer about the rename — it's the
+> remaining SHAPE changes (dropped `default_billable_qty`; atoms-only authoring once
+> Phase 6 lands; etc.) + regenerating the dataset. Re-derive specifics when executing.
 
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
 > Design draft §12 ("Migration: none — regenerate from the source spreadsheets") +

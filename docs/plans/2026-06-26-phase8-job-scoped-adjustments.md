@@ -1,10 +1,10 @@
 # Phase 8 — Job-scoped, auto-applied adjustments
 
-> ⚠️ **Predates the 2026-06-27 design revision.** "Percentage ServiceItem" here is now
-> a **percentage `RateScheme`** (rate card reverts `ServiceItem`→`RateScheme`;
-> `TaskTemplate`→`ServiceItem`). The add surface is now "Add Line". Read against
-> `2026-06-24-planning-billing-consolidation-draft.md`; this phase was already
-> "shape + decisions," so re-derive specifics when executing.
+> **Revised 2026-06-27.** The rename is done: a "percentage ServiceItem" is now a
+> **percentage `RateScheme`** (the AdjustmentModal already targets it — placeholder
+> "Select a rate"). Independent of the estimate/invoice authoring work. Still the
+> least-decided phase — treat as "shape + decisions to make with the user," not a
+> turnkey plan; re-derive specifics when executing.
 
 > REQUIRED SUB-SKILL when executing: superpowers:subagent-driven-development.
 > Design draft §10 + §13. **This phase is the least-decided one — treat it as

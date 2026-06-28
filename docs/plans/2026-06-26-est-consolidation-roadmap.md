@@ -27,17 +27,17 @@ Index of the implementation plans executing the design draft
 
 | # | Phase | Doc | Status |
 |---|---|---|---|
-| 0 | **RateScheme/ServiceItem rename** (rate card `ServiceItem`→`RateScheme`; `TaskTemplate`→`ServiceItem`) | _(plan TBD — write next)_ | **CONFIRMED — do FIRST** |
-| 1 | **"Add Line"** (rework of the built picker) | `phase1-add-from-price-list.md` | built picker shipped; **rework spec written** (search ServiceItems[saved work] + InventoryItems; free-text → attach RateScheme / one-off material; drop template default qty). **Next functional phase, after Phase 0.** |
-| 2 | Estimating starts on the Plan | `phase2-plan-first-and-express.md` | **DONE** (+ later: Start Estimate creates the Plan directly; create-worksheet page removed) |
+| 0 | **RateScheme/ServiceItem rename** | `phase0-ratescheme-serviceitem-rename.md` | **DONE** (4 commits; rate card→`RateScheme`, saved-work→`ServiceItem`) |
+| 1 | **"Add Line"** rework | `phase1-add-from-price-list.md` | **DONE** (search ServiceItems[saved work] + InventoryItems; free-text → attach RateScheme / one-off material; inline save-to-catalog, not config-gated; dropped template default qty) |
+| 2 | Estimating starts on the Plan | `phase2-plan-first-and-express.md` | **DONE** (Start Estimate creates the Plan directly; create-worksheet page removed) |
 | 3 | UI vocabulary + single-view Estimate pillar | `phase3-vocabulary-and-estimate-pillar.md` | **DONE** |
-| 4 | Re-projection "underlying changed" marker | `phase4-reprojection-change-marker.md` | planned (migration) |
-| 5 | Combined Tasks & Materials pillar | `phase5-combined-tasks-materials-pillar.md` | planned |
-| 6 | Remove direct line authoring + Phase B | `phase6-remove-direct-line-authoring.md` | planned — **predates 06-27** |
-| 7 | Slim line-item fields | `phase7-slim-line-item-fields.md` | planned — **predates 06-27** (migration) |
-| 8 | Job-scoped adjustments | `phase8-job-scoped-adjustments.md` | planned — **predates 06-27**, least-decided |
-| 9 | Seed data (nealsdata) | `phase9-seed-data-update.md` | planned — **predates 06-27** |
-| 10 | Rewrite the durable docs | `phase10-docs-rewrite.md` | planned — **predates 06-27**, last |
+| 4 | Re-projection / out-of-sync flag | `phase4-reprojection-change-marker.md` | **DONE, then SIMPLIFIED** — shipped snapshot-based states + re-pull/keep-mine, then reverted (per user) to a **live "out of sync with atoms" check** on Client View + wizard; no snapshot (migration 0034 removed) |
+| 5 | Combined Tasks & Materials pillar | `phase5-combined-tasks-materials-pillar.md` | **DONE** |
+| 6 | Remove direct line authoring + Phase B | `phase6-remove-direct-line-authoring.md` | **revised 06-27 — NEXT**; estimate-only (**invoice deferred**) |
+| 7 | Slim line-item fields | `phase7-slim-line-item-fields.md` | revised 06-27 (migration); estimate-side `source_template` only — `inventory_item` deferred with invoicing |
+| 8 | Job-scoped adjustments | `phase8-job-scoped-adjustments.md` | revised 06-27, least-decided |
+| 9 | Seed data (nealsdata) | `phase9-seed-data-update.md` | revised 06-27 (rename already in nealsdata; shape + regen left) |
+| 10 | Rewrite the durable docs | `phase10-docs-rewrite.md` | revised 06-27, last |
 
 ## Dependencies / suggested order
 - **Phase 0 (the rename) first** if we accept the early-rename proposal — then
@@ -51,10 +51,12 @@ Index of the implementation plans executing the design draft
   fields); 8 after projection is stable; 9 after the model changes; 10 last.
 
 ## Where to focus review
-- **Naming swap (Phase 0) — CONFIRMED, do first.** Then the "Add Line" rework
-  (Phase 1) uses the new names. Phase 0 plan to be written next.
-- **Phase 8** (adjustments) still wants a design pass before it's turnkey; **Phase 6**
-  manual-line removal; **Phase 7** `inventory_item` Option A vs B (lean A).
+- **Phases 0–5 are shipped.** Next functional phase is **Phase 6** — estimate-only:
+  remove the Client-View direct line authoring + Phase B; **invoice authoring removal
+  is deferred** (focus on getting the estimate right first).
+- **Phase 7** removes `EstimateLineItem.source_template` now; the shared
+  `inventory_item` field waits for the deferred invoice work (still read invoice-side).
+- **Phase 8** (job-scoped adjustments) still wants a design pass before it's turnkey.
 
 ## Deferred (design draft §15)
 - Fee atom (one-off charges); billing groups (N work atoms → one fixed line);
