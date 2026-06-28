@@ -116,17 +116,14 @@
   <UnitsManager />
 
 {:else if tab === 'catalog'}
-  <RateSchemeManager />
-
   <MaterialMarkupSetting />
 
   <ServiceItemManager />
 
+  <RateSchemeManager />
+
   <h3>Work templates</h3>
   <p><em>Not yet implemented in Svelte.</em></p>
-
-  <h3>Price list items</h3>
-  <p><em>Managed on the <a href="#/inventory">Inventory</a> page.</em></p>
 
 {:else if tab === 'schedule'}
   <ScheduleSettings />

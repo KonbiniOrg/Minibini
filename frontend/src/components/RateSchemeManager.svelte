@@ -188,7 +188,7 @@
   <p>
     <label>
       <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
-      Show superseded services
+      Show superseded rates
     </label>
   </p>
   <table class="data-table">
