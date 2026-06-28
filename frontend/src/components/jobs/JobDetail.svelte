@@ -2,6 +2,7 @@
   import EmailPanel from '../EmailPanel.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
+  import TaskTree from '../TaskTree.svelte';
   import DeliverablesSection from './DeliverablesSection.svelte';
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
@@ -476,7 +477,7 @@
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['estimate', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
+  const VALID_SECTIONS = ['estimate', 'tasks_materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -484,7 +485,7 @@
       if (invoices?.results?.length > 0) return 'invoices';
     }
     if (shipmentCount > 0 && hasOutstandingDeliverables) return 'shipments';
-    if (jobTasks.length > 0) return 'tasks';
+    if (jobTasks.length > 0) return 'tasks_materials';
     if (estimates?.results?.length > 0 || worksheets?.results?.length > 0) return 'estimate';
     return 'estimate';
   }
@@ -492,8 +493,9 @@
   function readStoredSection(id) {
     try {
       const v = sessionStorage.getItem(storageKey(id));
-      // Migrate old section keys to the unified 'estimate' pillar
+      // Migrate old section keys to the unified pillars
       if (v === 'worksheets' || v === 'estimates') return 'estimate';
+      if (v === 'tasks' || v === 'materials') return 'tasks_materials';
       return VALID_SECTIONS.includes(v) ? v : null;
     } catch { return null; }
   }
@@ -522,12 +524,52 @@
     selectedInvoiceId = null;
     selectedPoId = null;
     estimateView = initialEstimateView();
+    enrichedTasks = [];
+    enrichedJobId = null;
   });
 
   function openSection(s) {
     userSection = s;
     try { sessionStorage.setItem(storageKey(job.job_id), s); } catch {}
   }
+
+  // The combined Tasks & Materials pillar renders the Task View (TaskTree), which
+  // wants tasks pre-loaded with their materials + subtasks. The job payload only
+  // carries flat top-level tasks, so we lazily fetch per-task children when the
+  // pillar is open (read view; full interactions live on the task-list page).
+  let enrichedTasks = $state([]);
+  let enrichedJobId = $state(null);
+  let enriching = $state(false);
+  // Job-level materials only (task-linked ones ride inside the enriched tree).
+  let jobLevelMaterials = $derived(jobMaterials.filter(m => !m.task));
+
+  async function fetchTaskChildren(taskId, what) {
+    try { const r = await api.get(`/api/tasks/${taskId}/${what}/`); return r.results ?? r; }
+    catch { return []; }
+  }
+  async function enrichTasks() {
+    enriching = true;
+    try {
+      const tops = (job.tasks || []).filter(t => !t.parent_task);
+      enrichedTasks = await Promise.all(tops.map(async (task) => {
+        const [materials, subtasks] = await Promise.all([
+          fetchTaskChildren(task.task_id, 'materials'),
+          fetchTaskChildren(task.task_id, 'subtasks'),
+        ]);
+        const enrichedSubs = await Promise.all(subtasks.map(async (sub) => ({
+          ...sub, materials: await fetchTaskChildren(sub.task_id, 'materials'),
+        })));
+        return { ...task, materials, subtasks: enrichedSubs };
+      }));
+      enrichedJobId = job.job_id;
+    } finally { enriching = false; }
+  }
+
+  $effect(() => {
+    if (activeSection === 'tasks_materials' && enrichedJobId !== job.job_id && !enriching) {
+      enrichTasks();
+    }
+  });
 </script>
 
 <div class="job-detail-page">
@@ -836,20 +878,20 @@
     </div>
   {/if}
 
-  <!-- Tasks -->
-  {#if activeSection !== 'tasks'}
+  <!-- Tasks & Materials -->
+  {#if activeSection !== 'tasks_materials'}
     <div class="pillar pillar-tasks"
          role="button" tabindex="0"
-         onclick={() => openSection('tasks')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('tasks')}>
-      <span class="label-v">Tasks</span>
-      <span class="pillar-count">{jobTasks.length}</span>
+         onclick={() => openSection('tasks_materials')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('tasks_materials')}>
+      <span class="label-v">Tasks &amp; Materials</span>
+      <span class="pillar-count">{jobTasks.length + jobMaterials.length + looseExpenses.length}</span>
     </div>
   {:else}
     <div class="open open-tasks">
       <div class="top-bar top-bar-tasks">
         <span class="top-bar-title">
-          TASKS{#if hasTasks} · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}{:else} · None{/if}
+          TASKS &amp; MATERIALS · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}, {jobMaterials.length} material{jobMaterials.length === 1 ? '' : 's'}{#if looseExpenses.length}, {looseExpenses.length} expense{looseExpenses.length === 1 ? '' : 's'}{/if}
         </span>
         <span class="top-bar-actions">
           {#if canManageJobs && currentWorksheet && !hasTasks}
@@ -862,194 +904,19 @@
       </div>
       <div class="body">
         {#if populateError}<p class="empty-msg"><em>{populateError}</em></p>{/if}
-        {#if hasTasks}
-          <table class="wo-table">
-            <colgroup>
-              <col>
-              <col class="col-assigned">
-              <col class="col-status">
-              <col class="col-time">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Assigned</th>
-                <th class="text-center">Status</th>
-                <th>Time vs. estimate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each jobTasks as task}
-                <tr class:row-active={task.status === 'in_progress'}>
-                  <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a>{@render invoicedLink(task.invoice)}</td>
-                  <td class="assigned">{task.assignee_name || '—'}</td>
-                  <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
-                  <td class="time-cell">
-                    {#if task.scheme_algorithm === 'elapsed_time'}
-                      {@const actual = Number(task.actual_hours) || 0}
-                      {@const est = Number(task.est_qty) || 0}
-                      {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
-                      {@const over = est > 0 && actual > est}
-                      <div class="time-track">
-                        <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
-                      </div>
-                      <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
-                        {#if est > 0}
-                          {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
-                          {:else if actual === 0}
-                            <span class="time-dim">(not started)</span>
-                          {:else}
-                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
-                          {/if}
-                        {/if}
-                      </div>
-                    {:else if task.scheme_algorithm === 'entered_qty'}
-                      {@const actual = Number(task.actual_qty) || 0}
-                      {@const est = Number(task.est_qty) || 0}
-                      {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
-                      {@const over = est > 0 && actual > est}
-                      <div class="time-track">
-                        <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
-                      </div>
-                      <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
-                        {#if est > 0}
-                          {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
-                          {:else if actual === 0}
-                            <span class="time-dim">(not started)</span>
-                          {:else}
-                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
-                          {/if}
-                        {/if}
-                      </div>
-                    {:else if task.scheme_algorithm === 'flat_fee'}
-                      <div class="time-text time-dim">flat fee · {Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</div>
-                    {:else}
-                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+        {#if enriching && enrichedTasks.length === 0}
+          <p class="empty-msg">Loading…</p>
+        {:else if jobTasks.length === 0 && jobMaterials.length === 0 && looseExpenses.length === 0}
+          <p class="empty-msg">No tasks, materials, or expenses yet.</p>
         {:else}
-          <p class="empty-msg">No tasks yet.</p>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Materials -->
-  {#if activeSection !== 'materials'}
-    <div class="pillar pillar-mat"
-         role="button" tabindex="0"
-         onclick={() => openSection('materials')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('materials')}>
-      <span class="label-v">Materials</span>
-      <span class="pillar-count">{jobMaterials.length + looseExpenses.length}</span>
-    </div>
-  {:else}
-    <div class="open open-mat">
-      <div class="top-bar top-bar-mat">
-        <span class="top-bar-title">
-          MATERIALS &amp; EXPENSES · {jobMaterials.length} material{jobMaterials.length === 1 ? '' : 's'}, {looseExpenses.length} expense{looseExpenses.length === 1 ? '' : 's'}
-        </span>
-        <span class="top-bar-actions">
-          <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
-        </span>
-      </div>
-      <div class="body">
-        {#if jobMaterials.length > 0}
-          <table class="mat-table">
-            <colgroup>
-              <col>
-              <col class="col-qty">
-              <col class="col-on-order">
-              <col class="col-qty">
-              <col class="col-units">
-              <col class="col-money">
-              <col class="col-money">
-            </colgroup>
-            <thead><tr>
-              <th>Description</th>
-              <th class="text-right">Req'd</th>
-              <th class="text-right">On Order</th>
-              <th class="text-right">On Hand</th>
-              <th>Units</th>
-              <th class="text-right">Cost</th>
-              <th class="text-right">Ext</th>
-            </tr></thead>
-            <tbody>
-              {#each jobMaterials as mat}
-                {@const required = Number(mat.quantity) || 0}
-                {@const onOrder = Number(mat.qty_on_order) || 0}
-                {@const onHand = Number(mat.qty_on_hand) || 0}
-                {@const consumed = mat.consumption_state === 'consumed'}
-                {@const needsMore = !consumed && (onOrder + onHand) < required}
-                {@const ext = required * (Number(mat.unit_cost) || 0)}
-                <tr class:row-consumed={consumed}>
-                  <td>
-                    <span class="preserve-breaks">{mat.description || '(no description)'}</span>
-                    {#if consumed}<span class="badge-consumed">consumed</span>{/if}
-                    {#if expenseByMaterial[mat.material_id]}<span class="badge-paid">paid {money(expenseByMaterial[mat.material_id].amount)}</span>{/if}
-                    {@render invoicedLink(mat.invoice)}
-                    {#if needsMore && canManageFinancials}
-                      <a class="add-po" href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}">order</a>
-                    {/if}
-                  </td>
-                  <td class="text-right">{required}</td>
-                  <td class="text-right">
-                    {#if mat.po_id}
-                      {onOrder} — <a href="#/purchase-orders/{mat.po_id}">{mat.po_number}</a>
-                    {:else}
-                      <span class="dim">0</span>
-                    {/if}
-                  </td>
-                  <td class="text-right">
-                    {#if onHand > 0}
-                      {onHand}
-                    {:else}
-                      <span class="dim">0</span>
-                    {/if}
-                  </td>
-                  <td>{mat.units || 'none'}</td>
-                  <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '—'}</td>
-                  <td class="text-right">{ext > 0 ? `$${ext.toFixed(2)}` : '—'}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
-        {#if looseExpenses.length > 0}
-          <table class="mat-table">
-            <colgroup><col><col class="col-units"><col class="col-money"></colgroup>
-            <thead><tr>
-              <th>Expense</th>
-              <th>Category</th>
-              <th class="text-right">Amount</th>
-            </tr></thead>
-            <tbody>
-              {#each looseExpenses as exp}
-                <tr>
-                  <td>
-                    <span class="preserve-breaks">{exp.description || '(expense)'}</span>
-                    <span class="badge-paid">expense</span>
-                    {@render invoicedLink(exp.invoice)}
-                  </td>
-                  <td>{exp.accounting_category_name || '—'}</td>
-                  <td class="text-right">{money(exp.amount)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
-        {#if jobMaterials.length === 0 && looseExpenses.length === 0}
-          <p class="empty-msg">No materials or expenses.</p>
+          <TaskTree
+            tasks={enrichedTasks}
+            jobMaterials={jobLevelMaterials}
+            expenses={jobExpenses}
+            readonly={true}
+            canManage={job?.can_manage}
+            onTaskClick={(t) => { window.location.hash = `/jobs/${job.job_id}/tasks/${t.task_id}`; }}
+          />
         {/if}
       </div>
     </div>

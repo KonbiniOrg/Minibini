@@ -29,7 +29,7 @@ describe('JobDetail', () => {
     expect(getByText('Deliverables')).toBeInTheDocument();
   });
 
-  it('counts material-less expenses in the Materials pillar', () => {
+  it('counts material-less expenses in the Tasks & Materials pillar', () => {
     const job = {
       job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress',
       materials: [], can_manage: false,
@@ -40,8 +40,21 @@ describe('JobDetail', () => {
         accounting_category_name: 'Freight' },
     ] };
     const { getByText } = render(JobDetail, { props: { job, expenses } });
-    // Pillar count (materials 0 + expenses 1) shows 1.
+    // Pillar count (tasks 0 + materials 0 + expenses 1) shows 1.
     expect(getByText('1')).toBeInTheDocument();
+  });
+
+  it('shows one combined "Tasks & Materials" pillar (not separate Tasks / Materials)', () => {
+    const job = {
+      job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress',
+      tasks: [], materials: [], can_manage: false,
+    };
+    user.set({ permissions: [] });
+    const { getByText, queryByText } = render(JobDetail, { props: { job, expenses: [] } });
+    expect(getByText('Tasks & Materials')).toBeInTheDocument();
+    // The old separate pillar labels are gone.
+    expect(queryByText('Tasks')).toBeNull();
+    expect(queryByText('Materials')).toBeNull();
   });
 });
 

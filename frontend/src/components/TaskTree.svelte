@@ -161,7 +161,7 @@
     </td>
     {#if showAssignee}<td></td>{/if}
     <td></td>
-    {#if showStatus}<td></td>{/if}
+    {#if showStatus}<td>{#if exp.invoice}{@render invoicedLink(exp.invoice)}{/if}</td>{/if}
     <td class="text-right">-</td>
     <td class="text-right">-</td>
     <td class="text-right">-</td>
