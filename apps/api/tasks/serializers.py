@@ -11,6 +11,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
+    qty_on_hand = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
     class Meta:
@@ -21,12 +22,17 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
+            'qty_on_hand',
             'invoice',
         ]
         read_only_fields = fields
 
     def get_inventory_item_is_catalog(self, obj):
         return bool(obj.inventory_item and obj.inventory_item.is_catalog)
+
+    def get_qty_on_hand(self, obj):
+        from apps.inventory.serializer_helpers import material_qty_on_hand
+        return material_qty_on_hand(obj)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
