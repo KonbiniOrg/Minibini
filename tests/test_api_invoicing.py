@@ -191,9 +191,15 @@ class InvoiceSendTest(BaseTestCase):
             job=self.job, invoice_number='INV-SEND-001',
             status=Invoice.STATUS_DRAFT,
         )
+        # Every line needs an accounting category or the send-gate blocks it.
+        from apps.core.models import AccountingCategory
+        send_cat = AccountingCategory.objects.create(
+            name='Send Test', code='SNDT',
+        )
         InvoiceLineItem.objects.create(
             invoice=self.invoice, qty=Decimal('1.00'),
             price=Decimal('100.00'), description='Test',
+            accounting_category=send_cat,
         )
 
     def test_send_defaults_returns_form_prefills(self):
