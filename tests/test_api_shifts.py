@@ -59,6 +59,54 @@ class ShiftAPITest(BaseTestCase):
         r = self.client.get('/api/shifts/?user=me&since=not-a-date')
         self.assertEqual(r.status_code, 200, r.data)
 
+    def test_since_returns_overnight_shift_started_before_since(self):
+        """A shift that STARTED before `since` but is still active at/after it
+        (e.g. an overnight / multi-day shift) must be returned. `since` means
+        'shifts not yet ended as of this time', not 'shifts starting after it'.
+        Regression: the filter used start_time__gte, hiding such shifts and
+        falsely blocking blep entry with 'no shift covers this time'."""
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=2),   # started 2 days ago
+            end_time=now - timedelta(hours=1),    # ended an hour ago
+        )
+        since = (now - timedelta(days=1)).isoformat()  # after the start
+        r = self.client.get(f'/api/shifts/?user=me&since={since}')
+        self.assertEqual(r.status_code, 200, r.data)
+        rows = r.data.get('results', r.data)
+        self.assertEqual(len(rows), 1)
+
+    def test_since_returns_open_shift_started_before_since(self):
+        """An open (end_time=None) shift started before `since` is still running,
+        so it must be returned regardless of how long ago it started."""
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=3),
+            end_time=None,
+        )
+        since = (now - timedelta(days=1)).isoformat()
+        r = self.client.get(f'/api/shifts/?user=me&since={since}')
+        self.assertEqual(r.status_code, 200, r.data)
+        rows = r.data.get('results', r.data)
+        self.assertEqual(len(rows), 1)
+
+    def test_since_excludes_shift_that_ended_before_since(self):
+        """A shift that both started AND ended before `since` is not active in
+        the window and must be excluded."""
+        now = timezone.now()
+        Shift.objects.create(
+            user=self.user,
+            start_time=now - timedelta(days=3),
+            end_time=now - timedelta(days=2),   # ended before `since`
+        )
+        since = (now - timedelta(days=1)).isoformat()
+        r = self.client.get(f'/api/shifts/?user=me&since={since}')
+        self.assertEqual(r.status_code, 200, r.data)
+        rows = r.data.get('results', r.data)
+        self.assertEqual(len(rows), 0)
+
     def test_patch_open_shift_without_end_does_not_500(self):
         """Regression: PATCHing an open (end_time=None) shift without supplying
         an end_time passes end_time=None into ShiftService.update. The enclosure
