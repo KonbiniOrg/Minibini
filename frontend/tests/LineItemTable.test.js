@@ -11,6 +11,10 @@ const lineItems = [{
   ],
 }];
 
+const categories = [
+  { id: 7, name: 'Labor', taxable: false },
+];
+
 describe('LineItemTable source detail', () => {
   it('lists each source description and amount when showSource', () => {
     const { getByText } = render(LineItemTable, { props: { lineItems, showSource: true } });
@@ -23,5 +27,37 @@ describe('LineItemTable source detail', () => {
     const bare = [{ ...lineItems[0], sources: [], inventory_item: null }];
     const { getByText } = render(LineItemTable, { props: { lineItems: bare, showSource: true } });
     expect(getByText('No source')).toBeTruthy();
+  });
+});
+
+describe('LineItemTable category cell — needs-category flag', () => {
+  it('flags the category cell when canEdit and accounting_category is null', () => {
+    const items = [{ ...lineItems[0], accounting_category: null }];
+    const { getByText, container } = render(LineItemTable, {
+      props: { lineItems: items, categories, canEdit: true },
+    });
+    expect(getByText(/needs category/i)).toBeTruthy();
+    const flaggedCell = container.querySelector('td.needs-category');
+    expect(flaggedCell).toBeTruthy();
+  });
+
+  it('shows the category name (no flag) when canEdit and accounting_category is set', () => {
+    const items = [{ ...lineItems[0], accounting_category: 7 }];
+    const { getByText, container } = render(LineItemTable, {
+      props: { lineItems: items, categories, canEdit: true },
+    });
+    expect(getByText('Labor')).toBeTruthy();
+    const flaggedCell = container.querySelector('td.needs-category');
+    expect(flaggedCell).toBeNull();
+  });
+
+  it('does not flag the cell when !canEdit even if accounting_category is null', () => {
+    const items = [{ ...lineItems[0], accounting_category: null }];
+    const { container, queryByText } = render(LineItemTable, {
+      props: { lineItems: items, categories, canEdit: false },
+    });
+    expect(queryByText(/needs category/i)).toBeNull();
+    const flaggedCell = container.querySelector('td.needs-category');
+    expect(flaggedCell).toBeNull();
   });
 });

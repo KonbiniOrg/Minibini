@@ -65,7 +65,13 @@
       {#each lineItems as li, i}
         <tr class:adjustment-row={!!li.adjustment_service}>
           <td>{li.line_number}</td>
-          <td>{categoryName(li.accounting_category)}</td>
+          <td class:needs-category={canEdit && li.accounting_category == null}>
+            {#if canEdit && li.accounting_category == null}
+              needs category
+            {:else}
+              {categoryName(li.accounting_category)}
+            {/if}
+          </td>
           <td>{categoryTaxable(li.accounting_category)}</td>
           <td class="preserve-breaks">
             {#if li.adjustment_service}
@@ -129,6 +135,11 @@
   .source-list li { font-size: 0.9em; }
   .src-amt { color: #555; }
   .adjustment-row { background-color: #f0f7ff; }
+  .needs-category {
+    background-color: #fff8e1;
+    color: #b45309;
+    font-style: italic;
+  }
   .adj-badge {
     display: inline-block;
     padding: 2px 8px;
