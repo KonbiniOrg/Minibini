@@ -310,6 +310,26 @@ class InvoiceEmailService:
         }
 
     @staticmethod
+    def _assert_all_lines_categorized(invoice):
+        """Raise ValidationError if any line item is missing an accounting category.
+
+        Called at the top of send_invoice so the gate fires before any
+        external call (QBO push, PDF generation, email send).
+        """
+        missing = list(
+            invoice.invoicelineitem_set
+            .filter(accounting_category_id__isnull=True)
+            .values_list('line_number', flat=True)
+            .order_by('line_number')
+        )
+        if missing:
+            nums = ', '.join(str(n) for n in missing)
+            raise ValidationError(
+                f'Every line item needs an accounting category before sending'
+                f' (line(s) {nums}).'
+            )
+
+    @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
                      extra_attachments=None, user=None):
         """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
@@ -322,6 +342,8 @@ class InvoiceEmailService:
         from apps.qbo.services import (
             QBOService, QBOInvoiceSyncService, QBOCustomerSyncService,
         )
+
+        InvoiceEmailService._assert_all_lines_categorized(invoice)
 
         if not to:
             raise ValidationError('Recipient email address is required.')
