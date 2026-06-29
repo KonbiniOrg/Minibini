@@ -82,6 +82,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     job_description = serializers.SerializerMethodField()
     due_date = serializers.SerializerMethodField()
     is_late = serializers.SerializerMethodField()
+    job_has_other_invoices = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -92,12 +93,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'line_items', 'default_send_to',
             'job_number', 'job_name', 'job_description',
             'due_date', 'is_late',
+            'job_has_other_invoices',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
             'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
             'due_date', 'is_late',
+            'job_has_other_invoices',
         ]
 
     def get_due_date(self, obj):
@@ -135,6 +138,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job:
             return obj.job.description
         return ''
+
+    def get_job_has_other_invoices(self, obj):
+        """Return True if any non-cancelled Invoice exists for this job other than obj."""
+        return Invoice.objects.filter(
+            job=obj.job,
+        ).exclude(
+            pk=obj.pk,
+        ).exclude(
+            status=Invoice.STATUS_CANCELLED,
+        ).exists()
 
 
 class InvoiceSummarySerializer(serializers.ModelSerializer):

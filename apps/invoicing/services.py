@@ -127,6 +127,72 @@ class InvoiceService:
         return LineItemService.delete_line_item_with_renumber(line_item)
 
     @staticmethod
+    def copy_from_estimate(invoice):
+        """Copy the job's accepted estimate agreement onto a fresh draft invoice.
+
+        Creates one InvoiceLineItem per line returned by compose_agreement(invoice.job),
+        preserving description, qty, price, units, and accounting_category. Adjustment
+        lines also receive adjustment_service and adjustment_target_categories so the
+        agreement panel dedup sees them as already_added.
+
+        Preconditions (raise ValidationError if violated):
+        - invoice.status == Invoice.STATUS_DRAFT
+        - invoice has no existing line items
+        - no other non-cancelled Invoice exists for invoice.job
+
+        Returns the number of line items created.
+        """
+        from django.db import transaction
+        from apps.estimates.agreement import compose_agreement
+
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError(
+                'Copy from estimate is only available on a draft invoice.'
+            )
+        if InvoiceLineItem.objects.filter(invoice=invoice).exists():
+            raise ValidationError(
+                'Cannot copy from estimate: invoice already has line items.'
+            )
+        other_invoices = Invoice.objects.filter(
+            job=invoice.job,
+        ).exclude(
+            pk=invoice.pk,
+        ).exclude(
+            status=Invoice.STATUS_CANCELLED,
+        )
+        if other_invoices.exists():
+            raise ValidationError(
+                'Copy from estimate is only available on the first invoice for a job.'
+            )
+
+        agreement = compose_agreement(invoice.job)
+        lines = agreement['lines']
+
+        from apps.core.services import LineItemService
+
+        with transaction.atomic():
+            for line_number, line in enumerate(lines, start=1):
+                li = InvoiceLineItem(
+                    invoice=invoice,
+                    line_number=line_number,
+                    description=line['description'],
+                    qty=line['qty'],
+                    price=line['price'],
+                    units=line['units'],
+                    accounting_category_id=line.get('accounting_category_id'),
+                )
+                if line.get('is_adjustment') and line.get('adjustment_service_id'):
+                    li.adjustment_service_id = line['adjustment_service_id']
+
+                LineItemService.save_line_item(li)
+
+                # Set M2M after the initial save so the PK exists.
+                if line.get('is_adjustment') and line.get('target_category_ids'):
+                    li.adjustment_target_categories.set(line['target_category_ids'])
+
+        return len(lines)
+
+    @staticmethod
     def add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=None):
         """Add a percentage-adjustment line item to a draft invoice.
 

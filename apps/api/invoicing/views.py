@@ -260,6 +260,27 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'created': created}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='copy-from-estimate')
+    def copy_from_estimate(self, request, pk=None):
+        """Copy the job's accepted estimate agreement onto a fresh draft invoice.
+
+        Creates one InvoiceLineItem per agreement line, including adjustment lines
+        (which carry adjustment_service so the agreement panel sees them as
+        already_added). Only available when the invoice is draft, has no lines, and
+        is the first/only non-cancelled invoice for the job.
+
+        Returns 200 with ``{'created': N}`` on success, 400 on ValidationError.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.invoicing.services import InvoiceService
+        invoice = self.get_object()
+        try:
+            created = InvoiceService.copy_from_estimate(invoice)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'created': created}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='adjustment-lines')
     def adjustment_lines(self, request, pk=None):
         """Add a percentage-adjustment line item to a draft invoice.
