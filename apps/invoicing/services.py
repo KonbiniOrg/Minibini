@@ -608,6 +608,45 @@ class InvoiceWizardService(BaseWizardService):
 
         return {'tasks': task_list}
 
+    @classmethod
+    def seed_all_atoms(cls, invoice):
+        """Create one line item per available atom on a fresh draft invoice.
+
+        Requires:
+        - invoice.status == Invoice.STATUS_DRAFT
+        - invoice has no existing line items
+
+        Enumerates all atoms in get_source_pool(invoice) whose state == 'available'
+        (tasks, nested materials, loose materials, expenses) and creates one line
+        per atom via add_atoms_to_new_line_item. Already-claimed and not-billable
+        atoms are skipped. Wraps all writes in a single transaction.
+
+        Returns the number of line items created.
+        """
+        from django.db import transaction
+
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError(
+                'Can only seed line items on a draft invoice.'
+            )
+        if InvoiceLineItem.objects.filter(invoice=invoice).exists():
+            raise ValidationError(
+                'Cannot apply everything: invoice already has line items.'
+            )
+
+        pool = cls.get_source_pool(invoice)
+        available = []
+        for group in pool['tasks']:
+            for atom in group['atoms']:
+                if atom['state'] == 'available':
+                    available.append({'type': atom['type'], 'id': atom['id']})
+
+        with transaction.atomic():
+            for atom_ref in available:
+                cls.add_atoms_to_new_line_item(invoice, [atom_ref])
+
+        return len(available)
+
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
     def _line_item_model(cls):
