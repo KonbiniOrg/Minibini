@@ -149,7 +149,7 @@
           </label>
         </p>
         <p>
-          <label><strong>Line Item Type</strong><br>
+          <label><strong>Accounting Category</strong><br>
             <select bind:value={accountingCategory}>
               <option value="">-- None --</option>
               {#each categories as cat}
