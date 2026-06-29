@@ -1037,3 +1037,19 @@ IMAP-SMTP machinery and tend to be worked together.
   rather than as a one-off. _Done when:_ clocking out under the minimum after an
   auto-clock-in start leaves no blep visible in the UI, matching the (already-correct)
   DB state.
+
+- **Lost per-material "order" link when the Materials pillar was folded into Tasks & Materials.** — _added 2026-06-28_
+  The old standalone Materials pillar on the job overview rendered, per material that
+  needed more stock, an **"order"** link (`#/purchase-orders/new?job={job_id}&material={material_id}`)
+  plus an **"On Order"** column (showing `qty_on_order` and a link to the existing PO).
+  Phase 5 (commit `0f989580`, "combine Tasks & Materials into one pillar via the Task
+  View") replaced that pillar with `TaskTree`, and the per-material **order** affordance
+  + On Order column did **not** carry over — `TaskTree` shows the sell-side columns and
+  grand total (mirroring the invoice projection) but has no "needs more → start a PO"
+  control. Surfaced 2026-06-28 while working an invoice flow that got blocked by missing
+  inventory. _To decide:_ whether the order-from-material shortcut should be restored
+  inside the combined pillar (or live elsewhere — Plan/worksheet materials, or a
+  materials/PO view), and whether the On Order / shortfall indicator comes back with it.
+  _Done when:_ a user can get from "this job's material is short" to starting/ viewing
+  its PO without leaving the job overview, or we've consciously decided that lives
+  somewhere else and documented where.
