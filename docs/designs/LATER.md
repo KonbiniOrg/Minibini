@@ -1053,3 +1053,15 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ a user can get from "this job's material is short" to starting/ viewing
   its PO without leaving the job overview, or we've consciously decided that lives
   somewhere else and documented where.
+
+- **Hand-added blep should mirror the start-path side effects (assign + consume materials).** — _added 2026-06-29_
+  Starting a blep on a pending/unassigned task runs the "first worker to start the task"
+  path (`apps/jobs/services.py` ~1174-1254): it **assigns** the task to that worker,
+  promotes it in the worker queue, and **consumes the task's linked materials**
+  (`MaterialService.consume`, ~line 1013). But adding a blep **by hand** (the time-edit
+  create path) does none of this — the task stays unassigned and its materials stay
+  unconsumed. A manually-entered blep should produce the same state as a started one:
+  (a) assign the task to the blep's worker, and (b) consume the task's linked materials.
+  _To check:_ confirm current hand-add behavior for both; _done when:_ creating a blep by
+  hand on a pending task assigns it to the blep's user and consumes its linked materials,
+  with tests.
