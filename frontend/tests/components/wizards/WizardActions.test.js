@@ -34,4 +34,16 @@ describe('WizardActions', () => {
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
+
+  it('discards to a provided discardRoute when given', async () => {
+    api.delete.mockResolvedValue({});
+    const { getByRole } = render(WizardActions, {
+      props: { ...PROPS, discardRoute: '/jobs/77' },
+    });
+
+    await fireEvent.click(getByRole('button', { name: 'Discard draft' }));
+
+    expect(api.delete).toHaveBeenCalledWith('/api/invoices/123/?confirm=true');
+    expect(push).toHaveBeenCalledWith('/jobs/77');
+  });
 });
