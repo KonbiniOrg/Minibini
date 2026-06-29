@@ -63,6 +63,9 @@
       ]);
       estimate = est;
       if (est?.job) {
+        // Pre-select the job overview's estimate pillar so discarding the draft
+        // (which returns to the job overview) lands on the estimate section.
+        try { sessionStorage.setItem(`jobDetailActiveSection_${est.job}`, 'estimate'); } catch (_) {}
         try {
           job = await api.get(`/api/jobs/${est.job}/`);
           if (job?.contact) {
@@ -178,6 +181,7 @@
   <WizardActions
     apiBase={`/api/estimates/${estimate.estimate_id}`}
     detailRoute={`/estimates/${estimate.estimate_id}`}
+    discardRoute={estimate.job ? `/jobs/${estimate.job}` : '/'}
   />
 {/if}
 
