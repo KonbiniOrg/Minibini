@@ -2,14 +2,10 @@
   import EmailPanel from '../EmailPanel.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
-  import TaskTree from '../TaskTree.svelte';
   import DeliverablesSection from './DeliverablesSection.svelte';
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
-  import WorkItemForm from '../WorkItemForm.svelte';
-  import MaterialModal from '../MaterialModal.svelte';
-  import FeeModal from '../FeeModal.svelte';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
@@ -28,14 +24,8 @@
   let jobExpenses = $derived(
     expenses ? (expenses.results ?? expenses) : []
   );
-  // Material-less expenses get their own rows; material-linked ones annotate
-  // their material's row (cost lives on the material — avoids double-showing).
+  // Material-less expenses get their own rows in the expenses list.
   let looseExpenses = $derived(jobExpenses.filter((e) => !e.material));
-  let expenseByMaterial = $derived(
-    Object.fromEntries(
-      jobExpenses.filter((e) => e.material).map((e) => [e.material, e])
-    )
-  );
   function money(v) {
     return v != null && v !== '' ? `$${Number(v).toFixed(2)}` : '—';
   }
@@ -228,42 +218,20 @@
       : 0
   );
 
-  // Money formatter shared by the Work atom table.
-  function fmt(n) {
-    if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '—';
-    return `$${Number(n).toFixed(2)}`;
-  }
-  function materialTotal(mat) {
-    return (Number(mat.quantity) || 0) * (Number(mat.sell_price) || 0);
-  }
   function feeTotal(fee) {
     return (Number(fee.quantity) || 0) * (Number(fee.unit_rate) || 0);
   }
-  function taskTotal(task) {
-    // Tasks carry a server-computed charge; fall back to qty × effective_rate.
-    if (task.computed_charge != null && task.computed_charge !== '') {
-      return Number(task.computed_charge) || 0;
-    }
-    return (Number(task.est_qty) || 0) * (Number(task.effective_rate) || 0);
-  }
 
   // Job-owned work atoms (the Job now owns tasks/materials/fees directly).
-  // Top-level tasks only here; subtasks ride inside the Tasks & Materials tree.
+  // Top-level tasks only here; subtasks live on the task-list page.
   let jobTasks = $derived((job.tasks || []).filter(t => !t.parent_task));
   let jobFees = $derived(job.fees || []);
-  let hasTasks = $derived(jobTasks.length > 0);
   // Billable iff the job owns any work atom (task / material / fee). Drives the
   // Invoices pillar's create affordance.
   let hasBillables = $derived(
     (job.tasks || []).length > 0 ||
     (job.materials || []).length > 0 ||
     (job.fees || []).length > 0
-  );
-  // Grand total of the planned work atoms (Work view footer).
-  let planAtomsTotal = $derived(
-    jobTasks.reduce((s, t) => s + taskTotal(t), 0) +
-    (job.materials || []).reduce((s, m) => s + materialTotal(m), 0) +
-    jobFees.reduce((s, f) => s + feeTotal(f), 0)
   );
   let invList = $derived(invoices?.results || []);
   let poList = $derived(purchaseOrders?.results || []);
@@ -330,43 +298,6 @@
     }
   }
 
-  // ── Accounting categories (shared by MaterialModal and FeeModal) ───────────
-  let categories = $state([]);
-
-  async function loadCategories() {
-    try {
-      const resp = await api.get('/api/accounting-categories/?page_size=100');
-      categories = resp.results || resp;
-    } catch {
-      categories = [];
-    }
-  }
-
-  // ── Work section: add-line affordance ───────────────────────────────
-  // Service → Task via WorkItemForm (POST /api/jobs/{id}/tasks/);
-  // Material → Material via MaterialModal (POST /api/jobs/{id}/materials/);
-  // Fee → Fee via FeeModal (POST /api/jobs/{id}/fees/).
-  let workTaskModalOpen = $state(false);
-  let workMaterialModalOpen = $state(false);
-  let workFeeModalOpen = $state(false);
-
-  function reloadJob() {
-    // Refetch the job (and its atoms) via the page-supplied reload hook.
-    onStatusChange?.();
-  }
-  function onWorkTaskSaved() {
-    workTaskModalOpen = false;
-    reloadJob();
-  }
-  function onWorkMaterialSaved() {
-    workMaterialModalOpen = false;
-    reloadJob();
-  }
-  function onWorkFeeSaved() {
-    workFeeModalOpen = false;
-    reloadJob();
-  }
-
   async function createChangeOrder() {
     creatingCo = true;
     try {
@@ -384,7 +315,6 @@
       refreshShipmentCount();
       refreshDeliverableFulfillment();
       refreshChangeOrders();
-      loadCategories();
     }
   });
 
@@ -515,18 +445,6 @@
     } catch { return null; }
   }
 
-  // Toggle inside the Estimate pillar: 'work' | 'client-view'
-  // Default: 'work' when there is no live estimate or it is draft; 'client-view' once sent/frozen.
-  // Computed from the raw prop (not a $derived) so it only sets the initial default, not re-deriving
-  // on every data update (which would override the user's manual toggle choice).
-  const WORK_DEFAULT_STATUSES = new Set(['draft', 'superseded', null, undefined]);
-  function initialEstimateView() {
-    const estList = [...(estimates?.results || [])].sort((a, b) => a.version - b.version);
-    const liveEst = estList.findLast(e => e.status !== 'superseded') || estList[estList.length - 1] || null;
-    return (!liveEst || WORK_DEFAULT_STATUSES.has(liveEst?.status)) ? 'work' : 'client-view';
-  }
-  let estimateView = $state(initialEstimateView());
-
   let userSection = $state(null);
   let activeSection = $derived(userSection ?? readStoredSection(job.job_id) ?? getDefaultSection());
 
@@ -537,9 +455,6 @@
     selectedVersionKey = null;
     selectedInvoiceId = null;
     selectedPoId = null;
-    estimateView = initialEstimateView();
-    enrichedTasks = [];
-    enrichedJobId = null;
   });
 
   function openSection(s) {
@@ -547,43 +462,6 @@
     try { sessionStorage.setItem(storageKey(job.job_id), s); } catch {}
   }
 
-  // The combined Tasks & Materials pillar renders the Task View (TaskTree), which
-  // wants tasks pre-loaded with their materials + subtasks. The job payload only
-  // carries flat top-level tasks, so we lazily fetch per-task children when the
-  // pillar is open (read view; full interactions live on the task-list page).
-  let enrichedTasks = $state([]);
-  let enrichedJobId = $state(null);
-  let enriching = $state(false);
-  // Job-level materials only (task-linked ones ride inside the enriched tree).
-  let jobLevelMaterials = $derived(jobMaterials.filter(m => !m.task));
-
-  async function fetchTaskChildren(taskId, what) {
-    try { const r = await api.get(`/api/tasks/${taskId}/${what}/`); return r.results ?? r; }
-    catch { return []; }
-  }
-  async function enrichTasks() {
-    enriching = true;
-    try {
-      const tops = (job.tasks || []).filter(t => !t.parent_task);
-      enrichedTasks = await Promise.all(tops.map(async (task) => {
-        const [materials, subtasks] = await Promise.all([
-          fetchTaskChildren(task.task_id, 'materials'),
-          fetchTaskChildren(task.task_id, 'subtasks'),
-        ]);
-        const enrichedSubs = await Promise.all(subtasks.map(async (sub) => ({
-          ...sub, materials: await fetchTaskChildren(sub.task_id, 'materials'),
-        })));
-        return { ...task, materials, subtasks: enrichedSubs };
-      }));
-      enrichedJobId = job.job_id;
-    } finally { enriching = false; }
-  }
-
-  $effect(() => {
-    if (activeSection === 'tasks_materials' && enrichedJobId !== job.job_id && !enriching) {
-      enrichTasks();
-    }
-  });
 </script>
 
 <div class="job-detail-page">
@@ -642,9 +520,9 @@
               {startingEstimate ? 'Starting…' : 'Start Estimate'}
             </button>
           {/if}
-          {#if estimateView === 'client-view' && displayedVersion?.kind === 'co'}
+          {#if displayedVersion?.kind === 'co'}
             <a href="#/change-orders/{displayedVersion.co.change_order_id}">Open →</a>
-          {:else if estimateView === 'client-view' && displayedEstimate}
+          {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">Open →</a>
           {/if}
           {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
@@ -655,102 +533,7 @@
         </span>
       </div>
 
-      <!-- Work / Client View toggle -->
-      <div class="est-view-toggle">
-        <button
-          type="button"
-          aria-pressed={estimateView === 'work'}
-          class:active={estimateView === 'work'}
-          onclick={() => { estimateView = 'work'; }}
-        >Work</button>
-        <button
-          type="button"
-          aria-pressed={estimateView === 'client-view'}
-          class:active={estimateView === 'client-view'}
-          onclick={() => { estimateView = 'client-view'; }}
-        >Client View</button>
-      </div>
-
-      {#if estimateView === 'work'}
-        <!-- Work side — the job's own work atoms (tasks / materials / fees).
-             Visible regardless of estimate state: pre-approval effort shows here. -->
-        <div class="body">
-          {#if canManageJobs}
-            <div class="work-add">
-              <span class="work-add-label">Add line:</span>
-              <button type="button" onclick={() => { workTaskModalOpen = true; }}>+ Service</button>
-              <button type="button" onclick={() => { workMaterialModalOpen = true; }}>+ Material</button>
-              <button type="button" onclick={() => { workFeeModalOpen = true; }}>+ Fee</button>
-            </div>
-          {/if}
-          {#if jobTasks.length === 0 && (job.materials || []).length === 0 && jobFees.length === 0}
-            <p class="empty-msg">No work planned for this job yet.</p>
-          {:else}
-            <table class="ws-readonly">
-              <colgroup>
-                <col>
-                <col class="col-qty">
-                <col class="col-units">
-                <col class="col-money">
-                <col class="col-money">
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th class="text-right">Qty</th>
-                  <th>Units</th>
-                  <th class="text-right">Price</th>
-                  <th class="text-right">Ext</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each jobTasks as task (task.task_id)}
-                  <tr class="task-row">
-                    <td class="name">
-                      {task.name}{#if task.description}<span class="dim"> — {task.description}</span>{/if}
-                      {#if task.claimed === false}<span class="unclaimed-badge" title="Not on the current estimate">not on estimate</span>{/if}
-                    </td>
-                    <td class="text-right">{task.est_qty ?? '—'}</td>
-                    <td>{task.scheme_unit_label || ''}</td>
-                    <td class="text-right">{fmt(task.effective_rate)}</td>
-                    <td class="text-right">{fmt(taskTotal(task))}</td>
-                  </tr>
-                {/each}
-                {#each (job.materials || []) as mat (mat.material_id)}
-                  <tr class="material-row">
-                    <td class="preserve-breaks">
-                      <span class="marker">●</span> {mat.description || '(no description)'}
-                      {#if mat.claimed === false}<span class="unclaimed-badge" title="Not on the current estimate">not on estimate</span>{/if}
-                    </td>
-                    <td class="text-right">{mat.quantity ?? '—'}</td>
-                    <td>{mat.units || ''}</td>
-                    <td class="text-right">{fmt(mat.sell_price)}</td>
-                    <td class="text-right">{fmt(materialTotal(mat))}</td>
-                  </tr>
-                {/each}
-                {#each jobFees as fee (fee.fee_id)}
-                  <tr class="fee-row">
-                    <td class="preserve-breaks">
-                      <span class="marker">◆</span> {fee.description || '(fee)'}
-                      {#if fee.claimed === false}<span class="unclaimed-badge" title="Not on the current estimate">not on estimate</span>{/if}
-                    </td>
-                    <td class="text-right">{fee.quantity ?? '—'}</td>
-                    <td></td>
-                    <td class="text-right">{fmt(fee.unit_rate)}</td>
-                    <td class="text-right">{fmt(feeTotal(fee))}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-
-            <div class="ws-total">
-              <span class="ws-total-label">Total</span>
-              <span class="ws-total-value">{fmt(planAtomsTotal)}</span>
-            </div>
-          {/if}
-        </div>
-      {:else}
-        <!-- Client View (estimate + COs) side -->
+      <!-- Estimate document (estimate versions + change orders) -->
         {#if versionTimeline.length > 1}
           <div class="est-tabs">
             {#each versionTimeline as ver}
@@ -883,7 +666,6 @@
             <p class="empty-msg">No Client View yet.</p>
           {/if}
         </div>
-      {/if}
     </div>
   {/if}
 
@@ -907,19 +689,164 @@
         </span>
       </div>
       <div class="body">
-        {#if enriching && enrichedTasks.length === 0}
-          <p class="empty-msg">Loading…</p>
-        {:else if jobTasks.length === 0 && jobMaterials.length === 0 && looseExpenses.length === 0}
+        {#if jobTasks.length === 0 && jobMaterials.length === 0 && jobFees.length === 0 && looseExpenses.length === 0}
           <p class="empty-msg">No tasks, materials, or expenses yet.</p>
         {:else}
-          <TaskTree
-            tasks={enrichedTasks}
-            jobMaterials={jobLevelMaterials}
-            expenses={jobExpenses}
-            readonly={true}
-            canManage={job?.can_manage}
-            onTaskClick={(t) => { window.location.hash = `/jobs/${job.job_id}/tasks/${t.task_id}`; }}
-          />
+          {#if jobTasks.length > 0}
+            <table class="wo-table">
+              <colgroup>
+                <col>
+                <col class="col-assigned">
+                <col class="col-status">
+                <col class="col-time">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Assigned</th>
+                  <th class="text-center">Status</th>
+                  <th>Time vs. estimate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each jobTasks as task (task.task_id)}
+                  <tr class:row-active={task.status === 'in_progress'}>
+                    <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a>{@render invoicedLink(task.invoice)}</td>
+                    <td class="assigned">{task.assignee_name || '—'}</td>
+                    <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
+                    <td class="time-cell">
+                      {#if task.scheme_algorithm === 'elapsed_time'}
+                        {@const actual = Number(task.actual_hours) || 0}
+                        {@const est = Number(task.est_qty) || 0}
+                        {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
+                        {@const over = est > 0 && actual > est}
+                        <div class="time-track">
+                          <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
+                        </div>
+                        <div class="time-text {over ? 'over' : ''}">
+                          {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
+                          {#if est > 0}
+                            {#if over}
+                              <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
+                            {:else if actual === 0}
+                              <span class="time-dim">(not started)</span>
+                            {:else}
+                              <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
+                            {/if}
+                          {/if}
+                        </div>
+                      {:else if task.scheme_algorithm === 'entered_qty'}
+                        {@const actual = Number(task.actual_qty) || 0}
+                        {@const est = Number(task.est_qty) || 0}
+                        {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
+                        {@const over = est > 0 && actual > est}
+                        <div class="time-track">
+                          <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
+                        </div>
+                        <div class="time-text {over ? 'over' : ''}">
+                          {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
+                          {#if est > 0}
+                            {#if over}
+                              <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
+                            {:else if actual === 0}
+                              <span class="time-dim">(not started)</span>
+                            {:else}
+                              <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
+                            {/if}
+                          {/if}
+                        </div>
+                      {:else if task.scheme_algorithm === 'flat_fee'}
+                        <div class="time-text time-dim">flat fee · {Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</div>
+                      {:else}
+                        <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if jobMaterials.length > 0}
+            <table class="mat-table">
+              <colgroup>
+                <col>
+                <col class="col-qty">
+                <col class="col-units">
+                <col class="col-money">
+              </colgroup>
+              <thead><tr>
+                <th>Material</th>
+                <th class="text-right">Qty</th>
+                <th>Units</th>
+                <th class="text-right">Sell Price</th>
+              </tr></thead>
+              <tbody>
+                {#each jobMaterials as mat (mat.material_id)}
+                  <tr>
+                    <td>
+                      <span class="preserve-breaks">{mat.description || '(no description)'}</span>
+                      {@render invoicedLink(mat.invoice)}
+                    </td>
+                    <td class="text-right">{mat.quantity ?? '—'}</td>
+                    <td>{mat.units || 'none'}</td>
+                    <td class="text-right">{money(mat.sell_price)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if jobFees.length > 0}
+            <table class="mat-table">
+              <colgroup>
+                <col>
+                <col class="col-qty">
+                <col class="col-money">
+                <col class="col-money">
+              </colgroup>
+              <thead><tr>
+                <th>Fee</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Unit Rate</th>
+                <th class="text-right">Ext</th>
+              </tr></thead>
+              <tbody>
+                {#each jobFees as fee (fee.fee_id)}
+                  <tr>
+                    <td><span class="preserve-breaks">{fee.description || '(fee)'}</span></td>
+                    <td class="text-right">{fee.quantity ?? '—'}</td>
+                    <td class="text-right">{money(fee.unit_rate)}</td>
+                    <td class="text-right">{money(feeTotal(fee))}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if looseExpenses.length > 0}
+            <table class="mat-table">
+              <colgroup><col><col class="col-units"><col class="col-money"></colgroup>
+              <thead><tr>
+                <th>Expense</th>
+                <th>Category</th>
+                <th class="text-right">Amount</th>
+              </tr></thead>
+              <tbody>
+                {#each looseExpenses as exp (exp.id)}
+                  <tr>
+                    <td>
+                      <span class="preserve-breaks">{exp.description || '(expense)'}</span>
+                      <span class="badge-paid">expense</span>
+                      {@render invoicedLink(exp.invoice)}
+                    </td>
+                    <td>{exp.accounting_category_name || '—'}</td>
+                    <td class="text-right">{money(exp.amount)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
         {/if}
       </div>
     </div>
@@ -1179,34 +1106,6 @@
 
 </div>
 
-<!-- Work add-line modals — reuse the existing job-scoped add paths.
-     Service → Task (POST /api/jobs/{id}/tasks/); Material → Material (POST /api/jobs/{id}/materials/). -->
-<WorkItemForm
-  open={workTaskModalOpen}
-  mode="manual"
-  context="job"
-  contextId={job.job_id}
-  templates={[]}
-  onSaved={onWorkTaskSaved}
-  onClose={() => { workTaskModalOpen = false; }}
-/>
-<MaterialModal
-  open={workMaterialModalOpen}
-  mode="create"
-  jobId={job.job_id}
-  categories={categories}
-  onSaved={onWorkMaterialSaved}
-  onClose={() => { workMaterialModalOpen = false; }}
-/>
-<FeeModal
-  open={workFeeModalOpen}
-  mode="create"
-  jobId={job.job_id}
-  categories={categories}
-  onSaved={onWorkFeeSaved}
-  onClose={() => { workFeeModalOpen = false; }}
-/>
-
 <style>
   /* PAGE WRAPPER — full viewport, flex column so accordion fills remaining space */
   .job-detail-page {
@@ -1454,98 +1353,6 @@
   .pill-consumed { background: #d1fae5; color: #065f46; }
   .pill-na { background: #f3f4f6; color: #6b7280; }
 
-  /* Work add-line controls */
-  .work-add {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 14px; background: #f5f3ff; border-bottom: 1px solid #ede9fe;
-    font-size: 12px;
-  }
-  .work-add-label { color: #6d28d9; font-weight: 600; }
-  .work-add button {
-    font-size: 12px; padding: 3px 10px;
-    border: 1px solid #c4b5fd; background: #fff; color: #4c1d95;
-    border-radius: 4px; cursor: pointer;
-  }
-  .work-add button:hover:not(:disabled) { background: #ede9fe; }
-  .work-add button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  /* "Not on the current estimate" marker — informational, never blocking */
-  .unclaimed-badge {
-    display: inline-block; margin-left: 6px;
-    font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
-    padding: 1px 6px; border-radius: 8px;
-    background: #fef3c7; color: #92400e;
-    vertical-align: middle; text-transform: uppercase;
-  }
-  .ws-readonly .fee-row td { background: #faf5ff; }
-
-  /* Worksheet read-only view */
-  .ws-tabs {
-    background: #ccfbf1; padding: 6px 16px; border-bottom: 1px solid #99f6e4;
-    display: flex; gap: 4px; font-size: 12px; flex: 0 0 auto;
-  }
-  .ws-tab {
-    padding: 4px 12px; border-radius: 8px; cursor: pointer;
-    color: #115e59; background: transparent; border: none; font-size: 12px;
-  }
-  .ws-tab:hover { background: rgba(255,255,255,0.5); }
-  .ws-tab.active { background: #99f6e4; font-weight: 600; }
-  .ws-tab-status { opacity: 0.7; font-weight: 400; margin-left: 2px; }
-
-  .ws-readonly { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-  .ws-readonly th {
-    padding: 8px 14px; text-align: left; background: #f0fdfa; color: #115e59;
-    font-weight: 600; border-bottom: 1px solid #ccfbf1;
-  }
-  .ws-readonly td {
-    padding: 6px 14px; vertical-align: top; border-bottom: 1px solid #f0fdfa;
-  }
-  .ws-readonly col.col-qty { width: 70px; }
-  .ws-readonly col.col-units { width: 70px; }
-  .ws-readonly col.col-money { width: 110px; }
-  .ws-readonly .task-row td { background: #fff; }
-  .ws-readonly .task-row .name { font-weight: 600; }
-  .ws-readonly .material-row td { background: #f2fcfa; }
-  .ws-readonly .marker { color: #aaa; font-size: 8px; margin-right: 6px; }
-  .ws-readonly .dim { color: #888; font-weight: 400; font-size: 12px; }
-  .ws-readonly .text-right { font-variant-numeric: tabular-nums; }
-  .ws-total {
-    display: flex; justify-content: flex-end; align-items: baseline;
-    padding: 10px 14px; background: #ecfdf5; border-top: 2px solid #99f6e4;
-    font-weight: 700; font-size: 14px;
-  }
-  .ws-total-label { margin-right: 12px; }
-  .ws-total-value {
-    width: 110px; text-align: right; font-variant-numeric: tabular-nums;
-  }
-
-  /* Work / Client View toggle */
-  .est-view-toggle {
-    display: flex;
-    gap: 0;
-    background: #ddd6fe;
-    padding: 6px 16px;
-    border-bottom: 1px solid #c4b5fd;
-    flex: 0 0 auto;
-  }
-  .est-view-toggle button {
-    padding: 4px 14px;
-    border: 1px solid #c4b5fd;
-    background: transparent;
-    color: #3730a3;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    border-radius: 0;
-  }
-  .est-view-toggle button:first-child { border-radius: 6px 0 0 6px; }
-  .est-view-toggle button:last-child  { border-radius: 0 6px 6px 0; margin-left: -1px; }
-  .est-view-toggle button.active,
-  .est-view-toggle button[aria-pressed="true"] {
-    background: #c4b5fd;
-    font-weight: 700;
-  }
-
   /* Estimate tabs */
   .est-tabs {
     background: #ddd6fe; padding: 6px 16px; border-bottom: 1px solid #c4b5fd;
@@ -1720,15 +1527,8 @@
   .mat-table tbody tr:nth-child(even) { background: #fef3c7; }
   .mat-table tbody tr + tr { border-top: 1px solid #fde68a; }
   .mat-table col.col-qty { width: 80px; }
-  .mat-table col.col-on-order { width: 130px; }
   .mat-table col.col-units { width: 70px; }
   .mat-table col.col-money { width: 100px; }
-  .mat-table .row-consumed td { opacity: 0.55; }
-  .mat-table .badge-consumed {
-    font-size: 10px; color: #555;
-    margin-left: 6px; padding: 1px 6px;
-    background: #e5e7eb; border-radius: 8px;
-  }
   .mat-table .badge-paid {
     font-size: 10px; color: #166534;
     margin-left: 6px; padding: 1px 6px;
@@ -1739,12 +1539,6 @@
     border: 1px solid #888; border-radius: 3px;
     padding: 0 4px; margin-left: 6px;
   }
-  .mat-table .add-po {
-    font-size: 11px; color: #1e40af; margin-left: 8px;
-  }
-  .mat-table .add-po:hover { text-decoration: underline; }
-  .mat-table .dim { color: #aaa; }
-  .po-badge { font-size: 12px; color: #555; }
 
   /* PO other-job differentiation */
   .other-job { opacity: 0.5; }

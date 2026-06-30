@@ -22,17 +22,16 @@ function baseJob(overrides = {}) {
 }
 
 describe('JobDetail invoiced indicator', () => {
-  // The combined Tasks & Materials pillar renders the Task View (TaskTree), which
-  // shows an "INVOICED" link (href to the invoice) on billed tasks/materials/expenses.
+  // The Tasks & Materials pillar's read-only tables render an "Invoiced · NUM"
+  // link (href to the invoice) on billed tasks/materials/expenses.
   it('renders an Invoiced link on an invoiced task', async () => {
     const job = baseJob({
       tasks: [{ task_id: 7, name: 'Cut', status: 'complete',
                 invoice: { id: 3, number: 'INV-3' } }],
     });
-    // A job with tasks opens the Tasks & Materials pillar by default; the tree
-    // enriches asynchronously, so wait for the link.
+    // A job with tasks opens the Tasks & Materials pillar by default.
     const { findByRole } = render(JobDetail, { props: { job, expenses: [] } });
-    const link = await findByRole('link', { name: /INVOICED/ });
+    const link = await findByRole('link', { name: /Invoiced/ });
     expect(link.getAttribute('href')).toBe('#/invoices/3');
   });
 
@@ -41,8 +40,8 @@ describe('JobDetail invoiced indicator', () => {
       tasks: [{ task_id: 7, name: 'Cut', status: 'complete', invoice: null }],
     });
     const { findByText, queryByRole } = render(JobDetail, { props: { job, expenses: [] } });
-    await findByText('Cut'); // wait for the tree to render
-    expect(queryByRole('link', { name: /INVOICED/ })).toBeNull();
+    await findByText('Cut'); // wait for the table to render
+    expect(queryByRole('link', { name: /Invoiced/ })).toBeNull();
   });
 
   it('renders an Invoiced link on an invoiced material', async () => {
@@ -54,7 +53,7 @@ describe('JobDetail invoiced indicator', () => {
     });
     const { getByText, findByRole } = render(JobDetail, { props: { job, expenses: [] } });
     await fireEvent.click(getByText('Tasks & Materials')); // open the pillar (no tasks → collapsed by default)
-    const link = await findByRole('link', { name: /INVOICED/ });
+    const link = await findByRole('link', { name: /Invoiced/ });
     expect(link.getAttribute('href')).toBe('#/invoices/5');
   });
 
@@ -67,7 +66,7 @@ describe('JobDetail invoiced indicator', () => {
     const job = baseJob({ materials: [] });
     const { getByText, findByRole } = render(JobDetail, { props: { job, expenses } });
     await fireEvent.click(getByText('Tasks & Materials')); // open the pillar
-    const link = await findByRole('link', { name: /INVOICED/ });
+    const link = await findByRole('link', { name: /Invoiced/ });
     expect(link.getAttribute('href')).toBe('#/invoices/7');
   });
 });
