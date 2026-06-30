@@ -88,6 +88,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     active_worker_count = serializers.SerializerMethodField()
     has_bleps = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
+    claimed = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -103,6 +104,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'has_active_blep', 'active_worker_count', 'has_bleps',
             'can_manage',
             'invoice',
+            'claimed',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
@@ -147,6 +149,11 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 
     def get_has_bleps(self, obj):
         return len(obj.blep_set.all()) > 0
+
+    def get_claimed(self, obj):
+        """True iff a non-superseded estimate on this job has claimed this task."""
+        claims = self.context.get('estimate_claims') or frozenset()
+        return ('task', obj.pk) in claims
 
 
 class TaskDetailSerializer(TaskSerializer):

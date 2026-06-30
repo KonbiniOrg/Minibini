@@ -39,6 +39,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         write_only=True, required=False,
     )
     invoice = serializers.SerializerMethodField()
+    claimed = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -52,6 +53,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
             'invoice',
+            'claimed',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
@@ -109,6 +111,11 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     def get_qty_on_hand(self, obj):
         from apps.inventory.serializer_helpers import material_qty_on_hand
         return material_qty_on_hand(obj)
+
+    def get_claimed(self, obj):
+        """True iff a non-superseded estimate on this job has claimed this material."""
+        claims = self.context.get('estimate_claims') or frozenset()
+        return ('material', obj.pk) in claims
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (

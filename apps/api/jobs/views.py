@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.db.models import Prefetch
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, Fee
 from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
@@ -34,6 +34,10 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 queryset=Material.objects.select_related(
                     'inventory_item', 'po_line_item__purchase_order',
                 ),
+            ),
+            Prefetch(
+                'fees',
+                queryset=Fee.objects.order_by('sort_order'),
             ),
         ) \
         .all().order_by('-created_date')
