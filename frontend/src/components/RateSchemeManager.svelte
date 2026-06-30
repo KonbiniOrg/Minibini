@@ -16,7 +16,6 @@
   const ALGORITHM_LABELS = {
     elapsed_time: 'Based on time worked',
     entered_qty: 'Worker enters quantity',
-    flat_fee: 'Fixed charge',
     percentage: 'Percentage of other lines',
   };
 
@@ -52,7 +51,7 @@
 
   function isReferenced(s) {
     const c = s.reference_counts || {};
-    return ((c.plan_task_count || 0) + (c.task_count || 0) + (c.service_item_count || 0)) > 0;
+    return ((c.task_count || 0) + (c.service_item_count || 0)) > 0;
   }
 
   function startCreate() {
@@ -161,9 +160,6 @@
     }
   }
 
-  // flat_fee schemes carry no modifier catalog: the per-item price rides on
-  // the ServiceItem/Task, and rate is only a fallback default.
-  const isFlatFee = $derived(form.algorithm === 'flat_fee');
   // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
   const isPercentage = $derived(form.algorithm === 'percentage');
 
@@ -211,8 +207,7 @@
               <small>
                 Replaced by: scheme {s.replaced_by}
                 {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
-                | References: {s.reference_counts?.plan_task_count || 0} plan tasks,
-                {s.reference_counts?.task_count || 0} tasks,
+                | References: {s.reference_counts?.task_count || 0} tasks,
                 {s.reference_counts?.service_item_count || 0} templates
               </small>
             {:else if isReferenced(s)}
@@ -251,7 +246,6 @@
       <select bind:value={form.algorithm}>
         <option value="elapsed_time">Based on time worked</option>
         <option value="entered_qty">Worker enters quantity</option>
-        <option value="flat_fee">Fixed charge</option>
         <option value="percentage">Percentage of other lines</option>
       </select>
     </label></p>
@@ -283,7 +277,7 @@
       </select>
     </label></p>
 
-    {#if !isFlatFee && !isPercentage}
+    {#if !isPercentage}
       <fieldset>
         <legend><strong>Modifiers</strong></legend>
         {#each form.modifiers as mod, i}
@@ -297,7 +291,7 @@
       </fieldset>
     {/if}
 
-    {#if previewTotal && !isFlatFee && !isPercentage}
+    {#if previewTotal && !isPercentage}
       <p><strong>Preview:</strong>
         {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
       </p>

@@ -212,16 +212,6 @@
           {/if}
         </td>
       </tr>
-      <tr>
-        <td>Plan</td>
-        <td>
-          {#if estimate.worksheet}
-            <a href={`/worksheets/${estimate.worksheet}`} use:link>#{estimate.worksheet}</a>
-          {:else}
-            <em>None</em>
-          {/if}
-        </td>
-      </tr>
       <tr><td>Status</td><td>{estimate.status}</td></tr>
       <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
       <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
@@ -238,9 +228,7 @@
   {#if canEdit}
     <p>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-      {#if estimate.worksheet}
-        <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>
-      {/if}
+      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>
     </p>
   {/if}
 

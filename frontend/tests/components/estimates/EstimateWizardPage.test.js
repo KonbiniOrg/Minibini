@@ -47,23 +47,23 @@ describe('EstimateWizardPage vocabulary labels', () => {
     expect(screen.queryByText(/^Worksheet:/)).not.toBeInTheDocument();
   });
 
-  it('labels the source pool section "plan atoms" (not "worksheet atoms")', async () => {
+  it('labels the source pool section "job atoms" (not "plan atoms" or "worksheet atoms")', async () => {
     mockApi(makeEstimate());
 
     render(EstimateWizardPage, { props: { params: { id: '11' } } });
 
-    expect(await screen.findByText(/plan atoms/i)).toBeInTheDocument();
+    expect(await screen.findByText(/job atoms/i)).toBeInTheDocument();
+    expect(screen.queryByText(/plan atoms/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/worksheet atoms/i)).not.toBeInTheDocument();
   });
 
-  it('shows both back links: "back to Client View" and "back to Estimate"', async () => {
+  it('shows only the "back to Client View" link (worksheet back-link removed)', async () => {
     mockApi(makeEstimate());
 
     render(EstimateWizardPage, { props: { params: { id: '11' } } });
 
     const cv = await screen.findByText(/back to client view/i);
-    const est = await screen.findByText(/back to estimate/i);
     expect(cv.getAttribute('href')).toBe('/estimates/11');
-    expect(est.getAttribute('href')).toBe('/worksheets/22'); // the Plan, not the job
+    expect(screen.queryByText(/back to estimate/i)).not.toBeInTheDocument();
   });
 });

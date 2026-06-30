@@ -15,17 +15,6 @@
 
   function buildDocs(job) {
     const docs = [];
-    if (job.worksheets) {
-      for (const ws of job.worksheets) {
-        docs.push({
-          type: 'Worksheet',
-          status: 'draft',
-          statusLabel: 'Draft',
-          created_date: ws.created_date,
-          total: null,
-        });
-      }
-    }
     if (job.estimates) {
       for (const est of job.estimates) {
         if (est.status === 'superseded') continue;

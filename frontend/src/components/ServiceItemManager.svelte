@@ -178,7 +178,7 @@
 
     {#if selectedScheme}
       <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
-      {#if selectedScheme.algorithm !== 'flat_fee' && selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
+      {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
         <fieldset>
           <legend><strong>Default Modifiers</strong></legend>
           {#each selectedScheme.modifiers as mod}

@@ -93,19 +93,18 @@ describe('EstimateDetailPage number/version display', () => {
 });
 
 describe('EstimateDetailPage vocabulary labels', () => {
-  it('labels the worksheet row "Plan" and the wizard link "Customize Client View"', async () => {
+  it('shows the "Customize Client View" wizard link without a worksheet guard', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft', worksheet: 3 }));
+    mockApi(makeEstimate({ can_manage: true, status: 'draft' }));
 
     const { findByText, queryByText } = render(EstimateDetailPage, {
       props: { params: { id: '7' } },
     });
 
-    // "Plan" label in the data table row
-    expect(await findByText('Plan')).toBeInTheDocument();
-    // Wizard link uses new label
+    // Wizard link is always present for an editable estimate (no worksheet guard)
     expect(await findByText('Customize Client View')).toBeInTheDocument();
-    // Old labels gone
+    // No stale "Plan" row or old labels
+    expect(queryByText('Plan')).not.toBeInTheDocument();
     expect(queryByText('Worksheet')).not.toBeInTheDocument();
     expect(queryByText('Show Worksheet')).not.toBeInTheDocument();
   });

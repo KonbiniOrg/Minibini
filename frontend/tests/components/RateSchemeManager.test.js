@@ -7,7 +7,6 @@ import { api } from '@/lib/api.js';
 import RateSchemeManager from '@/components/RateSchemeManager.svelte';
 
 const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hr', modifiers: [], reference_counts: {} };
-const FLAT_FEE_SCHEME = { rate_scheme_id: 2, name: 'Flat Weld', algorithm: 'flat_fee', rate: '150', unit_label: 'none', modifiers: [], reference_counts: {} };
 
 beforeEach(() => {
   api.get.mockReset();
@@ -38,18 +37,6 @@ describe('RateSchemeManager', () => {
     const { findByRole, queryByRole } = render(RateSchemeManager);
     expect(await findByRole('button', { name: 'Add Rate Scheme' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'Add Service' })).not.toBeInTheDocument();
-  });
-
-  it('creates a scheme with rate field for flat-fee algorithm', async () => {
-    const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
-    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
-    // Switch to flat-fee
-    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'flat_fee' } });
-    // Should have a Rate field (not a separate flat_fee_price)
-    expect(getByLabelText(/Rate/)).toBeInTheDocument();
-    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Quick Fix' } });
-    await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/', expect.objectContaining({ name: 'Quick Fix', algorithm: 'flat_fee' }));
   });
 
   it('creates a scheme', async () => {

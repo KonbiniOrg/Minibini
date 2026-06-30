@@ -34,7 +34,6 @@
     { key: 'businesses', label: 'Businesses' },
     { key: 'invoices', label: 'Invoices' },
     { key: 'estimates', label: 'Estimates' },
-    { key: 'est_worksheets', label: 'Worksheets' },
     { key: 'bills', label: 'Bills' },
     { key: 'purchase_orders', label: 'Purchase Orders' },
     { key: 'inventory_items', label: 'Inventory Items' },
@@ -268,23 +267,6 @@
                   <td>{est.status}</td>
                   <td>{formatDate(est.created_date)}</td>
                   <td>{@html hlt(est.matching_descriptions?.join(', ') || null)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
-        {#if results.results.est_worksheets?.length}
-          <h3>Worksheets</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Job #</th><th>Estimate #</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.est_worksheets as ws}
-                <tr>
-                  <td>{ws.job_number || '—'}</td>
-                  <td>{ws.estimate_number || '—'}</td>
                 </tr>
               {/each}
             </tbody>
