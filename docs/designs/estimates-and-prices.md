@@ -2,21 +2,30 @@
 
 Reference for the estimating side of Minibini: `RateScheme` as the
 unit of billing identity, supersession, the billable-atom abstraction,
-the estimate wizard, atom carry-over from worksheet to job, and AC
-pass-through. Read alongside:
+the estimate wizard, the job-atom projection (documents-as-lenses),
+acceptance crystallizing hand-lines into Fees, and AC pass-through.
+Read alongside:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer
   pattern, `LineItemMixin`, exception hierarchy
   (`ServiceError` / `NotFoundError` / `SchemeSupersededError`).
-- `docs/designs/jobs-tasks-and-worksheets.md` — `Task`, `PlanTask`,
-  `Job`/`EstWorksheet` containers, populate paths, signal receivers
-  (`estimate_accepted`, `estimate_status_changed_for_job`).
+- `docs/designs/jobs-tasks-and-worksheets.md` — `Task`, `Material`,
+  `Fee` (the Job's work atoms), the Work surface, populate paths, signal
+  receivers (`estimate_accepted`, `estimate_status_changed_for_job`).
 - `docs/designs/materials-inventory-and-purchasing.md` — `Material`
-  and `PlanMaterial` (the other atom family), `InventoryItem`.
+  (the other atom family), `InventoryItem`.
 - `docs/designs/invoicing-and-expenses.md` — the parallel invoice
   wizard built on the same source-row pattern.
 - `CLAUDE.md` — status constants, document-numbering service,
   `AccountingCategory` shape, line-item delete rule.
+
+> **Job-owns-atoms model.** Work atoms (`Task`, `Material`, `Fee`) live
+> directly on the **Job**, created at any status (including `draft`). The
+> former planning layer — `EstWorksheet`, `PlanTask`, `PlanMaterial`, the
+> worksheet API, and worksheet→job carry-over — has been **removed**.
+> An `Estimate` is now a **lens** over the job's atoms: each line item
+> optionally links to one atom via `EstimateLineItemSource`; a line with no
+> source is a **hand-line**. See §7 and §9.
 
 ---
 
@@ -25,23 +34,25 @@ pass-through. Read alongside:
 This doc owns:
 
 - `RateScheme` model, modifier algebra, supersession lineage.
-- Billing identity on `Task` / `PlanTask` / `ServiceItem` (the FK to
-  `RateScheme` and the `active_modifiers` / `est_qty` / `actual_qty`
-  semantics).
+- Billing identity on `Task` / `ServiceItem` (the FK to `RateScheme` and
+  the `active_modifiers` / `est_qty` / `actual_qty` semantics).
 - `Estimate`, `EstimateLineItem`, `EstimateLineItemSource`.
 - `ChangeOrder`, `ChangeOrderLineItem`, the agreement-of-record
   composition over (Estimate + accepted COs).
-- The atom abstraction (atoms are Tasks and Materials; whole-task
+- The atom abstraction (atoms are Tasks, Materials, and Fees; whole-atom
   billing).
 - `EstimateWizardService`, the wizard endpoints, and the wizard UI.
-- `AtomCarryOverService` — what fires when an Estimate is accepted.
+- `EstimateAcceptanceService` — what fires when an Estimate is accepted
+  (hand-line → Fee crystallization, earmarks).
 - AC pass-through rules from RateScheme → Task / line item.
 
 It does **not** own:
 
-- The Job/Task/Worksheet shape or status machines (jobs-tasks doc).
-- The Material/PlanMaterial side of the atom family beyond the pieces
-  the wizard touches (materials doc).
+- The Job/Task shape or status machines (jobs-tasks doc).
+- The Material side of the atom family beyond the pieces the wizard
+  touches (materials doc).
+- The `Fee` atom model shape (jobs-tasks doc) beyond its role as a
+  billable atom and acceptance crystallization target.
 - Invoice-side wizard or `InvoiceLineItemSource` (invoicing doc).
 - Service-layer mechanics, mixin catalog, permission atoms (architecture
   doc).
@@ -55,8 +66,9 @@ FK field `rate_scheme`, API `/api/rate-schemes/`) is the **service
 price list** — the catalog of named, priced services the shop performs.
 It owns the math (rate, algorithm, modifiers), the `AccountingCategory`
 (and therefore taxability / QBO income mapping), and its own version
-lineage. Every `PlanTask`, `Task`, and `ServiceItem` references exactly
-one `RateScheme` and inherits the rest.
+lineage. Every `Task` and `ServiceItem` references exactly one
+`RateScheme` and inherits the rest. (Fixed one-off charges are the `Fee`
+atom — see §4.5 — not a RateScheme.)
 
 ### 2.1 Identity fields
 
@@ -65,8 +77,8 @@ one `RateScheme` and inherits the rest.
 | `rate_scheme_id` | AutoField PK | |
 | `name` | CharField(100), unique | display name; e.g. "CNC Router", "Hourly Labor", "Tap a hole" |
 | `description` | TextField, blank | longer admin explanation |
-| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `flat_fee`, `percentage` |
-| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`/`flat_fee`; holds the percent value for `percentage` (negative = discount) |
+| `algorithm` | CharField(20), choices | one of `elapsed_time`, `entered_qty`, `percentage` |
+| `rate` | Decimal(10,2) | the per-unit price for `elapsed_time`/`entered_qty`; holds the percent value for `percentage` (negative = discount) |
 | `unit_label` | CharField(50) | the customer-facing unit (e.g. `hour`, `minute`, `piece`, `job`); validated against the configured units list (`apps/core/units.py`) |
 | `modifiers` | JSONField | list of `{key, label, percent}` dicts |
 | `accounting_category` | FK → `AccountingCategory` (PROTECT) | required, NOT NULL |
@@ -82,13 +94,18 @@ one `RateScheme` and inherits the rest.
 |---|---|---|---|
 | `elapsed_time` | `RateScheme.ELAPSED_TIME` | sum of `Blep` durations on the task in hours | hourly labor (assembly, bench work) |
 | `entered_qty` | `RateScheme.ENTERED_QTY` | `Task.actual_qty` | machine-minutes, piece work; worker enters the count |
-| `flat_fee` | `RateScheme.FLAT_FEE` | the atom's `est_qty` (fallback `Decimal(1)`) | one-off and per-unit priced services (tap a hole, plywood coating, setup fee) |
 | `percentage` | `RateScheme.PERCENTAGE` | n/a — document-layer computation only | surcharges and discounts (rush fee, volume discount) |
+
+> **`flat_fee` removed.** RateScheme no longer has a `flat_fee` algorithm.
+> A fixed one-off or per-unit charge (tap a hole, plywood coating, setup
+> fee) is now the **`Fee` atom** on the Job — `quantity × unit_rate` with
+> its own `accounting_category` (see §4.5). `copy_active_modifiers()`
+> collapses any legacy `{'flat_fee_price': …}` dict to `[]`.
 
 #### The `percentage` algorithm
 
-`percentage` is a **document-level adjustment** — it never backs a `Task`,
-`PlanTask`, or `ServiceItem`. Calling `RateScheme.effective_rate()` or
+`percentage` is a **document-level adjustment** — it never backs a `Task`
+or `ServiceItem`. Calling `RateScheme.effective_rate()` or
 `get_actual_qty()` on a percentage service raises `ValueError`; the estimate
 and invoice serializers reject it; `TaskService.create_direct` rejects it;
 and `GET /api/rate-schemes/?task_applicable=true` excludes it. The
@@ -123,25 +140,15 @@ algorithm:
 ```python
 ELAPSED_TIME → (Decimal(sum(blep.elapsed.total_seconds())) / 3600).quantize(0.01)
 ENTERED_QTY  → task.actual_qty or Decimal('0')
-FLAT_FEE     → task.est_qty if task.est_qty is not None else Decimal('1')
 ```
+
+`get_actual_qty()` raises `ValueError` for a `percentage` scheme
+(percentage services are document adjustments, not task billing).
 
 The `ELAPSED_TIME` result is quantized to 2 decimal places: a raw
 seconds/3600 division is non-terminating (~28 digits) and would overflow
 the line item `qty` field (`max_digits=10`) when carried into the invoice
 wizard.
-
-**flat_fee pricing.** `flat_fee` bills `rate × est_qty`. The price is
-`RateScheme.rate` — the same field used by the other algorithms.
-There is no separate per-atom price dict; each distinctly-priced service
-is its own `RateScheme` row (e.g. "Tap a hole — $1.00", "Plywood
-coating — $30.00"). A `ServiceItem` references the appropriate entry;
-`est_qty` carries the billable quantity (e.g. 50 holes) from the
-worksheet to the Task, where it stays editable. It is not
-worker-entered at completion the way `entered_qty`'s `actual_qty` is.
-
-`flat_fee` services require a **positive `rate`** — `validate_data.py`
-raises an error for any flat-fee `RateScheme` with `rate <= 0`.
 
 ### 2.3 Modifiers
 
@@ -152,7 +159,7 @@ Each modifier in the scheme's `modifiers` JSON list is a dict:
 ```
 
 - `key`: stable identifier; recorded in `Task.active_modifiers` (and
-  `PlanTask.active_modifiers`, `ServiceItem.default_active_modifiers`).
+  `ServiceItem.default_active_modifiers`).
 - `label`: display string shown in checkboxes and on the line item.
 - `percent`: additive percent surcharge over the base rate.
 
@@ -160,22 +167,20 @@ Active modifiers stack additively: messy (+10%) + doublestick (+5%)
 = +15% on `rate`. Validation that `active_modifiers` keys are a subset
 of the scheme's modifier keys is up to the form/serializer layer.
 
-**`active_modifiers` is always a list.** `active_modifiers` on
-`Task` / `PlanTask`, and `default_active_modifiers` on `ServiceItem`,
-are always a **list** of modifier keys — never a dict. `flat_fee`
-services have no percentage modifiers; their `active_modifiers` is simply
-`[]`. The `copy_active_modifiers()` helper (`apps/jobs/models.py`)
-returns a list copy; legacy dict values (from an older encoding) collapse
-to `[]`.
+**`active_modifiers` is always a list.** `active_modifiers` on `Task`,
+and `default_active_modifiers` on `ServiceItem`, are always a **list** of
+modifier keys — never a dict. The `copy_active_modifiers()` helper
+(`apps/jobs/models.py`) returns a list copy; legacy dict values (e.g. an
+old `{'flat_fee_price': …}` encoding) collapse to `[]`.
 
 ### 2.4 Effective rate and compute
 
 ```python
 RateScheme.effective_rate(active_modifiers)
-    flat_fee
-        → self.rate
     elapsed_time / entered_qty
         → rate * (1 + sum(m.percent for m in modifiers if m.key in active_modifiers) / 100)
+    percentage
+        → raises ValueError (computes at the document layer, not per-unit)
 
 RateScheme.compute_charge(qty, active_modifiers)
     → qty * effective_rate(active_modifiers)
@@ -186,14 +191,13 @@ removed.
 
 ### 2.5 Reference checks
 
-`RateScheme.is_referenced()` returns `True` if any `PlanTask`, `Task`,
-or `ServiceItem` points at this service price.
+`RateScheme.is_referenced()` returns `True` if any `Task` or
+`ServiceItem` points at this service price.
 
 `RateScheme.reference_counts()` returns:
 
 ```python
 {
-    'plan_task_count':     PlanTask.objects.filter(rate_scheme=self).count(),
     'task_count':          Task.objects.filter(rate_scheme=self).count(),
     'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
 }
@@ -246,9 +250,9 @@ In one transaction:
 
 The chain is preserved without auto-collapse:
 `A.replaced_by → B.replaced_by → C` stays navigable. Existing
-`PlanTask` / `Task` / `ServiceItem` rows always keep their FK to the
-entry they were created with — no migration of historical references
-on supersede, ever. That's how billing history is preserved.
+`Task` / `ServiceItem` rows always keep their FK to the entry they were
+created with — no migration of historical references on supersede, ever.
+That's how billing history is preserved.
 
 `supersede()` raises `ValueError` if the entry is already superseded.
 
@@ -282,7 +286,6 @@ units list (`apps/core/units.get_units_list`).
     "detail": "Scheme is referenced; create a new version instead of editing.",
     "supersede_url": "https://.../api/rate-schemes/{id}/supersede/",
     "reference_counts": {
-        "plan_task_count":     5,
         "task_count":          12,
         "service_item_count": 1
     }
@@ -303,8 +306,7 @@ Conflict** with a message identifying the template:
 > Template "Hourly Labor — assembly" references a superseded
 > RateScheme. Update the template before adding tasks from it.
 
-Same guard fires on `WorksheetService.add_task_from_template` if no
-explicit `rate_scheme_id` override is supplied.
+The same guard fires on `TaskService.create_from_template`.
 
 The shop owner is forced to deliberately decide whether the template
 should adopt a new entry or pick a different one. Silent retroactive
@@ -319,79 +321,77 @@ set for the outdated-schemes view.
 
 ### 3.7 PROTECT cascade
 
-`replaced_by`, `Task.rate_scheme`, `PlanTask.rate_scheme`, and
-`ServiceItem.rate_scheme` all use `on_delete=PROTECT`. An entry that
+`replaced_by`, `Task.rate_scheme`, and `ServiceItem.rate_scheme` all use
+`on_delete=PROTECT`. An entry that
 has entered the lineage is effectively un-deletable — orphaning a
 work item or breaking the supersession chain is structurally
 impossible.
 
 ---
 
-## 4. Task / PlanTask billing
+## 4. Task billing (and the Fee atom)
 
-Both `Task` and `PlanTask` carry billing identity directly via
-`TaskBase` (the abstract base in `apps/jobs/models.py`). The full
-field shape lives in `docs/designs/jobs-tasks-and-worksheets.md`.
-Recap of the billing fields:
+`Task` carries billing identity directly via `TaskBase` (the abstract
+base in `apps/jobs/models.py`). The full field shape lives in
+`docs/designs/jobs-tasks-and-worksheets.md`. Recap of the billing fields:
 
-| Field | On TaskBase / Task / PlanTask | Notes |
+| Field | On TaskBase / Task | Notes |
 |---|---|---|
-| `rate_scheme` | declared on Task and PlanTask | FK to `RateScheme` (PROTECT). NOT NULL on both. |
-| `active_modifiers` | declared on Task and PlanTask | JSON list of modifier keys (always a list, never a dict — see §2.3) |
-| `est_qty` | inherited from `TaskBase` | nullable on Task; `PlanTask.clean()` rejects null |
+| `rate_scheme` | declared on Task | FK to `RateScheme` (PROTECT). NOT NULL at the DB level. |
+| `active_modifiers` | declared on Task | JSON list of modifier keys (always a list, never a dict — see §2.3) |
+| `est_qty` | inherited from `TaskBase` | nullable on Task |
 | `est_worker_time` | inherited from `TaskBase` | DurationField for scheduling |
 | `actual_qty` | declared on Task only | Decimal nullable; worker-entered for `entered_qty` schemes |
 
-### 4.1 compute_amount and effective_rate
+### 4.1 compute_amount, compute_estimate_amount, effective_rate
 
-Both models implement the uniform atom interface
-`compute_amount(active_modifiers=None) → Decimal`:
+`Task` implements the uniform atom interface
+`compute_amount(active_modifiers=None) → Decimal` (the **invoice** view —
+bills actuals) plus a parallel `compute_estimate_amount()` (the
+**estimate** view — bills `est_qty`):
 
 ```python
 class Task:
     def compute_amount(self, active_modifiers=None):
+        # Invoice side: qty from actuals (bleps / actual_qty).
         qty = self.rate_scheme.get_actual_qty(self)  # algorithm-aware
         charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
         return charge.quantize(Decimal('0.01'))
 
-class PlanTask:
-    def compute_amount(self, active_modifiers=None):
-        if not self.rate_scheme_id or self.est_qty is None:
-            return Decimal('0.00')
-        charge = self.rate_scheme.compute_charge(self.est_qty, self.active_modifiers)
+    def compute_estimate_amount(self, active_modifiers=None):
+        # Estimate side: qty is est_qty (what the job is *expected* to cost).
+        charge = self.rate_scheme.compute_charge(
+            self.est_qty or Decimal('0'), self.active_modifiers,
+        )
         return charge.quantize(Decimal('0.01'))
 ```
 
-Both `compute_amount` results are quantized to 2 decimal places (cents):
-`compute_charge` is `qty * effective_rate`, and a modifier-adjusted rate
-can carry more than 2 decimals, so the unrounded product would surface
-extra digits on the task detail page and in worksheet totals.
+This is the crux of **documents-as-lenses** (§7): the *estimate* projects
+`est_qty` via `compute_estimate_amount`; the *invoice* bills the locked
+`actual_qty` of a complete task via `compute_amount`. Both are quantized
+to cents: `compute_charge` is `qty * effective_rate`, and a
+modifier-adjusted rate can carry more than 2 decimals.
 
-The `active_modifiers` parameter is accepted to match the atom
-interface but is ignored — both use `self.active_modifiers`. PlanTask
-has no actuals, so it always uses `est_qty`. Task uses the algorithm
-to resolve qty:
+The `active_modifiers` parameter is accepted to match the atom interface
+but is ignored — both use `self.active_modifiers`. `compute_amount` uses
+the algorithm to resolve qty:
 
 | Algorithm | Task.compute_amount qty source |
 |---|---|
 | `elapsed_time` | sum of Blep durations in hours |
 | `entered_qty` | `task.actual_qty or 0` |
-| `flat_fee` | `task.est_qty` (fallback `1` when null) |
 
-`effective_rate()` on both returns
-`rate_scheme.effective_rate(self.active_modifiers)`.
+`effective_rate()` returns `rate_scheme.effective_rate(self.active_modifiers)`.
 
 `RateScheme.effective_rate()` for `elapsed_time` / `entered_qty`
 quantizes to 2 decimal places (cents): a percentage modifier divides by
 100, so `rate × (1 + percent/100)` can carry more than 2 places (e.g.
-`99.99 × 1.05 = 104.9895`). For `flat_fee` it simply returns `self.rate`
-(already 2-decimal). The per-unit rate is a money value that is copied
-straight onto a line item's `price` field (a 2-decimal `DecimalField`)
-when an atom carries over, so it must be trimmed at the source — every
-caller that uses it as a price (the estimate wizard's single-atom and
-"send all atoms" paths, the bundle summary, the source-pool detail) is
-then safe without having to remember its own `.quantize()`. This is the
-rate-side analog of the `elapsed_time` qty quantization in §3.
+`99.99 × 1.05 = 104.9895`). The per-unit rate is a money value that is
+copied straight onto a line item's `price` field (a 2-decimal
+`DecimalField`), so it must be trimmed at the source — every caller that
+uses it as a price (the estimate wizard's single-atom and "send all
+atoms" paths, the bundle summary, the source-pool detail) is then safe
+without having to remember its own `.quantize()`.
 
 ### 4.2 actual_qty semantics
 
@@ -399,7 +399,6 @@ rate-side analog of the `elapsed_time` qty quantization in §3.
 |---|---|
 | `elapsed_time` | unused; should stay `None` (qty derived from Bleps) |
 | `entered_qty` | what the worker entered; `None` until entered |
-| `flat_fee` | unused; should stay `None` |
 
 The "Actual qty" input on `TaskDetailPage` writes `actual_qty`; only
 visible for `entered_qty` schemes.
@@ -410,12 +409,45 @@ visible for `entered_qty` schemes.
 |---|---|
 | `elapsed_time` | estimated billable hours (often equals `est_worker_time` but doesn't have to) |
 | `entered_qty` | estimated piece / minute count |
-| `flat_fee` | the billable quantity (e.g. number of holes); the charge is `rate_scheme.rate × est_qty` |
 
 `est_qty` is **never** modified by work activity. It stays as the
-estimate. `actual_qty` and Bleps capture what happened. This
-separation enables estimate-vs-actuals reporting (not yet built;
-see §14).
+estimate (and drives `compute_estimate_amount`). `actual_qty` and Bleps
+capture what happened (and drive `compute_amount`). This separation
+enables estimate-vs-actuals reporting (not yet built; see §16).
+
+### 4.4 Material as a billable atom
+
+`Material` (`apps/inventory/models.py`) is the second billable atom on
+the Job. It implements `compute_amount() → quantity × sell_price`,
+exposes `effective_accounting_category`, and is claimed by a line item
+exactly like a Task. Full model shape is in
+`materials-inventory-and-purchasing.md`.
+
+### 4.5 Fee — the fixed-charge atom
+
+`Fee` (`apps/jobs/models.py`, `db_table = 'fees'`) is the third billable
+atom and the **crystallized form of an accepted hand-line** (§9). It is a
+pure pricing decision, not a record of work:
+
+| Field | Type | Notes |
+|---|---|---|
+| `fee_id` | AutoField PK | |
+| `job` | FK → Job (CASCADE, `related_name='fees'`) | owning job |
+| `task` | OneToOne → Task (SET_NULL, nullable) | optional link to the work behind the charge |
+| `description` | CharField(255), blank | |
+| `quantity` | Decimal(10,2), default `1.00` | |
+| `unit_rate` | Decimal(10,2) | **required** |
+| `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
+| `sort_order` | PositiveInteger, default 0 | |
+
+`Fee.compute_amount() → (quantity × unit_rate).quantize('0.01')`;
+`effective_accounting_category` returns its own `accounting_category`;
+`units` is `'none'`. A Fee has no lifecycle and no actuals — it is
+**always billable** (unlike a Task, which must be `complete`, or a
+Material, which must be `consumed`). Writes go through `FeeService`
+(`apps/jobs/services.py`) — `create_on_job` / `update` / `delete`, all
+respecting the job's on-hold guard — and the API at
+`POST /api/jobs/{id}/fees/`.
 
 ---
 
@@ -498,8 +530,10 @@ in `architecture-and-conventions.md` §9; it runs daily.
 3. Copies line items field-by-field and **moves** each line's
    `EstimateLineItemSource` rows onto the revision (reassigns the FK, not a
    copy — the source `unique_together` forbids two claims on one atom). So a
-   revision stays worksheet-backed and the atom remains claimed exactly once;
-   a source is lost only when the user deletes that line.
+   revision stays atom-backed and the job atom remains claimed exactly once;
+   a source is lost only when the user deletes that line. (The superseded
+   estimate keeps its frozen line items but no longer references the atoms —
+   the new revision is the live lens over them.)
 4. Marks the parent `superseded`.
 5. Snapshots the live deliverables onto the now-superseded parent
    (`DeliverableService.snapshot_document(estimate=parent)`), freezing the
@@ -554,7 +588,7 @@ One estimate tree per job, so the estimate's identity *is* the job's: the
 `estimate_number` **is just the job number** (e.g. `JOB-2026-0001`), the same
 across every revision. The revision lives in the separate `version` field — it
 is **not** baked into the number. It is set by `EstimateService.create_for_job`
-/ `create_direct` / `EstimateWizardService.open_for_worksheet` at creation and
+/ `create_direct` at creation and
 by `revise_estimate` on each revision (which sets the same number, bumps
 `version`). The `unique_together = ['estimate_number', 'version']` constraint
 keeps revisions distinct. The customer tracks one number across the
@@ -600,7 +634,7 @@ atom(s).
 EstimateLineItemSource:
     source_id           AutoField PK
     estimate_line_item  FK → EstimateLineItem (CASCADE, related_name='sources')
-    source_type         CharField — 'plan_task' | 'plan_material'
+    source_type         CharField — 'task' | 'material' | 'fee'
     source_pk           PositiveIntegerField
 
     Meta:
@@ -608,73 +642,85 @@ EstimateLineItemSource:
         unique_together = [('source_type', 'source_pk')]
 ```
 
-Atoms are `PlanTask` and `PlanMaterial` (the worksheet-side atoms;
-the real-side equivalents — `Task` and `Material` — feed the invoice
-wizard, owned by the invoicing doc). The unique constraint on
-`(source_type, source_pk)` enforces **whole-atom claim at the database
-level**: an atom can be referenced by at most one estimate line item.
+Atoms are the Job's `Task`, `Material`, and `Fee` (`SOURCE_TASK`,
+`SOURCE_MATERIAL`, `SOURCE_FEE`). These are the **same** job atoms the
+invoice lens claims (via `InvoiceLineItemSource`, owned by the invoicing
+doc) — both documents are lenses over one set of atoms on the Job. The
+unique constraint on `(source_type, source_pk)` enforces **whole-atom
+claim at the database level**: an atom can be referenced by at most one
+estimate line item.
 
-`source.resolve()` returns the concrete atom instance.
-
-Unlike `InvoiceLineItemSource`, this constraint is **not** scoped by
-Estimate status. Worksheet revisions copy atoms (creating new
-PlanTask / PlanMaterial instances), so the constraint never needs to
-fire across revisions in practice.
+`source.resolve()` returns the concrete atom instance (`Task`,
+`Material`, or `Fee`).
 
 CASCADE on `EstimateLineItem` deletion: deleting a line item releases
-its claims. Superseding / rejecting / expiring an Estimate does **not**
-release claims on the plan side.
+its claims. On revision, `revise_estimate` **moves** the source rows onto
+the new line items (§5.3), so the live estimate is always the one lens
+over the atoms; superseding/rejecting/expiring otherwise does not touch
+claims.
 
 ### 6.3 Atom-to-line-item shapes
 
 | Source rows on a line item | What it represents |
 |---|---|
-| 0 | Manually authored, or pre-filled from a `InventoryItem` (no atom backs it) |
+| 0 | A **hand-line** — manually authored, no atom backs it (crystallizes into a `Fee` on acceptance — §9) |
 | 1 | Single-atom conversion (bulk send-all or a wizard pick of one atom) |
 | N | Wizard-grouped from multiple atoms |
 
 A single-atom line item copies the atom's description, units, qty,
 and price across. Multi-atom line items: when every atom is a task
-(`PlanTask` / `Task`) sharing one `RateScheme` and identical
-`active_modifiers`, the line is **summarized** — `units` from the
-service price, `qty` = summed quantities (`est_qty` on the estimate side,
-actuals on the invoice side), `price` = the common effective rate.
-Any other multi-atom bundle (a material atom present, mixed service prices,
-or mixed modifiers) falls back to blank description, `units = 'none'`,
-`qty = 1`, `price = sum(compute_amount)`.
+sharing one `RateScheme` and identical `active_modifiers`, the line is
+**summarized** — `units` from the service price, `qty` = summed
+quantities (`est_qty` on the estimate side, actuals on the invoice side),
+`price` = the common effective rate. Any other multi-atom bundle (a
+material or fee atom present, mixed service prices, or mixed modifiers)
+falls back to blank description, `units = 'none'`, `qty = 1`,
+`price = sum(compute_amount)`.
 
 ---
 
-## 7. Billable atoms
+## 7. Billable atoms (documents as lenses)
 
-An **atom** is a billable unit on the plan side or real side. Atoms
-implement a uniform interface:
+An **atom** is a billable unit owned by the **Job**: a `Task`,
+`Material`, or `Fee`. Atoms implement a uniform interface:
 
-- `compute_amount(active_modifiers=None) → Decimal`
+- `compute_amount(active_modifiers=None) → Decimal` (Task also has
+  `compute_estimate_amount()` — the estimate-side projection of `est_qty`)
 - a description (`atom.description` or `atom.name` for tasks)
-- units (from the rate scheme on tasks; from the atom for materials)
-- an `accounting_category` (derived for tasks; direct on materials)
-- a source-pointer identity (model + pk)
+- units (from the rate scheme on tasks; from the atom for materials; `'none'` for fees)
+- an `accounting_category` (derived for tasks via the rate scheme; direct on materials and fees)
+- a source-pointer identity (`source_type` + pk)
 
-Atom families:
+An `Estimate` and an `Invoice` are **lenses** over these job atoms: each
+document's line items optionally link to an atom via its source table
+(`EstimateLineItemSource` / `InvoiceLineItemSource`). The **estimate**
+projects `est_qty` (`Task.compute_estimate_amount`); the **invoice** bills
+the locked `actual_qty` of complete tasks (`Task.compute_amount`); Fees
+are always billable on either side. A line item with no source is a
+**hand-line**.
 
-| Plan side | Real side | Owner doc |
-|---|---|---|
-| `PlanTask` | `Task` | this doc / jobs-tasks |
-| `PlanMaterial` | `Material` | materials doc |
-| _(no plan-side)_ | `Expense` (material-less) | invoicing-and-expenses doc |
+| Atom | Owner doc | Estimate amount | Invoice amount |
+|---|---|---|---|
+| `Task` | this doc / jobs-tasks | `compute_estimate_amount` (est_qty) | `compute_amount` (actuals; task must be complete) |
+| `Material` | materials doc | `compute_amount` (qty × sell_price) | same (must be consumed) |
+| `Fee` | jobs-tasks (§4.5 here) | `compute_amount` (qty × unit_rate) | same (always billable) |
+| `Expense` (material-less) | invoicing doc | _(invoice-only)_ | `compute_amount` |
 
 Bleps are read-only detail under their task's atom; they are never
 claimed as atoms themselves. **Whole-task billing**: there is no
 business reason to split bleps from one Task across multiple line
 items; if such a need arises, the Task itself gets split first.
 
-Atom claim semantics:
+Atom claim semantics (per document):
 
-- An atom is **available** if no source row points at it.
+- An atom is **available** if no source row of that document points at it.
 - An atom is **claimed** if a source row exists pointing at it.
 - The DB-level unique on `(source_type, source_pk)` makes
-  double-claim impossible.
+  double-claim impossible within one document table.
+- **Claim state on the job detail page.** Each Task/Material/Fee
+  serializer exposes a `claimed` boolean — true iff the atom is referenced
+  by the job's **live (non-superseded) estimate**. Unclaimed atoms are
+  pre-approval / released work that no current estimate lens covers.
 
 ### Wizard-pool billability gates (invoice side)
 
@@ -697,45 +743,39 @@ the invoicer can see what is pending without being able to add it yet.
 point: it re-checks readiness when atoms are actually submitted to the wizard
 (i.e. when `add_atoms_to_new_line_item` / `add_atoms_to_line_item` resolve
 each atom), raising `ValidationError` if the readiness condition is not met.
-
-A worksheet exposes two top-level operations on its atoms:
-
-1. **Send all atoms to estimate** — bulk 1:1 conversion of every
-   unclaimed atom to its own line item with one source row.
-2. **Open wizard to group atoms** — interactive grouping of atoms
-   into one or more line items.
-
-Both produce source-backed line items. They can be run in any order
-or sequence (e.g. wizard-group some, bulk-send the rest later).
+(The estimate side has no readiness gate — it projects `est_qty`, which exists
+the moment a Task is created.)
 
 Out of scope: partial-atom billing (per-hour or per-unit slicing of a
-single atom across line items), and flat-rate task billing without
-atoms. See §14.
+single atom across line items). See §16.
 
 ---
 
 ## 8. EstimateWizardService
 
 `EstimateWizardService` (`apps/estimates/services.py`) is the
-orchestration layer for the wizard. The line-items-from-atoms logic
+orchestration layer for the wizard. It subclasses `BaseWizardService`
+(`apps/core/wizard.py`), which owns the shared line-items-from-atoms logic
 (`add_atoms_to_new_line_item`, `add_atoms_to_line_item`,
-`remove_atoms_from_line_item`, the in-sync / bundle-summary helpers) is
-shared with `InvoiceWizardService` via `BaseWizardService`
-(`apps/core/wizard.py`); `EstimateWizardService` subclasses it, supplies
-a small config block plus model hooks, and keeps the estimate-specific
-methods (`open_for_worksheet`, `get_source_pool`,
-`send_all_atoms_to_estimate`).
+`remove_atoms_from_line_item`, the in-sync / bundle-summary helpers) with
+`InvoiceWizardService`. The estimate subclass supplies a config block
+(`container_attr='estimate'`, `source_fk='estimate_line_item'`,
+`claim_conflict_exc=EstimateClaimConflict`) plus model hooks
+(`_resolve_atom`, `_atom_source_type`, `_atom_computed_amount`,
+`_atom_units`) that wire it to the Job's atoms, and `get_source_pool`.
+
+The wizard projects the **Job's own atoms** (Tasks + Materials) — there is
+no longer a worksheet source. (Fees are created by acceptance, not picked
+in the wizard.)
 
 ### 8.1 Methods
 
 | Method | Purpose |
 |---|---|
-| `open_for_worksheet(worksheet)` | Returns the worksheet's draft Estimate, creating one if none exists. Refuses if the worksheet's estimate is non-draft (the `final` worksheet should have prevented this). |
-| `get_source_pool(worksheet)` | Walks PlanTasks and PlanMaterials on the worksheet, returns a flat pool of atoms. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). |
+| `get_source_pool(estimate)` | Walks the estimate's **Job's** Tasks and Materials, returns a flat pool of atoms. Each atom carries `type` (`'task'`/`'material'`), `id`, `description`, the `qty`/`rate`/`units`/`amount` breakdown, `category_id`, and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). Task amounts use `compute_estimate_amount` (`est_qty`). |
 | `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
-| `send_all_atoms_to_estimate(worksheet)` | Bulk 1:1 conversion of every unclaimed atom on the worksheet to its own line item. Not transactionally wrapped — partial success is acceptable; caller can re-run. |
 
 Conflict handling: `add_atoms_to_*` raise `EstimateClaimConflict` when
 the unique-constraint trips (e.g. concurrent claim from another
@@ -755,20 +795,17 @@ Estimate wizard endpoints live on `EstimateViewSet`
 
 | Verb + path | Action method | Calls |
 |---|---|---|
-| `GET /api/estimates/{id}/source-pool/` | `source_pool` | `EstimateWizardService.get_source_pool(worksheet)`; returns `{atoms: []}` if no worksheet |
+| `GET /api/estimates/{id}/source-pool/` | `source_pool` | `EstimateWizardService.get_source_pool(estimate)` — drawn from the job's Tasks/Materials |
 | `POST /api/estimates/{id}/line-items-from-atoms/` | `line_items_from_atoms` | `add_atoms_to_new_line_item(estimate, atoms)` |
 | `POST /api/estimates/{id}/line-items/{lid}/add-atoms/` | `add_atoms` | `add_atoms_to_line_item(line_item, atoms)` |
 | `POST /api/estimates/{id}/line-items/{lid}/remove-atoms/` | `remove_atoms` | `remove_atoms_from_line_item(line_item, source_ids)` |
 
-Worksheet-side wizard helpers live on `EstWorksheetViewSet`
-(`apps/api/worksheets/views.py`):
+Request body shape for atoms: `{atoms: [{type: 'task'|'material', id: N}, ...]}`.
 
-| Verb + path | Action method | Calls |
-|---|---|---|
-| `POST /api/est-worksheets/{id}/send-all-atoms-to-estimate/` | `send_all_atoms_to_estimate` | `EstimateWizardService.send_all_atoms_to_estimate(worksheet)` — returns `{estimate_id, estimate_number, created_count}` |
-| `POST /api/est-worksheets/{id}/open-estimate/` | `open_estimate` | `EstimateWizardService.open_for_worksheet(worksheet)` — returns `{estimate_id, estimate_number}` without auto-claiming any atoms |
-
-Request body shape for atoms: `{atoms: [{type: 'plan_task'|'plan_material', id: N}, ...]}`.
+The estimate itself is created directly on the job — `POST /api/estimates/`
+with `{job}` (→ `EstimateService.create_for_job`), surfaced in the SPA as
+the Job overview's **"Start Estimate"** button. There is no longer a
+worksheet `open-estimate` / `send-all-atoms` endpoint.
 
 Permissions: read is `IsAuthenticated`; write actions require
 `CanManageJobs`.
@@ -785,77 +822,64 @@ Permissions: read is `IsAuthenticated`; write actions require
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Now used by the **Invoice** detail page only (manual/catalog toggle on add; field-edit on edit). The Estimate detail page no longer authors lines — Phase 6 made the estimate an atoms-only projection (see §11.3). |
 
 The invoice-side wizard is structurally parallel — same source pool,
-add-atoms, remove-atoms, in-sync rule. Components are partially
-shared (e.g. `WizardLineItemCard`, `WizardActions`); the invoice
-WizardSourcePool is its own component
-(`frontend/src/components/invoices/WizardSourcePool.svelte`) because
-the atom shape differs (Tasks + Materials, not PlanTasks +
-PlanMaterials). Pointer: invoicing doc.
+add-atoms, remove-atoms, in-sync rule. Both wizards now read the **same**
+Job atoms (Tasks + Materials). Components are partially shared (e.g.
+`WizardLineItemCard`, `WizardActions`); the invoice WizardSourcePool is
+its own component (`frontend/src/components/invoices/WizardSourcePool.svelte`)
+because the invoice pool also surfaces billability gates (task complete /
+material consumed) and Expenses. Pointer: invoicing doc.
 
 ---
 
-## 9. Atom carry-over (Worksheet → Job)
+## 9. Acceptance — crystallizing hand-lines into Fees
 
-When an `Estimate` transitions to `accepted`, the
-`estimate_accepted` signal fires
-(`apps/estimates/signals.py:trigger_atom_carry_over` receiver), which
-calls `AtomCarryOverService.carry_over_for_estimate(estimate)`.
+When an `Estimate` transitions to `accepted`, the `estimate_accepted`
+signal fires (`apps/estimates/signals.py` receiver), which calls
+`EstimateAcceptanceService.on_accept(estimate)`
+(`apps/estimates/acceptance.py`).
 
-### 9.1 What carries
+In the job-owns-atoms model the work already lives on the Job
+(Tasks/Materials were created directly), so there is **nothing to copy
+from a worksheet** — the old `AtomCarryOverService` /
+`materialize_worksheet_onto_job` carry-over is gone. Acceptance instead
+**crystallizes the estimate's hand-lines into Fees** so the agreed price
+of a hand-authored line becomes a real, billable job atom.
 
-`AtomCarryOverService` (`apps/estimates/carry_over.py`) does its work
-in one `transaction.atomic()` block:
+### 9.1 What `on_accept` does
 
-**Phase A — worksheet atoms** (only if the job has a worksheet):
-delegates to the shared `JobService.materialize_worksheet_onto_job(job,
-worksheet)` core (the same core behind the manual
-`copy_from_worksheet`, so the two paths can't drift). It:
+In one `transaction.atomic()` block:
 
-- Turns each `PlanTask` into a `Task` via
-  `TaskService.create_direct(**pt.copy_fields(), source_plan_task=pt,
-  actual_qty=None, allow_superseded_scheme=True)`. `copy_fields()`
-  carries `name`, `description`, `sort_order`, `est_worker_time`,
-  `est_qty`, `rate_scheme_id`, `active_modifiers`; `source_plan_task`
-  is the idempotency hook; `parent_task` stays None (hierarchy emerges in
-  execution). The superseded-scheme bypass lets a worksheet built on a
-  since-superseded service price still carry over.
-- Turns each `PlanMaterial` (task-attached and task-less) into a
-  `Material` via `MaterialService.create_on_job(**pm.copy_fields(),
-  source_plan_material=pm, task=…)`, pairing to the `Task` carried from
-  its `PlanTask` (looked up through `Task.source_plan_task`).
-  `copy_fields()` carries `units` along with the other material fields.
-- Ends with `InventoryService.create_earmarks_for_job(job)`, so accepting
-  an estimate earmarks its inventoried materials.
+1. For each `EstimateLineItem` on the accepted estimate that has **no
+   source row** (a hand-line) and is **not** a percentage adjustment
+   (`adjustment_service_id is None`), create a `Fee` on the job:
+   - `description = li.description`, `quantity = li.qty or 1`,
+     `unit_rate = li.price or 0`,
+     `accounting_category = li.accounting_category`,
+     `sort_order = li.line_number or 0`.
+   - Then record an `EstimateLineItemSource` with `source_type='fee'`
+     pointing at the new Fee, so the line is now atom-backed and
+     `copy_from_estimate` (invoice side) can trace which hand-line maps
+     to which Fee and claim it.
+2. Atom-backed lines (those that already have an `EstimateLineItemSource`
+   for a Task / Material) are skipped — their atoms are already on the
+   job. Adjustment lines stay document-only (they recompute against the
+   live lines and never become Fees).
+3. Call `InventoryService.create_earmarks_for_job(job)`, so accepting an
+   estimate earmarks the job's inventoried materials.
 
-Because the core sets provenance on every atom, using the manual
-`copy_from_worksheet` button first and *then* accepting the estimate does
-**not** double up — the second pass skips atoms already carried.
-
-> **Removed (2026-06, estimate consolidation).** There is no longer a
-> "Phase B" line-item carry-over. Estimate line items are a pure projection of
-> the Plan (the worksheet's `PlanTask`s / `PlanMaterial`s) plus adjustments —
-> direct line authoring and the `source_template` field were both removed, so
-> the **only** carry-over is the worksheet-atom pass above (Phase A). (Invoice
-> line authoring still exists and is deferred to a later consolidation pass.)
+`on_accept` returns `{'fees_created': int}`.
 
 ### 9.2 Idempotency
 
-Each kind of carry-over has a different idempotency key:
-
-| Carry-over | Idempotency key |
-|---|---|
-| Worksheet PlanTask → Task | `Task.source_plan_task` (OneToOne; same PlanTask cannot carry over twice) |
-| Worksheet PlanMaterial → Material | `Material.source_plan_material` |
-
-Re-firing the signal (e.g. by saving the estimate again) is safe — the
-shared core (Phase A) and each `_create_*_from_line_item` (Phase B)
-check the appropriate filter and skip. The earmark step is an absolute
-aggregate sweep, so it is idempotent on re-run too.
+Because each crystallized hand-line gets a `fee` source row, re-firing
+acceptance would find those lines already source-backed and skip them —
+the same guard that protects atom-backed lines. The earmark step is an
+absolute aggregate sweep, so it is idempotent on re-run too.
 
 ### 9.3 Job status side effects
 
-Separate from carry-over, `estimate_status_changed_for_job` walks the
-Job's status when its estimate moves, via the receiver in
+Separate from acceptance crystallization, `estimate_status_changed_for_job`
+walks the Job's status when its estimate moves, via the receiver in
 `apps/estimates/signals.py`. Two symmetric invariants:
 
 - **Estimate accepted ⇒ Job approved.** An estimate reaching `accepted`
@@ -889,13 +913,12 @@ no PLI; Expenses).
 |---|---|
 | `RateScheme` | own field, required |
 | `Task` | `task.rate_scheme.accounting_category` (via `Task.effective_accounting_category`) |
-| `PlanTask` | `plan_task.rate_scheme.accounting_category` (via `PlanTask.effective_accounting_category`) |
 | `ServiceItem` | `template.rate_scheme.accounting_category` (via `ServiceItem.effective_accounting_category`) |
 | `Material` (PLI-linked) | `material.inventory_item.accounting_category` (copy/derivation; materials doc owns this) |
 | `Material` (freeform) | direct on the material |
+| `Fee` | own field, required (NOT NULL) |
 | `EstimateLineItem` from atom | derived from the atom's effective AC at line-item creation; snapshot |
-| `EstimateLineItem` from PLI | from `pli.accounting_category`; snapshot |
-| `EstimateLineItem` manual | user-entered |
+| `EstimateLineItem` hand-line | user-entered (carried onto the crystallized `Fee` on acceptance) |
 
 Each model that has an `effective_accounting_category` property
 exposes it for serializers and the wizard's pool building. Wizard
@@ -931,14 +954,12 @@ Top-down:
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
    buttons.
-3. **Field table** — estimate number, job link, worksheet link (a link
-   to the worksheet detail page at `#/worksheets/{id}`, or "None" if no
-   worksheet is attached), version, status, dates.
+3. **Field table** — estimate number, job link, version, status, dates.
 4. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
-   an actions row with an **"Add Adjustment"** button and, if a worksheet is
-   attached, a **"Customize Client View"** link to the wizard at
-   `#/estimates/{id}/wizard`. There is no "Add Line Item" button — estimate
-   lines are a pure projection of the Plan, authored/edited via the wizard.
+   an actions row with an **"Add Adjustment"** button and a **"Customize
+   Client View"** link to the wizard at `#/estimates/{id}/wizard`. Estimate
+   lines are a projection of the Job's atoms (plus hand-lines and
+   adjustments), authored/edited via the wizard.
 5. **Line items table** (`LineItemTable.svelte`) — line items with **reorder
    only** (move-up / move-down arrows) when editable, plus an "⚠ out of sync
    with atoms" marker on any line whose stored price no longer matches its
@@ -952,7 +973,7 @@ Top-down:
 | `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
 | `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
 | `draft` | "Add Adjustment" | opens `AdjustmentModal` (percentage `RateScheme`) |
-| `draft` | "Customize Client View" (navigation link) | navigates to the wizard at `#/estimates/{id}/wizard` |
+| `draft` | "Customize Client View" (navigation link) | navigates to the wizard at `#/estimates/{id}/wizard` (always available — the wizard projects the job's atoms) |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
@@ -961,8 +982,8 @@ Editing rules: `canEdit = canManageJobs && status === 'draft'`.
 ### 11.3 Line item authoring — estimate vs invoice
 
 **Estimate.** The estimate detail page (Client View) no longer authors line
-items — Phase 6 (2026-06 consolidation) made the estimate a pure projection of
-the Plan. Lines are created/edited/removed through the wizard ("Customize
+items — the estimate is a projection of the Job's atoms (plus hand-lines and
+adjustments). Lines are created/edited/removed through the wizard ("Customize
 Client View"); the detail page only reorders them and surfaces the "out of
 sync with atoms" marker. `POST /api/estimates/{id}/line-items/` now returns
 **405** (the GET list, per-line `PATCH`/`DELETE`, reorder, and
@@ -1004,10 +1025,10 @@ Route: `#/estimates/:id/wizard` → `EstimateWizardPage.svelte`
 
 Two columns:
 
-- **Source pool** (left) — `WizardSourcePool` shows every PlanTask
-  and PlanMaterial on the worksheet. Each atom is clickable
-  (checkbox-style) when `available`; locked-out otherwise with a
-  "claimed by …" indicator. The component binds `selectedAtoms`.
+- **Source pool** (left) — `WizardSourcePool` shows every Task and
+  Material on the **Job**. Each atom is clickable (checkbox-style) when
+  `available`; locked-out otherwise with a "claimed by …" indicator. The
+  component binds `selectedAtoms`.
 - **Line items** (right) — list of `WizardLineItemCard`s for the
   current estimate, each with its source rows expanded. Each card
   has an "Add Here" button (enabled when atoms are selected) that
@@ -1029,33 +1050,32 @@ atoms (snapshotted at mount) are left alone.
   the confirm token to the discard-draft path on `EstimateService.discard_draft`).
 - **Return** — navigate to `/estimates/{id}` (the detail page).
 
-### 12.3 Wizard entry from worksheet
+### 12.3 Wizard entry
 
-The Worksheet detail page (`WorksheetDetailPage.svelte`) has:
-
-- "Send all atoms to estimate" — `POST /api/est-worksheets/{id}/send-all-atoms-to-estimate/`,
-  then navigate to the estimate detail page.
-- "Open wizard to group atoms" — `POST /api/est-worksheets/{id}/open-estimate/`
-  (creates the draft estimate without claiming atoms), then navigate
-  to `/estimates/{eid}/wizard`.
+The estimate (and its wizard) is reached from the Job overview's
+**Estimate** pillar: "Start Estimate" creates the draft estimate directly
+on the job (`POST /api/estimates/` with `{job}`), and "Customize Client
+View" opens the wizard at `#/estimates/{id}/wizard`. There is no longer a
+worksheet page or worksheet-side wizard entry.
 
 ---
 
 ## 13. Signals
 
-Three signals, all defined in `apps/estimates/signals.py` and fired
-by `Estimate.save()`. Brief recap; the receiver-by-receiver
-behavior lives in `docs/designs/jobs-tasks-and-worksheets.md` §13.
+Two signals, defined in `apps/estimates/signals.py` and fired by
+`Estimate.save()`. Brief recap; the receiver-by-receiver behavior lives
+in `docs/designs/jobs-tasks-and-worksheets.md` §13. (The former
+`estimate_status_changed_for_worksheet` signal was removed with the
+worksheet layer.)
 
 | Signal | Fires when | Receiver | Effect |
 |---|---|---|---|
-| `estimate_status_changed_for_worksheet` | worksheet-status mapping changes | `update_estworksheet_status` | bulk-updates linked EstWorksheets to draft/final/superseded |
 | `estimate_status_changed_for_job` | draft→open, any→accepted, or open→{rejected, expired} | `update_job_status` | walks the Job through submitted/approved/rejected with HistoryEntry rows (see §9.3) |
-| `estimate_accepted` | any→accepted | `trigger_atom_carry_over` | calls `AtomCarryOverService.carry_over_for_estimate(estimate)` |
+| `estimate_accepted` | any→accepted | acceptance receiver | calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes hand-lines into Fees and earmarks the job (§9) |
 
-The `estimate_accepted` signal is the one this doc owns. The other
-two are summarized here only so the carry-over fits into the
-estimate-acceptance picture; their full behavior is in jobs-tasks.
+The `estimate_accepted` signal is the one this doc owns. The other is
+summarized here only so acceptance fits into the picture; its full
+behavior is in jobs-tasks.
 
 ---
 
@@ -1073,16 +1093,14 @@ accepted ChangeOrder's line-item deltas, composed by §14.6 below.
 ### 14.1 What a CO is (and isn't)
 
 A CO carries **less than a job's worth of change**. Significant
-restructurings (new worksheet, fresh PlanTasks, a re-run of the
-wizard) are not COs — they're "cancel and start a new job" territory
+restructurings (a wholesale re-scope, a re-run of the estimate wizard)
+are not COs — they're "cancel and start a new job" territory
 (`cancelled-with-invoice` for closing the current job early; see
 `invoicing-and-expenses.md`). Consequences baked into the model:
 
-- A CO never touches the planning side. No worksheet, no PlanTasks, no
-  wizard. The CO authoring path is direct line-item composition only
-  (manual entry, or pulls from `ServiceItem` / `InventoryItem`),
-  mirroring the *direct-estimate* line-item path rather than the
-  worksheet path.
+- A CO is **document-only**: direct line-item composition (manual entry,
+  or pulls from `ServiceItem` / `InventoryItem`). It does not project or
+  mutate the Job's atoms, and it never runs the estimate wizard.
 - **No automated Task/Material changes.** Accepting a CO does not
   spawn, mutate, or cancel any Task or Material. Accepting it advances
   the parent Job and updates the agreement-of-record, full stop. The
@@ -1401,8 +1419,8 @@ What happens on send (the cross-doc framing is in
    the Job overview Email panel and participates in reply correlation).
 3. On send success, transition `draft → open` (using `Estimate.save()`,
    so all the normal side effects from §5.1 still fire — `sent_date`
-   gets stamped, `expiration_date` gets computed, the worksheet status
-   maps, the Job goes to `submitted`).
+   gets stamped, `expiration_date` gets computed, the Job goes to
+   `submitted`).
 4. On SMTP failure, the exception re-raises so the API view returns
    502; the outbound EmailRecord persists with `last_send_error`
    populated, the Estimate stays `draft`.
@@ -1566,30 +1584,7 @@ transitions the CO `draft → open`.
   project-wide line-item AC-NOT-NULL migration tracked in
   `architecture-and-conventions.md`.
 
-- **Review `AtomCarryOverService.carry_over_for_estimate` in detail.**
-  The current behaviour is documented in §9 — a single Phase A worksheet
-  atom copy (PlanTask → Task, PlanMaterial → Material), idempotency keyed
-  by `source_plan_task` / `source_plan_material`. (Phase B direct-estimate
-  line-item spawn was removed in the 2026-06 consolidation.) Review against
+- **Review `EstimateAcceptanceService.on_accept` in detail.** The current
+  behaviour is documented in §9 — crystallize each hand-line into a `Fee`
+  (recording a `fee` source link), then earmark the job. Review against
   real estimate-accept scenarios and revise if needed.
-
-- **Worksheet lock-on-generate vs lock-on-send (open question).** When
-  an Estimate is generated from a worksheet, the current code keeps the
-  worksheet in `draft` until the Estimate transitions out of `draft`
-  (mapped by `Estimate._get_worksheet_status`: `draft → draft`,
-  `open/accepted/rejected → final`, `superseded → superseded`). This
-  allows both surfaces to be refined together until "Send Estimate"
-  flips both to locked. The alternative — lock the worksheet on
-  generation regardless of estimate status — is stricter and matches
-  the older mental model. Either policy is defensible; revisit if the
-  edit-both-in-draft mode causes confusion.
-
-- **Estimate send (PDF + email).** The "Send Estimate" button on
-  `EstimateDetailPage` is a disabled stub. When built, follow the PO
-  pattern in `PurchaseOrderEmailService.send_po`: rely on the
-  `@history` decorator on `Estimate` to capture the status change
-  (`draft → open` via `mark_open`), then hand-write an `action`
-  HistoryEntry to record the email-send event with the recipient
-  list (the recipients aren't model fields, so the decorator has
-  nothing to capture for them). Pair with PDF generation (parallel
-  to `apps/purchasing/pdf.py`) and reuse `OutboundEmailService.send_email`.

@@ -1,21 +1,25 @@
 # Materials, Inventory & Purchasing
 
 This document is the consolidated reference for the inventory catalog
-(`InventoryItem`), the materials lifecycle (`Material` / `PlanMaterial`,
-earmarks, consumption state), the configurable units system, and purchasing
+(`InventoryItem`), the materials lifecycle (`Material`, earmarks,
+consumption state), the configurable units system, and purchasing
 (POs, Bills, receiving, PO ↔ Material integration).
+
+> **Job-owns-atoms model.** A `Material` is created **directly on the
+> Job** (via the Work surface or a job-attributed PO line); the former
+> worksheet-side `PlanMaterial` and worksheet→job carry-over are
+> **removed**. `Material` is a billable **atom** (alongside `Task` and
+> `Fee`) that the estimate and invoice lenses claim.
 
 Sibling docs:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer pattern,
   `LineItemMixin`, `LineItemService.delete_line_item_with_renumber`,
   delete-confirm pattern.
-- `docs/designs/jobs-tasks-and-worksheets.md` — `Job`, `Task`, `EstWorksheet`,
-  `PlanTask`, `WorkTemplate`, populate-from-template / -estimate /
-  -worksheet paths.
+- `docs/designs/jobs-tasks-and-worksheets.md` — `Job`, `Task`, `Fee`,
+  `WorkTemplate`, populate-from-template path, the Work surface.
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
-  (Materials are atoms), atom carry-over (`PlanMaterial → Material` on
-  estimate accept), AccountingCategory pass-through.
+  (Materials are atoms), AccountingCategory pass-through.
 - `docs/designs/invoicing-and-expenses.md` — `Invoice` /
   `InvoiceLineItem`, expense-bound Materials.
 - `docs/designs/quickbooks-integration.md` — Bill QBO sync.
@@ -30,15 +34,18 @@ The data model splits into three layers:
 
 | Layer | Models | Purpose |
 |---|---|---|
-| Inventory | `InventoryItem` (was `InventoryItem`) | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
-| Plan & instance | `MaterialBase` (abstract) → `PlanMaterial`, `Material`, `TemplateMaterialAssociation` | Materials live on Worksheets (`PlanMaterial`), Jobs (`Material`), or Templates (`TemplateMaterialAssociation`) |
+| Inventory | `InventoryItem` | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
+| Instance | `MaterialBase` (abstract) → `Material`, `TemplateMaterialAssociation` | Materials live on Jobs (`Material`) or Templates (`TemplateMaterialAssociation`) |
 | Procurement | `PurchaseOrder`, `PurchaseOrderLineItem`, `Bill`, `BillLineItem`, `BillPayment` | Order goods from vendors, receive them, record vendor invoices, record payments against bills |
 
-A `Material` on a Job represents a *commitment*. Every item-backed Material
-holds an `Earmark` against the linked InventoryItem from the moment the
-Material is created (universal tracking). Earmarks are released by Consume (decrements QOH and
-shrinks the earmark) or by Restock (shrinks the earmark, leaves QOH
-alone).
+A `Material` on a Job represents a *commitment*. It is created directly on
+the Job (Work surface, PO line, or template populate — there is no
+worksheet stage). Every item-backed Material holds an `Earmark` against
+the linked InventoryItem **from the moment the Material is created**
+(universal tracking) — there is no longer a deferred "earmark on
+estimate acceptance" step for plan materials. Earmarks are released by
+Consume (decrements QOH and shrinks the earmark) or by Restock (shrinks
+the earmark, leaves QOH alone).
 
 PO line items integrate with this model via `Material.po_line_item`:
 adding a job-attributed PO line creates (or claims) a Material on that
@@ -153,9 +160,8 @@ access to inventory items requires **either** `can_manage_financials` **or**
 
 ### MaterialBase abstract
 
-`apps/inventory/models.py` — fields shared by `PlanMaterial`,
-`Material`, and (via the related-but-separate `TemplateMaterialAssociation`)
-the template side.
+`apps/inventory/models.py` — fields shared by `Material` and (via the
+related-but-separate `TemplateMaterialAssociation`) the template side.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -189,7 +195,6 @@ Concrete job-side material that participates in QOH/earmark flows.
 | `consumption_state` | choices `pending` / `consumed` | Default `pending` |
 | `restocked_qty` | `Decimal(10,2)` default 0 | Tracks expense-bound restock for QOH reversal |
 | `po_line_item` | FK SET_NULL `related_name='+'` | Optional PO line attribution |
-| `source_plan_material` | OneToOne SET_NULL | Carry-over idempotency key |
 
 `task` SET_NULL is deliberate: deleting a `Task` leaves Materials on
 the Job as task-less rather than orphaning their earmarks. Job
@@ -204,9 +209,9 @@ when one real-world purchase covers several jobs' needs. Uniqueness
 is not enforced at the DB level so that future model can be allowed
 without a migration.
 
-`source_plan_material` is the carry-over key used by
-`AtomCarryOverService` (see `docs/designs/estimates-and-prices.md`)
-to dedupe `PlanMaterial → Material` on estimate accept.
+(The former `source_plan_material` carry-over idempotency key was removed
+with the planning layer — Materials are authored directly on the Job, so
+there is nothing to carry over from.)
 
 #### Validation
 
@@ -217,13 +222,13 @@ to dedupe `PlanMaterial → Material` on estimate accept.
 
 #### `unit_cost` provenance & expenses (cost-model redesign 2026-06-14)
 
-`Material.unit_cost` comes from: PLI catalog (`_populate_from_pli` / carry-over),
+`Material.unit_cost` comes from: PLI catalog (`_populate_from_pli`),
 a PO line (`resolve_or_create_for_line(unit_cost=li.price)`), or — for a
 **cost-expense** — the user-entered `price` at creation (`create_on_job`,
 `cost_source='document'`). A **freeform** (no-PLI) actual Material's cost is still
 document-sourced only (no manual typing): `create_on_job`'s `cost_source` guard +
 `MaterialSerializer.validate` + the material-modal disabling the Unit Cost field
-when freeform. PLI materials and `PlanMaterial` estimates are unaffected.
+when freeform. PLI materials are unaffected.
 
 **Expenses & materials** (driven by `ExpenseService`): expenses **never link an
 existing material** — they only create their own (no recost, no clobber, no
@@ -240,24 +245,16 @@ division; the earlier link/unlink machinery was removed). Two modes:
   receipt tops up QOH, the existing material consumes once. See
   `docs/designs/invoicing-and-expenses.md` (Expense).
 
-### PlanMaterial
+### ~~PlanMaterial~~ (removed)
 
-`apps/inventory/models.py` — `PlanMaterial`, `db_table='plan_materials'`.
-
-Worksheet-side mirror. No QOH or earmark side effects.
-
-| Field | Type | Notes |
-|---|---|---|
-| `est_worksheet` | FK CASCADE | **Required** |
-| `plan_task` | FK CASCADE nullable | Optional PlanTask attachment |
-
-`PlanMaterial.clean()` enforces
-`plan_task.est_worksheet_id == est_worksheet_id` when `plan_task` is
-set.
+> **Removed.** `PlanMaterial` (`plan_materials`) was the worksheet-side
+> mirror of `Material`. It is gone with the planning layer — materials are
+> authored directly on the Job as `Material` rows. There is no
+> worksheet-side material model.
 
 ### PLI-linked vs freeform: the immutability rule
 
-A `Material` (or `PlanMaterial`) with a non-null `inventory_item` is a
+A `Material` with a non-null `inventory_item` is a
 faithful instance of that PLI. The labelling/categorization fields —
 `description`, `units`, `accounting_category` — are populated from the
 PLI at create time and locked thereafter. To change any of those, the
@@ -277,7 +274,7 @@ optional `propagate_to_pli` flag that, when true, also updates the
 linked PLI's `purchase_price` / `selling_price` in the same
 transaction. The propagate action is open to any authenticated user
 (deliberate carve-out from `can_manage_financials`). See
-`MaterialService.update_pricing` and `InventoryService.update_plan_material_pricing`.
+`MaterialService.update_pricing`.
 
 **Invoice freeze on `sell_price` and `unconsume`.** Once a Material is on a
 non-cancelled invoice (i.e. `InvoiceClaimService.is_invoiced('material', pk)`
@@ -450,18 +447,19 @@ Receipt only bumps QOH.
 ### Earmark lifecycle on a Job
 
 - **Created** when an item-backed Material is added to the Job (any
-  task or job-scoped path: manual add, template population,
-  worksheet-to-job copy, PO line creation, expense submit). Under universal
-  tracking this is every goods-Material, not just inventoried ones.
+  task or job-scoped path: Work-surface add, template population, PO line
+  creation, expense submit). Under universal tracking this is every
+  goods-Material, not just inventoried ones.
 - **Released** as Materials Consume/Restock through normal flows. The
   `Job → work_complete` transition runs
   `InventoryService.release_earmarks_for_job(job)` to sweep any
   remaining balance.
-- **Aggregator (`create_earmarks_for_job`)** runs at the end of each
-  populate path (`populate_from_template`, `populate_from_estimate`,
-  `copy_from_worksheet`) as a defensive re-aggregation. Under the
-  current regime where every Material write goes through
-  `MaterialService.create_on_job`, this is effectively a no-op.
+- **Aggregator (`create_earmarks_for_job`)** runs at the end of the
+  `populate_from_template` path and on **estimate acceptance**
+  (`EstimateAcceptanceService.on_accept`) as a defensive re-aggregation.
+  Under the current regime where every Material write goes through
+  `MaterialService.create_on_job` (which earmarks on creation), this is
+  effectively a no-op.
 
 ### Inventory history trail (InventoryHistory)
 
@@ -487,21 +485,14 @@ existing `@history` → JobHistory), and global/searchable.
 
 ---
 
-## 6. PlanMaterial (worksheet mirror)
+## 6. ~~PlanMaterial~~ (removed)
 
-`apps/inventory/models.py` — `PlanMaterial`, `db_table='plan_materials'`.
-
-Same `MaterialBase` field shape; lives on `EstWorksheet` (required) and
-optionally on a `PlanTask`. No `consumption_state`, no `restocked_qty`,
-no inventory side effects. The PLI-linked immutability rule applies in
-the same form; `update_plan_material_pricing` mirrors
-`MaterialService.update_pricing` including the `propagate_to_pli` flag.
-
-PlanMaterial → Material carry-over is handled by the atom carry-over
-service (pointer:
-`docs/designs/estimates-and-prices.md`). The carry-over uses
-`Material.source_plan_material` as the idempotency key — a second
-acceptance of the same Estimate doesn't duplicate Materials.
+> **Removed.** `PlanMaterial` (`plan_materials`) — the worksheet-side
+> material mirror — is gone with the planning layer, along with its
+> `update_plan_material_pricing` service and the
+> `Material.source_plan_material` carry-over key. Materials are authored
+> directly on the Job as `Material` rows (Work surface, PO line, template
+> populate). There is no plan→real material carry-over.
 
 ---
 
@@ -537,7 +528,7 @@ Configuration value: JSON array of strings
 ### Models with a `units` field
 
 - `InventoryItem.units`
-- `MaterialBase.units` (on `PlanMaterial`, `Material`)
+- `MaterialBase.units` (on `Material`)
 - `BaseLineItem.units` (on every line item subclass)
 - `Task.units`, `ServiceItem.units`
 
@@ -568,8 +559,8 @@ when the value is `'none'` or empty.
 `db_table='template_material_assoc'`.
 
 Pins a `InventoryItem` to a `WorkTemplate`, optionally pairing to a
-`TemplateTaskAssociation` so the generated PlanMaterial/Material
-attaches to the corresponding generated PlanTask/Task.
+`TemplateTaskAssociation` so the generated Material attaches to the
+corresponding generated Task.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -591,16 +582,15 @@ catalog was redundant.
 
 ### Generation
 
-`apps/estimates/models.py` — `WorkTemplate.generate_materials_for_worksheet`
-and `WorkTemplate.generate_materials_for_job`. Both accept
-`task_pairing` (a list of `(TemplateTaskAssociation, instance_index, …)`
-tuples returned by `generate_tasks_for_*`) and an optional
-`quantity=N` for multi-instance templates.
+`apps/estimates/models.py` — `WorkTemplate.generate_materials_for_job`.
+It accepts `task_pairing` (a list of `(TemplateTaskAssociation,
+instance_index, Task)` tuples returned by `generate_tasks_for_job`) and an
+optional `quantity=N` for multi-instance templates.
 
 For each instance × association:
 
-- If `assoc.template_task_association_id` matches a paired
-  PlanTask/Task, the generated material attaches there.
+- If `assoc.template_task_association_id` matches a paired Task, the
+  generated material attaches there.
 - Otherwise, the generated material is task-less.
 
 Pointer: `docs/designs/jobs-tasks-and-worksheets.md` covers the
@@ -1151,10 +1141,8 @@ Material edit lives on the Job detail page (covered in
 `docs/designs/jobs-tasks-and-worksheets.md`'s Job Detail section). Key
 components:
 
-- `frontend/src/components/MaterialModal.svelte` — Material create/edit;
-  freeform vs PLI-linked branches
-- `frontend/src/components/PlanMaterialModal.svelte` — same shape on
-  the worksheet side
+- `frontend/src/components/MaterialModal.svelte` — Material create/edit
+  (Work surface + full task list); freeform vs PLI-linked branches
 
 PLI-linked Material edit disables description / units /
 accounting_category and the linked PLI itself. Pricing fields stay

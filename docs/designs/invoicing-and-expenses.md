@@ -5,7 +5,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 ## What this doc owns
 
 - The `Invoice`, `InvoiceLineItem`, and `InvoiceLineItemSource` models.
-- The invoice wizard (re-aggregating real-side atoms — `Task`, `Material` — into invoice line items).
+- The invoice wizard (re-aggregating the job's atoms — `Task`, `Material`, plus `Fee` and `Expense` claims — into invoice line items).
 - The Minibini-side shape of "send an invoice to QBO": which states transition, which surfaces show what.
 - The `Expense` and `Reimbursement` models, services, and viewsets.
 - Per-expense permission scoping in the API.
@@ -14,7 +14,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 
 - Service-layer conventions, `LineItemMixin`, `StatusTransitionMixin`, two-phase delete, the line-item delete-and-renumber rule. See `docs/designs/architecture-and-conventions.md` and `CLAUDE.md`.
 - `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-tasks-and-worksheets.md`.
-- The estimate wizard (`EstimateLineItemSource`, plan-side atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
+- The estimate wizard (`EstimateLineItemSource`, the same Job atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
 - `Material` shape, `MaterialService.consume`, `is_expense_bound`, the "Materials (no task)" bucket. See `docs/designs/materials-inventory-and-purchasing.md`.
 - `Bill` (vendor-side AP, lives next to `PurchaseOrder`). See `docs/designs/materials-inventory-and-purchasing.md`.
 - OAuth, `QBOSyncLog`, payment polling, sync-failure plumbing. See `docs/designs/quickbooks-integration.md`. This doc references the push points but does not describe their internals.
@@ -25,7 +25,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 
 `apps/invoicing/models.py` — `Invoice`.
 
-One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The job is the only structural parent; an invoice does not link to an estimate or to the worksheet that produced the job.
+One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The job is the only structural parent; an invoice does not link to an estimate — it is a lens over the job's atoms (with `copy_from_estimate` as a convenience seeding path).
 
 ### Fields
 
@@ -121,36 +121,36 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 
 ### InvoiceLineItemSource
 
-Polymorphic join between `InvoiceLineItem` and the atom it represents (a real-side `Task` or `Material`). "Polymorphic" only in the sense that the atom side may be one of two model types; this is not a Django generic relation.
+Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, `Fee`, or `Expense`). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
 
 | Field | Type | Notes |
 |---|---|---|
 | `source_id` | AutoField PK | |
 | `invoice_line_item` | FK InvoiceLineItem (CASCADE) | `related_name='sources'`. |
-| `source_type` | CharField(20), choices `'task'` / `'material'` | `SOURCE_TASK = 'task'`, `SOURCE_MATERIAL = 'material'`. |
-| `source_pk` | PositiveIntegerField | The `Task.pk` or `Material.pk`. |
+| `source_type` | CharField(20), choices `'task'` / `'material'` / `'fee'` / `'expense'` | `SOURCE_TASK`, `SOURCE_MATERIAL`, `SOURCE_FEE`, `SOURCE_EXPENSE`. |
+| `source_pk` | PositiveIntegerField | The `Task.pk` / `Material.pk` / `Fee.pk` / `Expense.pk`. |
 
 `db_table = 'invoice_line_item_sources'`.
 `unique_together = [('source_type', 'source_pk')]` — DB-level enforcement of whole-atom claim. An atom cannot appear in two `InvoiceLineItemSource` rows.
 
-`InvoiceLineItemSource.resolve()` returns the concrete `Task` or `Material` instance.
+`InvoiceLineItemSource.resolve()` returns the concrete `Task` / `Material` / `Fee` / `Expense` instance.
 
-### Atoms on the real side
+### Atoms — same Job atoms as the estimate
 
-Invoice atoms differ from estimate atoms:
+Both the estimate and the invoice are **lenses** over the **same Job atoms** (see `estimates-and-prices.md` §7) — `Task`, `Material`, `Fee` — plus, invoice-only, material-less `Expense`s.
 
-| Side | Atoms |
-|---|---|
-| Estimate (plan) | `PlanTask`, `PlanMaterial` (estimate-side atom names — see estimates doc). |
-| Invoice (real) | `Task`, `Material`. |
+| Atom | Invoice billable amount | Billable when |
+|---|---|---|
+| `Task` | `task.compute_amount()` — actuals (bleps / `actual_qty`) via the `RateScheme` | `status == complete` |
+| `Material` | `quantity × sell_price` | `consumption_state == consumed` |
+| `Fee` | `quantity × unit_rate` | always |
+| `Expense` (material-less) | the expense amount | always (submitted) |
 
-A `Task`'s billable amount is `task.compute_amount()` — driven by the task's `RateScheme` (elapsed-bleps, entered qty, or flat fee). A `Material`'s amount is `quantity * sell_price`. See `InvoiceWizardService._atom_computed_amount`.
+See `InvoiceWizardService._atom_computed_amount`. The estimate side projects `est_qty` (`Task.compute_estimate_amount`) instead — the lens difference.
 
-### Unique-constraint difference vs. the estimate side
+### Whole-atom claim constraint
 
-The estimate wizard's `EstimateLineItemSource` unique constraint is **not estimate-scoped**, because plan-side atoms get duplicated on worksheet revisions and a flat global unique constraint would block the dup-and-revise pattern. See estimates doc.
-
-The invoice side uses a flat, global unique constraint — `unique_together = [('source_type', 'source_pk')]` — and that is correct here. Real-side atoms (`Task`, `Material`) are not duplicated across invoices; an atom is a single physical thing, and the constraint enforces the project's "no double billing" rule directly at the DB.
+The invoice side uses a flat, global unique constraint — `unique_together = [('source_type', 'source_pk')]`. A job atom is a single physical thing and is not duplicated across invoices, so the constraint enforces the project's "no double billing" rule directly at the DB. (The estimate side uses the same shape — see estimates doc — and on revision *moves* the source rows to the new revision rather than duplicating.)
 
 When the wizard hits a race, `InvoiceWizardService` catches `IntegrityError` and raises `ClaimConflict(atom_ids=...)`. The viewset translates this to HTTP 409 with `{'error': 'atoms_already_claimed', 'atom_ids': [...]}`.
 
@@ -158,7 +158,7 @@ When the wizard hits a race, `InvoiceWizardService` catches `IntegrityError` and
 
 - Deleting an `InvoiceLineItem` deletes its `InvoiceLineItemSource` rows (CASCADE).
 - Deleting an `Invoice` cascades to its line items, then to their sources. All claimed atoms become available again.
-- Deleting a `Task` or `Material` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
+- Deleting a `Task` / `Material` / `Fee` / `Expense` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
 
 ### Per-atom `invoice` field (API) and "Invoiced" indicator (UI)
 
@@ -242,7 +242,7 @@ includes `EstimateLineItemSourceSerializer` with the same `description` +
 
 ## Invoice wizard
 
-The invoice wizard re-aggregates real-side atoms into the invoice line items the customer wants to see. It is the structural parallel of the estimate wizard.
+The invoice wizard re-aggregates the job's atoms into the invoice line items the customer wants to see. It is the structural parallel of the estimate wizard (both are lenses over the same Job atoms).
 
 For the shared concepts — source pool, claim semantics, in-sync vs. override rule, two-pane UI shape, manual vs. bundled line items — see `docs/designs/estimates-and-prices.md`.
 
@@ -261,6 +261,12 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 | `remove_atoms_from_line_item(line_item, source_ids)` | Removes the matching source rows. Recomputes per the in-sync rule. Returns `{'line_item_deleted': bool}`. If the removal empties the source list, the line item is hard-deleted (via `LineItemService.delete_line_item_with_renumber`) regardless of override state. |
 
 `InvoiceService.discard_draft(invoice)` is the discard path — validates draft status, then hard-deletes the invoice (cascade frees all claimed atoms).
+
+### Copy from estimate (`copy_from_estimate`)
+
+`InvoiceService.copy_from_estimate(invoice)` (`POST /api/invoices/{id}/copy-from-estimate/`) seeds a fresh draft invoice from the job's **accepted-estimate agreement** (`compose_agreement(invoice.job)`) — one `InvoiceLineItem` per agreement line (description, qty, price, units, accounting_category; adjustment lines also carry `adjustment_service` + target categories). Preconditions (else `ValidationError`): the invoice is `draft`, has no existing line items, and is the only non-cancelled invoice for the job (i.e. it's the first invoice).
+
+**Fee-claim-on-copy.** A hand-line on the accepted estimate was crystallized into a `Fee` on the job at acceptance time (see `estimates-and-prices.md` §9). When `compose_agreement` surfaces such a line it carries the `source_fee_id`; `copy_from_estimate` then writes an `InvoiceLineItemSource` (`source_type='fee'`, `source_pk=fee.pk`) for that line. This claims the Fee so the wizard source pool marks it billed and the whole-atom unique constraint blocks double-billing it through the atom-pull path.
 
 ### Defaults when bundling N atoms into a new line item
 
@@ -306,7 +312,7 @@ All wizard endpoints require `IsAuthenticated` + `CanManageFinancials` (`Invoice
 
 `frontend/src/routes/invoices/InvoiceWizardPage.svelte` is the SPA route at `#/invoices/:id/wizard`. Two panes:
 
-- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the real-side `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate wizard has its own source-pool component because the atom shape and grouping differ.
+- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate wizard has its own source-pool component because the atom shape and grouping differ.
 - Right: `frontend/src/components/wizards/WizardLineItemCard.svelte` — shared with the estimate wizard. One card per line item, in-sync/override price display, atom remove buttons.
 
 Footer actions use `frontend/src/components/wizards/WizardActions.svelte` — also shared.
