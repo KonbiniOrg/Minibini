@@ -12,8 +12,8 @@ those views are being deleted as part of the broader HTML-view sunset.
 """
 
 from django.test import TestCase
-from apps.jobs.models import Job, PlanTask, RateScheme
-from apps.estimates.models import EstWorksheet, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
+from apps.estimates.models import ServiceItem
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from decimal import Decimal
@@ -36,16 +36,15 @@ class TaskDescriptionModelTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-DESC-001', contact=self.contact, status=Job.STATUS_APPROVED
         )
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.tdm_ac = AccountingCategory.objects.create(name='tdm-ac', code='TDM-AC')
         self.scheme = _make_scheme('tdm', self.tdm_ac)
 
     def test_task_can_have_description(self):
         """Task should have a description field that can be set directly."""
-        task = PlanTask.objects.create(
+        task = Task.objects.create(
             name='Described Task',
             description='This is a task description',
-            est_worksheet=self.worksheet,
+            job=self.job,
             rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
@@ -54,9 +53,9 @@ class TaskDescriptionModelTests(TestCase):
 
     def test_task_description_defaults_to_blank(self):
         """Task description should default to empty string."""
-        task = PlanTask.objects.create(
+        task = Task.objects.create(
             name='No Description Task',
-            est_worksheet=self.worksheet,
+            job=self.job,
             rate_scheme=self.scheme,
             est_qty=Decimal('1'),
         )
@@ -75,7 +74,6 @@ class TaskDescriptionFromTemplateTests(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-DESC-002', contact=self.contact, status=Job.STATUS_APPROVED
         )
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = _make_scheme('dft', self.accounting_category)
         self.service_item = ServiceItem.objects.create(
             template_name='Painting',

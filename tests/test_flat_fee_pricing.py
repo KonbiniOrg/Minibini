@@ -6,8 +6,7 @@ price lives on RateScheme.rate. See docs/designs/estimates-and-prices.md.
 import unittest
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import Task, PlanTask, RateScheme, Job
-from apps.estimates.models import EstWorksheet
+from apps.jobs.models import Task, RateScheme, Job
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
@@ -83,12 +82,3 @@ class FlatFeePricingTest(TestCase):
         )
         # rate=5.00 * est_qty=50 = 250.00
         self.assertEqual(task.compute_amount(), Decimal('250.00'))
-
-    def test_plan_task_compute_amount_flat_fee_price_on_rate(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        pt = PlanTask.objects.create(
-            est_worksheet=ws, name='Tap', rate_scheme=self.flat,
-            est_qty=Decimal('10'),
-        )
-        # rate=5.00 * est_qty=10 = 50.00
-        self.assertEqual(pt.compute_amount(), Decimal('50.00'))

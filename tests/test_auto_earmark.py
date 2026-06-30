@@ -8,12 +8,12 @@ InventoryService.create_earmarks_for_job().
 from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import (
-    Estimate, EstimateLineItem, EstWorksheet, WorkTemplate,
+    Estimate, EstimateLineItem, WorkTemplate,
     ServiceItem, TemplateTaskAssociation,
 )
-from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
+from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.jobs.services import JobService
 
 

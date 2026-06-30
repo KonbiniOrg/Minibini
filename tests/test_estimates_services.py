@@ -3,13 +3,13 @@ from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.estimates.models import (
-    Estimate, EstimateLineItem, EstWorksheet,
+    Estimate, EstimateLineItem,
     WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.estimates.services import EstimateService
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService
-from apps.inventory.models import Material, PlanMaterial
+from apps.inventory.models import Material
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact, Business

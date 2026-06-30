@@ -4,9 +4,8 @@ from io import StringIO
 from django.test import TestCase
 from django.core.management import call_command
 from apps.core.models import AccountingCategory
-from apps.jobs.models import RateScheme, Job, Task, PlanTask
+from apps.jobs.models import RateScheme, Job, Task
 from apps.contacts.models import Contact
-from apps.estimates.models import EstWorksheet
 
 
 class ValidateDataRateSchemeTest(TestCase):

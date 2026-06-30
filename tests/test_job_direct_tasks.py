@@ -6,13 +6,11 @@ Tests that:
   - TaskService.create_direct succeeds on an APPROVED job (no regression).
   - POST /api/jobs/{id}/tasks/ returns 201 for a DRAFT job.
   - The on_hold guard still rejects Task creation on an on-hold job.
-  - materialize_worksheet_onto_job STILL gates on approved/in_progress
-    (regression: the worksheet-copy path must not silently lose its guard).
 
 Note on state-bypass in test setUp:
   Job.objects.create(status=X) bypasses the state-machine check (self.pk is
   None at creation time, so full_clean skips the transition guard). This is the
-  established test pattern — see test_materialize_worksheet.py.
+  established test pattern.
 """
 
 from decimal import Decimal
@@ -22,7 +20,6 @@ from rest_framework.test import APIClient
 
 from apps.core.models import User, AccountingCategory
 from apps.contacts.models import Contact
-from apps.estimates.models import EstWorksheet
 from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskService
 

@@ -1,9 +1,14 @@
 from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import RateScheme, Task, PlanTask
+from apps.jobs.models import RateScheme, Task
 from apps.estimates.models import ServiceItem
 from apps.jobs.flat_fee_reframe import reframe_flat_fee_prices
+
+# The live PlanTask model has been removed (job-owns-atoms refactor). The
+# historical migration helper still takes a PlanTask-shaped arg (the data
+# migration passes its frozen historical model); these live-model unit tests
+# pass Task in that slot — it's empty here, so the helper just re-scans Task.
 
 
 class FlatFeeReframeTest(TestCase):
@@ -27,7 +32,7 @@ class FlatFeeReframeTest(TestCase):
         t1 = self._template('1.00')
         t2 = self._template('30.00')
         t3 = self._template('1.00')  # same price as t1 -> shares minted service
-        worklist = reframe_flat_fee_prices(RateScheme, Task, PlanTask, ServiceItem, fk_field='rate_scheme')
+        worklist = reframe_flat_fee_prices(RateScheme, Task, Task, ServiceItem, fk_field='rate_scheme')
         t1.refresh_from_db(); t2.refresh_from_db(); t3.refresh_from_db()
         self.assertEqual(t1.rate_scheme.rate, Decimal('1.00'))
         self.assertEqual(t2.rate_scheme.rate, Decimal('30.00'))
@@ -38,5 +43,5 @@ class FlatFeeReframeTest(TestCase):
 
     def test_logs_unresolved_zero_price(self):
         bad = self._template('0')
-        worklist = reframe_flat_fee_prices(RateScheme, Task, PlanTask, ServiceItem, fk_field='rate_scheme')
+        worklist = reframe_flat_fee_prices(RateScheme, Task, Task, ServiceItem, fk_field='rate_scheme')
         self.assertTrue(any(r[0] == 'ServiceItem' and r[1] == bad.pk for r in worklist))

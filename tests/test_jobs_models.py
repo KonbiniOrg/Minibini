@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from datetime import timedelta
 from decimal import Decimal
 from apps.jobs.models import Job, Task, Blep, RateScheme
-from apps.estimates.models import Estimate, EstWorksheet, WorkTemplate, ServiceItem
+from apps.estimates.models import Estimate, WorkTemplate, ServiceItem
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
 
@@ -393,29 +393,6 @@ class EstimateModelTest(TestCase):
         estimate.refresh_from_db()
         self.assertEqual(estimate.status, Estimate.STATUS_SUPERSEDED)
         self.assertIsNotNone(estimate.closed_date)
-
-
-class EstWorksheetJobLinkTest(TestCase):
-    """Phase A: EstWorksheet.job is declared directly and is required."""
-    def setUp(self):
-        self.contact = Contact.objects.create(first_name='T', last_name='C', email='t@c.com')
-        self.job = Job.objects.create(job_number="J_WS", contact=self.contact)
-
-    def test_worksheet_requires_job(self):
-        with self.assertRaises(Exception):  # IntegrityError or ValidationError
-            with transaction.atomic():
-                EstWorksheet.objects.create()
-
-    def test_worksheet_with_job_ok(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        self.assertEqual(ws.job, self.job)
-
-    def test_deleting_job_cascades_to_worksheets(self):
-        EstWorksheet.objects.create(job=self.job)
-        EstWorksheet.objects.create(job=self.job)
-        self.assertEqual(EstWorksheet.objects.filter(job=self.job).count(), 2)
-        self.job.delete()
-        self.assertEqual(EstWorksheet.objects.filter(pk__in=[]).count(), 0)
 
 
 class TaskModelTest(TestCase):

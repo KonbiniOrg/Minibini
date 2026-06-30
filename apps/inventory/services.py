@@ -511,7 +511,7 @@ class MaterialService:
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
                       inventory_item=None, accounting_category=None, units='none',
-                      source_plan_material=None, cost_source='document'):
+                      cost_source='document'):
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
         # Freeform (no-PLI) actual materials get their cost from a document
@@ -532,7 +532,6 @@ class MaterialService:
                 inventory_item=inventory_item,
                 accounting_category=accounting_category,
                 units=units,
-                source_plan_material=source_plan_material,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
             InventoryService._mutate_earmark(inventory_item, job, quantity)

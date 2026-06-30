@@ -6,9 +6,8 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import Configuration, AccountingCategory, User
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
-from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
+from apps.jobs.models import Job, Task, RateScheme
+from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.deliverables.models import Deliverable
 from apps.jobs.services import JobService
 
@@ -128,7 +127,6 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertEqual(finish.status, Task.STATUS_PENDING)
         self.assertIsNone(finish.assignee_id)
         self.assertIsNone(finish.actual_qty)
-        self.assertIsNone(finish.source_plan_task_id)
         # carried fields
         self.assertEqual(finish.est_qty, Decimal('6'))
         self.assertEqual(finish.rate_scheme_id, self.scheme.pk)
@@ -147,7 +145,6 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertIsNone(loose.task_id)
         self.assertEqual(attached.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertIsNone(attached.po_line_item_id)
-        self.assertIsNone(attached.source_plan_material_id)
 
     def test_creates_earmarks(self):
         new_job = JobService.duplicate_job(
@@ -175,10 +172,9 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
             a.changes.get('_action') == f'Duplicated from {self.source.job_number}'
             for a in actions))
 
-    def test_no_estimate_or_worksheet_on_new_job(self):
+    def test_no_estimate_on_new_job(self):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='approved')
-        self.assertFalse(EstWorksheet.objects.filter(job=new_job).exists())
         self.assertFalse(new_job.estimate_set.exists())
 
     def test_source_job_unchanged(self):
@@ -199,11 +195,6 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertEqual(new_job.status, Job.STATUS_DRAFT)
         self.assertIsNone(new_job.start_date)
         self.assertEqual(new_job.contact_id, self.other_contact.pk)
-
-    def test_creates_no_worksheet(self):
-        new_job = JobService.duplicate_job(
-            self.source, contact=self.contact, path='estimate')
-        self.assertFalse(EstWorksheet.objects.filter(job=new_job).exists())
 
     def test_copies_tasks_onto_job(self):
         new_job = JobService.duplicate_job(
@@ -340,5 +331,4 @@ class DuplicateEmptySourceTest(BaseTestCase):
             self.source, contact=self.contact, path='estimate')
         self.assertEqual(new_job.status, Job.STATUS_DRAFT)
         self.assertEqual(Task.objects.filter(job=new_job).count(), 0)
-        self.assertFalse(EstWorksheet.objects.filter(job=new_job).exists())
         self.assertEqual(Material.objects.filter(job=new_job).count(), 0)

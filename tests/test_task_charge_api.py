@@ -124,8 +124,7 @@ class TaskTimeFieldsTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory, User
         from django.contrib.auth.models import Permission
-        from apps.jobs.models import RateScheme, Job, Task, PlanTask, Blep
-        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import RateScheme, Job, Task, Blep
         from apps.contacts.models import Contact
         from datetime import timedelta
         from django.utils import timezone
@@ -146,16 +145,10 @@ class TaskTimeFieldsTest(BaseTestCase):
         )
         contact = Contact.objects.create(first_name='T', last_name='Time')
         self.job = Job.objects.create(job_number='J-time', contact=contact)
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
 
-        # Time-based task carried over from a plan task with est_qty=4 hours.
-        # Phase B: est_qty is set directly on the Task (not read via source_plan_task).
-        self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut',
-            rate_scheme=self.elapsed_scheme, est_qty=Decimal('4.0'),
-        )
+        # Time-based task with est_qty=4 hours set directly on the Task.
         self.elapsed_task = Task.objects.create(
-            job=self.job, name='Cut', source_plan_task=self.plan_task,
+            job=self.job, name='Cut',
             est_qty=Decimal('4.0'), rate_scheme=self.elapsed_scheme,
         )
 

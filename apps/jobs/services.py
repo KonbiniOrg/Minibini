@@ -1500,13 +1500,10 @@ class BoardService:
         from apps.estimates.models import EstimateLineItem
         data = BoardService._serialize_job(job)
 
-        worksheets = []
-        for ws in job.estworksheet_set.order_by('-pk'):
-            worksheets.append({
-                'est_worksheet_id': ws.est_worksheet_id,
-                'created_date': ws.created_date.isoformat() if ws.created_date else None,
-            })
-        data['worksheets'] = worksheets
+        # The plan/worksheet layer has been removed; work lives directly on the
+        # Job. The key is kept (empty) for API-contract stability until the
+        # frontend drops it (Phase 7).
+        data['worksheets'] = []
 
         from apps.estimates.models import ChangeOrder
         estimates = []
@@ -1651,9 +1648,6 @@ class BoardService:
             return 'awaiting-response'
 
         if estimates.filter(status='draft').exists():
-            return 'estimating'
-
-        if not estimates.exists() and job.estworksheet_set.exists():
             return 'estimating'
 
         return 'needs-scoping'

@@ -200,7 +200,7 @@ class Job(AbstractWorkContainer):
 
 
 class TaskBase(models.Model):
-    """Abstract base for PlanTask (worksheet) and Task (work order)."""
+    """Abstract base for Task (work order)."""
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
@@ -213,7 +213,7 @@ class TaskBase(models.Model):
         null=True, blank=True,
         help_text=(
             "Estimated billable quantity in the rate scheme's units. "
-            "Required at the application layer on PlanTask; optional on Task."
+            "Optional on Task."
         ),
     )
 
@@ -243,66 +243,6 @@ class TaskBase(models.Model):
             rate_scheme_id=self.rate_scheme_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
         )
-
-
-class PlanTask(TaskBase):
-    """Planning task on an EstWorksheet. No lifecycle, no hierarchy, no bleps."""
-    plan_task_id = models.AutoField(primary_key=True)
-    est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
-    )
-    rate_scheme = models.ForeignKey(
-        'jobs.RateScheme', on_delete=models.PROTECT,
-    )
-    active_modifiers = models.JSONField(default=list, blank=True)
-    # est_qty is now inherited from TaskBase (nullable at DB level; PlanTask.clean()
-    # enforces non-null in Phase B).
-
-    class Meta:
-        db_table = 'plan_tasks'
-
-    def clean(self):
-        super().clean()
-        if self.est_qty is None:
-            raise ValidationError({
-                'est_qty': 'Required: every PlanTask must have an estimated quantity.',
-            })
-
-    def save(self, *args, **kwargs):
-        """Auto-assign sort_order at the worksheet level."""
-        from django.db import transaction
-        if self.sort_order is None:
-            with transaction.atomic():
-                max_order = PlanTask.objects.filter(
-                    est_worksheet=self.est_worksheet
-                ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-                self.sort_order = max_order + 1
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-    def compute_amount(self, active_modifiers=None):
-        """Uniform atom interface: total billable amount for this plan task.
-
-        Ignores the active_modifiers argument (uses self.active_modifiers).
-        Parameter is accepted to match the BillableAtom interface.
-        Returns Decimal('0.00') when rate_scheme or est_qty is unset
-        — i.e., billing not yet configured.
-        """
-        if not self.rate_scheme_id or self.est_qty is None:
-            return Decimal('0.00')
-        charge = self.rate_scheme.compute_charge(
-            self.est_qty, self.active_modifiers,
-        )
-        return charge.quantize(Decimal('0.01'))
-
-    def effective_rate(self):
-        if not self.rate_scheme_id:
-            return None
-        return self.rate_scheme.effective_rate(self.active_modifiers)
-
-    @property
-    def effective_accounting_category(self):
-        return self.rate_scheme.accounting_category
 
 
 @history(exclude=['task_id'])
@@ -335,13 +275,6 @@ class Task(TaskBase):
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
-    source_plan_task = models.OneToOneField(
-        'jobs.PlanTask',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='carried_task',
-        help_text="PlanTask this task was carried over from (carry-over idempotency)",
-    )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     blocked_reason = models.TextField(blank=True, default='')
@@ -410,7 +343,7 @@ class Task(TaskBase):
 
         Ignores the active_modifiers argument (uses self.active_modifiers).
         Parameter is accepted to match the BillableAtom interface shared
-        with PlanTask/Material/PlanMaterial.
+        with Material.
         """
         qty = self.rate_scheme.get_actual_qty(self)
         charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
@@ -586,10 +519,8 @@ class RateScheme(models.Model):
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any PlanTask, Task, or ServiceItem points at this scheme."""
+        """True if any Task or ServiceItem points at this scheme."""
         from apps.estimates.models import ServiceItem
-        if PlanTask.objects.filter(rate_scheme=self).exists():
-            return True
         if Task.objects.filter(rate_scheme=self).exists():
             return True
         if ServiceItem.objects.filter(rate_scheme=self).exists():
@@ -600,7 +531,6 @@ class RateScheme(models.Model):
         """Return reference counts for the outdated-schemes UI."""
         from apps.estimates.models import ServiceItem
         return {
-            'plan_task_count': PlanTask.objects.filter(rate_scheme=self).count(),
             'task_count': Task.objects.filter(rate_scheme=self).count(),
             'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
         }

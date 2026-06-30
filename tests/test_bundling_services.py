@@ -4,10 +4,10 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import models
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.estimates.services import WorkTemplateService
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService
 from apps.core.services import NotFoundError, BundlingService
 from apps.core.models import AccountingCategory
@@ -36,29 +36,28 @@ class BundlingTestBase(TestCase):
 
 
 class ReorderServiceTest(BundlingTestBase):
-    """Tests for ReorderService.reorder_container_items with flat PlanTasks."""
+    """Tests for ReorderService.reorder_container_items with flat Tasks."""
 
     def setUp(self):
         super().setUp()
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
 
     def test_unbundled_only_swap(self):
         """Simple swap with no bundles present."""
-        a = PlanTask.objects.create(
-            est_worksheet=self.ws, name='A', sort_order=1,
+        a = Task.objects.create(
+            job=self.job, name='A', sort_order=1,
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        b = PlanTask.objects.create(
-            est_worksheet=self.ws, name='B', sort_order=2,
+        b = Task.objects.create(
+            job=self.job, name='B', sort_order=2,
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        c = PlanTask.objects.create(
-            est_worksheet=self.ws, name='C', sort_order=3,
+        c = Task.objects.create(
+            job=self.job, name='C', sort_order=3,
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
-        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
+        items_qs = Task.objects.filter(job=self.job)
         BundlingService.reorder_container_items(
             items_qs, 'task', b.pk, 'down',
         )
@@ -71,11 +70,11 @@ class ReorderServiceTest(BundlingTestBase):
 
     def test_cannot_move_past_boundary(self):
         """Moving beyond boundaries raises ValidationError."""
-        t1 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Only', sort_order=1,
+        t1 = Task.objects.create(
+            job=self.job, name='Only', sort_order=1,
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
+        items_qs = Task.objects.filter(job=self.job)
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(
                 items_qs, 'task', t1.pk, 'up',

@@ -386,10 +386,7 @@ class LineItemValidationTest(TestCase):
             contact=self.contact,
             vendor_invoice_number="VIN_VALID001"
         )
-        # EstimateLineItem.task targets PlanTask, not Task
-        from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import PlanTask, RateScheme
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        from apps.jobs.models import RateScheme
         self.cm_ac = AccountingCategory.objects.create(code='CM-AC', name='cm-ac')
         self.cm_scheme = RateScheme.objects.create(
             name='S-cm', algorithm=RateScheme.ENTERED_QTY,
@@ -400,12 +397,6 @@ class LineItemValidationTest(TestCase):
             job=self.job,
             name="Test Task",
             rate_scheme=self.cm_scheme,
-        )
-        self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet,
-            name="Plan Test Task",
-            rate_scheme=self.cm_scheme,
-            est_qty=Decimal('1'),
         )
 
         # Create price list item

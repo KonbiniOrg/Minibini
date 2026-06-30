@@ -6,7 +6,6 @@ Business Rules:
 2. When an Estimate is approved, the Job should automatically be approved
 3. An approved Estimate cannot go back to Draft (but can be superseded)
 4. When an approved Estimate is superseded, the new Estimate starts in Draft and the Job becomes Blocked
-5. All existing EstWorksheet-Estimate status links remain unchanged
 """
 
 from decimal import Decimal
@@ -14,7 +13,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from apps.jobs.models import Job
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, User
 

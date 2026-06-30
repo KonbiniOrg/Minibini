@@ -303,27 +303,6 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         )
         self.assertFalse(s.is_referenced())
 
-    def test_scheme_with_planTask_is_referenced(self):
-        from apps.jobs.models import RateScheme, PlanTask
-        from apps.estimates.models import EstWorksheet
-        from apps.contacts.models import Contact, Business
-        from apps.jobs.models import Job
-        contact = Contact.objects.create(first_name='F', last_name='L', email='f@l.test')
-        biz = Business.objects.create(business_name='B', default_contact=contact)
-        contact.business = biz
-        contact.save()
-        job = Job.objects.create(job_number='J1', contact=contact)
-        ws = EstWorksheet.objects.create(job=job)
-        s = RateScheme.objects.create(
-            name='ref', algorithm='entered_qty', rate=Decimal('1'),
-            unit_label='ea', accounting_category=self.ac,
-        )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='t', rate_scheme=s,
-            est_qty=Decimal('1'),
-        )
-        self.assertTrue(s.is_referenced())
-
     def test_scheme_with_task_is_referenced(self):
         """Phase B: is_referenced checks Task.rate_scheme, not TaskCharge."""
         from apps.jobs.models import RateScheme, Task, Job
@@ -521,8 +500,7 @@ class RateSchemeFreezeOnReferenceTest(BaseTestCase):
         self.ac = AccountingCategory.objects.create(code='X', name='X')
 
     def _make_referenced_scheme(self):
-        from apps.jobs.models import RateScheme, PlanTask, Job
-        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import RateScheme, Task, Job
         from apps.contacts.models import Contact, Business
         # NOTE: real model schema requires Business.business_name + default_contact
         # FK, and Contact.email. Build the pair in the order: Contact first
@@ -537,15 +515,11 @@ class RateSchemeFreezeOnReferenceTest(BaseTestCase):
         contact.business = biz
         contact.save()
         job = Job.objects.create(job_number='J-frz', contact=contact)
-        ws = EstWorksheet.objects.create(job=job)
         s = RateScheme.objects.create(
             name='S-frz', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='t', rate_scheme=s,
-            est_qty=Decimal('1'),
-        )
+        Task.objects.create(job=job, name='t', rate_scheme=s)
         return s
 
     def test_unreferenced_scheme_can_be_edited(self):

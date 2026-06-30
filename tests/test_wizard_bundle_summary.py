@@ -11,12 +11,12 @@ from django.utils import timezone
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
-from apps.estimates.models import EstWorksheet
+from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
+from apps.inventory.models import Material, InventoryItem
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceWizardService
-from apps.jobs.models import Blep, Job, PlanTask, RateScheme, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 
 
 class InvoiceWizardBundleSummaryTest(TestCase):
@@ -177,7 +177,6 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-E1',
         )
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='E-Widgets', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
@@ -194,11 +193,14 @@ class EstimateWizardBundleSummaryTest(TestCase):
             rate=Decimal('99.00'), unit_label='jobs',
             accounting_category=self.cat,
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
     def _pt(self, scheme, est_qty, modifiers=None):
         # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks
-        # (est_qty-based), not the worksheet's PlanTasks.
+        # (est_qty-based), now owned directly by the Job.
         return Task.objects.create(
             job=self.job, name='PT', rate_scheme=scheme,
             est_qty=Decimal(str(est_qty)), active_modifiers=modifiers or [],
@@ -254,7 +256,7 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'none')
         self.assertEqual(li.qty, Decimal('1'))
 
-    def test_bundle_with_plan_material_falls_back(self):
+    def test_bundle_with_material_falls_back(self):
         a = self._pt(self.scheme, 3)
         mat = Material.objects.create(
             job=self.job, description='steel', quantity=Decimal('2'),

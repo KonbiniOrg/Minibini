@@ -129,8 +129,7 @@ class RateSchemeEditBlockTest(BaseTestCase):
 
     def _make_referenced_scheme(self):
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import RateScheme, PlanTask, Job
-        from apps.estimates.models import EstWorksheet
+        from apps.jobs.models import RateScheme, Task, Job
         from apps.contacts.models import Contact, Business
         # Real schema requires Business.business_name + default_contact FK,
         # and Contact.email. Build pair: Contact first, then Business with
@@ -145,15 +144,11 @@ class RateSchemeEditBlockTest(BaseTestCase):
         contact.business = biz
         contact.save()
         job = Job.objects.create(job_number='J-eb', contact=contact)
-        ws = EstWorksheet.objects.create(job=job)
         s = RateScheme.objects.create(
             name='S-eb', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='t', rate_scheme=s,
-            est_qty=Decimal('1'),
-        )
+        Task.objects.create(job=job, name='t', rate_scheme=s)
         return s
 
     def test_patch_referenced_scheme_returns_409(self):
@@ -166,7 +161,7 @@ class RateSchemeEditBlockTest(BaseTestCase):
         body = resp.json()
         self.assertIn('supersede_url', body)
         self.assertIn('reference_counts', body)
-        self.assertEqual(body['reference_counts']['plan_task_count'], 1)
+        self.assertEqual(body['reference_counts']['task_count'], 1)
 
     def test_put_referenced_scheme_returns_409(self):
         # Verify the same behavior on PUT (full update), not just PATCH.
@@ -338,7 +333,6 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
         self.assertIn('superseded', body)
         self.assertFalse(body['superseded'])
         self.assertIn('reference_counts', body)
-        self.assertEqual(body['reference_counts']['plan_task_count'], 0)
         self.assertEqual(body['reference_counts']['task_count'], 0)
         self.assertEqual(body['reference_counts']['service_item_count'], 0)
 

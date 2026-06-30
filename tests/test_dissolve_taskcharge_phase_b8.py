@@ -90,7 +90,7 @@ class RateSchemeReverseManagerTest(TestCase):
         self.assertTrue(self.scheme.is_referenced())
 
     def test_unreferenced_scheme_is_not_referenced(self):
-        """Scheme with no Tasks/PlanTasks/Templates is not referenced."""
+        """Scheme with no Tasks/Templates is not referenced."""
         self.assertFalse(self.other.is_referenced())
 
 

@@ -8,7 +8,6 @@ from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.models import InventoryHistory
 from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job, Task, RateScheme
-from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
 

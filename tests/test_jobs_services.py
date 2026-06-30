@@ -3,13 +3,13 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
-    Estimate, EstWorksheet,
+    Estimate,
     WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
+from apps.inventory.models import Material, InventoryItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory

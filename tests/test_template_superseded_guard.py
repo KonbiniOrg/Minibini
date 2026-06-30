@@ -9,7 +9,7 @@ class TemplateSupersededGuardTest(BaseTestCase):
         super().setUp()
         from apps.core.models import AccountingCategory
         from apps.jobs.models import RateScheme, Job
-        from apps.estimates.models import ServiceItem, EstWorksheet
+        from apps.estimates.models import ServiceItem
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tsg', name='X-tsg')
         self.old_scheme = RateScheme.objects.create(
@@ -29,7 +29,6 @@ class TemplateSupersededGuardTest(BaseTestCase):
         contact.business = biz
         contact.save()
         self.job = Job.objects.create(job_number='J-tsg', contact=contact)
-        self.ws = EstWorksheet.objects.create(job=self.job)
 
     def test_generate_task_for_task_branch_raises(self):
         from apps.core.services import SchemeSupersededError

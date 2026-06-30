@@ -203,24 +203,6 @@ class JobHistoryCollationTest(BaseTestCase):
         labels = {(e['object_type'], e['source_label']) for e in resp.data['results']}
         self.assertIn(('changeorder', f'Change Order {co.change_order_number}'), labels)
 
-    def test_excludes_estworksheet(self):
-        from apps.jobs.models import Job
-        from apps.estimates.models import EstWorksheet
-        from apps.core.models import JobHistory
-
-        job = Job.objects.first()
-        # Construct a minimal EstWorksheet — only job= is required.
-        ws = EstWorksheet.objects.create(job=job)
-        # EstWorksheet is no longer tracked, so record_history won't route it;
-        # plant a stray row directly to prove the collation Q still excludes it.
-        JobHistory.objects.create(
-            entry_type='audit', object_type='estworksheet', object_id=ws.pk,
-            changes={'status': {'old': 'a', 'new': 'b'}},
-        )
-        resp = self.client.get(f'/api/jobs/{job.pk}/history/')
-        types = [e['object_type'] for e in resp.data['results']]
-        self.assertNotIn('estworksheet', types)
-
     def test_source_links_for_estimate_invoice_shipment(self):
         from apps.jobs.models import Job
         from apps.estimates.models import Estimate

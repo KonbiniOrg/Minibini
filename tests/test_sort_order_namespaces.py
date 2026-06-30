@@ -1,53 +1,11 @@
-"""Tests for sort_order namespace separation on PlanTasks and template reordering."""
+"""Tests for sort_order pass-through on Tasks generated from templates."""
 from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
-from apps.jobs.models import PlanTask, Job, RateScheme
-from apps.estimates.models import EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation
+from apps.jobs.models import Job, RateScheme
+from apps.estimates.models import WorkTemplate, ServiceItem, TemplateTaskAssociation
 from apps.contacts.models import Contact
 from apps.core.models import User, AccountingCategory
-
-
-class SortOrderAutoGenerationTest(TestCase):
-    """PlanTask.save() auto-generation should place tasks sequentially."""
-
-    def setUp(self):
-        self.contact = Contact.objects.create(first_name='Test', last_name='User')
-        self.job = Job.objects.create(job_number='J001', contact=self.contact)
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.lit, _ = AccountingCategory.objects.get_or_create(
-            code='LBR', defaults={'name': 'Labor'}
-        )
-        self.scheme = RateScheme.objects.create(
-            name='S-son', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
-        )
-
-    def test_new_task_gets_sequential_sort_order(self):
-        """Tasks without an explicit sort_order get next sequential value."""
-        t1 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 1',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        t2 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 2',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        t3 = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 3',
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        self.assertEqual(t1.sort_order, 1)
-        self.assertEqual(t2.sort_order, 2)
-        self.assertEqual(t3.sort_order, 3)
-
-    def test_explicit_sort_order_preserved(self):
-        """Tasks with explicit sort_order are not auto-reassigned."""
-        t = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task', sort_order=42,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        self.assertEqual(t.sort_order, 42)
 
 
 class GenerateTaskSortOrderTest(TestCase):

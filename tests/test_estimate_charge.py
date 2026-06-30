@@ -1,8 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.jobs.models import RateScheme, PlanTask, Job
+from apps.jobs.models import RateScheme, Job
 from apps.jobs.services import JobService
-from apps.estimates.models import EstWorksheet
 from apps.core.models import AccountingCategory
 from apps.contacts.models import Contact
 from tests.base import BaseTestCase
@@ -68,18 +67,6 @@ class EffectiveACPropertyTest(BaseTestCase):
         contact.business = biz
         contact.save()
         return Job.objects.create(job_number='J-eac', contact=contact)
-
-    def test_planTask_effective_ac_comes_from_scheme(self):
-        from apps.jobs.models import PlanTask
-        from apps.estimates.models import EstWorksheet
-        job = self._make_job()
-        ws = EstWorksheet.objects.create(job=job)
-        pt = PlanTask.objects.create(
-            est_worksheet=ws, name='t',
-            rate_scheme=self.scheme,
-            est_qty=Decimal('1'),
-        )
-        self.assertEqual(pt.effective_accounting_category, self.scheme_ac)
 
     def test_task_effective_ac_comes_from_rate_scheme(self):
         from apps.jobs.models import Task

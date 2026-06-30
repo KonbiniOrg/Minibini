@@ -7,8 +7,8 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.core.models import AccountingCategory
-from apps.jobs.models import PlanTask, Task, RateScheme
-from apps.inventory.models import PlanMaterial, Material, InventoryItem
+from apps.jobs.models import Task, RateScheme
+from apps.inventory.models import Material, InventoryItem
 
 
 def _make_scheme(suffix):
@@ -32,12 +32,12 @@ class TaskBaseCopyFieldsTest(TestCase):
     def test_copy_fields_returns_full_taskbase_field_set(self):
         scheme = _make_scheme('task')
         mods = ['mod_a', 'mod_b']
-        pt = PlanTask(
+        t = Task(
             name='Cut', description='cut to length', sort_order=5,
             est_worker_time=timedelta(hours=2), est_qty=Decimal('3.00'),
             rate_scheme=scheme, active_modifiers=mods,
         )
-        self.assertEqual(pt.copy_fields(), {
+        self.assertEqual(t.copy_fields(), {
             'name': 'Cut',
             'description': 'cut to length',
             'sort_order': 5,
@@ -50,9 +50,9 @@ class TaskBaseCopyFieldsTest(TestCase):
     def test_copy_fields_deep_copies_active_modifiers(self):
         scheme = _make_scheme('mods')
         mods = ['x']
-        pt = PlanTask(name='T', rate_scheme=scheme, active_modifiers=mods,
-                      est_qty=Decimal('1'))
-        self.assertIsNot(pt.copy_fields()['active_modifiers'], mods)
+        t = Task(name='T', rate_scheme=scheme, active_modifiers=mods,
+                 est_qty=Decimal('1'))
+        self.assertIsNot(t.copy_fields()['active_modifiers'], mods)
 
     def test_copy_fields_works_on_task_subclass_too(self):
         scheme = _make_scheme('exec')
@@ -68,12 +68,12 @@ class MaterialBaseCopyFieldsTest(TestCase):
         pli = InventoryItem.objects.create(
             description='Steel', units='kg', accounting_category=ac,
         )
-        pm = PlanMaterial(
+        m = Material(
             description='Steel bar', quantity=Decimal('10.00'), units='kg',
             unit_cost=Decimal('1.50'), sell_price=Decimal('3.00'),
             inventory_item=pli, accounting_category=ac,
         )
-        self.assertEqual(pm.copy_fields(), {
+        self.assertEqual(m.copy_fields(), {
             'description': 'Steel bar',
             'quantity': Decimal('10.00'),
             'units': 'kg',

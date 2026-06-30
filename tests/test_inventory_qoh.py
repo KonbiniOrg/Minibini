@@ -5,9 +5,8 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, Task, RateScheme
-from apps.estimates.models import EstWorksheet
-from apps.inventory.models import PlanMaterial, Material
+from apps.jobs.models import Job, Task, RateScheme
+from apps.inventory.models import Material
 from apps.inventory.models import InventoryItem
 from apps.inventory.models import Earmark
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem

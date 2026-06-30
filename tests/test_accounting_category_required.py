@@ -5,8 +5,7 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
-from apps.estimates.models import EstWorksheet
+from apps.inventory.models import Material, InventoryItem
 from apps.jobs.models import Job
 
 

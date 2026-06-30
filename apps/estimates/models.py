@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from apps.core.models import BaseLineItem, AbstractWorkContainer
+from apps.core.models import BaseLineItem
 from apps.core.history import history
 
 
@@ -292,22 +292,6 @@ class ChangeOrder(models.Model):
 
     def __str__(self):
         return self.change_order_number or f'ChangeOrder {self.pk}'
-
-
-class EstWorksheet(AbstractWorkContainer):
-    # Deprecated plan-layer container, retained until its removal migration
-    # (Task 4.2b). Work now lives directly on the Job; nothing creates new
-    # worksheets. The model is kept only so historical rows and the model-level
-    # tests survive this step.
-    est_worksheet_id = models.AutoField(primary_key=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
-    created_date = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        db_table = 'worksheets'
-
-    def __str__(self):
-        return f"EstWorksheet {self.pk}"
 
 
 class WorkTemplate(models.Model):

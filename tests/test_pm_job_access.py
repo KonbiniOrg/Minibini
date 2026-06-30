@@ -122,9 +122,6 @@ class JobViewSetPMAccessTest(BaseTestCase):
         self.assertFalse(resp.data['can_manage'])
 
 
-from apps.estimates.models import EstWorksheet
-
-
 from apps.estimates.models import Estimate
 
 

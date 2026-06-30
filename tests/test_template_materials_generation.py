@@ -3,12 +3,12 @@ from django.test import TestCase
 from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact
 from apps.inventory.models import (
-    Material, PlanMaterial, InventoryItem, TemplateMaterialAssociation,
+    Material, InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
-from apps.jobs.models import Job, PlanTask, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class _Setup(TestCase):

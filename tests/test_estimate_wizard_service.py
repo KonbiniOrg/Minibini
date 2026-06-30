@@ -4,52 +4,9 @@ from django.test import TestCase
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateWizardService, EstimateClaimConflict
 from apps.jobs.models import Job
-
-
-class OpenForWorksheetTest(TestCase):
-    def setUp(self):
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
-        self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
-        )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
-
-    def test_creates_draft_estimate_when_none_exists(self):
-        est = EstimateWizardService.open_for_worksheet(self.ws)
-        self.assertEqual(est.status, Estimate.STATUS_DRAFT)
-        self.assertEqual(est.job, self.job)
-
-    def test_returns_existing_draft(self):
-        first = EstimateWizardService.open_for_worksheet(self.ws)
-        second = EstimateWizardService.open_for_worksheet(self.ws)
-        self.assertEqual(first.pk, second.pk)
-
-    def test_adopts_jobs_existing_draft_estimate(self):
-        """One tree per job: if the job already has a draft estimate (e.g.
-        created directly via the Create Estimate button), generating from the
-        worksheet adopts that estimate rather than minting a second one."""
-        from apps.estimates.services import EstimateService
-        existing = EstimateService.create_for_job(self.job.pk)
-        result = EstimateWizardService.open_for_worksheet(self.ws)
-        self.assertEqual(result.pk, existing.pk)
-        self.assertEqual(Estimate.objects.filter(job=self.job).count(), 1)
-
-    def test_refuses_when_estimate_sent(self):
-        """The worksheet freezes once the job's estimate is sent; generating
-        an estimate from it then refuses (the model is decoupled — editability
-        derives from the job's live estimate)."""
-        est = EstimateWizardService.open_for_worksheet(self.ws)
-        # Force the estimate to a sent state, bypassing transition validation.
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        with self.assertRaises(ValidationError):
-            EstimateWizardService.open_for_worksheet(self.ws)
 
 
 class ClaimConflictExceptionTest(TestCase):
@@ -74,7 +31,6 @@ class GetSourcePoolTest(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
@@ -92,9 +48,12 @@ class GetSourcePoolTest(TestCase):
             sell_price=Decimal('5'), accounting_category=self.cat,
         )
 
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
-    def test_pool_has_plan_task_and_material_atoms(self):
+    def test_pool_has_task_and_material_atoms(self):
         pool = EstimateWizardService.get_source_pool(self.estimate)
         atom_ids = [(a['type'], a['id']) for a in pool['atoms']]
         self.assertIn(('task', self.pt.pk), atom_ids)
@@ -136,8 +95,8 @@ class GetSourcePoolTest(TestCase):
         self.assertEqual(states[('task', self.pt.pk)], 'claimed_by_current')
         self.assertEqual(states[('material', self.pm.pk)], 'available')
 
-    def test_source_pool_includes_plan_tasks_without_explicit_charge_creation(self):
-        """Bug regression: PlanTasks should appear in the source pool even when
+    def test_source_pool_includes_tasks_without_explicit_charge_creation(self):
+        """Bug regression: Tasks should appear in the source pool even when
         no separate PlanCharge POST has fired — the billing fields are on the
         Task itself now."""
         scheme = RateScheme.objects.create(
@@ -152,8 +111,8 @@ class GetSourcePoolTest(TestCase):
 
         pool = EstimateWizardService.get_source_pool(self.estimate)
 
-        plan_task_ids = [a['id'] for a in pool['atoms'] if a['type'] == 'task']
-        self.assertIn(pt.pk, plan_task_ids)
+        task_ids = [a['id'] for a in pool['atoms'] if a['type'] == 'task']
+        self.assertIn(pt.pk, task_ids)
         pt_atom = next(a for a in pool['atoms'] if a['type'] == 'task' and a['id'] == pt.pk)
         self.assertEqual(pt_atom['amount'], Decimal('150.00'))
 
@@ -171,7 +130,6 @@ class AddAtomsToNewLineItemTest(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
@@ -184,7 +142,10 @@ class AddAtomsToNewLineItemTest(TestCase):
             job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat2,
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
     def test_creates_line_item_with_summed_price(self):
         atoms = [
@@ -228,7 +189,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         with self.assertRaises(EstimateClaimConflict):
             EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
-    def test_single_plan_task_atom_copy_over(self):
+    def test_single_task_atom_copy_over(self):
         # pt has est_qty=2, scheme rate=100, no modifiers -> qty=2, price=100, units=hour
         atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
@@ -236,7 +197,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(li.price, Decimal('100'))
         self.assertEqual(li.units, 'hour')
 
-    def test_single_plan_material_atom_copy_over(self):
+    def test_single_material_atom_copy_over(self):
         # pm has quantity=3, sell_price=5, no inventory_item -> qty=3, price=5, units='none'
         atoms = [{'type': 'material', 'id': self.pm.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
@@ -273,7 +234,6 @@ class AddAtomsToExistingLineItemTest(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
@@ -286,7 +246,10 @@ class AddAtomsToExistingLineItemTest(TestCase):
             job=self.job, name='B',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate, [{'type': 'task', 'id': self.pt1.pk}],
         )
@@ -336,7 +299,6 @@ class RemoveAtomsFromLineItemTest(TestCase):
             first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
@@ -349,7 +311,10 @@ class RemoveAtomsFromLineItemTest(TestCase):
             job=self.job, name='B',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate,
             [
@@ -461,125 +426,6 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.assertEqual(li3.line_number, 2)
 
 
-class SendAllAtomsTest(TestCase):
-    def setUp(self):
-        Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
-        Configuration.objects.create(key='estimate_counter', value='0')
-        Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
-        AppState.objects.create(key='job_counter', value='0')
-        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
-        self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
-        )
-        self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.create(
-            name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
-            rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
-        )
-        self.pt = Task.objects.create(
-            job=self.job, name='A',
-            rate_scheme=self.scheme, est_qty=Decimal('2'),
-        )
-        self.pm = Material.objects.create(
-            job=self.job, description='steel', quantity=Decimal('3'),
-            sell_price=Decimal('5'), accounting_category=self.cat,
-        )
-
-    def test_creates_one_line_item_per_unclaimed_atom(self):
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        self.assertEqual(result['created_count'], 2)
-        from apps.estimates.models import EstimateLineItem
-        line_items = EstimateLineItem.objects.filter(estimate=result['estimate'])
-        self.assertEqual(line_items.count(), 2)
-
-    def test_each_line_item_has_one_source(self):
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        from apps.estimates.models import EstimateLineItem
-        for li in EstimateLineItem.objects.filter(estimate=result['estimate']):
-            self.assertEqual(li.sources.count(), 1)
-
-    def test_skips_already_claimed_atoms(self):
-        # Pre-claim the Task via an existing line item
-        estimate = EstimateWizardService.open_for_worksheet(self.ws)
-        EstimateWizardService.add_atoms_to_new_line_item(
-            estimate, [{'type': 'task', 'id': self.pt.pk}],
-        )
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        # Only the Material gets a new line item
-        self.assertEqual(result['created_count'], 1)
-
-    def test_amount_matches_compute_amount(self):
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        from apps.estimates.models import EstimateLineItem
-        # qty * price totals must equal each atom's compute_amount.
-        # Task: est_qty=2, rate=$100 → qty=2, price=100, total=$200.
-        # Material: quantity=3, sell_price=$5 → qty=3, price=5, total=$15.
-        totals = sorted(
-            li.qty * li.price
-            for li in EstimateLineItem.objects.filter(estimate=result['estimate'])
-        )
-        self.assertEqual(totals, [Decimal('15.00'), Decimal('200.00')])
-
-    def test_send_all_recomputes_existing_adjustment(self):
-        """A percentage adjustment added before send-all is recomputed against
-        the base lines send-all creates (the bulk path recomputes once at end)."""
-        from apps.estimates.services import EstimateService
-        estimate = EstimateWizardService.open_for_worksheet(self.ws)
-        rush = RateScheme.objects.create(
-            name='Rush', algorithm=RateScheme.PERCENTAGE,
-            rate=Decimal('10'), unit_label='none', accounting_category=self.cat,
-        )
-        adj = EstimateService.add_adjustment_line(
-            estimate, adjustment_service_id=rush.pk, target_category_ids=[],
-        )
-        self.assertEqual(adj.price, Decimal('0.00'))  # no base lines yet
-        EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        adj.refresh_from_db()
-        # base = $200 (task) + $15 (material) = $215; 10% = $21.50
-        self.assertEqual(adj.price, Decimal('21.50'))
-
-    def test_qty_and_price_split_per_atom(self):
-        """Per-unit qty/price must reflect the source atom, not collapse to 1×total."""
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        from apps.estimates.models import EstimateLineItem
-        rows = sorted(
-            EstimateLineItem.objects.filter(estimate=result['estimate'])
-            .values_list('qty', 'price'),
-            key=lambda t: t[0],
-        )
-        self.assertEqual(rows, [
-            (Decimal('2.00'), Decimal('100.00')),  # Task
-            (Decimal('3.00'), Decimal('5.00')),    # Material
-        ])
-
-    def test_returns_estimate(self):
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        self.assertEqual(result['estimate'].job, self.job)
-        self.assertEqual(result['estimate'].status, Estimate.STATUS_DRAFT)
-
-    def test_worker_time_task_with_modifier_does_not_raise(self):
-        """A worker-entered-time task whose rate+modifier yields >2 decimals
-        (99.99 × 1.05 = 104.9895) must carry to an EstimateLineItem without
-        tripping the price DecimalField's 2-place validation."""
-        scheme = RateScheme.objects.create(
-            name='Worker Time', algorithm=RateScheme.ENTERED_QTY,
-            rate=Decimal('99.99'), unit_label='hour',
-            modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 5}],
-            accounting_category=self.cat,
-        )
-        pt = Task.objects.create(
-            job=self.job, name='Rushed work',
-            rate_scheme=scheme, est_qty=Decimal('2'),
-            active_modifiers=['rush'],
-        )
-        result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        from apps.estimates.models import EstimateLineItem
-        li = EstimateLineItem.objects.get(
-            estimate=result['estimate'], description='Rushed work')
-        self.assertEqual(li.price, Decimal('104.99'))
-
-
 class AddAtomsToNewLineItemDescriptionTest(TestCase):
     """Description is pre-filled from the source atom when exactly one atom is added."""
 
@@ -588,7 +434,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         from apps.contacts.models import Contact
         from apps.jobs.models import Job, Task, RateScheme
         from apps.inventory.models import Material
-        from apps.estimates.models import EstWorksheet
+        from apps.estimates.models import Estimate
         from apps.core.models import AccountingCategory, Configuration
 
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
@@ -601,7 +447,6 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
             mobile_number='555-1',
         )
         self.job = Job.objects.create(job_number='J-desc', contact=contact)
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='D', name='D')
         self.scheme = RateScheme.objects.create(
             name='Hourly-d', algorithm='entered_qty', rate=Decimal('10'),
@@ -616,15 +461,18 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
             quantity=Decimal('2'), unit_cost=Decimal('5'),
             sell_price=Decimal('10'), accounting_category=self.cat,
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
-    def test_single_plan_task_atom_seeds_description_from_name(self):
+    def test_single_task_atom_seeds_description_from_name(self):
         from apps.estimates.services import EstimateWizardService
         atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.description, 'Cut sign blank')
 
-    def test_single_plan_material_atom_seeds_description(self):
+    def test_single_material_atom_seeds_description(self):
         from apps.estimates.services import EstimateWizardService
         atoms = [{'type': 'material', 'id': self.pm.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
@@ -644,7 +492,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         should expose claiming_line_number (not just claiming_line_item_id)
         so the frontend can show the user-facing line number."""
         from apps.estimates.services import EstimateWizardService
-        # self.pt is a Task on self.ws; claim it on a new line item.
+        # self.pt is a Task on self.job; claim it on a new line item.
         atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         pool = EstimateWizardService.get_source_pool(self.estimate)

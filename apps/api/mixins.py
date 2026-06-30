@@ -400,7 +400,7 @@ class JobScopedPermissionMixin:
 
     Configure per viewset:
       - job_object_path: attribute chain instance -> Job ('self' for JobViewSet,
-        'job', 'est_worksheet.job', 'estimate.job', 'change_order.job', ...).
+        'job', 'estimate.job', 'change_order.job', ...).
       - job_create_field: request.data key naming the parent Job on create.
       - job_url_kwarg: URL kwarg holding the job id (job-nested routes).
     """

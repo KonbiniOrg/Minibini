@@ -1,5 +1,5 @@
 """Task 3.1: the estimate wizard's source pool projects the Job's Tasks +
-Materials (job-owns-atoms refactor), not the worksheet's PlanTasks/PlanMaterials.
+Materials (job-owns-atoms refactor): work lives directly on the Job.
 
 Also covers Task.compute_estimate_amount() (est_qty) vs Task.compute_amount()
 (actuals): the estimate projection bills est_qty, the invoice projection bills

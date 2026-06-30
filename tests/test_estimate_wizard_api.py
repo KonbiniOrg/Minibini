@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, User, AppState
-from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
 from apps.inventory.models import Material
 from apps.jobs.models import Job, Task, RateScheme
@@ -29,7 +29,6 @@ class EstimateWizardAPITest(TestCase):
         self.client.login(username='u', password='p')
 
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
@@ -42,7 +41,10 @@ class EstimateWizardAPITest(TestCase):
             job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat,
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
     def test_source_pool_endpoint(self):
         url = f'/api/estimates/{self.estimate.pk}/source-pool/'

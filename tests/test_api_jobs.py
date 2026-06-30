@@ -7,12 +7,12 @@ from django.test import TestCase
 from tests.base import BaseTestCase
 from apps.core.models import User, AccountingCategory, Configuration, AppState
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, ServiceItem,
+    WorkTemplate, ServiceItem,
     TemplateTaskAssociation,
 )
-from apps.inventory.models import PlanMaterial, Material
+from apps.inventory.models import Material
 
 
 def _make_admin(username='admin_jobapi'):

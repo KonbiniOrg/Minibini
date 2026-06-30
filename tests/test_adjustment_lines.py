@@ -354,8 +354,8 @@ class EstimateWizardAutoRecomputeTest(TestCase):
 
     def setUp(self):
         from apps.contacts.models import Contact
-        from apps.estimates.models import EstWorksheet
-        from apps.estimates.services import EstimateService, EstimateWizardService
+        from apps.estimates.models import Estimate
+        from apps.estimates.services import EstimateService
         from apps.jobs.models import Task
         from apps.jobs.services import JobService
 
@@ -366,7 +366,6 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             first_name='WZ', last_name='Test', email='wz@t.com', work_number='555-4444',
         )
         self.job = JobService.create_job(name='WZ Job', contact=self.contact)
-        self.ws = EstWorksheet.objects.create(job=self.job)
 
         flat_svc = RateScheme.objects.create(
             name='FlatWZ', algorithm=RateScheme.ENTERED_QTY,
@@ -379,7 +378,10 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             rate_scheme=flat_svc, est_qty=Decimal('1'),
         )
 
-        self.est = EstimateWizardService.open_for_worksheet(self.ws)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
         pct_svc = RateScheme.objects.create(
             name='WizRush', algorithm=RateScheme.PERCENTAGE,

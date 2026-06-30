@@ -441,11 +441,6 @@ class AtomDerivationTest(unittest.TestCase):
                 rate_str = next(f['fields']['rate'] for f in ff_schemes if f['pk'] == sp)
                 self.assertNotEqual(rate_str, '0.00',
                                     f"task {t['pk']} points to a flat_fee scheme with zero rate")
-        # PlanTasks likewise carry list modifiers.
-        for pt in self._models('jobs.plantask'):
-            mods = pt['fields']['active_modifiers']
-            self.assertIsInstance(mods, list,
-                                  f"plantask {pt['pk']} active_modifiers should be list")
 
     def test_assign_worker_times_random_per_task_in_range(self):
         # Every task/plantask gets an invented per-task estimate in [0.5, 4.0]h
@@ -630,155 +625,6 @@ class ShipmentBuilderTest(unittest.TestCase):
             # the item's deliverable belongs to the shipment's job
             self.assertEqual(deliv_job[it['fields']['deliverable']],
                              ship_job[it['fields']['shipment']])
-
-
-@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
-                     'datasets not present')
-class PlanSideAtomsTest(unittest.TestCase):
-    """Jobs whose status at build time is draft or submitted don't yet have
-    an accepted estimate, so their atoms must live on the plan side
-    (EstWorksheet + PlanTask + PlanMaterial) rather than the real side
-    (Task + Material). Deliverables stay on the Job either way."""
-
-    def setUp(self):
-        # limit=100 to guarantee both draft and submitted jobs in the slice.
-        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json',
-                                    limit=100)
-        self.c.loader.load()
-        self.c.csv_cards = self.c.csv_loader.load()
-        self.c.spine = self.c.select_spine()
-        build.build_seed(self.c)
-        build.build_contacts_and_businesses(self.c)
-        build.build_jobs(self.c)
-        build.build_estimates(self.c)
-        build.derive_atoms(self.c)
-
-    def _models(self, m):
-        return [f for f in self.c.fixture_data if f['model'] == m]
-
-    def _jobs_by_status(self):
-        out = {}
-        for j in self._models('jobs.job'):
-            out.setdefault(j['fields']['status'], []).append(j['pk'])
-        return out
-
-    def test_draft_and_submitted_jobs_have_no_real_tasks_or_materials(self):
-        plan_jobs = set()
-        by_status = self._jobs_by_status()
-        for s in ('draft', 'submitted'):
-            plan_jobs.update(by_status.get(s, []))
-        self.assertGreater(len(plan_jobs), 0,
-                           'dataset should contain draft/submitted jobs')
-        for t in self._models('jobs.task'):
-            self.assertNotIn(t['fields']['job'], plan_jobs,
-                             f'task {t["pk"]} on plan-side job {t["fields"]["job"]}')
-        for m in self._models('inventory.material'):
-            self.assertNotIn(m['fields']['job'], plan_jobs,
-                             f'material {m["pk"]} on plan-side job {m["fields"]["job"]}')
-
-    def test_draft_and_submitted_jobs_have_exactly_one_est_worksheet(self):
-        by_status = self._jobs_by_status()
-        plan_jobs = set(by_status.get('draft', []) + by_status.get('submitted', []))
-        ws_by_job = {}
-        for ws in self._models('estimates.estworksheet'):
-            ws_by_job.setdefault(ws['fields']['job'], []).append(ws['pk'])
-        for jp in plan_jobs:
-            self.assertEqual(len(ws_by_job.get(jp, [])), 1,
-                             f'plan-side job {jp} has {len(ws_by_job.get(jp, []))} worksheets')
-
-    def test_started_and_terminal_jobs_have_no_est_worksheet(self):
-        # Real-side jobs (approved+, completed, rejected, cancelled) don't get
-        # an EstWorksheet — their atoms are real-side.
-        by_status = self._jobs_by_status()
-        real_jobs = set()
-        for s in ('approved', 'in_progress', 'work_complete', 'completed',
-                  'rejected', 'cancelled'):
-            real_jobs.update(by_status.get(s, []))
-        ws_jobs = {ws['fields']['job'] for ws in self._models('estimates.estworksheet')}
-        self.assertEqual(real_jobs & ws_jobs, set(),
-                         'real-side jobs should not have EstWorksheets')
-
-    def test_every_plantask_has_required_fields(self):
-        # PlanTask.clean() raises if est_qty is null; rate_scheme is NOT NULL
-        # at the DB level. Every emitted PlanTask must satisfy both.
-        plantasks = self._models('jobs.plantask')
-        self.assertGreater(len(plantasks), 0)
-        rs_pks = {f['pk'] for f in self._models('jobs.ratescheme')}
-        ws_pks = {f['pk'] for f in self._models('estimates.estworksheet')}
-        for pt in plantasks:
-            self.assertIsNotNone(pt['fields'].get('est_qty'),
-                                 f'plantask {pt["pk"]} has null est_qty')
-            self.assertIn(pt['fields']['rate_scheme'], rs_pks)
-            self.assertIn(pt['fields']['est_worksheet'], ws_pks)
-            # PlanTask has no parent_task / status / actual_qty fields.
-            for f in ('parent_task', 'status', 'actual_qty', 'blocked_reason',
-                      'worker_queue', 'assignee', 'source_template',
-                      'source_plan_task'):
-                self.assertNotIn(f, pt['fields'],
-                                 f'plantask {pt["pk"]} has unexpected field {f!r}')
-
-    def test_planmaterials_link_to_worksheet(self):
-        planmats = self._models('inventory.planmaterial')
-        ws_pks = {f['pk'] for f in self._models('estimates.estworksheet')}
-        for pm in planmats:
-            self.assertIn(pm['fields']['est_worksheet'], ws_pks)
-            # PlanMaterial swaps job/task for est_worksheet/plan_task.
-            self.assertNotIn('job', pm['fields'])
-            self.assertNotIn('task', pm['fields'])
-
-    def test_deliverables_exist_for_all_jobs_regardless_of_plan_status(self):
-        by_status = self._jobs_by_status()
-        all_job_pks = set()
-        for v in by_status.values():
-            all_job_pks.update(v)
-        deliv_jobs = {d['fields']['job']
-                      for d in self._models('deliverables.deliverable')}
-        self.assertEqual(deliv_jobs, all_job_pks,
-                         'every Job (plan or real) should have a Deliverable')
-
-
-@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
-                     'datasets not present')
-class EstimateLineItemSourceWiringTest(unittest.TestCase):
-    """Plan atoms derived from estimate line items get an
-    EstimateLineItemSource row linking back. Checklist-derived plan tasks
-    don't (no source LI)."""
-
-    def setUp(self):
-        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json',
-                                    limit=100)
-        self.c.loader.load()
-        self.c.csv_cards = self.c.csv_loader.load()
-        self.c.spine = self.c.select_spine()
-        build.build_seed(self.c)
-        build.build_contacts_and_businesses(self.c)
-        build.build_jobs(self.c)
-        build.build_estimates(self.c)
-        build.derive_atoms(self.c)
-
-    def _models(self, m):
-        return [f for f in self.c.fixture_data if f['model'] == m]
-
-    def test_source_rows_have_valid_types_and_unique_atoms(self):
-        srcs = self._models('estimates.estimatelineitemsource')
-        self.assertGreater(len(srcs), 0, 'expected some plan source links')
-        plan_task_pks = {f['pk'] for f in self._models('jobs.plantask')}
-        plan_mat_pks = {f['pk'] for f in self._models('inventory.planmaterial')}
-        li_pks = {f['pk'] for f in self._models('estimates.estimatelineitem')}
-        seen = set()
-        for s in srcs:
-            t = s['fields']['source_type']
-            pk = s['fields']['source_pk']
-            self.assertIn(t, ('plan_task', 'plan_material'))
-            self.assertIn(s['fields']['estimate_line_item'], li_pks)
-            if t == 'plan_task':
-                self.assertIn(pk, plan_task_pks)
-            else:
-                self.assertIn(pk, plan_mat_pks)
-            key = (t, pk)
-            self.assertNotIn(key, seen,
-                             f'duplicate claim on {key}: violates unique_together')
-            seen.add(key)
 
 
 class DroppedChecklistLineTest(unittest.TestCase):
@@ -1357,8 +1203,6 @@ class BuildHistoryUnitTest(unittest.TestCase):
         c.add_fixture('contacts.contact', 8, {})
         c.add_fixture('contacts.business', 9, {})
         # untracked — must NOT get history
-        c.add_fixture('estimates.estworksheet', 10, {'job': 1})
-        c.add_fixture('jobs.plantask', 11, {})
         c.add_fixture('inventory.inventoryitem', 12, {})
 
         build.build_history(c)
@@ -1512,7 +1356,7 @@ class BlepShiftSynthesisTest(unittest.TestCase):
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': status, 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
-            'source_plan_task': None, 'sort_order': sort_order,
+            'sort_order': sort_order,
         })
 
     def _m(self, c, model):
@@ -1640,7 +1484,7 @@ class EstQuantityHeuristicTest(unittest.TestCase):
             'est_qty': est_qty, 'est_worker_time': ewt, 'actual_qty': None,
             'active_modifiers': [], 'status': 'complete', 'blocked_reason': '',
             'worker_queue': None, 'assignee': None, 'parent_task': None,
-            'source_plan_task': None, 'sort_order': 1,
+            'sort_order': 1,
         })
 
     def _qty(self, c, pk):

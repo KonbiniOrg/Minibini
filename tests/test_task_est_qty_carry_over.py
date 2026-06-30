@@ -1,9 +1,9 @@
 from decimal import Decimal
 from django.test import TestCase
 
-from apps.jobs.models import Task, PlanTask, RateScheme, Job
+from apps.jobs.models import Task, RateScheme, Job
 from apps.jobs.services import JobService
-from apps.estimates.models import EstWorksheet, ServiceItem
+from apps.estimates.models import ServiceItem
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
@@ -20,7 +20,6 @@ class TaskEstQtyCarryOverTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-CO1', contact=c, status=Job.STATUS_APPROVED,
         )
-        self.ws = EstWorksheet.objects.create(job=self.job)
 
     def test_template_generate_task_for_job_persists_est_qty(self):
         scheme = RateScheme.objects.create(

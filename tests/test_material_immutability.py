@@ -3,10 +3,9 @@ from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
 from apps.inventory.models import (
-    Material, PlanMaterial, InventoryItem,
+    Material, InventoryItem,
 )
-from apps.estimates.models import EstWorksheet
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 
 
 class _Setup(APITestCase):
