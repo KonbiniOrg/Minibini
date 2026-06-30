@@ -20,13 +20,16 @@ describe('WorkItemForm', () => {
   it('also POSTs a ServiceItem when "Save to catalog" is checked (manual create)', async () => {
     const onSaved = vi.fn();
     const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, onSaved },
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
     });
     await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
     await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Custom Polish' } });
-    await fireEvent.input(getByLabelText(/Estimated qty/i), { target: { value: '2' } });
     await fireEvent.click(getByLabelText(/save to catalog/i));
     await fireEvent.click(getByRole('button', { name: 'Save' }));
+    // Task should be POSTed to the job-task endpoint
+    const taskCalls = api.post.mock.calls.filter((c) => c[0] === '/api/jobs/5/tasks/');
+    expect(taskCalls.length).toBe(1);
+    // Catalog item should also be created
     const catalogCalls = api.post.mock.calls.filter((c) => c[0] === '/api/service-items/');
     expect(catalogCalls.length).toBe(1);
     expect(catalogCalls[0][1]).toEqual(expect.objectContaining({ template_name: 'Custom Polish' }));
@@ -35,7 +38,7 @@ describe('WorkItemForm', () => {
 
   it('does not show "Save to catalog" when editing', async () => {
     const { queryByLabelText } = render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, isEdit: true,
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, isEdit: true,
         item: { name: 'X', rate_scheme: 1, active_modifiers: [], est_qty: '1' } },
     });
     expect(queryByLabelText(/save to catalog/i)).not.toBeInTheDocument();
@@ -88,7 +91,7 @@ describe('WorkItemForm', () => {
     expect(Array.isArray(call[1].active_modifiers)).toBe(true);
   });
 
-  it('saves a manual task', async () => {
+  it('saves a manual task to /api/jobs/{id}/tasks/', async () => {
     const onSaved = vi.fn();
     const { findByLabelText, getByLabelText, getByRole } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, onSaved },
@@ -116,7 +119,7 @@ const SERVICE_WITH_MODIFIER = {
 describe('WorkItemForm with a pre-selected rateScheme', () => {
   it('shows the chosen service as a header and hides the internal service selector', async () => {
     render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, rateScheme: SERVICE_WITH_MODIFIER },
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, rateScheme: SERVICE_WITH_MODIFIER },
     });
     // The chosen service name should appear as a read-only header
     expect(await screen.findByText(/CNC Cutting/)).toBeInTheDocument();
@@ -126,7 +129,7 @@ describe('WorkItemForm with a pre-selected rateScheme', () => {
 
   it('renders the pre-selected service modifier choices', async () => {
     render(WorkItemForm, {
-      props: { open: true, mode: 'manual', context: 'worksheet', contextId: 5, rateScheme: SERVICE_WITH_MODIFIER },
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5, rateScheme: SERVICE_WITH_MODIFIER },
     });
     // The modifier label should be visible
     expect(await screen.findByText(/Rush/)).toBeInTheDocument();

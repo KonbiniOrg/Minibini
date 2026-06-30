@@ -6,7 +6,7 @@
   let {
     open = false,
     mode = 'manual', // 'manual' | 'template'
-    context = 'job', // 'job' | 'worksheet' | 'subtask'
+    context = 'job', // 'job' | 'subtask'
     contextId = null, // job pk, worksheet pk, or parent task pk
     item = null,     // for edit mode; null for create
     isEdit = false,
@@ -102,8 +102,6 @@
       : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
 
-  const estQtyRequired = $derived(context === 'worksheet');
-
   function formatDuration(value) {
     // Server returns ISO 8601 like "PT1H30M" or HH:MM:SS — accept either, render HH:MM
     if (!value) return '';
@@ -161,10 +159,6 @@
       error = 'Name is required.';
       return;
     }
-    if (estQtyRequired && !estQty) {
-      error = 'Estimated qty is required on the worksheet.';
-      return;
-    }
     if (!isEdit && mode === 'template' && !templateId) {
       error = 'Please pick a template.';
       return;
@@ -193,14 +187,10 @@
       };
 
       if (isEdit && item) {
-        const url = context === 'worksheet'
-          ? `/api/est-worksheets/${contextId}/tasks/${item.plan_task_id || item.task_id}/`
-          : `/api/jobs/${contextId}/tasks/${item.task_id}/`;
+        const url = `/api/jobs/${contextId}/tasks/${item.task_id}/`;
         await api.patch(url, payload);
       } else if (mode === 'template') {
-        const url = context === 'worksheet'
-          ? `/api/est-worksheets/${contextId}/add-from-template/`
-          : `/api/jobs/${contextId}/add-from-template/`;
+        const url = `/api/jobs/${contextId}/add-from-template/`;
         await api.post(url, {
           service_item_id: Number(templateId),
           name,
@@ -211,9 +201,7 @@
         });
       } else {
         let url;
-        if (context === 'worksheet') {
-          url = `/api/est-worksheets/${contextId}/tasks/`;
-        } else if (context === 'subtask') {
+        if (context === 'subtask') {
           url = `/api/tasks/${contextId}/subtasks/`;
         } else {
           url = `/api/jobs/${contextId}/tasks/`;
@@ -328,7 +316,7 @@
           {/if}
 
           <p>
-            <label><strong>Estimated qty {estQtyRequired ? '*' : ''}</strong><br>
+            <label><strong>Estimated qty</strong><br>
               <input type="number" step="0.01" bind:value={estQty}>
               <small>{selectedScheme.unit_label}</small>
             </label>

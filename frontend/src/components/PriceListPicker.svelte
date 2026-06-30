@@ -1,8 +1,8 @@
 <script>
-  // Dual-source picker for the worksheet/estimate atom-add flow.
+  // Dual-source picker for the estimate atom-add flow.
   // Shows service items (task-applicable) and catalog inventory items together,
   // driven by backend search (no initial list — results appear after typing).
-  // Props mirror the consumption side in WorksheetDetailPage / estimate forms.
+  // Used in estimate forms and the job work surface.
   import SearchPicker from './SearchPicker.svelte';
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
