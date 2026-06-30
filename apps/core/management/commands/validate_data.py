@@ -739,18 +739,15 @@ class Command(BaseCommand):
                 )
 
     def check_fees(self):
-        """For each Fee, validate unit_rate > 0, accounting_category present,
-        quantity >= 0, and (if task is set) task.job_id == fee.job_id."""
+        """For each Fee, validate unit_rate > 0, quantity >= 0,
+        and (if task is set) task.job_id == fee.job_id.
+        (accounting_category is NOT NULL on the model; no need to check it here.)"""
         from apps.jobs.models import Fee
-        for fee in Fee.objects.select_related('accounting_category', 'task', 'job').all():
+        for fee in Fee.objects.select_related('task', 'job').all():
             if fee.unit_rate <= 0:
                 self.errors.append(
                     f'Fee {fee.pk} ({fee.description!r}): unit_rate must be positive '
                     f'(got {fee.unit_rate})'
-                )
-            if not fee.accounting_category_id:
-                self.errors.append(
-                    f'Fee {fee.pk} ({fee.description!r}): missing accounting_category'
                 )
             if fee.quantity < 0:
                 self.errors.append(
