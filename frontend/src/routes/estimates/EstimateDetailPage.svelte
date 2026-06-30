@@ -228,16 +228,16 @@
   {#if canEdit}
     <p>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Customize Client View</a>
+      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Tasks &amp; Materials</a>
     </p>
   {/if}
 
   {#snippet actionsSnippet(li, i)}
-    <!-- Reorder only on the Client View; all editing goes through Customize Client View. -->
+    <!-- Reorder only here; all editing goes through Show Tasks & Materials. -->
     <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
     <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
     {#if lineOutOfSync(li)}
-      <span class="out-of-sync" title="The line no longer matches its atoms; adjust in Customize Client View if needed.">⚠ out of sync with atoms</span>
+      <span class="out-of-sync" title="The line no longer matches its atoms; adjust in Show Tasks &amp; Materials if needed.">⚠ out of sync with atoms</span>
     {/if}
   {/snippet}
 

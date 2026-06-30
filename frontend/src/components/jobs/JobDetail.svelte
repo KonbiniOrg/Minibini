@@ -501,7 +501,7 @@
 
 <!-- HORIZONTAL ACCORDION -->
 <div class="accordion">
-  <!-- Estimate (Work + Client View pillar) -->
+  <!-- Estimate pillar -->
   {#if activeSection !== 'estimate'}
     <div class="pillar pillar-est"
          role="button" tabindex="0"
@@ -661,9 +661,9 @@
               </div>
             </div>
           {:else if displayedEstimate}
-            <p class="empty-msg">Client View has no line items.</p>
+            <p class="empty-msg">Estimate has no line items.</p>
           {:else}
-            <p class="empty-msg">No Client View yet.</p>
+            <p class="empty-msg">No estimate yet.</p>
           {/if}
         </div>
     </div>

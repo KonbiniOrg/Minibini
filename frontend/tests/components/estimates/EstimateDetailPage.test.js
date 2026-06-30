@@ -93,7 +93,7 @@ describe('EstimateDetailPage number/version display', () => {
 });
 
 describe('EstimateDetailPage vocabulary labels', () => {
-  it('shows the "Customize Client View" wizard link without a worksheet guard', async () => {
+  it('shows the "Show Tasks & Materials" wizard link without a worksheet guard', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft' }));
 
@@ -102,7 +102,7 @@ describe('EstimateDetailPage vocabulary labels', () => {
     });
 
     // Wizard link is always present for an editable estimate (no worksheet guard)
-    expect(await findByText('Customize Client View')).toBeInTheDocument();
+    expect(await findByText('Show Tasks & Materials')).toBeInTheDocument();
     // No stale "Plan" row or old labels
     expect(queryByText('Plan')).not.toBeInTheDocument();
     expect(queryByText('Worksheet')).not.toBeInTheDocument();
@@ -158,7 +158,7 @@ describe('EstimateDetailPage out-of-sync indicator', () => {
 });
 
 describe('EstimateDetailPage line-item actions', () => {
-  it('has no Edit/Delete buttons on line items (editing goes through Customize)', async () => {
+  it('has no Edit/Delete buttons on line items (editing goes through Show Tasks & Materials)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
       { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',

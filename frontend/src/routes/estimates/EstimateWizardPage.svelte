@@ -145,8 +145,8 @@
     <JobHeader {job} {contact} />
   {/if}
   <div class="toolbar">
-    <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to Client View</a>
-    <span class="page-title">Customize Client View: {estimate.estimate_number}</span>
+    <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to Estimate</a>
+    <span class="page-title">Tasks &amp; Materials: {estimate.estimate_number}</span>
   </div>
 
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">

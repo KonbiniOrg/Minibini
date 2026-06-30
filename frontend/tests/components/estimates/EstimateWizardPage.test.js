@@ -37,12 +37,12 @@ function mockApi(estimate) {
 }
 
 describe('EstimateWizardPage vocabulary labels', () => {
-  it('shows "Customize Client View" as the page title', async () => {
+  it('shows "Tasks & Materials" as the page title', async () => {
     mockApi(makeEstimate());
 
     render(EstimateWizardPage, { props: { params: { id: '11' } } });
 
-    expect(await screen.findByText(/Customize Client View/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Tasks & Materials/i)).toBeInTheDocument();
     // Old label absent
     expect(screen.queryByText(/^Worksheet:/)).not.toBeInTheDocument();
   });
@@ -57,13 +57,12 @@ describe('EstimateWizardPage vocabulary labels', () => {
     expect(screen.queryByText(/worksheet atoms/i)).not.toBeInTheDocument();
   });
 
-  it('shows only the "back to Client View" link (worksheet back-link removed)', async () => {
+  it('shows the "back to Estimate" link', async () => {
     mockApi(makeEstimate());
 
     render(EstimateWizardPage, { props: { params: { id: '11' } } });
 
-    const cv = await screen.findByText(/back to client view/i);
-    expect(cv.getAttribute('href')).toBe('/estimates/11');
-    expect(screen.queryByText(/back to estimate/i)).not.toBeInTheDocument();
+    const back = await screen.findByText(/back to estimate/i);
+    expect(back.getAttribute('href')).toBe('/estimates/11');
   });
 });
