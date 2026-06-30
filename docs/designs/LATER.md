@@ -532,6 +532,25 @@ page stays whole.
   _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
   with the doubling explained.
 
+- **"Mark Work Complete" button shows on Draft jobs (task list).** — _added 2026-06-30_
+  On the job task-list page (`JobTaskListPage.svelte`), the "Mark Work Complete" action is
+  offered even on a **Draft** job. Marking work complete is meaningless before the job is
+  approved — the button should be hidden for Draft status (decide whether Submitted counts
+  too), alongside the existing `jobLocked` gating.
+  _Done when:_ "Mark Work Complete" is not shown for Draft jobs, with a test.
+
+- **"Send all to Estimate/Invoice" button on the source-pull (wizard) page.** — _added 2026-06-30_
+  On the estimate/invoice source-pull page (`EstimateWizardPage` / `InvoiceWizardPage` — the
+  "Show Tasks & Materials" / "Show Billables" view), atoms are added to the document one row at
+  a time. When the user just wants to copy **all** the job's atoms onto the document, add a
+  one-click **"Send all to Estimate" / "Send all to Invoice"** action that projects every
+  available (unclaimed / billable) atom at once. Prior art: the invoice detail page already has
+  "Apply everything" (`seed_all_atoms`), and a `send_all_atoms_to_estimate` service existed for
+  estimates before the plan-layer removal — re-introduce the equivalent at the wizard level for
+  both documents.
+  _Done when:_ the source-pull page has a one-click "send all atoms" action for both estimate
+  and invoice that projects all available atoms, with a test.
+
 ---
 
 ## Email
