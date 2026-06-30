@@ -534,7 +534,14 @@ class MaterialService:
                 units=units,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
-            InventoryService._mutate_earmark(inventory_item, job, quantity)
+            # Only earmark immediately for committed (approved or later) jobs.
+            # Pre-approval jobs (draft / submitted) do NOT reserve stock; their
+            # materials are earmarked in bulk when the estimate is accepted via
+            # EstimateAcceptanceService → InventoryService.create_earmarks_for_job.
+            from apps.jobs.models import Job as _Job
+            _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
+            if job.status not in _PRE_APPROVAL:
+                InventoryService._mutate_earmark(inventory_item, job, quantity)
         return m
 
     @staticmethod

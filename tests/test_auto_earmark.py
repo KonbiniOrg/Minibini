@@ -1,9 +1,10 @@
 """
-Tests for automatic earmarking when a Job is populated with tasks.
+Tests for automatic earmarking behaviour across job lifecycle.
 
-Earmarks are created at job-population time (not on estimate acceptance).
-The trigger is inside JobService's population methods, which call
-InventoryService.create_earmarks_for_job().
+Key rule: earmarks are only created immediately when a material is added to a
+*committed* (approved or later) job.  Pre-approval jobs (draft / submitted) do
+NOT earmark on create; their materials get earmarked in bulk when the estimate
+is accepted via InventoryService.create_earmarks_for_job().
 """
 from decimal import Decimal
 from django.test import TestCase
@@ -14,6 +15,7 @@ from apps.estimates.models import (
     ServiceItem, TemplateTaskAssociation,
 )
 from apps.inventory.models import Material, InventoryItem, Earmark
+from apps.inventory.services import MaterialService, InventoryService
 from apps.jobs.services import JobService
 
 
@@ -105,3 +107,127 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
 
         earmark = Earmark.objects.get(job=self.job, inventory_item=self.plywood)
         self.assertEqual(earmark.quantity, Decimal('5.00'))
+
+
+class PreApprovalNoEarmarkTest(TestCase):
+    """Gate: MaterialService.create_on_job must NOT earmark on pre-approval jobs.
+
+    Earmarks are created in bulk at acceptance via create_earmarks_for_job.
+    Materials added to an already-committed (approved / in_progress) job still
+    earmark immediately, as before.
+    """
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        self.contact = Contact.objects.create(
+            first_name='Gate', last_name='Test',
+            email='gate@example.com', work_number='555-0200',
+        )
+        self.category = AccountingCategory.objects.create(
+            name='GateMat', code='GM01',
+        )
+        self.item = InventoryItem.objects.create(
+            code='GATE.PLY', description='Gate Plywood',
+            units='sheets', qty_on_hand=Decimal('30.00'),
+            purchase_price=Decimal('50.00'), selling_price=Decimal('100.00'),
+            is_catalog=True, accounting_category=self.category,
+        )
+
+    def _draft_job(self, suffix):
+        return Job.objects.create(
+            job_number=f'J-GATE-{suffix}', contact=self.contact,
+        )
+
+    def test_create_on_draft_job_no_earmark(self):
+        """Adding a material to a DRAFT job must not create an earmark."""
+        job = self._draft_job('D1')
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
+        MaterialService.create_on_job(
+            job=job, inventory_item=self.item,
+            quantity=Decimal('3.00'), units='sheets',
+            accounting_category=self.category,
+        )
+        self.assertEqual(
+            Earmark.objects.filter(job=job, inventory_item=self.item).count(), 0,
+            'No earmark expected for a DRAFT job',
+        )
+
+    def test_create_on_submitted_job_no_earmark(self):
+        """Adding a material to a SUBMITTED job must not create an earmark."""
+        job = self._draft_job('S1')
+        job.status = Job.STATUS_SUBMITTED
+        job.save()
+        MaterialService.create_on_job(
+            job=job, inventory_item=self.item,
+            quantity=Decimal('2.00'), units='sheets',
+            accounting_category=self.category,
+        )
+        self.assertEqual(
+            Earmark.objects.filter(job=job, inventory_item=self.item).count(), 0,
+            'No earmark expected for a SUBMITTED job',
+        )
+
+    def test_create_on_approved_job_earmarks_immediately(self):
+        """Adding a material to an APPROVED job must earmark right away."""
+        job = Job.objects.create(
+            job_number='J-GATE-A1', contact=self.contact,
+            status=Job.STATUS_APPROVED,
+        )
+        MaterialService.create_on_job(
+            job=job, inventory_item=self.item,
+            quantity=Decimal('4.00'), units='sheets',
+            accounting_category=self.category,
+        )
+        earmark = Earmark.objects.get(job=job, inventory_item=self.item)
+        self.assertEqual(earmark.quantity, Decimal('4.00'))
+
+    def test_create_on_in_progress_job_earmarks_immediately(self):
+        """Adding a material to an IN_PROGRESS job must earmark right away."""
+        job = Job.objects.create(
+            job_number='J-GATE-IP1', contact=self.contact,
+            status=Job.STATUS_IN_PROGRESS,
+        )
+        MaterialService.create_on_job(
+            job=job, inventory_item=self.item,
+            quantity=Decimal('1.00'), units='sheets',
+            accounting_category=self.category,
+        )
+        earmark = Earmark.objects.get(job=job, inventory_item=self.item)
+        self.assertEqual(earmark.quantity, Decimal('1.00'))
+
+    def test_acceptance_earmarks_pre_approval_materials(self):
+        """Full flow: draft job + create_on_job (no earmark) → accept → earmark appears.
+
+        This exercises the integration between the gate (no earmark on draft) and
+        EstimateAcceptanceService which calls create_earmarks_for_job at accept time.
+        """
+        job = self._draft_job('ACC1')
+        estimate = Estimate.objects.create(
+            job=job, estimate_number='EST-GATE-001', version=1,
+        )
+        # Create material via the service on the DRAFT job — should NOT earmark yet.
+        MaterialService.create_on_job(
+            job=job, inventory_item=self.item,
+            quantity=Decimal('6.00'), units='sheets',
+            accounting_category=self.category,
+        )
+        self.assertEqual(
+            Earmark.objects.filter(job=job).count(), 0,
+            'No earmark before acceptance',
+        )
+        # Accept the estimate — this triggers signals that approve the job then
+        # call EstimateAcceptanceService.on_accept → create_earmarks_for_job.
+        EstimateLineItem.objects.create(
+            estimate=estimate, description='Hand line',
+            price=Decimal('200.00'), accounting_category=self.category,
+        )
+        estimate.status = Estimate.STATUS_OPEN
+        estimate.save()
+        estimate.status = Estimate.STATUS_ACCEPTED
+        estimate.save()
+
+        earmark = Earmark.objects.get(job=job, inventory_item=self.item)
+        self.assertEqual(
+            earmark.quantity, Decimal('6.00'),
+            'Earmark must appear after estimate acceptance',
+        )

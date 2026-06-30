@@ -218,13 +218,13 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertEqual(attached.task_id, build.pk)
         self.assertIsNone(loose.task_id)
 
-    def test_earmarks_created_for_inventoried_materials(self):
-        # Estimate path copies materials onto the Job; inventoried materials
-        # earmark on creation (MaterialService.create_on_job), so the duplicate
-        # holds one earmark per inventoried item (plywood + screws).
+    def test_no_earmarks_on_estimate_path(self):
+        # Estimate path copies materials onto a new DRAFT job. Pre-approval jobs
+        # must NOT earmark on create (gate added in MaterialService.create_on_job);
+        # earmarks are created in bulk at estimate acceptance instead.
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')
-        self.assertEqual(Earmark.objects.filter(job=new_job).count(), 2)
+        self.assertEqual(Earmark.objects.filter(job=new_job).count(), 0)
 
 
 class DuplicateApiTest(DuplicateJobTestBase):
