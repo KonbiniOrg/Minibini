@@ -144,7 +144,17 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
         # supplies an actual_qty so the task completes.
         scheme = RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
         if scheme is None:
-            self.skipTest('No ENTERED_QTY RateScheme in fixture.')
+            from apps.core.models import AccountingCategory
+            ac, _ = AccountingCategory.objects.get_or_create(
+                name='Test AC for ENTERED_QTY', defaults={'code': 'TSTEQ'}
+            )
+            scheme = RateScheme.objects.create(
+                name='Test ENTERED_QTY Scheme',
+                algorithm=RateScheme.ENTERED_QTY,
+                rate=Decimal('50.00'),
+                unit_label='each',
+                accounting_category=ac,
+            )
         self.scheme = scheme
 
     def test_complete_task_blocked_on_on_hold_job(self):
@@ -316,7 +326,17 @@ class CreateFromTemplateOnHoldTest(OnHoldGuardBase):
         from apps.estimates.models import ServiceItem
         scheme = RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
         if scheme is None:
-            self.skipTest('No ENTERED_QTY RateScheme in fixture.')
+            from apps.core.models import AccountingCategory
+            ac, _ = AccountingCategory.objects.get_or_create(
+                name='Test AC for template', defaults={'code': 'TSTTMPL'}
+            )
+            scheme = RateScheme.objects.create(
+                name='Test ENTERED_QTY for template',
+                algorithm=RateScheme.ENTERED_QTY,
+                rate=Decimal('50.00'),
+                unit_label='each',
+                accounting_category=ac,
+            )
         tmpl, _ = ServiceItem.objects.get_or_create(
             template_name='Guard Test Template',
             defaults={

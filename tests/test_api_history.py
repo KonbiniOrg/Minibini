@@ -33,7 +33,9 @@ class JobHistoryAPITest(BaseTestCase):
         job = Job.objects.first()
         estimate = Estimate.objects.filter(job=job).first()
         if not estimate:
-            self.skipTest('No estimate for this job')
+            estimate = Estimate.objects.create(
+                job=job, estimate_number='EST-HIST-AGG-001', version=1,
+            )
         record_history(
             entry_type='audit', object_type='job', object_id=job.pk,
             changes={'status': {'old': 'draft', 'new': 'submitted'}},
@@ -48,10 +50,14 @@ class JobHistoryAPITest(BaseTestCase):
 
     def test_job_history_excludes_unrelated(self):
         from apps.jobs.models import Job
+        from apps.contacts.models import Contact
         job1 = Job.objects.first()
         job2 = Job.objects.exclude(pk=job1.pk).first()
         if not job2:
-            self.skipTest('Need 2 jobs')
+            contact = Contact.objects.first()
+            job2 = Job.objects.create(
+                job_number='J-HIST-EXCL-002', name='Second job', contact=contact,
+            )
         record_history(
             entry_type='note', object_type='job', object_id=job1.pk, text='Job 1',
         )
@@ -108,7 +114,9 @@ class BusinessHistoryAPITest(BaseTestCase):
         business = Business.objects.first()
         contact = Contact.objects.filter(business=business).first()
         if not contact:
-            self.skipTest('No contact for this business')
+            contact = Contact.objects.create(
+                first_name='Test', last_name='Contact', business=business,
+            )
         record_history(
             entry_type='audit', object_type='business', object_id=business.pk,
             changes={'business_name': {'old': 'A', 'new': 'B'}},

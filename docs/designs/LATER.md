@@ -1054,6 +1054,16 @@ IMAP-SMTP machinery and tend to be worked together.
   its PO without leaving the job overview, or we've consciously decided that lives
   somewhere else and documented where.
 
+- **Sweep test suite for `self.skipTest('… in fixture')` anti-pattern.** — _added 2026-06-30_
+  Several tests silently skip when ambient fixture data is absent (e.g. "Need at least two
+  users in fixture", "No ENTERED_QTY RateScheme in fixture"). Seven were fixed 2026-06-30
+  (self-setup or hard-assert). Grep the full suite for remaining `self.skipTest` calls that
+  rely on fixture content and convert them: either create the required data inline so the
+  test is self-sufficient, or replace the skip with `self.fail(…)` so a missing prerequisite
+  fails loudly. A skip that hides a broken prerequisite is worse than a red test.
+  _Done when:_ no test skips because ambient fixture data is absent; every prerequisite
+  is either created by the test itself or triggers a hard failure.
+
 - **Hand-added blep should mirror the start-path side effects (assign + consume materials).** — _added 2026-06-29_
   Starting a blep on a pending/unassigned task runs the "first worker to start the task"
   path (`apps/jobs/services.py` ~1174-1254): it **assigns** the task to that worker,

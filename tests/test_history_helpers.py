@@ -60,7 +60,9 @@ class CurrentRequestUserTest(BaseTestCase):
         """_request.user wins over ctx.user when both are set."""
         other_user = User.objects.exclude(pk=self.user.pk).first()
         if other_user is None:
-            self.skipTest('Need at least two users in fixture')
+            other_user = User.objects.create_user(
+                username='test_second_user', password='x'
+            )
         ctx = HistoryContext(user=other_user)
         request = MagicMock()
         mock_req_user = MagicMock()
@@ -122,7 +124,9 @@ class RecordActionTest(BaseTestCase):
     def test_explicit_user_overrides_context_user(self):
         other_user = User.objects.exclude(pk=self.user.pk).first()
         if other_user is None:
-            self.skipTest('Need at least two users in fixture')
+            other_user = User.objects.create_user(
+                username='test_second_user_b', password='x'
+            )
         ctx = HistoryContext(user=self.user)
         set_history_context(ctx)
         entry = record_action('bill', self.bill.pk, 'Y happened', user=other_user)
