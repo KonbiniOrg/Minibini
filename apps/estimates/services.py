@@ -149,10 +149,11 @@ class EstimateService:
             parent=parent,
         )
 
-        # Copy line items, MOVING each line's source rows (atom claims) onto the
-        # revision so it stays worksheet-backed and the atom remains claimed
-        # exactly once. (Copying the rows would violate EstimateLineItemSource's
-        # unique_together on the atom.)
+        # Copy line items as a frozen snapshot on the new revision, then DELETE
+        # the old estimate's source rows (atom claims) so atoms are released
+        # back to the live job and the new revision can re-claim them freely
+        # via the wizard (EstimateLineItemSource.unique_together enforces
+        # at-most-one claim per atom across all estimates).
         for li in EstimateLineItem.objects.filter(estimate=parent):
             new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
@@ -168,9 +169,10 @@ class EstimateService:
             cats = li.adjustment_target_categories.all()
             if cats:
                 new_li.adjustment_target_categories.set(cats)
-            for src in li.sources.all():
-                src.estimate_line_item = new_li
-                src.save()
+            # Release the parent's atom claims: delete source rows so the
+            # line items remain as a frozen snapshot (description/qty/price
+            # intact) but the live atom links are gone.
+            li.sources.all().delete()
 
         # Supersede parent
         parent.status = Estimate.STATUS_SUPERSEDED
