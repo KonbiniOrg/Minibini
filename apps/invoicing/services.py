@@ -694,6 +694,35 @@ class InvoiceWizardService(BaseWizardService):
             'atoms': expense_atoms,
         })
 
+        # "Fees" group — job-owned Fee atoms; always billable (no completion gate).
+        from apps.jobs.models import Fee
+        fees = (
+            Fee.objects.filter(job=job)
+            .order_by('sort_order', 'pk')
+        )
+        fee_atoms = []
+        for fee in fees:
+            detail = InvoiceWizardService._atom_detail(fee)
+            key = (InvoiceLineItemSource.SOURCE_FEE, fee.pk)
+            state_info = claims.get(key, default_state)
+            fee_atoms.append({
+                'type': 'fee',
+                'id': fee.pk,
+                'description': fee.description,
+                'sub_info': '',
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'units': detail['units'],
+                'amount': detail['amount'],
+                **state_info,
+            })
+        task_list.append({
+            'task_id': None,
+            'name': 'Fees',
+            'has_billable_atoms': len(fee_atoms) > 0,
+            'atoms': fee_atoms,
+        })
+
         return {'tasks': task_list}
 
     @classmethod
@@ -778,8 +807,8 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _resolve_atom(cls, atom_ref):
-        """Given {'type': 'material'|'task'|'expense', 'id': N}, return the instance."""
-        from apps.jobs.models import Task
+        """Given {'type': 'material'|'task'|'expense'|'fee', 'id': N}, return the instance."""
+        from apps.jobs.models import Task, Fee
         from apps.inventory.models import Material
         if atom_ref['type'] == 'material':
             return Material.objects.get(pk=atom_ref['id'])
@@ -787,11 +816,13 @@ class InvoiceWizardService(BaseWizardService):
             return Task.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'expense':
             return cls._expense_model().objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'fee':
+            return Fee.objects.get(pk=atom_ref['id'])
         raise ValueError(f"Unknown atom type: {atom_ref['type']}")
 
     @classmethod
     def _atom_source_type(cls, atom_instance):
-        from apps.jobs.models import Task
+        from apps.jobs.models import Task, Fee
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
         if isinstance(atom_instance, Task):
@@ -800,6 +831,8 @@ class InvoiceWizardService(BaseWizardService):
             return InvoiceLineItemSource.SOURCE_MATERIAL
         if isinstance(atom_instance, cls._expense_model()):
             return InvoiceLineItemSource.SOURCE_EXPENSE
+        if isinstance(atom_instance, Fee):
+            return InvoiceLineItemSource.SOURCE_FEE
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @classmethod
@@ -817,12 +850,18 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_category(cls, atom_instance):
+        from apps.jobs.models import Fee
+        if isinstance(atom_instance, Fee):
+            return atom_instance.accounting_category
         if isinstance(atom_instance, cls._expense_model()):
             return atom_instance.accounting_category
         return super()._atom_category(atom_instance)
 
     @classmethod
     def _atom_description(cls, atom_instance):
+        from apps.jobs.models import Fee
+        if isinstance(atom_instance, Fee):
+            return atom_instance.description
         if isinstance(atom_instance, cls._expense_model()):
             return atom_instance.description or (
                 atom_instance.accounting_category.name
@@ -832,6 +871,10 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_qty_and_price(cls, atom_instance, total_price):
+        from apps.jobs.models import Fee
+        # A fee line item copies over quantity × unit_rate directly.
+        if isinstance(atom_instance, Fee):
+            return atom_instance.quantity, atom_instance.unit_rate
         # A material-less expense bills at pass-through cost: qty 1 × amount.
         if isinstance(atom_instance, cls._expense_model()):
             return Decimal('1'), atom_instance.amount
@@ -839,6 +882,15 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_detail(cls, atom_instance):
+        from apps.jobs.models import Fee
+        if isinstance(atom_instance, Fee):
+            amount = cls._atom_computed_amount(atom_instance)
+            return {
+                'qty': atom_instance.quantity,
+                'rate': atom_instance.unit_rate.quantize(Decimal('0.01')),
+                'units': 'none',
+                'amount': amount,
+            }
         if isinstance(atom_instance, cls._expense_model()):
             amount = cls._atom_computed_amount(atom_instance)
             return {'qty': Decimal('1'), 'rate': amount,
