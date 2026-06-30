@@ -140,9 +140,10 @@
   }
 
   function lineOutOfSync(li) {
-    // Live check (no stored snapshot): does the saved line price still match the
-    // current atoms? Fires for both hand-edits and atom changes — we just flag the
-    // mismatch and let the user decide what to do (e.g. adjust in Customize).
+    // Only meaningful on a draft estimate — once sent/accepted/superseded the line
+    // can no longer be adjusted in the wizard, so flagging it would be misleading.
+    if (!isDraft) return false;
+    // Hand-entered lines have no sources; nothing to be out of sync with.
     if (!li.sources || li.sources.length === 0) return false;
     const sum = li.sources.reduce((s, src) => s + (parseFloat(src.computed_amount) || 0), 0);
     const qty = parseFloat(li.qty) || 0;

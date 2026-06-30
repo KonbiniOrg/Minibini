@@ -133,6 +133,29 @@ describe('EstimateDetailPage out-of-sync indicator', () => {
     await findByText('Cut');
     expect(queryByText(/out of sync/)).toBeNull();
   });
+
+  it('does NOT show out-of-sync warning on a non-draft (open) estimate', async () => {
+    // Out-of-sync is only meaningful on a draft estimate — once sent/accepted/superseded
+    // the line can no longer be edited via the wizard, so flagging it is misleading.
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [line(true)] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await findByText('Cut');
+    expect(queryByText(/out of sync/)).toBeNull();
+  });
+
+  it('does NOT show out-of-sync warning for a hand-line (no atom sources)', async () => {
+    // Hand-entered lines have no sources — nothing to be out of sync with.
+    user.set({ permissions: ['can_manage_jobs'] });
+    const handLine = {
+      line_item_id: 2, line_number: 1, description: 'Hand entry', qty: '1', units: 'each',
+      price: '999', accounting_category: null, sources: [],
+    };
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [handLine] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await findByText('Hand entry');
+    expect(queryByText(/out of sync/)).toBeNull();
+  });
 });
 
 describe('EstimateDetailPage line-item actions', () => {

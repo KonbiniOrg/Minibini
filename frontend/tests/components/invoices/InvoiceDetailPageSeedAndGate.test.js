@@ -231,3 +231,47 @@ describe('InvoiceDetailPage — send gate', () => {
     expect(sendEl).toBeDisabled();
   });
 });
+
+// ─── hasBillables / Show Billables link ──────────────────────────────────────
+
+describe('InvoiceDetailPage — Show Billables link', () => {
+  function mockApiWithJob(invoice, jobOverrides = {}) {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === `/api/invoices/${invoice.invoice_id}/`) return Promise.resolve({ ...invoice });
+      if (url.startsWith('/api/jobs/')) return Promise.resolve({
+        job_id: 10, job_number: 'JOB-10', name: 'Test Job',
+        contact: null, tasks: [], materials: [], fees: [],
+        ...jobOverrides,
+      });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve({});
+    });
+  }
+
+  it('shows "Show Billables" when job has fees (but no tasks or materials)', async () => {
+    // hasBillables must include job.fees so the wizard link appears for fee-only jobs.
+    mockApiWithJob(makeInvoice({ status: 'draft' }), { fees: [{ id: 1, description: 'Setup Fee' }] });
+    const { findByText } = render(InvoiceDetailPage, { props: { params: { id: '5' } } });
+    expect(await findByText('Show Billables')).toBeInTheDocument();
+  });
+
+  it('shows "Show Billables" when job has tasks', async () => {
+    mockApiWithJob(makeInvoice({ status: 'draft' }), { tasks: [{ id: 1, name: 'Cut' }] });
+    const { findByText } = render(InvoiceDetailPage, { props: { params: { id: '5' } } });
+    expect(await findByText('Show Billables')).toBeInTheDocument();
+  });
+
+  it('shows "Show Billables" when job has materials', async () => {
+    mockApiWithJob(makeInvoice({ status: 'draft' }), { materials: [{ id: 2, description: 'Steel' }] });
+    const { findByText } = render(InvoiceDetailPage, { props: { params: { id: '5' } } });
+    expect(await findByText('Show Billables')).toBeInTheDocument();
+  });
+
+  it('does NOT show "Show Billables" when job has no tasks, materials, or fees', async () => {
+    mockApiWithJob(makeInvoice({ status: 'draft' }), { tasks: [], materials: [], fees: [] });
+    const { findByText, queryByText } = render(InvoiceDetailPage, { props: { params: { id: '5' } } });
+    await findByText('Line Items');
+    expect(queryByText('Show Billables')).not.toBeInTheDocument();
+  });
+});

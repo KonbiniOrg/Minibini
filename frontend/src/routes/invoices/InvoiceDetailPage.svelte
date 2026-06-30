@@ -20,12 +20,13 @@
   let success = $state(null);
 
   let canEditLineItems = $derived($canManageFinancials && invoice?.status === 'draft');
-  // "Show Billables" when the job has anything billable to pull from — tasks
-  // OR materials. (A job can carry materials with no tasks; Material.job is a
-  // direct FK and JobSerializer exposes both `tasks` and `materials`.) The pool
-  // may still be empty of logged actuals — that's fine, we still offer the view.
+  // "Show Billables" when the job has anything billable to pull from — tasks,
+  // materials, OR fees. (JobSerializer exposes all three.) The pool may still be
+  // empty of logged actuals — that's fine, we still offer the wizard view.
   let hasBillables = $derived(
-    (job?.tasks?.length ?? 0) > 0 || (job?.materials?.length ?? 0) > 0
+    (job?.tasks?.length ?? 0) > 0 ||
+    (job?.materials?.length ?? 0) > 0 ||
+    (job?.fees?.length ?? 0) > 0
   );
   // Revise placeholder: visible on sent invoices, not yet functional.
   let canSeeRevise = $derived(
