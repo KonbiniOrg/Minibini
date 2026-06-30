@@ -1,3 +1,4 @@
+import unittest
 from decimal import Decimal
 from django.test import TestCase
 
@@ -37,6 +38,7 @@ class CarryOverSignalTest(TestCase):
             price=Decimal('200.00'),
         )
 
+    @unittest.skip("worksheet carry-over replaced by acceptance-Fee crystallization in Phase 4 of job-owns-atoms refactor")
     def test_carry_over_fires_on_estimate_accepted(self):
         # Walk the estimate through draft → open → accepted
         self.estimate.status = Estimate.STATUS_OPEN

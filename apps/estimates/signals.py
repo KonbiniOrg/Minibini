@@ -107,9 +107,11 @@ def update_job_status(sender, estimate, new_job_status, **kwargs):
 
 
 @receiver(estimate_accepted)
-def trigger_atom_carry_over(sender, estimate, **kwargs):
-    """When an Estimate is accepted, carry over atoms from its worksheet (and from
-    any direct-estimate line items with template refs) to the Job.
+def trigger_acceptance_crystallization(sender, estimate, **kwargs):
+    """When an Estimate is accepted, crystallize its hand-lines into Fees on the
+    Job and earmark the job. In the job-owns-atoms model, work already lives on
+    the Job, so there is nothing to carry over from a worksheet — only hand-lines
+    (line items with no source atom, and not adjustments) become Fees.
     """
-    from apps.estimates.carry_over import AtomCarryOverService
-    AtomCarryOverService.carry_over_for_estimate(estimate)
+    from apps.estimates.acceptance import EstimateAcceptanceService
+    EstimateAcceptanceService.on_accept(estimate)

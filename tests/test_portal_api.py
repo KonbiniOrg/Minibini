@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.test import Client, TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration
+from apps.core.models import AccountingCategory, Configuration
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import EstimateService
 from apps.jobs.models import Job
@@ -22,7 +22,8 @@ class PortalApiTest(TestCase):
         self.est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(
             estimate=self.est, description='Work', qty=Decimal('1'),
-            price=Decimal('100.00'))
+            price=Decimal('100.00'),
+            accounting_category=AccountingCategory.objects.first())
         EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
         self.est.refresh_from_db()
         self.token = self.est.public_token

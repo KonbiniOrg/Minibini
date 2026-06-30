@@ -168,10 +168,13 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
 
 
 class EstimateAcceptanceCreatesEarmarksTest(TestCase):
-    """Accepting an estimate carries the worksheet onto the job (via the shared
-    materialize_worksheet_onto_job core), which earmarks inventoried materials.
-    (Earmarking used to live only in the separate WO-creation path; now that
-    carry-over IS the materialization path, it earmarks there too.)"""
+    """Accepting an estimate earmarks the job's inventoried materials.
+
+    In the job-owns-atoms model, materials live directly on the Job (created up
+    front, not carried over from a worksheet at accept time). Acceptance's
+    crystallization hook (EstimateAcceptanceService.on_accept) calls
+    create_earmarks_for_job, so accepting an estimate still earmarks the job's
+    inventoried materials."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -192,24 +195,17 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-AEM-005', version=1,
         )
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.eanc_scheme = _make_scheme('eanc')
-        self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet,
-            name='Build stuff', sort_order=1,
-            rate_scheme=self.eanc_scheme, est_qty=Decimal('1'),
-        )
-        PlanMaterial.objects.create(
-            plan_task=self.plan_task, est_worksheet=self.worksheet,
-            inventory_item=self.plywood,
-            quantity=Decimal('5.00'), unit_cost=Decimal('45.00'),
-            sell_price=Decimal('90.00'),
+        # Material lives directly on the Job in the job-owns-atoms model.
+        Material.objects.create(
+            job=self.job, description='Plywood', inventory_item=self.plywood,
+            quantity=Decimal('5.00'), units='sheets',
+            accounting_category=self.category,
         )
 
     def test_accepting_estimate_creates_earmarks(self):
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Test item',
-            price=Decimal('100.00'),
+            price=Decimal('100.00'), accounting_category=self.category,
         )
         self.estimate.status = Estimate.STATUS_OPEN
         self.estimate.save()

@@ -16,7 +16,7 @@ from django.db import IntegrityError
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstWorksheet
 from apps.contacts.models import Contact
-from apps.core.models import User
+from apps.core.models import AccountingCategory, User
 
 
 class EstimateJobStatusSyncTest(TestCase):
@@ -30,6 +30,10 @@ class EstimateJobStatusSyncTest(TestCase):
             email='test@example.com',
             password='testpass123'
         )
+
+        # Accounting category for line items (Fee crystallization on accept
+        # requires the hand-line's accounting_category to be set).
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
 
         # Create a test contact
         self.contact = Contact.objects.create(
@@ -49,7 +53,7 @@ class EstimateJobStatusSyncTest(TestCase):
         from apps.estimates.models import EstimateLineItem
         EstimateLineItem.objects.create(
             estimate=estimate, description='Test item',
-            price=Decimal('100.00'),
+            price=Decimal('100.00'), accounting_category=self.cat,
         )
 
     def test_only_one_approved_estimate_per_job(self):
