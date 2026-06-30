@@ -112,7 +112,7 @@ class Command(BaseCommand):
         self.check_jobs()
         self.check_rate_schemes()
         self.check_estimates()
-        self.check_worksheets()
+        self.check_fees()
         self.check_tasks()
         self.check_bleps_and_shifts()
         self.check_materials()
@@ -133,6 +133,8 @@ class Command(BaseCommand):
         self.check_bill_po_business_match()
         self.check_earmark_job_status()
         self.check_invoice_job_status()
+        self.check_estimate_source_job_consistency()
+        self.check_invoice_source_job_consistency()
 
         # Report
         self.stdout.write('')
@@ -304,14 +306,6 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'Job {job.job_number}: has {draft_count} draft estimates (max 1)'
                 )
-
-    # ── Worksheets ────────────────────────────────────────────
-
-    def check_worksheets(self):
-        # Worksheets are decoupled from estimates and carry no status/version/
-        # parent of their own — nothing to validate here beyond the FK to a job
-        # (enforced by the schema).
-        return
 
     # ── Tasks ─────────────────────────────────────────────────
 
@@ -742,4 +736,86 @@ class Command(BaseCommand):
                 self.warnings.append(
                     f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
                     f'status is "{inv.job.status}" (expected approved or later)'
+                )
+
+    def check_fees(self):
+        """For each Fee, validate unit_rate > 0, accounting_category present,
+        quantity >= 0, and (if task is set) task.job_id == fee.job_id."""
+        from apps.jobs.models import Fee
+        for fee in Fee.objects.select_related('accounting_category', 'task', 'job').all():
+            if fee.unit_rate <= 0:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): unit_rate must be positive '
+                    f'(got {fee.unit_rate})'
+                )
+            if not fee.accounting_category_id:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): missing accounting_category'
+                )
+            if fee.quantity < 0:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): negative quantity {fee.quantity}'
+                )
+            if fee.task_id and fee.task.job_id != fee.job_id:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): task {fee.task_id} belongs to '
+                    f'job {fee.task.job_id} but Fee belongs to job {fee.job_id}'
+                )
+
+    def check_estimate_source_job_consistency(self):
+        """For each EstimateLineItemSource (task/material/fee), the atom's job_id
+        must match the owning estimate's job_id."""
+        from apps.estimates.models import EstimateLineItemSource
+        atom_source_types = {
+            EstimateLineItemSource.SOURCE_TASK,
+            EstimateLineItemSource.SOURCE_MATERIAL,
+            EstimateLineItemSource.SOURCE_FEE,
+        }
+        for source in EstimateLineItemSource.objects.select_related(
+            'estimate_line_item__estimate__job'
+        ).filter(source_type__in=atom_source_types):
+            estimate_job_id = source.estimate_line_item.estimate.job_id
+            try:
+                atom = source.resolve()
+            except Exception:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): atom not found'
+                )
+                continue
+            atom_job_id = getattr(atom, 'job_id', None)
+            if atom_job_id != estimate_job_id:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): '
+                    f'atom job_id={atom_job_id} does not match estimate job_id={estimate_job_id}'
+                )
+
+    def check_invoice_source_job_consistency(self):
+        """For each InvoiceLineItemSource (task/material/fee), the atom's job_id
+        must match the owning invoice's job_id."""
+        from apps.invoicing.models import InvoiceLineItemSource
+        atom_source_types = {
+            InvoiceLineItemSource.SOURCE_TASK,
+            InvoiceLineItemSource.SOURCE_MATERIAL,
+            InvoiceLineItemSource.SOURCE_FEE,
+        }
+        for source in InvoiceLineItemSource.objects.select_related(
+            'invoice_line_item__invoice__job'
+        ).filter(source_type__in=atom_source_types):
+            invoice_job_id = source.invoice_line_item.invoice.job_id
+            try:
+                atom = source.resolve()
+            except Exception:
+                self.errors.append(
+                    f'InvoiceLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): atom not found'
+                )
+                continue
+            atom_job_id = getattr(atom, 'job_id', None)
+            if atom_job_id != invoice_job_id:
+                self.errors.append(
+                    f'InvoiceLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): '
+                    f'atom job_id={atom_job_id} does not match invoice job_id={invoice_job_id}'
                 )
