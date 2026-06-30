@@ -118,6 +118,12 @@ class NealsDataConverter:
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
         build.assign_current_work(self)  # after bleps: assign pending in_progress tasks
         build.build_purchasing(self)  # after reconcile: consumption, earmarks, QOH, POs/Bills
+        # Test-data synthesis (late, so mirrored atoms copy populated values and
+        # don't disturb bleps/purchasing): in_progress jobs get a plan side
+        # mirroring their real atoms, and estimate lines get synthetic PlanTask
+        # sources. (Draft jobs stay plan-only.)
+        build.build_dual_atoms(self)
+        build.build_synthetic_estimate_sources(self)
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:

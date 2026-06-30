@@ -1727,6 +1727,125 @@ def build_invoices(c):
             inv_fields['qbo_amount_paid'] = f'{inv_total.quantize(Decimal("0.01")):.2f}'
 
 
+def build_dual_atoms(c):
+    """Test-data synthesis: give in_progress jobs a plan side mirroring their
+    real atoms, so the worksheet/carry-over relationship is populated.
+
+    derive_atoms emits real atoms (Task/Material) for in_progress jobs but no
+    worksheet. This adds a worksheet + a PlanTask per Task + a PlanMaterial per
+    Material, linking the existing tasks/materials back via source_plan_task /
+    source_plan_material. (Draft jobs are left plan-only — a draft job can't have
+    real Tasks through the UI, so we don't model that.) Runs late (after worker
+    times / est_qty / purchasing) so the mirrored side copies already-populated
+    values from its source side.
+    """
+    jobs = {f['pk']: f for f in c.fixture_data if f['model'] == 'jobs.job'}
+    ws_by_job = {}
+    tasks_by_job, mats_by_job = {}, {}
+    for f in c.fixture_data:
+        m = f['model']
+        if m == 'estimates.estworksheet':
+            ws_by_job.setdefault(f['fields']['job'], f['pk'])
+        elif m == 'jobs.task':
+            tasks_by_job.setdefault(f['fields']['job'], []).append(f)
+        elif m == 'inventory.material':
+            mats_by_job.setdefault(f['fields']['job'], []).append(f)
+
+    for job_pk, jf in jobs.items():
+        # Only in_progress jobs gain the mirror. Draft jobs stay plan-only — a
+        # draft job can't have real Tasks through the UI, so we don't model it.
+        if jf['fields'].get('status') != 'in_progress':
+            continue
+        if ws_by_job.get(job_pk):
+            continue  # already has a plan; skip
+        created = (jf['fields'].get('created_date')
+                   or f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00')
+        ws_pk = _build_estworksheet(c, job_pk, created)
+        task_to_pt = {}
+        for sort, t in enumerate(
+                sorted(tasks_by_job.get(job_pk, []),
+                       key=lambda f: f['fields'].get('sort_order') or 0), 1):
+            tf = t['fields']
+            pt_pk = c.next_pk('jobs.plantask')
+            c.add_fixture('jobs.plantask', pt_pk, {
+                'est_worksheet':    ws_pk,
+                'rate_scheme':      tf['rate_scheme'],
+                'name':             tf['name'],
+                'description':      tf['description'],
+                'est_qty':          tf.get('est_qty') or '1.00',
+                'est_worker_time':  tf.get('est_worker_time'),
+                'active_modifiers': list(tf.get('active_modifiers') or []),
+                'sort_order':       tf.get('sort_order') or sort,
+            })
+            task_to_pt[t['pk']] = pt_pk
+            tf['source_plan_task'] = pt_pk  # link the existing task
+        for mt in mats_by_job.get(job_pk, []):
+            mf = mt['fields']
+            pm_pk = c.next_pk('inventory.planmaterial')
+            c.add_fixture('inventory.planmaterial', pm_pk, {
+                'est_worksheet':       ws_pk,
+                'plan_task':           task_to_pt.get(mf.get('task')),
+                'description':         mf['description'],
+                'quantity':            mf['quantity'],
+                'units':               mf['units'],
+                'unit_cost':           mf['unit_cost'],
+                'sell_price':          mf['sell_price'],
+                'accounting_category': mf['accounting_category'],
+                'inventory_item':      mf['inventory_item'],
+            })
+            mf['source_plan_material'] = pm_pk  # link the existing material
+
+
+def build_synthetic_estimate_sources(c):
+    """Test-data synthesis: round-robin assign each job's PlanTasks as sources
+    of that job's (non-adjustment) estimate line items, so the Client View
+    projects atoms even though the kanban work and FreeAgent charge lines don't
+    really correspond. Each PlanTask claims at most one estimate line (model
+    unique_together); extra PlanTasks group onto lines, surplus/adjustment lines
+    stay sourceless. Skips PlanTasks already claimed as an estimate source.
+    """
+    claimed = {
+        f['fields']['source_pk']
+        for f in c.fixture_data
+        if f['model'] == 'estimates.estimatelineitemsource'
+        and f['fields'].get('source_type') == 'plan_task'
+    }
+    ws_to_job = {
+        f['pk']: f['fields']['job']
+        for f in c.fixture_data if f['model'] == 'estimates.estworksheet'
+    }
+    plantasks_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'jobs.plantask' and f['pk'] not in claimed:
+            job_pk = ws_to_job.get(f['fields']['est_worksheet'])
+            if job_pk is not None:
+                plantasks_by_job.setdefault(job_pk, []).append(f)
+
+    est_to_job = {
+        f['pk']: f['fields']['job']
+        for f in c.fixture_data if f['model'] == 'estimates.estimate'
+    }
+    lines_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] != 'estimates.estimatelineitem':
+            continue
+        if f['fields'].get('adjustment_service') is not None:
+            continue  # adjustment lines never get atom sources
+        job_pk = est_to_job.get(f['fields']['estimate'])
+        if job_pk is not None:
+            lines_by_job.setdefault(job_pk, []).append(f)
+
+    for job_pk, pts in plantasks_by_job.items():
+        lines = lines_by_job.get(job_pk)
+        if not lines:
+            continue
+        lines = sorted(lines, key=lambda f: (
+            f['fields'].get('estimate'), f['fields'].get('line_number') or 0))
+        for i, pt in enumerate(sorted(pts, key=lambda f: f['pk'])):
+            li = lines[i % len(lines)]
+            _emit_estimate_line_item_source(c, li['pk'], 'plan_task', pt['pk'])
+
+
 def build_invoice_line_item_sources(c):
     """Emit invoicing.invoicelineitemsource rows linking InvoiceLineItems to
     Tasks / Materials on the Job.
@@ -1784,6 +1903,11 @@ def build_invoice_line_item_sources(c):
         material_pool = sorted(materials_by_job.get(job_pk, []))
         invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
         for inv in invs:
+            # Draft invoices are seeded empty in the app (the user picks
+            # "Apply everything" / "Copy from estimate"); don't pre-claim atoms
+            # onto a draft's lines.
+            if inv['fields'].get('status') == 'draft':
+                continue
             lines = sorted(
                 lines_by_invoice.get(inv['pk'], []),
                 key=lambda f: f['fields'].get('line_number') or 0,
