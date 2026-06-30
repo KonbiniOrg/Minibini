@@ -1502,12 +1502,15 @@ class EstQuantityHeuristicTest(unittest.TestCase):
         build.assign_est_quantities(c)
         self.assertEqual(self._qty(c, 10), '1.00')
 
-    def test_flat_fee_defaults_to_one_but_keeps_source(self):
+    def test_non_work_algorithm_leaves_est_qty_untouched(self):
+        # Fixed charges are now jobs.Fee atoms (no est_qty), not Tasks, so
+        # assign_est_quantities only fills elapsed_time / entered_qty Tasks and
+        # leaves any other scheme's est_qty exactly as the source set it.
         c = self._converter()
         self._add_task(c, 10, 3, est_qty=None)
         self._add_task(c, 11, 3, est_qty='3.00')
         build.assign_est_quantities(c)
-        self.assertEqual(self._qty(c, 10), '1.00')
+        self.assertIsNone(self._qty(c, 10))
         self.assertEqual(self._qty(c, 11), '3.00')
 
     def test_entered_qty_generated_when_missing_kept_when_present(self):
