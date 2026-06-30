@@ -34,19 +34,28 @@ class EstimateAcceptanceService:
         # before this fires; refresh so we act against committed state.
         job.refresh_from_db()
 
+        from apps.estimates.models import EstimateLineItemSource
+
         fees_created = 0
         for li in estimate.estimatelineitem_set.all():
             if li.sources.exists():              # atom-backed → already on the job
                 continue
             if li.adjustment_service_id is not None:  # percentage adjustments stay document-only
                 continue
-            Fee.objects.create(
+            fee = Fee.objects.create(
                 job=job,
                 description=li.description or '',
                 quantity=li.qty or Decimal('1'),
                 unit_rate=li.price or Decimal('0'),
                 accounting_category=li.accounting_category,
                 sort_order=li.line_number or 0,
+            )
+            # Link the estimate line to its crystallized Fee so copy_from_estimate
+            # can trace which hand-line maps to which Fee and claim it on the invoice.
+            EstimateLineItemSource.objects.create(
+                estimate_line_item=li,
+                source_type=EstimateLineItemSource.SOURCE_FEE,
+                source_pk=fee.pk,
             )
             fees_created += 1
 

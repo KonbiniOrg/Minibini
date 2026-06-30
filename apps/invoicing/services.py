@@ -170,6 +170,8 @@ class InvoiceService:
 
         from apps.core.services import LineItemService
 
+        from apps.invoicing.models import InvoiceLineItemSource
+
         with transaction.atomic():
             for line_number, line in enumerate(lines, start=1):
                 li = InvoiceLineItem(
@@ -189,6 +191,16 @@ class InvoiceService:
                 # Set M2M after the initial save so the PK exists.
                 if line.get('is_adjustment') and line.get('target_category_ids'):
                     li.adjustment_target_categories.set(line['target_category_ids'])
+
+                # If this line was crystallized from a hand-line into a Fee at
+                # acceptance time, create the InvoiceLineItemSource so the wizard
+                # pool marks the Fee as claimed and blocks double-billing.
+                if line.get('source_fee_id'):
+                    InvoiceLineItemSource.objects.create(
+                        invoice_line_item=li,
+                        source_type=InvoiceLineItemSource.SOURCE_FEE,
+                        source_pk=line['source_fee_id'],
+                    )
 
         return len(lines)
 
