@@ -1,19 +1,14 @@
 from rest_framework import serializers
 
 
-# Fields editable on PLI-linked Material / PlanMaterial.
+# Fields editable on PLI-linked Material.
 PLI_LINKED_PRICING_ALLOWED = {'unit_cost', 'sell_price', 'propagate_to_pli'}
 
-# Fields editable on freeform (no PLI) Material / PlanMaterial.
+# Fields editable on freeform (no PLI) Material.
 FREEFORM_ALLOWED = {
     'description', 'units', 'unit_cost', 'sell_price', 'accounting_category',
     'propagate_to_pli',
 }
-
-# PlanMaterial freeform allowlist — same as Material's plus 'quantity'.
-# PlanMaterial has no Restock/Draw-more state-machine ops (no inventory
-# accounting), so quantity must be PATCH-editable after create.
-PLAN_MATERIAL_FREEFORM_ALLOWED = FREEFORM_ALLOWED | {'quantity'}
 
 
 def material_qty_on_hand(obj):
@@ -43,7 +38,7 @@ def enforce_pli_linked_allowlist(instance, validated_data, allowed):
     outside `allowed` while the instance is PLI-linked.
 
     `allowed` is a set of field names. Use PLI_LINKED_PRICING_ALLOWED for
-    Material/PlanMaterial.
+    Material.
     """
     if instance.inventory_item_id is None:
         return

@@ -154,9 +154,8 @@ class Estimate(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
-        # Check if status changed and handle updates. (Worksheets no longer
-        # mirror estimate status — their editability is derived from the live
-        # estimate at read time; see WorksheetService.is_editable.)
+        # Check if status changed and handle updates. (Wizard editability is
+        # derived from the live estimate's status at read time.)
         if old_status and old_status != self.status:
             self._maybe_update_job_status(old_status)
 
@@ -296,10 +295,10 @@ class ChangeOrder(models.Model):
 
 
 class EstWorksheet(AbstractWorkContainer):
-    # One mutable worksheet per job. The worksheet has no lifecycle of its own:
-    # it relates to a job only (no estimate FK), carries no status/version, and
-    # its editability is derived from the job's live estimate (see
-    # WorksheetService.is_editable). It is found via the job, not a direct link.
+    # Deprecated plan-layer container, retained until its removal migration
+    # (Task 4.2b). Work now lives directly on the Job; nothing creates new
+    # worksheets. The model is kept only so historical rows and the model-level
+    # tests survive this step.
     est_worksheet_id = models.AutoField(primary_key=True)
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
     created_date = models.DateTimeField(default=timezone.now)
@@ -312,7 +311,7 @@ class EstWorksheet(AbstractWorkContainer):
 
 
 class WorkTemplate(models.Model):
-    """Template for populating Jobs and EstWorksheets with product structure"""
+    """Template for populating Jobs with product structure"""
 
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
@@ -329,38 +328,12 @@ class WorkTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
-    def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate plan tasks for a worksheet from this template.
-
-        Returns a list of (TemplateTaskAssociation, instance_index, PlanTask) tuples
-        so callers (e.g. generate_materials_for_worksheet) can pair generated
-        materials with their matching PlanTasks.
-        """
-        generated = []
-
-        for instance in range(1, quantity + 1):
-            associations = TemplateTaskAssociation.objects.filter(
-                work_template=self,
-                service_item__is_active=True,
-            ).order_by('sort_order', 'service_item__template_name')
-
-            for association in associations:
-                task = association.service_item.generate_task(
-                    worksheet,
-                    est_qty=association.est_qty,
-                    product_instance=instance if quantity > 1 else None,
-                    sort_order=association.sort_order,
-                )
-                generated.append((association, instance, task))
-
-        return generated
-
     def generate_tasks_for_job(self, job, quantity=1):
         """Generate Tasks on a Job from this template's ServiceItems.
 
         Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
         so generate_materials_for_job can pair generated Materials with their
-        matching Tasks. Mirrors generate_tasks_for_worksheet.
+        matching Tasks.
         """
         generated = []
 
@@ -380,36 +353,6 @@ class WorkTemplate(models.Model):
                 generated.append((association, instance, task))
 
         return generated
-
-    def generate_materials_for_worksheet(self, worksheet, quantity=1, task_pairing=None):
-        """Generate PlanMaterials for a worksheet from this template's
-        material associations. Pairs each association's generated PlanMaterial
-        with the matching generated PlanTask via task_pairing (a list of
-        (TemplateTaskAssociation, instance_index, PlanTask) tuples returned by
-        generate_tasks_for_worksheet).
-
-        If task_pairing is None, all generated materials are task-less.
-        """
-        from apps.inventory.models import PlanMaterial
-
-        # Build (tta_pk, instance) -> PlanTask lookup if pairing was provided
-        pairing = {}
-        if task_pairing:
-            for tta, instance, pt in task_pairing:
-                pairing[(tta.pk, instance)] = pt
-
-        associations = self.material_associations.all()
-        for instance in range(1, quantity + 1):
-            for assoc in associations:
-                paired_pt = None
-                if assoc.template_task_association_id is not None:
-                    paired_pt = pairing.get((assoc.template_task_association_id, instance))
-                PlanMaterial.objects.create(
-                    est_worksheet=worksheet,
-                    plan_task=paired_pt,
-                    quantity=assoc.quantity,
-                    inventory_item=assoc.inventory_item,
-                )
 
     def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
         """Generate Materials for a job from this template's material associations.
@@ -497,9 +440,7 @@ class ServiceItem(models.Model):
                        assignee=None, sort_order=None,
                        name=None, description=None,
                        active_modifiers=None, est_worker_time=None):
-        """Generate a PlanTask or Task from this template with specified quantity.
-
-        The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
+        """Generate a Task on a Job from this template with specified quantity.
 
         Optional overrides:
           name            – if truthy, replaces template_name; empty string falls back to template default.
@@ -507,7 +448,7 @@ class ServiceItem(models.Model):
           active_modifiers – list of modifier keys; falls back to template defaults when None.
           est_worker_time – ISO 8601 duration string or None.
         """
-        from apps.jobs.models import Job, Task, PlanTask, copy_active_modifiers
+        from apps.jobs.models import Job, Task, copy_active_modifiers
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
@@ -524,31 +465,23 @@ class ServiceItem(models.Model):
             else self.default_active_modifiers
         )
 
-        if isinstance(container, Job):
-            with transaction.atomic():
-                task = Task.objects.create(
-                    job=container,
-                    name=resolved_name,
-                    description=resolved_description,
-                    assignee=assignee,
-                    sort_order=sort_order,
-                    rate_scheme=self.rate_scheme,
-                    active_modifiers=resolved_modifiers,
-                    est_qty=est_qty,
-                    est_worker_time=est_worker_time,
-                )
-            return task
-        else:  # EstWorksheet
-            return PlanTask.objects.create(
-                est_worksheet=container,
+        if not isinstance(container, Job):
+            raise ValueError(
+                'generate_task only supports a Job container (job-owns-atoms refactor).'
+            )
+        with transaction.atomic():
+            task = Task.objects.create(
+                job=container,
                 name=resolved_name,
                 description=resolved_description,
+                assignee=assignee,
+                sort_order=sort_order,
                 rate_scheme=self.rate_scheme,
                 active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
-                sort_order=sort_order,
             )
+        return task
 
 
 class EstimateLineItem(BaseLineItem):
@@ -579,23 +512,15 @@ class EstimateLineItem(BaseLineItem):
 
 
 class EstimateLineItemSource(models.Model):
-    """Polymorphic join between an EstimateLineItem and its source atom (PlanTask or PlanMaterial).
+    """Polymorphic join between an EstimateLineItem and its source atom (Task, Material, or Fee).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one estimate line item.
-
-    Note: unlike InvoiceLineItemSource, this constraint is NOT scoped by Estimate status
-    on the plan side. Worksheet revisions copy atoms (creating new instances), so the
-    constraint never needs to fire across revisions in practice.
     """
-    SOURCE_PLAN_TASK = 'plan_task'
-    SOURCE_PLAN_MATERIAL = 'plan_material'
     SOURCE_TASK = 'task'
     SOURCE_MATERIAL = 'material'
     SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
-        (SOURCE_PLAN_TASK, 'PlanTask'),
-        (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
         (SOURCE_TASK, 'Task'),
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_FEE, 'Fee'),
@@ -616,12 +541,6 @@ class EstimateLineItemSource(models.Model):
 
     def resolve(self):
         """Return the concrete atom instance referenced by this source."""
-        if self.source_type == self.SOURCE_PLAN_TASK:
-            from apps.jobs.models import PlanTask
-            return PlanTask.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_PLAN_MATERIAL:
-            from apps.inventory.models import PlanMaterial
-            return PlanMaterial.objects.get(pk=self.source_pk)
         if self.source_type == self.SOURCE_TASK:
             from apps.jobs.models import Task
             return Task.objects.get(pk=self.source_pk)

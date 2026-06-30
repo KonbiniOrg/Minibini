@@ -86,6 +86,6 @@ class TaskDescriptionFromTemplateTests(TestCase):
     def test_generate_task_copies_description_from_template(self):
         """ServiceItem.generate_task() should copy description to the new task."""
         task = self.service_item.generate_task(
-            self.worksheet, est_qty=Decimal('100.00')
+            self.job, est_qty=Decimal('100.00')
         )
         self.assertEqual(task.description, 'Apply two coats of primer and paint')

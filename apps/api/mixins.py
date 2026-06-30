@@ -303,61 +303,6 @@ class LineItemMixin:
             raise NotFound()
 
 
-class PlanTaskMixin:
-    """
-    Adds plan-task CRUD actions to the EstWorksheet viewset.
-
-    Works against PlanTask (worksheet-side model).
-
-    Subclasses declare:
-        plan_task_serializer_class = SomePlanTaskSerializer
-    """
-    plan_task_serializer_class = None
-
-    @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
-    def tasks(self, request, pk=None):
-        worksheet = self.get_object()
-        if request.method == 'GET':
-            from apps.jobs.models import PlanTask
-            tasks = PlanTask.objects.filter(
-                est_worksheet=worksheet,
-            ).select_related('rate_scheme').order_by('sort_order')
-            serializer = self.plan_task_serializer_class(tasks, many=True)
-            return Response(serializer.data)
-
-        serializer = self.plan_task_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(est_worksheet=worksheet)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='tasks/(?P<task_id>[0-9]+)', url_name='task-detail')
-    def task_detail(self, request, pk=None, task_id=None):
-        worksheet = self.get_object()
-        task = self._get_plan_task_or_404(worksheet, task_id)
-
-        if request.method == 'DELETE':
-            task.delete()
-            return Response({'message': 'Task deleted.'})
-
-        serializer = self.plan_task_serializer_class(task, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-    def _get_plan_task_or_404(self, worksheet, task_id):
-        from apps.jobs.models import PlanTask
-        try:
-            return PlanTask.objects.get(pk=task_id, est_worksheet=worksheet)
-        except PlanTask.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
-
-
-# Backwards-compat alias — remove after all callers updated
-PlanTaskBundleMixin = PlanTaskMixin
-
-
 class JobTaskMixin:
     """
     Adds task CRUD actions to the Job viewset. Works against Task.

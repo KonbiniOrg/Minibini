@@ -11,7 +11,7 @@ from apps.jobs.models import Job, Task, Fee
 from apps.inventory.models import Material
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
-from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, ServiceItem
+from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
@@ -26,7 +26,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             Prefetch(
                 'tasks',
                 queryset=Task.objects.select_related(
-                    'assignee', 'rate_scheme', 'source_plan_task',
+                    'assignee', 'rate_scheme',
                 ).prefetch_related('blep_set').order_by('sort_order'),
             ),
             Prefetch(
@@ -231,35 +231,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         except SchemeSupersededError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
         except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        job.refresh_from_db()
-        return Response(self.get_serializer(job).data)
-
-    @action(detail=True, methods=['post'], url_path='copy-from-worksheet')
-    def copy_from_worksheet(self, request, pk=None):
-        # The job-state guard (must be approved/in_progress) lives in the shared
-        # JobService.materialize_worksheet_onto_job core; it raises ValidationError,
-        # caught below and returned as 400.
-        job = self.get_object()
-        worksheet_pk = request.data.get('worksheet_id')
-        if not worksheet_pk:
-            return Response(
-                {'worksheet_id': ['This field is required.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            return Response(
-                {'worksheet_id': ['Worksheet not found.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            JobService.copy_from_worksheet(job.pk, ws.pk)
-        except (ValidationError, NotFoundError) as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},
                 status=status.HTTP_400_BAD_REQUEST,

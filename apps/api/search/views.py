@@ -94,16 +94,6 @@ def _serialize_categories(categories):
             categories['inventory_items']['items'], many=True
         ).data
 
-    if 'est_worksheets' in categories:
-        out['est_worksheets'] = [
-            {
-                'worksheet_id': ws.pk,
-                'job_number': ws.job.job_number if ws.job else None,
-                'estimate_number': ws.estimate.estimate_number if ws.estimate else None,
-            }
-            for ws in categories['est_worksheets']
-        ]
-
     return out
 
 

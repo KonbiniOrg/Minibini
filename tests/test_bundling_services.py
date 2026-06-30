@@ -6,7 +6,7 @@ from django.db import models
 from apps.estimates.models import (
     EstWorksheet, WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
-from apps.estimates.services import WorkTemplateService, WorksheetService
+from apps.estimates.services import WorkTemplateService
 from apps.jobs.models import Job, PlanTask, RateScheme
 from apps.jobs.services import JobService
 from apps.core.services import NotFoundError, BundlingService
@@ -79,46 +79,6 @@ class ReorderServiceTest(BundlingTestBase):
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(
                 items_qs, 'task', t1.pk, 'up',
-            )
-
-
-class WorksheetServiceReorderTest(BundlingTestBase):
-    """Tests for WorksheetService reorder methods."""
-
-    def setUp(self):
-        super().setUp()
-        self.ws = WorksheetService.create_worksheet(self.job.pk)
-        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
-        self.t1 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Task 1', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        self.t2 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Task 2', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-
-    def test_reorder_items(self):
-        """Reorder tasks at container level."""
-        WorksheetService.reorder_items(
-            self.ws.pk, 'task', self.t1.pk, 'down',
-        )
-        self.t1.refresh_from_db()
-        self.t2.refresh_from_db()
-        self.assertEqual(self.t1.sort_order, 2)
-        self.assertEqual(self.t2.sort_order, 1)
-
-    def test_reorder_refused_when_estimate_sent(self):
-        """Cannot reorder once the job's estimate is sent (worksheet frozen)."""
-        from apps.estimates.models import Estimate
-        est = Estimate.objects.create(
-            job=self.ws.job, estimate_number='EST-REORD-1',
-            status=Estimate.STATUS_DRAFT,
-        )
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        with self.assertRaises(ValidationError):
-            WorksheetService.reorder_items(
-                self.ws.pk, 'task', self.t1.pk, 'down',
             )
 
 

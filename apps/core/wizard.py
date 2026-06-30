@@ -34,12 +34,12 @@ class BaseWizardService:
 
     @classmethod
     def _task_model(cls):
-        """The task atom model — Task / PlanTask."""
+        """The task atom model — Task."""
         raise NotImplementedError
 
     @classmethod
     def _material_model(cls):
-        """The material atom model — Material / PlanMaterial."""
+        """The material atom model — Material."""
         raise NotImplementedError
 
     @classmethod

@@ -68,17 +68,6 @@ class FreeformMaterialRequiresCategoryTests(_Setup):
         self.assertEqual(m.accounting_category_id, self.cat.pk)
 
 
-class FreeformPlanMaterialRequiresCategoryTests(_Setup):
-    def test_post_freeform_plan_material_without_category_fails(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        resp = self.client.post(
-            f'/api/est-worksheets/{ws.pk}/plan-materials/',
-            {'description': 'x', 'quantity': '1'},
-            format='json',
-        )
-        self.assertEqual(resp.status_code, 400, resp.content)
-
-
 class ModelLevelNotNullTests(TestCase):
     @classmethod
     def setUpTestData(cls):

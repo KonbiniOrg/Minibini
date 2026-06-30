@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.estimates.models import (
-    Estimate, EstimateLineItem, EstWorksheet,
+    Estimate, EstimateLineItem,
     WorkTemplate, ServiceItem, TemplateTaskAssociation,
     ChangeOrder,
 )
@@ -124,8 +124,8 @@ class EstimateService:
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        # The job's worksheet (if any) freezes automatically: editability is
-        # derived from the now-sent estimate (WorksheetService.is_editable).
+        # Once sent, the estimate freezes the job's quoting state: a sent
+        # (non-draft) live estimate blocks further wizard edits.
 
         return estimate
 
@@ -749,186 +749,6 @@ class WorkTemplateService:
         )
 
 
-class WorksheetService:
-    """Service for EstWorksheet operations."""
-
-    @staticmethod
-    def is_editable(worksheet):
-        """A worksheet is editable while the job is still quoting — its live
-        (non-superseded) estimate is a draft, or the job has no estimate yet.
-        It freezes once an estimate is sent (and stays frozen through accept);
-        revising a sent estimate yields a new draft, which unlocks it again.
-        """
-        live = (
-            Estimate.objects
-            .filter(job_id=worksheet.job_id)
-            .exclude(status=Estimate.STATUS_SUPERSEDED)
-            .order_by('-version', '-pk')
-            .first()
-        )
-        return live is None or live.status == Estimate.STATUS_DRAFT
-
-    @staticmethod
-    def create_worksheet(job_pk, **kwargs):
-        """Create a new EstWorksheet for a job (one per job)."""
-        from apps.jobs.models import Job
-        try:
-            job = Job.objects.get(pk=job_pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_pk} not found')
-        ws = EstWorksheet(job=job, **kwargs)
-        ws.save()
-        return ws
-
-    @staticmethod
-    def get_or_create_worksheet(job_pk, **kwargs):
-        """Return the job's latest worksheet (created=False) or create a new one (created=True).
-
-        "Latest" is determined by est_worksheet_id descending, matching the
-        frontend's currentWorksheet derivation.  A job never gets a second Plan
-        through this path — idempotent by design.
-        """
-        from apps.jobs.models import Job
-        try:
-            job = Job.objects.get(pk=job_pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_pk} not found')
-        existing = (
-            EstWorksheet.objects
-            .filter(job=job)
-            .order_by('-est_worksheet_id')
-            .first()
-        )
-        if existing is not None:
-            return existing, False
-        ws = EstWorksheet(job=job, **kwargs)
-        ws.save()
-        return ws, True
-
-    @staticmethod
-    def has_claimed_atoms(worksheet):
-        """True if any of the worksheet's plan tasks/materials are claimed by an
-        estimate line item source. Such a worksheet can't be deleted until those
-        line items are removed (the frontend uses this to suppress the Delete
-        button so the user never hits the 400)."""
-        from django.db.models import Q
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-        from apps.estimates.models import EstimateLineItemSource
-        pt_ids = list(
-            PlanTask.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
-        )
-        pm_ids = list(
-            PlanMaterial.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
-        )
-        return EstimateLineItemSource.objects.filter(
-            Q(source_type=EstimateLineItemSource.SOURCE_PLAN_TASK, source_pk__in=pt_ids)
-            | Q(source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL, source_pk__in=pm_ids)
-        ).exists()
-
-    @staticmethod
-    def delete_worksheet(worksheet):
-        """Delete a worksheet. Refuses if any of its plan tasks/materials are
-        claimed by an estimate line item — those line items must be removed
-        first so their source rows don't outlive the atoms they reference.
-        """
-        if WorksheetService.has_claimed_atoms(worksheet):
-            raise ValidationError(
-                'Cannot delete a worksheet whose tasks or materials are used by '
-                'an estimate. Remove those estimate line items first.'
-            )
-        worksheet.delete()
-
-    @staticmethod
-    def add_task_from_template(
-        worksheet_pk, template_pk,
-        rate_scheme_id=None,
-        active_modifiers=None,
-        est_qty=None,
-        est_worker_time=None,
-        name=None,
-        description=None,
-    ):
-        """Add a PlanTask to a draft worksheet from a ServiceItem.
-
-        Optional overrides:
-          name        – if truthy, replaces template_name; empty string falls back to template default.
-          description – if not None, replaces template description (empty string is kept as-is).
-        """
-        from apps.jobs.models import PlanTask
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if not WorksheetService.is_editable(ws):
-            raise ValidationError(
-                'Cannot add tasks to a worksheet whose estimate has been sent.'
-            )
-        try:
-            tt = ServiceItem.objects.get(pk=template_pk)
-        except ServiceItem.DoesNotExist:
-            raise NotFoundError(f'ServiceItem {template_pk} not found')
-
-        # Guard: refuse to use a template whose RateScheme has been superseded.
-        # Only fires when the caller is relying on the template's rate_scheme
-        # (i.e. they didn't supply an explicit override).
-        if rate_scheme_id is None and tt.rate_scheme_id and tt.rate_scheme.replaced_by_id is not None:
-            from apps.core.services import SchemeSupersededError
-            raise SchemeSupersededError(
-                f'Template "{tt.template_name}" references a superseded '
-                f'RateScheme. Update the template before adding tasks from it.'
-            )
-
-        task = PlanTask.objects.create(
-            name=name if name else tt.template_name,
-            description=description if description is not None else tt.description,
-            est_worksheet=ws,
-            rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
-            active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
-            est_qty=est_qty if est_qty is not None else Decimal('1'),
-            est_worker_time=est_worker_time,
-        )
-        return task
-
-    @staticmethod
-    def add_task_manual(worksheet_pk, **kwargs):
-        """Add a PlanTask manually to a draft worksheet."""
-        from apps.jobs.models import PlanTask
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if not WorksheetService.is_editable(ws):
-            raise ValidationError(
-                'Cannot add tasks to a worksheet whose estimate has been sent.'
-            )
-        if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
-            raise ValidationError(
-                {'rate_scheme': 'A RateScheme is required to add a task.'}
-            )
-        task = PlanTask(est_worksheet=ws, **kwargs)
-        task.full_clean()
-        task.save()
-        return task
-
-    @staticmethod
-    def reorder_items(worksheet_pk, item_type, item_id, direction):
-        """Reorder PlanTasks at container level on a draft worksheet."""
-        from apps.jobs.models import PlanTask
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if not WorksheetService.is_editable(ws):
-            raise ValidationError('Cannot reorder a worksheet whose estimate has been sent.')
-
-        items_qs = PlanTask.objects.filter(est_worksheet=ws)
-        BundlingService.reorder_container_items(
-            items_qs, item_type, item_id, direction,
-        )
-
-
 class EstimateClaimConflict(Exception):
     """Raised when the estimate wizard tries to claim an atom already claimed elsewhere."""
 
@@ -959,7 +779,17 @@ class EstimateWizardService(BaseWizardService):
         has a sent/accepted estimate).
         """
         from apps.estimates.models import Estimate
-        if not WorksheetService.is_editable(worksheet):
+        # Editable while the job is still quoting: its live (non-superseded)
+        # estimate is a draft, or the job has no estimate yet. It freezes once an
+        # estimate is sent.
+        live = (
+            Estimate.objects
+            .filter(job_id=worksheet.job_id)
+            .exclude(status=Estimate.STATUS_SUPERSEDED)
+            .order_by('-version', '-pk')
+            .first()
+        )
+        if live is not None and live.status != Estimate.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot generate an estimate from a worksheet whose estimate '
                 'has already been sent.'
@@ -986,7 +816,7 @@ class EstimateWizardService(BaseWizardService):
         """Convert {'type': 'task'|'material', 'id': N} to a model instance.
 
         The estimate now projects the Job's own atoms (Tasks + Materials),
-        not the worksheet's PlanTasks/PlanMaterials (job-owns-atoms refactor).
+        per the job-owns-atoms refactor.
         """
         from apps.jobs.models import Task
         from apps.inventory.models import Material
@@ -1052,8 +882,7 @@ class EstimateWizardService(BaseWizardService):
     @staticmethod
     def get_source_pool(estimate):
         """Walk the estimate's Job's atoms (Tasks + Materials) and return a flat
-        pool with claim state (job-owns-atoms refactor — was the worksheet's
-        PlanTasks/PlanMaterials).
+        pool with claim state (job-owns-atoms refactor).
 
         Returns: {'atoms': [
             {'type': 'task'|'material', 'id': N, 'description': str,
@@ -1151,9 +980,9 @@ class EstimateWizardService(BaseWizardService):
     def send_all_atoms_to_estimate(worksheet):
         """Bulk 1:1 conversion of the Job's unclaimed atoms to EstimateLineItems.
 
-        Iterates all of the Job's Tasks and Materials (job-owns-atoms refactor —
-        was the worksheet's PlanTasks/PlanMaterials) that aren't yet claimed by
-        any EstimateLineItemSource, and creates one EstimateLineItem per atom
+        Iterates all of the Job's Tasks and Materials (job-owns-atoms refactor)
+        that aren't yet claimed by any EstimateLineItemSource, and creates one
+        EstimateLineItem per atom
         (with one source row pointing at the atom). Tasks bill est_qty (estimate
         projection), via _atom_computed_amount.
 

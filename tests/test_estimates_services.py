@@ -267,15 +267,14 @@ class EstimateServiceReviseTest(EstimatesTestBase):
             EstimateService.revise_estimate(est.pk)
 
     def test_revise_moves_line_item_sources(self):
-        """Worksheet sources MOVE to the revision's copied line items — not
+        """Atom sources MOVE to the revision's copied line items — not
         copied (the unique_together on the atom forbids two claims) and not
         dropped. The atom stays claimed exactly once; the superseded parent's
         line loses the claim."""
-        from apps.estimates.models import EstWorksheet, EstimateLineItemSource
-        from apps.jobs.models import PlanTask
-        ws = EstWorksheet.objects.create(job=self.job)
-        plan_task = PlanTask.objects.create(
-            est_worksheet=ws, name='Mill', rate_scheme=self.scheme, est_qty=Decimal('2'),
+        from apps.estimates.models import EstimateLineItemSource
+        from apps.jobs.models import Task
+        task = Task.objects.create(
+            job=self.job, name='Mill', rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
         est = EstimateService.create_for_job(self.job.pk)
         li = EstimateLineItem.objects.create(
@@ -284,8 +283,8 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         )
         src = EstimateLineItemSource.objects.create(
             estimate_line_item=li,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-            source_pk=plan_task.pk,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
         )
         EstimateService.update_status(est.pk, Estimate.STATUS_OPEN)
 
@@ -301,8 +300,8 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         # Exactly one claim on the atom (unique_together still satisfied).
         self.assertEqual(
             EstimateLineItemSource.objects.filter(
-                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-                source_pk=plan_task.pk,
+                source_type=EstimateLineItemSource.SOURCE_TASK,
+                source_pk=task.pk,
             ).count(),
             1,
         )
@@ -418,141 +417,6 @@ class EstimateServiceDeleteLineItemTest(EstimatesTestBase):
             EstimateService.delete_line_item(99999)
 
 
-# --- WorksheetService ---
-
-class WorksheetServiceCreateTest(EstimatesTestBase):
-    """Tests for WorksheetService.create_worksheet."""
-
-    def test_create_worksheet(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        self.assertIsNotNone(ws.pk)
-        self.assertEqual(ws.job, self.job)
-
-    def test_create_worksheet_job_not_found(self):
-        from apps.estimates.services import WorksheetService
-        with self.assertRaises(NotFoundError):
-            WorksheetService.create_worksheet(99999)
-
-
-class WorksheetServiceDeleteTest(EstimatesTestBase):
-    """Tests for WorksheetService.delete_worksheet."""
-
-    def test_deletes_worksheet_with_no_claimed_atoms(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        ws_pk = ws.pk
-        WorksheetService.delete_worksheet(ws)
-        self.assertFalse(EstWorksheet.objects.filter(pk=ws_pk).exists())
-
-    def test_refuses_when_atom_claimed_by_estimate(self):
-        """Deletion is refused while one of the worksheet's atoms is claimed by
-        an estimate line item (so the source row isn't orphaned)."""
-        from apps.estimates.services import WorksheetService, EstimateWizardService
-        from apps.estimates.models import EstimateLineItemSource
-        from django.core.exceptions import ValidationError
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        pt = PlanTask.objects.create(
-            est_worksheet=ws, name='Task 1', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        est = EstimateWizardService.open_for_worksheet(ws)
-        li = EstimateLineItem.objects.create(estimate=est, description='T1', price=Decimal('10'))
-        EstimateLineItemSource.objects.create(
-            estimate_line_item=li,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-            source_pk=pt.pk,
-        )
-        with self.assertRaises(ValidationError):
-            WorksheetService.delete_worksheet(ws)
-        self.assertTrue(EstWorksheet.objects.filter(pk=ws.pk).exists())
-
-
-class WorksheetServiceAddTaskTest(EstimatesTestBase):
-    """Tests for WorksheetService task-adding methods."""
-
-    def setUp(self):
-        super().setUp()
-        from apps.estimates.services import WorksheetService
-        self.ws = WorksheetService.create_worksheet(self.job.pk)
-
-    def test_add_task_from_template(self):
-        from apps.estimates.services import WorksheetService, WorkTemplateService
-        tt = WorkTemplateService.create_service_item(
-            template_name='Welding',
-            rate_scheme=self.scheme,
-        )
-        task = WorksheetService.add_task_from_template(
-            self.ws.pk, tt.pk, est_qty=Decimal('4.00'),
-        )
-        self.assertEqual(task.name, 'Welding')
-        self.assertEqual(task.est_qty, Decimal('4.00'))
-        self.assertEqual(task.est_worksheet, self.ws)
-
-    def test_add_task_manual(self):
-        from apps.estimates.services import WorksheetService
-        from apps.jobs.models import RateScheme
-        ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
-        scheme = RateScheme.objects.create(
-            name='S-atm', algorithm='entered_qty', rate=Decimal('1'),
-            unit_label='ea', accounting_category=ac,
-        )
-        task = WorksheetService.add_task_manual(
-            self.ws.pk, name='Custom task', rate_scheme_id=scheme.pk,
-            est_qty=Decimal('1.00'),
-        )
-        self.assertEqual(task.name, 'Custom task')
-        self.assertEqual(task.est_worksheet, self.ws)
-
-    def test_add_task_refused_when_estimate_sent(self):
-        """The worksheet freezes once the job's estimate is sent."""
-        from apps.estimates.services import WorksheetService, EstimateWizardService
-        est = EstimateWizardService.open_for_worksheet(self.ws)
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        with self.assertRaises(ValidationError):
-            WorksheetService.add_task_manual(
-                self.ws.pk, name='X', rate_scheme_id=self.scheme.pk,
-            )
-
-
-class WorksheetServiceIsEditableTest(EstimatesTestBase):
-    """Direct lifecycle test of WorksheetService.is_editable — the derived
-    editability boundary that the freeze-on-send / unlock-on-revise behavior
-    rests on. (add_task_refused_when_estimate_sent covers only the open path.)"""
-
-    def setUp(self):
-        super().setUp()
-        from apps.estimates.services import WorksheetService
-        self.ws = WorksheetService.create_worksheet(self.job.pk)
-
-    def test_editable_when_no_estimate(self):
-        from apps.estimates.services import WorksheetService
-        self.assertTrue(WorksheetService.is_editable(self.ws))
-
-    def test_editable_while_estimate_is_draft(self):
-        from apps.estimates.services import WorksheetService, EstimateWizardService
-        EstimateWizardService.open_for_worksheet(self.ws)  # creates a draft
-        self.assertTrue(WorksheetService.is_editable(self.ws))
-
-    def test_frozen_once_estimate_is_open(self):
-        from apps.estimates.services import WorksheetService, EstimateWizardService
-        est = EstimateWizardService.open_for_worksheet(self.ws)
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        self.assertFalse(WorksheetService.is_editable(self.ws))
-
-    def test_revise_unlocks_worksheet_again(self):
-        """Revising a sent estimate yields a fresh draft head, which makes the
-        worksheet editable again."""
-        from apps.estimates.services import (
-            WorksheetService, EstimateWizardService, EstimateService,
-        )
-        est = EstimateWizardService.open_for_worksheet(self.ws)
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        self.assertFalse(WorksheetService.is_editable(self.ws))
-        EstimateService.revise_estimate(est.pk)
-        self.assertTrue(WorksheetService.is_editable(self.ws))
-
-
 # --- WorkTemplateService.delete_association ---
 
 class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
@@ -595,65 +459,19 @@ class WorkTemplateServiceDeleteAssociationTest(EstimatesTestBase):
             WorkTemplateService.delete_association(tmpl2.pk, assoc.pk)
 
 
-# --- WorksheetService.finalize ---
-
-# --- JobService.copy_from_worksheet ---
-
-class JobServiceCopyFromWorksheetTest(EstimatesTestBase):
-    """Tests for JobService.copy_from_worksheet."""
-
-    def setUp(self):
-        super().setUp()
-        # carry-over requires an approved job; walk the state machine to get there
-        JobService.update_status(self.job.pk, Job.STATUS_SUBMITTED)
-        JobService.update_status(self.job.pk, Job.STATUS_APPROVED)
-
-    def test_copy_tasks(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Task A', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        PlanTask.objects.create(
-            est_worksheet=ws, name='Task B', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-
-        JobService.copy_from_worksheet(self.job.pk, ws.pk)
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 2)
-
-    def test_copy_materials(self):
-        from apps.estimates.services import WorksheetService
-        ws = WorksheetService.create_worksheet(self.job.pk)
-        task = PlanTask.objects.create(
-            est_worksheet=ws, name='Task', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-        PlanMaterial.objects.create(
-            est_worksheet=ws,
-            plan_task=task, description='Steel', quantity=Decimal('5.00'),
-            accounting_category=self.lit,
-        )
-
-        JobService.copy_from_worksheet(self.job.pk, ws.pk)
-        job_task = Task.objects.get(job=self.job)
-        self.assertEqual(job_task.materials.count(), 1)
-        self.assertEqual(job_task.materials.first().description, 'Steel')
-
-
 class EstimateServiceDiscardDraftTest(EstimatesTestBase):
     """Tests for EstimateService.discard_draft."""
 
     def _make_estimate_with_sources(self):
         from apps.estimates.models import EstimateLineItemSource
-        worksheet = EstWorksheet.objects.create(job=self.job)
-        plan_task = PlanTask.objects.create(
-            est_worksheet=worksheet, name='T1',
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+        task = Task.objects.create(
+            job=self.job, name='T1',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        plan_material = PlanMaterial.objects.create(
-            est_worksheet=worksheet, description='steel',
+        material = Material.objects.create(
+            job=self.job, description='steel',
             quantity=Decimal('2'), sell_price=Decimal('5'),
             accounting_category=self.lit,
         )
@@ -664,13 +482,13 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
         )
         src1 = EstimateLineItemSource.objects.create(
             estimate_line_item=line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-            source_pk=plan_task.pk,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
         )
         src2 = EstimateLineItemSource.objects.create(
             estimate_line_item=line_item,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
-            source_pk=plan_material.pk,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=material.pk,
         )
         return estimate, line_item, src1, src2
 

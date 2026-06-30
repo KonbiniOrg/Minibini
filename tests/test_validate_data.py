@@ -68,17 +68,6 @@ class ValidateDataRateSchemeTest(TestCase):
         output = self._run()
         self.assertIn('active_modifiers', output.lower())
 
-    def test_flags_dict_active_modifiers_on_plan_task(self):
-        sp = self._make_sp(name='Sp-pt')
-        job = self._make_job('J-VDT-003')
-        ws = EstWorksheet.objects.create(job=job)
-        PlanTask.objects.filter(pk=PlanTask.objects.create(
-            name='Bad plan task', est_worksheet=ws, rate_scheme=sp,
-            active_modifiers=[], est_qty=Decimal('1.00'),
-        ).pk).update(active_modifiers={'key': 'val'})
-        output = self._run()
-        self.assertIn('active_modifiers', output.lower())
-
     def test_flags_dict_default_active_modifiers_on_service_item(self):
         from apps.estimates.models import ServiceItem
         sp = self._make_sp(name='Sp-tt')

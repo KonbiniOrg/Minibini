@@ -21,7 +21,6 @@ class FullURLTreeTest(BaseTestCase):
             '/api/contacts/',
             '/api/businesses/',
             '/api/payment-terms/',
-            '/api/est-worksheets/',
             '/api/estimates/',
             '/api/invoices/',
             '/api/purchase-orders/',

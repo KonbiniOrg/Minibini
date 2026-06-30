@@ -31,12 +31,6 @@ class TemplateSupersededGuardTest(BaseTestCase):
         self.job = Job.objects.create(job_number='J-tsg', contact=contact)
         self.ws = EstWorksheet.objects.create(job=self.job)
 
-    def test_generate_task_for_planTask_branch_raises(self):
-        from apps.core.services import SchemeSupersededError
-        with self.assertRaises(SchemeSupersededError) as cm:
-            self.template.generate_task(self.ws, est_qty=Decimal('1'))
-        self.assertIn('superseded', str(cm.exception).lower())
-
     def test_generate_task_for_task_branch_raises(self):
         from apps.core.services import SchemeSupersededError
         with self.assertRaises(SchemeSupersededError) as cm:

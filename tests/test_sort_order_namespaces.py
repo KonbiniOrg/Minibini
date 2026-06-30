@@ -51,7 +51,7 @@ class SortOrderAutoGenerationTest(TestCase):
 
 
 class GenerateTaskSortOrderTest(TestCase):
-    """generate_tasks_for_worksheet should pass association sort_order through."""
+    """generate_tasks_for_job should pass association sort_order through."""
 
     def setUp(self):
         self.contact = Contact.objects.create(first_name='Test', last_name='User')
@@ -85,10 +85,9 @@ class GenerateTaskSortOrderTest(TestCase):
             est_qty=1, sort_order=10
         )
 
-        worksheet = EstWorksheet.objects.create(job=self.job)
-        # generate_tasks_for_worksheet returns [(association, instance, PlanTask), ...]
-        # tuples (Phase 9 / Task 16). Extract the PlanTask from each entry.
-        tasks = [t for (_, _, t) in wot.generate_tasks_for_worksheet(worksheet)]
+        # generate_tasks_for_job returns [(association, instance, Task), ...]
+        # tuples. Extract the Task from each entry.
+        tasks = [t for (_, _, t) in wot.generate_tasks_for_job(self.job)]
 
         sand = next(t for t in tasks if t.name == 'Sand')
         clean = next(t for t in tasks if t.name == 'Clean')

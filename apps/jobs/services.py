@@ -16,7 +16,7 @@ from django.utils import timezone
 from apps.jobs.models import Job, Task, Blep, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
     Estimate, WorkTemplate, ServiceItem,
-    EstWorksheet, EstimateLineItem,
+    EstimateLineItem,
 )
 from apps.inventory.models import InventoryItem
 from apps.core.models import Configuration
@@ -625,85 +625,6 @@ class JobService:
         return job
 
     @staticmethod
-    def materialize_worksheet_onto_job(job, worksheet):
-        """Create execution Tasks/Materials on ``job`` from ``worksheet``'s
-        PlanTasks/PlanMaterials. The single shared core behind both the
-        estimate-acceptance carry-over (#2) and the manual copy-from-worksheet
-        button (#3).
-
-        Idempotent on provenance (``source_plan_task`` / ``source_plan_material``):
-        re-running skips atoms already carried, so it is safe to call twice and
-        safe when both entry points run for the same worksheet (manual copy then
-        acceptance won't duplicate). Tasks clone faithfully even when their rate
-        scheme has since been superseded. Ends with the aggregate earmark sweep.
-
-        Returns ``{'tasks_created': int, 'materials_created': int}``.
-
-        Safety precondition: the job must be ``approved`` or ``in_progress``. The
-        estimate-acceptance path approves the job *before* this runs, and the manual
-        button is gone — so any caller reaching here on an earlier-state job is a bug,
-        and we refuse rather than silently materialize tasks onto an unapproved job.
-        """
-        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
-            raise ValidationError(
-                'Tasks can only be copied from the Plan once the job is approved '
-                'or in progress.'
-            )
-        from apps.jobs.models import PlanTask, Task
-        from apps.inventory.models import PlanMaterial, Material
-        from apps.inventory.services import InventoryService, MaterialService
-
-        tasks_created = 0
-        materials_created = 0
-
-        for pt in PlanTask.objects.filter(
-            est_worksheet=worksheet
-        ).order_by('sort_order', 'pk'):
-            if Task.objects.filter(job=job, source_plan_task=pt).exists():
-                continue
-            TaskService.create_direct(
-                job=job, source_plan_task=pt, actual_qty=None,
-                allow_superseded_scheme=True, **pt.copy_fields(),
-            )
-            tasks_created += 1
-
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet):
-            if Material.objects.filter(job=job, source_plan_material=pm).exists():
-                continue
-            task = None
-            if pm.plan_task_id:
-                task = Task.objects.filter(
-                    job=job, source_plan_task=pm.plan_task).first()
-            MaterialService.create_on_job(
-                job=job, task=task, source_plan_material=pm, **pm.copy_fields(),
-            )
-            materials_created += 1
-
-        InventoryService.create_earmarks_for_job(job)
-        return {'tasks_created': tasks_created, 'materials_created': materials_created}
-
-    @staticmethod
-    def copy_from_worksheet(job_pk, worksheet_pk):
-        """Manually copy a worksheet's PlanTasks/PlanMaterials onto a job.
-
-        The pre-acceptance counterpart to estimate carry-over; both delegate to
-        the shared ``materialize_worksheet_onto_job`` core, so the field set,
-        provenance, idempotency, and earmarking stay identical between them.
-        """
-        from apps.estimates.models import EstWorksheet
-
-        try:
-            job = Job.objects.get(pk=job_pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_pk} not found')
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-
-        JobService.materialize_worksheet_onto_job(job, ws)
-
-    @staticmethod
     def duplicate_job(source_job, *, contact, path):
         """Copy `source_job` into a new Job. `path` is 'approved' or 'estimate'.
         Work is always sourced from the source Job's execution Tasks/Materials.
@@ -724,7 +645,10 @@ class JobService:
                 InventoryService.create_earmarks_for_job(new_job)
                 JobService._advance_to_approved(new_job, source_job)
             else:
-                JobService._copy_work_to_worksheet(source_job, new_job)
+                # Estimate path: copy work onto the new (draft) job. Estimates
+                # project from the Job's atoms, so no worksheet is created and the
+                # job is left in DRAFT for re-estimation.
+                JobService._copy_work_to_job(source_job, new_job)
             new_job.refresh_from_db()
             return new_job
 
@@ -796,39 +720,6 @@ class JobService:
             changes={'status': {'old': Job.STATUS_SUBMITTED, 'new': Job.STATUS_APPROVED},
                      '_action': action_desc},
         )
-
-    @staticmethod
-    def _copy_work_to_worksheet(source_job, new_job):
-        """Outcome B: map execution Tasks/Materials into a fresh draft worksheet
-        as PlanTasks/PlanMaterials. PlanTask requires a non-null est_qty, so fall
-        back to actual_qty then 0.00 when the source Task has none. (PlanTask has
-        no hierarchy, so subtask nesting is flattened; sort_order is preserved.)"""
-        from decimal import Decimal
-        from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import Task, PlanTask
-        from apps.inventory.models import Material, PlanMaterial
-
-        ws = EstWorksheet.objects.create(job=new_job)
-        task_map = {}  # source task_id -> new PlanTask
-        for task in Task.objects.filter(job=source_job).order_by('sort_order', 'pk'):
-            if task.est_qty is not None:
-                est_qty = task.est_qty
-            elif task.actual_qty is not None:
-                est_qty = task.actual_qty
-            else:
-                est_qty = Decimal('0.00')
-            plan_task = PlanTask.objects.create(
-                est_worksheet=ws,
-                **{**task.copy_fields(), 'est_qty': est_qty},
-            )
-            task_map[task.pk] = plan_task
-        for material in Material.objects.filter(job=source_job).order_by('pk'):
-            PlanMaterial.objects.create(
-                est_worksheet=ws,
-                plan_task=task_map.get(material.task_id),
-                **material.copy_fields(),
-            )
-        return ws
 
 
 class TaskService:

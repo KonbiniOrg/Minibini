@@ -6,12 +6,10 @@ from rest_framework.routers import DefaultRouter
 from apps.api.jobs.views import JobViewSet
 from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTermsViewSet, TagViewSet
 from apps.api.estimates.views import EstimateViewSet
-from apps.api.worksheets.views import EstWorksheetViewSet
 from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
 from apps.api.inventory.views import InventoryItemViewSet, MaterialViewSet
 from apps.api.tasks.views import TaskViewSet
-from apps.api.plan_tasks.views import PlanTaskViewSet
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
 from apps.api.schedule.views import schedule_view
@@ -42,7 +40,6 @@ def api_root(request):
         'contacts': '/api/contacts/',
         'businesses': '/api/businesses/',
         'payment-terms': '/api/payment-terms/',
-        'est-worksheets': '/api/est-worksheets/',
         'estimates': '/api/estimates/',
         'invoices': '/api/invoices/',
         'purchase-orders': '/api/purchase-orders/',
@@ -51,7 +48,6 @@ def api_root(request):
         'search': '/api/search/',
         'schedule': '/api/schedule/',
         'activity': '/api/activity/',
-        'plan-tasks': '/api/plan-tasks/',
         'emails': '/api/emails/',
         'work-templates': '/api/work-templates/',
         'service-items': '/api/service-items/',
@@ -70,14 +66,12 @@ router.register(r'businesses', BusinessViewSet, basename='business')
 router.register(r'payment-terms', PaymentTermsViewSet, basename='payment-terms')
 router.register(r'tags', TagViewSet, basename='tag')
 router.register(r'estimates', EstimateViewSet, basename='estimate')
-router.register(r'est-worksheets', EstWorksheetViewSet, basename='est-worksheet')
 router.register(r'invoices', InvoiceViewSet, basename='invoice')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-order')
 router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'inventory', InventoryItemViewSet, basename='inventory-item')
 router.register(r'materials', MaterialViewSet, basename='material')
 router.register(r'tasks', TaskViewSet, basename='task')
-router.register(r'plan-tasks', PlanTaskViewSet, basename='plan-task')
 router.register(r'bleps', BlepViewSet, basename='blep')
 router.register(r'work-templates', WorkTemplateViewSet, basename='work-template')
 router.register(r'service-items', ServiceItemViewSet, basename='service-item')
