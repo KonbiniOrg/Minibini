@@ -13,7 +13,8 @@ class MaterialServiceCreateOnJobTest(TestCase):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact', email='c@test.com'
         )
-        self.job = Job.objects.create(job_number='JOB-MS-1', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-MS-1', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.pli_inv = InventoryItem.objects.create(
             code='I', accounting_category=self.cat, is_catalog=True,
         )
