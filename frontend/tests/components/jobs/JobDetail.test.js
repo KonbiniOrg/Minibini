@@ -77,13 +77,13 @@ describe('JobDetail — single Estimate pillar', () => {
     expect(queryByText('Estimates')).not.toBeInTheDocument();
   });
 
-  it('shows Plan / Client View toggle when the pillar is open', async () => {
+  it('shows Work / Client View toggle when the pillar is open', async () => {
     const { getByText, queryByText } = render(JobDetail, {
       props: { job: baseJob, worksheets: noWorksheets, estimates: noEstimates },
     });
     const pillar = getByText('Estimate');
     await fireEvent.click(pillar);
-    expect(queryByText('Plan')).toBeInTheDocument();
+    expect(queryByText('Work')).toBeInTheDocument();
     expect(queryByText('Client View')).toBeInTheDocument();
   });
 });
@@ -113,30 +113,30 @@ describe('JobDetail — toggle default side', () => {
     await fireEvent.click(pillar);
   }
 
-  it('defaults to Plan side when no estimate exists', async () => {
+  it('defaults to Work side when no estimate exists', async () => {
     const { getByText, queryByText } = render(JobDetail, {
       props: { job: baseJob, worksheets, estimates: { results: [] } },
     });
     await openEstimatePillar(getByText);
-    // The "Plan" toggle button should have the active/selected class.
-    // We check that "Plan" button is in the document and "Client View" is not the active default
-    // by verifying the Plan heading text appears in the open content area
-    const planBtn = queryByText('Plan');
-    expect(planBtn).toBeInTheDocument();
-    // Plan button should be the active/selected one (aria-pressed or class)
-    // We use a broader check: the open-est area should reflect Plan content
+    // The "Work" toggle button should have the active/selected class.
+    // We check that "Work" button is in the document and "Client View" is not the active default
+    // by verifying the Work heading text appears in the open content area
+    const workBtn = queryByText('Work');
+    expect(workBtn).toBeInTheDocument();
+    // Work button should be the active/selected one (aria-pressed or class)
+    // We use a broader check: the open-est area should reflect Work content
     expect(queryByText('Client View')).toBeInTheDocument();
   });
 
-  it('defaults to Plan side when estimate is draft', async () => {
+  it('defaults to Work side when estimate is draft', async () => {
     const { getByText, queryByRole } = render(JobDetail, {
       props: { job: baseJob, worksheets, estimates: makeEstimates('draft') },
     });
     await openEstimatePillar(getByText);
-    // Plan button should be aria-pressed="true"
-    const planBtn = queryByRole('button', { name: 'Plan' });
-    expect(planBtn).toBeInTheDocument();
-    expect(planBtn).toHaveAttribute('aria-pressed', 'true');
+    // Work button should be aria-pressed="true"
+    const workBtn = queryByRole('button', { name: 'Work' });
+    expect(workBtn).toBeInTheDocument();
+    expect(workBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('defaults to Client View side when estimate is open (sent)', async () => {
@@ -159,13 +159,13 @@ describe('JobDetail — toggle default side', () => {
     expect(cvBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('defaults to Plan side when no estimate at all', async () => {
+  it('defaults to Work side when no estimate at all', async () => {
     const { getByText, queryByRole } = render(JobDetail, {
       props: { job: baseJob, worksheets, estimates: { results: [] } },
     });
     await openEstimatePillar(getByText);
-    const planBtn = queryByRole('button', { name: 'Plan' });
-    expect(planBtn).toHaveAttribute('aria-pressed', 'true');
+    const workBtn = queryByRole('button', { name: 'Work' });
+    expect(workBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('clicking Client View tab switches the toggle', async () => {
@@ -173,12 +173,12 @@ describe('JobDetail — toggle default side', () => {
       props: { job: baseJob, worksheets, estimates: { results: [] } },
     });
     await openEstimatePillar(getByText);
-    // Starts on Plan; click Client View
+    // Starts on Work; click Client View
     const cvBtn = queryByRole('button', { name: 'Client View' });
     await fireEvent.click(cvBtn);
     expect(cvBtn).toHaveAttribute('aria-pressed', 'true');
-    const planBtn = queryByRole('button', { name: 'Plan' });
-    expect(planBtn).toHaveAttribute('aria-pressed', 'false');
+    const workBtn = queryByRole('button', { name: 'Work' });
+    expect(workBtn).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
@@ -212,7 +212,7 @@ describe('JobDetail — Open link in Estimate pillar', () => {
     expect(openLink.getAttribute('href')).toContain('/estimates/88');
   });
 
-  it('shows no worksheet "Open Plan" link on the Plan side (worksheets removed)', async () => {
+  it('shows no worksheet "Open Plan" link on the Work side (worksheets removed)', async () => {
     const draftEstimate = {
       results: [{ estimate_id: 77, estimate_number: 'EST-77', version: 1, status: 'draft', line_items: [], is_amended: false }],
     };
@@ -220,13 +220,13 @@ describe('JobDetail — Open link in Estimate pillar', () => {
       props: { job: baseJob, estimates: draftEstimate },
     });
     await openEstimatePillar(getByText);
-    // Default is Plan (draft estimate); there is no longer an Open-Plan worksheet link.
+    // Default is Work (draft estimate); there is no longer an Open-Plan worksheet link.
     const links = queryByRole('link', { name: /Open Plan/i });
     expect(links).toBeNull();
   });
 });
 
-// ── Start Estimate / no-Plan state ─────────────────────────────────────────
+// ── Start Estimate / no-estimate state ─────────────────────────────────────────
 
 describe('JobDetail — Start Estimate button (Task 3)', () => {
   const startableJob = {
@@ -331,7 +331,7 @@ describe('JobDetail — estimateView resets on job navigation', () => {
     };
   }
 
-  it('resets estimateView to Plan when navigating from a job with accepted estimate to one with a draft', async () => {
+  it('resets estimateView to Work when navigating from a job with accepted estimate to one with a draft', async () => {
     // Job A: accepted estimate → should default to Client View
     const jobA = {
       job_id: 101, job_number: 'JOB-101', name: 'Job A', status: 'in_progress', can_manage: true,
@@ -344,7 +344,7 @@ describe('JobDetail — estimateView resets on job navigation', () => {
     await fireEvent.click(getByText('Estimate'));
     expect(queryByRole('button', { name: 'Client View' })).toHaveAttribute('aria-pressed', 'true');
 
-    // Job B: only a draft estimate → should reset to Plan
+    // Job B: only a draft estimate → should reset to Work
     const jobB = {
       job_id: 102, job_number: 'JOB-102', name: 'Job B', status: 'draft', can_manage: true,
     };
@@ -354,14 +354,14 @@ describe('JobDetail — estimateView resets on job navigation', () => {
     // Re-open the Estimate pillar on Job B (section resets on nav)
     await fireEvent.click(getByText('Estimate'));
 
-    // estimateView should have been reset to 'plan' by the job.job_id effect
-    expect(queryByRole('button', { name: 'Plan' })).toHaveAttribute('aria-pressed', 'true');
+    // estimateView should have been reset to 'work' by the job.job_id effect
+    expect(queryByRole('button', { name: 'Work' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
-// ── Work (Plan) section: the job owns its atoms ────────────────────────────
+// ── Work section: the job owns its atoms ────────────────────────────
 
-describe('JobDetail — Work (Plan) section', () => {
+describe('JobDetail — Work section', () => {
   function jobWithAtoms(overrides = {}) {
     return {
       job_id: 200, job_number: 'JOB-200', name: 'Atoms', status: 'draft', can_manage: true,
@@ -375,15 +375,15 @@ describe('JobDetail — Work (Plan) section', () => {
   // A job with tasks opens the Tasks & Materials pillar by default; open the
   // (collapsed) Estimate pillar by its element — "Estimate" also labels the
   // header P/L grid, so a plain text query is ambiguous here.
-  async function openPlan(container) {
+  async function openWork(container) {
     await fireEvent.click(container.querySelector('.pillar-est'));
   }
 
-  it('lists the job tasks, materials, and fees in the Plan view', async () => {
+  it('lists the job tasks, materials, and fees in the Work view', async () => {
     const { getByText, container } = render(JobDetail, {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
-    await openPlan(container);
+    await openWork(container);
     expect(getByText('Site visit')).toBeInTheDocument();
     expect(getByText(/Steel plate/)).toBeInTheDocument();
     expect(getByText(/Rush fee/)).toBeInTheDocument();
@@ -393,7 +393,7 @@ describe('JobDetail — Work (Plan) section', () => {
     const { getByRole, container } = render(JobDetail, {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
-    await openPlan(container);
+    await openWork(container);
     expect(getByRole('button', { name: '+ Service' })).toBeInTheDocument();
     expect(getByRole('button', { name: '+ Material' })).toBeInTheDocument();
     expect(getByRole('button', { name: '+ Fee' })).toBeInTheDocument();
@@ -404,7 +404,7 @@ describe('JobDetail — Work (Plan) section', () => {
     const { getByRole, findByRole, container } = render(JobDetail, {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
-    await openPlan(container);
+    await openWork(container);
     await fireEvent.click(getByRole('button', { name: '+ Fee' }));
     // FeeModal renders an "Add Fee" heading when open
     expect(await findByRole('heading', { name: 'Add Fee' })).toBeInTheDocument();
@@ -420,7 +420,7 @@ describe('JobDetail — Work (Plan) section', () => {
     const { getByRole, findByText, container } = render(JobDetail, {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
-    await openPlan(container);
+    await openWork(container);
     // Open FeeModal and verify category reaches it
     await fireEvent.click(getByRole('button', { name: '+ Fee' }));
     expect(await findByText(/RUSH/)).toBeInTheDocument();
@@ -439,7 +439,7 @@ describe('JobDetail — Work (Plan) section', () => {
     const { getAllByText, container } = render(JobDetail, {
       props: { job, estimates: { results: [] } },
     });
-    await openPlan(container);
+    await openWork(container);
     expect(getAllByText(/not on estimate/i).length).toBeGreaterThan(0);
   });
 
@@ -447,7 +447,7 @@ describe('JobDetail — Work (Plan) section', () => {
     const { queryByText, container } = render(JobDetail, {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
-    await openPlan(container);
+    await openWork(container);
     expect(queryByText(/not on estimate/i)).toBeNull();
   });
 });

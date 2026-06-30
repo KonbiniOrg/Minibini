@@ -228,7 +228,7 @@
       : 0
   );
 
-  // Money formatter shared by the Work (Plan) atom table.
+  // Money formatter shared by the Work atom table.
   function fmt(n) {
     if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '—';
     return `$${Number(n).toFixed(2)}`;
@@ -259,7 +259,7 @@
     (job.materials || []).length > 0 ||
     (job.fees || []).length > 0
   );
-  // Grand total of the planned work atoms (Work / Plan view footer).
+  // Grand total of the planned work atoms (Work view footer).
   let planAtomsTotal = $derived(
     jobTasks.reduce((s, t) => s + taskTotal(t), 0) +
     (job.materials || []).reduce((s, m) => s + materialTotal(m), 0) +
@@ -342,7 +342,7 @@
     }
   }
 
-  // ── Work (Plan) section: add-line affordance ───────────────────────────────
+  // ── Work section: add-line affordance ───────────────────────────────
   // Service → Task via WorkItemForm (POST /api/jobs/{id}/tasks/);
   // Material → Material via MaterialModal (POST /api/jobs/{id}/materials/);
   // Fee → Fee via FeeModal (POST /api/jobs/{id}/fees/).
@@ -515,15 +515,15 @@
     } catch { return null; }
   }
 
-  // Toggle inside the Estimate pillar: 'plan' | 'client-view'
-  // Default: 'plan' when there is no live estimate or it is draft; 'client-view' once sent/frozen.
+  // Toggle inside the Estimate pillar: 'work' | 'client-view'
+  // Default: 'work' when there is no live estimate or it is draft; 'client-view' once sent/frozen.
   // Computed from the raw prop (not a $derived) so it only sets the initial default, not re-deriving
   // on every data update (which would override the user's manual toggle choice).
-  const PLAN_DEFAULT_STATUSES = new Set(['draft', 'superseded', null, undefined]);
+  const WORK_DEFAULT_STATUSES = new Set(['draft', 'superseded', null, undefined]);
   function initialEstimateView() {
     const estList = [...(estimates?.results || [])].sort((a, b) => a.version - b.version);
     const liveEst = estList.findLast(e => e.status !== 'superseded') || estList[estList.length - 1] || null;
-    return (!liveEst || PLAN_DEFAULT_STATUSES.has(liveEst?.status)) ? 'plan' : 'client-view';
+    return (!liveEst || WORK_DEFAULT_STATUSES.has(liveEst?.status)) ? 'work' : 'client-view';
   }
   let estimateView = $state(initialEstimateView());
 
@@ -623,7 +623,7 @@
 
 <!-- HORIZONTAL ACCORDION -->
 <div class="accordion">
-  <!-- Estimate (merged Plan + Client View pillar) -->
+  <!-- Estimate (Work + Client View pillar) -->
   {#if activeSection !== 'estimate'}
     <div class="pillar pillar-est"
          role="button" tabindex="0"
@@ -655,14 +655,14 @@
         </span>
       </div>
 
-      <!-- Plan / Client View toggle -->
+      <!-- Work / Client View toggle -->
       <div class="est-view-toggle">
         <button
           type="button"
-          aria-pressed={estimateView === 'plan'}
-          class:active={estimateView === 'plan'}
-          onclick={() => { estimateView = 'plan'; }}
-        >Plan</button>
+          aria-pressed={estimateView === 'work'}
+          class:active={estimateView === 'work'}
+          onclick={() => { estimateView = 'work'; }}
+        >Work</button>
         <button
           type="button"
           aria-pressed={estimateView === 'client-view'}
@@ -671,8 +671,8 @@
         >Client View</button>
       </div>
 
-      {#if estimateView === 'plan'}
-        <!-- Work (Plan) side — the job's own work atoms (tasks / materials / fees).
+      {#if estimateView === 'work'}
+        <!-- Work side — the job's own work atoms (tasks / materials / fees).
              Visible regardless of estimate state: pre-approval effort shows here. -->
         <div class="body">
           {#if canManageJobs}
@@ -1179,7 +1179,7 @@
 
 </div>
 
-<!-- Work (Plan) add-line modals — reuse the existing job-scoped add paths.
+<!-- Work add-line modals — reuse the existing job-scoped add paths.
      Service → Task (POST /api/jobs/{id}/tasks/); Material → Material (POST /api/jobs/{id}/materials/). -->
 <WorkItemForm
   open={workTaskModalOpen}
@@ -1454,7 +1454,7 @@
   .pill-consumed { background: #d1fae5; color: #065f46; }
   .pill-na { background: #f3f4f6; color: #6b7280; }
 
-  /* Work (Plan) add-line controls */
+  /* Work add-line controls */
   .work-add {
     display: flex; align-items: center; gap: 8px;
     padding: 8px 14px; background: #f5f3ff; border-bottom: 1px solid #ede9fe;
@@ -1519,7 +1519,7 @@
     width: 110px; text-align: right; font-variant-numeric: tabular-nums;
   }
 
-  /* Plan / Client View toggle */
+  /* Work / Client View toggle */
   .est-view-toggle {
     display: flex;
     gap: 0;
