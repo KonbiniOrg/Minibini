@@ -9,6 +9,7 @@
   import JobHeader from './JobHeader.svelte';
   import WorkItemForm from '../WorkItemForm.svelte';
   import MaterialModal from '../MaterialModal.svelte';
+  import FeeModal from '../FeeModal.svelte';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
@@ -329,12 +330,25 @@
     }
   }
 
+  // ── Accounting categories (shared by MaterialModal and FeeModal) ───────────
+  let categories = $state([]);
+
+  async function loadCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100');
+      categories = resp.results || resp;
+    } catch {
+      categories = [];
+    }
+  }
+
   // ── Work (Plan) section: add-line affordance ───────────────────────────────
   // Service → Task via WorkItemForm (POST /api/jobs/{id}/tasks/);
-  // Material → Material via MaterialModal (POST /api/jobs/{id}/materials/).
-  // TODO(Task 7.3): wire the Fee branch + FeeModal (POST /api/jobs/{id}/fees/).
+  // Material → Material via MaterialModal (POST /api/jobs/{id}/materials/);
+  // Fee → Fee via FeeModal (POST /api/jobs/{id}/fees/).
   let workTaskModalOpen = $state(false);
   let workMaterialModalOpen = $state(false);
+  let workFeeModalOpen = $state(false);
 
   function reloadJob() {
     // Refetch the job (and its atoms) via the page-supplied reload hook.
@@ -346,6 +360,10 @@
   }
   function onWorkMaterialSaved() {
     workMaterialModalOpen = false;
+    reloadJob();
+  }
+  function onWorkFeeSaved() {
+    workFeeModalOpen = false;
     reloadJob();
   }
 
@@ -366,6 +384,7 @@
       refreshShipmentCount();
       refreshDeliverableFulfillment();
       refreshChangeOrders();
+      loadCategories();
     }
   });
 
@@ -661,8 +680,7 @@
               <span class="work-add-label">Add line:</span>
               <button type="button" onclick={() => { workTaskModalOpen = true; }}>+ Service</button>
               <button type="button" onclick={() => { workMaterialModalOpen = true; }}>+ Material</button>
-              <!-- TODO(Task 7.3): open FeeModal here (POST /api/jobs/{id}/fees/). -->
-              <button type="button" disabled title="Fee lines arrive in a later change">+ Fee</button>
+              <button type="button" onclick={() => { workFeeModalOpen = true; }}>+ Fee</button>
             </div>
           {/if}
           {#if jobTasks.length === 0 && (job.materials || []).length === 0 && jobFees.length === 0}
@@ -1176,9 +1194,17 @@
   open={workMaterialModalOpen}
   mode="create"
   jobId={job.job_id}
-  categories={[]}
+  categories={categories}
   onSaved={onWorkMaterialSaved}
   onClose={() => { workMaterialModalOpen = false; }}
+/>
+<FeeModal
+  open={workFeeModalOpen}
+  mode="create"
+  jobId={job.job_id}
+  categories={categories}
+  onSaved={onWorkFeeSaved}
+  onClose={() => { workFeeModalOpen = false; }}
 />
 
 <style>

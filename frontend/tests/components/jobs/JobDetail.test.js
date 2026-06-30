@@ -389,15 +389,41 @@ describe('JobDetail — Work (Plan) section', () => {
     expect(getByText(/Rush fee/)).toBeInTheDocument();
   });
 
-  it('renders an "Add line" affordance with Service and Material options', async () => {
+  it('renders an "Add line" affordance with Service, Material, and Fee options', async () => {
     const { getByRole, container } = render(JobDetail, {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
     await openPlan(container);
     expect(getByRole('button', { name: '+ Service' })).toBeInTheDocument();
     expect(getByRole('button', { name: '+ Material' })).toBeInTheDocument();
-    // Fee add is the Task 7.3 seam — present but disabled for now.
-    expect(getByRole('button', { name: '+ Fee' })).toBeDisabled();
+    expect(getByRole('button', { name: '+ Fee' })).toBeInTheDocument();
+    expect(getByRole('button', { name: '+ Fee' })).not.toBeDisabled();
+  });
+
+  it('opens FeeModal when "+ Fee" is clicked', async () => {
+    const { getByRole, findByRole, container } = render(JobDetail, {
+      props: { job: jobWithAtoms(), estimates: { results: [] } },
+    });
+    await openPlan(container);
+    await fireEvent.click(getByRole('button', { name: '+ Fee' }));
+    // FeeModal renders an "Add Fee" heading when open
+    expect(await findByRole('heading', { name: 'Add Fee' })).toBeInTheDocument();
+  });
+
+  it('fetches accounting categories on mount and passes them to MaterialModal and FeeModal', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('accounting-categories')) {
+        return Promise.resolve({ results: [{ id: 1, code: 'RUSH', name: 'Rush Charges' }] });
+      }
+      return Promise.resolve([]);
+    });
+    const { getByRole, findByText, container } = render(JobDetail, {
+      props: { job: jobWithAtoms(), estimates: { results: [] } },
+    });
+    await openPlan(container);
+    // Open FeeModal and check category select has real options
+    await fireEvent.click(getByRole('button', { name: '+ Fee' }));
+    expect(await findByText(/RUSH/)).toBeInTheDocument();
   });
 
   it('marks an atom that is not on the current estimate with an unclaimed badge', async () => {
