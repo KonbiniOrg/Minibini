@@ -7,8 +7,8 @@ from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, User, AppState
 from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import PlanMaterial
-from apps.jobs.models import Job, PlanTask, RateScheme
+from apps.inventory.models import Material
+from apps.jobs.models import Job, Task, RateScheme
 
 
 class EstimateWizardAPITest(TestCase):
@@ -34,12 +34,12 @@ class EstimateWizardAPITest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Setup',
+        self.pt = Task.objects.create(
+            job=self.job, name='Setup',
             rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
-        self.pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
+        self.pm = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat,
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
@@ -51,19 +51,19 @@ class EstimateWizardAPITest(TestCase):
         data = resp.json()
         self.assertIn('atoms', data)
         types = [a['type'] for a in data['atoms']]
-        self.assertIn('plan_task', types)
-        self.assertIn('plan_material', types)
+        self.assertIn('task', types)
+        self.assertIn('material', types)
 
     def test_line_items_from_atoms_endpoint(self):
         url = f'/api/estimates/{self.estimate.pk}/line-items-from-atoms/'
-        payload = {'atoms': [{'type': 'plan_task', 'id': self.pt.pk}]}
+        payload = {'atoms': [{'type': 'task', 'id': self.pt.pk}]}
         resp = self.client.post(url, payload, format='json')
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(EstimateLineItem.objects.filter(estimate=self.estimate).count(), 1)
 
     def test_line_items_from_atoms_conflict_returns_409(self):
         url = f'/api/estimates/{self.estimate.pk}/line-items-from-atoms/'
-        payload = {'atoms': [{'type': 'plan_task', 'id': self.pt.pk}]}
+        payload = {'atoms': [{'type': 'task', 'id': self.pt.pk}]}
         self.client.post(url, payload, format='json')
         resp = self.client.post(url, payload, format='json')
         self.assertEqual(resp.status_code, 409)
@@ -71,10 +71,10 @@ class EstimateWizardAPITest(TestCase):
 
     def test_add_atoms_to_existing_line_item(self):
         li = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'plan_task', 'id': self.pt.pk}],
+            self.estimate, [{'type': 'task', 'id': self.pt.pk}],
         )
         url = f'/api/estimates/{self.estimate.pk}/line-items/{li.pk}/add-atoms/'
-        payload = {'atoms': [{'type': 'plan_material', 'id': self.pm.pk}]}
+        payload = {'atoms': [{'type': 'material', 'id': self.pm.pk}]}
         resp = self.client.post(url, payload, format='json')
         self.assertEqual(resp.status_code, 200)
         li.refresh_from_db()
@@ -84,8 +84,8 @@ class EstimateWizardAPITest(TestCase):
         li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate,
             [
-                {'type': 'plan_task', 'id': self.pt.pk},
-                {'type': 'plan_material', 'id': self.pm.pk},
+                {'type': 'task', 'id': self.pt.pk},
+                {'type': 'material', 'id': self.pm.pk},
             ],
         )
         src_id = li.sources.first().source_id
@@ -96,7 +96,7 @@ class EstimateWizardAPITest(TestCase):
 
     def test_remove_all_atoms_deletes_line_item(self):
         li = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'plan_task', 'id': self.pt.pk}],
+            self.estimate, [{'type': 'task', 'id': self.pt.pk}],
         )
         all_ids = list(li.sources.values_list('source_id', flat=True))
         url = f'/api/estimates/{self.estimate.pk}/line-items/{li.pk}/remove-atoms/'
@@ -106,7 +106,7 @@ class EstimateWizardAPITest(TestCase):
 
     def test_line_items_list_includes_sources(self):
         li = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'plan_task', 'id': self.pt.pk}],
+            self.estimate, [{'type': 'task', 'id': self.pt.pk}],
         )
         url = f'/api/estimates/{self.estimate.pk}/line-items/'
         resp = self.client.get(url)
@@ -115,7 +115,7 @@ class EstimateWizardAPITest(TestCase):
         items = data.get('results', data) if isinstance(data, dict) else data  # handle pagination
         match = next(i for i in items if i['line_item_id'] == li.pk)
         self.assertEqual(len(match['sources']), 1)
-        self.assertEqual(match['sources'][0]['source_type'], 'plan_task')
+        self.assertEqual(match['sources'][0]['source_type'], 'task')
 
 
 class SendAllAtomsAPITest(TestCase):
@@ -141,8 +141,8 @@ class SendAllAtomsAPITest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Setup',
+        self.pt = Task.objects.create(
+            job=self.job, name='Setup',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 

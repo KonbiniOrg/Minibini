@@ -54,13 +54,13 @@ class OpenForWorksheetTest(TestCase):
 
 class ClaimConflictExceptionTest(TestCase):
     def test_exception_carries_atom_ids(self):
-        exc = EstimateClaimConflict(atom_ids=[{'type': 'plan_task', 'id': 1}])
-        self.assertEqual(exc.atom_ids, [{'type': 'plan_task', 'id': 1}])
+        exc = EstimateClaimConflict(atom_ids=[{'type': 'task', 'id': 1}])
+        self.assertEqual(exc.atom_ids, [{'type': 'task', 'id': 1}])
 
 
 from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
-from apps.inventory.models import PlanMaterial
-from apps.jobs.models import PlanTask, RateScheme
+from apps.inventory.models import Material
+from apps.jobs.models import Task, RateScheme
 
 
 class GetSourcePoolTest(TestCase):
@@ -80,44 +80,44 @@ class GetSourcePoolTest(TestCase):
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
 
-        # PlanTask atom with billing fields (no separate PlanCharge needed)
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Setup',
+        # Task atom with billing fields (no separate PlanCharge needed)
+        self.pt = Task.objects.create(
+            job=self.job, name='Setup',
             rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
 
-        # PlanMaterial atom (task-less)
-        self.pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
+        # Material atom (task-less)
+        self.pm = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat,
         )
 
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
 
     def test_pool_has_plan_task_and_material_atoms(self):
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
         atom_ids = [(a['type'], a['id']) for a in pool['atoms']]
-        self.assertIn(('plan_task', self.pt.pk), atom_ids)
-        self.assertIn(('plan_material', self.pm.pk), atom_ids)
+        self.assertIn(('task', self.pt.pk), atom_ids)
+        self.assertIn(('material', self.pm.pk), atom_ids)
 
     def test_atom_amount_uses_compute_amount(self):
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
         amounts = {(a['type'], a['id']): a['amount'] for a in pool['atoms']}
-        self.assertEqual(amounts[('plan_task', self.pt.pk)], Decimal('200.00'))
-        self.assertEqual(amounts[('plan_material', self.pm.pk)], Decimal('15.00'))
+        self.assertEqual(amounts[('task', self.pt.pk)], Decimal('200.00'))
+        self.assertEqual(amounts[('material', self.pm.pk)], Decimal('15.00'))
 
     def test_atoms_include_qty_and_rate(self):
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
         by_id = {(a['type'], a['id']): a for a in pool['atoms']}
-        pt_atom = by_id[('plan_task', self.pt.pk)]
+        pt_atom = by_id[('task', self.pt.pk)]
         self.assertEqual(pt_atom['qty'], Decimal('2'))
         self.assertEqual(pt_atom['rate'], Decimal('100.00'))
-        pm_atom = by_id[('plan_material', self.pm.pk)]
+        pm_atom = by_id[('material', self.pm.pk)]
         self.assertEqual(pm_atom['qty'], Decimal('3'))
         self.assertEqual(pm_atom['rate'], Decimal('5.00'))
 
     def test_unclaimed_atom_state(self):
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
         for a in pool['atoms']:
             self.assertEqual(a['state'], 'available')
 
@@ -128,33 +128,33 @@ class GetSourcePoolTest(TestCase):
         )
         EstimateLineItemSource.objects.create(
             estimate_line_item=li,
-            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
             source_pk=self.pt.pk,
         )
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
         states = {(a['type'], a['id']): a['state'] for a in pool['atoms']}
-        self.assertEqual(states[('plan_task', self.pt.pk)], 'claimed_by_current')
-        self.assertEqual(states[('plan_material', self.pm.pk)], 'available')
+        self.assertEqual(states[('task', self.pt.pk)], 'claimed_by_current')
+        self.assertEqual(states[('material', self.pm.pk)], 'available')
 
     def test_source_pool_includes_plan_tasks_without_explicit_charge_creation(self):
         """Bug regression: PlanTasks should appear in the source pool even when
         no separate PlanCharge POST has fired — the billing fields are on the
-        PlanTask itself now."""
+        Task itself now."""
         scheme = RateScheme.objects.create(
             name='Hourly Test', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
-        pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Inline Task',
+        pt = Task.objects.create(
+            job=self.job, name='Inline Task',
             rate_scheme=scheme, est_qty=Decimal('3.0'),
         )
 
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
 
-        plan_task_ids = [a['id'] for a in pool['atoms'] if a['type'] == 'plan_task']
+        plan_task_ids = [a['id'] for a in pool['atoms'] if a['type'] == 'task']
         self.assertIn(pt.pk, plan_task_ids)
-        pt_atom = next(a for a in pool['atoms'] if a['type'] == 'plan_task' and a['id'] == pt.pk)
+        pt_atom = next(a for a in pool['atoms'] if a['type'] == 'task' and a['id'] == pt.pk)
         self.assertEqual(pt_atom['amount'], Decimal('150.00'))
 
 
@@ -176,61 +176,61 @@ class AddAtomsToNewLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Setup',
+        self.pt = Task.objects.create(
+            job=self.job, name='Setup',
             rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
-        self.pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
+        self.pm = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat2,
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
 
     def test_creates_line_item_with_summed_price(self):
         atoms = [
-            {'type': 'plan_task', 'id': self.pt.pk},
-            {'type': 'plan_material', 'id': self.pm.pk},
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': self.pm.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         # 200 + 15 = 215
         self.assertEqual(li.price, Decimal('215.00'))
 
     def test_creates_source_rows(self):
-        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.sources.count(), 1)
         self.assertEqual(li.sources.first().source_pk, self.pt.pk)
 
     def test_uniform_category_kept(self):
         # Both atoms in same category
-        pm_same_cat = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='m', quantity=Decimal('1'),
+        pm_same_cat = Material.objects.create(
+            job=self.job, description='m', quantity=Decimal('1'),
             sell_price=Decimal('1'), accounting_category=self.cat,
         )
         atoms = [
-            {'type': 'plan_task', 'id': self.pt.pk},
-            {'type': 'plan_material', 'id': pm_same_cat.pk},
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': pm_same_cat.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.accounting_category, self.cat)
 
     def test_mixed_category_left_null(self):
         atoms = [
-            {'type': 'plan_task', 'id': self.pt.pk},
-            {'type': 'plan_material', 'id': self.pm.pk},
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': self.pm.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertIsNone(li.accounting_category)
 
     def test_double_claim_raises(self):
-        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
         EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         with self.assertRaises(EstimateClaimConflict):
             EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
     def test_single_plan_task_atom_copy_over(self):
         # pt has est_qty=2, scheme rate=100, no modifiers -> qty=2, price=100, units=hour
-        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.qty, Decimal('2'))
         self.assertEqual(li.price, Decimal('100'))
@@ -238,7 +238,7 @@ class AddAtomsToNewLineItemTest(TestCase):
 
     def test_single_plan_material_atom_copy_over(self):
         # pm has quantity=3, sell_price=5, no inventory_item -> qty=3, price=5, units='none'
-        atoms = [{'type': 'plan_material', 'id': self.pm.pk}]
+        atoms = [{'type': 'material', 'id': self.pm.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.qty, Decimal('3'))
         self.assertEqual(li.price, Decimal('5'))
@@ -246,8 +246,8 @@ class AddAtomsToNewLineItemTest(TestCase):
 
     def test_multi_atom_line_qty_1_units_none(self):
         atoms = [
-            {'type': 'plan_task', 'id': self.pt.pk},
-            {'type': 'plan_material', 'id': self.pm.pk},
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': self.pm.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.qty, Decimal('1'))
@@ -257,7 +257,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         # Use update() to bypass model-level transition validation
         Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
         self.estimate.refresh_from_db()
-        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
         with self.assertRaises(ValidationError):
             EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
@@ -278,22 +278,22 @@ class AddAtomsToExistingLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt1 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='A',
+        self.pt1 = Task.objects.create(
+            job=self.job, name='A',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        self.pt2 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='B',
+        self.pt2 = Task.objects.create(
+            job=self.job, name='B',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'plan_task', 'id': self.pt1.pk}],
+            self.estimate, [{'type': 'task', 'id': self.pt1.pk}],
         )
 
     def test_appends_source(self):
         EstimateWizardService.add_atoms_to_line_item(
-            self.li, [{'type': 'plan_task', 'id': self.pt2.pk}],
+            self.li, [{'type': 'task', 'id': self.pt2.pk}],
         )
         self.assertEqual(self.li.sources.count(), 2)
 
@@ -302,7 +302,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         # pt2 makes {pt1, pt2} a uniform same-scheme bundle, re-summarized:
         # qty = summed est_qty = 2, price = scheme rate $100.
         EstimateWizardService.add_atoms_to_line_item(
-            self.li, [{'type': 'plan_task', 'id': self.pt2.pk}],
+            self.li, [{'type': 'task', 'id': self.pt2.pk}],
         )
         self.li.refresh_from_db()
         self.assertEqual(self.li.qty, Decimal('2'))
@@ -313,7 +313,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.li.price = Decimal('500.00')
         self.li.save()
         EstimateWizardService.add_atoms_to_line_item(
-            self.li, [{'type': 'plan_task', 'id': self.pt2.pk}],
+            self.li, [{'type': 'task', 'id': self.pt2.pk}],
         )
         self.li.refresh_from_db()
         self.assertEqual(self.li.price, Decimal('500.00'))
@@ -321,7 +321,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
     def test_double_claim_raises(self):
         with self.assertRaises(EstimateClaimConflict):
             EstimateWizardService.add_atoms_to_line_item(
-                self.li, [{'type': 'plan_task', 'id': self.pt1.pk}],
+                self.li, [{'type': 'task', 'id': self.pt1.pk}],
             )
 
 
@@ -341,20 +341,20 @@ class RemoveAtomsFromLineItemTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt1 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='A',
+        self.pt1 = Task.objects.create(
+            job=self.job, name='A',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        self.pt2 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='B',
+        self.pt2 = Task.objects.create(
+            job=self.job, name='B',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
         self.li = EstimateWizardService.add_atoms_to_new_line_item(
             self.estimate,
             [
-                {'type': 'plan_task', 'id': self.pt1.pk},
-                {'type': 'plan_task', 'id': self.pt2.pk},
+                {'type': 'task', 'id': self.pt1.pk},
+                {'type': 'task', 'id': self.pt2.pk},
             ],
         )
 
@@ -432,19 +432,19 @@ class RemoveAtomsFromLineItemTest(TestCase):
         """When all atoms are removed and the line item auto-deletes, the
         remaining siblings must be renumbered to close the gap."""
         # self.li is line 1 (from setUp). Add two more line items so we have 1, 2, 3.
-        pt3 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='C',
+        pt3 = Task.objects.create(
+            job=self.job, name='C',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        pt4 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='D',
+        pt4 = Task.objects.create(
+            job=self.job, name='D',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
         li2 = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'plan_task', 'id': pt3.pk}],
+            self.estimate, [{'type': 'task', 'id': pt3.pk}],
         )
         li3 = EstimateWizardService.add_atoms_to_new_line_item(
-            self.estimate, [{'type': 'plan_task', 'id': pt4.pk}],
+            self.estimate, [{'type': 'task', 'id': pt4.pk}],
         )
         self.assertEqual(self.li.line_number, 1)
         self.assertEqual(li2.line_number, 2)
@@ -477,12 +477,12 @@ class SendAllAtomsTest(TestCase):
             name='Hourly', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('100'), unit_label='hour', accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='A',
+        self.pt = Task.objects.create(
+            job=self.job, name='A',
             rate_scheme=self.scheme, est_qty=Decimal('2'),
         )
-        self.pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('3'),
+        self.pm = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('3'),
             sell_price=Decimal('5'), accounting_category=self.cat,
         )
 
@@ -500,21 +500,21 @@ class SendAllAtomsTest(TestCase):
             self.assertEqual(li.sources.count(), 1)
 
     def test_skips_already_claimed_atoms(self):
-        # Pre-claim the PlanTask via an existing line item
+        # Pre-claim the Task via an existing line item
         estimate = EstimateWizardService.open_for_worksheet(self.ws)
         EstimateWizardService.add_atoms_to_new_line_item(
-            estimate, [{'type': 'plan_task', 'id': self.pt.pk}],
+            estimate, [{'type': 'task', 'id': self.pt.pk}],
         )
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
-        # Only the PlanMaterial gets a new line item
+        # Only the Material gets a new line item
         self.assertEqual(result['created_count'], 1)
 
     def test_amount_matches_compute_amount(self):
         result = EstimateWizardService.send_all_atoms_to_estimate(self.ws)
         from apps.estimates.models import EstimateLineItem
         # qty * price totals must equal each atom's compute_amount.
-        # PlanTask: est_qty=2, rate=$100 → qty=2, price=100, total=$200.
-        # PlanMaterial: quantity=3, sell_price=$5 → qty=3, price=5, total=$15.
+        # Task: est_qty=2, rate=$100 → qty=2, price=100, total=$200.
+        # Material: quantity=3, sell_price=$5 → qty=3, price=5, total=$15.
         totals = sorted(
             li.qty * li.price
             for li in EstimateLineItem.objects.filter(estimate=result['estimate'])
@@ -549,8 +549,8 @@ class SendAllAtomsTest(TestCase):
             key=lambda t: t[0],
         )
         self.assertEqual(rows, [
-            (Decimal('2.00'), Decimal('100.00')),  # PlanTask
-            (Decimal('3.00'), Decimal('5.00')),    # PlanMaterial
+            (Decimal('2.00'), Decimal('100.00')),  # Task
+            (Decimal('3.00'), Decimal('5.00')),    # Material
         ])
 
     def test_returns_estimate(self):
@@ -568,8 +568,8 @@ class SendAllAtomsTest(TestCase):
             modifiers=[{'key': 'rush', 'label': 'Rush', 'percent': 5}],
             accounting_category=self.cat,
         )
-        pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Rushed work',
+        pt = Task.objects.create(
+            job=self.job, name='Rushed work',
             rate_scheme=scheme, est_qty=Decimal('2'),
             active_modifiers=['rush'],
         )
@@ -586,8 +586,8 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
     def setUp(self):
         super().setUp()
         from apps.contacts.models import Contact
-        from apps.jobs.models import Job, PlanTask, RateScheme
-        from apps.inventory.models import PlanMaterial
+        from apps.jobs.models import Job, Task, RateScheme
+        from apps.inventory.models import Material
         from apps.estimates.models import EstWorksheet
         from apps.core.models import AccountingCategory, Configuration
 
@@ -607,12 +607,12 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
             name='Hourly-d', algorithm='flat_fee', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Cut sign blank',
+        self.pt = Task.objects.create(
+            job=self.job, name='Cut sign blank',
             rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        self.pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='3/4" plywood',
+        self.pm = Material.objects.create(
+            job=self.job, description='3/4" plywood',
             quantity=Decimal('2'), unit_cost=Decimal('5'),
             sell_price=Decimal('10'), accounting_category=self.cat,
         )
@@ -620,21 +620,21 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
 
     def test_single_plan_task_atom_seeds_description_from_name(self):
         from apps.estimates.services import EstimateWizardService
-        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.description, 'Cut sign blank')
 
     def test_single_plan_material_atom_seeds_description(self):
         from apps.estimates.services import EstimateWizardService
-        atoms = [{'type': 'plan_material', 'id': self.pm.pk}]
+        atoms = [{'type': 'material', 'id': self.pm.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.description, '3/4" plywood')
 
     def test_multiple_atoms_leaves_description_blank(self):
         from apps.estimates.services import EstimateWizardService
         atoms = [
-            {'type': 'plan_task', 'id': self.pt.pk},
-            {'type': 'plan_material', 'id': self.pm.pk},
+            {'type': 'task', 'id': self.pt.pk},
+            {'type': 'material', 'id': self.pm.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.description, '')
@@ -644,10 +644,10 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         should expose claiming_line_number (not just claiming_line_item_id)
         so the frontend can show the user-facing line number."""
         from apps.estimates.services import EstimateWizardService
-        # self.pt is a PlanTask on self.ws; claim it on a new line item.
-        atoms = [{'type': 'plan_task', 'id': self.pt.pk}]
+        # self.pt is a Task on self.ws; claim it on a new line item.
+        atoms = [{'type': 'task', 'id': self.pt.pk}]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
-        pool = EstimateWizardService.get_source_pool(self.ws)
+        pool = EstimateWizardService.get_source_pool(self.estimate)
         claimed = next(a for a in pool['atoms'] if a['id'] == self.pt.pk)
         self.assertEqual(claimed['state'], 'claimed_by_current')
         self.assertEqual(claimed['claiming_line_number'], li.line_number)

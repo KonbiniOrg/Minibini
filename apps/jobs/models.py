@@ -416,6 +416,20 @@ class Task(TaskBase):
         charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
         return charge.quantize(Decimal('0.01'))
 
+    def compute_estimate_amount(self, active_modifiers=None):
+        """Estimate-side amount: bills est_qty, not actuals.
+
+        The estimate wizard projects what the job is *expected* to cost, so it
+        uses est_qty via the rate scheme. (compute_amount() resolves qty from
+        actuals — bleps / actual_qty — which is what the *invoice* wizard wants.)
+        Ignores the active_modifiers argument (uses self.active_modifiers) to
+        match the BillableAtom interface.
+        """
+        charge = self.rate_scheme.compute_charge(
+            self.est_qty or Decimal('0'), self.active_modifiers,
+        )
+        return charge.quantize(Decimal('0.01'))
+
     def effective_rate(self):
         return self.rate_scheme.effective_rate(self.active_modifiers)
 

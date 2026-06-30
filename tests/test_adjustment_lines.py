@@ -356,7 +356,7 @@ class EstimateWizardAutoRecomputeTest(TestCase):
         from apps.contacts.models import Contact
         from apps.estimates.models import EstWorksheet
         from apps.estimates.services import EstimateService, EstimateWizardService
-        from apps.jobs.models import PlanTask
+        from apps.jobs.models import Task
         from apps.jobs.services import JobService
 
         self.cat = AccountingCategory.objects.create(
@@ -373,8 +373,9 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             rate=Decimal('100.00'), unit_label='hr',
             accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            name='Wiring', est_worksheet=self.ws,
+        # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks.
+        self.pt = Task.objects.create(
+            name='Wiring', job=self.job,
             rate_scheme=flat_svc, est_qty=Decimal('1'),
         )
 
@@ -395,7 +396,7 @@ class EstimateWizardAutoRecomputeTest(TestCase):
         """Adding an atom via the wizard recomputes existing adjustment lines."""
         from apps.estimates.services import EstimateWizardService
         line_item = EstimateWizardService.add_atoms_to_new_line_item(
-            self.est, [{'type': 'plan_task', 'id': self.pt.pk}],
+            self.est, [{'type': 'task', 'id': self.pt.pk}],
         )
         self.assertIsNotNone(line_item.pk)
         self.adj.refresh_from_db()

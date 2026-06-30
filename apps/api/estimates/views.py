@@ -13,7 +13,7 @@ from apps.api.mixins import (
 )
 from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError, ServiceError
-from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import (
     EstimateClaimConflict,
     EstimateService,
@@ -116,16 +116,9 @@ class EstimateViewSet(
 
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):
-        """Return the source pool for the wizard, drawn from the job's worksheet."""
+        """Return the source pool for the wizard, drawn from the job's Tasks/Materials."""
         estimate = self.get_object()
-        worksheet = (
-            EstWorksheet.objects.filter(job_id=estimate.job_id)
-            .order_by('-est_worksheet_id')
-            .first()
-        )
-        if not worksheet:
-            return Response({'atoms': []})
-        pool = EstimateWizardService.get_source_pool(worksheet)
+        pool = EstimateWizardService.get_source_pool(estimate)
         return Response(_serialize_pool(pool))
 
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')

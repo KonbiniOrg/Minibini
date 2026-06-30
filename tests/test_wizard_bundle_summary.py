@@ -197,13 +197,15 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
 
     def _pt(self, scheme, est_qty, modifiers=None):
-        return PlanTask.objects.create(
-            est_worksheet=self.ws, name='PT', rate_scheme=scheme,
+        # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks
+        # (est_qty-based), not the worksheet's PlanTasks.
+        return Task.objects.create(
+            job=self.job, name='PT', rate_scheme=scheme,
             est_qty=Decimal(str(est_qty)), active_modifiers=modifiers or [],
         )
 
     def _bundle(self, *pts):
-        atoms = [{'type': 'plan_task', 'id': p.pk} for p in pts]
+        atoms = [{'type': 'task', 'id': p.pk} for p in pts]
         return EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
     def test_same_scheme_no_modifiers_summarized(self):
@@ -254,13 +256,13 @@ class EstimateWizardBundleSummaryTest(TestCase):
 
     def test_bundle_with_plan_material_falls_back(self):
         a = self._pt(self.scheme, 3)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('2'),
+        mat = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('2'),
             sell_price=Decimal('5'), accounting_category=self.cat_mat,
         )
         atoms = [
-            {'type': 'plan_task', 'id': a.pk},
-            {'type': 'plan_material', 'id': pm.pk},
+            {'type': 'task', 'id': a.pk},
+            {'type': 'material', 'id': mat.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.units, 'none')

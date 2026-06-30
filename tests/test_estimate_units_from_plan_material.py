@@ -2,12 +2,15 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact
-from apps.inventory.models import InventoryItem, PlanMaterial
+from apps.inventory.models import InventoryItem, Material
 from apps.estimates.models import EstWorksheet, EstimateLineItem
 from apps.estimates.services import EstimateWizardService
 from apps.jobs.models import Job
 
 
+# job-owns-atoms refactor (Task 3.1): the estimate now projects the Job's own
+# Materials, not the worksheet's PlanMaterials. These tests assert the same
+# carried-units/qty/price behavior, now sourced from Material.
 class AtomUnitsFromPlanMaterialTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -26,33 +29,31 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
             name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
         )
 
-    def test_atom_units_returns_plan_material_field_freeform(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=ws, plan_task=None,
+    def test_atom_units_returns_material_field_freeform(self):
+        mat = Material.objects.create(
+            job=self.job, task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
             accounting_category=self.cat,
         )
-        self.assertEqual(EstimateWizardService._atom_units(pm), 'lbs')
+        self.assertEqual(EstimateWizardService._atom_units(mat), 'lbs')
 
-    def test_atom_units_returns_plan_material_field_pli_linked(self):
-        # PlanMaterial linked to a PLI with units='sheets' inherits that on save
+    def test_atom_units_returns_material_field_pli_linked(self):
+        # Material linked to a PLI with units='sheets' inherits that on save
         # via _populate_from_pli, then _atom_units reads the field.
-        ws = EstWorksheet.objects.create(job=self.job)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=ws, plan_task=None,
+        mat = Material.objects.create(
+            job=self.job, task=None,
             quantity=Decimal('1'), inventory_item=self.pli,
         )
-        self.assertEqual(pm.units, 'sheets')
-        self.assertEqual(EstimateWizardService._atom_units(pm), 'sheets')
+        self.assertEqual(mat.units, 'sheets')
+        self.assertEqual(EstimateWizardService._atom_units(mat), 'sheets')
 
-    def test_send_all_atoms_to_estimate_carries_pm_units(self):
-        # End-to-end: a freeform PlanMaterial on a worksheet → bulk-converted
-        # to an EstimateLineItem; the line item's units mirrors the PM's.
+    def test_send_all_atoms_to_estimate_carries_material_units(self):
+        # End-to-end: a freeform Material on the job → bulk-converted to an
+        # EstimateLineItem; the line item's units mirrors the material's.
         ws = EstWorksheet.objects.create(job=self.job)
-        PlanMaterial.objects.create(
-            est_worksheet=ws, plan_task=None,
+        Material.objects.create(
+            job=self.job, task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
             accounting_category=self.cat,
@@ -64,8 +65,8 @@ class AtomUnitsFromPlanMaterialTests(TestCase):
 
 
 class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
-    """Regression: send_all_atoms_to_estimate must carry the PlanMaterial's
-    own qty and sell_price (not collapse to qty=1, price=total)."""
+    """Regression: send_all_atoms_to_estimate must carry the Material's own
+    qty and sell_price (not collapse to qty=1, price=total)."""
 
     @classmethod
     def setUpTestData(cls):
@@ -84,10 +85,10 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
             name='J', job_number='J-Q', status=Job.STATUS_DRAFT, contact=cls.contact,
         )
 
-    def test_freeform_plan_material_carries_qty_and_sell_price(self):
+    def test_freeform_material_carries_qty_and_sell_price(self):
         ws = EstWorksheet.objects.create(job=self.job)
-        PlanMaterial.objects.create(
-            est_worksheet=ws, plan_task=None,
+        Material.objects.create(
+            job=self.job, task=None,
             description='loose', quantity=Decimal('5'), units='lbs',
             unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
             accounting_category=self.cat,
@@ -98,10 +99,10 @@ class SendAllAtomsCarriesQtyAndPriceTests(TestCase):
         self.assertEqual(li.units, 'lbs')
         self.assertEqual(li.price, Decimal('2.00'))
 
-    def test_pli_linked_plan_material_carries_qty_and_sell_price(self):
+    def test_pli_linked_material_carries_qty_and_sell_price(self):
         ws = EstWorksheet.objects.create(job=self.job)
-        PlanMaterial.objects.create(
-            est_worksheet=ws, plan_task=None,
+        Material.objects.create(
+            job=self.job, task=None,
             quantity=Decimal('3'), inventory_item=self.pli,
         )
         result = EstimateWizardService.send_all_atoms_to_estimate(ws)
