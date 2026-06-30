@@ -186,17 +186,6 @@ describe('JobDetail — Open link in Estimate pillar', () => {
   const baseJob = {
     job_id: 12, job_number: 'JOB-12', name: 'Open Link Test', status: 'draft', can_manage: true,
   };
-  const worksheets = { results: [{ est_worksheet_id: 55, tasks: [], taskless_materials: [] }] };
-  const draftEstimate = {
-    results: [{
-      estimate_id: 77,
-      estimate_number: 'EST-77',
-      version: 1,
-      status: 'draft',
-      line_items: [],
-      is_amended: false,
-    }],
-  };
   const openEstimate = {
     results: [{
       estimate_id: 88,
@@ -213,24 +202,27 @@ describe('JobDetail — Open link in Estimate pillar', () => {
     await fireEvent.click(pillar);
   }
 
-  it('Open link points to the worksheet when on Plan side', async () => {
-    const { getByText, getByRole } = render(JobDetail, {
-      props: { job: baseJob, worksheets, estimates: draftEstimate },
-    });
-    await openEstimatePillar(getByText);
-    // Default is Plan (draft estimate); the Open link should go to the worksheet
-    const openLink = getByRole('link', { name: /Open/i });
-    expect(openLink.getAttribute('href')).toContain('/worksheets/55');
-  });
-
   it('Open link points to the estimate when on Client View side', async () => {
     const { getByText, getByRole } = render(JobDetail, {
-      props: { job: baseJob, worksheets, estimates: openEstimate },
+      props: { job: baseJob, estimates: openEstimate },
     });
     await openEstimatePillar(getByText);
     // Default is Client View (open estimate); the Open link should go to the estimate
     const openLink = getByRole('link', { name: /Open/i });
     expect(openLink.getAttribute('href')).toContain('/estimates/88');
+  });
+
+  it('shows no worksheet "Open Plan" link on the Plan side (worksheets removed)', async () => {
+    const draftEstimate = {
+      results: [{ estimate_id: 77, estimate_number: 'EST-77', version: 1, status: 'draft', line_items: [], is_amended: false }],
+    };
+    const { getByText, queryByRole } = render(JobDetail, {
+      props: { job: baseJob, estimates: draftEstimate },
+    });
+    await openEstimatePillar(getByText);
+    // Default is Plan (draft estimate); there is no longer an Open-Plan worksheet link.
+    const links = queryByRole('link', { name: /Open Plan/i });
+    expect(links).toBeNull();
   });
 });
 
@@ -255,25 +247,17 @@ describe('JobDetail — Start Estimate button (Task 3)', () => {
     await fireEvent.click(pillar);
   }
 
-  it('shows "Start Estimate" button in the estimate section for a startable job with no worksheet', async () => {
+  it('shows "Start Estimate" button in the estimate section for a startable job with no estimate', async () => {
     const { getByText, queryByText } = render(JobDetail, {
-      props: {
-        job: startableJob,
-        worksheets: noWorksheets,
-        estimates: noEstimates,
-      },
+      props: { job: startableJob, estimates: noEstimates },
     });
     await openEstimateSection(getByText);
     expect(queryByText('Start Estimate')).toBeInTheDocument();
   });
 
-  it('shows "Start Estimate" for a submitted job with no worksheet', async () => {
+  it('shows "Start Estimate" for a submitted job with no estimate', async () => {
     const { getByText, queryByText } = render(JobDetail, {
-      props: {
-        job: startableJobSubmitted,
-        worksheets: noWorksheets,
-        estimates: noEstimates,
-      },
+      props: { job: startableJobSubmitted, estimates: noEstimates },
     });
     await openEstimateSection(getByText);
     expect(queryByText('Start Estimate')).toBeInTheDocument();
@@ -281,54 +265,39 @@ describe('JobDetail — Start Estimate button (Task 3)', () => {
 
   it('does NOT show "Create Estimate" label in the estimate section (old label gone)', async () => {
     const { getByText, queryByText } = render(JobDetail, {
-      props: {
-        job: startableJob,
-        worksheets: noWorksheets,
-        estimates: noEstimates,
-      },
+      props: { job: startableJob, estimates: noEstimates },
     });
     await openEstimateSection(getByText);
     expect(queryByText('Create Estimate')).not.toBeInTheDocument();
   });
 
-  it('creates a worksheet and navigates straight to the Plan when "Start Estimate" is clicked', async () => {
-    api.post.mockResolvedValue({ est_worksheet_id: 7 });
+  it('creates an estimate directly and navigates to it when "Start Estimate" is clicked', async () => {
+    api.post.mockResolvedValue({ estimate_id: 7 });
     const { getByText } = render(JobDetail, {
-      props: {
-        job: startableJob,
-        worksheets: noWorksheets,
-        estimates: noEstimates,
-      },
+      props: { job: startableJob, estimates: noEstimates },
     });
     await openEstimateSection(getByText);
     const btn = getByText('Start Estimate');
     await fireEvent.click(btn);
-    expect(api.post).toHaveBeenCalledWith('/api/est-worksheets/', { job: 42 });
-    await vi.waitFor(() => expect(window.location.hash).toBe('#/worksheets/7'));
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/', { job: 42 });
+    await vi.waitFor(() => expect(window.location.hash).toBe('#/estimates/7'));
   });
 
-  it('does NOT fire POST /api/estimates/ when "Start Estimate" is clicked', async () => {
+  it('does NOT fire POST /api/est-worksheets/ when "Start Estimate" is clicked', async () => {
+    api.post.mockResolvedValue({ estimate_id: 7 });
     const { getByText } = render(JobDetail, {
-      props: {
-        job: startableJob,
-        worksheets: noWorksheets,
-        estimates: noEstimates,
-      },
+      props: { job: startableJob, estimates: noEstimates },
     });
     await openEstimateSection(getByText);
     const btn = getByText('Start Estimate');
     await fireEvent.click(btn);
-    expect(api.post).not.toHaveBeenCalledWith('/api/estimates/', expect.anything());
+    expect(api.post).not.toHaveBeenCalledWith('/api/est-worksheets/', expect.anything());
   });
 
-  it('does NOT show "Start Estimate" when a worksheet already exists', async () => {
-    const worksheets = { results: [{ est_worksheet_id: 7, tasks: [], taskless_materials: [] }] };
+  it('does NOT show "Start Estimate" when an estimate already exists', async () => {
+    const estimates = { results: [{ estimate_id: 3, estimate_number: 'EST-3', version: 1, status: 'draft', line_items: [] }] };
     const { getByText, queryByText } = render(JobDetail, {
-      props: {
-        job: startableJob,
-        worksheets,
-        estimates: noEstimates,
-      },
+      props: { job: startableJob, estimates },
     });
     await openEstimateSection(getByText);
     expect(queryByText('Start Estimate')).not.toBeInTheDocument();
@@ -337,11 +306,7 @@ describe('JobDetail — Start Estimate button (Task 3)', () => {
   it('does NOT show "Start Estimate" for a non-startable job status', async () => {
     const inProgressJob = { ...startableJob, status: 'in_progress' };
     const { getByText, queryByText } = render(JobDetail, {
-      props: {
-        job: inProgressJob,
-        worksheets: noWorksheets,
-        estimates: noEstimates,
-      },
+      props: { job: inProgressJob, estimates: noEstimates },
     });
     await openEstimateSection(getByText);
     expect(queryByText('Start Estimate')).not.toBeInTheDocument();
@@ -391,5 +356,96 @@ describe('JobDetail — estimateView resets on job navigation', () => {
 
     // estimateView should have been reset to 'plan' by the job.job_id effect
     expect(queryByRole('button', { name: 'Plan' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+// ── Work (Plan) section: the job owns its atoms ────────────────────────────
+
+describe('JobDetail — Work (Plan) section', () => {
+  function jobWithAtoms(overrides = {}) {
+    return {
+      job_id: 200, job_number: 'JOB-200', name: 'Atoms', status: 'draft', can_manage: true,
+      tasks: [{ task_id: 1, name: 'Site visit', est_qty: '1', effective_rate: '50', computed_charge: '50', claimed: true }],
+      materials: [{ material_id: 2, description: 'Steel plate', quantity: '3', units: 'kg', sell_price: '10', claimed: true }],
+      fees: [{ fee_id: 3, description: 'Rush fee', quantity: '1', unit_rate: '25', claimed: true }],
+      ...overrides,
+    };
+  }
+
+  // A job with tasks opens the Tasks & Materials pillar by default; open the
+  // (collapsed) Estimate pillar by its element — "Estimate" also labels the
+  // header P/L grid, so a plain text query is ambiguous here.
+  async function openPlan(container) {
+    await fireEvent.click(container.querySelector('.pillar-est'));
+  }
+
+  it('lists the job tasks, materials, and fees in the Plan view', async () => {
+    const { getByText, container } = render(JobDetail, {
+      props: { job: jobWithAtoms(), estimates: { results: [] } },
+    });
+    await openPlan(container);
+    expect(getByText('Site visit')).toBeInTheDocument();
+    expect(getByText(/Steel plate/)).toBeInTheDocument();
+    expect(getByText(/Rush fee/)).toBeInTheDocument();
+  });
+
+  it('renders an "Add line" affordance with Service and Material options', async () => {
+    const { getByRole, container } = render(JobDetail, {
+      props: { job: jobWithAtoms(), estimates: { results: [] } },
+    });
+    await openPlan(container);
+    expect(getByRole('button', { name: '+ Service' })).toBeInTheDocument();
+    expect(getByRole('button', { name: '+ Material' })).toBeInTheDocument();
+    // Fee add is the Task 7.3 seam — present but disabled for now.
+    expect(getByRole('button', { name: '+ Fee' })).toBeDisabled();
+  });
+
+  it('marks an atom that is not on the current estimate with an unclaimed badge', async () => {
+    const job = jobWithAtoms({
+      tasks: [{ task_id: 1, name: 'Loose task', est_qty: '1', effective_rate: '50', computed_charge: '50', claimed: false }],
+      materials: [],
+      fees: [],
+    });
+    const { getAllByText, container } = render(JobDetail, {
+      props: { job, estimates: { results: [] } },
+    });
+    await openPlan(container);
+    expect(getAllByText(/not on estimate/i).length).toBeGreaterThan(0);
+  });
+
+  it('does NOT mark a claimed atom with the unclaimed badge', async () => {
+    const { queryByText, container } = render(JobDetail, {
+      props: { job: jobWithAtoms(), estimates: { results: [] } },
+    });
+    await openPlan(container);
+    expect(queryByText(/not on estimate/i)).toBeNull();
+  });
+});
+
+// ── hasBillables drives the Invoices pillar create affordance ──────────────
+
+describe('JobDetail — hasBillables (Invoices pillar)', () => {
+  it('shows "Create Invoice" when the job owns any atom (billable status)', async () => {
+    const job = {
+      job_id: 300, job_number: 'JOB-300', name: 'Billable', status: 'in_progress', can_manage: true,
+      tasks: [{ task_id: 9, name: 'Cut', claimed: true }], materials: [], fees: [],
+    };
+    const { getByText } = render(JobDetail, {
+      props: { job, estimates: { results: [] }, invoices: { results: [] } },
+    });
+    await fireEvent.click(getByText('Invoices'));
+    expect(getByText('Create Invoice')).toBeInTheDocument();
+  });
+
+  it('hides "Create Invoice" when the job owns no atoms', async () => {
+    const job = {
+      job_id: 301, job_number: 'JOB-301', name: 'Empty', status: 'in_progress', can_manage: true,
+      tasks: [], materials: [], fees: [],
+    };
+    const { getByText, queryByText } = render(JobDetail, {
+      props: { job, estimates: { results: [] }, invoices: { results: [] } },
+    });
+    await fireEvent.click(getByText('Invoices'));
+    expect(queryByText('Create Invoice')).toBeNull();
   });
 });

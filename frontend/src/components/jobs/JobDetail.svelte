@@ -7,6 +7,8 @@
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
+  import WorkItemForm from '../WorkItemForm.svelte';
+  import MaterialModal from '../MaterialModal.svelte';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api } from '../../lib/api.js';
 
@@ -14,7 +16,6 @@
     job,
     contact = null,
     estimates = null,
-    worksheets = null,
     invoices = null,
     purchaseOrders = null,
     emails = null,
@@ -226,49 +227,43 @@
       : 0
   );
 
-  // Worksheet versions, sorted newest first
-  let worksheetList = $derived(
-    [...(worksheets?.results || [])].sort((a, b) => b.est_worksheet_id - a.est_worksheet_id)
-  );
-  // Latest worksheet (highest version)
-  let currentWorksheet = $derived(worksheetList[0] || null);
-
-  // Active worksheet shown in panel (user can click a tab to switch)
-  let selectedWorksheetId = $state(null);
-  let displayedWorksheet = $derived(
-    worksheetList.find(w => w.est_worksheet_id === selectedWorksheetId) || currentWorksheet
-  );
-
-  // For each task: per-unit Price (amount / qty when qty > 0).
+  // Money formatter shared by the Work (Plan) atom table.
   function fmt(n) {
     if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '—';
     return `$${Number(n).toFixed(2)}`;
   }
-  function unitPrice(task) {
-    const qty = Number(task.est_qty);
-    const amount = Number(task.amount);
-    if (!qty || isNaN(amount)) return null;
-    return amount / qty;
-  }
   function materialTotal(mat) {
     return (Number(mat.quantity) || 0) * (Number(mat.sell_price) || 0);
   }
-  let worksheetGrandTotal = $derived.by(() => {
-    if (!displayedWorksheet) return 0;
-    let total = 0;
-    for (const t of (displayedWorksheet.tasks || [])) {
-      total += Number(t.amount) || 0;
-      for (const m of (t.plan_materials || [])) total += materialTotal(m);
+  function feeTotal(fee) {
+    return (Number(fee.quantity) || 0) * (Number(fee.unit_rate) || 0);
+  }
+  function taskTotal(task) {
+    // Tasks carry a server-computed charge; fall back to qty × effective_rate.
+    if (task.computed_charge != null && task.computed_charge !== '') {
+      return Number(task.computed_charge) || 0;
     }
-    for (const m of (displayedWorksheet.taskless_materials || [])) {
-      total += materialTotal(m);
-    }
-    return total;
-  });
+    return (Number(task.est_qty) || 0) * (Number(task.effective_rate) || 0);
+  }
 
-  // Job tasks (top-level), invoice list, PO list
+  // Job-owned work atoms (the Job now owns tasks/materials/fees directly).
+  // Top-level tasks only here; subtasks ride inside the Tasks & Materials tree.
   let jobTasks = $derived((job.tasks || []).filter(t => !t.parent_task));
+  let jobFees = $derived(job.fees || []);
   let hasTasks = $derived(jobTasks.length > 0);
+  // Billable iff the job owns any work atom (task / material / fee). Drives the
+  // Invoices pillar's create affordance.
+  let hasBillables = $derived(
+    (job.tasks || []).length > 0 ||
+    (job.materials || []).length > 0 ||
+    (job.fees || []).length > 0
+  );
+  // Grand total of the planned work atoms (Work / Plan view footer).
+  let planAtomsTotal = $derived(
+    jobTasks.reduce((s, t) => s + taskTotal(t), 0) +
+    (job.materials || []).reduce((s, m) => s + materialTotal(m), 0) +
+    jobFees.reduce((s, f) => s + feeTotal(f), 0)
+  );
   let invList = $derived(invoices?.results || []);
   let poList = $derived(purchaseOrders?.results || []);
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
@@ -316,22 +311,42 @@
   let canStartEstimate = $derived(
     canManageJobs &&
     (job.status === 'draft' || job.status === 'submitted') &&
-    !currentWorksheet
+    !currentEstimate
   );
 
   let startingEstimate = $state(false);
   async function startEstimate() {
     startingEstimate = true;
     try {
-      // Worksheet creation is idempotent (one Plan per job), so this is safe to
-      // POST directly and land on the Plan — no intermediate template-choice page.
-      const ws = await api.post('/api/est-worksheets/', { job: job.job_id });
-      window.location.hash = `/worksheets/${ws.est_worksheet_id}`;
+      // Job now owns its work atoms; an estimate is created directly off the job
+      // (no intermediate worksheet/plan). Land on the new draft estimate.
+      const est = await api.post('/api/estimates/', { job: job.job_id });
+      window.location.hash = `/estimates/${est.estimate_id}`;
     } catch (e) {
       alert(e.message || 'Failed to start estimate.');
     } finally {
       startingEstimate = false;
     }
+  }
+
+  // ── Work (Plan) section: add-line affordance ───────────────────────────────
+  // Service → Task via WorkItemForm (POST /api/jobs/{id}/tasks/);
+  // Material → Material via MaterialModal (POST /api/jobs/{id}/materials/).
+  // TODO(Task 7.3): wire the Fee branch + FeeModal (POST /api/jobs/{id}/fees/).
+  let workTaskModalOpen = $state(false);
+  let workMaterialModalOpen = $state(false);
+
+  function reloadJob() {
+    // Refetch the job (and its atoms) via the page-supplied reload hook.
+    onStatusChange?.();
+  }
+  function onWorkTaskSaved() {
+    workTaskModalOpen = false;
+    reloadJob();
+  }
+  function onWorkMaterialSaved() {
+    workMaterialModalOpen = false;
+    reloadJob();
   }
 
   async function createChangeOrder() {
@@ -439,6 +454,7 @@
   let canCreateInvoice = $derived(
     (canManageJobs || canManageFinancials) &&
     BILLABLE_JOB_STATUSES.includes(job.status) &&
+    hasBillables &&
     !draftInvoice
   );
 
@@ -467,7 +483,6 @@
     }
     if (shipmentCount > 0 && hasOutstandingDeliverables) return 'shipments';
     if (jobTasks.length > 0) return 'tasks_materials';
-    if (estimates?.results?.length > 0 || worksheets?.results?.length > 0) return 'estimate';
     return 'estimate';
   }
 
@@ -500,7 +515,6 @@
   $effect(() => {
     void job.job_id;
     userSection = null;
-    selectedWorksheetId = null;
     selectedVersionKey = null;
     selectedInvoiceId = null;
     selectedPoId = null;
@@ -597,7 +611,7 @@
          onclick={() => openSection('estimate')}
          onkeydown={(e) => e.key === 'Enter' && openSection('estimate')}>
       <span class="label-v">Estimate</span>
-      <span class="pillar-count">{worksheetList.length + versionTimeline.length}</span>
+      <span class="pillar-count">{versionTimeline.length}</span>
     </div>
   {:else}
     <div class="open open-est">
@@ -609,9 +623,7 @@
               {startingEstimate ? 'Starting…' : 'Start Estimate'}
             </button>
           {/if}
-          {#if currentWorksheet && estimateView === 'plan'}
-            <a href="#/worksheets/{currentWorksheet.est_worksheet_id}">Open Plan →</a>
-          {:else if estimateView === 'client-view' && displayedVersion?.kind === 'co'}
+          {#if estimateView === 'client-view' && displayedVersion?.kind === 'co'}
             <a href="#/change-orders/{displayedVersion.co.change_order_id}">Open →</a>
           {:else if estimateView === 'client-view' && displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">Open →</a>
@@ -641,84 +653,82 @@
       </div>
 
       {#if estimateView === 'plan'}
-        <!-- Plan (worksheet) side -->
+        <!-- Work (Plan) side — the job's own work atoms (tasks / materials / fees).
+             Visible regardless of estimate state: pre-approval effort shows here. -->
         <div class="body">
-          {#if !currentWorksheet}
-            <p class="empty-msg">No plan for this job yet.</p>
+          {#if canManageJobs}
+            <div class="work-add">
+              <span class="work-add-label">Add line:</span>
+              <button type="button" onclick={() => { workTaskModalOpen = true; }}>+ Service</button>
+              <button type="button" onclick={() => { workMaterialModalOpen = true; }}>+ Material</button>
+              <!-- TODO(Task 7.3): open FeeModal here (POST /api/jobs/{id}/fees/). -->
+              <button type="button" disabled title="Fee lines arrive in a later change">+ Fee</button>
+            </div>
+          {/if}
+          {#if jobTasks.length === 0 && (job.materials || []).length === 0 && jobFees.length === 0}
+            <p class="empty-msg">No work planned for this job yet.</p>
           {:else}
-            {@const wsTasks = (displayedWorksheet?.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))}
-            {@const taskless = displayedWorksheet?.taskless_materials || []}
-            {#if wsTasks.length === 0 && taskless.length === 0}
-              <p class="empty-msg">Plan has no tasks or materials.</p>
-            {:else}
-              <table class="ws-readonly">
-                <colgroup>
-                  <col>
-                  <col class="col-qty">
-                  <col class="col-units">
-                  <col class="col-money">
-                  <col class="col-money">
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th class="text-right">Qty</th>
-                    <th>Units</th>
-                    <th class="text-right">Price</th>
-                    <th class="text-right">Ext</th>
+            <table class="ws-readonly">
+              <colgroup>
+                <col>
+                <col class="col-qty">
+                <col class="col-units">
+                <col class="col-money">
+                <col class="col-money">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th class="text-right">Qty</th>
+                  <th>Units</th>
+                  <th class="text-right">Price</th>
+                  <th class="text-right">Ext</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each jobTasks as task (task.task_id)}
+                  <tr class="task-row">
+                    <td class="name">
+                      {task.name}{#if task.description}<span class="dim"> — {task.description}</span>{/if}
+                      {#if task.claimed === false}<span class="unclaimed-badge" title="Not on the current estimate">not on estimate</span>{/if}
+                    </td>
+                    <td class="text-right">{task.est_qty ?? '—'}</td>
+                    <td>{task.scheme_unit_label || ''}</td>
+                    <td class="text-right">{fmt(task.effective_rate)}</td>
+                    <td class="text-right">{fmt(taskTotal(task))}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {#each wsTasks as task}
-                    <tr class="task-row">
-                      <td class="name">{task.name}{#if task.description}<span class="dim"> — {task.description}</span>{/if}</td>
-                      <td class="text-right">{task.est_qty ?? '—'}</td>
-                      <td>{task.units || ''}</td>
-                      <td class="text-right">{fmt(unitPrice(task))}</td>
-                      <td class="text-right">{fmt(task.amount)}</td>
-                    </tr>
-                    {#each (task.plan_materials || []) as mat}
-                      <tr class="material-row">
-                        <td class="indent preserve-breaks"><span class="marker">●</span> {mat.description || '(no description)'}</td>
-                        <td class="text-right">{mat.quantity ?? '—'}</td>
-                        <td>{mat.units || ''}</td>
-                        <td class="text-right">{fmt(mat.sell_price)}</td>
-                        <td class="text-right">{fmt(materialTotal(mat))}</td>
-                      </tr>
-                    {/each}
-                  {/each}
-                </tbody>
-              </table>
+                {/each}
+                {#each (job.materials || []) as mat (mat.material_id)}
+                  <tr class="material-row">
+                    <td class="preserve-breaks">
+                      <span class="marker">●</span> {mat.description || '(no description)'}
+                      {#if mat.claimed === false}<span class="unclaimed-badge" title="Not on the current estimate">not on estimate</span>{/if}
+                    </td>
+                    <td class="text-right">{mat.quantity ?? '—'}</td>
+                    <td>{mat.units || ''}</td>
+                    <td class="text-right">{fmt(mat.sell_price)}</td>
+                    <td class="text-right">{fmt(materialTotal(mat))}</td>
+                  </tr>
+                {/each}
+                {#each jobFees as fee (fee.fee_id)}
+                  <tr class="fee-row">
+                    <td class="preserve-breaks">
+                      <span class="marker">◆</span> {fee.description || '(fee)'}
+                      {#if fee.claimed === false}<span class="unclaimed-badge" title="Not on the current estimate">not on estimate</span>{/if}
+                    </td>
+                    <td class="text-right">{fee.quantity ?? '—'}</td>
+                    <td></td>
+                    <td class="text-right">{fmt(fee.unit_rate)}</td>
+                    <td class="text-right">{fmt(feeTotal(fee))}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
 
-              {#if taskless.length > 0}
-                <div class="ml-heading">Materials not assigned to a task</div>
-                <table class="ml-readonly">
-                  <colgroup>
-                    <col>
-                    <col class="col-qty">
-                    <col class="col-units">
-                    <col class="col-money">
-                    <col class="col-money">
-                  </colgroup>
-                  <tbody>
-                    {#each taskless as mat}
-                      <tr>
-                        <td class="preserve-breaks">{mat.description || '(no description)'}</td>
-                        <td class="text-right">{mat.quantity ?? '—'}</td>
-                        <td>{mat.units || ''}</td>
-                        <td class="text-right">{fmt(mat.sell_price)}</td>
-                        <td class="text-right">{fmt(materialTotal(mat))}</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              {/if}
-
-              <div class="ws-total">
-                <span class="ws-total-label">Total</span>
-                <span class="ws-total-value">{fmt(worksheetGrandTotal)}</span>
-              </div>
-            {/if}
+            <div class="ws-total">
+              <span class="ws-total-label">Total</span>
+              <span class="ws-total-value">{fmt(planAtomsTotal)}</span>
+            </div>
           {/if}
         </div>
       {:else}
@@ -1151,6 +1161,26 @@
 
 </div>
 
+<!-- Work (Plan) add-line modals — reuse the existing job-scoped add paths.
+     Service → Task (POST /api/jobs/{id}/tasks/); Material → Material (POST /api/jobs/{id}/materials/). -->
+<WorkItemForm
+  open={workTaskModalOpen}
+  mode="manual"
+  context="job"
+  contextId={job.job_id}
+  templates={[]}
+  onSaved={onWorkTaskSaved}
+  onClose={() => { workTaskModalOpen = false; }}
+/>
+<MaterialModal
+  open={workMaterialModalOpen}
+  mode="create"
+  jobId={job.job_id}
+  categories={[]}
+  onSaved={onWorkMaterialSaved}
+  onClose={() => { workMaterialModalOpen = false; }}
+/>
+
 <style>
   /* PAGE WRAPPER — full viewport, flex column so accordion fills remaining space */
   .job-detail-page {
@@ -1398,6 +1428,31 @@
   .pill-consumed { background: #d1fae5; color: #065f46; }
   .pill-na { background: #f3f4f6; color: #6b7280; }
 
+  /* Work (Plan) add-line controls */
+  .work-add {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; background: #f5f3ff; border-bottom: 1px solid #ede9fe;
+    font-size: 12px;
+  }
+  .work-add-label { color: #6d28d9; font-weight: 600; }
+  .work-add button {
+    font-size: 12px; padding: 3px 10px;
+    border: 1px solid #c4b5fd; background: #fff; color: #4c1d95;
+    border-radius: 4px; cursor: pointer;
+  }
+  .work-add button:hover:not(:disabled) { background: #ede9fe; }
+  .work-add button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* "Not on the current estimate" marker — informational, never blocking */
+  .unclaimed-badge {
+    display: inline-block; margin-left: 6px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.2px;
+    padding: 1px 6px; border-radius: 8px;
+    background: #fef3c7; color: #92400e;
+    vertical-align: middle; text-transform: uppercase;
+  }
+  .ws-readonly .fee-row td { background: #faf5ff; }
+
   /* Worksheet read-only view */
   .ws-tabs {
     background: #ccfbf1; padding: 6px 16px; border-bottom: 1px solid #99f6e4;
@@ -1425,7 +1480,6 @@
   .ws-readonly .task-row td { background: #fff; }
   .ws-readonly .task-row .name { font-weight: 600; }
   .ws-readonly .material-row td { background: #f2fcfa; }
-  .ws-readonly .indent { padding-left: 32px; }
   .ws-readonly .marker { color: #aaa; font-size: 8px; margin-right: 6px; }
   .ws-readonly .dim { color: #888; font-weight: 400; font-size: 12px; }
   .ws-readonly .text-right { font-variant-numeric: tabular-nums; }
@@ -1438,21 +1492,6 @@
   .ws-total-value {
     width: 110px; text-align: right; font-variant-numeric: tabular-nums;
   }
-
-  .ml-heading {
-    margin: 0; padding: 4px 14px;
-    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #115e59;
-    background: #ccfbf1; font-weight: 600; line-height: 1.4;
-  }
-  .ml-readonly { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-  .ml-readonly td {
-    padding: 6px 14px; vertical-align: top; background: #f2fcfa;
-    border-bottom: 1px solid #ccfbf1;
-  }
-  .ml-readonly col.col-qty { width: 70px; }
-  .ml-readonly col.col-units { width: 70px; }
-  .ml-readonly col.col-money { width: 110px; }
-  .ml-readonly .text-right { font-variant-numeric: tabular-nums; }
 
   /* Plan / Client View toggle */
   .est-view-toggle {
