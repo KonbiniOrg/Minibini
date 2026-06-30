@@ -1,4 +1,3 @@
-import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from tests.base import BaseTestCase
@@ -45,13 +44,6 @@ class RateSchemeModelTest(BaseTestCase):
         self.assertEqual(scheme.algorithm, RateScheme.ENTERED_QTY)
         self.assertEqual(len(scheme.modifiers), 2)
         self.assertEqual(scheme.modifiers[0]['key'], 'messy')
-
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_create_flat_fee_scheme(self):
-        pass
 
     def test_name_unique(self):
         RateScheme.objects.create(
@@ -139,20 +131,6 @@ class RateSchemeComputeTest(BaseTestCase):
         self.assertEqual(result, Decimal('104.99'))
         self.assertEqual(result.as_tuple().exponent, -2)
 
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_flat_fee_effective_rate(self):
-        pass
-
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_flat_fee_compute_charge(self):
-        pass
-
     def test_get_actual_qty_elapsed_time(self):
         from datetime import datetime, timedelta
         from django.utils import timezone as tz
@@ -206,20 +184,6 @@ class RateSchemeComputeTest(BaseTestCase):
 
         result = self.scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('25'))
-
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_get_actual_qty_flat_fee_uses_est_qty(self):
-        pass
-
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_get_actual_qty_flat_fee_falls_back_to_one(self):
-        pass
 
     def test_get_modifier_inputs(self):
         result = self.scheme.get_modifier_inputs()

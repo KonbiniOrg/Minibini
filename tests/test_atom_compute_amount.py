@@ -1,4 +1,3 @@
-import unittest
 from decimal import Decimal
 from django.test import TestCase
 
@@ -81,13 +80,6 @@ class TaskComputeAmountTest(TestCase):
         )
         # 3 × $50 = $150
         self.assertEqual(task.compute_amount(), Decimal('150.00'))
-
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_task_flat_fee(self):
-        pass
 
     def test_compute_estimate_amount_bills_est_qty(self):
         """Estimate-side amount bills est_qty (not actuals)."""

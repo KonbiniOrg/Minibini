@@ -1,4 +1,3 @@
-import unittest
 from decimal import Decimal
 from io import StringIO
 from django.test import TestCase
@@ -33,29 +32,6 @@ class ValidateDataRateSchemeTest(TestCase):
         return Job.objects.create(
             job_number=number, name='Test Job', contact=self.contact,
         )
-
-    # ── Flat-fee rate checks ──────────────────────────────────────
-
-    @unittest.skip(
-        "flat_fee removed; flat-fee rate check dropped from validate_data — "
-        "fixed charges are the Fee atom"
-    )
-    def test_flags_zero_rate_flat_fee(self):
-        pass
-
-    @unittest.skip(
-        "flat_fee removed; flat-fee rate check dropped from validate_data — "
-        "fixed charges are the Fee atom"
-    )
-    def test_flags_negative_rate_flat_fee(self):
-        pass
-
-    @unittest.skip(
-        "flat_fee removed; flat-fee rate check dropped from validate_data — "
-        "fixed charges are the Fee atom"
-    )
-    def test_valid_flat_fee_not_flagged(self):
-        pass
 
     # ── active_modifiers dict-shape checks ───────────────────────
 
@@ -164,15 +140,6 @@ class ValidateDataFeeTest(TestCase):
         self.assertNotIn('unit_rate must be positive', output)
 
     # ── accounting_category ──────────────────────────────────────
-
-    @unittest.skip(
-        "accounting_category is a NOT NULL FK — the DB constraint prevents "
-        "creation of a Fee without one; the check_fees() guard is defensive "
-        "only (catches data-corruption that bypassed DB constraints via fixtures). "
-        "Untestable via ORM without raw SQL that MySQL's NOT NULL will reject."
-    )
-    def test_fee_missing_accounting_category_is_error(self):
-        pass
 
     # ── quantity ─────────────────────────────────────────────────
 

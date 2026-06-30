@@ -1,4 +1,3 @@
-import unittest
 from decimal import Decimal
 from django.test import TestCase
 
@@ -22,13 +21,6 @@ class TaskComputeAmountTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-2026-0001', contact=contact, status=Job.STATUS_DRAFT,
         )
-
-    @unittest.skip(
-        "flat_fee removed; fixed charges are the Fee atom — "
-        "covered by test_fee_model/test_fee_wizard"
-    )
-    def test_compute_amount_flat_fee(self):
-        pass
 
     def test_compute_amount_entered_qty(self):
         scheme = RateScheme.objects.create(
