@@ -119,9 +119,10 @@ class OnHoldGuardBase(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.contact = Contact.objects.first()
-        # Prefer a FLAT_FEE scheme so we don't need bleps to complete tasks.
+        # An entered_qty scheme: completing a task needs a quantity (passed to
+        # complete_task), not bleps.
         self.scheme = (
-            RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
+            RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
             or RateScheme.objects.first()
         )
         self.user = User.objects.get(username='admin')
@@ -137,13 +138,14 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
 
     def setUp(self):
         super().setUp()
-        # complete_task checks algorithm before the guard fires only if we call
-        # the guard first. Until the guard is in place, we need a FLAT_FEE
-        # scheme so TaskTimeRequired doesn't mask the missing ValidationError.
-        flat_fee = RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
-        if flat_fee is None:
-            self.skipTest('No FLAT_FEE RateScheme in fixture.')
-        self.scheme = flat_fee
+        # The on-hold guard fires before the quantity check in complete_task, so
+        # an entered_qty scheme is fine here: the on-hold test asserts the
+        # 'on hold' ValidationError (raised first), and the in-progress test
+        # supplies an actual_qty so the task completes.
+        scheme = RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
+        if scheme is None:
+            self.skipTest('No ENTERED_QTY RateScheme in fixture.')
+        self.scheme = scheme
 
     def test_complete_task_blocked_on_on_hold_job(self):
         job = _on_hold_job(self.contact)
@@ -155,7 +157,8 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
     def test_complete_task_allowed_on_in_progress_job(self):
         job = _in_progress_job(self.contact)
         task = _pending_task(job, self.scheme)
-        result = TaskLifecycleService.complete_task(task.pk)
+        # entered_qty scheme: supply a quantity so the task can complete.
+        result = TaskLifecycleService.complete_task(task.pk, actual_qty=Decimal('1'))
         self.assertEqual(result.status, Task.STATUS_COMPLETE)
 
 
@@ -311,9 +314,9 @@ class CreateFromTemplateOnHoldTest(OnHoldGuardBase):
 
     def _get_flat_fee_template(self):
         from apps.estimates.models import ServiceItem
-        scheme = RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
+        scheme = RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
         if scheme is None:
-            self.skipTest('No FLAT_FEE RateScheme in fixture.')
+            self.skipTest('No ENTERED_QTY RateScheme in fixture.')
         tmpl, _ = ServiceItem.objects.get_or_create(
             template_name='Guard Test Template',
             defaults={

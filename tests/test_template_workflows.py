@@ -67,7 +67,7 @@ class TaskCreationWorkflowTest(TestCase):
         self.user = User.objects.create_user(username="testuser")
         self.ac = AccountingCategory.objects.create(code='X-tw', name='X-tw')
         self.scheme = RateScheme.objects.create(
-            name='S-tw', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-tw', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
 

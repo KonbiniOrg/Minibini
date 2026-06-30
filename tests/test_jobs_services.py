@@ -142,7 +142,7 @@ class TaskServiceUpdateTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         scheme = RateScheme.objects.create(
-            name='TSU scheme', algorithm=RateScheme.FLAT_FEE,
+            name='TSU scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
@@ -167,7 +167,7 @@ class TaskServiceReorderTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         scheme = RateScheme.objects.create(
-            name='TSR scheme', algorithm=RateScheme.FLAT_FEE,
+            name='TSR scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )

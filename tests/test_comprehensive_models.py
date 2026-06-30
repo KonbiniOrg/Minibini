@@ -42,7 +42,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
         )
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.scheme = RateScheme.objects.create(
-            name='S-cm-int', algorithm=RateScheme.FLAT_FEE,
+            name='S-cm-int', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
 
@@ -216,7 +216,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
 
         from apps.jobs.models import RateScheme
         scheme = RateScheme.objects.create(
-            name='S-cmtw', algorithm=RateScheme.FLAT_FEE,
+            name='S-cmtw', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         task = Task.objects.create(
@@ -392,7 +392,7 @@ class LineItemValidationTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cm_ac = AccountingCategory.objects.create(code='CM-AC', name='cm-ac')
         self.cm_scheme = RateScheme.objects.create(
-            name='S-cm', algorithm=RateScheme.FLAT_FEE,
+            name='S-cm', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.cm_ac,
         )

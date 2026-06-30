@@ -21,7 +21,7 @@ from decimal import Decimal
 
 def _make_scheme(suffix, ac):
     return RateScheme.objects.create(
-        name=f'S-td-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-td-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 

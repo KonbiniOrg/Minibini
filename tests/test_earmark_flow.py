@@ -53,7 +53,7 @@ class EarmarkPreviewTest(TestCase):
         )
 
         self.scheme = RateScheme.objects.create(
-            name='S-emk', algorithm=RateScheme.FLAT_FEE,
+            name='S-emk', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         self.task_a = Task.objects.create(
@@ -257,7 +257,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         cat = AccountingCategory.objects.create(name='c', code='NOP1')
         scheme_ac = AccountingCategory.objects.create(name='nop-sc', code='NOP-SC')
         scheme = RateScheme.objects.create(
-            name='S-nop', algorithm=RateScheme.FLAT_FEE,
+            name='S-nop', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
         )
         pli = InventoryItem.objects.create(

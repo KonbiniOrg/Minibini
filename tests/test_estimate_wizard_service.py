@@ -604,7 +604,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(code='D', name='D')
         self.scheme = RateScheme.objects.create(
-            name='Hourly-d', algorithm='flat_fee', rate=Decimal('10'),
+            name='Hourly-d', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.cat,
         )
         self.pt = Task.objects.create(

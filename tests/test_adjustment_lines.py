@@ -369,7 +369,7 @@ class EstimateWizardAutoRecomputeTest(TestCase):
         self.ws = EstWorksheet.objects.create(job=self.job)
 
         flat_svc = RateScheme.objects.create(
-            name='FlatWZ', algorithm=RateScheme.FLAT_FEE,
+            name='FlatWZ', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100.00'), unit_label='hr',
             accounting_category=self.cat,
         )

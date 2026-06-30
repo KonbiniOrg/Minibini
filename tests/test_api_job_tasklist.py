@@ -23,7 +23,7 @@ def _make_scheme(name_suffix=''):
         code=code, defaults={'name': f'Test AC {name_suffix}'},
     )
     return RateScheme.objects.create(
-        name=f'S-tst-{name_suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-tst-{name_suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 

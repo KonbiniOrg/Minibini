@@ -89,7 +89,7 @@ class WorksheetAPITest(BaseTestCase):
         ws = EstWorksheet.objects.create(job=job)
         ac = AccountingCategory.objects.create(code='WSDEL', name='wsdel')
         scheme = RateScheme.objects.create(
-            name='S-wsdel', algorithm=RateScheme.FLAT_FEE, rate=Decimal('1'),
+            name='S-wsdel', algorithm=RateScheme.ENTERED_QTY, rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         pt = PlanTask.objects.create(

@@ -154,7 +154,7 @@ class JobTaskSubResourceTest(TestCase):
         from apps.jobs.models import RateScheme
         ac = AccountingCategory.objects.create(code='JT-AC', name='Job Task AC')
         self.scheme = RateScheme.objects.create(
-            name='Job Task Scheme', algorithm='flat_fee',
+            name='Job Task Scheme', algorithm='entered_qty',
             rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
         )
 
@@ -294,7 +294,7 @@ class JobSerializerNestingTest(TestCase):
         )
         ac = AccountingCategory.objects.create(code='NEST-AC', name='Nest AC')
         self.scheme = RateScheme.objects.create(
-            name='S-nest', algorithm='flat_fee',
+            name='S-nest', algorithm='entered_qty',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         Task.objects.create(job=self.job, name='A task', rate_scheme=self.scheme)
@@ -321,7 +321,7 @@ class JobListQueryCountTest(TestCase):
         )
         ac = AccountingCategory.objects.create(code='QC-AC', name='QC AC')
         self.scheme = RateScheme.objects.create(
-            name='S-qc', algorithm='flat_fee',
+            name='S-qc', algorithm='entered_qty',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
 
@@ -411,7 +411,7 @@ class JobPopulateFromTemplateTest(TestCase):
         )
         cat = AccountingCategory.objects.create(name='Labor')
         self.scheme = RateScheme.objects.create(
-            name='S-poptpl', algorithm=RateScheme.FLAT_FEE,
+            name='S-poptpl', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=cat,
         )
         self.service_item = ServiceItem.objects.create(
@@ -469,7 +469,7 @@ class JobCopyFromWorksheetTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         ac = AccountingCategory.objects.create(code='CWAJ-AC', name='cwaj-ac')
         self.scheme = RateScheme.objects.create(
-            name='S-cwaj', algorithm=RateScheme.FLAT_FEE,
+            name='S-cwaj', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         self.plan_task = PlanTask.objects.create(
@@ -558,7 +558,7 @@ class JobReorderTasksTest(TestCase):
         )
         ac = AccountingCategory.objects.create(code='REORD-AC', name='reord-ac')
         self.scheme = RateScheme.objects.create(
-            name='S-reord', algorithm=RateScheme.FLAT_FEE,
+            name='S-reord', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         self.a = Task.objects.create(job=self.job, name='A', sort_order=0, rate_scheme=self.scheme)
@@ -615,7 +615,7 @@ class JobPatchValidationErrorTest(TestCase):
         ac = AccountingCategory.objects.create(code='PV-AC', name='pv-ac')
         from apps.jobs.models import RateScheme
         self.scheme = RateScheme.objects.create(
-            name='S-pv', algorithm='flat_fee',
+            name='S-pv', algorithm='entered_qty',
             rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
         )
 
@@ -673,7 +673,7 @@ class JobAddFromTemplateTest(TestCase):
         )
         ac = AccountingCategory.objects.create(code='AFT-AC', name='aft-ac')
         self.scheme = RateScheme.objects.create(
-            name='S-aft', algorithm=RateScheme.FLAT_FEE,
+            name='S-aft', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         self.template = ServiceItem.objects.create(
@@ -747,7 +747,7 @@ class JobDetailInvoiceFieldTest(TestCase):
         )
         AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
         self.scheme = RateScheme.objects.create(
-            name='S-invf', algorithm=RateScheme.FLAT_FEE,
+            name='S-invf', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
         )
         self.task = Task.objects.create(

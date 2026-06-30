@@ -27,7 +27,7 @@ class PlanMaterialsApiTest(APITestCase):
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme_ac = AccountingCategory.objects.create(name='pmapi-sc', code='PMAPI-SC')
         self.scheme = RateScheme.objects.create(
-            name='S-pmapi', algorithm=RateScheme.FLAT_FEE,
+            name='S-pmapi', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
         )
         self.plan_task = PlanTask.objects.create(

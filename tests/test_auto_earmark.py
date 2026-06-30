@@ -21,7 +21,7 @@ def _make_scheme(suffix):
     from apps.core.models import AccountingCategory
     ac = AccountingCategory.objects.create(code=f'AEM-{suffix}', name=f'aem-{suffix}')
     return RateScheme.objects.create(
-        name=f'S-aem-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-aem-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 

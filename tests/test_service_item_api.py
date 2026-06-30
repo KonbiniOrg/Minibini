@@ -34,7 +34,7 @@ class RateSchemeAPITest(TestCase):
     def test_create_requires_config_perm(self):
         self.client.login(username='worker', password='testpass')
         resp = self.client.post('/api/rate-schemes/', {
-            'name': 'New Scheme', 'algorithm': 'flat_fee',
+            'name': 'New Scheme', 'algorithm': 'entered_qty',
             'rate': '50.00', 'unit_label': 'ea',
         }, content_type='application/json')
         self.assertEqual(resp.status_code, 403)
@@ -42,7 +42,7 @@ class RateSchemeAPITest(TestCase):
     def test_create_with_config_perm(self):
         self.client.login(username='admin', password='testpass')
         resp = self.client.post('/api/rate-schemes/', {
-            'name': 'CNC Setup', 'algorithm': 'flat_fee',
+            'name': 'CNC Setup', 'algorithm': 'entered_qty',
             'rate': '50.00', 'unit_label': 'ea',
             'accounting_category': self.ac.pk,
         }, content_type='application/json')
@@ -87,7 +87,7 @@ class RateSchemeAPITest(TestCase):
         """Non-percentage algorithms still require a configured unit_label."""
         self.client.login(username='admin', password='testpass')
         resp = self.client.post('/api/rate-schemes/', {
-            'name': 'No Unit Flat', 'algorithm': 'flat_fee',
+            'name': 'No Unit Flat', 'algorithm': 'entered_qty',
             'rate': '50.00',
             'accounting_category': self.ac.pk,
         }, content_type='application/json')
@@ -147,7 +147,7 @@ class RateSchemeEditBlockTest(BaseTestCase):
         job = Job.objects.create(job_number='J-eb', contact=contact)
         ws = EstWorksheet.objects.create(job=job)
         s = RateScheme.objects.create(
-            name='S-eb', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-eb', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         PlanTask.objects.create(
@@ -176,7 +176,7 @@ class RateSchemeEditBlockTest(BaseTestCase):
         resp = self.client.put(
             f'/api/rate-schemes/{s.pk}/',
             {
-                'name': 'S-eb-changed', 'algorithm': 'flat_fee',
+                'name': 'S-eb-changed', 'algorithm': 'entered_qty',
                 'rate': '99', 'unit_label': 'ea',
                 'accounting_category': ac.pk,
                 'modifiers': [], 'description': '',
@@ -190,7 +190,7 @@ class RateSchemeEditBlockTest(BaseTestCase):
         from apps.jobs.models import RateScheme
         ac = AccountingCategory.objects.create(code='X-ok', name='X-ok')
         s = RateScheme.objects.create(
-            name='S-ok', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-ok', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         resp = self.client.patch(
@@ -216,13 +216,13 @@ class RateSchemeSupersedeEndpointTest(BaseTestCase):
     def test_supersede_creates_new_and_links_old(self):
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='O-sup', algorithm='flat_fee', rate=Decimal('5'),
+            name='O-sup', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         resp = self.client.post(
             f'/api/rate-schemes/{old.pk}/supersede/',
             {
-                'name': 'O-sup v2', 'rate': '7', 'algorithm': 'flat_fee',
+                'name': 'O-sup v2', 'rate': '7', 'algorithm': 'entered_qty',
                 'unit_label': 'ea', 'accounting_category': self.ac.pk,
                 'modifiers': [], 'description': '',
             },
@@ -240,7 +240,7 @@ class RateSchemeSupersedeEndpointTest(BaseTestCase):
         plain = User.objects.create_user('plain-sup', 'plain-sup@x.test', 'pw')
         self.client.force_login(plain)
         old = RateScheme.objects.create(
-            name='O-sup-perm', algorithm='flat_fee', rate=Decimal('5'),
+            name='O-sup-perm', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         resp = self.client.post(f'/api/rate-schemes/{old.pk}/supersede/', {})
@@ -249,7 +249,7 @@ class RateSchemeSupersedeEndpointTest(BaseTestCase):
     def test_supersede_already_superseded_returns_409(self):
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='O-sup-twice', algorithm='flat_fee', rate=Decimal('5'),
+            name='O-sup-twice', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         # First supersede via the model method
@@ -258,7 +258,7 @@ class RateSchemeSupersedeEndpointTest(BaseTestCase):
         resp = self.client.post(
             f'/api/rate-schemes/{old.pk}/supersede/',
             {
-                'name': 'O-sup-twice v3', 'rate': '9', 'algorithm': 'flat_fee',
+                'name': 'O-sup-twice v3', 'rate': '9', 'algorithm': 'entered_qty',
                 'unit_label': 'ea', 'accounting_category': self.ac.pk,
                 'modifiers': [], 'description': '',
             },
@@ -278,11 +278,11 @@ class RateSchemeListFilterTest(BaseTestCase):
         self.client.force_login(self.user)
         self.ac = AccountingCategory.objects.create(code='Z-lf', name='Z-lf')
         self.active = RateScheme.objects.create(
-            name='A-lf', algorithm='flat_fee', rate=Decimal('1'),
+            name='A-lf', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.old = RateScheme.objects.create(
-            name='O-lf', algorithm='flat_fee', rate=Decimal('1'),
+            name='O-lf', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.new = self.old.supersede(name='N-lf')
@@ -326,7 +326,7 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
         self.client.force_login(self.user)
         self.ac = AccountingCategory.objects.create(code='X-sef', name='X-sef')
         self.s = RateScheme.objects.create(
-            name='S-sef', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-sef', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
 
@@ -350,7 +350,7 @@ class RateSchemeSerializerExtraFieldsTest(BaseTestCase):
         admin.user_permissions.add(perm)
         self.client.force_login(admin)
         resp = self.client.post('/api/rate-schemes/', {
-            'name': 'BadUnits', 'algorithm': 'flat_fee', 'rate': '1',
+            'name': 'BadUnits', 'algorithm': 'entered_qty', 'rate': '1',
             'unit_label': 'frobnitz-not-a-unit',
             'accounting_category': self.ac.pk,
             'modifiers': [], 'description': '',
@@ -383,14 +383,14 @@ class RateSchemeSupersedeSameNameTest(BaseTestCase):
     def test_supersede_with_same_name_as_old_succeeds(self):
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='SN-Hourly', algorithm='flat_fee', rate=Decimal('5'),
+            name='SN-Hourly', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         resp = self.client.post(
             f'/api/rate-schemes/{old.pk}/supersede/',
             {
                 'name': 'SN-Hourly',  # unchanged from old
-                'rate': '7', 'algorithm': 'flat_fee',
+                'rate': '7', 'algorithm': 'entered_qty',
                 'unit_label': 'ea', 'accounting_category': self.ac.pk,
                 'modifiers': [], 'description': '',
             },
@@ -413,14 +413,14 @@ class RateSchemeSupersedeSameNameTest(BaseTestCase):
         """Old row gets (v1) regardless of whether the new name was changed."""
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='SN-Setup', algorithm='flat_fee', rate=Decimal('5'),
+            name='SN-Setup', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         resp = self.client.post(
             f'/api/rate-schemes/{old.pk}/supersede/',
             {
                 'name': 'SN-Setup Premium',
-                'rate': '8', 'algorithm': 'flat_fee',
+                'rate': '8', 'algorithm': 'entered_qty',
                 'unit_label': 'ea', 'accounting_category': self.ac.pk,
                 'modifiers': [], 'description': '',
             },
@@ -479,7 +479,7 @@ class RateSchemeSearchFilterTest(TestCase):
         )
         self.design = RateScheme.objects.create(
             name='Design Fee', description='Graphic design work',
-            algorithm=RateScheme.FLAT_FEE, rate=Decimal('150.00'),
+            algorithm=RateScheme.ENTERED_QTY, rate=Decimal('150.00'),
             unit_label='ea', accounting_category=self.ac,
         )
 

@@ -1,3 +1,4 @@
+import unittest
 from decimal import Decimal
 from django.test import TestCase
 
@@ -72,7 +73,7 @@ class TaskComputeAmountTest(TestCase):
             rate=Decimal('50'), unit_label='item', accounting_category=self.cat,
         )
         self.scheme_flat = RateScheme.objects.create(
-            name='FlatFee', algorithm=RateScheme.FLAT_FEE,
+            name='FlatFee', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('250'), unit_label='each', accounting_category=self.cat,
         )
 
@@ -91,9 +92,12 @@ class TaskComputeAmountTest(TestCase):
         # 3 × $50 = $150
         self.assertEqual(task.compute_amount(), Decimal('150.00'))
 
+    @unittest.skip(
+        "flat_fee removed; fixed charges are the Fee atom — "
+        "covered by test_fee_model/test_fee_wizard"
+    )
     def test_task_flat_fee(self):
-        task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme_flat)
-        self.assertEqual(task.compute_amount(), Decimal('250.00'))
+        pass
 
 
 

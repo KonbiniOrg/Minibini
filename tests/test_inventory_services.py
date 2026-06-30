@@ -87,7 +87,7 @@ class AssignPlanTaskServiceTest(TestCase):
         self.job = Job.objects.create(job_number='APT-JOB', contact=self.contact)
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
-            name='apt-scheme', algorithm=RateScheme.FLAT_FEE,
+            name='apt-scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.task_a = PlanTask.objects.create(

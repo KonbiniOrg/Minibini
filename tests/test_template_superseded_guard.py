@@ -13,7 +13,7 @@ class TemplateSupersededGuardTest(BaseTestCase):
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-tsg', name='X-tsg')
         self.old_scheme = RateScheme.objects.create(
-            name='O-tsg', algorithm='flat_fee', rate=Decimal('1'),
+            name='O-tsg', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.template = ServiceItem.objects.create(
@@ -60,7 +60,7 @@ class TemplateSupersededAPITest(BaseTestCase):
         self.client.force_login(self.user)
         self.ac = AccountingCategory.objects.create(code='X-tsga', name='X-tsga')
         self.old_scheme = RateScheme.objects.create(
-            name='O-tsga', algorithm='flat_fee', rate=Decimal('1'),
+            name='O-tsga', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.template = ServiceItem.objects.create(

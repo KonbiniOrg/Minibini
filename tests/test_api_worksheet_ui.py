@@ -32,7 +32,7 @@ class PlanMaterialCRUDTest(TestCase):
             name='Mat-scheme', code='MAT-SC-AWUI',
         )
         self.scheme = RateScheme.objects.create(
-            name='S-mat-awui', algorithm=RateScheme.FLAT_FEE,
+            name='S-mat-awui', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.scheme_ac,
         )
         self.plan_task = PlanTask.objects.create(
@@ -188,7 +188,7 @@ class ReorderTest(TestCase):
             name='Labor', code='LAB', is_active=True,
         )
         self.scheme = RateScheme.objects.create(
-            name='S-reord-awui', algorithm=RateScheme.FLAT_FEE,
+            name='S-reord-awui', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
 
@@ -275,7 +275,7 @@ class AddFromTemplateTest(TestCase):
         # Phase B requires PlanTask.rate_scheme; templates used by add-from-template
         # must carry a default scheme so the created PlanTask inherits one.
         self.template_scheme = RateScheme.objects.create(
-            name='Tmpl default scheme', algorithm=RateScheme.FLAT_FEE,
+            name='Tmpl default scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('2.50'), unit_label='sqft',
             accounting_category=self.category,
         )
@@ -431,7 +431,7 @@ class PlanMaterialAssignTaskApiTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         self.cat = AccountingCategory.objects.create(name='c', code='ASGN-C')
         self.scheme = RateScheme.objects.create(
-            name='asgn-scheme', algorithm=RateScheme.FLAT_FEE,
+            name='asgn-scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.task_a = PlanTask.objects.create(

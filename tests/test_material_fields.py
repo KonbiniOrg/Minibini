@@ -18,7 +18,7 @@ class MaterialFieldsTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-TEST-1', contact=self.contact)
         self.scheme = RateScheme.objects.create(
-            name='S-mf', algorithm=RateScheme.FLAT_FEE,
+            name='S-mf', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
         self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
@@ -72,7 +72,7 @@ class PlanMaterialFieldsTest(TestCase):
         self.ws = EstWorksheet.objects.create(job=self.job)
         self.pmf_ac = AccountingCategory.objects.create(name='pmf-ac', code='PMF-AC')
         self.pmf_scheme = RateScheme.objects.create(
-            name='S-pmf', algorithm=RateScheme.FLAT_FEE,
+            name='S-pmf', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.pmf_ac,
         )
@@ -111,7 +111,7 @@ class MaterialTaskSetNullTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-TSN-1', contact=self.contact)
         cat = AccountingCategory.objects.create(name='tsn-cat', code='TSN1')
         scheme = RateScheme.objects.create(
-            name='S-tsn', algorithm=RateScheme.FLAT_FEE,
+            name='S-tsn', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=cat,
         )
         self.task = Task.objects.create(job=self.job, name='deletable', rate_scheme=scheme)

@@ -35,7 +35,7 @@ class MaterialTestBase(TestCase):
             name='Material-scheme', code='MAT-SCHEME',
         )
         self.scheme = RateScheme.objects.create(
-            name='S-mat', algorithm=RateScheme.FLAT_FEE,
+            name='S-mat', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.scheme_ac,
         )

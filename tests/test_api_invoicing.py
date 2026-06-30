@@ -603,7 +603,7 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
         from apps.invoicing.services import InvoiceService
         from apps.core.models import AccountingCategory
         flat_svc = RateScheme.objects.create(
-            name='Flat Labor', algorithm=RateScheme.FLAT_FEE,
+            name='Flat Labor', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='ea',
             accounting_category=self.adj_cat,
         )

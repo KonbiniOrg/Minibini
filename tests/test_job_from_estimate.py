@@ -42,7 +42,7 @@ class JobCopyFromWorksheetEndToEndTest(TestCase):
         self.worksheet = EstWorksheet.objects.create(job=self.job)
         ac = AccountingCategory.objects.create(code='E2E-AC', name='e2e')
         self.scheme = RateScheme.objects.create(
-            name='S-e2e', algorithm=RateScheme.FLAT_FEE,
+            name='S-e2e', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
         self.plan_task = PlanTask.objects.create(

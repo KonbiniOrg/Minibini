@@ -1,3 +1,4 @@
+import unittest
 from decimal import Decimal
 from io import StringIO
 from django.test import TestCase
@@ -20,7 +21,7 @@ class ValidateDataRateSchemeTest(TestCase):
 
     def _make_sp(self, name='Sp', rate=Decimal('10.00'), algorithm=None):
         if algorithm is None:
-            algorithm = RateScheme.FLAT_FEE
+            algorithm = RateScheme.ENTERED_QTY
         return RateScheme.objects.create(
             name=name, algorithm=algorithm,
             rate=rate, unit_label='each', accounting_category=self.ac,
@@ -33,26 +34,26 @@ class ValidateDataRateSchemeTest(TestCase):
 
     # ── Flat-fee rate checks ──────────────────────────────────────
 
+    @unittest.skip(
+        "flat_fee removed; flat-fee rate check dropped from validate_data — "
+        "fixed charges are the Fee atom"
+    )
     def test_flags_zero_rate_flat_fee(self):
-        RateScheme.objects.create(
-            name='Bad flat', algorithm=RateScheme.FLAT_FEE,
-            rate=Decimal('0.00'), unit_label='each', accounting_category=self.ac,
-        )
-        output = self._run()
-        self.assertIn('flat-fee', output.lower())
+        pass
 
+    @unittest.skip(
+        "flat_fee removed; flat-fee rate check dropped from validate_data — "
+        "fixed charges are the Fee atom"
+    )
     def test_flags_negative_rate_flat_fee(self):
-        RateScheme.objects.create(
-            name='Neg rate flat', algorithm=RateScheme.FLAT_FEE,
-            rate=Decimal('-5.00'), unit_label='each', accounting_category=self.ac,
-        )
-        output = self._run()
-        self.assertIn('flat-fee', output.lower())
+        pass
 
+    @unittest.skip(
+        "flat_fee removed; flat-fee rate check dropped from validate_data — "
+        "fixed charges are the Fee atom"
+    )
     def test_valid_flat_fee_not_flagged(self):
-        self._make_sp(name='Good flat', rate=Decimal('50.00'))
-        output = self._run()
-        self.assertNotIn('flat-fee', output.lower())
+        pass
 
     # ── active_modifiers dict-shape checks ───────────────────────
 

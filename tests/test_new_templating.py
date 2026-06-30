@@ -14,7 +14,7 @@ from django.db import IntegrityError
 
 def _make_scheme(suffix, ac):
     return RateScheme.objects.create(
-        name=f'S-nt-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-nt-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -61,7 +61,7 @@ class TestTemplateTaskAssociation(TestCase):
         """A flat-fee ServiceItem with empty default_active_modifiers validates cleanly."""
         ac = AccountingCategory.objects.create(name="Setup AC", code="STP")
         svc = RateScheme.objects.create(
-            name='Setup fee', algorithm=RateScheme.FLAT_FEE,
+            name='Setup fee', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100.00'), unit_label='job',
             accounting_category=ac,
         )

@@ -3,6 +3,7 @@
 flat_fee billing means "fixed unit price x estimated quantity". The unit
 price lives on RateScheme.rate. See docs/designs/estimates-and-prices.md.
 """
+import unittest
 from decimal import Decimal
 from django.test import TestCase
 from apps.jobs.models import Task, PlanTask, RateScheme, Job
@@ -11,6 +12,10 @@ from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
 
 
+@unittest.skip(
+    "flat_fee removed; fixed charges are the Fee atom — "
+    "covered by test_fee_model/test_fee_wizard"
+)
 class FlatFeePricingTest(TestCase):
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')

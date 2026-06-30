@@ -16,7 +16,7 @@ class PlanTaskEstQtyRequiredTest(TestCase):
     def setUp(self):
         ac = AccountingCategory.objects.create(name='Labor')
         self.scheme = RateScheme.objects.create(
-            name='Setup', algorithm=RateScheme.FLAT_FEE,
+            name='Setup', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100.00'), unit_label='job',
             accounting_category=ac,
         )

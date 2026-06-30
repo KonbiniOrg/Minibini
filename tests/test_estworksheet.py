@@ -21,7 +21,7 @@ def _make_scheme(suffix):
     """Helper: create a minimal RateScheme + AccountingCategory for tests."""
     ac = AccountingCategory.objects.create(code=f'ESTWS-{suffix}', name=f'estws-{suffix}')
     return RateScheme.objects.create(
-        name=f'S-estws-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-estws-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 

@@ -47,7 +47,7 @@ class ApplyEverythingServiceTest(TestCase):
 
         # A completed task with a rate scheme
         self.rs = RateScheme.objects.create(
-            name='Flat-AE', algorithm=RateScheme.FLAT_FEE,
+            name='Flat-AE', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100.00'), unit_label='ea',
             accounting_category=self.cat,
         )
@@ -175,7 +175,7 @@ class ApplyEverythingAPITest(TestCase):
         )
 
         self.rs = RateScheme.objects.create(
-            name='Flat-API', algorithm=RateScheme.FLAT_FEE,
+            name='Flat-API', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('200.00'), unit_label='ea',
             accounting_category=self.cat,
         )

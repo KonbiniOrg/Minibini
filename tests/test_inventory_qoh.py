@@ -35,7 +35,7 @@ class ConsumeMaterialTest(TestCase):
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.scheme = RateScheme.objects.create(
-            name='S-qoh2', algorithm=RateScheme.FLAT_FEE,
+            name='S-qoh2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -160,7 +160,7 @@ class CompleteTaskAdjustmentTest(TestCase):
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.scheme = RateScheme.objects.create(
-            name='S-qoh3', algorithm=RateScheme.FLAT_FEE,
+            name='S-qoh3', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(

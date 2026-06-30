@@ -9,8 +9,11 @@ from apps.jobs.flat_fee_reframe import reframe_flat_fee_prices
 class FlatFeeReframeTest(TestCase):
     def setUp(self):
         self.ac = AccountingCategory.objects.create(name='Svc', code='SVC')
+        # Literal 'flat_fee' (not RateScheme.FLAT_FEE — that constant is gone):
+        # this exercises the historical migration helper, which still queries the
+        # raw 'flat_fee' string. .create() skips full_clean so the value persists.
         self.shared = RateScheme.objects.create(
-            name='Flat Fee', algorithm=RateScheme.FLAT_FEE,
+            name='Flat Fee', algorithm='flat_fee',
             rate=Decimal('0.00'), unit_label='each', accounting_category=self.ac,
         )
 

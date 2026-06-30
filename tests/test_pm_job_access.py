@@ -432,7 +432,7 @@ class TaskAssignPMAccessTest(BaseTestCase):
         )
         ac = AccountingCategory.objects.create(code='ASG-AC', name='ASG AC')
         scheme = RateScheme.objects.create(
-            name='ASG-S', algorithm='flat_fee', rate=Decimal('1'),
+            name='ASG-S', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         self.task = Task.objects.create(

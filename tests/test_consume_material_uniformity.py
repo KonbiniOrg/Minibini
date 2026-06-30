@@ -12,7 +12,7 @@ class ConsumeMaterialUniformityTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='cu', code='CU1')
         self.scheme = RateScheme.objects.create(
-            name='S-cu', algorithm=RateScheme.FLAT_FEE,
+            name='S-cu', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.contact = Contact.objects.create(

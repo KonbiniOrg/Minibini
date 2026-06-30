@@ -81,7 +81,7 @@ class CollectIfFinishedTest(TestCase):
 
     def test_consume_does_not_delete_so_unconsume_works(self):
         scheme = RateScheme.objects.create(
-            name='S', algorithm=RateScheme.FLAT_FEE, rate=1, unit_label='ea',
+            name='S', algorithm=RateScheme.ENTERED_QTY, rate=1, unit_label='ea',
             accounting_category=self.cat)
         task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
         it = self._item(code='C1', is_catalog=False, qty_on_hand=Decimal('5.00'))

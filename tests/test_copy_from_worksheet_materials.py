@@ -21,7 +21,7 @@ class CopyFromWorksheetMaterialsTest(TestCase):
         self.ws = EstWorksheet.objects.create(job=self.src_job)
         self.scheme_ac = AccountingCategory.objects.create(name='cfwm-ac', code='CFWM-AC')
         self.scheme = RateScheme.objects.create(
-            name='S-cfwm', algorithm=RateScheme.FLAT_FEE,
+            name='S-cfwm', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.scheme_ac,
         )

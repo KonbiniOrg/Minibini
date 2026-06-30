@@ -227,7 +227,7 @@ class EstimateWizardBundleSummaryTest(TestCase):
         # flat_fee price now lives on RateScheme.rate; active_modifiers is [].
         # Same scheme + same (empty) modifiers summarizes — est_qty summed, not set to 1.
         scheme_flat = RateScheme.objects.create(
-            name='E-Tapping', algorithm=RateScheme.FLAT_FEE,
+            name='E-Tapping', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('7.00'), unit_label='holes',
             accounting_category=self.cat,
         )

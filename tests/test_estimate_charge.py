@@ -61,7 +61,7 @@ class GenerateTaskEstWorksheetBranchTest(BaseTestCase):
         from apps.contacts.models import Business, Contact
         ac = AccountingCategory.objects.create(code='X', name='X')
         self.scheme = RateScheme.objects.create(
-            name='S-gtw', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-gtw', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         self.template = ServiceItem.objects.create(
@@ -98,7 +98,7 @@ class EffectiveACPropertyTest(BaseTestCase):
         from apps.jobs.models import RateScheme
         self.scheme_ac = AccountingCategory.objects.create(code='S-eac', name='Scheme AC')
         self.scheme = RateScheme.objects.create(
-            name='S-eac', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-eac', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.scheme_ac,
         )
 
@@ -152,7 +152,7 @@ class AddTaskManualRequiresSchemeTest(BaseTestCase):
         from apps.contacts.models import Business, Contact
         self.ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
         self.scheme = RateScheme.objects.create(
-            name='S-atm', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-atm', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         contact = Contact.objects.create(
@@ -196,7 +196,7 @@ class PlanTaskSerializerNoACTest(BaseTestCase):
         self.client.force_login(self.user)
         self.ac = AccountingCategory.objects.create(code='X-pts', name='X-pts')
         self.scheme = RateScheme.objects.create(
-            name='S-pts', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-pts', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
 

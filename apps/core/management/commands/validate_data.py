@@ -508,10 +508,6 @@ class Command(BaseCommand):
                     f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
                     f'must both be set or both be null'
                 )
-            if rs.algorithm == RateScheme.FLAT_FEE and (rs.rate is None or rs.rate <= 0):
-                self.errors.append(
-                    f'RateScheme {rs.pk} ({rs.name}): flat-fee service must have a positive rate'
-                )
             if rs.algorithm != RateScheme.PERCENTAGE and rs.rate is not None and rs.rate < 0:
                 self.errors.append(
                     f'RateScheme {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'

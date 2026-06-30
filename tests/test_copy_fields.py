@@ -14,7 +14,7 @@ from apps.inventory.models import PlanMaterial, Material, InventoryItem
 def _make_scheme(suffix):
     ac = AccountingCategory.objects.create(code=f'CF-{suffix}', name=f'cf-{suffix}')
     return RateScheme.objects.create(
-        name=f'S-cf-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-cf-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 

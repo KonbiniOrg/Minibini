@@ -16,7 +16,7 @@ from apps.jobs.services import JobService
 def _make_scheme(suffix):
     ac = AccountingCategory.objects.create(code=f'DUP-{suffix}', name=f'dup-{suffix}')
     return RateScheme.objects.create(
-        name=f'S-dup-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-dup-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 

@@ -76,7 +76,7 @@ class TaskSerializerNoLegacyFieldsTest(BaseTestCase):
         self.client.force_login(self.user)
         ac = AccountingCategory.objects.create(code='X-tnf', name='X-tnf')
         self.scheme = RateScheme.objects.create(
-            name='S-tnf', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-tnf', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         contact = Contact.objects.create(
@@ -141,7 +141,7 @@ class TaskTimeFieldsTest(BaseTestCase):
             unit_label='hr', accounting_category=ac,
         )
         self.flat_scheme = RateScheme.objects.create(
-            name='Flat-time', algorithm='flat_fee', rate=Decimal('100'),
+            name='Flat-time', algorithm='entered_qty', rate=Decimal('100'),
             unit_label='ea', accounting_category=ac,
         )
         contact = Contact.objects.create(first_name='T', last_name='Time')
@@ -209,7 +209,7 @@ class ServiceItemSerializerNoACTest(BaseTestCase):
         self.client.force_login(self.user)
         ac = AccountingCategory.objects.create(code='X-tts', name='X-tts')
         scheme = RateScheme.objects.create(
-            name='S-tts', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-tts', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         self.template = ServiceItem.objects.create(

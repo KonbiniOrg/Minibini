@@ -21,7 +21,7 @@ class MaterialServiceCreateOnJobTest(TestCase):
             code='N', accounting_category=self.cat, is_catalog=False,
         )
         self.scheme = RateScheme.objects.create(
-            name='S-msc', algorithm=RateScheme.FLAT_FEE,
+            name='S-msc', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
 

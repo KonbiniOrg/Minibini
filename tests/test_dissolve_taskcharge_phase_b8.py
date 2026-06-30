@@ -21,7 +21,7 @@ from apps.jobs.models import Job, RateScheme, Task
 def _make_scheme(name='S-b8'):
     ac, _ = AccountingCategory.objects.get_or_create(code='B8', defaults={'name': 'B8-Labor'})
     return RateScheme.objects.create(
-        name=name, algorithm=RateScheme.FLAT_FEE,
+        name=name, algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea',
         accounting_category=ac,
     )

@@ -1,3 +1,4 @@
+import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from tests.base import BaseTestCase
@@ -45,21 +46,17 @@ class RateSchemeModelTest(BaseTestCase):
         self.assertEqual(len(scheme.modifiers), 2)
         self.assertEqual(scheme.modifiers[0]['key'], 'messy')
 
+    @unittest.skip(
+        "flat_fee removed; fixed charges are the Fee atom — "
+        "covered by test_fee_model/test_fee_wizard"
+    )
     def test_create_flat_fee_scheme(self):
-        scheme = RateScheme.objects.create(
-            name='Setup Fee',
-            algorithm=RateScheme.FLAT_FEE,
-            rate=Decimal('50.00'),
-            unit_label='job',
-            accounting_category=self.ac,
-        )
-        self.assertEqual(scheme.algorithm, RateScheme.FLAT_FEE)
-        self.assertEqual(str(scheme), 'Setup Fee')
+        pass
 
     def test_name_unique(self):
         RateScheme.objects.create(
             name='Unique Scheme',
-            algorithm=RateScheme.FLAT_FEE,
+            algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'),
             unit_label='job',
             accounting_category=self.ac,
@@ -68,7 +65,7 @@ class RateSchemeModelTest(BaseTestCase):
         with self.assertRaises(IntegrityError):
             RateScheme.objects.create(
                 name='Unique Scheme',
-                algorithm=RateScheme.FLAT_FEE,
+                algorithm=RateScheme.ENTERED_QTY,
                 rate=Decimal('10.00'),
                 unit_label='job',
                 accounting_category=self.ac,
@@ -95,7 +92,7 @@ class RateSchemeComputeTest(BaseTestCase):
         )
         self.flat_scheme = RateScheme.objects.create(
             name='Setup Fee',
-            algorithm=RateScheme.FLAT_FEE,
+            algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'),
             unit_label='job',
             accounting_category=self.ac,
@@ -142,13 +139,19 @@ class RateSchemeComputeTest(BaseTestCase):
         self.assertEqual(result, Decimal('104.99'))
         self.assertEqual(result.as_tuple().exponent, -2)
 
+    @unittest.skip(
+        "flat_fee removed; fixed charges are the Fee atom — "
+        "covered by test_fee_model/test_fee_wizard"
+    )
     def test_flat_fee_effective_rate(self):
-        result = self.flat_scheme.effective_rate()
-        self.assertEqual(result, Decimal('50.00'))
+        pass
 
+    @unittest.skip(
+        "flat_fee removed; fixed charges are the Fee atom — "
+        "covered by test_fee_model/test_fee_wizard"
+    )
     def test_flat_fee_compute_charge(self):
-        result = self.flat_scheme.compute_charge(Decimal('1'))
-        self.assertEqual(result, Decimal('50.00'))
+        pass
 
     def test_get_actual_qty_elapsed_time(self):
         from datetime import datetime, timedelta
@@ -204,19 +207,19 @@ class RateSchemeComputeTest(BaseTestCase):
         result = self.scheme.get_actual_qty(task)
         self.assertEqual(result, Decimal('25'))
 
+    @unittest.skip(
+        "flat_fee removed; fixed charges are the Fee atom — "
+        "covered by test_fee_model/test_fee_wizard"
+    )
     def test_get_actual_qty_flat_fee_uses_est_qty(self):
-        # flat_fee now bills a fixed unit price x estimated quantity.
-        task = MagicMock()
-        task.est_qty = Decimal('12')
-        result = self.flat_scheme.get_actual_qty(task)
-        self.assertEqual(result, Decimal('12'))
+        pass
 
+    @unittest.skip(
+        "flat_fee removed; fixed charges are the Fee atom — "
+        "covered by test_fee_model/test_fee_wizard"
+    )
     def test_get_actual_qty_flat_fee_falls_back_to_one(self):
-        # A genuine one-off fee carries no quantity; fall back to 1.
-        task = MagicMock()
-        task.est_qty = None
-        result = self.flat_scheme.get_actual_qty(task)
-        self.assertEqual(result, Decimal('1'))
+        pass
 
     def test_get_modifier_inputs(self):
         result = self.scheme.get_modifier_inputs()
@@ -276,7 +279,7 @@ class RateSchemeSupersessionFieldsTest(BaseTestCase):
         from apps.jobs.models import RateScheme
         ac = AccountingCategory.objects.first()
         scheme = RateScheme.objects.create(
-            name='X', algorithm='flat_fee', rate=Decimal('10'),
+            name='X', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=ac,
         )
         # New nullable fields exist with sensible defaults
@@ -295,7 +298,7 @@ class RateSchemeIsReferencedTest(BaseTestCase):
     def test_unreferenced_scheme_is_not_referenced(self):
         from apps.jobs.models import RateScheme
         s = RateScheme.objects.create(
-            name='unref', algorithm='flat_fee', rate=Decimal('1'),
+            name='unref', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         self.assertFalse(s.is_referenced())
@@ -312,7 +315,7 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         job = Job.objects.create(job_number='J1', contact=contact)
         ws = EstWorksheet.objects.create(job=job)
         s = RateScheme.objects.create(
-            name='ref', algorithm='flat_fee', rate=Decimal('1'),
+            name='ref', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         PlanTask.objects.create(
@@ -331,7 +334,7 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         contact.save()
         job = Job.objects.create(job_number='J2', contact=contact)
         s = RateScheme.objects.create(
-            name='refTC', algorithm='flat_fee', rate=Decimal('1'),
+            name='refTC', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         Task.objects.create(job=job, name='t', rate_scheme=s)
@@ -341,7 +344,7 @@ class RateSchemeIsReferencedTest(BaseTestCase):
         from apps.jobs.models import RateScheme
         from apps.estimates.models import ServiceItem
         s = RateScheme.objects.create(
-            name='refTT', algorithm='flat_fee', rate=Decimal('1'),
+            name='refTT', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         ServiceItem.objects.create(
@@ -362,7 +365,7 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
         from apps.jobs.models import RateScheme
         from django.utils import timezone
         old = RateScheme.objects.create(
-            name='Old', algorithm='flat_fee', rate=Decimal('10'),
+            name='Old', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
         )
         before = timezone.now()
@@ -375,7 +378,7 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
         self.assertEqual(new.name, 'New')
         self.assertEqual(new.rate, Decimal('15'))
         # New scheme inherits non-overridden fields
-        self.assertEqual(new.algorithm, 'flat_fee')
+        self.assertEqual(new.algorithm, 'entered_qty')
         self.assertEqual(new.unit_label, 'ea')
         self.assertEqual(new.accounting_category, self.ac)
         self.assertIsNone(new.replaced_by)
@@ -384,7 +387,7 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
     def test_supersede_on_already_superseded_raises(self):
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='Old', algorithm='flat_fee', rate=Decimal('10'),
+            name='Old', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
         )
         old.supersede(name='V2')
@@ -394,7 +397,7 @@ class RateSchemeSupersedeMethodTest(BaseTestCase):
     def test_supersede_does_not_share_modifiers_list_with_new_scheme(self):
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='Old', algorithm='flat_fee', rate=Decimal('10'),
+            name='Old', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
             modifiers=[{'key': 'm1', 'label': 'M1', 'percent': 10}],
         )
@@ -420,7 +423,7 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
         """
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='Standard Labor', algorithm='flat_fee', rate=Decimal('10'),
+            name='Standard Labor', algorithm='entered_qty', rate=Decimal('10'),
             unit_label='ea', accounting_category=self.ac,
         )
         new = old.supersede()
@@ -443,7 +446,7 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
         """
         from apps.jobs.models import RateScheme
         a = RateScheme.objects.create(
-            name='Job A', algorithm='flat_fee', rate=Decimal('1'),
+            name='Job A', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         b = a.supersede()  # a -> "Job A (v1)", b -> "Job A"
@@ -465,7 +468,7 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
         """
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='Hourly', algorithm='flat_fee', rate=Decimal('5'),
+            name='Hourly', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         new = old.supersede(name='Premium Hourly')
@@ -482,7 +485,7 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
         """
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='Quirky (v1)', algorithm='flat_fee', rate=Decimal('5'),
+            name='Quirky (v1)', algorithm='entered_qty', rate=Decimal('5'),
             unit_label='ea', accounting_category=self.ac,
         )
         new = old.supersede()
@@ -499,7 +502,7 @@ class RateSchemeVersionedSupersedeTest(BaseTestCase):
         """
         from apps.jobs.models import RateScheme
         old = RateScheme.objects.create(
-            name='Mod', algorithm='flat_fee', rate=Decimal('1'),
+            name='Mod', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
             modifiers=[{'key': 'm1', 'label': 'M1', 'percent': 10}],
         )
@@ -536,7 +539,7 @@ class RateSchemeFreezeOnReferenceTest(BaseTestCase):
         job = Job.objects.create(job_number='J-frz', contact=contact)
         ws = EstWorksheet.objects.create(job=job)
         s = RateScheme.objects.create(
-            name='S-frz', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-frz', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         PlanTask.objects.create(
@@ -548,7 +551,7 @@ class RateSchemeFreezeOnReferenceTest(BaseTestCase):
     def test_unreferenced_scheme_can_be_edited(self):
         from apps.jobs.models import RateScheme
         s = RateScheme.objects.create(
-            name='U-frz', algorithm='flat_fee', rate=Decimal('1'),
+            name='U-frz', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
         s.rate = Decimal('2')
@@ -578,7 +581,7 @@ class RateSchemeRequiresACTest(BaseTestCase):
         from django.core.exceptions import ValidationError
         from apps.jobs.models import RateScheme
         s = RateScheme(
-            name='NoAC', algorithm='flat_fee', rate=Decimal('1'),
+            name='NoAC', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea',
         )
         with self.assertRaises(ValidationError) as cm:
@@ -600,7 +603,7 @@ class RateSchemeIsReferencedTaskTest(BaseTestCase):
         from apps.contacts.models import Contact, Business
 
         scheme = RateScheme.objects.create(
-            name='Test B2', algorithm=RateScheme.FLAT_FEE,
+            name='Test B2', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='job',
             accounting_category=self.ac,
         )

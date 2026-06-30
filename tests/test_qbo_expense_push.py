@@ -579,7 +579,7 @@ class SFMOMAIntegrationTest(TestCase):
         contact.save()
         self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
         self.scheme = RateScheme.objects.create(
-            name='S-sfmoma', algorithm=RateScheme.FLAT_FEE,
+            name='S-sfmoma', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
 

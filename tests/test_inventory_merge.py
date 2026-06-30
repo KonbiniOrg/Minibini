@@ -35,7 +35,7 @@ class MergeServiceTest(TestCase):
 
     def test_merge_repoints_materials(self):
         scheme = RateScheme.objects.create(
-            name='S', algorithm=RateScheme.FLAT_FEE, rate=1, unit_label='ea',
+            name='S', algorithm=RateScheme.ENTERED_QTY, rate=1, unit_label='ea',
             accounting_category=self.cat)
         task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
         m = Material.objects.create(

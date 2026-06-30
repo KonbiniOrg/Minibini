@@ -494,7 +494,7 @@ class WorksheetServiceAddTaskTest(EstimatesTestBase):
         from apps.jobs.models import RateScheme
         ac = AccountingCategory.objects.create(code='X-atm', name='X-atm')
         scheme = RateScheme.objects.create(
-            name='S-atm', algorithm='flat_fee', rate=Decimal('1'),
+            name='S-atm', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         task = WorksheetService.add_task_manual(

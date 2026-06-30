@@ -228,7 +228,7 @@ class PropagateFlagOnFreeformAndPostPathsTests(_Setup):
         ws = EstWorksheet.objects.create(job=self.job)
         scheme_ac = AccountingCategory.objects.create(code='RS-AC', name='RS AC')
         scheme = RateScheme.objects.create(
-            name='RS', algorithm=RateScheme.FLAT_FEE,
+            name='RS', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
         )
         pt = PlanTask.objects.create(

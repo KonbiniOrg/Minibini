@@ -35,7 +35,7 @@ def _make_scheme(name_suffix=''):
     )
     return RateScheme.objects.create(
         name=f'S-dt-{name_suffix}',
-        algorithm=RateScheme.FLAT_FEE,
+        algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('50'),
         unit_label='ea',
         accounting_category=ac,

@@ -19,7 +19,7 @@ class SortOrderAutoGenerationTest(TestCase):
             code='LBR', defaults={'name': 'Labor'}
         )
         self.scheme = RateScheme.objects.create(
-            name='S-son', algorithm=RateScheme.FLAT_FEE,
+            name='S-son', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.lit,
         )
 
@@ -60,7 +60,7 @@ class GenerateTaskSortOrderTest(TestCase):
             code='LBR', defaults={'name': 'Labor'}
         )
         self.scheme = RateScheme.objects.create(
-            name='S-gtso', algorithm=RateScheme.FLAT_FEE,
+            name='S-gtso', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.lit_labor,
         )
 

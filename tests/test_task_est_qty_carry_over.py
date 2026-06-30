@@ -56,7 +56,7 @@ class TaskEstQtyCarryOverTest(TestCase):
 
     def test_template_generate_task_for_job_persists_est_qty(self):
         scheme = RateScheme.objects.create(
-            name='T', algorithm=RateScheme.FLAT_FEE,
+            name='T', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100'), unit_label='job',
             accounting_category=self.ac,
         )

@@ -38,8 +38,8 @@ def _pick_least_used_accent_color():
 def copy_active_modifiers(value):
     """Return a copy of an atom's active_modifiers list (modifier keys).
 
-    Legacy flat-fee dicts ({'flat_fee_price': ...}) collapse to [] — the price
-    now lives on RateScheme.rate, not on the atom.
+    Legacy dicts ({'flat_fee_price': ...}) collapse to [] — fixed charges are
+    now the Fee atom, not a RateScheme algorithm.
     """
     if isinstance(value, dict):
         return []
@@ -361,7 +361,7 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text=(
             "Worker-entered actual quantity for ENTERED_QTY schemes. "
-            "Null for ELAPSED_TIME (qty derived from bleps) and FLAT_FEE."
+            "Null for ELAPSED_TIME (qty derived from bleps)."
         ),
     )
     # est_qty inherited from TaskBase (nullable on Task).
@@ -477,13 +477,11 @@ class Blep(models.Model):
 class RateScheme(models.Model):
     ELAPSED_TIME = 'elapsed_time'
     ENTERED_QTY = 'entered_qty'
-    FLAT_FEE = 'flat_fee'
     PERCENTAGE = 'percentage'
 
     ALGORITHM_CHOICES = [
         (ELAPSED_TIME, 'Based on time worked'),
         (ENTERED_QTY, 'Worker enters quantity'),
-        (FLAT_FEE, 'Fixed charge'),
         (PERCENTAGE, 'Percentage of other lines'),
     ]
 
@@ -547,13 +545,10 @@ class RateScheme(models.Model):
     def effective_rate(self, active_modifiers=None):
         """Compute the per-unit rate.
 
-        Flat-fee price lives on self.rate (one priced service per item).
         For time/qty schemes, apply additive modifier surcharges.
         """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services compute at the document layer, not per-unit')
-        if self.algorithm == self.FLAT_FEE:
-            return self.rate
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
@@ -583,11 +578,8 @@ class RateScheme(models.Model):
             return (Decimal(str(total_seconds)) / 3600).quantize(Decimal('0.01'))
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
-        else:  # FLAT_FEE
-            # flat_fee bills a fixed unit price x estimated quantity. est_qty
-            # comes from the worksheet, carried to the Task and editable there;
-            # fall back to 1 for a genuine one-off fee with no quantity.
-            return task.est_qty if task.est_qty is not None else Decimal('1')
+        else:
+            raise ValueError(f'unknown algorithm: {self.algorithm}')
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""
