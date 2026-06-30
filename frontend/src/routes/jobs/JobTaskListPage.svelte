@@ -4,6 +4,7 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
+  import FeeModal from '../../components/FeeModal.svelte';
   import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
@@ -36,6 +37,10 @@
   let materialModalMaterial = $state(null);
   let materialModalTaskId = $state(null);
   let materialModalJobId = $state(null);
+
+  let feeModalOpen = $state(false);
+  let feeModalMode = $state('create');
+  let feeModalFee = $state(null);
 
   let selectedTaskId = $state(null);
 
@@ -273,6 +278,25 @@
     reload();
   }
 
+  // Fee modal handlers
+  function openAddJobFee() {
+    feeModalFee = null;
+    feeModalMode = 'create';
+    feeModalOpen = true;
+  }
+
+  function openEditFee(fee) {
+    feeModalFee = fee;
+    feeModalMode = 'edit';
+    feeModalOpen = true;
+  }
+
+  function handleFeeSaved() {
+    feeModalOpen = false;
+    feeModalFee = null;
+    reload();
+  }
+
   // Subtask modal handlers
   function openAddSubtask(task) {
     subtaskModalParentTaskId = task.task_id;
@@ -333,6 +357,7 @@
       <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
       <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
       <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      <button type="button" onclick={openAddJobFee}>Add Fee</button>
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
     {#if job?.can_manage}
@@ -364,6 +389,36 @@
     bind:selectedTaskId
   />
 
+  {#if (job.fees || []).length > 0}
+    <section class="fees-section">
+      <h4 class="fees-heading">Fees</h4>
+      <table class="fees-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Unit Rate</th>
+            <th class="text-right">Total</th>
+            {#if !jobLocked}<th></th>{/if}
+          </tr>
+        </thead>
+        <tbody>
+          {#each (job.fees || []) as fee (fee.fee_id)}
+            <tr>
+              <td>{fee.description || '(fee)'}</td>
+              <td class="text-right">{fee.quantity ?? '—'}</td>
+              <td class="text-right">{fee.unit_rate != null ? fee.unit_rate : '—'}</td>
+              <td class="text-right">{fee.quantity != null && fee.unit_rate != null ? Number(fee.quantity) * Number(fee.unit_rate) : '—'}</td>
+              {#if !jobLocked}
+                <td><button type="button" class="btn-inline" onclick={() => openEditFee(fee)}>Edit</button></td>
+              {/if}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </section>
+  {/if}
+
   <!-- Modals -->
   <WorkItemForm
     open={taskModalOpen}
@@ -386,6 +441,16 @@
     {categories}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
+  />
+
+  <FeeModal
+    open={feeModalOpen}
+    mode={feeModalMode}
+    fee={feeModalFee}
+    jobId={job.job_id}
+    {categories}
+    onSaved={handleFeeSaved}
+    onClose={() => { feeModalOpen = false; }}
   />
 
   <ExpenseModal
@@ -427,4 +492,16 @@
   }
   .toolbar button:hover { background: #f3f4f6; }
   .toolbar button:disabled { opacity: 0.5; cursor: default; }
+
+  .fees-section { padding: 0 24px 16px; }
+  .fees-heading { margin: 12px 0 6px; font-size: 13px; font-weight: 600; color: #374151; }
+  .fees-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .fees-table th, .fees-table td { padding: 4px 8px; border-bottom: 1px solid #e5e7eb; }
+  .fees-table th { font-weight: 600; color: #6b7280; text-align: left; }
+  .text-right { text-align: right; }
+  .btn-inline {
+    padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 3px;
+    background: #fff; cursor: pointer; font-size: 12px;
+  }
+  .btn-inline:hover { background: #f3f4f6; }
 </style>
