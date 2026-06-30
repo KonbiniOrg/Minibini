@@ -266,11 +266,12 @@ class EstimateServiceReviseTest(EstimatesTestBase):
         with self.assertRaises(ValidationError):
             EstimateService.revise_estimate(est.pk)
 
-    def test_revise_releases_line_item_sources(self):
-        """Atom sources are DELETED from the superseded estimate on revision —
-        the parent's line items remain as a frozen snapshot (description/qty/price
-        intact) but the atom claims are released so the new revision can
-        freely re-claim them via the wizard (no unique_together conflict)."""
+    def test_revise_moves_line_item_sources(self):
+        """Atom sources are MOVED from the superseded estimate to the new
+        revision on revision — the parent's line items remain as a frozen
+        snapshot (description/qty/price intact, no source rows) and the new
+        revision's copied line items carry the live atom references by default.
+        The atom claim count stays at 1 (no unique_together violation)."""
         from apps.estimates.models import EstimateLineItemSource
         from apps.jobs.models import Task
         task = Task.objects.create(
@@ -290,24 +291,24 @@ class EstimateServiceReviseTest(EstimatesTestBase):
 
         new_est = EstimateService.revise_estimate(est.pk)
 
-        # The source row was deleted — atom is now unclaimed.
-        self.assertFalse(
+        # The source row was moved (re-pointed), so the same pk still exists.
+        self.assertTrue(
             EstimateLineItemSource.objects.filter(pk=src.pk).exists(),
-            'Original EstimateLineItemSource must be deleted on supersession',
+            'Original EstimateLineItemSource must be re-pointed (not deleted) on supersession',
         )
-        # Parent's line item still exists (frozen snapshot).
+        # Parent's line item still exists as a frozen snapshot — no source rows.
         old_li = EstimateLineItem.objects.get(estimate=est)
         self.assertEqual(old_li.sources.count(), 0)
-        # New revision's line item exists but also has no source rows.
+        # New revision's line item carries the moved source row.
         new_li = EstimateLineItem.objects.get(estimate=new_est)
-        self.assertEqual(new_li.sources.count(), 0)
-        # Atom is completely unclaimed — count must be 0.
+        self.assertEqual(new_li.sources.count(), 1)
+        # Atom is claimed exactly once — by the new revision.
         self.assertEqual(
             EstimateLineItemSource.objects.filter(
                 source_type=EstimateLineItemSource.SOURCE_TASK,
                 source_pk=task.pk,
             ).count(),
-            0,
+            1,
         )
 
     def test_revise_preserves_adjustment_lines(self):

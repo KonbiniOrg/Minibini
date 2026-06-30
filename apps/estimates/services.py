@@ -149,11 +149,14 @@ class EstimateService:
             parent=parent,
         )
 
-        # Copy line items as a frozen snapshot on the new revision, then DELETE
-        # the old estimate's source rows (atom claims) so atoms are released
-        # back to the live job and the new revision can re-claim them freely
-        # via the wizard (EstimateLineItemSource.unique_together enforces
-        # at-most-one claim per atom across all estimates).
+        # Copy line items onto the new revision and MOVE each source row
+        # (EstimateLineItemSource) from the parent's line to the new revision's
+        # copied line.  Net effect: the superseded estimate keeps its
+        # EstimateLineItem rows as a frozen snapshot (description/qty/price
+        # intact) but has no source rows; the new revision's lines carry the
+        # live atom references by default.  Each atom remains claimed exactly
+        # once (unique_together is satisfied because the row is re-pointed, not
+        # duplicated).
         for li in EstimateLineItem.objects.filter(estimate=parent):
             new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
@@ -169,10 +172,12 @@ class EstimateService:
             cats = li.adjustment_target_categories.all()
             if cats:
                 new_li.adjustment_target_categories.set(cats)
-            # Release the parent's atom claims: delete source rows so the
-            # line items remain as a frozen snapshot (description/qty/price
-            # intact) but the live atom links are gone.
-            li.sources.all().delete()
+            # Move the source rows to the new revision's line item so the atom
+            # is claimed by the revision (not dropped).  The parent line ends up
+            # with no sources — a correct frozen snapshot.
+            for src in li.sources.all():
+                src.estimate_line_item = new_li
+                src.save()
 
         # Supersede parent
         parent.status = Estimate.STATUS_SUPERSEDED

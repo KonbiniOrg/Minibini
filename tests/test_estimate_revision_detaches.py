@@ -1,8 +1,11 @@
-"""Task 4.3: Revising (superseding) an estimate releases its atom claims.
+"""Task 4.3: Revising (superseding) an estimate MOVES its atom claims to the new revision.
 
 The superseded estimate keeps its EstimateLineItem rows as a frozen snapshot
-but its EstimateLineItemSource rows must be deleted so the live job atoms
-(Tasks / Materials / Fees) are free for the new/revised estimate to re-claim.
+but its EstimateLineItemSource rows are moved to the new revision's copied
+line items so the live job atoms (Tasks / Materials / Fees) remain referenced
+by default on the new draft — the user can later release or hold them via the
+wizard.  Each atom is claimed exactly once throughout (unique_together remains
+satisfied because the source row is re-pointed, not duplicated or dropped).
 """
 from decimal import Decimal
 
@@ -19,8 +22,9 @@ from apps.jobs.services import JobService
 
 
 class EstimateRevisionDetachesTest(TestCase):
-    """revise_estimate deletes source rows from the superseded estimate so
-    atoms are freed; the new revision starts with unclaimed line items."""
+    """revise_estimate moves source rows from the superseded estimate to the
+    new revision, keeping the parent as a frozen snapshot (no sources) while
+    the new revision references the job's atoms by default."""
 
     fixtures = ['unit_test_data.json']
 
@@ -79,11 +83,12 @@ class EstimateRevisionDetachesTest(TestCase):
         )
 
     def test_superseded_estimate_loses_source_rows(self):
-        """EstimateLineItemSource rows must be deleted from the superseded estimate
-        so its atom claims are released back to the live job."""
+        """EstimateLineItemSource rows must be moved away from the superseded
+        estimate so the parent line items become a frozen snapshot (no live
+        atom links)."""
         EstimateService.revise_estimate(self.est.pk)
 
-        # Count sources on the superseded estimate's line items.
+        # Count sources still on the superseded estimate's line items.
         superseded_sources = EstimateLineItemSource.objects.filter(
             estimate_line_item__estimate=self.est,
         )
@@ -91,30 +96,12 @@ class EstimateRevisionDetachesTest(TestCase):
             superseded_sources.count(),
             0,
             'Superseded estimate must have no EstimateLineItemSource rows '
-            '(atoms released to live job)',
+            '(sources moved to the new revision)',
         )
 
-    def test_new_revision_can_reclaim_atoms(self):
-        """After revision the freed atom must be claimable by the new estimate
-        (no unique_together conflict, confirming the old claim was deleted)."""
-        new_est = EstimateService.revise_estimate(self.est.pk)
-
-        # The new estimate should have a copied line item.
-        new_li = EstimateLineItem.objects.filter(estimate=new_est).first()
-        self.assertIsNotNone(new_li, 'New estimate must have at least one line item')
-
-        # Creating a new EstimateLineItemSource for the same task on the new
-        # estimate's line item must succeed without IntegrityError.
-        new_src = EstimateLineItemSource.objects.create(
-            estimate_line_item=new_li,
-            source_type=EstimateLineItemSource.SOURCE_TASK,
-            source_pk=self.task.pk,
-        )
-        self.assertEqual(new_src.source_pk, self.task.pk)
-
-    def test_new_revision_starts_without_source_rows(self):
-        """The new/revised estimate's line items must have no source rows of
-        their own after revision (the user re-claims via the wizard)."""
+    def test_new_revision_has_source_rows(self):
+        """After revision the new estimate's copied line items must carry the
+        source rows that were on the parent — atoms referenced by default."""
         new_est = EstimateService.revise_estimate(self.est.pk)
 
         new_sources = EstimateLineItemSource.objects.filter(
@@ -122,7 +109,34 @@ class EstimateRevisionDetachesTest(TestCase):
         )
         self.assertEqual(
             new_sources.count(),
-            0,
-            'New estimate must have no source rows after revision '
-            '(atoms are re-claimed via the wizard, not auto-transferred)',
+            1,
+            'New estimate must inherit the source rows from the parent '
+            '(atom references by default, moved not deleted)',
+        )
+        self.assertEqual(
+            new_sources.first().source_pk,
+            self.task.pk,
+            'Moved source row must still reference the same job atom (task pk)',
+        )
+
+    def test_atom_claim_count_is_exactly_one(self):
+        """The atom must be claimed exactly once across all estimates after
+        revision — source moved (not duplicated or dropped), no IntegrityError."""
+        new_est = EstimateService.revise_estimate(self.est.pk)
+
+        total_claims = EstimateLineItemSource.objects.filter(
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
+        )
+        self.assertEqual(
+            total_claims.count(),
+            1,
+            'Atom must be claimed exactly once after revision '
+            '(source moved from parent to new revision, not duplicated)',
+        )
+        # And the single remaining claim is on the new revision, not the parent.
+        self.assertEqual(
+            total_claims.first().estimate_line_item.estimate_id,
+            new_est.pk,
+            'The surviving source row must belong to the new revision, not the superseded parent',
         )
