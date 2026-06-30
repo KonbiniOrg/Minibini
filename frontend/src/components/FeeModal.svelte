@@ -7,6 +7,7 @@
     mode = 'create', // 'create' | 'edit'
     fee = null,
     jobId = null,
+    taskId = null,
     categories = [],
     onSaved = () => {},
     onClose = () => {},
@@ -57,7 +58,7 @@
       if (mode === 'edit' && fee) {
         await api.patch(`/api/jobs/${jobId}/fees/${fee.fee_id}/`, payload);
       } else {
-        await api.post(`/api/jobs/${jobId}/fees/`, payload);
+        await api.post(`/api/jobs/${jobId}/fees/`, { ...payload, task: taskId || null });
       }
       onSaved();
     } catch (e) {

@@ -421,8 +421,12 @@ describe('JobDetail — Work (Plan) section', () => {
       props: { job: jobWithAtoms(), estimates: { results: [] } },
     });
     await openPlan(container);
-    // Open FeeModal and check category select has real options
+    // Open FeeModal and verify category reaches it
     await fireEvent.click(getByRole('button', { name: '+ Fee' }));
+    expect(await findByText(/RUSH/)).toBeInTheDocument();
+    // Close FeeModal and open MaterialModal to verify the same categories reach it
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    await fireEvent.click(getByRole('button', { name: '+ Material' }));
     expect(await findByText(/RUSH/)).toBeInTheDocument();
   });
 

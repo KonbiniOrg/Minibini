@@ -38,6 +38,7 @@ describe('FeeModal — create', () => {
       quantity: 2,
       unit_rate: 50,
       accounting_category: null,
+      task: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
@@ -93,6 +94,30 @@ describe('FeeModal — create', () => {
     });
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('includes task in the POST payload when taskId prop is provided', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, taskId: 99, categories: [], onSaved },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Task fee' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/7/fees/', expect.objectContaining({
+      task: 99,
+    }));
+  });
+
+  it('sends task: null in the POST payload when taskId prop is not provided', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [], onSaved },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Unassigned fee' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/7/fees/', expect.objectContaining({
+      task: null,
+    }));
   });
 });
 
