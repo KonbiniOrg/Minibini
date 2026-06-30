@@ -22,7 +22,12 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     def get_computed_amount(self, obj):
         from decimal import Decimal
         instance = obj.resolve()
-        return str(instance.compute_amount().quantize(Decimal('0.01')))
+        # Estimate line items project the ESTIMATE quote (est_qty), not actuals.
+        # A Task bills actuals via compute_amount() — $0 until it's worked — so the
+        # estimate must use compute_estimate_amount() instead; Material / Fee have
+        # only compute_amount() (no est/actual split) and fall through.
+        amount_fn = getattr(instance, 'compute_estimate_amount', instance.compute_amount)
+        return str(amount_fn().quantize(Decimal('0.01')))
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):

@@ -89,6 +89,35 @@ class EstimateLineItemSourceTest(TestCase):
         )
         self.assertEqual(src.resolve(), self.material)
 
+    def test_serializer_computed_amount_uses_est_qty_for_task_not_actuals(self):
+        """An estimate Task source's computed_amount must reflect the est_qty
+        quote (compute_estimate_amount), NOT the task's actuals. A freshly-added
+        task with no bleps/actual_qty bills $0 via compute_amount(), which would
+        read as '$0.00 / out of sync' against its est_qty-priced line."""
+        from apps.api.estimates.serializers import EstimateLineItemSourceSerializer
+        # Guard: actuals are 0 (no bleps), est_qty quote is 95 (1 × $95).
+        self.assertEqual(self.task.compute_amount(), Decimal('0.00'))
+        self.assertEqual(self.task.compute_estimate_amount(), Decimal('95.00'))
+        src = EstimateLineItemSource.objects.create(
+            estimate_line_item=self.line_item,
+            source_type=EstimateLineItemSource.SOURCE_TASK,
+            source_pk=self.task.pk,
+        )
+        data = EstimateLineItemSourceSerializer(src).data
+        self.assertEqual(data['computed_amount'], '95.00')
+
+    def test_serializer_computed_amount_for_material_uses_compute_amount(self):
+        """Material has no est/actual split — computed_amount stays quantity ×
+        sell_price (2 × $5 = $10.00) via the compute_amount() fallback."""
+        from apps.api.estimates.serializers import EstimateLineItemSourceSerializer
+        src = EstimateLineItemSource.objects.create(
+            estimate_line_item=self.line_item,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.material.pk,
+        )
+        data = EstimateLineItemSourceSerializer(src).data
+        self.assertEqual(data['computed_amount'], '10.00')
+
     def test_cascade_on_line_item_delete(self):
         EstimateLineItemSource.objects.create(
             estimate_line_item=self.line_item,
