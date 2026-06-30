@@ -551,6 +551,13 @@ page stays whole.
   _Done when:_ the source-pull page has a one-click "send all atoms" action for both estimate
   and invoice that projects all available atoms, with a test.
 
+- **Wizard "Done" should auto-save unsaved lines.** — _added 2026-06-30_
+  On the estimate/invoice source-pull page, pressing **"Done"** should commit any unsaved
+  (dirty/pending) line edits automatically, instead of leaving them unsaved or requiring a
+  separate save per line. This stays within the explicit-save convention — "Done" *is* the
+  deliberate commit action (not a blur), so flushing pending edits on it is correct.
+  _Done when:_ pressing "Done" on the source-pull page persists all pending line edits, with a test.
+
 ---
 
 ## Email
