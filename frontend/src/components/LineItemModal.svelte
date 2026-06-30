@@ -72,12 +72,18 @@
           qty: qty || '1',
         });
       } else {
+        // Accounting category is required for all manual line items.
+        if (!accountingCategory) {
+          error = 'Accounting Category is required.';
+          busy = false;
+          return;
+        }
         const payload = {
           description,
           qty: qty || '0',
           units,
           price: price || '0',
-          accounting_category: accountingCategory || null,
+          accounting_category: accountingCategory ? Number(accountingCategory) : null,
         };
         if (mode === 'edit' && item) {
           await api.patch(`${apiBase}/line-items/${item.line_item_id}/`, payload);
@@ -149,9 +155,9 @@
           </label>
         </p>
         <p>
-          <label><strong>Accounting Category</strong><br>
+          <label><strong>Accounting Category *</strong><br>
             <select bind:value={accountingCategory}>
-              <option value="">-- None --</option>
+              <option value="">-- Select --</option>
               {#each categories as cat}
                 <option value={cat.id}>{cat.code} - {cat.name}</option>
               {/each}

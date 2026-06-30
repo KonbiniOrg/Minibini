@@ -247,6 +247,17 @@ class EstimateService:
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
+        # Hand-lines (no atom source, not an adjustment) must have an accounting category.
+        # Atom-backed lines (sources exist) and adjustment lines are exempt.
+        is_adjustment = li.adjustment_service_id is not None
+        has_source = li.sources.exists()
+        if not has_source and not is_adjustment and li.accounting_category_id is None:
+            raise ValidationError(
+                {'accounting_category': (
+                    'Accounting category is required for hand-line items '
+                    '(lines with no atom source).'
+                )}
+            )
         li.full_clean()
         LineItemService.save_line_item(li)
         return li

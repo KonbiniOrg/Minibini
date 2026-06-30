@@ -14,6 +14,7 @@ Tasks/Materials on the job — nothing to convert. Adjustment lines stay
 document-only (they recompute against the live lines and never become Fees).
 """
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 
@@ -42,6 +43,15 @@ class EstimateAcceptanceService:
                 continue
             if li.adjustment_service_id is not None:  # percentage adjustments stay document-only
                 continue
+            # Defensive guard: Fee.accounting_category is NOT NULL. A hand-line
+            # with no category would throw an opaque IntegrityError. Raise a
+            # clear ValidationError here instead so the caller gets a useful message.
+            if li.accounting_category_id is None:
+                raise ValidationError(
+                    f'Estimate line "{li.description or "(no description)"}" '
+                    f'has no accounting category. All hand-line items must have '
+                    f'an accounting category before the estimate can be accepted.'
+                )
             fee = Fee.objects.create(
                 job=job,
                 description=li.description or '',
