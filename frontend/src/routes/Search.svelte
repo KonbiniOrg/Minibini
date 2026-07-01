@@ -198,12 +198,13 @@
           <h3>Contacts</h3>
           <table class="data-table">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
+              <tr><th>Name</th><th>Business</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
             </thead>
             <tbody>
               {#each results.results.contacts as c}
                 <tr>
                   <td><a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a></td>
+                  <td>{#if c.business_name}{@html hl(c.business_name)}{:else}—{/if}</td>
                   <td>{@html hl(c.email)}</td>
                   <td>{@html hl(c.mobile_number)}</td>
                   <td>{@html hl(c.work_number)}</td>

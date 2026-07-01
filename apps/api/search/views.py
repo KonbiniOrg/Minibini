@@ -14,10 +14,11 @@ from apps.contacts.models import Contact, Business
 
 class ContactSearchSerializer(drf_serializers.ModelSerializer):
     name = drf_serializers.CharField(read_only=True)
+    business_name = drf_serializers.CharField(source='business.business_name', read_only=True, default=None)
 
     class Meta:
         model = Contact
-        fields = ['contact_id', 'name', 'email', 'mobile_number', 'work_number', 'home_number', 'city']
+        fields = ['contact_id', 'name', 'business_name', 'email', 'mobile_number', 'work_number', 'home_number', 'city']
 
 
 class BusinessSearchSerializer(drf_serializers.ModelSerializer):

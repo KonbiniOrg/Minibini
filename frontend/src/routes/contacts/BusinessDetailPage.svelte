@@ -6,9 +6,11 @@
   const { params = {} } = $props();
 
   let business = $state(null);
+  let invoices = $state(null);
   let purchaseOrders = $state(null);
   let bills = $state(null);
   let history = $state(null);
+  let financials = $state(null);
   let poPage = $state(1);
   let billPage = $state(1);
   let loading = $state(true);
@@ -22,12 +24,16 @@
     loadError = null;
     try {
       business = await api.get(`/api/businesses/${params.id}/`);
-      await Promise.all([loadPOs(1), loadBills(1), loadHistory()]);
+      await Promise.all([loadInvoices(1), loadPOs(1), loadBills(1), loadHistory(), loadFinancials()]);
     } catch (e) {
       loadError = e.message;
     } finally {
       loading = false;
     }
+  }
+
+  async function loadInvoices(page) {
+    invoices = await api.get(`/api/invoices/?business=${params.id}&summary=true&page=${page}`);
   }
 
   async function loadPOs(page) {
@@ -38,6 +44,10 @@
   async function loadBills(page) {
     billPage = page;
     bills = await api.get(`/api/bills/?business=${params.id}&page=${page}`);
+  }
+
+  async function loadFinancials() {
+    financials = await api.get(`/api/businesses/${params.id}/financials/`);
   }
 
   async function loadHistory() {
@@ -104,14 +114,16 @@
 {:else if loadError}
   <p>Error: {loadError}</p>
 {:else if business}
-  <h2>{business.business_name}</h2>
   <BusinessDetail
     {business}
+    {invoices}
     {purchaseOrders}
     {bills}
     {history}
+    {financials}
     onEdit={() => push(`/businesses/${params.id}/edit`)}
     onDelete={handleDelete}
+    onInvoicePageChange={loadInvoices}
     onPOPageChange={loadPOs}
     onBillPageChange={loadBills}
     onAddNote={handleAddNote}
