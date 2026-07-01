@@ -1101,3 +1101,15 @@ IMAP-SMTP machinery and tend to be worked together.
   _To check:_ confirm current hand-add behavior for both; _done when:_ creating a blep by
   hand on a pending task assigns it to the blep's user and consumes its linked materials,
   with tests.
+
+- **Service catalog item = rough work type; Task.Description carries the specifics.** — _added 2026-07-01_
+  A service catalog item (RateScheme) should name the _rough category_ of work, with the
+  Task's own `Description` field free to add the detail. E.g. pick **"CAM coding"** (a CAD
+  RateScheme) from the service catalog when adding a Task, then fill in the Description
+  with the specifics: _"V-Carve the lettering, but use AutoCAD to cut the perimeters with
+  dogbones."_ The catalog entry is the billing/type bucket; the Description is the
+  human instruction. Confirm the add-Task flow lets you set both — a RateScheme for the
+  rate/category **and** a distinct free-text Description on that same Task — and that the
+  Description isn't overwritten from the RateScheme name.
+  _Done when:_ adding a Task lets you choose a service (RateScheme) for the work type while
+  independently authoring the Task's Description, and neither clobbers the other.
