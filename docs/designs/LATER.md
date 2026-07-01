@@ -1113,3 +1113,8 @@ IMAP-SMTP machinery and tend to be worked together.
   Description isn't overwritten from the RateScheme name.
   _Done when:_ adding a Task lets you choose a service (RateScheme) for the work type while
   independently authoring the Task's Description, and neither clobbers the other.
+  _Corollary:_ if the catalog entry only ever supplies the rough type, then RateSchemes /
+  service catalog items may not need a `description` field at all — just a `name`. The
+  per-use detail lives on the Task. Review whether the RateScheme `description` field earns
+  its keep or should be dropped in favor of name-only, with Task.Description as the sole
+  place for specifics.
