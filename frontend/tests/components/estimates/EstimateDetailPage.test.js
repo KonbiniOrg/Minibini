@@ -158,7 +158,7 @@ describe('EstimateDetailPage out-of-sync indicator', () => {
 });
 
 describe('EstimateDetailPage line-item actions', () => {
-  it('has no Edit/Delete buttons on line items (editing goes through Show Tasks & Materials)', async () => {
+  it('shows Edit/Delete buttons on line items of a draft estimate', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
       { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
@@ -166,7 +166,32 @@ describe('EstimateDetailPage line-item actions', () => {
     ] }));
     const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
     await findByText('Cut');
+    expect(queryByText('Edit')).not.toBeNull();
+    expect(queryByText('Delete')).not.toBeNull();
+  });
+
+  it('hides Edit/Delete when the estimate is not editable (sent)', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [
+      { line_item_id: 1, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+        price: '5', accounting_category: null, sources: [] },
+    ] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await findByText('Cut');
     expect(queryByText('Edit')).toBeNull();
     expect(queryByText('Delete')).toBeNull();
+  });
+
+  it('Delete on a line calls the line-item delete endpoint', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [
+      { line_item_id: 42, line_number: 1, description: 'Cut', qty: '2', units: 'hr',
+        price: '5', accounting_category: null, sources: [] },
+    ] }));
+    api.delete.mockResolvedValue({ message: 'deleted' });
+    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    const deleteBtn = await findByText('Delete');
+    deleteBtn.click();
+    expect(api.delete).toHaveBeenCalledWith('/api/estimates/7/line-items/42/');
   });
 });
