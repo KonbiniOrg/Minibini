@@ -6,9 +6,11 @@
   const { params = {} } = $props();
 
   let contact = $state(null);
+  let invoices = $state(null);
   let purchaseOrders = $state(null);
   let bills = $state(null);
   let history = $state(null);
+  let financials = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let error = $state(null);
@@ -20,12 +22,16 @@
     loadError = null;
     try {
       contact = await api.get(`/api/contacts/${params.id}/`);
-      await Promise.all([loadPOs(1), loadBills(1), loadHistory()]);
+      await Promise.all([loadInvoices(1), loadPOs(1), loadBills(1), loadHistory(), loadFinancials()]);
     } catch (e) {
       loadError = e.message;
     } finally {
       loading = false;
     }
+  }
+
+  async function loadInvoices(page) {
+    invoices = await api.get(`/api/invoices/?contact=${params.id}&summary=true&page=${page}`);
   }
 
   async function loadPOs(page) {
@@ -34,6 +40,10 @@
 
   async function loadBills(page) {
     bills = await api.get(`/api/bills/?contact=${params.id}&page=${page}`);
+  }
+
+  async function loadFinancials() {
+    financials = await api.get(`/api/contacts/${params.id}/financials/`);
   }
 
   async function loadHistory() {
@@ -100,14 +110,16 @@
 {:else if loadError}
   <p>Error: {loadError}</p>
 {:else if contact}
-  <h2>{contact.name}</h2>
   <ContactDetail
     {contact}
+    {invoices}
     {purchaseOrders}
     {bills}
     {history}
+    {financials}
     onEdit={() => push(`/contacts/${params.id}/edit`)}
     onDelete={handleDelete}
+    onInvoicePageChange={loadInvoices}
     onPOPageChange={loadPOs}
     onBillPageChange={loadBills}
     onAddNote={handleAddNote}
