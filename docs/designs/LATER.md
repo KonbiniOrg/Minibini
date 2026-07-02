@@ -1163,3 +1163,14 @@ IMAP-SMTP machinery and tend to be worked together.
   → Promoted to a follow-on plan: `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`
   (Part 1). Make the inventory pick immediate like the service pick, retire the acceptance
   `inventory_item → Material` branch, and solve orphan-atom cleanup with provenance. See the plan.
+  _(Under active reconsideration 2026-07-02: leaning the other way — unify on **atom-on-approval**
+  (make the service pick deferred too) rather than atom-on-add. Plan to be revised once decided.)_
+
+- **Is "one open estimate chain per job" enforced, or only a UI block?** — _added 2026-07-02_
+  We treat a job as having a single live estimate chain (then change orders), not multiple
+  concurrent open estimates — but it's unclear whether that's a real backend invariant or just
+  a UI-only affordance block. The atom-on-approval crystallization decision leans on this
+  (no concurrent draft estimates ⇒ no duplicate speculative atoms), so it's worth confirming the
+  constraint actually holds server-side. See the single-live-estimate memory note.
+  _Done when:_ we've confirmed where (if anywhere) the backend enforces one-open-chain, and
+  either documented it as a real invariant or filed the gap.
