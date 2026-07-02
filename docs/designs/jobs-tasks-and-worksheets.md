@@ -128,6 +128,16 @@ marked complete prematurely or cancelled by accident. They are exposed on
 the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
 `/api/jobs/{id}/`, which already requires that atom).
 
+**Release-to-floor guard.** `approved → in_progress` via the user PATCH — the
+"Release to floor" button (`JobHeader.svelte`) — is **rejected (400) when the job
+has no Tasks**: there is no work to release, so a task must be set up first. The
+guard lives in `JobViewSet.perform_update` (the user-PATCH boundary), **not** in
+`JobService`, so the internal walks that legitimately pass through `in_progress`
+are unaffected — the completion cascade (`maybe_complete_if_resolved` must step
+`approved → in_progress → work_complete → completed`) and blep-driven
+`mark_work_started` (which always has the just-started Task present). The button
+is also disabled client-side when `job.tasks` is empty.
+
 #### `on_hold` semantics
 
 `on_hold` is a general pause primitive — change orders are one consumer

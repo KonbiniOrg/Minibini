@@ -217,7 +217,10 @@ class EstimateServiceMarkOpenTest(EstimatesTestBase):
     def test_mark_open(self):
         from apps.deliverables.models import Deliverable
         est = EstimateService.create_for_job(self.job.pk)
-        EstimateLineItem.objects.create(estimate=est, description='Test item', price=Decimal('100.00'))
+        EstimateLineItem.objects.create(
+            estimate=est, description='Test item', price=Decimal('100.00'),
+            accounting_category=AccountingCategory.objects.first(),  # hand-line needs an AC to send
+        )
         # mark_open requires the job to have at least one Deliverable.
         Deliverable.objects.create(
             job=self.job, description='Widget', qty_ordered=Decimal('1'), units='ea',

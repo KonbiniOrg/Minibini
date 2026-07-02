@@ -108,6 +108,27 @@ class EstimateService:
         return estimate
 
     @staticmethod
+    def assert_all_hand_lines_have_ac(estimate):
+        """Raise if any hand-line (no atom source, not a percentage adjustment)
+        lacks an accounting category. Enforced at send-time (mark_open / email)
+        so the AC-required rule is caught before the estimate goes out — not only
+        at acceptance. Atom-backed and adjustment lines are exempt (same predicate
+        as EstimateAcceptanceService.on_accept)."""
+        missing = []
+        for li in estimate.estimatelineitem_set.all():
+            if li.sources.exists():
+                continue
+            if li.adjustment_service_id is not None:
+                continue
+            if li.accounting_category_id is None:
+                missing.append(li.description or f'line {li.line_number}')
+        if missing:
+            raise ValidationError(
+                'Cannot send: every line item needs an accounting category first. '
+                'Missing on: ' + ', '.join(missing) + '.'
+            )
+
+    @staticmethod
     def mark_open(pk):
         """Mark a draft estimate as open and finalize associated worksheet."""
         try:
@@ -121,6 +142,9 @@ class EstimateService:
         from apps.deliverables.models import Deliverable
         if not Deliverable.objects.filter(job=estimate.job).exists():
             raise ValidationError('Cannot send estimate: job has no deliverables.')
+
+        # Guard: every hand-line must have an accounting category before send.
+        EstimateService.assert_all_hand_lines_have_ac(estimate)
 
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
@@ -546,6 +570,9 @@ class EstimateEmailService:
             raise ValidationError(
                 'Cannot send an estimate with no line items.'
             )
+
+        # Every hand-line must have an accounting category before it goes out.
+        EstimateService.assert_all_hand_lines_have_ac(estimate)
 
         pdf_bytes = generate_estimate_pdf(estimate)
         pdf_filename = f'Estimate-{estimate.estimate_number}.pdf'

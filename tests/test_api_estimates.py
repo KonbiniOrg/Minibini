@@ -141,12 +141,15 @@ class EstimateSendTest(BaseTestCase):
             estimate_number='EST-SEND-001',
             status=Estimate.STATUS_DRAFT,
         )
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
         EstimateLineItem.objects.create(
             estimate=self.estimate,
             line_number=1,
             qty='1.00', units='ea',
             description='Bracket assembly',
             price='100.00',
+            accounting_category=cat,  # hand-lines need an AC before send
         )
 
     def test_send_defaults_returns_to_subject_body_and_attachment_preview(self):

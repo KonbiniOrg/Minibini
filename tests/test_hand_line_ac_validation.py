@@ -130,6 +130,37 @@ class UpdateHandLineACValidationTest(HandLineACValidationSetup):
         self.assertEqual(updated.accounting_category, self.cat)
 
 
+class EstimateSendACGuardTest(HandLineACValidationSetup):
+    """Sending an estimate (mark_open) is blocked while any hand-line lacks an
+    accounting category — the AC-required rule is hoisted from acceptance to send."""
+
+    def _add_deliverable(self):
+        from apps.deliverables.models import Deliverable
+        Deliverable.objects.create(
+            job=self.job, description='Sign', qty_ordered=Decimal('1'), units='ea',
+        )
+
+    def test_mark_open_blocked_when_hand_line_missing_ac(self):
+        self._add_deliverable()
+        # Plant a hand-line with no AC (bypass the service's own create validation).
+        EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=4, description='No-cat charge',
+            qty=Decimal('1'), price=Decimal('10.00'), accounting_category=None,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            EstimateService.mark_open(self.estimate.pk)
+        self.assertIn('accounting', str(ctx.exception).lower())
+        self.estimate.refresh_from_db()
+        self.assertEqual(self.estimate.status, Estimate.STATUS_DRAFT)  # not opened
+
+    def test_mark_open_succeeds_when_all_hand_lines_have_ac(self):
+        # Baseline: hand_line has AC; the null-AC atom_line and adj_line are exempt,
+        # so they must NOT block the send.
+        self._add_deliverable()
+        result = EstimateService.mark_open(self.estimate.pk)
+        self.assertEqual(result.status, Estimate.STATUS_OPEN)
+
+
 class AcceptanceDefensiveGuardTest(HandLineACValidationSetup):
     """EstimateAcceptanceService.on_accept() must raise a clear ValidationError
     (not IntegrityError) when a hand-line has no accounting_category."""

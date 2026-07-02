@@ -36,12 +36,18 @@ describe('JobHeader', () => {
   it('releases an approved job to the floor without prompting (reversible via on-hold)', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
     const onStatusChange = vi.fn();
-    const approvedJob = { ...job, status: 'approved' };
+    const approvedJob = { ...job, status: 'approved', tasks: [{ task_id: 1 }] };
     const { getByRole } = render(JobHeader, { props: { job: approvedJob, onStatusChange } });
     await fireEvent.click(getByRole('button', { name: 'Release to floor' }));
     expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it('disables Release to floor when the approved job has no tasks', () => {
+    const approvedNoTasks = { ...job, status: 'approved', tasks: [] };
+    const { getByRole } = render(JobHeader, { props: { job: approvedNoTasks } });
+    expect(getByRole('button', { name: 'Release to floor' })).toBeDisabled();
   });
 
   it('shows a read-only badge when the job is not manageable', () => {

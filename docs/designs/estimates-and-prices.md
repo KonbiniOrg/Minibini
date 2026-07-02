@@ -1422,6 +1422,16 @@ is the entry point. The SPA route `/estimates/:id/send` mounts
 `GET /api/estimates/{id}/send-defaults/`; submit POSTs
 multipart to `/api/estimates/{id}/send/`.
 
+**Send preconditions.** Before an estimate goes out — enforced in **both**
+`EstimateEmailService.send_estimate` and the bare `EstimateService.mark_open`
+(the draft→open shortcut) — every hand-line must have an accounting category.
+`EstimateService.assert_all_hand_lines_have_ac` raises `ValidationError` (400)
+listing the offending lines if any hand-line (no atom source, not a percentage
+adjustment — atom-backed and adjustment lines are exempt) lacks one. This hoists
+the AC-required rule from acceptance (§9) to send-time, so the omission is caught
+before the estimate reaches the customer. (`mark_open` also still requires the job
+to have at least one Deliverable.)
+
 What happens on send (the cross-doc framing is in
 `architecture-and-conventions.md` §7.10):
 
