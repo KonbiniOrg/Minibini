@@ -1187,3 +1187,26 @@ IMAP-SMTP machinery and tend to be worked together.
   deferred). Whatever model wins, correct/add the "Add line → atoms" description in
   `estimates-and-prices.md` so the doc matches the code. _Done when:_ inventory and service
   picks share one crystallization model and the estimates doc describes it accurately.
+
+  **Orphan-Task cleanup on line delete (part of the same decision).** With the *immediate*
+  model, deleting an Add-from-Service line leaves the created Task on the Job. The
+  `EstimateLineItemSource` link cascades (so the *link* is cleaned up) but the Task is not —
+  and it can't be safely auto-deleted by "walking the source back," because:
+    (1) the source row for an Add-from-Service Task is **indistinguishable** from one for a
+        Task that pre-existed on the Job and was merely claimed via the wizard — there's no
+        provenance field, so a blanket delete would destroy legitimate pre-existing work;
+    (2) it would violate the documents-as-lenses invariant that unlinking an atom never
+        deletes it (`remove_atoms_from_line_item` in `apps/core/wizard.py` deletes only the
+        source/line, never the atom);
+    (3) `JobService.delete_task` refuses when the Task is `in_progress`/`complete` or has
+        bleps ("cancel instead").
+  Safe immediate-model cleanup therefore needs **provenance** (mark Tasks created by
+  Add-from-Service) plus a no-bleps/no-actuals/no-other-claims check. The *deferred* model
+  sidesteps this entirely: delete the line before acceptance → no Task ever existed.
+  _Constraint that narrows the case:_ a line is only deletable while its estimate is `draft`.
+  In the **primary flow** a draft estimate means the Job is still pre-approval
+  (`draft`/`submitted`) — i.e. the Task is uncommitted planning work, which lowers the stakes.
+  **But not universally:** the estimate→job status sync is forward-only
+  (`apps/estimates/signals.py`), so a draft estimate can also sit on an already-`approved`
+  Job (a sibling estimate, or a revision after a prior acceptance). So cleanup must still
+  gate on the *Task's* actual state (bleps/status), not merely on "estimate is draft."
