@@ -9,10 +9,12 @@
     onCancel,
     errors = null,
     contextJob = null,
+    defaultBusinessId = null,
+    defaultContactId = null,
   } = $props();
 
   let form = $state({
-    business: po?.business ?? null,
+    business: po?.business ?? defaultBusinessId ?? null,
     contact: po?.contact || '',
     requested_date: po?.requested_date || '',
   });
@@ -30,7 +32,7 @@
     return biz?.default_contact || null;
   }
 
-  async function fetchContactsAndAutoSelect(businessId, autoSelect) {
+  async function fetchContactsAndAutoSelect(businessId, autoSelect, preferredContactId = null) {
     if (!businessId) {
       contactsForBusiness = [];
       return;
@@ -39,7 +41,9 @@
     try {
       const data = await api.get(`/api/contacts/?business=${businessId}&page_size=100`);
       contactsForBusiness = data.results || [];
-      if (autoSelect) {
+      if (preferredContactId && contactsForBusiness.some(c => c.contact_id === preferredContactId)) {
+        form.contact = preferredContactId;
+      } else if (autoSelect) {
         const defaultId = getDefaultContactId(businessId);
         if (defaultId && contactsForBusiness.some(c => c.contact_id === defaultId)) {
           form.contact = defaultId;
@@ -62,9 +66,9 @@
     fetchContactsAndAutoSelect(biz, true);
   });
 
-  // Initial load for edit mode
+  // Initial load: auto-select the default contact for new POs, not for edits.
   if (form.business) {
-    fetchContactsAndAutoSelect(form.business, false);
+    fetchContactsAndAutoSelect(form.business, !po, po ? null : defaultContactId);
   }
 
   function handleSubmit(e) {
