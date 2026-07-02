@@ -967,15 +967,17 @@ Top-down:
    buttons.
 3. **Field table** — estimate number, job link, version, status, dates.
 4. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
-   an actions row with an **"Add Adjustment"** button and a **"Customize
-   Client View"** link to the wizard at `#/estimates/{id}/wizard`. Estimate
-   lines are a projection of the Job's atoms (plus hand-lines and
-   adjustments), authored/edited via the wizard.
-5. **Line items table** (`LineItemTable.svelte`) — line items with **reorder
-   only** (move-up / move-down arrows) when editable, plus an "⚠ out of sync
-   with atoms" marker on any line whose stored price no longer matches its
-   atoms' computed total. Editing and deletion go through the Customize Client
-   View wizard, not the detail page.
+   an actions row with **"Add Line Item"**, **"Add from Service"**, and
+   **"Add Adjustment"** buttons plus a **"Show Tasks & Materials"** link to the
+   wizard at `#/estimates/{id}/wizard`. Direct authoring is back (the Phase-6
+   projection-only stance was reversed): lines can be hand-authored/edited on the
+   detail page, or atom-backed (pulled from the job's atoms via the wizard, or
+   created by "Add from Service").
+5. **Line items table** (`LineItemTable.svelte`) — line items with per-line
+   **Edit** / **Delete** and reorder (move-up / move-down) when editable, plus an
+   "⚠ out of sync with atoms" marker on any line whose stored price no longer
+   matches its atoms' computed total. (Atom-backed lines are still pulled/edited
+   via the wizard; hand-lines are authored directly.)
 
 ### 11.2 Action buttons
 
@@ -983,8 +985,10 @@ Top-down:
 |---|---|---|
 | `draft` | "Send Email" (navigation link) | navigates to `#/estimates/{id}/send` — the send-form page that calls `EstimateEmailService.send_estimate` on submit |
 | `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
+| `draft` | "Add Line Item" | opens `LineItemModal` (manual or catalog) — direct hand-line/PLI authoring |
+| `draft` | "Add from Service" | opens `AddServiceItemModal` — pick a `ServiceItem` → creates a Task on the Job + an atom-backed line |
 | `draft` | "Add Adjustment" | opens `AdjustmentModal` (percentage `RateScheme`) |
-| `draft` | "Customize Client View" (navigation link) | navigates to the wizard at `#/estimates/{id}/wizard` (always available — the wizard projects the job's atoms) |
+| `draft` | "Show Tasks & Materials" (navigation link) | navigates to the wizard at `#/estimates/{id}/wizard` (pulls the job's atoms into atom-backed lines) |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
@@ -1080,9 +1084,10 @@ atoms (snapshotted at mount) are left alone.
 
 The estimate (and its wizard) is reached from the Job overview's
 **Estimate** pillar: "Start Estimate" creates the draft estimate directly
-on the job (`POST /api/estimates/` with `{job}`), and "Customize Client
-View" opens the wizard at `#/estimates/{id}/wizard`. There is no longer a
-worksheet page or worksheet-side wizard entry.
+on the job (`POST /api/estimates/` with `{job}`), and "Show Tasks &
+Materials" (on the estimate detail) opens the wizard at
+`#/estimates/{id}/wizard`. There is no longer a worksheet page or
+worksheet-side wizard entry.
 
 ---
 

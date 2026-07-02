@@ -1131,19 +1131,11 @@ IMAP-SMTP machinery and tend to be worked together.
   catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
   session-expiry path instead of a silently broken widget.
 
-- **Hand-*typed* estimate material lines can't crystallize into Materials.** — _added 2026-07-01_
-  Estimate acceptance now crystallizes a hand-line into a **Material** atom when it has
-  an `inventory_item` (added via "From Inventory"), else into a **Fee** (see
-  `apps/estimates/acceptance.py`). But a *freeform-typed* line the user thinks of as a
-  material (no catalog item — just a description + price) has no signal, so it still
-  becomes a Fee. Need a way to mark a hand-line as a material without a catalog item.
-  Idea floated: infer "it's a material" from the line's **accounting category** — but
-  ACs are fully user-configurable (no fixed "Materials" category to key off), so that's
-  likely the wrong mechanism. More promising: an explicit atom-type choice on the Add
-  Line Item modal (Material vs Fee), which also dovetails with the freeform-material-
-  procurement spec (a freeform material would mint its transient lot at crystallization).
-  _Done when:_ a user can add an estimate line that becomes a freeform Material atom on
-  acceptance, without needing a catalog item, via a deliberate signal (not AC inference).
+- **Hand-*typed* estimate material lines can't crystallize into Materials.** — _added 2026-07-01, moved to a plan 2026-07-02_
+  → Folded into `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md` (Part 2):
+  a freeform-typed material has no atom-type signal, so it becomes a Fee. The **unified picker**
+  is where an explicit Material-vs-Fee choice belongs (not accounting-category inference — ACs are
+  fully configurable). See the plan.
 
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
@@ -1167,46 +1159,7 @@ IMAP-SMTP machinery and tend to be worked together.
   Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
   the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".
 
-- **Reconcile inventory vs. service "Add line" crystallization timing (+ fix the drifted doc).** — _added 2026-07-02_
-  The estimate "Add line" catalog picks are now **asymmetric**:
-    - **Add from Service** (`AddServiceItemModal.svelte`, built 2026-07-02) is **immediate** —
-      it creates a real Task on the Job now (`add-from-template`) and links it as an
-      atom-backed line (`line-items-from-atoms`). Deleting the line later leaves the Task on
-      the Job.
-    - **From Inventory** (`add_line_item_from_pli`) is **deferred** — it makes a hand-line
-      carrying `inventory_item`, and the Material atom is only minted at **acceptance**
-      (the crystallization branch in `apps/estimates/acceptance.py`).
-  Pick one model for both. The immediate model is what the old design prose described
-  ("picking inventory generates a Material on the Job — an atom-backed line, not a hand-line")
-  and is probably the cleaner end-state: make the inventory pick immediate too (create the
-  Material on pick), then the acceptance inventory→Material crystallization branch can be
-  retired. Alternatively make Service deferred (an `EstimateLineItem.service_item` FK +
-  a Task-crystallization branch at acceptance) for symmetry with today's inventory.
-  **Also a doc fix:** that "immediate atom" passage is NOT in the current `docs/designs/`
-  (it's from a superseded doc) and does **not** match current inventory behavior (which is
-  deferred). Whatever model wins, correct/add the "Add line → atoms" description in
-  `estimates-and-prices.md` so the doc matches the code. _Done when:_ inventory and service
-  picks share one crystallization model and the estimates doc describes it accurately.
-
-  **Orphan-Task cleanup on line delete (part of the same decision).** With the *immediate*
-  model, deleting an Add-from-Service line leaves the created Task on the Job. The
-  `EstimateLineItemSource` link cascades (so the *link* is cleaned up) but the Task is not —
-  and it can't be safely auto-deleted by "walking the source back," because:
-    (1) the source row for an Add-from-Service Task is **indistinguishable** from one for a
-        Task that pre-existed on the Job and was merely claimed via the wizard — there's no
-        provenance field, so a blanket delete would destroy legitimate pre-existing work;
-    (2) it would violate the documents-as-lenses invariant that unlinking an atom never
-        deletes it (`remove_atoms_from_line_item` in `apps/core/wizard.py` deletes only the
-        source/line, never the atom);
-    (3) `JobService.delete_task` refuses when the Task is `in_progress`/`complete` or has
-        bleps ("cancel instead").
-  Safe immediate-model cleanup therefore needs **provenance** (mark Tasks created by
-  Add-from-Service) plus a no-bleps/no-actuals/no-other-claims check. The *deferred* model
-  sidesteps this entirely: delete the line before acceptance → no Task ever existed.
-  _Constraint that narrows the case:_ a line is only deletable while its estimate is `draft`.
-  In the **primary flow** a draft estimate means the Job is still pre-approval
-  (`draft`/`submitted`) — i.e. the Task is uncommitted planning work, which lowers the stakes.
-  **But not universally:** the estimate→job status sync is forward-only
-  (`apps/estimates/signals.py`), so a draft estimate can also sit on an already-`approved`
-  Job (a sibling estimate, or a revision after a prior acceptance). So cleanup must still
-  gate on the *Task's* actual state (bleps/status), not merely on "estimate is draft."
+- **Reconcile inventory vs. service "Add line" crystallization timing.** — _added 2026-07-02, moved to a plan 2026-07-02_
+  → Promoted to a follow-on plan: `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`
+  (Part 1). Make the inventory pick immediate like the service pick, retire the acceptance
+  `inventory_item → Material` branch, and solve orphan-atom cleanup with provenance. See the plan.

@@ -583,8 +583,8 @@ respecting the on-hold guard — and the API at
 `POST /api/jobs/{id}/fees/` (+ `PATCH`/`DELETE` at
 `/api/jobs/{id}/fees/{fee_pk}/`).
 
-A Fee is created two ways: directly by the user (the Work surface's "Fee"
-add-line, §9.5), or by **estimate acceptance**, which crystallizes each
+A Fee is created two ways: directly by the user (the task-list page's "Add
+Fee", §9.5), or by **estimate acceptance**, which crystallizes each
 hand-authored estimate line (a line with no atom source) into a Fee on
 the job and links it back via a `fee` source row (see
 `estimates-and-prices.md` §9). The `Fee` replaces the old `flat_fee`
@@ -939,30 +939,34 @@ Top-down:
 2. **Description + History** in a flex row. `HistoryPanel`
    (`components/HistoryPanel.svelte`) shows status changes, notes, and
    inline email previews.
-3. **Horizontal accordion pillars** for Estimate, Tasks & Materials,
-   Invoice, Purchase Orders. One pillar is expanded; the others render
-   as vertical labels with counts. Clicking a pillar swaps the active
-   one. The Estimate pillar carries a **Plan / Client View** toggle (the
-   Plan side is the Work surface — see §9.5; the Client View renders the
-   estimate/agreement projection). There is no Worksheet pillar (the
-   planning layer was removed).
+3. **Horizontal accordion pillars** — Estimate, Tasks & Materials,
+   Invoices, Shipments, Purchase Orders (`activeSection ∈ {estimate,
+   tasks_materials, invoices, shipments, pos}`). One pillar is expanded;
+   the others render as vertical labels with counts. Clicking a pillar
+   swaps the active one. The pillars are **read-only summaries**: the
+   Estimate pillar shows the estimate document (or **Start Estimate** when
+   the job has none), Tasks & Materials a read-only work table (§9.5),
+   Shipments/PO/Invoice summary panels with links out. Authoring the Job's
+   work atoms happens on the **task-list page**, not the overview. (There is
+   no Plan/Client-View toggle and no Worksheet pillar — the planning layer
+   and the separate "client view" concept were both removed.)
 
 ### 9.2 Components
 
 | Component | Role |
 |---|---|
-| `JobDetail.svelte` | Composes the page; owns accordion + Plan/Client-View state, fetches related data |
+| `JobDetail.svelte` | Composes the page; owns the accordion `activeSection` state, fetches related data |
 | `JobHeader.svelte` | Header + status dropdown |
 | `HistoryPanel.svelte` | Notes + history timeline + email entries |
 | `Accordion.svelte` | Reusable expand/collapse used elsewhere |
-| `WorkItemForm.svelte` | Add/edit a Task (Service) on the job |
-| `MaterialModal.svelte` | Add/edit a Material on the job |
-| `FeeModal.svelte` | Add/edit a Fee on the job |
+| `ShipmentsPillar.svelte` | Read-only shipments summary inside the Shipments pillar |
 
-The Estimate pillar's **Plan** view is the Work surface (job atoms with a
-grand-total footer); its **Client View** shows the estimate/agreement
-line items with grand total. Tasks & Materials shows the active Task tree
-(materials nested under tasks); Invoice / PO pillars are summary tables.
+The Estimate pillar shows the estimate document (line items + grand total,
+or **Start Estimate** when the job has none). Tasks & Materials shows a
+**read-only** work table (`wo-table`: Task / assignee / status / time, with
+materials nested); Invoice / PO / Shipments pillars are summary panels with
+links out. The overview does not author atoms — `WorkItemForm` /
+`MaterialModal` / `FeeModal` live on the **task-list page** (§9.5), not here.
 
 ### 9.3 Header financial rollups
 
@@ -1022,26 +1026,31 @@ Expense" button (next to "Add Material", shown when the job isn't locked) opens
 the form's `initialJob` prop; on save the list reloads so the new expense
 surfaces. Expense create is open to any authenticated user.
 
-### 9.5 The Work surface
+### 9.5 The work surface (task-list page)
 
-The Estimate pillar's **Plan** view is the **Work surface** — the single
-place to author the Job's own work atoms, visible regardless of estimate
-state (so pre-approval / released effort shows here too). It renders a
-read-only atom table (Tasks, Materials, Fees with a grand-total footer)
-plus, for managers, an **Add line** row:
+Authoring the Job's own work atoms happens on the **task-list page**
+(`JobTaskListPage.svelte`, `#/jobs/{id}/tasks`), reached from the Tasks &
+Materials pillar. It is available regardless of estimate state, so
+pre-approval / released effort is authored and shown there too. For managers
+it carries the **Add line** affordances:
 
 | Add-line button | Modal | Creates | Endpoint |
 |---|---|---|---|
-| **+ Service** | `WorkItemForm` | `Task` | `POST /api/jobs/{id}/tasks/` |
-| **+ Material** | `MaterialModal` | `Material` | `POST /api/jobs/{id}/materials/` |
-| **+ Fee** | `FeeModal` | `Fee` | `POST /api/jobs/{id}/fees/` |
+| **Add Task** (manual or from template) | `WorkItemForm` | `Task` | `POST /api/jobs/{id}/tasks/` (or `/add-from-template/`) |
+| **Add Material** | `MaterialModal` | `Material` | `POST /api/jobs/{id}/materials/` |
+| **Add Fee** | `FeeModal` | `Fee` | `POST /api/jobs/{id}/fees/` |
+| **Add Expense** | (expenses app) | `Expense` | — |
 
-The Estimate pillar's toolbar also carries **Start Estimate** (creates a
-draft estimate directly on the job — `POST /api/estimates/` with `{job}`)
-and, while the job is `on_hold`, **+ New change order**. The Client View
-toggle then renders the estimate (or accepted-agreement) projection over
-these same atoms. This is the surface that replaced the deleted Worksheet
-detail page.
+The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
+of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
+a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
+the job is `on_hold`, **+ New change order** live on the overview's Estimate
+pillar. (These replaced the deleted Worksheet detail page; the old
+Plan/Client-View toggle is gone.)
+
+> Follow-on: the separate Add-Task/Material/Fee affordances are slated to be
+> unified into a single "Add line" picker — see
+> `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`.
 
 ## 10. UI: Task Detail page
 
@@ -1124,10 +1133,9 @@ general cross-client repolling mechanism is deferred (see Unfinished Work).
 >
 > Where the work-authoring UI lives now:
 >
-> - **Authoring the Job's work atoms** → the **Work surface** on the Job
->   overview's Estimate pillar (Plan view) — see §9.5. `WorkItemForm`
->   creates a `Task` (`POST /api/jobs/{id}/tasks/`), `MaterialModal` a
->   `Material` (`/materials/`), `FeeModal` a `Fee` (`/fees/`).
+> - **Authoring the Job's work atoms** → the **task-list page** (§9.5), not
+>   the overview. `WorkItemForm` creates a `Task` (`POST /api/jobs/{id}/tasks/`),
+>   `MaterialModal` a `Material` (`/materials/`), `FeeModal` a `Fee` (`/fees/`).
 > - **`InventoryItemPicker.svelte`** (type-ahead `InventoryItem` picker,
 >   built on `SearchPicker`) survives — reused by `MaterialModal` and the
 >   PO line-item form.
