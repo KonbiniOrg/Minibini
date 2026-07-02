@@ -2,7 +2,6 @@ from decimal import Decimal, InvalidOperation
 from apps.core.history import record_history
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import ValidationError
@@ -111,19 +110,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_update(self, serializer):
-        obj = self.get_object()
-        # Release-to-floor guard: the user can't release an approved job to the
-        # floor (approved -> in_progress) until it has at least one task. Enforced
-        # here at the user-PATCH boundary, not in JobService — the completion
-        # cascade and blep-start legitimately walk through in_progress internally.
-        if (serializer.validated_data.get('status') == Job.STATUS_IN_PROGRESS
-                and obj.status == Job.STATUS_APPROVED
-                and not obj.tasks.exists()):
-            raise DRFValidationError(
-                {'detail': 'Cannot release to floor: the job has no tasks. '
-                           'Add at least one task first.'}
-            )
-        job = JobService.update_job(obj.pk, **serializer.validated_data)
+        job = JobService.update_job(self.get_object().pk, **serializer.validated_data)
         serializer.instance = job
 
     @action(detail=True, methods=['post'], url_path='start-invoice-wizard')

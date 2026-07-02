@@ -1144,3 +1144,25 @@ IMAP-SMTP machinery and tend to be worked together.
   procurement spec (a freeform material would mint its transient lot at crystallization).
   _Done when:_ a user can add an estimate line that becomes a freeform Material atom on
   acceptance, without needing a catalog item, via a deliberate signal (not AC inference).
+
+- **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
+  A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
+  A first pass built this but it was **removed pending a design decision** — the code
+  (view-layer guard in `JobViewSet.perform_update`, a `hasTasks` disable on
+  `JobHeader.svelte`'s "Release to floor" button, and `tests/test_release_to_floor_guard.py`)
+  was reverted so it doesn't ship half-decided.
+  **Gating question (blocks any implementation):** *is a taskless, hand-billed, paid job a
+  supported flow?* This determines where the guard belongs — and it must be decided on
+  merits, not on test blast radius (see CLAUDE.md → Engineering Principles):
+    - **If NO** — `in_progress ⇒ has tasks` is a true invariant → enforce deep (in
+      `Job.clean()` or `JobService.update_job`). Then `maybe_complete_if_resolved` (which
+      today mechanically steps `approved → in_progress → work_complete → completed` because
+      `Job.VALID_TRANSITIONS` has no direct `approved → completed` edge) must be fixed so a
+      never-worked job doesn't fake-traverse `in_progress` — likely a direct terminal path.
+    - **If YES** — the completion cascade legitimately completes taskless jobs, so a hard
+      invariant would wrongly block it. Guard the *user action* at the view layer (as the
+      reverted pass did), justified by "release to floor is a deliberate user action distinct
+      from the cascade's status walk" — NOT by cascade-breakage/test convenience.
+  _Note:_ `mark_work_started` (blep-start) always reaches `in_progress` with the just-started
+  Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
+  the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".

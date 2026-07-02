@@ -18,9 +18,6 @@
 
   let profitNum = $derived(job.profit_amount == null ? null : Number(job.profit_amount));
 
-  // Release-to-floor needs at least one task (the backend enforces this too).
-  let hasTasks = $derived((job?.tasks?.length ?? 0) > 0);
-
   // The transitions the status pill offers — a subset of the Job model's
   // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's
   // →completed/→cancelled).
@@ -157,12 +154,7 @@
         {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
       </span>
       {#if job.status === 'approved' && canManageJobs}
-        <button
-          class="release-btn"
-          onclick={releaseToFloor}
-          disabled={releasingToFloor || !hasTasks}
-          title={hasTasks ? '' : 'Add at least one task before releasing to the floor.'}
-        >
+        <button class="release-btn" onclick={releaseToFloor} disabled={releasingToFloor}>
           {releasingToFloor ? 'Releasing…' : 'Release to floor'}
         </button>
       {/if}
