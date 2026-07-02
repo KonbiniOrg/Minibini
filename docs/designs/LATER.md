@@ -1118,3 +1118,15 @@ IMAP-SMTP machinery and tend to be worked together.
   per-use detail lives on the Task. Review whether the RateScheme `description` field earns
   its keep or should be dropped in favor of name-only, with Task.Description as the sole
   place for specifics.
+
+- **Surface session-expiry instead of silently degrading fetched-list components.** — _added 2026-07-01_
+  When the session expires, `GET /api/settings/units/` returns 403 and
+  `UnitsSelect.svelte` swallows it in a `try/catch`, falling back to `['none']` — so a
+  logged-out user just sees a mysteriously empty/`none`-only units dropdown (observed in
+  the estimate Add-Line-Item modal) with no hint that they're logged out. Any
+  fetch-and-fallback component has the same failure mode. There should be a global
+  handler: when an authenticated-only API call returns 401/403, bounce to the login
+  screen (or show a "session expired, please log in again" banner) rather than letting
+  each component degrade silently. _To check:_ whether `api.js` / the auth store already
+  catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
+  session-expiry path instead of a silently broken widget.
