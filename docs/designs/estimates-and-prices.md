@@ -1003,6 +1003,18 @@ requires an accounting category), served by `LineItemMixin.line_items` — the
 Phase-6 405 override was removed. GET list, per-line `PATCH`/`DELETE`, reorder,
 and `POST .../adjustment-lines/` are unchanged.
 
+**Add from Service** (`AddServiceItemModal.svelte`, estimate detail only) is the
+service counterpart to the inventory catalog pick. It creates a real Task on the
+Job *immediately* — `POST /api/jobs/{jobId}/add-from-template/`
+(`ServiceItem.generate_task`) — then links that Task as an atom-backed line via
+`POST /api/estimates/{id}/line-items-from-atoms/` (`{atoms:[{type:'task', id}]}`).
+So the line is atom-backed from the start (no acceptance crystallization needed),
+and the Task persists on the Job even if the line is later removed. It is
+estimate-only: an invoice bills actuals, so a freshly-created zero-actual Task
+there makes no sense. **Note the asymmetry with the inventory pick** (which is
+deferred — hand-line now, Material at acceptance); reconciling the two
+crystallization models is tracked in `docs/designs/LATER.md`.
+
 **Invoice.** `LineItemModal.svelte` is still used by the **invoice** detail
 page for direct (no-atom) line authoring — a toggle between **manual entry**
 and **"From Price List"** (catalog mode: pick an `InventoryItem`; the server

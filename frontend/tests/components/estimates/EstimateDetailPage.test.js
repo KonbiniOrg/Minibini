@@ -189,6 +189,21 @@ describe('EstimateDetailPage line-item actions', () => {
     expect(await findByText('Add Line Item')).toBeInTheDocument();
   });
 
+  it('shows an Add from Service button on a draft estimate', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [] }));
+    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    expect(await findByText('Add from Service')).toBeInTheDocument();
+  });
+
+  it('hides Add from Service when the estimate is not editable (sent)', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [] }));
+    const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
+    await findByText(/Estimate:/);
+    expect(queryByText('Add from Service')).toBeNull();
+  });
+
   it('hides Add Line Item when the estimate is not editable (sent)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [] }));

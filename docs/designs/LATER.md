@@ -1166,3 +1166,24 @@ IMAP-SMTP machinery and tend to be worked together.
   _Note:_ `mark_work_started` (blep-start) always reaches `in_progress` with the just-started
   Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
   the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".
+
+- **Reconcile inventory vs. service "Add line" crystallization timing (+ fix the drifted doc).** — _added 2026-07-02_
+  The estimate "Add line" catalog picks are now **asymmetric**:
+    - **Add from Service** (`AddServiceItemModal.svelte`, built 2026-07-02) is **immediate** —
+      it creates a real Task on the Job now (`add-from-template`) and links it as an
+      atom-backed line (`line-items-from-atoms`). Deleting the line later leaves the Task on
+      the Job.
+    - **From Inventory** (`add_line_item_from_pli`) is **deferred** — it makes a hand-line
+      carrying `inventory_item`, and the Material atom is only minted at **acceptance**
+      (the crystallization branch in `apps/estimates/acceptance.py`).
+  Pick one model for both. The immediate model is what the old design prose described
+  ("picking inventory generates a Material on the Job — an atom-backed line, not a hand-line")
+  and is probably the cleaner end-state: make the inventory pick immediate too (create the
+  Material on pick), then the acceptance inventory→Material crystallization branch can be
+  retired. Alternatively make Service deferred (an `EstimateLineItem.service_item` FK +
+  a Task-crystallization branch at acceptance) for symmetry with today's inventory.
+  **Also a doc fix:** that "immediate atom" passage is NOT in the current `docs/designs/`
+  (it's from a superseded doc) and does **not** match current inventory behavior (which is
+  deferred). Whatever model wins, correct/add the "Add line → atoms" description in
+  `estimates-and-prices.md` so the doc matches the code. _Done when:_ inventory and service
+  picks share one crystallization model and the estimates doc describes it accurately.

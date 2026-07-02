@@ -5,6 +5,7 @@
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import LineItemModal from '../../components/LineItemModal.svelte';
+  import AddServiceItemModal from '../../components/estimates/AddServiceItemModal.svelte';
   import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
 
   let { params = {} } = $props();
@@ -18,6 +19,7 @@
 
 
   let adjustmentModalOpen = $state(false);
+  let serviceItemModalOpen = $state(false);
   let modalOpen = $state(false);
   let modalMode = $state('edit');
   let modalItem = $state(null);
@@ -246,6 +248,7 @@
   {#if canEdit}
     <p>
       <button type="button" onclick={openAddItem}>Add Line Item</button>
+      <button type="button" onclick={() => { serviceItemModalOpen = true; }}>Add from Service</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Tasks &amp; Materials</a>
     </p>
@@ -281,6 +284,14 @@
     {categories}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
+  />
+
+  <AddServiceItemModal
+    open={serviceItemModalOpen}
+    jobId={estimate.job}
+    estimateId={estimate.estimate_id}
+    onSaved={() => { serviceItemModalOpen = false; loadEstimate(); }}
+    onClose={() => { serviceItemModalOpen = false; }}
   />
 
   <AdjustmentModal
