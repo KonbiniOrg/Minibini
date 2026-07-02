@@ -94,6 +94,37 @@ class AcceptanceCrystallizesFeesTest(TestCase):
         self.assertEqual(fee.accounting_category, self.cat)
         self.assertEqual(fee.sort_order, 2)
 
+    def test_catalog_hand_line_becomes_a_material_not_a_fee(self):
+        # A hand-line with an inventory_item (added via "From Inventory") is a
+        # material, so acceptance crystallizes it into a Material atom — not a Fee.
+        pli2 = InventoryItem.objects.create(
+            code='PLY', accounting_category=self.cat, is_catalog=True,
+            qty_on_hand=Decimal('20'), purchase_price=Decimal('80'),
+            selling_price=Decimal('100'),
+        )
+        cat_line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=4, description='Plywood sheets',
+            qty=Decimal('5'), price=Decimal('114.00'), units='ea',
+            accounting_category=self.cat, inventory_item=pli2,
+        )
+
+        result = EstimateAcceptanceService.on_accept(self.estimate)
+
+        mat = Material.objects.get(job=self.job, description='Plywood sheets')
+        self.assertEqual(mat.quantity, Decimal('5'))
+        self.assertEqual(mat.sell_price, Decimal('114.00'))  # estimate's quoted price
+        self.assertEqual(mat.inventory_item, pli2)
+        self.assertEqual(mat.accounting_category, self.cat)
+        self.assertEqual(result['materials_created'], 1)
+        # It did NOT become a Fee.
+        self.assertFalse(
+            Fee.objects.filter(job=self.job, description='Plywood sheets').exists()
+        )
+        # The estimate line is now source-linked to the Material (for copy_from_estimate).
+        src = EstimateLineItemSource.objects.get(estimate_line_item=cat_line)
+        self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_MATERIAL)
+        self.assertEqual(src.source_pk, mat.pk)
+
     def test_atom_backed_and_adjustment_lines_do_not_become_fees(self):
         EstimateAcceptanceService.on_accept(self.estimate)
         descriptions = set(Fee.objects.filter(job=self.job).values_list('description', flat=True))

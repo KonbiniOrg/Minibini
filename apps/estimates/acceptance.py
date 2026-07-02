@@ -1,17 +1,23 @@
-"""Acceptance crystallizes hand-lines into Fees (replaces worksheet carry-over).
+"""Acceptance crystallizes hand-lines into atoms (replaces worksheet carry-over).
 
 Triggered when an Estimate transitions to ACCEPTED (see apps/estimates/signals.py).
 In the job-owns-atoms model, work already lives on the Job (Tasks/Materials created
 directly), so there is nothing to copy from a worksheet. Instead, acceptance:
 
   1. For each accepted-estimate line item with NO source row (a hand-line) that is
-     not a percentage adjustment, creates a Fee on the job (the crystallized,
-     frozen form of that charge).
+     not a percentage adjustment, crystallizes it onto the job:
+       - a hand-line with an `inventory_item` (added via "From Inventory") is a
+         catalog material → becomes a **Material** atom;
+       - any other hand-line → becomes a **Fee** (the frozen fixed charge).
+     Either way the estimate line is source-linked to the atom it created.
   2. Earmarks the job's inventoried materials.
 
 Atom-backed lines (those with an EstimateLineItemSource) already have their
 Tasks/Materials on the job — nothing to convert. Adjustment lines stay
 document-only (they recompute against the live lines and never become Fees).
+
+(Hand-*typed* material lines with no `inventory_item` still become Fees — there's
+no signal that a freeform description is a material. See docs/designs/LATER.md.)
 """
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -23,12 +29,13 @@ class EstimateAcceptanceService:
     @staticmethod
     @transaction.atomic
     def on_accept(estimate):
-        """Crystallize the estimate's hand-lines into Fees, then earmark the job.
+        """Crystallize the estimate's hand-lines into atoms, then earmark the job.
 
-        Returns: {'fees_created': int}
+        Catalog (inventory-backed) hand-lines become Materials; other hand-lines
+        become Fees. Returns: {'fees_created': int, 'materials_created': int}
         """
         from apps.jobs.models import Fee
-        from apps.inventory.services import InventoryService
+        from apps.inventory.services import InventoryService, MaterialService
 
         job = estimate.job
         # A sibling signal (estimate_status_changed_for_job) approves the job just
@@ -38,11 +45,34 @@ class EstimateAcceptanceService:
         from apps.estimates.models import EstimateLineItemSource
 
         fees_created = 0
+        materials_created = 0
         for li in estimate.estimatelineitem_set.all():
             if li.sources.exists():              # atom-backed → already on the job
                 continue
             if li.adjustment_service_id is not None:  # percentage adjustments stay document-only
                 continue
+
+            if li.inventory_item_id is not None:
+                # Catalog material hand-line → Material atom. The PLI supplies cost
+                # (via _populate_from_pli); the estimate's price is the sell price.
+                material = MaterialService.create_on_job(
+                    job=job,
+                    task=None,
+                    description=li.description or '',
+                    quantity=li.qty or Decimal('1'),
+                    sell_price=li.price or Decimal('0'),
+                    inventory_item=li.inventory_item,
+                    accounting_category=li.accounting_category,
+                    units=li.units or 'none',
+                )
+                EstimateLineItemSource.objects.create(
+                    estimate_line_item=li,
+                    source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+                    source_pk=material.pk,
+                )
+                materials_created += 1
+                continue
+
             # Defensive guard: Fee.accounting_category is NOT NULL. A hand-line
             # with no category would throw an opaque IntegrityError. Raise a
             # clear ValidationError here instead so the caller gets a useful message.
@@ -70,4 +100,4 @@ class EstimateAcceptanceService:
             fees_created += 1
 
         InventoryService.create_earmarks_for_job(job)
-        return {'fees_created': fees_created}
+        return {'fees_created': fees_created, 'materials_created': materials_created}

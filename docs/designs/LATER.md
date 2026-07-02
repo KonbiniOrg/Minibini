@@ -1130,3 +1130,17 @@ IMAP-SMTP machinery and tend to be worked together.
   each component degrade silently. _To check:_ whether `api.js` / the auth store already
   catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
   session-expiry path instead of a silently broken widget.
+
+- **Hand-*typed* estimate material lines can't crystallize into Materials.** — _added 2026-07-01_
+  Estimate acceptance now crystallizes a hand-line into a **Material** atom when it has
+  an `inventory_item` (added via "From Inventory"), else into a **Fee** (see
+  `apps/estimates/acceptance.py`). But a *freeform-typed* line the user thinks of as a
+  material (no catalog item — just a description + price) has no signal, so it still
+  becomes a Fee. Need a way to mark a hand-line as a material without a catalog item.
+  Idea floated: infer "it's a material" from the line's **accounting category** — but
+  ACs are fully user-configurable (no fixed "Materials" category to key off), so that's
+  likely the wrong mechanism. More promising: an explicit atom-type choice on the Add
+  Line Item modal (Material vs Fee), which also dovetails with the freeform-material-
+  procurement spec (a freeform material would mint its transient lot at crystallization).
+  _Done when:_ a user can add an estimate line that becomes a freeform Material atom on
+  acceptance, without needing a catalog item, via a deliberate signal (not AC inference).

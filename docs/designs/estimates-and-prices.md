@@ -3,7 +3,7 @@
 Reference for the estimating side of Minibini: `RateScheme` as the
 unit of billing identity, supersession, the billable-atom abstraction,
 the estimate wizard, the job-atom projection (documents-as-lenses),
-acceptance crystallizing hand-lines into Fees, and AC pass-through.
+acceptance crystallizing hand-lines into atoms (Materials or Fees), and AC pass-through.
 Read alongside:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer
@@ -43,7 +43,7 @@ This doc owns:
   billing).
 - `EstimateWizardService`, the wizard endpoints, and the wizard UI.
 - `EstimateAcceptanceService` — what fires when an Estimate is accepted
-  (hand-line → Fee crystallization, earmarks).
+  (hand-line → Material/Fee crystallization, earmarks).
 - AC pass-through rules from RateScheme → Task / line item.
 
 It does **not** own:
@@ -561,7 +561,8 @@ mutation — `add_line_item`, `add_line_item_from_pli`, `update_line_item`,
 methods. (Direct authoring `add_line_item` / `add_line_item_from_pli` were
 removed in the 2026-06 consolidation, then **restored** — the estimate detail
 page authors hand-lines again alongside atom-backed lines; hand-lines
-crystallize into Fees at acceptance.) There is no manual recalculate step. Freeze is implicit:
+crystallize into atoms at acceptance — catalog lines into Materials, the rest
+into Fees.) There is no manual recalculate step. Freeze is implicit:
 all mutations are draft-gated, so once an estimate leaves `draft` the stored
 price is frozen automatically.
 
@@ -665,7 +666,7 @@ claims.
 
 | Source rows on a line item | What it represents |
 |---|---|
-| 0 | A **hand-line** — manually authored, no atom backs it (crystallizes into a `Fee` on acceptance — §9) |
+| 0 | A **hand-line** — manually authored, no atom backs it (crystallizes on acceptance into a `Material` if it has an `inventory_item`, else a `Fee` — §9) |
 | 1 | Single-atom conversion (bulk send-all or a wizard pick of one atom) |
 | N | Wizard-grouped from multiple atoms |
 
@@ -833,7 +834,7 @@ material consumed) and Expenses. Pointer: invoicing doc.
 
 ---
 
-## 9. Acceptance — crystallizing hand-lines into Fees
+## 9. Acceptance — crystallizing hand-lines into atoms
 
 When an `Estimate` transitions to `accepted`, the `estimate_accepted`
 signal fires (`apps/estimates/signals.py` receiver), which calls
@@ -844,8 +845,8 @@ In the job-owns-atoms model the work already lives on the Job
 (Tasks/Materials were created directly), so there is **nothing to copy
 from a worksheet** — the old `AtomCarryOverService` /
 `materialize_worksheet_onto_job` carry-over is gone. Acceptance instead
-**crystallizes the estimate's hand-lines into Fees** so the agreed price
-of a hand-authored line becomes a real, billable job atom.
+**crystallizes the estimate's hand-lines into job atoms** so the agreed
+price of a hand-authored line becomes a real, billable job atom.
 
 ### 9.1 What `on_accept` does
 
@@ -853,23 +854,31 @@ In one `transaction.atomic()` block:
 
 1. For each `EstimateLineItem` on the accepted estimate that has **no
    source row** (a hand-line) and is **not** a percentage adjustment
-   (`adjustment_service_id is None`), create a `Fee` on the job:
-   - `description = li.description`, `quantity = li.qty or 1`,
-     `unit_rate = li.price or 0`,
-     `accounting_category = li.accounting_category`,
-     `sort_order = li.line_number or 0`.
-   - Then record an `EstimateLineItemSource` with `source_type='fee'`
-     pointing at the new Fee, so the line is now atom-backed and
-     `copy_from_estimate` (invoice side) can trace which hand-line maps
-     to which Fee and claim it.
+   (`adjustment_service_id is None`), crystallize it by type:
+   - **Catalog material** (`inventory_item_id is not None`, i.e. added via
+     "From Inventory") → create a `Material` via
+     `MaterialService.create_on_job` carrying `description`, `quantity =
+     li.qty`, `sell_price = li.price` (the estimate's quoted price; the
+     PLI supplies `unit_cost` via `_populate_from_pli`), the
+     `inventory_item`, and `accounting_category`. Record an
+     `EstimateLineItemSource` with `source_type='material'`.
+   - **Otherwise** → create a `Fee`: `description`, `quantity = li.qty or
+     1`, `unit_rate = li.price or 0`, `accounting_category`, `sort_order =
+     li.line_number or 0`. Record an `EstimateLineItemSource` with
+     `source_type='fee'`.
+   Either way the line becomes atom-backed, so `copy_from_estimate`
+   (invoice side) can trace which hand-line maps to which atom and claim
+   it. (A hand-*typed* material with no `inventory_item` has no signal and
+   still becomes a Fee — see `docs/designs/LATER.md`.)
 2. Atom-backed lines (those that already have an `EstimateLineItemSource`
    for a Task / Material) are skipped — their atoms are already on the
    job. Adjustment lines stay document-only (they recompute against the
    live lines and never become Fees).
 3. Call `InventoryService.create_earmarks_for_job(job)`, so accepting an
-   estimate earmarks the job's inventoried materials.
+   estimate earmarks the job's inventoried materials (including any just
+   crystallized from catalog hand-lines).
 
-`on_accept` returns `{'fees_created': int}`.
+`on_accept` returns `{'fees_created': int, 'materials_created': int}`.
 
 ### 9.2 Idempotency
 
