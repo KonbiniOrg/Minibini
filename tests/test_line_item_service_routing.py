@@ -200,24 +200,26 @@ class EstimateLineItemStatusCheckTest(BaseTestCase):
         return est
 
     def test_create_rejected_on_open_estimate(self):
-        # Phase 6: estimate line creation is removed entirely (405), regardless of status.
+        # Direct create is back, but only on drafts — a non-draft estimate rejects (400).
         est = self._make_estimate(status=Estimate.STATUS_OPEN)
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
             {'description': 'New item', 'qty': 1, 'price': 10},
             format='json',
         )
-        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 400)
 
-    def test_create_rejected_on_draft_estimate(self):
-        # Phase 6: even on a draft, lines come from atoms — no direct create.
+    def test_create_allowed_on_draft_estimate(self):
+        # A hand-line (with an accounting category) creates fine on a draft estimate.
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
         est = self._make_estimate(status=Estimate.STATUS_DRAFT)
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
-            {'description': 'New item', 'qty': 1, 'price': 10},
+            {'description': 'New item', 'qty': 1, 'price': 10,
+             'accounting_category': cat.pk},
             format='json',
         )
-        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 201)
 
     def test_update_rejected_on_open_estimate(self):
         est = self._make_estimate(status=Estimate.STATUS_OPEN)

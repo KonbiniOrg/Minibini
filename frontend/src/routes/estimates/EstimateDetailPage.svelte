@@ -22,6 +22,7 @@
   let modalMode = $state('edit');
   let modalItem = $state(null);
 
+  function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
   function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
   function handleSaved() { modalOpen = false; modalItem = null; loadEstimate(); }
 
@@ -244,6 +245,7 @@
   <h3>Line Items</h3>
   {#if canEdit}
     <p>
+      <button type="button" onclick={openAddItem}>Add Line Item</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Tasks &amp; Materials</a>
     </p>

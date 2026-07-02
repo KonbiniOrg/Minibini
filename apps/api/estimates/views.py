@@ -86,21 +86,11 @@ class EstimateViewSet(
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': 'Estimate discarded'})
 
-    @action(detail=True, methods=['get', 'post'], url_path='line-items', url_name='line-items')
-    def line_items(self, request, pk=None):
-        """Override the mixin's line-item endpoint: estimate lines are projected from
-        atoms (the wizard / Show Client View), so direct authoring (POST) is removed
-        on the Client View (Phase 6). GET (list) stays; edit/delete/reorder live on
-        the detail/reorder actions and are unaffected."""
-        parent = self.get_object()
-        if request.method == 'POST':
-            return Response(
-                {'detail': 'Estimate lines come from the Plan — add atoms via the '
-                           'wizard / Show Client View, not as direct lines.'},
-                status=status.HTTP_405_METHOD_NOT_ALLOWED,
-            )
-        items = self._get_line_items_qs(parent)
-        return Response(self.line_item_serializer_class(items, many=True).data)
+    # Line-item GET (list) + POST (create) are provided by LineItemMixin.line_items;
+    # 'line_items' stays in get_permissions' mixed_actions so GET is IsAuthenticated
+    # and POST requires CanManageJobOrPM. Direct line authoring is supported again
+    # (hand-lines crystallize into Fees at acceptance); atom-backed lines still come
+    # via line-items-from-atoms / add-atoms.
 
     @action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):

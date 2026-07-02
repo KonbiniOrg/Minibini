@@ -43,16 +43,49 @@ class EstimateAPITest(BaseTestCase):
             }, format='json')
             self.assertEqual(response.status_code, 200)
 
-    def test_manual_line_item_create_rejected(self):
-        # Phase 6: estimate lines come from atoms — direct line authoring is removed.
-        estimate = Estimate.objects.first()
+    def _draft_estimate(self):
+        est = Estimate.objects.filter(status=Estimate.STATUS_DRAFT).first()
+        if est is None:
+            est = Estimate.objects.create(
+                job=Job.objects.first(),
+                estimate_number='EST-ADDLINE-1',
+                status=Estimate.STATUS_DRAFT,
+            )
+        return est
+
+    def test_manual_line_item_create_succeeds(self):
+        # Add Line Item is back: a hand-line with an accounting category creates (201).
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
+        estimate = self._draft_estimate()
         response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
             'qty': '2.00',
             'units': 'ea',
             'description': 'API test item',
             'price': '100.00',
+            'accounting_category': cat.pk,
         }, format='json')
-        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['description'], 'API test item')
+
+    def test_manual_line_item_create_requires_accounting_category(self):
+        # Hand-line AC rule (Decision 1): a line with no atom source needs an AC.
+        estimate = self._draft_estimate()
+        response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
+            'qty': '2.00', 'units': 'ea', 'description': 'no cat', 'price': '5.00',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_manual_line_item_create_rejected_on_non_draft(self):
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
+        estimate = self._draft_estimate()
+        Estimate.objects.filter(pk=estimate.pk).update(status=Estimate.STATUS_OPEN)
+        response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
+            'qty': '1.00', 'units': 'ea', 'description': 'x', 'price': '5.00',
+            'accounting_category': cat.pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
 
     def test_list_line_items(self):
         estimate = Estimate.objects.first()

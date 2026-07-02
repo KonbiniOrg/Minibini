@@ -235,6 +235,60 @@ class EstimateService:
     # Client View). Editing/deleting/reordering existing lines + adjustments remain.
 
     @staticmethod
+    def add_line_item(estimate_pk, **kwargs):
+        """Add a manual (hand-authored) line item to a draft estimate.
+
+        A hand-line has no atom source and isn't an adjustment, so it must carry
+        an accounting category (Decision 1) — the same rule enforced on update."""
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {estimate_pk} not found')
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft estimates.')
+        from apps.core.services import LineItemService
+        kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
+        li = EstimateLineItem(estimate=estimate, **kwargs)
+        # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
+        if li.adjustment_service_id is None and li.accounting_category_id is None:
+            raise ValidationError(
+                {'accounting_category': (
+                    'Accounting category is required for hand-line items '
+                    '(lines with no atom source).'
+                )}
+            )
+        li.full_clean()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
+    def add_line_item_from_pli(estimate_pk, pli_pk, qty):
+        """Add a line item from an InventoryItem to a draft estimate."""
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {estimate_pk} not found')
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft estimates.')
+        try:
+            pli = InventoryItem.objects.get(pk=pli_pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pli_pk} not found')
+        from apps.core.services import LineItemService
+        li = EstimateLineItem(
+            estimate=estimate,
+            inventory_item=pli,
+            description=pli.description,
+            qty=qty,
+            units=pli.units,
+            price=pli.selling_price,
+            accounting_category=pli.accounting_category,
+        )
+        li.full_clean()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
     def update_line_item(line_item_id, **kwargs):
         """Update an estimate line item — validates draft status."""
         try:

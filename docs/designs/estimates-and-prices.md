@@ -556,10 +556,12 @@ moved onto the new line items as usual (see §5.3).
 ### 5.3b Adjustment line services and endpoints
 
 **Auto-recompute:** Adjustment lines recompute automatically on every line-item
-mutation — `update_line_item`, `delete_line_item`, `add_adjustment_line`,
-and all three wizard atom-mutation methods. (`add_line_item` /
-`add_line_item_from_pli` were removed in the 2026-06 consolidation —
-estimate lines come only from atoms, not direct authoring.) There is no manual recalculate step. Freeze is implicit:
+mutation — `add_line_item`, `add_line_item_from_pli`, `update_line_item`,
+`delete_line_item`, `add_adjustment_line`, and all three wizard atom-mutation
+methods. (Direct authoring `add_line_item` / `add_line_item_from_pli` were
+removed in the 2026-06 consolidation, then **restored** — the estimate detail
+page authors hand-lines again alongside atom-backed lines; hand-lines
+crystallize into Fees at acceptance.) There is no manual recalculate step. Freeze is implicit:
 all mutations are draft-gated, so once an estimate leaves `draft` the stored
 price is frozen automatically.
 
@@ -819,7 +821,7 @@ Permissions: read is `IsAuthenticated`; write actions require
 | `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
 | `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Return to estimate detail) |
-| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Now used by the **Invoice** detail page only (manual/catalog toggle on add; field-edit on edit). The Estimate detail page no longer authors lines — Phase 6 made the estimate an atoms-only projection (see §11.3). |
+| `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines again via **Add Line Item** + per-line **Edit** (Phase 6's atoms-only projection was reversed). |
 
 The invoice-side wizard is structurally parallel — same source pool,
 add-atoms, remove-atoms, in-sync rule. Both wizards now read the **same**
@@ -981,13 +983,16 @@ Editing rules: `canEdit = canManageJobs && status === 'draft'`.
 
 ### 11.3 Line item authoring — estimate vs invoice
 
-**Estimate.** The estimate detail page (Client View) no longer authors line
-items — the estimate is a projection of the Job's atoms (plus hand-lines and
-adjustments). Lines are created/edited/removed through the wizard ("Customize
-Client View"); the detail page only reorders them and surfaces the "out of
-sync with atoms" marker. `POST /api/estimates/{id}/line-items/` now returns
-**405** (the GET list, per-line `PATCH`/`DELETE`, reorder, and
-`POST .../adjustment-lines/` remain).
+**Estimate.** The estimate detail page authors line items directly again
+(Phase 6's atoms-only projection was reversed). It uses `LineItemModal.svelte`
+for **Add Line Item** (manual or catalog) and per-line **Edit**, plus per-line
+**Delete** and reorder, and surfaces the "out of sync with atoms" marker on
+atom-backed lines. Atom-backed lines are still pulled via the wizard
+("Show Tasks & Materials"); hand-lines crystallize into Fees at acceptance.
+`POST /api/estimates/{id}/line-items/` creates again (draft-only; a hand-line
+requires an accounting category), served by `LineItemMixin.line_items` — the
+Phase-6 405 override was removed. GET list, per-line `PATCH`/`DELETE`, reorder,
+and `POST .../adjustment-lines/` are unchanged.
 
 **Invoice.** `LineItemModal.svelte` is still used by the **invoice** detail
 page for direct (no-atom) line authoring — a toggle between **manual entry**
