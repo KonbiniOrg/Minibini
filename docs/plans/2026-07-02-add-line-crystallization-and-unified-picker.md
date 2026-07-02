@@ -96,6 +96,40 @@ This *keeps* the inventory→Material branch (it was going to be retired under t
 atom-on-add plan; under atom-on-approval it stays) and *adds* the service→Task branch. `on_accept`
 grows from two branches to three — the accepted, bounded cost of this direction.
 
+### How a deferred service line behaves before acceptance
+
+A service-descriptor line stores **only** `service_item` + `qty` (no override capture — see Settled
+decisions). Two consequences follow, both resolved so the sent estimate matches the crystallized Task:
+
+- **Amount projection [SETTLED].** The line has no Task, so it can't defer to `compute_estimate_amount`
+  like an atom-backed line, and a flat snapshot `price` would misrepresent a rate-scheme charge.
+  Instead the serializer projects the line **live** from the ServiceItem:
+  `service_item.rate_scheme.compute_charge(li.qty, service_item.default_active_modifiers)`. Because no
+  overrides are stored, `default_active_modifiers` is exactly what crystallization feeds
+  `generate_task`, so **estimate projection == crystallized-Task projection** by construction. No
+  stored `price` on service lines.
+- **Accounting category [SETTLED].** A service line carries no hand-set AC; it derives from
+  `ServiceItem.effective_accounting_category` (= `rate_scheme.accounting_category`). So a line carrying
+  `service_item` is **exempt from the hand-line AC requirement** (`assert_all_hand_lines_have_ac` and
+  the add/update AC validation), exactly as an `inventory_item` line is; the AC is set from the
+  ServiceItem at crystallization.
+
+### Superseded-scheme pre-flight guard [SETTLED]
+
+`generate_task` raises `SchemeSupersededError` when the ServiceItem's `rate_scheme.replaced_by` is set.
+Deferral moves that failure from pick-time to **acceptance**. Add a pre-flight guard — parallel to
+`assert_all_hand_lines_have_ac` — that refuses **send and accept** if any service-descriptor line
+references a superseded scheme, with a clear "re-pick this line" message (acceptance is atomic and
+would roll back cleanly regardless, but this gives a readable error instead of an exception deep in
+the crystallization loop).
+
+> **⚠️ Verify before building (added at RM's request):** scheme supersession *used to* update all of a
+> scheme's catalog users, which would make an orphaned superseded reference on a live service line
+> **very rare**. That propagation code hasn't been exercised in a while — **confirm it still does
+> this, and that there are tests covering it.** If propagation no longer holds, this guard is more
+> load-bearing than it looks. (Search: `replaced_by` / supersession handling on `RateScheme` and its
+> `ServiceItem` users.)
+
 ### Orphan-atom cleanup — no longer a problem
 
 Because draft lines create **no atoms**, deleting a draft estimate line strands nothing — the whole
@@ -105,22 +139,23 @@ lifecycle left is the ordinary **direct job authoring** one (`JobService.delete_
 material delete), which already exists and already refuses to delete worked/blep-bearing atoms —
 unchanged by this plan.
 
+### Settled decisions
+
+1. **No override capture [SETTLED].** The service descriptor is `service_item` + `qty` only. The Task
+   is generated from the template at crystallization; `name` / `description` / `active_modifiers` /
+   `est_worker_time` take template defaults. Users edit the Task freely afterward, so there's no need
+   to freeze picked-time overrides on the estimate line.
+2. **Invoices do not get a service descriptor [SETTLED].** The invoice `LineItemModal` inventory pick
+   stays as-is; invoices bill *actuals* and never generate work, so a service pick there is
+   meaningless. Service deferral is estimate-only (mirrors why "Add from Service" was estimate-only).
+
 ### Open questions [OPEN]
 
-1. **Descriptor overrides.** `add-from-template` today also accepts `name` / `description` /
-   `active_modifiers` / `est_worker_time` overrides. Decide whether the deferred descriptor stores
-   these (so acceptance reproduces the picked Task exactly) or the pick is `service_item` + `qty` only
-   with template defaults applied at crystallization. **[DEFAULT]** minimal: `service_item` + `qty`;
-   revisit if the wizard exposed the overrides.
-2. **Invoice-side parity.** The invoice `LineItemModal` also has an inventory pick. Invoices bill
-   *actuals* and never generate work, so a fresh zero-actual atom is likely meaningless there —
-   confirm the invoice pick pulls only already-worked atoms and does **not** get a service descriptor
-   (mirrors why "Add from Service" is estimate-only).
-3. **One-open-chain assumption.** Deferred crystallization leans on a job not having concurrent draft
+1. **One-open-chain assumption.** Deferred crystallization leans on a job not having concurrent draft
    estimates that would each crystallize the same pick. We believe one live estimate chain per job is
    the rule (then change orders) — confirm it's actually enforced server-side, not just in the UI
    (tracked in `docs/designs/LATER.md`).
-4. **Migration/regeneration** — no dev-DB migration (regenerate); the converter/seed generator must
+2. **Migration/regeneration** — no dev-DB migration (regenerate); the converter/seed generator must
    emit service picks as **deferred descriptors** on draft estimates (and as crystallized Tasks on
    accepted ones), consistently with inventory.
 
@@ -182,10 +217,22 @@ toggle + `AddServiceItemModal` + inventory picker) wants thinking-through, not a
 
 ## Rollout / testing (when built)
 
-No dev-DB migration (regenerate). TDD. Part 1: a service pick on a draft estimate creates a document
-line carrying `service_item` + `qty` and **no `Task`**; acceptance crystallizes it into a `Task`
-(alongside inventory→`Material` and hand→`Fee`), source-links it, and earmarks; deleting a draft line
-strands no atom; direct Add Task / Add Material on a pre-approval job still create real atoms
-immediately and remain claimable by an estimate line via the wizard. Part 2: the unified picker routes
-a pick to the right descriptor (Service→`service_item`, Material→`inventory_item`/freeform,
-free-text→bare hand-line), each crystallizing at acceptance, across the intended surfaces.
+No dev-DB migration (regenerate). TDD. Part 1:
+
+- a service pick on a draft estimate creates a document line carrying `service_item` + `qty` and
+  **no `Task`**;
+- the line's projected amount equals `rate_scheme.compute_charge(qty, default_active_modifiers)` and
+  **matches** the amount of the Task it crystallizes into (same figure before and after acceptance);
+- a service line needs **no hand-set AC** and is not blocked by the AC send-gate; its crystallized
+  Task's AC comes from `ServiceItem.effective_accounting_category`;
+- acceptance crystallizes the line into a `Task` (alongside inventory→`Material` and hand→`Fee`),
+  source-links it, and earmarks;
+- **send and accept are refused** when a service line references a superseded scheme (pre-flight
+  guard), with a clear message; plus the ⚠️ verification that scheme supersession still propagates to
+  catalog users (and is test-covered);
+- deleting a draft line strands no atom; direct Add Task / Add Material on a pre-approval job still
+  create real atoms immediately and remain claimable by an estimate line via the wizard.
+
+Part 2: the unified picker routes a pick to the right descriptor (Service→`service_item`,
+Material→`inventory_item`/freeform, free-text→bare hand-line), each crystallizing at acceptance, across
+the intended surfaces.
