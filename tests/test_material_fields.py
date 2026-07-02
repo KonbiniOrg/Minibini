@@ -3,10 +3,9 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from apps.contacts.models import Contact
 from apps.jobs.models import Job, Task
-from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
+from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.core.models import AccountingCategory
-from apps.estimates.models import EstWorksheet
-from apps.jobs.models import PlanTask, ServiceItem
+from apps.jobs.models import RateScheme
 
 
 class MaterialFieldsTest(TestCase):
@@ -17,11 +16,11 @@ class MaterialFieldsTest(TestCase):
             email='test@example.com', work_number='555-0100',
         )
         self.job = Job.objects.create(job_number='JOB-TEST-1', contact=self.contact)
-        self.scheme = ServiceItem.objects.create(
-            name='S-mf', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-mf', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
-        self.task = Task.objects.create(job=self.job, name='t', service_item=self.scheme)
+        self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
 
     def test_material_has_job_consumption_state_restocked_qty(self):
         m = Material.objects.create(
@@ -62,42 +61,89 @@ class MaterialFieldsTest(TestCase):
             m.save()
 
 
-class PlanMaterialFieldsTest(TestCase):
+class MaterialBaseBehaviorTest(TestCase):
+    """MaterialBase behaviors on the actual Material model.
+
+    Ported from the deleted test_material.py (which exercised these via the
+    now-removed plan layer). Covers total_cost/total_sell, accounting-category
+    auto-fill from a linked InventoryItem, the explicit-value-not-overwritten
+    guard, and inventory_item SET_NULL on InventoryItem delete.
+    """
+
     def setUp(self):
         self.contact = Contact.objects.create(
-            first_name='Test', last_name='User',
-            email='plantest@example.com', work_number='555-0200',
+            first_name='Base', last_name='Behavior',
+            email='basebehavior@example.com',
         )
-        self.job = Job.objects.create(job_number='JOB-PLAN-1', contact=self.contact)
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.pmf_ac = AccountingCategory.objects.create(name='pmf-ac', code='PMF-AC')
-        self.pmf_scheme = ServiceItem.objects.create(
-            name='S-pmf', algorithm=ServiceItem.FLAT_FEE,
-            rate=Decimal('1'), unit_label='ea',
-            accounting_category=self.pmf_ac,
-        )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='pt1',
-            service_item=self.pmf_scheme, est_qty=Decimal('1'),
+        self.job = Job.objects.create(job_number='JOB-MBB-1', contact=self.contact)
+        self.category = AccountingCategory.objects.create(name='MBB-Mat', code='MBB-MAT')
+        self.inventory_item = InventoryItem.objects.create(
+            code='MBB.OAK',
+            description='Oak edge banding',
+            purchase_price=Decimal('12.00'),
+            selling_price=Decimal('24.00'),
+            accounting_category=self.category,
         )
 
-    def test_plan_material_has_est_worksheet(self):
-        pm = PlanMaterial.objects.create(
-            plan_task=self.pt, est_worksheet=self.ws,
-            description='x', quantity=Decimal('1.00'),
-            accounting_category=self.pmf_ac,
+    def test_total_cost_property(self):
+        m = Material.objects.create(
+            job=self.job, description='Screws',
+            quantity=Decimal('100.00'),
+            unit_cost=Decimal('0.10'), sell_price=Decimal('0.20'),
+            accounting_category=self.category,
         )
-        self.assertEqual(pm.est_worksheet_id, self.ws.pk)
+        self.assertEqual(m.total_cost, Decimal('10.00'))
 
-    def test_plan_material_invariant_rejects_mismatched_ws(self):
-        other_job = Job.objects.create(job_number='JOB-PLAN-2', contact=self.contact)
-        other_ws = EstWorksheet.objects.create(job=other_job)
-        with self.assertRaises(ValidationError):
-            PlanMaterial.objects.create(
-                plan_task=self.pt, est_worksheet=other_ws,
-                description='x', quantity=Decimal('1.00'),
-                accounting_category=self.pmf_ac,
-            )
+    def test_total_sell_property(self):
+        m = Material.objects.create(
+            job=self.job, description='Screws',
+            quantity=Decimal('100.00'),
+            unit_cost=Decimal('0.10'), sell_price=Decimal('0.20'),
+            accounting_category=self.category,
+        )
+        self.assertEqual(m.total_sell, Decimal('20.00'))
+
+    def test_pli_auto_fills_accounting_category(self):
+        """Material linked to an InventoryItem auto-fills accounting_category."""
+        m = Material.objects.create(
+            job=self.job, inventory_item=self.inventory_item,
+            quantity=Decimal('2.00'),
+        )
+        self.assertEqual(m.accounting_category, self.category)
+        self.assertEqual(m.description, 'Oak edge banding')
+        self.assertEqual(m.unit_cost, Decimal('12.00'))
+        self.assertEqual(m.sell_price, Decimal('24.00'))
+
+    def test_explicit_accounting_category_not_overwritten_by_pli(self):
+        other = AccountingCategory.objects.create(name='MBB-Labor', code='MBB-LBR')
+        m = Material.objects.create(
+            job=self.job, inventory_item=self.inventory_item,
+            quantity=Decimal('2.00'),
+            accounting_category=other,
+        )
+        self.assertEqual(m.accounting_category, other)
+
+    def test_explicit_values_not_overwritten_by_pli(self):
+        m = Material.objects.create(
+            job=self.job, inventory_item=self.inventory_item,
+            description='Custom description',
+            quantity=Decimal('2.00'),
+            unit_cost=Decimal('55.00'), sell_price=Decimal('110.00'),
+            accounting_category=self.category,
+        )
+        self.assertEqual(m.description, 'Custom description')
+        self.assertEqual(m.unit_cost, Decimal('55.00'))
+        self.assertEqual(m.sell_price, Decimal('110.00'))
+
+    def test_set_null_on_inventory_item_delete(self):
+        """inventory_item FK set to null when the InventoryItem is deleted."""
+        m = Material.objects.create(
+            job=self.job, inventory_item=self.inventory_item,
+            quantity=Decimal('1.00'),
+        )
+        self.inventory_item.delete()
+        m.refresh_from_db()
+        self.assertIsNone(m.inventory_item)
 
 
 class MaterialTaskSetNullTest(TestCase):
@@ -110,11 +156,11 @@ class MaterialTaskSetNullTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-TSN-1', contact=self.contact)
         cat = AccountingCategory.objects.create(name='tsn-cat', code='TSN1')
-        scheme = ServiceItem.objects.create(
-            name='S-tsn', algorithm=ServiceItem.FLAT_FEE,
+        scheme = RateScheme.objects.create(
+            name='S-tsn', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=cat,
         )
-        self.task = Task.objects.create(job=self.job, name='deletable', service_item=scheme)
+        self.task = Task.objects.create(job=self.job, name='deletable', rate_scheme=scheme)
 
     def test_delete_task_keeps_material_with_null_task_and_original_job(self):
         cat = AccountingCategory.objects.create(name='tsn-mat', code='TSN-MAT')

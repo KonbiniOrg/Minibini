@@ -200,6 +200,7 @@ class EstimateLineItemStatusCheckTest(BaseTestCase):
         return est
 
     def test_create_rejected_on_open_estimate(self):
+        # Direct create is back, but only on drafts — a non-draft estimate rejects (400).
         est = self._make_estimate(status=Estimate.STATUS_OPEN)
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
@@ -209,13 +210,16 @@ class EstimateLineItemStatusCheckTest(BaseTestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_create_allowed_on_draft_estimate(self):
+        # A hand-line (with an accounting category) creates fine on a draft estimate.
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
         est = self._make_estimate(status=Estimate.STATUS_DRAFT)
         response = self.client.post(
             f'/api/estimates/{est.pk}/line-items/',
-            {'description': 'New item', 'qty': 1, 'price': 10},
+            {'description': 'New item', 'qty': 1, 'price': 10,
+             'accounting_category': cat.pk},
             format='json',
         )
-        self.assertIn(response.status_code, [200, 201])
+        self.assertEqual(response.status_code, 201)
 
     def test_update_rejected_on_open_estimate(self):
         est = self._make_estimate(status=Estimate.STATUS_OPEN)

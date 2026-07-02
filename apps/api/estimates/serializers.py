@@ -14,15 +14,20 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
 
     def get_description(self, obj):
         instance = obj.resolve()
-        from apps.jobs.models import PlanTask
-        if isinstance(instance, PlanTask):
+        from apps.jobs.models import Task
+        if isinstance(instance, Task):
             return instance.name
-        return instance.description  # PlanMaterial
+        return instance.description  # Material / Fee
 
     def get_computed_amount(self, obj):
         from decimal import Decimal
         instance = obj.resolve()
-        return str(instance.compute_amount().quantize(Decimal('0.01')))
+        # Estimate line items project the ESTIMATE quote (est_qty), not actuals.
+        # A Task bills actuals via compute_amount() — $0 until it's worked — so the
+        # estimate must use compute_estimate_amount() instead; Material / Fee have
+        # only compute_amount() (no est/actual split) and fall through.
+        amount_fn = getattr(instance, 'compute_estimate_amount', instance.compute_amount)
+        return str(amount_fn().quantize(Decimal('0.01')))
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):
@@ -60,7 +65,6 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     )
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
-    worksheet = serializers.SerializerMethodField()
     is_amended = serializers.SerializerMethodField()
 
     class Meta:
@@ -69,7 +73,7 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'estimate_id', 'job', 'job_number', 'job_name',
             'estimate_number', 'version', 'status', 'is_amended',
             'parent', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items', 'worksheet', 'can_manage',
+            'expiration_date', 'line_items', 'can_manage',
         ]
         read_only_fields = [
             'estimate_id', 'estimate_number', 'version',
@@ -94,13 +98,3 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_job_name(self, obj):
         return obj.job.name if obj.job_id else ''
-
-    def get_worksheet(self, obj):
-        # Worksheet and estimate relate only through the job (one per job).
-        from apps.estimates.models import EstWorksheet
-        ws = (
-            EstWorksheet.objects.filter(job_id=obj.job_id)
-            .order_by('-est_worksheet_id')
-            .first()
-        )
-        return ws.pk if ws else None

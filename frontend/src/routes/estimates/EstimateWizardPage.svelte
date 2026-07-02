@@ -52,17 +52,6 @@
     }
   }
 
-  async function addManualLineItem() {
-    try {
-      await api.post(`/api/estimates/${estimate.estimate_id}/line-items/`, {
-        description: '', qty: '1', units: 'each', price: '0.00',
-      });
-      await reloadAfterAction();
-    } catch (e) {
-      alert(e.message || 'Failed to add manual line item');
-    }
-  }
-
   async function loadAll() {
     loading = true;
     error = null;
@@ -74,6 +63,9 @@
       ]);
       estimate = est;
       if (est?.job) {
+        // Pre-select the job overview's estimate pillar so discarding the draft
+        // (which returns to the job overview) lands on the estimate section.
+        try { sessionStorage.setItem(`jobDetailActiveSection_${est.job}`, 'estimate'); } catch (_) {}
         try {
           job = await api.get(`/api/jobs/${est.job}/`);
           if (job?.contact) {
@@ -153,13 +145,13 @@
     <JobHeader {job} {contact} />
   {/if}
   <div class="toolbar">
-    <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to estimate</a>
-    <span class="page-title">Worksheet: {estimate.estimate_number}</span>
+    <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to Estimate</a>
+    <span class="page-title">Tasks &amp; Materials: {estimate.estimate_number}</span>
   </div>
 
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
     <div>
-      <h3>Source pool (worksheet atoms)</h3>
+      <h3>Source pool (job atoms)</h3>
       <WizardSourcePool {sourcePool} bind:selectedAtoms />
     </div>
     <div>
@@ -182,13 +174,13 @@
           title={canAddHere ? 'Create a new line item from selected atoms' : 'Select atoms first'}
         >Add Here</button>
       </div>
-      <button type="button" onclick={addManualLineItem}>+ Manual</button>
     </div>
   </div>
 
   <WizardActions
     apiBase={`/api/estimates/${estimate.estimate_id}`}
     detailRoute={`/estimates/${estimate.estimate_id}`}
+    discardRoute={estimate.job ? `/jobs/${estimate.job}` : '/'}
   />
 {/if}
 

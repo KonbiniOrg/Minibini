@@ -76,6 +76,9 @@
       ]);
       invoice = inv;
       if (inv?.job) {
+        // Pre-select the job overview's invoices pillar so discarding the draft
+        // (which returns to the job overview) lands on the invoice section.
+        try { sessionStorage.setItem(`jobDetailActiveSection_${inv.job}`, 'invoices'); } catch (_) {}
         try {
           job = await api.get(`/api/jobs/${inv.job}/`);
           if (job?.contact) {
@@ -196,6 +199,7 @@
   <WizardActions
     apiBase={`/api/invoices/${invoice.invoice_id}`}
     detailRoute={`/invoices/${invoice.invoice_id}`}
+    discardRoute={invoice.job ? `/jobs/${invoice.job}` : '/'}
   />
 {/if}
 

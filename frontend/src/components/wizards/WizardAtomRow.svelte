@@ -19,7 +19,7 @@
 {:else if atom.state === 'available'}
   <label>
     <input type="checkbox" checked={selected} onchange={onToggle}>
-    <small>[{atom.type === 'task' || atom.type === 'plan_task' ? 'task' : atom.type === 'expense' ? 'expense' : 'material'}]</small>
+    <small>[{atom.type === 'task' ? 'task' : atom.type === 'expense' ? 'expense' : atom.type === 'fee' ? 'fee' : 'material'}]</small>
     {atom.description}
     {#if atom.sub_info} <small>&middot; {atom.sub_info}</small>{/if}
     &mdash; {formatDetail(atom)}

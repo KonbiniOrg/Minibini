@@ -5,8 +5,7 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
-from apps.estimates.models import EstWorksheet
+from apps.inventory.models import Material, InventoryItem
 from apps.jobs.models import Job
 
 
@@ -66,17 +65,6 @@ class FreeformMaterialRequiresCategoryTests(_Setup):
         self.assertEqual(resp.status_code, 201, resp.content)
         m = Material.objects.get(job=self.job)
         self.assertEqual(m.accounting_category_id, self.cat.pk)
-
-
-class FreeformPlanMaterialRequiresCategoryTests(_Setup):
-    def test_post_freeform_plan_material_without_category_fails(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        resp = self.client.post(
-            f'/api/est-worksheets/{ws.pk}/plan-materials/',
-            {'description': 'x', 'quantity': '1'},
-            format='json',
-        )
-        self.assertEqual(resp.status_code, 400, resp.content)
 
 
 class ModelLevelNotNullTests(TestCase):

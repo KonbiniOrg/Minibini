@@ -97,11 +97,11 @@ class FreeformMaterialCostApiTest(TestCase):
     def test_post_freeform_manual_cost_rejected(self):
         """Creating a freeform material with a manual unit_cost via the API is
         rejected (the same validate() guard as PATCH, on the create path)."""
-        from apps.jobs.models import Task, ServiceItem
-        scheme = ServiceItem.objects.create(
-            name='ff-scheme', algorithm=ServiceItem.FLAT_FEE, rate=1,
+        from apps.jobs.models import Task, RateScheme
+        scheme = RateScheme.objects.create(
+            name='ff-scheme', algorithm=RateScheme.ENTERED_QTY, rate=1,
             unit_label='ea', accounting_category=self.cat)
-        task = Task.objects.create(job=self.job, name='t', service_item=scheme)
+        task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
         r = self.client_http.post(
             f'/api/tasks/{task.pk}/materials/',
             data={'description': 'glue', 'quantity': '1.00',

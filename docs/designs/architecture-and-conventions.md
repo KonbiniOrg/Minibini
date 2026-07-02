@@ -49,7 +49,7 @@ document's percentage-adjustment lines, so an adjustment can never go stale no
 matter who edited a line (a viewset, the wizard, a future caller). Sanctioned
 exceptions: migrations, fixtures/seed loaders, and test `setUp` may write models
 directly; a bulk service method may batch its writes and recompute once at the
-end (e.g. `EstimateWizardService.send_all_atoms_to_estimate`).
+end (e.g. `InvoiceService.copy_from_estimate`).
 
 **Rules:**
 
@@ -80,7 +80,7 @@ class NotFoundError(ServiceError):
     """Raised when a requested object does not exist."""
 
 class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded ServiceItem is used."""
+    """Raised when a template referencing a superseded RateScheme is used."""
 ```
 
 A typical create:
@@ -122,11 +122,13 @@ effects. Two different conventions coexist:
 
 - `apps/jobs/signals.py` — **0 lines**. Job status side effects are
   handled inside `apps/jobs/services.py`.
-- `apps/estimates/signals.py` — three receivers
-  (`estimate_status_changed_for_worksheet`, `estimate_status_changed_for_job`,
-  `estimate_accepted`) that mutate worksheets and jobs when an estimate
+- `apps/estimates/signals.py` — two receivers
+  (`estimate_status_changed_for_job`, `estimate_accepted`) that mutate jobs
+  (and, on accept, crystallize hand-lines into Fees) when an estimate
   status changes. The job-status receiver routes its changes through
-  `JobService.update_job` rather than mutating the Job directly.
+  `JobService.update_job` rather than mutating the Job directly. (The former
+  `estimate_status_changed_for_worksheet` receiver was removed with the
+  planning layer.)
 
 This is undecided convention, not deliberate design. Either approach
 works in isolation; mixing them makes it hard to reason about what
@@ -144,7 +146,7 @@ apps/api/
     permissions.py           # atom-permission factory + the four atom classes
     pagination.py            # StandardPagination
     mixins.py                # StatusTransitionMixin, LineItemMixin,
-                             # PlanTaskMixin, JobTaskMixin,
+                             # JobTaskMixin,
                              # JSONDestroyMixin, ConfirmDeleteMixin
     stubs.py                 # stub_501 factory
     auth/                    # session login/logout/me, password change, refresh stub
@@ -156,28 +158,28 @@ apps/api/
     history/                 # HistoryEntrySerializer (no urls of its own;
                              #  feeds live on Job/Contact/Business viewsets)
     home/                    # home dashboard, current blep band
-    inventory/               # PriceListItem, Material
+    inventory/               # InventoryItem, Material
     invoicing/               # Invoice
     jobs/                    # Job + board views
-    plan_tasks/              # PlanTask (worksheet-side tasks)
     purchasing/              # PurchaseOrder, Bill
     rate_schemes/            # RateScheme
     reimbursements/          # expense reimbursement batches
     search/                  # SearchService dispatch
     shifts/                  # Shift + clock-in/out + change-requests + report
     tasks/                   # Task (job-side tasks)
-    templates_config/        # WorkTemplate, TaskTemplate, AccountingCategory,
+    templates_config/        # WorkTemplate, ServiceItem, AccountingCategory,
                              #  settings, units
     time_tracking/           # urls only — re-exports apps.api.shifts.urls
                              #  (mounted at /api/shifts/); time-tracking/{status,active} still 501
     users/                   # User admin (CRUD, deactivate, reset password)
-    worksheets/              # EstWorksheet
     portal/                  # Customer portal (AllowAny; estimate read/accept/reject)
 ```
 
-The `WorkOrder` model has been removed; Tasks live directly on `Job`.
-See `docs/designs/jobs-tasks-and-worksheets.md` for the task-on-job
-shape.
+The `WorkOrder` model has been removed; Tasks live directly on `Job`. The
+planning layer (`EstWorksheet` / `PlanTask` / the `worksheets/` and
+`plan_tasks/` API apps) has also been removed — the Job owns its work atoms
+(`Task` / `Material` / `Fee`) directly. See
+`docs/designs/jobs-tasks-and-worksheets.md` for the job-owns-atoms shape.
 
 **Shared change-request viewset.** `apps/api/shifts/views.py` defines a
 `_ChangeRequestViewSet` base that `ShiftChangeRequestViewSet` and
@@ -254,7 +256,7 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > it's complete. If you bound a result deliberately, say so in the UI; never let
 > it look like "everything" when it's the first 100. Known instances fixed by
 > page-walking: `InventoryListPage` (2026-06). Fixed by server-side-search
-> rework (2026-06): `InventoryItemPicker` (formerly `PriceListItemPicker`),
+> rework (2026-06): `InventoryItemPicker` (formerly `InventoryItemPicker`),
 > email-association pickers (jobs/POs/bills).
 
 #### Type-ahead pickers: `SearchPicker` + per-entity wrappers
@@ -293,13 +295,14 @@ All in `apps/api/mixins.py`.
 |---|---|---|
 | `StatusTransitionMixin` | Every document viewset | Auto-registers `@action` POST endpoints from a `status_actions` dict, with optional `requires_reason` validation and HistoryEntry attachment. |
 | `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet, BillViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. |
-| `PlanTaskMixin` | EstWorksheetViewSet | Adds `tasks/`, `tasks/{id}/` actions for `PlanTask` (worksheet-side). |
-| `PlanTaskBundleMixin` | n/a | Backwards-compat alias for `PlanTaskMixin`; remove after callers update. |
-| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
-| `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` and `fees/` actions live on `JobViewSet` directly.) |
+| `JSONDestroyMixin` | JobViewSet, BillViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
-| `JobScopedPermissionMixin` | JobViewSet, EstWorksheetViewSet, EstimateViewSet, PlanTaskViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
-| `JobScopedCanManageMixin` | Job/EstWorksheet/Estimate/PlanTaskDetail/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
+| `JobScopedPermissionMixin` | JobViewSet, EstimateViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
+| `JobScopedCanManageMixin` | Job/Estimate/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
+
+(The former `PlanTaskMixin` / `PlanTaskBundleMixin` were removed with the
+worksheet layer.)
 
 `StatusTransitionMixin.status_actions` shape:
 
@@ -339,7 +342,7 @@ CanManageConfig     = atom_permission('can_manage_config')
 Two composite classes (hand-written, not factory-generated) live alongside the atoms:
 
 - `CanManageTimeOrFinancials` — OR of `can_manage_time` and `can_manage_financials`; gates the payroll shift report.
-- `CanManageJobOrPM` — `can_manage_jobs` OR being the target Job's `project_manager`. View-authoritative: short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (via `JobScopedPermissionMixin.get_permission_target_job`) and PM-checks it with `JobService.user_can_manage`. `has_object_permission` stays as defense-in-depth for update/destroy. Gates writes on the job-owned viewsets (Job, EstWorksheet, Estimate, PlanTask, ChangeOrder, Deliverable) so a job's PM gets atom-equivalent access **scoped to that one job** — see `users-and-permissions.md` "Project-manager object access".
+- `CanManageJobOrPM` — `can_manage_jobs` OR being the target Job's `project_manager`. View-authoritative: short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (via `JobScopedPermissionMixin.get_permission_target_job`) and PM-checks it with `JobService.user_can_manage`. `has_object_permission` stays as defense-in-depth for update/destroy. Gates writes on the job-owned viewsets (Job, Estimate, ChangeOrder, Deliverable, Task) so a job's PM gets atom-equivalent access **scoped to that one job** — see `users-and-permissions.md` "Project-manager object access".
 
 Default for everything else: `IsAuthenticated`. See CLAUDE.md
 "Permissions" for the full atom-to-action mapping and the default
@@ -375,7 +378,6 @@ a runtime error in the SPA.
 
 - `EstimateViewSet` — `apps/api/estimates/views.py`
 - `InvoiceViewSet` — `apps/api/invoicing/views.py`
-- `EstWorksheetViewSet` — `apps/api/worksheets/views.py`
 - `PurchaseOrderViewSet` — `apps/api/purchasing/views.py`
 - `ContactViewSet` — `apps/api/contacts/views.py`
 - `BusinessViewSet` — `apps/api/contacts/views.py`
@@ -385,9 +387,9 @@ a runtime error in the SPA.
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
 - `JobViewSet` — `JSONDestroyMixin`
 - `BillViewSet` — `JSONDestroyMixin`
-- `PriceListItemViewSet` — `JSONDestroyMixin`
+- `InventoryItemViewSet` — `JSONDestroyMixin`
 - `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
-- `TaskTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `ServiceItemViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
 - `AccountingCategoryViewSet` — `JSONDestroyMixin`
 - `MaterialViewSet` — returns 405 (top-level material delete is disallowed)
 - `UserViewSet` — raises `MethodNotAllowed` (use deactivate)
@@ -463,7 +465,7 @@ The mixin then exposes:
 | Verb + path | Mixin method | Calls |
 |---|---|---|
 | `GET /{id}/line-items/` | `line_items` | direct query, ordered by `line_number` |
-| `POST /{id}/line-items/` | `line_items` | `service.add_line_item_from_pli` if `price_list_item` is supplied without manual fields, else `service.add_line_item` |
+| `POST /{id}/line-items/` | `line_items` | `service.add_line_item_from_pli` if `inventory_item` is supplied without manual fields, else `service.add_line_item` |
 | `PATCH /{id}/line-items/{item_id}/` | `line_item_detail` | `service.update_line_item` |
 | `DELETE /{id}/line-items/{item_id}/` | `line_item_detail` | `service.delete_line_item` |
 | `POST /{id}/line-items/reorder/` | `reorder_line_items` | `service.reorder_line_items` |
@@ -474,7 +476,7 @@ enforces its own status guard (typically draft only); the mixin doesn't
 know what statuses are editable.
 
 `BaseLineItem.save()` has a `_populate_from_pli` safety net that fills
-in description/units/price/category from a linked `PriceListItem` if
+in description/units/price/category from a linked `InventoryItem` if
 they're missing — the model's last line of defence in case some new
 code path bypasses the service.
 
@@ -494,10 +496,9 @@ percentage-adjustment lines on the parent document (container resolved via
 no manual "recalculate" step. `recompute_adjustments` writes the adjustment
 rows with a raw `.save()`, so there is no recursion. The wizard still owns
 creating its `…LineItemSource` rows (those aren't line items); only the
-line-item writes go through the chokepoint. The two sanctioned bypasses both
-stay correct: `send_all_atoms_to_estimate` bulk-creates then recomputes once at
-the end; `revise_estimate` is a faithful copy of an existing revision (adjustment
-prices carry over already correct).
+line-item writes go through the chokepoint. The sanctioned bypass stays
+correct: `revise_estimate` is a faithful copy of an existing revision
+(adjustment prices carry over already correct).
 
 ---
 
@@ -683,7 +684,7 @@ with `rel="noopener noreferrer"`.
 URLs) — never `{@html}` — so it's XSS-safe by construction, same discipline
 as §5.6.
 
-**Applied at:** Job / Task / PlanTask descriptions and billing line-item
+**Applied at:** Job / Task descriptions and billing line-item
 descriptions (`LineItemTable`, `JobDetail` invoice + PO lines,
 `PurchaseOrderDetail`). Other free-text fields (notes, addresses, material
 descriptions) get the §5.6 wrap but are not linkified.

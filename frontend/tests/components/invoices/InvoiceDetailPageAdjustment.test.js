@@ -16,7 +16,7 @@ vi.mock('@/stores/permissions.js', () => {
 import { api } from '@/lib/api.js';
 import InvoiceDetailPage from '@/routes/invoices/InvoiceDetailPage.svelte';
 
-const ADJ_SERVICE = { service_item_id: 2, name: 'Late Fee', algorithm: 'percentage', rate: '5.00' };
+const ADJ_SERVICE = { rate_scheme_id: 2, name: 'Late Fee', algorithm: 'percentage', rate: '5.00' };
 
 function makeInvoice(overrides = {}) {
   return {
@@ -47,7 +47,7 @@ function mockApi(invoice) {
       return Promise.resolve({ job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, tasks: [], materials: [] });
     }
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
-    if (url.includes('service-items')) return Promise.resolve({ results: [ADJ_SERVICE] });
+    if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
     return Promise.resolve({});
   });
   api.post.mockResolvedValue({ line_item_id: 88 });

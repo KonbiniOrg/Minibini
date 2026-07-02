@@ -13,7 +13,7 @@ from apps.api.mixins import (
 )
 from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError, ServiceError
-from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import (
     EstimateClaimConflict,
     EstimateService,
@@ -86,6 +86,12 @@ class EstimateViewSet(
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': 'Estimate discarded'})
 
+    # Line-item GET (list) + POST (create) are provided by LineItemMixin.line_items;
+    # 'line_items' stays in get_permissions' mixed_actions so GET is IsAuthenticated
+    # and POST requires CanManageJobOrPM. Direct line authoring is supported again
+    # (hand-lines crystallize into Fees at acceptance); atom-backed lines still come
+    # via line-items-from-atoms / add-atoms.
+
     @action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):
         try:
@@ -100,16 +106,9 @@ class EstimateViewSet(
 
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):
-        """Return the source pool for the wizard, drawn from the job's worksheet."""
+        """Return the source pool for the wizard, drawn from the job's Tasks/Materials."""
         estimate = self.get_object()
-        worksheet = (
-            EstWorksheet.objects.filter(job_id=estimate.job_id)
-            .order_by('-est_worksheet_id')
-            .first()
-        )
-        if not worksheet:
-            return Response({'atoms': []})
-        pool = EstimateWizardService.get_source_pool(worksheet)
+        pool = EstimateWizardService.get_source_pool(estimate)
         return Response(_serialize_pool(pool))
 
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
@@ -187,7 +186,7 @@ class EstimateViewSet(
     def adjustment_lines(self, request, pk=None):
         """Add a percentage-adjustment line item to a draft estimate.
 
-        Body: ``adjustment_service`` (ServiceItem PK, must be PERCENTAGE),
+        Body: ``adjustment_service`` (RateScheme PK, must be PERCENTAGE),
         ``target_category_ids`` (list of AccountingCategory PKs; empty = all).
         Returns 201 with the serialized line item.
         Returns 400 when the estimate is not draft or the service is not PERCENTAGE.

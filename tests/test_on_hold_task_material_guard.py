@@ -19,7 +19,7 @@ from django.core.exceptions import ValidationError
 
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import TaskService, TaskLifecycleService
 from apps.inventory.models import Material
 from apps.inventory.services import MaterialService
@@ -64,7 +64,7 @@ def _pending_task(job, scheme):
     return Task.objects.create(
         job=job,
         name='Test Task',
-        service_item=scheme,
+        rate_scheme=scheme,
         status=Task.STATUS_PENDING,
     )
 
@@ -74,7 +74,7 @@ def _blocked_task(job, scheme):
     task = Task.objects.create(
         job=job,
         name='Blocked Task',
-        service_item=scheme,
+        rate_scheme=scheme,
         status=Task.STATUS_BLOCKED,
     )
     return task
@@ -85,7 +85,7 @@ def _in_progress_task(job, scheme):
     return Task.objects.create(
         job=job,
         name='In Progress Task',
-        service_item=scheme,
+        rate_scheme=scheme,
         status=Task.STATUS_IN_PROGRESS,
     )
 
@@ -112,17 +112,18 @@ class OnHoldGuardBase(BaseTestCase):
     """
     Base for all on_hold guard tests.
 
-    Fixture provides: a Contact, a ServiceItem with pk=1, a User 'admin',
+    Fixture provides: a Contact, a RateScheme with pk=1, a User 'admin',
     and AccountingCategories.
     """
 
     def setUp(self):
         super().setUp()
         self.contact = Contact.objects.first()
-        # Prefer a FLAT_FEE scheme so we don't need bleps to complete tasks.
+        # An entered_qty scheme: completing a task needs a quantity (passed to
+        # complete_task), not bleps.
         self.scheme = (
-            ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
-            or ServiceItem.objects.first()
+            RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
+            or RateScheme.objects.first()
         )
         self.user = User.objects.get(username='admin')
         from apps.core.models import AccountingCategory
@@ -137,13 +138,24 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
 
     def setUp(self):
         super().setUp()
-        # complete_task checks algorithm before the guard fires only if we call
-        # the guard first. Until the guard is in place, we need a FLAT_FEE
-        # scheme so TaskTimeRequired doesn't mask the missing ValidationError.
-        flat_fee = ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
-        if flat_fee is None:
-            self.skipTest('No FLAT_FEE ServiceItem in fixture.')
-        self.scheme = flat_fee
+        # The on-hold guard fires before the quantity check in complete_task, so
+        # an entered_qty scheme is fine here: the on-hold test asserts the
+        # 'on hold' ValidationError (raised first), and the in-progress test
+        # supplies an actual_qty so the task completes.
+        scheme = RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
+        if scheme is None:
+            from apps.core.models import AccountingCategory
+            ac, _ = AccountingCategory.objects.get_or_create(
+                name='Test AC for ENTERED_QTY', defaults={'code': 'TSTEQ'}
+            )
+            scheme = RateScheme.objects.create(
+                name='Test ENTERED_QTY Scheme',
+                algorithm=RateScheme.ENTERED_QTY,
+                rate=Decimal('50.00'),
+                unit_label='each',
+                accounting_category=ac,
+            )
+        self.scheme = scheme
 
     def test_complete_task_blocked_on_on_hold_job(self):
         job = _on_hold_job(self.contact)
@@ -155,7 +167,8 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
     def test_complete_task_allowed_on_in_progress_job(self):
         job = _in_progress_job(self.contact)
         task = _pending_task(job, self.scheme)
-        result = TaskLifecycleService.complete_task(task.pk)
+        # entered_qty scheme: supply a quantity so the task can complete.
+        result = TaskLifecycleService.complete_task(task.pk, actual_qty=Decimal('1'))
         self.assertEqual(result.status, Task.STATUS_COMPLETE)
 
 
@@ -220,7 +233,7 @@ class CreateDirectTaskOnHoldTest(OnHoldGuardBase):
             TaskService.create_direct(
                 job,
                 name='New Task',
-                service_item_id=self.scheme.pk,
+                rate_scheme_id=self.scheme.pk,
             )
         self.assertIn('on hold', str(ctx.exception).lower())
 
@@ -229,7 +242,7 @@ class CreateDirectTaskOnHoldTest(OnHoldGuardBase):
         task = TaskService.create_direct(
             job,
             name='New Task',
-            service_item_id=self.scheme.pk,
+            rate_scheme_id=self.scheme.pk,
         )
         self.assertIsNotNone(task.pk)
         self.assertEqual(task.job, job)
@@ -272,16 +285,16 @@ class ReorderTasksOnHoldTest(OnHoldGuardBase):
 
     def test_reorder_tasks_blocked_on_on_hold_job(self):
         job = _on_hold_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', service_item=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', service_item=self.scheme, sort_order=2)
+        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
+        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
         with self.assertRaises(ValidationError) as ctx:
             TaskService.reorder_tasks(t1.pk, 'down')
         self.assertIn('on hold', str(ctx.exception).lower())
 
     def test_reorder_tasks_allowed_on_in_progress_job(self):
         job = _in_progress_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', service_item=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', service_item=self.scheme, sort_order=2)
+        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
+        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
         TaskService.reorder_tasks(t1.pk, 'down')
         t1.refresh_from_db()
         t2.refresh_from_db()
@@ -310,15 +323,24 @@ class AssignTaskOnHoldTest(OnHoldGuardBase):
 class CreateFromTemplateOnHoldTest(OnHoldGuardBase):
 
     def _get_flat_fee_template(self):
-        from apps.estimates.models import TaskTemplate
-        scheme = ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
+        from apps.estimates.models import ServiceItem
+        scheme = RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
         if scheme is None:
-            self.skipTest('No FLAT_FEE ServiceItem in fixture.')
-        tmpl, _ = TaskTemplate.objects.get_or_create(
+            from apps.core.models import AccountingCategory
+            ac, _ = AccountingCategory.objects.get_or_create(
+                name='Test AC for template', defaults={'code': 'TSTTMPL'}
+            )
+            scheme = RateScheme.objects.create(
+                name='Test ENTERED_QTY for template',
+                algorithm=RateScheme.ENTERED_QTY,
+                rate=Decimal('50.00'),
+                unit_label='each',
+                accounting_category=ac,
+            )
+        tmpl, _ = ServiceItem.objects.get_or_create(
             template_name='Guard Test Template',
             defaults={
-                'service_item': scheme,
-                'default_billable_qty': Decimal('1'),
+                'rate_scheme': scheme,
                 'is_active': True,
             },
         )

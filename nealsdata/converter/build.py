@@ -67,7 +67,7 @@ def _revision_index(row):
 
 
 def build_seed(c):
-    """Emit core.user, core.accountingcategory and jobs.serviceitem records
+    """Emit core.user, core.accountingcategory and jobs.ratescheme records
     verbatim from the nealseed fixture.
 
     The records are appended to c.fixture_data exactly as they appear in
@@ -75,7 +75,7 @@ def build_seed(c):
     assigns them on load). Indexes the seed data for downstream builders:
       - c.ac_by_code / c.ac_svc_pk / c.ac_mat_pk
       - c.scheme_by_name
-    Also advances the jobs.serviceitem pk counter past the seeded schemes so
+    Also advances the jobs.ratescheme pk counter past the seeded schemes so
     any derived (cloned) scheme gets a fresh pk.
     """
     from nealsdata.converter.loaders import load_seed_records
@@ -101,7 +101,7 @@ def build_seed(c):
         c.fixture_data.append(rec)
         if model == 'core.accountingcategory':
             c.ac_by_code[fields['code']] = rec.get('pk')
-        elif model == 'jobs.serviceitem':
+        elif model == 'jobs.ratescheme':
             c.scheme_by_name[fields['name']] = rec.get('pk')
             c.scheme_algorithm_by_pk[rec.get('pk')] = fields.get('algorithm')
             if isinstance(rec.get('pk'), int):
@@ -110,12 +110,8 @@ def build_seed(c):
     c.ac_svc_pk = c.ac_by_code.get('SVC')
     c.ac_mat_pk = c.ac_by_code.get('MTL')
     if max_rs_pk:
-        c._pk_counters['jobs.serviceitem'] = max(
-            c._pk_counters['jobs.serviceitem'], max_rs_pk)
-
-    # Per-price flat-fee ServiceItems are minted on demand in _match_seed_scheme
-    # (one per distinct rate). c.flat_fee_by_rate caches rate string → pk.
-    c.flat_fee_by_rate = {}
+        c._pk_counters['jobs.ratescheme'] = max(
+            c._pk_counters['jobs.ratescheme'], max_rs_pk)
 
 
 def build_configuration(c):
@@ -919,7 +915,6 @@ def build_estimates(c):
                 li_pk = c.next_pk('estimates.estimatelineitem')
                 c.add_fixture('estimates.estimatelineitem', li_pk, {
                     'estimate':          est_pk,
-                    'source_template':   None,
                     'inventory_item':   None,
                     'line_number':       line_number,
                     'qty':               f'{qty:.2f}',
@@ -944,73 +939,61 @@ def build_estimates(c):
         c.estimates[base] = base_estimates
 
 
-# Default ServiceItem for tasks with no more specific keyword match.
+# Default RateScheme for tasks with no more specific keyword match.
 _CHECKLIST_DEFAULT_SCHEME = 'Shop labor'
 
 
 def _scheme_pk(c, scheme_name):
-    """Resolve a seed ServiceItem name to its pk, falling back to Shop labor."""
+    """Resolve a seed RateScheme name to its pk, falling back to Shop labor."""
     return (c.scheme_by_name.get(scheme_name)
             or c.scheme_by_name.get(_CHECKLIST_DEFAULT_SCHEME))
 
 
 def _match_seed_scheme(c, algorithm, rate):
-    """Match a line's (algorithm, rate) to a seed ServiceItem.
+    """Match a time/qty line's (algorithm, rate) to a seed RateScheme.
 
-    Returns (scheme_pk, active_modifiers). Time/qty lines match the nearest
-    seed scheme of that algorithm when within ~10% of its rate. Anything
-    that doesn't fit — and every flat-fee line, since the only flat-fee
-    seed scheme (Delivery1) is delivery-specific — gets a per-price
-    ServiceItem minted on demand (one per distinct rate), with the price
-    on `rate` and `active_modifiers` as an empty list.
+    Returns (scheme_pk, active_modifiers). Picks the nearest seed scheme of the
+    given algorithm; when it is within ~10% of the line's rate that scheme wins,
+    otherwise (or when no seed scheme of that algorithm exists) the default Shop
+    labor scheme stands in. active_modifiers is always an empty list.
+
+    Fixed charges no longer reach this function — they become jobs.Fee atoms
+    (see _line_billing); only 'elapsed_time' / 'entered_qty' lines are matched.
     """
-    if algorithm != 'flat_fee':
-        candidates = [
-            f for f in c.fixture_data
-            if f['model'] == 'jobs.serviceitem'
-            and f['fields'].get('algorithm') == algorithm
-            and f['pk'] not in c.flat_fee_by_rate.values()
-        ]
-        if candidates:
-            nearest = min(
-                candidates,
-                key=lambda f: abs(Decimal(f['fields']['rate']) - rate))
-            near_rate = Decimal(nearest['fields']['rate'])
-            tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
-            if abs(near_rate - rate) <= tolerance:
-                return nearest['pk'], []
-    # Doesn't fit a seed scheme: mint or reuse a per-price flat-fee ServiceItem.
-    rate_str = f'{rate:.2f}'
-    if rate_str not in c.flat_fee_by_rate:
-        ff_pk = c.next_pk('jobs.serviceitem')
-        c.add_fixture('jobs.serviceitem', ff_pk, {
-            'name':                f'Flat Fee ${rate_str}',
-            'description':         f'Fixed charge; rate = ${rate_str}.',
-            'algorithm':           'flat_fee',
-            'rate':                rate_str,
-            'unit_label':          'ea',
-            'modifiers':           [],
-            'accounting_category': c.ac_svc_pk,
-            'replaced_by':         None,
-            'replaced_at':         None,
-        })
-        c.scheme_algorithm_by_pk[ff_pk] = 'flat_fee'
-        c.flat_fee_by_rate[rate_str] = ff_pk
-    return c.flat_fee_by_rate[rate_str], []
+    candidates = [
+        f for f in c.fixture_data
+        if f['model'] == 'jobs.ratescheme'
+        and f['fields'].get('algorithm') == algorithm
+    ]
+    if candidates:
+        nearest = min(
+            candidates,
+            key=lambda f: abs(Decimal(f['fields']['rate']) - rate))
+        near_rate = Decimal(nearest['fields']['rate'])
+        tolerance = max(near_rate, Decimal('1')) / 10   # within ~10%
+        if abs(near_rate - rate) <= tolerance:
+            return nearest['pk'], []
+    return _scheme_pk(c, _CHECKLIST_DEFAULT_SCHEME), []
 
 
-def _fallback_scheme(c, li):
-    """ServiceItem pk + active_modifiers for an estimate-line-item-derived task.
+def _line_billing(c, li):
+    """Decide how a task-classified estimate line should bill.
 
-    Keyword rule first; otherwise match a seed scheme by rate, or create a
-    per-price flat-fee ServiceItem (rate=price) and return it with an empty
-    modifier list. Returns (scheme_pk, active_modifiers).
+    Returns one of:
+      ('fee', None, None)              — a fixed charge → emit a jobs.Fee atom
+      ('task', scheme_pk, modifiers)   — work → emit a Task with this RateScheme
+
+    Keyword rule first (a 'cut'/'laser'/'cad' line is always work); otherwise the
+    inferred billing shape decides. A line with no time/quantity signal is a fee.
     """
     keyword_name = P.checklist_scheme_name(li['description'])
     if keyword_name != _CHECKLIST_DEFAULT_SCHEME:
-        return _scheme_pk(c, keyword_name), []
+        return 'task', _scheme_pk(c, keyword_name), []
     algorithm = P.infer_algorithm(li['item_type'], li['units'])
-    return _match_seed_scheme(c, algorithm, li['price'])
+    if algorithm == 'fee':
+        return 'fee', None, None
+    scheme_pk, modifiers = _match_seed_scheme(c, algorithm, li['price'])
+    return 'task', scheme_pk, modifiers
 
 
 # Leading verbs that mark a material-keyword line as labour/prep (a Task)
@@ -1129,7 +1112,7 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
-            'service_item':      scheme_pk,
+            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      item['text'] or '',
             'est_qty':          None,
@@ -1141,8 +1124,6 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      parent_pk,
-            'source_template':  None,
-            'source_plan_task': None,
             'sort_order':       sort_order,
         })
         if not item['is_subtask']:
@@ -1152,22 +1133,48 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     return sort_order
 
 
+def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
+    """Emit a jobs.fee atom for a fixed-charge estimate line, plus the
+    EstimateLineItemSource claiming it (source_type='fee'). Returns the fee pk.
+
+    quantity comes from the line qty (>0) or defaults to 1; unit_rate is the
+    line price; the fee carries the services AccountingCategory.
+    """
+    qty = li['qty'] if (li['qty'] and li['qty'] > 0) else Decimal('1')
+    fee_pk = c.next_pk('jobs.fee')
+    c.add_fixture('jobs.fee', fee_pk, {
+        'job':                 job_pk,
+        'task':                task_pk,
+        'description':         (li['description'] or '')[:255],
+        'quantity':            f'{qty:.2f}',
+        'unit_rate':           f"{li['price']:.2f}",
+        'accounting_category': c.ac_svc_pk,
+        'sort_order':          sort_order,
+    })
+    _emit_estimate_line_item_source(c, li['line_item_pk'], 'fee', fee_pk)
+    return fee_pk
+
+
 def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
-    """Emit jobs.task fixtures from estimate line items.
+    """Emit jobs.task / jobs.fee fixtures from estimate line items.
 
     Used for the no-checklist fallback (task-classified lines) and for
-    material-keyword lines reclassified as labour. Returns the final
-    per-job sort_order.
+    material-keyword lines reclassified as labour. A line that bills as a fixed
+    charge becomes a jobs.Fee (claimed via an EstimateLineItemSource); every
+    other line becomes a Task. Returns the final per-job sort_order.
     """
     sort_order = start_sort
     for li in task_lines:
         sort_order += 1
+        kind, scheme_pk, active_modifiers = _line_billing(c, li)
+        if kind == 'fee':
+            _emit_fee(c, base_ref, job_pk, li, sort_order)
+            continue
         name = (li['description'] or 'Task')[:255] or 'Task'
-        scheme_pk, active_modifiers = _fallback_scheme(c, li)
         task_pk = c.next_pk('jobs.task')
         c.add_fixture('jobs.task', task_pk, {
             'job':              job_pk,
-            'service_item':      scheme_pk,
+            'rate_scheme':      scheme_pk,
             'name':             name,
             'description':      li['description'] or '',
             'est_qty':          f"{li['qty']:.2f}",
@@ -1179,8 +1186,6 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
             'worker_queue':     None,
             'assignee':         None,
             'parent_task':      None,
-            'source_template':  None,
-            'source_plan_task': None,
             'sort_order':       sort_order,
         })
         if base_ref not in c.cut_task and 'cut' in name.lower():
@@ -1188,27 +1193,19 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
     return sort_order
 
 
-# Job statuses for which atoms live on the plan side (EstWorksheet +
-# PlanTask + PlanMaterial) rather than the real side (Task + Material).
-# These are statuses where no estimate has been accepted yet: an accepted
-# estimate is the trigger that copies plan atoms onto the Job per §2.3.
-_PLAN_STATUSES = ('draft', 'submitted')
-
-
 def assign_worker_times(c):
-    """Give every Task and PlanTask an invented per-task estimated worker time.
+    """Give every Task an invented per-task estimated worker time.
 
     The Kanban data carries no trustworthy per-task time signal (the old
     est *cut*/ASS columns were rare, whole-job estimates wrongly stamped onto a
     single task), so each task gets an independent random estimate uniform in
     [0.5, 4.0] hours, rounded to 2 significant figures and stored at minute
-    granularity. Iterates in (model, pk) order with the seeded RNG so output is
+    granularity. Iterates in pk order with the seeded RNG so output is
     deterministic.
     """
     tasks = sorted(
-        (f for f in c.fixture_data
-         if f['model'] in ('jobs.task', 'jobs.plantask')),
-        key=lambda f: (f['model'], f['pk']),
+        (f for f in c.fixture_data if f['model'] == 'jobs.task'),
+        key=lambda f: f['pk'],
     )
     for f in tasks:
         hours = P.round_2sig(random.uniform(0.5, 4.0))
@@ -1252,22 +1249,19 @@ def assign_est_quantities(c):
     - elapsed_time (hourly): est_qty == the worker-time estimate in hours, so
       estimated billable hours match the estimated worker time. Set always
       (overrides any source-line qty).
-    - flat_fee: a single fixed charge → 1, unless a source line already set one.
     - entered_qty: a piece count tied to the worker time (longer task → more
       pieces, 2–6 pieces/hour), unless a source line already set one.
 
-    PlanTasks are left alone — they already carry a required est_qty.
+    Fixed charges are now jobs.Fee atoms (not Tasks), so no flat-fee case
+    remains here.
     """
     for f in c.fixture_data:
         if f['model'] != 'jobs.task':
             continue
         fields = f['fields']
-        algo = c.scheme_algorithm_by_pk.get(fields.get('service_item'))
+        algo = c.scheme_algorithm_by_pk.get(fields.get('rate_scheme'))
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
-        elif algo == 'flat_fee':
-            if fields.get('est_qty') in (None, ''):
-                fields['est_qty'] = '1.00'
         elif algo == 'entered_qty':
             if fields.get('est_qty') in (None, ''):
                 hours = _duration_hours(fields.get('est_worker_time'))
@@ -1275,23 +1269,12 @@ def assign_est_quantities(c):
                 fields['est_qty'] = f'{Decimal(pieces):.2f}'
 
 
-def _build_estworksheet(c, job_pk, created_date):
-    """Emit one estimates.estworksheet per Job. Returns the new pk."""
-    ws_pk = c.next_pk('estimates.estworksheet')
-    c.add_fixture('estimates.estworksheet', ws_pk, {
-        'job':          job_pk,
-        'created_date': created_date,
-    })
-    return ws_pk
-
-
 def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):
-    """Emit an estimates.estimatelineitemsource row claiming a plan atom.
+    """Emit an estimates.estimatelineitemsource row claiming a job atom.
 
-    Each plan atom can be claimed by at most one line item (model enforces
-    unique_together on (source_type, source_pk)); the converter emits at
-    most one source row per plan atom by construction (each plan atom is
-    derived from exactly one LI).
+    source_type is one of 'task' / 'material' / 'fee'. Each atom can be claimed
+    by at most one line item (model enforces unique_together on
+    (source_type, source_pk)); the converter never double-claims an atom.
     """
     src_pk = c.next_pk('estimates.estimatelineitemsource')
     c.add_fixture('estimates.estimatelineitemsource', src_pk, {
@@ -1299,89 +1282,6 @@ def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):
         'source_type':        source_type,
         'source_pk':          source_pk,
     })
-
-
-def _build_plan_checklist_tasks(c, base_ref, ws_pk, items, start_sort=0):
-    """Emit jobs.plantask fixtures from parsed Kanban checklist items.
-
-    PlanTask is flat — the checklist's subtask hierarchy is lost. Pickup
-    markers (Shipments) and board status-markers (_is_dropped_checklist_line)
-    do not become PlanTasks. Returns the final per-worksheet sort_order.
-    Checklist-derived plan tasks have no source LI, so no
-    EstimateLineItemSource row is emitted.
-
-    est_qty is set to Decimal('1') — PlanTask.clean() requires non-null
-    est_qty, and the checklist carries no quantity signal.
-    """
-    sort_order = start_sort
-    for item in items:
-        if _is_pickup_marker(item['text']):
-            continue
-        if _is_dropped_checklist_line(item['text']):
-            continue
-        sort_order += 1
-        name = (item['text'] or 'Task')[:255] or 'Task'
-        scheme_pk = _scheme_pk(c, P.checklist_scheme_name(name))
-        pt_pk = c.next_pk('jobs.plantask')
-        c.add_fixture('jobs.plantask', pt_pk, {
-            'est_worksheet':    ws_pk,
-            'service_item':      scheme_pk,
-            'name':             name,
-            'description':      item['text'] or '',
-            'est_qty':          '1.00',
-            'est_worker_time':  None,
-            'active_modifiers': [],
-            'sort_order':       sort_order,
-        })
-        if base_ref not in c.cut_plan_task and 'cut' in name.lower():
-            c.cut_plan_task[base_ref] = pt_pk
-    return sort_order
-
-
-def _build_plan_line_item_tasks(c, base_ref, ws_pk, task_lines, start_sort=0):
-    """Emit jobs.plantask fixtures from estimate line items, plus the
-    EstimateLineItemSource row linking each to its source LI."""
-    sort_order = start_sort
-    for li in task_lines:
-        sort_order += 1
-        name = (li['description'] or 'Task')[:255] or 'Task'
-        scheme_pk, active_modifiers = _fallback_scheme(c, li)
-        pt_pk = c.next_pk('jobs.plantask')
-        c.add_fixture('jobs.plantask', pt_pk, {
-            'est_worksheet':    ws_pk,
-            'service_item':      scheme_pk,
-            'name':             name,
-            'description':      li['description'] or '',
-            'est_qty':          f"{li['qty']:.2f}",
-            'est_worker_time':  None,
-            'active_modifiers': active_modifiers,
-            'sort_order':       sort_order,
-        })
-        _emit_estimate_line_item_source(
-            c, li['line_item_pk'], 'plan_task', pt_pk)
-        if base_ref not in c.cut_plan_task and 'cut' in name.lower():
-            c.cut_plan_task[base_ref] = pt_pk
-    return sort_order
-
-
-def _build_plan_raw_materials(c, base_ref, ws_pk, raw_lines):
-    """Emit inventory.planmaterial fixtures + EstimateLineItemSource rows."""
-    for li in raw_lines:
-        pm_pk = c.next_pk('inventory.planmaterial')
-        unit_cost, pli_pk = _material_cost_and_pli(c, li['description'] or '', li['price'])
-        c.add_fixture('inventory.planmaterial', pm_pk, {
-            'est_worksheet':       ws_pk,
-            'plan_task':           c.cut_plan_task.get(base_ref),
-            'description':         (li['description'] or '')[:255],
-            'quantity':            f"{li['qty']:.2f}",
-            'units':               li['units'] or 'none',
-            'unit_cost':           unit_cost,
-            'sell_price':          f"{li['price']:.2f}",
-            'accounting_category': c.ac_mat_pk,
-            'inventory_item':     pli_pk,
-        })
-        _emit_estimate_line_item_source(
-            c, li['line_item_pk'], 'plan_material', pm_pk)
 
 
 def _build_deliverables(c, job_pk, deliverable_lines):
@@ -1429,41 +1329,29 @@ def _build_deliverables(c, job_pk, deliverable_lines):
 
 
 def derive_atoms(c):
-    """Derive Task / PlanTask, Material / PlanMaterial, and Deliverable
-    fixtures for each job.
+    """Derive Task, Material, Fee, and Deliverable fixtures for each job.
 
-    Branches on the Job's as-built status:
+    Atoms now live directly on the Job for **every** status (draft included) —
+    there is no plan layer. Per job:
 
-    - **Plan-side** (draft, submitted) — no accepted estimate yet, so the
-      atoms live on the plan side. Emit one EstWorksheet per Job, then
-      PlanTasks and PlanMaterials on that worksheet. PlanTask is flat (no
-      hierarchy) and est_qty is required (Decimal('1') for checklist-derived,
-      qty from LI otherwise). LI-derived plan atoms also get an
-      EstimateLineItemSource row linking back to the LI.
-    - **Real-side** (everything else) — Tasks on Job, Materials on Job.
-      Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
+    - **Tasks** come from the Kanban card's Checklist when it has any items
+      (each line -> a Task; indented lines -> subtasks; [X] -> complete);
+      otherwise task-classified estimate line items become Tasks (or Fees, see
+      below). Checklist tasks keep their subtask hierarchy and [X]/[ ] status.
+    - **Fees**: a task-classified estimate line that bills as a fixed charge
+      (no time/quantity signal) becomes a jobs.Fee instead of a Task, claimed by
+      its source line via an EstimateLineItemSource (source_type='fee').
+    - **Materials** come from material-classified lines split by
+      _material_line_kind: raw stock -> Material, labour/prep -> Task, finished
+      goods -> Deliverable. Each line becomes exactly one of those.
+    - **Deliverables** go on the Job; a job with no deliverable line gets a
+      synthetic 'Fake Deliverable'.
 
-    In both modes, Deliverables go on the Job (deliverables are job-scoped,
-    not plan-scoped).
-
-    Tasks come from the Kanban card's Checklist when it has any items
-    (each line -> a Task; indented lines -> subtasks; [X] -> complete);
-    otherwise task-classified estimate line items become Tasks.
-
-    Material-classified estimate line items are split (see
-    _material_line_kind): raw stock -> Material/PlanMaterial, labour/prep
-    lines -> Task/PlanTask, finished goods -> Deliverable. Each line
-    becomes exactly one of those. A job with no deliverable line gets a
-    synthetic 'Fake Deliverable'.
-
-    Mutates c.fixture_data, c.cut_task, c.cut_plan_task,
-    c.fake_deliverable_count.
+    Mutates c.fixture_data, c.cut_task, c.fake_deliverable_count.
     """
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
         card = job_info['card']
-        job_status = job_info.get('status')
-        plan_mode = job_status in _PLAN_STATUSES
 
         # Use only the latest estimate version for materials / fallback tasks.
         est_list = c.estimates.get(base_ref, [])
@@ -1487,37 +1375,7 @@ def derive_atoms(c):
 
         checklist_items = P.parse_checklist(card.get('Checklist'))
 
-        if plan_mode:
-            # --- Plan side: EstWorksheet + PlanTask + PlanMaterial -------
-            job_fixture = next(
-                (f for f in c.fixture_data
-                 if f['model'] == 'jobs.job' and f['pk'] == job_pk),
-                None,
-            )
-            created = (job_fixture['fields']['created_date'] if job_fixture
-                       else f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00')
-            ws_pk = _build_estworksheet(c, job_pk, created)
-
-            # --- 1. PlanTasks (checklist or LI fallback) + labour lines ---
-            if checklist_items:
-                sort_order = _build_plan_checklist_tasks(
-                    c, base_ref, ws_pk, checklist_items)
-            else:
-                sort_order = _build_plan_line_item_tasks(
-                    c, base_ref, ws_pk, task_lines)
-            _build_plan_line_item_tasks(
-                c, base_ref, ws_pk, labor_lines, sort_order)
-
-            # --- 2. PlanMaterials: raw stock (after plan tasks so cut is set)
-            _build_plan_raw_materials(c, base_ref, ws_pk, raw_lines)
-
-            # --- 3. Deliverables: on the Job regardless of plan mode -------
-            _build_deliverables(c, job_pk, deliverable_lines)
-            continue
-
-        # --- Real side (existing behaviour) ------------------------------
-
-        # --- 1. Tasks: checklist (or fallback line items), plus labour lines.
+        # --- 1. Tasks/Fees: checklist (or fallback line items), plus labour.
         if checklist_items:
             sort_order = _build_checklist_tasks(
                 c, base_ref, job_pk, checklist_items)
@@ -1528,7 +1386,7 @@ def derive_atoms(c):
         _build_line_item_tasks(c, base_ref, job_pk, labor_lines, sort_order)
 
         # Worker times are assigned in a separate pass (assign_worker_times)
-        # after every task/plantask exists.
+        # after every task exists.
 
         # --- 2. Materials: raw stock only (after tasks so cut_task is set) --
         for li in raw_lines:
@@ -1552,7 +1410,6 @@ def derive_atoms(c):
                 'consumption_state':   'pending',
                 'restocked_qty':       '0.00',
                 'po_line_item':        None,
-                'source_plan_material': None,
             })
 
         # --- 3. Deliverables: finished-good lines (or a Fake Deliverable) --
@@ -1730,20 +1587,74 @@ def build_invoices(c):
             inv_fields['qbo_amount_paid'] = f'{inv_total.quantize(Decimal("0.01")):.2f}'
 
 
+def build_synthetic_estimate_sources(c):
+    """Test-data synthesis: round-robin assign each job's unclaimed Tasks as
+    sources of that job's (non-adjustment) estimate line items, so the Client
+    View projects atoms even though the kanban work and FreeAgent charge lines
+    don't really correspond. Each Task claims at most one estimate line (model
+    unique_together); extra Tasks group onto lines, surplus/adjustment lines
+    stay sourceless.
+
+    Fee atoms are already claimed by their own source lines in derive_atoms
+    (source_type='fee'); this pass only places Tasks, and it skips Tasks already
+    claimed and estimate lines that already carry a source (so a line that owns
+    a Fee isn't double-sourced with a Task).
+    """
+    claimed_tasks = {
+        f['fields']['source_pk']
+        for f in c.fixture_data
+        if f['model'] == 'estimates.estimatelineitemsource'
+        and f['fields'].get('source_type') == 'task'
+    }
+    sourced_lines = {
+        f['fields']['estimate_line_item']
+        for f in c.fixture_data
+        if f['model'] == 'estimates.estimatelineitemsource'
+    }
+    tasks_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'jobs.task' and f['pk'] not in claimed_tasks:
+            tasks_by_job.setdefault(f['fields']['job'], []).append(f)
+
+    est_to_job = {
+        f['pk']: f['fields']['job']
+        for f in c.fixture_data if f['model'] == 'estimates.estimate'
+    }
+    lines_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] != 'estimates.estimatelineitem':
+            continue
+        if f['pk'] in sourced_lines:
+            continue  # already owns an atom (e.g. a Fee) — don't double-source
+        job_pk = est_to_job.get(f['fields']['estimate'])
+        if job_pk is not None:
+            lines_by_job.setdefault(job_pk, []).append(f)
+
+    for job_pk, tasks in tasks_by_job.items():
+        lines = lines_by_job.get(job_pk)
+        if not lines:
+            continue
+        lines = sorted(lines, key=lambda f: (
+            f['fields'].get('estimate'), f['fields'].get('line_number') or 0))
+        for i, t in enumerate(sorted(tasks, key=lambda f: f['pk'])):
+            li = lines[i % len(lines)]
+            _emit_estimate_line_item_source(c, li['pk'], 'task', t['pk'])
+
+
 def build_invoice_line_item_sources(c):
     """Emit invoicing.invoicelineitemsource rows linking InvoiceLineItems to
-    Tasks / Materials on the Job.
+    Tasks / Fees / Materials on the Job.
 
     Schema permits freeform invoice lines (no source); the wiring is purely
-    cosmetic — it makes Tasks/Materials show as 'billed' on a paid Job in
+    cosmetic — it makes Tasks/Fees/Materials show as 'billed' on a paid Job in
     the UI instead of orphaned. Heuristic, deterministic claim:
 
       - For each Invoice on each Job (invoice pk asc → invoice line_number asc)
       - Classify the line via P.classify_line_item.
       - If classification is 'task': claim the next unclaimed Task on the Job;
-        fall through to materials if exhausted.
+        fall through to Fees, then Materials, if exhausted.
       - If classification is 'material': claim the next unclaimed Material;
-        fall through to tasks if exhausted.
+        fall through to Tasks, then Fees, if exhausted.
       - 'lineitem' / 'skip' classifications never claim (discounts / comments
         are inherently freeform).
       - Leftover lines stay freeform.
@@ -1770,9 +1681,14 @@ def build_invoice_line_item_sources(c):
     for f in c.fixture_data:
         if f['model'] == 'inventory.material':
             materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
+    fees_by_job = {}
+    for f in c.fixture_data:
+        if f['model'] == 'jobs.fee':
+            fees_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
 
     claimed_tasks = set()
     claimed_materials = set()
+    claimed_fees = set()
 
     def _claim(pool, claimed):
         for pk in pool:
@@ -1785,8 +1701,14 @@ def build_invoice_line_item_sources(c):
     for job_pk in sorted(invoices_by_job):
         task_pool = sorted(tasks_by_job.get(job_pk, []))
         material_pool = sorted(materials_by_job.get(job_pk, []))
+        fee_pool = sorted(fees_by_job.get(job_pk, []))
         invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
         for inv in invs:
+            # Draft invoices are seeded empty in the app (the user picks
+            # "Apply everything" / "Copy from estimate"); don't pre-claim atoms
+            # onto a draft's lines.
+            if inv['fields'].get('status') == 'draft':
+                continue
             lines = sorted(
                 lines_by_invoice.get(inv['pk'], []),
                 key=lambda f: f['fields'].get('line_number') or 0,
@@ -1797,6 +1719,9 @@ def build_invoice_line_item_sources(c):
                     src_pk = _claim(task_pool, claimed_tasks)
                     src_type = 'task'
                     if src_pk is None:
+                        src_pk = _claim(fee_pool, claimed_fees)
+                        src_type = 'fee'
+                    if src_pk is None:
                         src_pk = _claim(material_pool, claimed_materials)
                         src_type = 'material'
                 elif kind == 'material':
@@ -1805,6 +1730,9 @@ def build_invoice_line_item_sources(c):
                     if src_pk is None:
                         src_pk = _claim(task_pool, claimed_tasks)
                         src_type = 'task'
+                    if src_pk is None:
+                        src_pk = _claim(fee_pool, claimed_fees)
+                        src_type = 'fee'
                 else:
                     src_pk = None
                 if src_pk is None:
@@ -2124,7 +2052,7 @@ def build_bleps_and_shifts(c):
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
         # EVERY complete task — even an old finished one too old to get a blep
         # (the horizon skip below) — so nothing can invoice at zero.
-        if c.scheme_algorithm_by_pk.get(fields.get('service_item')) == 'entered_qty':
+        if c.scheme_algorithm_by_pk.get(fields.get('rate_scheme')) == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))

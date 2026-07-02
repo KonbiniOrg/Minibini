@@ -7,12 +7,12 @@ from django.test import TestCase
 from tests.base import BaseTestCase
 from apps.core.models import User, AccountingCategory, Configuration, AppState
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, PlanTask, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate,
+    WorkTemplate, ServiceItem,
     TemplateTaskAssociation,
 )
-from apps.inventory.models import PlanMaterial, Material
+from apps.inventory.models import Material
 
 
 def _make_admin(username='admin_jobapi'):
@@ -151,15 +151,15 @@ class JobTaskSubResourceTest(TestCase):
         self.job = Job.objects.create(
             job_number='C2-T-001', name='Task Job', contact=self.contact,
         )
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         ac = AccountingCategory.objects.create(code='JT-AC', name='Job Task AC')
-        self.scheme = ServiceItem.objects.create(
-            name='Job Task Scheme', algorithm='flat_fee',
+        self.scheme = RateScheme.objects.create(
+            name='Job Task Scheme', algorithm='entered_qty',
             rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
         )
 
     def test_list_tasks_on_job(self):
-        Task.objects.create(job=self.job, name='First task', service_item=self.scheme)
+        Task.objects.create(job=self.job, name='First task', rate_scheme=self.scheme)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
@@ -168,18 +168,18 @@ class JobTaskSubResourceTest(TestCase):
     def test_create_task_on_job(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'New task', 'service_item': self.scheme.pk},
+            {'name': 'New task', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['name'], 'New task')
         t = Task.objects.get(pk=response.data['task_id'])
         self.assertEqual(t.job_id, self.job.pk)
-        # service_item set directly on Task (no TaskCharge)
-        self.assertEqual(t.service_item_id, self.scheme.pk)
+        # rate_scheme set directly on Task (no TaskCharge)
+        self.assertEqual(t.rate_scheme_id, self.scheme.pk)
 
     def test_update_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Original', service_item=self.scheme)
+        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'Renamed'},
@@ -190,7 +190,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertEqual(task.name, 'Renamed')
 
     def test_delete_task_on_job(self):
-        task = Task.objects.create(job=self.job, name='Goner', service_item=self.scheme)
+        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('message', response.data)
@@ -200,7 +200,7 @@ class JobTaskSubResourceTest(TestCase):
         other_job = Job.objects.create(
             job_number='C2-T-002', name='Other', contact=self.contact,
         )
-        task = Task.objects.create(job=other_job, name='Theirs', service_item=self.scheme)
+        task = Task.objects.create(job=other_job, name='Theirs', rate_scheme=self.scheme)
         response = self.client.patch(
             f'/api/jobs/{self.job.pk}/tasks/{task.pk}/',
             {'name': 'nope'},
@@ -213,14 +213,14 @@ class JobTaskSubResourceTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/tasks/',
-            {'name': 'Worker task', 'service_item': self.scheme.pk},
+            {'name': 'Worker task', 'rate_scheme': self.scheme.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
 
     def test_update_task_allowed_for_worker(self):
         # Editing a task is open to any authenticated user.
-        task = Task.objects.create(job=self.job, name='Original', service_item=self.scheme)
+        task = Task.objects.create(job=self.job, name='Original', rate_scheme=self.scheme)
         worker = User.objects.create_user(username='jt_worker_edit', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.patch(
@@ -234,7 +234,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_delete_task_allowed_for_worker_without_bleps(self):
         # Deleting a blep-less, not-started task is open to any authenticated user.
-        task = Task.objects.create(job=self.job, name='Goner', service_item=self.scheme)
+        task = Task.objects.create(job=self.job, name='Goner', rate_scheme=self.scheme)
         worker = User.objects.create_user(username='jt_worker_del', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.delete(f'/api/jobs/{self.job.pk}/tasks/{task.pk}/')
@@ -246,7 +246,7 @@ class JobTaskSubResourceTest(TestCase):
         # a worker deleting a task that has time entries gets a 400.
         from apps.jobs.models import Blep
         from django.utils import timezone
-        task = Task.objects.create(job=self.job, name='Worked', service_item=self.scheme)
+        task = Task.objects.create(job=self.job, name='Worked', rate_scheme=self.scheme)
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
         worker = User.objects.create_user(username='jt_worker_blep', password='pass')
         self.client.force_authenticate(user=worker)
@@ -255,7 +255,7 @@ class JobTaskSubResourceTest(TestCase):
         self.assertTrue(Task.objects.filter(pk=task.pk).exists())
 
     def test_list_tasks_any_authenticated(self):
-        Task.objects.create(job=self.job, name='Read me', service_item=self.scheme)
+        Task.objects.create(job=self.job, name='Read me', rate_scheme=self.scheme)
         worker = User.objects.create_user(username='jt_reader', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.get(f'/api/jobs/{self.job.pk}/tasks/')
@@ -270,7 +270,7 @@ class JobTaskSubResourceTest(TestCase):
 
     def test_reorder_tasks_still_denied_for_worker(self):
         # reorder-tasks also stays manager-or-PM via the fall-through.
-        task = Task.objects.create(job=self.job, name='Reorder me', service_item=self.scheme)
+        task = Task.objects.create(job=self.job, name='Reorder me', rate_scheme=self.scheme)
         worker = User.objects.create_user(username='jt_worker_ro', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
@@ -293,12 +293,12 @@ class JobSerializerNestingTest(TestCase):
             job_number='C2-N-001', name='Nesting Job', contact=self.contact,
         )
         ac = AccountingCategory.objects.create(code='NEST-AC', name='Nest AC')
-        self.scheme = ServiceItem.objects.create(
-            name='S-nest', algorithm='flat_fee',
+        self.scheme = RateScheme.objects.create(
+            name='S-nest', algorithm='entered_qty',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        Task.objects.create(job=self.job, name='A task', service_item=self.scheme)
-        Task.objects.create(job=self.job, name='B task', service_item=self.scheme)
+        Task.objects.create(job=self.job, name='A task', rate_scheme=self.scheme)
+        Task.objects.create(job=self.job, name='B task', rate_scheme=self.scheme)
 
     def test_retrieve_nests_tasks(self):
         response = self.client.get(f'/api/jobs/{self.job.pk}/')
@@ -320,8 +320,8 @@ class JobListQueryCountTest(TestCase):
             template_name='QC Template',
         )
         ac = AccountingCategory.objects.create(code='QC-AC', name='QC AC')
-        self.scheme = ServiceItem.objects.create(
-            name='S-qc', algorithm='flat_fee',
+        self.scheme = RateScheme.objects.create(
+            name='S-qc', algorithm='entered_qty',
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
 
@@ -333,8 +333,8 @@ class JobListQueryCountTest(TestCase):
                 name=f'QC Job {i}',
                 contact=self.contact,
             )
-            Task.objects.create(job=job, name=f'Task A {i}', service_item=self.scheme)
-            Task.objects.create(job=job, name=f'Task B {i}', service_item=self.scheme)
+            Task.objects.create(job=job, name=f'Task A {i}', rate_scheme=self.scheme)
+            Task.objects.create(job=job, name=f'Task B {i}', rate_scheme=self.scheme)
 
     def _list_query_count(self):
         from django.test.utils import CaptureQueriesContext
@@ -410,17 +410,17 @@ class JobPopulateFromTemplateTest(TestCase):
             template_name='Kitchen',
         )
         cat = AccountingCategory.objects.create(name='Labor')
-        self.scheme = ServiceItem.objects.create(
-            name='S-poptpl', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-poptpl', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=cat,
         )
-        self.task_template = TaskTemplate.objects.create(
+        self.service_item = ServiceItem.objects.create(
             template_name='Countertop', is_active=True,
-            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         TemplateTaskAssociation.objects.create(
             work_template=self.template,
-            task_template=self.task_template,
+            service_item=self.service_item,
             est_qty=2, sort_order=1,
         )
 
@@ -454,77 +454,6 @@ class JobPopulateFromTemplateTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-class JobCopyFromWorksheetTest(TestCase):
-    """Phase C2: POST /api/jobs/{id}/copy-from-worksheet/."""
-
-    def setUp(self):
-        self.client = APIClient()
-        self.user = _make_admin('copyws_admin')
-        self.client.force_authenticate(user=self.user)
-        self.contact = Contact.objects.create(first_name='T', last_name='C')
-        self.job = Job.objects.create(
-            job_number='C2-CW-001', name='CW Job', contact=self.contact,
-        )
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
-        ac = AccountingCategory.objects.create(code='CWAJ-AC', name='cwaj-ac')
-        self.scheme = ServiceItem.objects.create(
-            name='S-cwaj', algorithm=ServiceItem.FLAT_FEE,
-            rate=Decimal('1'), unit_label='ea', accounting_category=ac,
-        )
-        self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet,
-            name='Build cabinet',
-            service_item=self.scheme,
-            est_qty=Decimal('1'),
-        )
-        PlanMaterial.objects.create(
-            est_worksheet=self.worksheet,
-            plan_task=self.plan_task,
-            description='Plywood sheet',
-            quantity=2, unit_cost=40, sell_price=60,
-            accounting_category=ac,
-        )
-
-    def test_copy_from_worksheet_success(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/copy-from-worksheet/',
-            {'worksheet_id': self.worksheet.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.tasks.count(), 1)
-        task = self.job.tasks.first()
-        self.assertEqual(task.name, 'Build cabinet')
-        self.assertEqual(task.materials.count(), 1)
-
-    def test_copy_from_worksheet_missing(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/copy-from-worksheet/',
-            {},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_copy_from_worksheet_not_found(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/copy-from-worksheet/',
-            {'worksheet_id': 99999},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_copy_from_worksheet_requires_can_manage_jobs(self):
-        worker = User.objects.create_user(username='cw_worker', password='pass')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/copy-from-worksheet/',
-            {'worksheet_id': self.worksheet.pk},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
-
 class JobReorderTasksTest(TestCase):
     """Phase C2: POST /api/jobs/{id}/reorder-tasks/."""
 
@@ -537,13 +466,13 @@ class JobReorderTasksTest(TestCase):
             job_number='C2-R-001', name='R Job', contact=self.contact,
         )
         ac = AccountingCategory.objects.create(code='REORD-AC', name='reord-ac')
-        self.scheme = ServiceItem.objects.create(
-            name='S-reord', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-reord', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        self.a = Task.objects.create(job=self.job, name='A', sort_order=0, service_item=self.scheme)
-        self.b = Task.objects.create(job=self.job, name='B', sort_order=1, service_item=self.scheme)
-        self.c = Task.objects.create(job=self.job, name='C', sort_order=2, service_item=self.scheme)
+        self.a = Task.objects.create(job=self.job, name='A', sort_order=0, rate_scheme=self.scheme)
+        self.b = Task.objects.create(job=self.job, name='B', sort_order=1, rate_scheme=self.scheme)
+        self.c = Task.objects.create(job=self.job, name='C', sort_order=2, rate_scheme=self.scheme)
 
     def test_reorder_down(self):
         response = self.client.post(
@@ -593,9 +522,9 @@ class JobPatchValidationErrorTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.contact = Contact.objects.create(first_name='T', last_name='C')
         ac = AccountingCategory.objects.create(code='PV-AC', name='pv-ac')
-        from apps.jobs.models import ServiceItem
-        self.scheme = ServiceItem.objects.create(
-            name='S-pv', algorithm='flat_fee',
+        from apps.jobs.models import RateScheme
+        self.scheme = RateScheme.objects.create(
+            name='S-pv', algorithm='entered_qty',
             rate=Decimal('25.00'), unit_label='ea', accounting_category=ac,
         )
 
@@ -617,7 +546,7 @@ class JobPatchValidationErrorTest(TestCase):
         from django.utils import timezone
 
         job = self._in_progress_job()
-        task = Task.objects.create(job=job, name='Active task', service_item=self.scheme)
+        task = Task.objects.create(job=job, name='Active task', rate_scheme=self.scheme)
         # Create an open blep (no end_time)
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
 
@@ -652,22 +581,21 @@ class JobAddFromTemplateTest(TestCase):
             job_number='C2-AFT-001', name='AFT Job', contact=self.contact,
         )
         ac = AccountingCategory.objects.create(code='AFT-AC', name='aft-ac')
-        self.scheme = ServiceItem.objects.create(
-            name='S-aft', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-aft', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=ac,
         )
-        self.template = TaskTemplate.objects.create(
+        self.template = ServiceItem.objects.create(
             template_name='Paint room',
             description='Paint all walls',
             is_active=True,
-            service_item=self.scheme,
-            default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
 
     def test_add_from_template_success(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk, 'est_qty': '100.00'},
+            {'service_item_id': self.template.pk, 'est_qty': '100.00'},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
@@ -677,7 +605,7 @@ class JobAddFromTemplateTest(TestCase):
     def test_add_from_template_default_qty(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk},
+            {'service_item_id': self.template.pk},
             format='json',
         )
         self.assertEqual(response.status_code, 201, response.data)
@@ -689,12 +617,12 @@ class JobAddFromTemplateTest(TestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('task_template_id', response.data)
+        self.assertIn('service_item_id', response.data)
 
     def test_add_from_template_not_found(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': 99999},
+            {'service_item_id': 99999},
             format='json',
         )
         self.assertEqual(response.status_code, 404)
@@ -703,7 +631,7 @@ class JobAddFromTemplateTest(TestCase):
         self.client.force_authenticate(user=None)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/add-from-template/',
-            {'task_template_id': self.template.pk},
+            {'service_item_id': self.template.pk},
             format='json',
         )
         self.assertIn(response.status_code, [401, 403])
@@ -727,12 +655,12 @@ class JobDetailInvoiceFieldTest(TestCase):
             defaults={'value': 'INV-{year}-{counter:04d}'},
         )
         AppState.objects.get_or_create(key='invoice_counter', defaults={'value': '0'})
-        self.scheme = ServiceItem.objects.create(
-            name='S-invf', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-invf', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='ea', accounting_category=ac,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Invoiceable Task', service_item=self.scheme,
+            job=self.job, name='Invoiceable Task', rate_scheme=self.scheme,
         )
         self.material = Material.objects.create(
             job=self.job,
@@ -848,12 +776,13 @@ class JobDetailInvoiceFieldTest(TestCase):
         )
 
         # Absolute pin: guard against flat per-request regressions that the
-        # comparative assertion above cannot catch.  N=13 was derived empirically
-        # (run with N=1, read the failure message).  If the jobs viewset gains new
-        # prefetches/annotations this number may need updating — update it together
-        # with a comment explaining why the count changed.
+        # comparative assertion above cannot catch.  N=15 (was 13 before Task 3.4):
+        # +1 for the `fees` prefetch query, +1 for EstimateClaimService.claimed_set_for_job
+        # (one query per job-detail to build the estimate-claim set).
+        # If the jobs viewset gains new prefetches/annotations this number may need
+        # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 13,
-            f'Absolute query count for job-detail changed: expected 13, got {count_one}. '
+            count_one, 15,
+            f'Absolute query count for job-detail changed: expected 15, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

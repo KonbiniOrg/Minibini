@@ -45,6 +45,10 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             qs = qs.annotate(_em_count=Count('earmark')).exclude(
                 is_catalog=False, qty_on_hand=Decimal('0.00'), _em_count=0,
             )
+        is_catalog_param = self.request.query_params.get('is_catalog')
+        if is_catalog_param is not None:
+            is_catalog_value = is_catalog_param.lower() in ('true', '1', 'yes')
+            qs = qs.filter(is_catalog=is_catalog_value)
         search = self.request.query_params.get('search', '').strip()
         if search:
             from django.db.models import Q

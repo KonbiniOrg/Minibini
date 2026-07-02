@@ -13,10 +13,10 @@ from django.db import models, transaction
 from django.db.models import Q, Prefetch
 from django.utils import timezone
 
-from apps.jobs.models import Job, Task, Blep, ServiceItem, copy_active_modifiers
+from apps.jobs.models import Job, Task, Blep, Fee, RateScheme, copy_active_modifiers
 from apps.estimates.models import (
-    Estimate, WorkTemplate, TaskTemplate,
-    EstWorksheet, EstimateLineItem,
+    Estimate, WorkTemplate, ServiceItem,
+    EstimateLineItem,
 )
 from apps.inventory.models import InventoryItem
 from apps.core.models import Configuration
@@ -265,7 +265,8 @@ class BlepService:
         # logged against a stopped job for billing purposes.
         _assert_job_allows_blep(
             task.job,
-            (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+            (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+             Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
              Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED),
             'log time',
         )
@@ -625,75 +626,6 @@ class JobService:
         return job
 
     @staticmethod
-    def materialize_worksheet_onto_job(job, worksheet):
-        """Create execution Tasks/Materials on ``job`` from ``worksheet``'s
-        PlanTasks/PlanMaterials. The single shared core behind both the
-        estimate-acceptance carry-over (#2) and the manual copy-from-worksheet
-        button (#3).
-
-        Idempotent on provenance (``source_plan_task`` / ``source_plan_material``):
-        re-running skips atoms already carried, so it is safe to call twice and
-        safe when both entry points run for the same worksheet (manual copy then
-        acceptance won't duplicate). Tasks clone faithfully even when their rate
-        scheme has since been superseded. Ends with the aggregate earmark sweep.
-
-        Returns ``{'tasks_created': int, 'materials_created': int}``.
-        """
-        from apps.jobs.models import PlanTask, Task
-        from apps.inventory.models import PlanMaterial, Material
-        from apps.inventory.services import InventoryService, MaterialService
-
-        tasks_created = 0
-        materials_created = 0
-
-        for pt in PlanTask.objects.filter(
-            est_worksheet=worksheet
-        ).order_by('sort_order', 'pk'):
-            if Task.objects.filter(job=job, source_plan_task=pt).exists():
-                continue
-            TaskService.create_direct(
-                job=job, source_plan_task=pt, actual_qty=None,
-                allow_superseded_scheme=True, **pt.copy_fields(),
-            )
-            tasks_created += 1
-
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet):
-            if Material.objects.filter(job=job, source_plan_material=pm).exists():
-                continue
-            task = None
-            if pm.plan_task_id:
-                task = Task.objects.filter(
-                    job=job, source_plan_task=pm.plan_task).first()
-            MaterialService.create_on_job(
-                job=job, task=task, source_plan_material=pm, **pm.copy_fields(),
-            )
-            materials_created += 1
-
-        InventoryService.create_earmarks_for_job(job)
-        return {'tasks_created': tasks_created, 'materials_created': materials_created}
-
-    @staticmethod
-    def copy_from_worksheet(job_pk, worksheet_pk):
-        """Manually copy a worksheet's PlanTasks/PlanMaterials onto a job.
-
-        The pre-acceptance counterpart to estimate carry-over; both delegate to
-        the shared ``materialize_worksheet_onto_job`` core, so the field set,
-        provenance, idempotency, and earmarking stay identical between them.
-        """
-        from apps.estimates.models import EstWorksheet
-
-        try:
-            job = Job.objects.get(pk=job_pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_pk} not found')
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-
-        JobService.materialize_worksheet_onto_job(job, ws)
-
-    @staticmethod
     def duplicate_job(source_job, *, contact, path):
         """Copy `source_job` into a new Job. `path` is 'approved' or 'estimate'.
         Work is always sourced from the source Job's execution Tasks/Materials.
@@ -714,7 +646,10 @@ class JobService:
                 InventoryService.create_earmarks_for_job(new_job)
                 JobService._advance_to_approved(new_job, source_job)
             else:
-                JobService._copy_work_to_worksheet(source_job, new_job)
+                # Estimate path: copy work onto the new (draft) job. Estimates
+                # project from the Job's atoms, so no worksheet is created and the
+                # job is left in DRAFT for re-estimation.
+                JobService._copy_work_to_job(source_job, new_job)
             new_job.refresh_from_db()
             return new_job
 
@@ -787,39 +722,6 @@ class JobService:
                      '_action': action_desc},
         )
 
-    @staticmethod
-    def _copy_work_to_worksheet(source_job, new_job):
-        """Outcome B: map execution Tasks/Materials into a fresh draft worksheet
-        as PlanTasks/PlanMaterials. PlanTask requires a non-null est_qty, so fall
-        back to actual_qty then 0.00 when the source Task has none. (PlanTask has
-        no hierarchy, so subtask nesting is flattened; sort_order is preserved.)"""
-        from decimal import Decimal
-        from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import Task, PlanTask
-        from apps.inventory.models import Material, PlanMaterial
-
-        ws = EstWorksheet.objects.create(job=new_job)
-        task_map = {}  # source task_id -> new PlanTask
-        for task in Task.objects.filter(job=source_job).order_by('sort_order', 'pk'):
-            if task.est_qty is not None:
-                est_qty = task.est_qty
-            elif task.actual_qty is not None:
-                est_qty = task.actual_qty
-            else:
-                est_qty = Decimal('0.00')
-            plan_task = PlanTask.objects.create(
-                est_worksheet=ws,
-                **{**task.copy_fields(), 'est_qty': est_qty},
-            )
-            task_map[task.pk] = plan_task
-        for material in Material.objects.filter(job=source_job).order_by('pk'):
-            PlanMaterial.objects.create(
-                est_worksheet=ws,
-                plan_task=task_map.get(material.task_id),
-                **material.copy_fields(),
-            )
-        return ws
-
 
 class TaskService:
     """Service class for Task creation workflows."""
@@ -827,37 +729,37 @@ class TaskService:
     @staticmethod
     def create_from_template(template, job, assignee=None, est_qty=None):
         """
-        Create Task from TaskTemplate. Writes billing fields directly on Task.
+        Create Task from ServiceItem. Writes billing fields directly on Task.
         """
         from apps.core.services import SchemeSupersededError
 
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
-        if template.service_item_id and template.service_item.replaced_by_id is not None:
+        if template.rate_scheme_id and template.rate_scheme.replaced_by_id is not None:
             raise SchemeSupersededError(
-                f'Template "{template.template_name}" references a superseded ServiceItem.'
+                f'Template "{template.template_name}" references a superseded RateScheme.'
             )
-        if not template.service_item_id:
+        if not template.rate_scheme_id:
             raise ValidationError(
-                f'Template "{template.template_name}" has no service_item.'
+                f'Template "{template.template_name}" has no rate_scheme.'
             )
         with transaction.atomic():
             task = Task.objects.create(
                 job=job,
                 name=template.template_name,
                 assignee=assignee,
-                service_item=template.service_item,
+                rate_scheme=template.rate_scheme,
                 active_modifiers=copy_active_modifiers(template.default_active_modifiers),
-                est_qty=est_qty if est_qty is not None else template.default_billable_qty,
+                est_qty=est_qty if est_qty is not None else Decimal('1'),
             )
         return task
 
     @staticmethod
-    def create_direct(job, name, service_item_id=None, active_modifiers=None,
+    def create_direct(job, name, rate_scheme_id=None, active_modifiers=None,
                       est_qty=None, est_worker_time=None, actual_qty=None,
                       allow_superseded_scheme=False, **task_fields):
-        """Create Task directly. Requires service_item_id.
+        """Create Task directly. Requires rate_scheme_id.
 
         ``allow_superseded_scheme`` bypasses the superseded-scheme rejection.
         The only intended caller is the worksheet→job copy/carry-over core,
@@ -865,21 +767,21 @@ class TaskService:
         since been superseded.
         """
         _assert_job_not_on_hold(job, 'add a task to this job')
-        if not service_item_id:
-            raise ValidationError({'service_item': 'Required.'})
-        scheme = ServiceItem.objects.get(pk=service_item_id)
+        if not rate_scheme_id:
+            raise ValidationError({'rate_scheme': 'Required.'})
+        scheme = RateScheme.objects.get(pk=rate_scheme_id)
         if scheme.replaced_by_id is not None and not allow_superseded_scheme:
             raise ValidationError(
-                {'service_item': 'Selected ServiceItem is superseded.'}
+                {'rate_scheme': 'Selected RateScheme is superseded.'}
             )
-        if scheme.algorithm == ServiceItem.PERCENTAGE:
+        if scheme.algorithm == RateScheme.PERCENTAGE:
             raise ValidationError(
-                {'service_item': 'Percentage services are document adjustments and cannot bill a task.'}
+                {'rate_scheme': 'Percentage services are document adjustments and cannot bill a task.'}
             )
         with transaction.atomic():
             task = Task.objects.create(
                 job=job, name=name,
-                service_item=scheme,
+                rate_scheme=scheme,
                 active_modifiers=copy_active_modifiers(active_modifiers),
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
@@ -978,6 +880,66 @@ class TaskService:
         return task
 
 
+class FeeService:
+    """Service for Fee (job-owned billable atom) writes.
+
+    A Fee is a fixed charge owned by the Job — a pure pricing decision, not a
+    record of work. Mirrors the create/update/delete shape of TaskService and
+    respects the on-hold guard like the other job atoms.
+    """
+
+    @staticmethod
+    def _next_sort_order(job):
+        from django.db.models import Max
+        current_max = Fee.objects.filter(job=job).aggregate(m=Max('sort_order'))['m']
+        return (current_max or 0) + 1
+
+    @staticmethod
+    def create_on_job(job, *, description='', quantity=Decimal('1.00'),
+                      unit_rate=None, accounting_category=None, task=None,
+                      sort_order=None):
+        """Create a Fee on `job`. `accounting_category` and `unit_rate` are
+        required by the model — a missing one surfaces as a ValidationError
+        (→ 400) via full_clean, never a 500."""
+        _assert_job_not_on_hold(job, 'add a fee to this job')
+        with transaction.atomic():
+            if sort_order is None:
+                sort_order = FeeService._next_sort_order(job)
+            fee = Fee(
+                job=job, task=task,
+                description=description or '',
+                quantity=quantity if quantity is not None else Decimal('1.00'),
+                unit_rate=unit_rate,
+                accounting_category=accounting_category,
+                sort_order=sort_order,
+            )
+            fee.full_clean()
+            fee.save()
+        return fee
+
+    @staticmethod
+    def update(fee_pk, **kwargs):
+        try:
+            fee = Fee.objects.get(pk=fee_pk)
+        except Fee.DoesNotExist:
+            raise NotFoundError(f'Fee {fee_pk} not found')
+        _assert_job_not_on_hold(fee.job, 'edit this fee')
+        for field, value in kwargs.items():
+            setattr(fee, field, value)
+        fee.full_clean()
+        fee.save()
+        return fee
+
+    @staticmethod
+    def delete(fee_pk):
+        try:
+            fee = Fee.objects.get(pk=fee_pk)
+        except Fee.DoesNotExist:
+            raise NotFoundError(f'Fee {fee_pk} not found')
+        _assert_job_not_on_hold(fee.job, 'delete this fee')
+        fee.delete()
+
+
 class TaskLifecycleService:
     """Service for managing Task status transitions and Blep (time tracking) lifecycle."""
 
@@ -1023,11 +985,11 @@ class TaskLifecycleService:
                 if actual_qty <= 0:
                     raise ValidationError('Quantity must be greater than 0.')
                 task.actual_qty = actual_qty
-            if (task.service_item.algorithm == ServiceItem.ENTERED_QTY
+            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
                     and (task.actual_qty is None or task.actual_qty <= 0)):
-                raise TaskActualQtyRequired(task.service_item.unit_label)
-            if (task.service_item.algorithm == ServiceItem.ELAPSED_TIME
-                    and task.service_item.get_actual_qty(task) <= 0):
+                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
+            if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
+                    and task.rate_scheme.get_actual_qty(task) <= 0):
                 raise TaskTimeRequired()
             update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
             if actual_qty is not None:
@@ -1179,7 +1141,8 @@ class TaskLifecycleService:
             # Post-split: task is always a Task (work-order side); no container check needed.
             _assert_job_allows_blep(
                 task.job,
-                (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
+                (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                 Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
                 'start work',
             )
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
@@ -1599,13 +1562,10 @@ class BoardService:
         from apps.estimates.models import EstimateLineItem
         data = BoardService._serialize_job(job)
 
-        worksheets = []
-        for ws in job.estworksheet_set.order_by('-pk'):
-            worksheets.append({
-                'est_worksheet_id': ws.est_worksheet_id,
-                'created_date': ws.created_date.isoformat() if ws.created_date else None,
-            })
-        data['worksheets'] = worksheets
+        # The plan/worksheet layer has been removed; work lives directly on the
+        # Job. The key is kept (empty) for API-contract stability until the
+        # frontend drops it (Phase 7).
+        data['worksheets'] = []
 
         from apps.estimates.models import ChangeOrder
         estimates = []
@@ -1750,9 +1710,6 @@ class BoardService:
             return 'awaiting-response'
 
         if estimates.filter(status='draft').exists():
-            return 'estimating'
-
-        if not estimates.exists() and job.estworksheet_set.exists():
             return 'estimating'
 
         return 'needs-scoping'

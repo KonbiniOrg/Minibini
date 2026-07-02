@@ -6,7 +6,7 @@ from datetime import timedelta
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact
-from apps.core.models import Configuration
+from apps.core.models import AccountingCategory, Configuration
 
 
 class JobStateTransitionTest(TestCase):
@@ -483,7 +483,11 @@ class EstimateStateTransitionTest(TestCase):
         )
 
     def _add_estimate_line_item(self, estimate):
-        EstimateLineItem.objects.create(estimate=estimate, description='Test item', price=Decimal('100.00'))
+        cat, _ = AccountingCategory.objects.get_or_create(
+            code='STX', defaults={'name': 'StateTx'})
+        EstimateLineItem.objects.create(
+            estimate=estimate, description='Test item', price=Decimal('100.00'),
+            accounting_category=cat)
 
     def test_estimate_starts_in_draft(self):
         """Test that new Estimates start in Draft state."""

@@ -35,9 +35,7 @@
 
 <h3>Standard material markup</h3>
 <p>The default markup applied to a new inventory item's selling price <em>at
-creation</em>: <code>sell = cost × (1 + markup%)</code>. It seeds the value
-once — you can always edit an item's sell price afterward, and changing this
-never re-prices existing items. <strong>0 = sell equals cost.</strong></p>
+creation</em>.  Changing this never re-prices existing items.</p>
 
 <p>
   <label for="mat-markup"><strong>Default markup (%)</strong></label><br>

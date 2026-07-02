@@ -11,11 +11,16 @@ Amount convention: qty * price, matching BaseLineItem.total_amount.
 from collections import OrderedDict
 from decimal import Decimal
 
-from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate
+from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate, EstimateLineItemSource
 
 
-def _line_dict_from_estimate_item(eli):
-    """Build a line dict from an EstimateLineItem."""
+def _line_dict_from_estimate_item(eli, source_fee_id=None):
+    """Build a line dict from an EstimateLineItem.
+
+    source_fee_id: the Fee pk crystallized from this hand-line at acceptance time
+    (None for atom-backed lines and adjustment lines).  Populated by
+    compose_agreement via a bulk prefetch to avoid N+1 queries.
+    """
     amount = eli.qty * eli.price
     is_adjustment = eli.adjustment_service_id is not None
     return {
@@ -24,6 +29,7 @@ def _line_dict_from_estimate_item(eli):
         'units': eli.units,
         'price': eli.price,
         'amount': amount,
+        'accounting_category_id': eli.accounting_category_id,
         'origin': 'estimate',
         'is_adjustment': is_adjustment,
         'adjustment_service_id': eli.adjustment_service_id,
@@ -32,6 +38,7 @@ def _line_dict_from_estimate_item(eli):
             list(eli.adjustment_target_categories.values_list('pk', flat=True))
             if is_adjustment else []
         ),
+        'source_fee_id': source_fee_id,
     }
 
 
@@ -49,6 +56,7 @@ def _line_dict_from_co_item(coli):
         'units': coli.units,
         'price': coli.price,
         'amount': amount,
+        'accounting_category_id': coli.accounting_category_id,
         'origin': 'change_order',
         'is_adjustment': False,
         'adjustment_service_id': None,
@@ -77,11 +85,25 @@ def compose_agreement(job):
 
     # Build an ordered dict keyed by EstimateLineItem pk preserving line_number order.
     # Values are mutable line dicts (or None when removed).
-    est_line_items = estimate.estimatelineitem_set.order_by('line_number')
+    est_line_items = list(estimate.estimatelineitem_set.order_by('line_number'))
+
+    # Prefetch the fee-source mapping in a single query to avoid N+1.
+    # Each hand-line that was crystallized into a Fee has exactly one
+    # EstimateLineItemSource(source_type='fee') row created at acceptance time.
+    fee_source_map = {
+        src.estimate_line_item_id: src.source_pk
+        for src in EstimateLineItemSource.objects.filter(
+            estimate_line_item__in=[eli.pk for eli in est_line_items],
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+        )
+    }
+
     # Use an OrderedDict so insertion order (= line_number order) is preserved.
     keyed_lines = OrderedDict()
     for eli in est_line_items:
-        keyed_lines[eli.pk] = _line_dict_from_estimate_item(eli)
+        keyed_lines[eli.pk] = _line_dict_from_estimate_item(
+            eli, source_fee_id=fee_source_map.get(eli.pk),
+        )
 
     # Added lines come after all estimate lines.
     added_lines = []

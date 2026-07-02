@@ -11,7 +11,7 @@ from apps.core.models import AccountingCategory
 from apps.expenses.models import Expense
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskLifecycleService
 
 User = get_user_model()
@@ -25,8 +25,8 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             email='wcg@example.com', work_number='555-0199',
         )
         cat = AccountingCategory.objects.create(name='WCG Cat', code='WCG1')
-        self.scheme = ServiceItem.objects.create(
-            name='S-wcg', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-wcg', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=cat,
         )
         self.pli = InventoryItem.objects.create(
@@ -116,9 +116,10 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             job=self.job, task=None, description='blocking mat',
             quantity=Decimal('2'), inventory_item=self.pli,
         )
-        t = Task.objects.create(job=self.job, name='only task', service_item=self.scheme)
-        # Drive task completion the same way production does.
-        TaskLifecycleService.complete_task(t.pk)
+        t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
+        # Drive task completion the same way production does. The scheme is
+        # entered_qty, so a quantity must be supplied to complete the task.
+        TaskLifecycleService.complete_task(t.pk, actual_qty=Decimal('1'))
         self.job.refresh_from_db()
         self.assertNotEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
         # Job should be in_progress (setUp walks to in_progress; loose materials

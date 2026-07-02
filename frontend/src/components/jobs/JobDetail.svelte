@@ -13,7 +13,6 @@
     job,
     contact = null,
     estimates = null,
-    worksheets = null,
     invoices = null,
     purchaseOrders = null,
     emails = null,
@@ -25,14 +24,8 @@
   let jobExpenses = $derived(
     expenses ? (expenses.results ?? expenses) : []
   );
-  // Material-less expenses get their own rows; material-linked ones annotate
-  // their material's row (cost lives on the material — avoids double-showing).
+  // Material-less expenses get their own rows in the expenses list.
   let looseExpenses = $derived(jobExpenses.filter((e) => !e.material));
-  let expenseByMaterial = $derived(
-    Object.fromEntries(
-      jobExpenses.filter((e) => e.material).map((e) => [e.material, e])
-    )
-  );
   function money(v) {
     return v != null && v !== '' ? `$${Number(v).toFixed(2)}` : '—';
   }
@@ -225,49 +218,21 @@
       : 0
   );
 
-  // Worksheet versions, sorted newest first
-  let worksheetList = $derived(
-    [...(worksheets?.results || [])].sort((a, b) => b.est_worksheet_id - a.est_worksheet_id)
-  );
-  // Latest worksheet (highest version)
-  let currentWorksheet = $derived(worksheetList[0] || null);
-
-  // Active worksheet shown in panel (user can click a tab to switch)
-  let selectedWorksheetId = $state(null);
-  let displayedWorksheet = $derived(
-    worksheetList.find(w => w.est_worksheet_id === selectedWorksheetId) || currentWorksheet
-  );
-
-  // For each task: per-unit Price (amount / qty when qty > 0).
-  function fmt(n) {
-    if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '—';
-    return `$${Number(n).toFixed(2)}`;
+  function feeTotal(fee) {
+    return (Number(fee.quantity) || 0) * (Number(fee.unit_rate) || 0);
   }
-  function unitPrice(task) {
-    const qty = Number(task.est_qty);
-    const amount = Number(task.amount);
-    if (!qty || isNaN(amount)) return null;
-    return amount / qty;
-  }
-  function materialTotal(mat) {
-    return (Number(mat.quantity) || 0) * (Number(mat.sell_price) || 0);
-  }
-  let worksheetGrandTotal = $derived.by(() => {
-    if (!displayedWorksheet) return 0;
-    let total = 0;
-    for (const t of (displayedWorksheet.tasks || [])) {
-      total += Number(t.amount) || 0;
-      for (const m of (t.plan_materials || [])) total += materialTotal(m);
-    }
-    for (const m of (displayedWorksheet.taskless_materials || [])) {
-      total += materialTotal(m);
-    }
-    return total;
-  });
 
-  // Job tasks (top-level), invoice list, PO list
+  // Job-owned work atoms (the Job now owns tasks/materials/fees directly).
+  // Top-level tasks only here; subtasks live on the task-list page.
   let jobTasks = $derived((job.tasks || []).filter(t => !t.parent_task));
-  let hasTasks = $derived(jobTasks.length > 0);
+  let jobFees = $derived(job.fees || []);
+  // Billable iff the job owns any work atom (task / material / fee). Drives the
+  // Invoices pillar's create affordance.
+  let hasBillables = $derived(
+    (job.tasks || []).length > 0 ||
+    (job.materials || []).length > 0 ||
+    (job.fees || []).length > 0
+  );
   let invList = $derived(invoices?.results || []);
   let poList = $derived(purchaseOrders?.results || []);
   let draftInvoice = $derived(invList.find(inv => inv.status === 'draft') || null);
@@ -312,23 +277,24 @@
     }
   }
 
-  let creatingEstimate = $state(false);
-
-  let canCreateEstimate = $derived(
+  let canStartEstimate = $derived(
     canManageJobs &&
     (job.status === 'draft' || job.status === 'submitted') &&
     !currentEstimate
   );
 
-  async function createEstimate() {
-    creatingEstimate = true;
+  let startingEstimate = $state(false);
+  async function startEstimate() {
+    startingEstimate = true;
     try {
+      // Job now owns its work atoms; an estimate is created directly off the job
+      // (no intermediate worksheet/plan). Land on the new draft estimate.
       const est = await api.post('/api/estimates/', { job: job.job_id });
       window.location.hash = `/estimates/${est.estimate_id}`;
     } catch (e) {
-      alert(e.data?.detail || e.message || 'Failed to create estimate.');
+      alert(e.message || 'Failed to start estimate.');
     } finally {
-      creatingEstimate = false;
+      startingEstimate = false;
     }
   }
 
@@ -437,6 +403,7 @@
   let canCreateInvoice = $derived(
     (canManageJobs || canManageFinancials) &&
     BILLABLE_JOB_STATUSES.includes(job.status) &&
+    hasBillables &&
     !draftInvoice
   );
 
@@ -452,30 +419,11 @@
     }
   }
 
-  let populating = $state(false);
-  let populateError = $state('');
-
-  async function copyFromWorksheet() {
-    if (!currentWorksheet) return;
-    populating = true;
-    populateError = '';
-    try {
-      await api.post(`/api/jobs/${job.job_id}/copy-from-worksheet/`, {
-        worksheet_id: currentWorksheet.est_worksheet_id,
-      });
-      if (onStatusChange) onStatusChange();
-    } catch (e) {
-      populateError = e.data?.detail || e.message || 'Could not copy tasks from worksheet.';
-    } finally {
-      populating = false;
-    }
-  }
-
   // All materials on this job (for the Materials section)
   let jobMaterials = $derived(job.materials || []);
 
   // Horizontal accordion state — which section is expanded
-  const VALID_SECTIONS = ['worksheets', 'estimates', 'tasks', 'materials', 'invoices', 'shipments', 'pos'];
+  const VALID_SECTIONS = ['estimate', 'tasks_materials', 'invoices', 'shipments', 'pos'];
   const storageKey = (id) => `jobDetailActiveSection_${id}`;
 
   function getDefaultSection() {
@@ -483,15 +431,16 @@
       if (invoices?.results?.length > 0) return 'invoices';
     }
     if (shipmentCount > 0 && hasOutstandingDeliverables) return 'shipments';
-    if (jobTasks.length > 0) return 'tasks';
-    if (estimates?.results?.length > 0) return 'estimates';
-    if (worksheets?.results?.length > 0) return 'worksheets';
-    return 'worksheets';
+    if (jobTasks.length > 0) return 'tasks_materials';
+    return 'estimate';
   }
 
   function readStoredSection(id) {
     try {
       const v = sessionStorage.getItem(storageKey(id));
+      // Migrate old section keys to the unified pillars
+      if (v === 'worksheets' || v === 'estimates') return 'estimate';
+      if (v === 'tasks' || v === 'materials') return 'tasks_materials';
       return VALID_SECTIONS.includes(v) ? v : null;
     } catch { return null; }
   }
@@ -503,7 +452,6 @@
   $effect(() => {
     void job.job_id;
     userSection = null;
-    selectedWorksheetId = null;
     selectedVersionKey = null;
     selectedInvoiceId = null;
     selectedPoId = null;
@@ -513,6 +461,7 @@
     userSection = s;
     try { sessionStorage.setItem(storageKey(job.job_id), s); } catch {}
   }
+
 </script>
 
 <div class="job-detail-page">
@@ -552,144 +501,29 @@
 
 <!-- HORIZONTAL ACCORDION -->
 <div class="accordion">
-  <!-- Worksheet -->
-  {#if activeSection !== 'worksheets'}
-    <div class="pillar pillar-ws"
-         role="button" tabindex="0"
-         onclick={() => openSection('worksheets')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('worksheets')}>
-      <span class="label-v">Worksheet</span>
-      <span class="pillar-count">{worksheetList.length}</span>
-    </div>
-  {:else}
-    <div class="open open-ws">
-      <div class="top-bar top-bar-ws">
-        <span class="top-bar-title">
-          WORKSHEET
-          {#if !displayedWorksheet} · None{/if}
-        </span>
-        <span class="top-bar-actions">
-          {#if displayedWorksheet}
-            <a href="#/worksheets/{displayedWorksheet.est_worksheet_id}">Open full worksheet →</a>
-          {/if}
-          {#if canManageJobs && !currentWorksheet && job.status === 'draft'}
-            <a href="#/jobs/{job.job_id}/create-worksheet">Create Worksheet</a>
-          {/if}
-        </span>
-      </div>
-      <div class="body">
-        {#if displayedWorksheet}
-          {@const wsTasks = (displayedWorksheet.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))}
-          {@const taskless = displayedWorksheet.taskless_materials || []}
-          {#if wsTasks.length === 0 && taskless.length === 0}
-            <p class="empty-msg">Worksheet has no tasks or materials.</p>
-          {:else}
-            <table class="ws-readonly">
-              <colgroup>
-                <col>
-                <col class="col-qty">
-                <col class="col-units">
-                <col class="col-money">
-                <col class="col-money">
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th class="text-right">Qty</th>
-                  <th>Units</th>
-                  <th class="text-right">Price</th>
-                  <th class="text-right">Ext</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each wsTasks as task}
-                  <tr class="task-row">
-                    <td class="name">{task.name}{#if task.description}<span class="dim"> — {task.description}</span>{/if}</td>
-                    <td class="text-right">{task.est_qty ?? '—'}</td>
-                    <td>{task.units || ''}</td>
-                    <td class="text-right">{fmt(unitPrice(task))}</td>
-                    <td class="text-right">{fmt(task.amount)}</td>
-                  </tr>
-                  {#each (task.plan_materials || []) as mat}
-                    <tr class="material-row">
-                      <td class="indent preserve-breaks"><span class="marker">●</span> {mat.description || '(no description)'}</td>
-                      <td class="text-right">{mat.quantity ?? '—'}</td>
-                      <td>{mat.units || ''}</td>
-                      <td class="text-right">{fmt(mat.sell_price)}</td>
-                      <td class="text-right">{fmt(materialTotal(mat))}</td>
-                    </tr>
-                  {/each}
-                {/each}
-              </tbody>
-            </table>
-
-            {#if taskless.length > 0}
-              <div class="ml-heading">Materials not assigned to a task</div>
-              <table class="ml-readonly">
-                <colgroup>
-                  <col>
-                  <col class="col-qty">
-                  <col class="col-units">
-                  <col class="col-money">
-                  <col class="col-money">
-                </colgroup>
-                <tbody>
-                  {#each taskless as mat}
-                    <tr>
-                      <td class="preserve-breaks">{mat.description || '(no description)'}</td>
-                      <td class="text-right">{mat.quantity ?? '—'}</td>
-                      <td>{mat.units || ''}</td>
-                      <td class="text-right">{fmt(mat.sell_price)}</td>
-                      <td class="text-right">{fmt(materialTotal(mat))}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-
-            <div class="ws-total">
-              <span class="ws-total-label">Total</span>
-              <span class="ws-total-value">{fmt(worksheetGrandTotal)}</span>
-            </div>
-          {/if}
-        {:else}
-          <p class="empty-msg">No worksheet for this job.</p>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Estimates + Change Orders (unified version timeline) -->
-  {#if activeSection !== 'estimates'}
+  <!-- Estimate pillar -->
+  {#if activeSection !== 'estimate'}
     <div class="pillar pillar-est"
          role="button" tabindex="0"
-         onclick={() => openSection('estimates')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('estimates')}>
-      <span class="label-v">Estimates</span>
+         onclick={() => openSection('estimate')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('estimate')}>
+      <span class="label-v">Estimate</span>
       <span class="pillar-count">{versionTimeline.length}</span>
     </div>
   {:else}
     <div class="open open-est">
       <div class="top-bar top-bar-est">
-        <span class="top-bar-title">
-          {#if displayedVersion?.kind === 'co'}
-            CHANGE ORDER · {displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`} · {changeOrderDisplayStatus(displayedVersion.co, changeOrders)}
-          {:else if displayedEstimate}
-            ESTIMATE · {displayedEstimate.estimate_number} · v{displayedEstimate.version} · {estimateDisplayStatus(displayedEstimate)}
-          {:else}
-            ESTIMATE · None
-          {/if}
-        </span>
+        <span class="top-bar-title">ESTIMATE</span>
         <span class="top-bar-actions">
-          {#if displayedVersion?.kind === 'co'}
-            <a href="#/change-orders/{displayedVersion.co.change_order_id}">View Change Order</a>
-          {:else if displayedEstimate}
-            <a href="#/estimates/{displayedEstimate.estimate_id}">View Full Estimate</a>
-          {/if}
-          {#if canCreateEstimate}
-            <button type="button" onclick={createEstimate} disabled={creatingEstimate}>
-              {creatingEstimate ? 'Creating…' : 'Create Estimate'}
+          {#if canStartEstimate}
+            <button type="button" onclick={startEstimate} disabled={startingEstimate}>
+              {startingEstimate ? 'Starting…' : 'Start Estimate'}
             </button>
+          {/if}
+          {#if displayedVersion?.kind === 'co'}
+            <a href="#/change-orders/{displayedVersion.co.change_order_id}">Open →</a>
+          {:else if displayedEstimate}
+            <a href="#/estimates/{displayedEstimate.estimate_id}">Open →</a>
           {/if}
           {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
             <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
@@ -698,15 +532,17 @@
           {/if}
         </span>
       </div>
-      {#if versionTimeline.length > 1}
-        <div class="est-tabs">
-          {#each versionTimeline as ver}
-            {#if ver.kind === 'estimate'}
-              <button
-                type="button"
-                class="est-tab"
-                class:active={ver.key === (displayedVersion?.key)}
-                onclick={() => { selectedVersionKey = ver.key; }}
+
+      <!-- Estimate document (estimate versions + change orders) -->
+        {#if versionTimeline.length > 1}
+          <div class="est-tabs">
+            {#each versionTimeline as ver}
+              {#if ver.kind === 'estimate'}
+                <button
+                  type="button"
+                  class="est-tab"
+                  class:active={ver.key === (displayedVersion?.key)}
+                  onclick={() => { selectedVersionKey = ver.key; }}
               >
                 {ver.est.estimate_number} v{ver.est.version} <span class="est-tab-status">({estimateDisplayStatus(ver.est)})</span>
               </button>
@@ -721,11 +557,59 @@
             {/if}
           {/each}
         </div>
-      {/if}
-      <div class="body">
-        {#if displayedVersion?.kind === 'co'}
-          <!-- CO effective agreement view (Option A): base estimate lines with CO deltas applied -->
-          {#if coEffectiveLines.length > 0}
+        {/if}
+        <div class="body">
+          {#if displayedVersion?.kind === 'co'}
+            <!-- CO effective agreement view (Option A): base estimate lines with CO deltas applied -->
+            {#if coEffectiveLines.length > 0}
+              <table class="est-table">
+                <colgroup>
+                  <col class="col-num">
+                  <col>
+                  <col class="col-qty">
+                  <col class="col-units">
+                  <col class="col-money">
+                  <col class="col-money">
+                </colgroup>
+                <thead><tr>
+                  <th>#</th><th>Description</th>
+                  <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
+                </tr></thead>
+                <tbody>
+                  {#each coEffectiveLines as li}
+                    <tr class:co-line-changed={li.coTouched === 'changed'} class:co-line-added={li.coTouched === 'added'}>
+                      <td>{li.line_number}</td>
+                      <td>
+                        {li.description}
+                        {#if li.coTouched}
+                          <span class="co-tag">{coCountOnEstimate > 1 ? `CO-${li.coOrdinal}` : 'CO'}</span>
+                        {/if}
+                      </td>
+                      <td class="text-right">{li.qty}</td>
+                      <td>{li.units || 'none'}</td>
+                      <td class="text-right">${Number(li.price).toFixed(2)}</td>
+                      <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+              <div class="est-footer">
+                <div class="est-meta">
+                  <span class="meta-bit">
+                    <span class="meta-label">Change Order</span>
+                    <span class="meta-value">{displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`}</span>
+                  </span>
+                  <span class="pill pill-co-{displayedVersion.co.status}">{displayedVersion.co.status}</span>
+                </div>
+                <div class="est-totals">
+                  <div class="t-label">Total</div>
+                  <div class="t-value grand">${coEffectiveTotal.toFixed(2)}</div>
+                </div>
+              </div>
+            {:else}
+              <p class="empty-msg">No effective lines (CO has no base estimate or all lines removed).</p>
+            {/if}
+          {:else if displayedEstimate?.line_items?.length > 0}
             <table class="est-table">
               <colgroup>
                 <col class="col-num">
@@ -740,15 +624,10 @@
                 <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
               </tr></thead>
               <tbody>
-                {#each coEffectiveLines as li}
-                  <tr class:co-line-changed={li.coTouched === 'changed'} class:co-line-added={li.coTouched === 'added'}>
+                {#each displayedEstimate.line_items as li}
+                  <tr>
                     <td>{li.line_number}</td>
-                    <td>
-                      {li.description}
-                      {#if li.coTouched}
-                        <span class="co-tag">{coCountOnEstimate > 1 ? `CO-${li.coOrdinal}` : 'CO'}</span>
-                      {/if}
-                    </td>
+                    <td>{li.description}</td>
                     <td class="text-right">{li.qty}</td>
                     <td>{li.units || 'none'}</td>
                     <td class="text-right">${Number(li.price).toFixed(2)}</td>
@@ -759,294 +638,215 @@
             </table>
             <div class="est-footer">
               <div class="est-meta">
-                <span class="meta-bit">
-                  <span class="meta-label">Change Order</span>
-                  <span class="meta-value">{displayedVersion.co.change_order_number || `CO #${displayedVersion.co.change_order_id}`}</span>
-                </span>
-                <span class="pill pill-co-{displayedVersion.co.status}">{displayedVersion.co.status}</span>
+                {#if displayedEstimate.sent_date}
+                  <span class="meta-bit"><span class="meta-label">Sent</span> <span class="meta-value">{fmtDate(displayedEstimate.sent_date)}</span></span>
+                {/if}
+                {#if displayedEstimate.closed_date && displayedEstimate.status === 'accepted'}
+                  <span class="meta-bit"><span class="meta-label">Accepted</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if displayedEstimate.closed_date && displayedEstimate.status === 'rejected'}
+                  <span class="meta-bit"><span class="meta-label">Rejected</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if displayedEstimate.closed_date && displayedEstimate.status === 'superseded'}
+                  <span class="meta-bit"><span class="meta-label">Superseded</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if displayedEstimate.closed_date && displayedEstimate.status === 'expired'}
+                  <span class="meta-bit"><span class="meta-label">Expired</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
+                {:else if !displayedEstimate.sent_date && displayedEstimate.created_date}
+                  <span class="meta-bit"><span class="meta-label">Started</span> <span class="meta-value">{fmtDate(displayedEstimate.created_date)}</span></span>
+                {/if}
               </div>
               <div class="est-totals">
                 <div class="t-label">Total</div>
-                <div class="t-value grand">${coEffectiveTotal.toFixed(2)}</div>
+                <div class="t-value grand">
+                  ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
+                </div>
               </div>
             </div>
+          {:else if displayedEstimate}
+            <p class="empty-msg">Estimate has no line items.</p>
           {:else}
-            <p class="empty-msg">No effective lines (CO has no base estimate or all lines removed).</p>
+            <p class="empty-msg">No estimate yet.</p>
           {/if}
-        {:else if displayedEstimate?.line_items?.length > 0}
-          <table class="est-table">
-            <colgroup>
-              <col class="col-num">
-              <col>
-              <col class="col-qty">
-              <col class="col-units">
-              <col class="col-money">
-              <col class="col-money">
-            </colgroup>
-            <thead><tr>
-              <th>#</th><th>Description</th>
-              <th class="text-right">Qty</th><th>Units</th><th class="text-right">Price</th><th class="text-right">Total</th>
-            </tr></thead>
-            <tbody>
-              {#each displayedEstimate.line_items as li}
-                <tr>
-                  <td>{li.line_number}</td>
-                  <td>{li.description}</td>
-                  <td class="text-right">{li.qty}</td>
-                  <td>{li.units || 'none'}</td>
-                  <td class="text-right">${Number(li.price).toFixed(2)}</td>
-                  <td class="text-right">${(Number(li.qty) * Number(li.price)).toFixed(2)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-          <div class="est-footer">
-            <div class="est-meta">
-              {#if displayedEstimate.sent_date}
-                <span class="meta-bit"><span class="meta-label">Sent</span> <span class="meta-value">{fmtDate(displayedEstimate.sent_date)}</span></span>
-              {/if}
-              {#if displayedEstimate.closed_date && displayedEstimate.status === 'accepted'}
-                <span class="meta-bit"><span class="meta-label">Accepted</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'rejected'}
-                <span class="meta-bit"><span class="meta-label">Rejected</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'superseded'}
-                <span class="meta-bit"><span class="meta-label">Superseded</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if displayedEstimate.closed_date && displayedEstimate.status === 'expired'}
-                <span class="meta-bit"><span class="meta-label">Expired</span> <span class="meta-value">{fmtDate(displayedEstimate.closed_date)}</span></span>
-              {:else if !displayedEstimate.sent_date && displayedEstimate.created_date}
-                <span class="meta-bit"><span class="meta-label">Started</span> <span class="meta-value">{fmtDate(displayedEstimate.created_date)}</span></span>
-              {/if}
-            </div>
-            <div class="est-totals">
-              <div class="t-label">Total</div>
-              <div class="t-value grand">
-                ${displayedEstimate.line_items.reduce((sum, li) => sum + Number(li.qty) * Number(li.price), 0).toFixed(2)}
-              </div>
-            </div>
-          </div>
-        {:else if displayedEstimate}
-          <p class="empty-msg">Estimate has no line items.</p>
-        {:else}
-          <p class="empty-msg">No estimates yet.</p>
-        {/if}
-      </div>
+        </div>
     </div>
   {/if}
 
-  <!-- Tasks -->
-  {#if activeSection !== 'tasks'}
+  <!-- Tasks & Materials -->
+  {#if activeSection !== 'tasks_materials'}
     <div class="pillar pillar-tasks"
          role="button" tabindex="0"
-         onclick={() => openSection('tasks')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('tasks')}>
-      <span class="label-v">Tasks</span>
-      <span class="pillar-count">{jobTasks.length}</span>
+         onclick={() => openSection('tasks_materials')}
+         onkeydown={(e) => e.key === 'Enter' && openSection('tasks_materials')}>
+      <span class="label-v">Tasks &amp; Materials</span>
+      <span class="pillar-count">{jobTasks.length + jobMaterials.length + looseExpenses.length}</span>
     </div>
   {:else}
     <div class="open open-tasks">
       <div class="top-bar top-bar-tasks">
         <span class="top-bar-title">
-          TASKS{#if hasTasks} · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}{:else} · None{/if}
+          TASKS &amp; MATERIALS · {jobTasks.length} task{jobTasks.length === 1 ? '' : 's'}, {jobMaterials.length} material{jobMaterials.length === 1 ? '' : 's'}{#if looseExpenses.length}, {looseExpenses.length} expense{looseExpenses.length === 1 ? '' : 's'}{/if}
         </span>
         <span class="top-bar-actions">
-          {#if canManageJobs && currentWorksheet && !hasTasks}
-            <button type="button" onclick={copyFromWorksheet} disabled={populating}>
-              {populating ? 'Copying…' : 'Copy tasks from worksheet'}
-            </button>
-          {/if}
           <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
         </span>
       </div>
       <div class="body">
-        {#if populateError}<p class="empty-msg"><em>{populateError}</em></p>{/if}
-        {#if hasTasks}
-          <table class="wo-table">
-            <colgroup>
-              <col>
-              <col class="col-assigned">
-              <col class="col-status">
-              <col class="col-time">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Assigned</th>
-                <th class="text-center">Status</th>
-                <th>Time vs. estimate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each jobTasks as task}
-                <tr class:row-active={task.status === 'in_progress'}>
-                  <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a>{@render invoicedLink(task.invoice)}</td>
-                  <td class="assigned">{task.assignee_name || '—'}</td>
-                  <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
-                  <td class="time-cell">
-                    {#if task.scheme_algorithm === 'elapsed_time'}
-                      {@const actual = Number(task.actual_hours) || 0}
-                      {@const est = Number(task.est_qty) || 0}
-                      {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
-                      {@const over = est > 0 && actual > est}
-                      <div class="time-track">
-                        <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
-                      </div>
-                      <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
-                        {#if est > 0}
-                          {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
-                          {:else if actual === 0}
-                            <span class="time-dim">(not started)</span>
-                          {:else}
-                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
-                          {/if}
-                        {/if}
-                      </div>
-                    {:else if task.scheme_algorithm === 'entered_qty'}
-                      {@const actual = Number(task.actual_qty) || 0}
-                      {@const est = Number(task.est_qty) || 0}
-                      {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
-                      {@const over = est > 0 && actual > est}
-                      <div class="time-track">
-                        <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
-                      </div>
-                      <div class="time-text {over ? 'over' : ''}">
-                        {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
-                        {#if est > 0}
-                          {#if over}
-                            <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
-                          {:else if actual === 0}
-                            <span class="time-dim">(not started)</span>
-                          {:else}
-                            <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
-                          {/if}
-                        {/if}
-                      </div>
-                    {:else if task.scheme_algorithm === 'flat_fee'}
-                      <div class="time-text time-dim">flat fee · {Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</div>
-                    {:else}
-                      <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+        {#if jobTasks.length === 0 && jobMaterials.length === 0 && jobFees.length === 0 && looseExpenses.length === 0}
+          <p class="empty-msg">No tasks, materials, or expenses yet.</p>
         {:else}
-          <p class="empty-msg">No tasks yet.</p>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Materials -->
-  {#if activeSection !== 'materials'}
-    <div class="pillar pillar-mat"
-         role="button" tabindex="0"
-         onclick={() => openSection('materials')}
-         onkeydown={(e) => e.key === 'Enter' && openSection('materials')}>
-      <span class="label-v">Materials</span>
-      <span class="pillar-count">{jobMaterials.length + looseExpenses.length}</span>
-    </div>
-  {:else}
-    <div class="open open-mat">
-      <div class="top-bar top-bar-mat">
-        <span class="top-bar-title">
-          MATERIALS &amp; EXPENSES · {jobMaterials.length} material{jobMaterials.length === 1 ? '' : 's'}, {looseExpenses.length} expense{looseExpenses.length === 1 ? '' : 's'}
-        </span>
-        <span class="top-bar-actions">
-          <a href="#/jobs/{job.job_id}/tasklist">View task list →</a>
-        </span>
-      </div>
-      <div class="body">
-        {#if jobMaterials.length > 0}
-          <table class="mat-table">
-            <colgroup>
-              <col>
-              <col class="col-qty">
-              <col class="col-on-order">
-              <col class="col-qty">
-              <col class="col-units">
-              <col class="col-money">
-              <col class="col-money">
-            </colgroup>
-            <thead><tr>
-              <th>Description</th>
-              <th class="text-right">Req'd</th>
-              <th class="text-right">On Order</th>
-              <th class="text-right">On Hand</th>
-              <th>Units</th>
-              <th class="text-right">Cost</th>
-              <th class="text-right">Ext</th>
-            </tr></thead>
-            <tbody>
-              {#each jobMaterials as mat}
-                {@const required = Number(mat.quantity) || 0}
-                {@const onOrder = Number(mat.qty_on_order) || 0}
-                {@const onHand = Number(mat.qty_on_hand) || 0}
-                {@const consumed = mat.consumption_state === 'consumed'}
-                {@const needsMore = !consumed && (onOrder + onHand) < required}
-                {@const ext = required * (Number(mat.unit_cost) || 0)}
-                <tr class:row-consumed={consumed}>
-                  <td>
-                    <span class="preserve-breaks">{mat.description || '(no description)'}</span>
-                    {#if consumed}<span class="badge-consumed">consumed</span>{/if}
-                    {#if expenseByMaterial[mat.material_id]}<span class="badge-paid">paid {money(expenseByMaterial[mat.material_id].amount)}</span>{/if}
-                    {@render invoicedLink(mat.invoice)}
-                    {#if needsMore && canManageFinancials}
-                      <a class="add-po" href="#/purchase-orders/new?job={job.job_id}&material={mat.material_id}">order</a>
-                    {/if}
-                  </td>
-                  <td class="text-right">{required}</td>
-                  <td class="text-right">
-                    {#if mat.po_id}
-                      {onOrder} — <a href="#/purchase-orders/{mat.po_id}">{mat.po_number}</a>
-                    {:else}
-                      <span class="dim">0</span>
-                    {/if}
-                  </td>
-                  <td class="text-right">
-                    {#if onHand > 0}
-                      {onHand}
-                    {:else}
-                      <span class="dim">0</span>
-                    {/if}
-                  </td>
-                  <td>{mat.units || 'none'}</td>
-                  <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '—'}</td>
-                  <td class="text-right">{ext > 0 ? `$${ext.toFixed(2)}` : '—'}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
-        {#if looseExpenses.length > 0}
-          <table class="mat-table">
-            <colgroup><col><col class="col-units"><col class="col-money"></colgroup>
-            <thead><tr>
-              <th>Expense</th>
-              <th>Category</th>
-              <th class="text-right">Amount</th>
-            </tr></thead>
-            <tbody>
-              {#each looseExpenses as exp}
+          {#if jobTasks.length > 0}
+            <table class="wo-table">
+              <colgroup>
+                <col>
+                <col class="col-assigned">
+                <col class="col-status">
+                <col class="col-time">
+              </colgroup>
+              <thead>
                 <tr>
-                  <td>
-                    <span class="preserve-breaks">{exp.description || '(expense)'}</span>
-                    <span class="badge-paid">expense</span>
-                    {@render invoicedLink(exp.invoice)}
-                  </td>
-                  <td>{exp.accounting_category_name || '—'}</td>
-                  <td class="text-right">{money(exp.amount)}</td>
+                  <th>Task</th>
+                  <th>Assigned</th>
+                  <th class="text-center">Status</th>
+                  <th>Time vs. estimate</th>
                 </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
+              </thead>
+              <tbody>
+                {#each jobTasks as task (task.task_id)}
+                  <tr class:row-active={task.status === 'in_progress'}>
+                    <td><a href="#/jobs/{job.job_id}/tasks/{task.task_id}">{task.name}</a>{@render invoicedLink(task.invoice)}</td>
+                    <td class="assigned">{task.assignee_name || '—'}</td>
+                    <td class="text-center"><TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><small class="preserve-breaks">{task.blocked_reason}</small>{/if}</td>
+                    <td class="time-cell">
+                      {#if task.scheme_algorithm === 'elapsed_time'}
+                        {@const actual = Number(task.actual_hours) || 0}
+                        {@const est = Number(task.est_qty) || 0}
+                        {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
+                        {@const over = est > 0 && actual > est}
+                        <div class="time-track">
+                          <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
+                        </div>
+                        <div class="time-text {over ? 'over' : ''}">
+                          {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'h'}
+                          {#if est > 0}
+                            {#if over}
+                              <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
+                            {:else if actual === 0}
+                              <span class="time-dim">(not started)</span>
+                            {:else}
+                              <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
+                            {/if}
+                          {/if}
+                        </div>
+                      {:else if task.scheme_algorithm === 'entered_qty'}
+                        {@const actual = Number(task.actual_qty) || 0}
+                        {@const est = Number(task.est_qty) || 0}
+                        {@const ratio = est > 0 ? actual / est : (actual > 0 ? 1 : 0)}
+                        {@const over = est > 0 && actual > est}
+                        <div class="time-track">
+                          <div class="time-fill {over ? 'over' : 'under'}" style="width: {Math.min(ratio, 1) * 100}%;"></div>
+                        </div>
+                        <div class="time-text {over ? 'over' : ''}">
+                          {actual.toFixed(2)} / {est > 0 ? est.toFixed(2) : '?'} {task.scheme_unit_label || 'units'}
+                          {#if est > 0}
+                            {#if over}
+                              <span class="time-delta">(over by {(actual - est).toFixed(2)})</span>
+                            {:else if actual === 0}
+                              <span class="time-dim">(not started)</span>
+                            {:else}
+                              <span class="time-dim">({(est - actual).toFixed(2)} left)</span>
+                            {/if}
+                          {/if}
+                        </div>
+                      {:else if task.scheme_algorithm === 'flat_fee'}
+                        <div class="time-text time-dim">flat fee · {Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</div>
+                      {:else}
+                        <div class="time-text time-dim">{Number(task.actual_hours || 0).toFixed(2)}h logged</div>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
 
-        {#if jobMaterials.length === 0 && looseExpenses.length === 0}
-          <p class="empty-msg">No materials or expenses.</p>
+          {#if jobMaterials.length > 0}
+            <table class="mat-table">
+              <colgroup>
+                <col>
+                <col class="col-qty">
+                <col class="col-units">
+                <col class="col-money">
+              </colgroup>
+              <thead><tr>
+                <th>Material</th>
+                <th class="text-right">Qty</th>
+                <th>Units</th>
+                <th class="text-right">Sell Price</th>
+              </tr></thead>
+              <tbody>
+                {#each jobMaterials as mat (mat.material_id)}
+                  <tr>
+                    <td>
+                      <span class="preserve-breaks">{mat.description || '(no description)'}</span>
+                      {@render invoicedLink(mat.invoice)}
+                    </td>
+                    <td class="text-right">{mat.quantity ?? '—'}</td>
+                    <td>{mat.units || 'none'}</td>
+                    <td class="text-right">{money(mat.sell_price)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if jobFees.length > 0}
+            <table class="mat-table">
+              <colgroup>
+                <col>
+                <col class="col-qty">
+                <col class="col-money">
+                <col class="col-money">
+              </colgroup>
+              <thead><tr>
+                <th>Fee</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Unit Rate</th>
+                <th class="text-right">Ext</th>
+              </tr></thead>
+              <tbody>
+                {#each jobFees as fee (fee.fee_id)}
+                  <tr>
+                    <td><span class="preserve-breaks">{fee.description || '(fee)'}</span></td>
+                    <td class="text-right">{fee.quantity ?? '—'}</td>
+                    <td class="text-right">{money(fee.unit_rate)}</td>
+                    <td class="text-right">{money(feeTotal(fee))}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+
+          {#if looseExpenses.length > 0}
+            <table class="mat-table">
+              <colgroup><col><col class="col-units"><col class="col-money"></colgroup>
+              <thead><tr>
+                <th>Expense</th>
+                <th>Category</th>
+                <th class="text-right">Amount</th>
+              </tr></thead>
+              <tbody>
+                {#each looseExpenses as exp (exp.id)}
+                  <tr>
+                    <td>
+                      <span class="preserve-breaks">{exp.description || '(expense)'}</span>
+                      <span class="badge-paid">expense</span>
+                      {@render invoicedLink(exp.invoice)}
+                    </td>
+                    <td>{exp.accounting_category_name || '—'}</td>
+                    <td class="text-right">{money(exp.amount)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
         {/if}
       </div>
     </div>
@@ -1471,7 +1271,6 @@
     opacity: 0.85;
     font-variant-numeric: tabular-nums;
   }
-  .pillar-ws    { background: #0d9488; }
   .pillar-est   { background: #4f46e5; }
   .pillar-tasks { background: #b45309; }
   .pillar-mat   { background: #ca8a04; }
@@ -1497,7 +1296,6 @@
     justify-content: space-between;
     gap: 16px;
   }
-  .top-bar-ws    { background: #0d9488; }
   .top-bar-est   { background: #4f46e5; }
   .top-bar-tasks { background: #b45309; }
   .top-bar-mat   { background: #ca8a04; }
@@ -1554,62 +1352,6 @@
   .pill-issued { background: #dbeafe; color: #1e40af; }
   .pill-consumed { background: #d1fae5; color: #065f46; }
   .pill-na { background: #f3f4f6; color: #6b7280; }
-
-  /* Worksheet read-only view */
-  .ws-tabs {
-    background: #ccfbf1; padding: 6px 16px; border-bottom: 1px solid #99f6e4;
-    display: flex; gap: 4px; font-size: 12px; flex: 0 0 auto;
-  }
-  .ws-tab {
-    padding: 4px 12px; border-radius: 8px; cursor: pointer;
-    color: #115e59; background: transparent; border: none; font-size: 12px;
-  }
-  .ws-tab:hover { background: rgba(255,255,255,0.5); }
-  .ws-tab.active { background: #99f6e4; font-weight: 600; }
-  .ws-tab-status { opacity: 0.7; font-weight: 400; margin-left: 2px; }
-
-  .ws-readonly { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-  .ws-readonly th {
-    padding: 8px 14px; text-align: left; background: #f0fdfa; color: #115e59;
-    font-weight: 600; border-bottom: 1px solid #ccfbf1;
-  }
-  .ws-readonly td {
-    padding: 6px 14px; vertical-align: top; border-bottom: 1px solid #f0fdfa;
-  }
-  .ws-readonly col.col-qty { width: 70px; }
-  .ws-readonly col.col-units { width: 70px; }
-  .ws-readonly col.col-money { width: 110px; }
-  .ws-readonly .task-row td { background: #fff; }
-  .ws-readonly .task-row .name { font-weight: 600; }
-  .ws-readonly .material-row td { background: #f2fcfa; }
-  .ws-readonly .indent { padding-left: 32px; }
-  .ws-readonly .marker { color: #aaa; font-size: 8px; margin-right: 6px; }
-  .ws-readonly .dim { color: #888; font-weight: 400; font-size: 12px; }
-  .ws-readonly .text-right { font-variant-numeric: tabular-nums; }
-  .ws-total {
-    display: flex; justify-content: flex-end; align-items: baseline;
-    padding: 10px 14px; background: #ecfdf5; border-top: 2px solid #99f6e4;
-    font-weight: 700; font-size: 14px;
-  }
-  .ws-total-label { margin-right: 12px; }
-  .ws-total-value {
-    width: 110px; text-align: right; font-variant-numeric: tabular-nums;
-  }
-
-  .ml-heading {
-    margin: 0; padding: 4px 14px;
-    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #115e59;
-    background: #ccfbf1; font-weight: 600; line-height: 1.4;
-  }
-  .ml-readonly { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-  .ml-readonly td {
-    padding: 6px 14px; vertical-align: top; background: #f2fcfa;
-    border-bottom: 1px solid #ccfbf1;
-  }
-  .ml-readonly col.col-qty { width: 70px; }
-  .ml-readonly col.col-units { width: 70px; }
-  .ml-readonly col.col-money { width: 110px; }
-  .ml-readonly .text-right { font-variant-numeric: tabular-nums; }
 
   /* Estimate tabs */
   .est-tabs {
@@ -1785,15 +1527,8 @@
   .mat-table tbody tr:nth-child(even) { background: #fef3c7; }
   .mat-table tbody tr + tr { border-top: 1px solid #fde68a; }
   .mat-table col.col-qty { width: 80px; }
-  .mat-table col.col-on-order { width: 130px; }
   .mat-table col.col-units { width: 70px; }
   .mat-table col.col-money { width: 100px; }
-  .mat-table .row-consumed td { opacity: 0.55; }
-  .mat-table .badge-consumed {
-    font-size: 10px; color: #555;
-    margin-left: 6px; padding: 1px 6px;
-    background: #e5e7eb; border-radius: 8px;
-  }
   .mat-table .badge-paid {
     font-size: 10px; color: #166534;
     margin-left: 6px; padding: 1px 6px;
@@ -1804,12 +1539,6 @@
     border: 1px solid #888; border-radius: 3px;
     padding: 0 4px; margin-left: 6px;
   }
-  .mat-table .add-po {
-    font-size: 11px; color: #1e40af; margin-left: 8px;
-  }
-  .mat-table .add-po:hover { text-decoration: underline; }
-  .mat-table .dim { color: #aaa; }
-  .po-badge { font-size: 12px; color: #555; }
 
   /* PO other-job differentiation */
   .other-job { opacity: 0.5; }

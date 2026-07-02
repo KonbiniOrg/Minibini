@@ -5,7 +5,7 @@ from datetime import timedelta
 from tests.base import FixtureTestCase
 from apps.jobs.models import Job, Task
 from apps.contacts.models import Contact
-from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
+from apps.estimates.models import Estimate, EstimateLineItem
 from decimal import Decimal
 from apps.core.models import Configuration
 
@@ -43,7 +43,6 @@ class PipelineSubStatusTest(FixtureTestCase):
         estimate = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        EstWorksheet.objects.create(job=job)
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
@@ -53,7 +52,6 @@ class PipelineSubStatusTest(FixtureTestCase):
         Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        EstWorksheet.objects.create(job=job)
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'estimating')
 
@@ -134,7 +132,6 @@ class PipelineSubStatusTest(FixtureTestCase):
         est = Estimate.objects.create(
             job=job, estimate_number='EST-TEST-001', status='draft'
         )
-        EstWorksheet.objects.create(job=job)
         Estimate.objects.filter(pk=est.pk).update(status='rejected')
         result = BoardService.compute_sub_status(job)
         self.assertEqual(result, 'needs-scoping')
@@ -182,20 +179,20 @@ class ApprovedSubStatusTest(FixtureTestCase):
 
     def test_work_ready_when_tasks_pending(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending', service_item_id=1)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='pending', rate_scheme_id=1)
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'work-ready')
 
     def test_in_progress_when_tasks_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', service_item_id=1)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', rate_scheme_id=1)
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'in-progress')
 
     def test_blocked_takes_priority_over_in_progress(self):
         from apps.jobs.services import BoardService
-        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', service_item_id=1)
-        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked', service_item_id=1)
+        Task.objects.create(name='Task 1', job=self.in_progress_job, status='in_progress', rate_scheme_id=1)
+        Task.objects.create(name='Task 2', job=self.in_progress_job, status='blocked', rate_scheme_id=1)
         result = BoardService.compute_sub_status(self.in_progress_job)
         self.assertEqual(result, 'blocked')
 
@@ -399,10 +396,10 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
         Task.objects.create(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1, service_item_id=1,
+            assignee=self.worker, worker_queue=1, rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
-        Task.objects.create(name='Unassigned task', job=job, service_item_id=1)
+        Task.objects.create(name='Unassigned task', job=job, rate_scheme_id=1)
         data = BoardService.get_board_data()
         self.assertEqual(len(data['approved']['workers']), 1)
         self.assertEqual(data['approved']['workers'][0]['user']['id'], self.worker.pk)
@@ -421,7 +418,7 @@ class BoardDataAssemblyTest(FixtureTestCase):
         )
         Task.objects.create(
             name='Assigned task', job=job,
-            assignee=self.worker, worker_queue=1, service_item_id=1,
+            assignee=self.worker, worker_queue=1, rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
         data = BoardService.get_board_data()
@@ -675,22 +672,6 @@ class PipelineDocDataTest(FixtureTestCase):
         self.assertEqual(job_data['worksheets'], [])
         self.assertEqual(job_data['estimates'], [])
 
-    def test_pipeline_job_includes_worksheet_with_total(self):
-        from apps.jobs.services import BoardService
-        job = self._make_job()
-        estimate = Estimate.objects.create(
-            job=job, estimate_number='EST-TEST-001', status='draft'
-        )
-        EstWorksheet.objects.create(job=job)
-        EstimateLineItem.objects.create(
-            estimate=estimate, qty=Decimal('2'), price=Decimal('100.00'),
-        )
-        result = BoardService.get_pipeline_data()
-        job_data = next(j for j in result['jobs'] if j['job_id'] == job.job_id)
-        self.assertEqual(len(job_data['worksheets']), 1)
-        self.assertIsNotNone(job_data['worksheets'][0]['created_date'])
-        self.assertIsNotNone(job_data['worksheets'][0]['created_date'])
-
     def test_pipeline_job_includes_estimate_with_total(self):
         from apps.jobs.services import BoardService
         job = self._make_job()
@@ -816,16 +797,16 @@ class UnpaidDataTest(FixtureTestCase):
         InvoiceLineItem.objects.create(
             invoice=inv, qty=Decimal('1'), price=Decimal('500.00'),
         )
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.create(code='LBR-bs', name='lbr-bs')
-        scheme = ServiceItem.objects.create(
-            name='Hourly-bs', algorithm=ServiceItem.ELAPSED_TIME,
+        scheme = RateScheme.objects.create(
+            name='Hourly-bs', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours', accounting_category=cat,
         )
         task = Task.objects.create(
             job=job, name='Labor task', status='in_progress',
-            service_item=scheme,
+            rate_scheme=scheme,
         )
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(

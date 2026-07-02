@@ -4,10 +4,10 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.db import models
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
-from apps.estimates.services import WorkTemplateService, WorksheetService
-from apps.jobs.models import Job, PlanTask, ServiceItem
+from apps.estimates.services import WorkTemplateService
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService
 from apps.core.services import NotFoundError, BundlingService
 from apps.core.models import AccountingCategory
@@ -36,29 +36,28 @@ class BundlingTestBase(TestCase):
 
 
 class ReorderServiceTest(BundlingTestBase):
-    """Tests for ReorderService.reorder_container_items with flat PlanTasks."""
+    """Tests for ReorderService.reorder_container_items with flat Tasks."""
 
     def setUp(self):
         super().setUp()
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServiceItem.objects.get(pk=1)  # from fixture
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
 
     def test_unbundled_only_swap(self):
         """Simple swap with no bundles present."""
-        a = PlanTask.objects.create(
-            est_worksheet=self.ws, name='A', sort_order=1,
-            service_item=self.scheme, est_qty=Decimal('1'),
+        a = Task.objects.create(
+            job=self.job, name='A', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        b = PlanTask.objects.create(
-            est_worksheet=self.ws, name='B', sort_order=2,
-            service_item=self.scheme, est_qty=Decimal('1'),
+        b = Task.objects.create(
+            job=self.job, name='B', sort_order=2,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        c = PlanTask.objects.create(
-            est_worksheet=self.ws, name='C', sort_order=3,
-            service_item=self.scheme, est_qty=Decimal('1'),
+        c = Task.objects.create(
+            job=self.job, name='C', sort_order=3,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
 
-        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
+        items_qs = Task.objects.filter(job=self.job)
         BundlingService.reorder_container_items(
             items_qs, 'task', b.pk, 'down',
         )
@@ -71,54 +70,14 @@ class ReorderServiceTest(BundlingTestBase):
 
     def test_cannot_move_past_boundary(self):
         """Moving beyond boundaries raises ValidationError."""
-        t1 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Only', sort_order=1,
-            service_item=self.scheme, est_qty=Decimal('1'),
+        t1 = Task.objects.create(
+            job=self.job, name='Only', sort_order=1,
+            rate_scheme=self.scheme, est_qty=Decimal('1'),
         )
-        items_qs = PlanTask.objects.filter(est_worksheet=self.ws)
+        items_qs = Task.objects.filter(job=self.job)
         with self.assertRaises(ValidationError):
             BundlingService.reorder_container_items(
                 items_qs, 'task', t1.pk, 'up',
-            )
-
-
-class WorksheetServiceReorderTest(BundlingTestBase):
-    """Tests for WorksheetService reorder methods."""
-
-    def setUp(self):
-        super().setUp()
-        self.ws = WorksheetService.create_worksheet(self.job.pk)
-        self.scheme = ServiceItem.objects.get(pk=1)  # from fixture
-        self.t1 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Task 1', sort_order=1,
-            service_item=self.scheme, est_qty=Decimal('1'),
-        )
-        self.t2 = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Task 2', sort_order=2,
-            service_item=self.scheme, est_qty=Decimal('1'),
-        )
-
-    def test_reorder_items(self):
-        """Reorder tasks at container level."""
-        WorksheetService.reorder_items(
-            self.ws.pk, 'task', self.t1.pk, 'down',
-        )
-        self.t1.refresh_from_db()
-        self.t2.refresh_from_db()
-        self.assertEqual(self.t1.sort_order, 2)
-        self.assertEqual(self.t2.sort_order, 1)
-
-    def test_reorder_refused_when_estimate_sent(self):
-        """Cannot reorder once the job's estimate is sent (worksheet frozen)."""
-        from apps.estimates.models import Estimate
-        est = Estimate.objects.create(
-            job=self.ws.job, estimate_number='EST-REORD-1',
-            status=Estimate.STATUS_DRAFT,
-        )
-        Estimate.objects.filter(pk=est.pk).update(status=Estimate.STATUS_OPEN)
-        with self.assertRaises(ValidationError):
-            WorksheetService.reorder_items(
-                self.ws.pk, 'task', self.t1.pk, 'down',
             )
 
 
@@ -127,23 +86,23 @@ class TemplateServiceReorderTest(BundlingTestBase):
 
     def setUp(self):
         super().setUp()
-        self.scheme = ServiceItem.objects.get(pk=1)  # from fixture
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
         self.tmpl = WorkTemplateService.create_template(
             template_name='Test Template',
         )
-        self.tt1 = WorkTemplateService.create_task_template(
+        self.tt1 = WorkTemplateService.create_service_item(
             template_name='TT1',
-            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
-        self.tt2 = WorkTemplateService.create_task_template(
+        self.tt2 = WorkTemplateService.create_service_item(
             template_name='TT2',
-            service_item=self.scheme, default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
         )
         self.a1 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt1, sort_order=1,
+            work_template=self.tmpl, service_item=self.tt1, sort_order=1,
         )
         self.a2 = TemplateTaskAssociation.objects.create(
-            work_template=self.tmpl, task_template=self.tt2, sort_order=2,
+            work_template=self.tmpl, service_item=self.tt2, sort_order=2,
         )
 
     def test_reorder_items(self):

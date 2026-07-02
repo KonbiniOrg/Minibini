@@ -28,7 +28,7 @@ function mockApi(taskOverrides = {}) {
     if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
     if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
-    if (url.startsWith('/api/task-templates/')) return Promise.resolve([]);
+    if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
     if (url.startsWith('/api/contacts/')) return Promise.resolve({});
     return Promise.resolve([]);
   });

@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from apps.core.models import BaseLineItem, AbstractWorkContainer
+from apps.core.models import BaseLineItem
 from apps.core.history import history
 
 
@@ -154,9 +154,8 @@ class Estimate(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
-        # Check if status changed and handle updates. (Worksheets no longer
-        # mirror estimate status — their editability is derived from the live
-        # estimate at read time; see WorksheetService.is_editable.)
+        # Check if status changed and handle updates. (Wizard editability is
+        # derived from the live estimate's status at read time.)
         if old_status and old_status != self.status:
             self._maybe_update_job_status(old_status)
 
@@ -295,24 +294,8 @@ class ChangeOrder(models.Model):
         return self.change_order_number or f'ChangeOrder {self.pk}'
 
 
-class EstWorksheet(AbstractWorkContainer):
-    # One mutable worksheet per job. The worksheet has no lifecycle of its own:
-    # it relates to a job only (no estimate FK), carries no status/version, and
-    # its editability is derived from the job's live estimate (see
-    # WorksheetService.is_editable). It is found via the job, not a direct link.
-    est_worksheet_id = models.AutoField(primary_key=True)
-    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE)
-    created_date = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        db_table = 'worksheets'
-
-    def __str__(self):
-        return f"EstWorksheet {self.pk}"
-
-
 class WorkTemplate(models.Model):
-    """Template for populating Jobs and EstWorksheets with product structure"""
+    """Template for populating Jobs with product structure"""
 
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
@@ -329,49 +312,23 @@ class WorkTemplate(models.Model):
     def __str__(self):
         return self.template_name
 
-    def generate_tasks_for_worksheet(self, worksheet, quantity=1):
-        """Generate plan tasks for a worksheet from this template.
-
-        Returns a list of (TemplateTaskAssociation, instance_index, PlanTask) tuples
-        so callers (e.g. generate_materials_for_worksheet) can pair generated
-        materials with their matching PlanTasks.
-        """
-        generated = []
-
-        for instance in range(1, quantity + 1):
-            associations = TemplateTaskAssociation.objects.filter(
-                work_template=self,
-                task_template__is_active=True,
-            ).order_by('sort_order', 'task_template__template_name')
-
-            for association in associations:
-                task = association.task_template.generate_task(
-                    worksheet,
-                    est_qty=association.est_qty,
-                    product_instance=instance if quantity > 1 else None,
-                    sort_order=association.sort_order,
-                )
-                generated.append((association, instance, task))
-
-        return generated
-
     def generate_tasks_for_job(self, job, quantity=1):
-        """Generate Tasks on a Job from this template's TaskTemplates.
+        """Generate Tasks on a Job from this template's ServiceItems.
 
         Returns a list of (TemplateTaskAssociation, instance_index, Task) tuples
         so generate_materials_for_job can pair generated Materials with their
-        matching Tasks. Mirrors generate_tasks_for_worksheet.
+        matching Tasks.
         """
         generated = []
 
         for instance in range(1, quantity + 1):
             associations = TemplateTaskAssociation.objects.filter(
                 work_template=self,
-                task_template__is_active=True,
-            ).order_by('sort_order', 'task_template__template_name')
+                service_item__is_active=True,
+            ).order_by('sort_order', 'service_item__template_name')
 
             for association in associations:
-                task = association.task_template.generate_task(
+                task = association.service_item.generate_task(
                     job,
                     est_qty=association.est_qty,
                     product_instance=instance if quantity > 1 else None,
@@ -380,36 +337,6 @@ class WorkTemplate(models.Model):
                 generated.append((association, instance, task))
 
         return generated
-
-    def generate_materials_for_worksheet(self, worksheet, quantity=1, task_pairing=None):
-        """Generate PlanMaterials for a worksheet from this template's
-        material associations. Pairs each association's generated PlanMaterial
-        with the matching generated PlanTask via task_pairing (a list of
-        (TemplateTaskAssociation, instance_index, PlanTask) tuples returned by
-        generate_tasks_for_worksheet).
-
-        If task_pairing is None, all generated materials are task-less.
-        """
-        from apps.inventory.models import PlanMaterial
-
-        # Build (tta_pk, instance) -> PlanTask lookup if pairing was provided
-        pairing = {}
-        if task_pairing:
-            for tta, instance, pt in task_pairing:
-                pairing[(tta.pk, instance)] = pt
-
-        associations = self.material_associations.all()
-        for instance in range(1, quantity + 1):
-            for assoc in associations:
-                paired_pt = None
-                if assoc.template_task_association_id is not None:
-                    paired_pt = pairing.get((assoc.template_task_association_id, instance))
-                PlanMaterial.objects.create(
-                    est_worksheet=worksheet,
-                    plan_task=paired_pt,
-                    quantity=assoc.quantity,
-                    inventory_item=assoc.inventory_item,
-                )
 
     def generate_materials_for_job(self, job, quantity=1, task_pairing=None):
         """Generate Materials for a job from this template's material associations.
@@ -441,9 +368,9 @@ class WorkTemplate(models.Model):
 
 
 class TemplateTaskAssociation(models.Model):
-    """Association between WorkTemplate and TaskTemplate with ordering."""
+    """Association between WorkTemplate and ServiceItem with ordering."""
     work_template = models.ForeignKey(WorkTemplate, on_delete=models.CASCADE)
-    task_template = models.ForeignKey('TaskTemplate', on_delete=models.CASCADE)
+    service_item = models.ForeignKey('ServiceItem', on_delete=models.CASCADE)
 
     # Quantity and ordering
     est_qty = models.DecimalField(max_digits=10, decimal_places=2, default=1)
@@ -451,21 +378,21 @@ class TemplateTaskAssociation(models.Model):
 
     class Meta:
         db_table = 'template_task_assoc'
-        unique_together = ['work_template', 'task_template']
+        unique_together = ['work_template', 'service_item']
         ordering = ['sort_order']
 
     def __str__(self):
-        return f"{self.work_template.template_name} -> {self.task_template.template_name}"
+        return f"{self.work_template.template_name} -> {self.service_item.template_name}"
 
 
-class TaskTemplate(models.Model):
+class ServiceItem(models.Model):
     """Template for creating Tasks with predefined settings"""
 
     template_id = models.AutoField(primary_key=True)
     template_name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    service_item = models.ForeignKey(
-        'jobs.ServiceItem',
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
         on_delete=models.PROTECT,
         help_text="Default billing scheme for tasks from this template"
     )
@@ -473,19 +400,15 @@ class TaskTemplate(models.Model):
         default=list, blank=True,
         help_text="Pre-checked modifier keys from the scheme"
     )
-    default_billable_qty = models.DecimalField(
-        max_digits=10, decimal_places=2,
-        help_text="Typical estimated billable quantity"
-    )
 
     # Relationships
-    work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='task_templates')
+    work_templates = models.ManyToManyField(WorkTemplate, through='TemplateTaskAssociation', related_name='service_items')
 
     created_date = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        db_table = 'task_templates'
+        db_table = 'service_items'
 
     def __str__(self):
         return self.template_name
@@ -495,15 +418,13 @@ class TaskTemplate(models.Model):
 
     @property
     def effective_accounting_category(self):
-        return self.service_item.accounting_category
+        return self.rate_scheme.accounting_category
 
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None,
                        name=None, description=None,
                        active_modifiers=None, est_worker_time=None):
-        """Generate a PlanTask or Task from this template with specified quantity.
-
-        The return type depends on the container: EstWorksheet -> PlanTask, Job -> Task.
+        """Generate a Task on a Job from this template with specified quantity.
 
         Optional overrides:
           name            – if truthy, replaces template_name; empty string falls back to template default.
@@ -511,14 +432,14 @@ class TaskTemplate(models.Model):
           active_modifiers – list of modifier keys; falls back to template defaults when None.
           est_worker_time – ISO 8601 duration string or None.
         """
-        from apps.jobs.models import Job, Task, PlanTask, copy_active_modifiers
+        from apps.jobs.models import Job, Task, copy_active_modifiers
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
-        if self.service_item_id and self.service_item.replaced_by_id is not None:
+        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
             raise SchemeSupersededError(
                 f'Template "{self.template_name}" references a superseded '
-                f'ServiceItem. Update the template before adding tasks from it.'
+                f'RateScheme. Update the template before adding tasks from it.'
             )
 
         resolved_name = name if name else self.template_name
@@ -528,45 +449,31 @@ class TaskTemplate(models.Model):
             else self.default_active_modifiers
         )
 
-        if isinstance(container, Job):
-            with transaction.atomic():
-                task = Task.objects.create(
-                    job=container,
-                    name=resolved_name,
-                    description=resolved_description,
-                    assignee=assignee,
-                    sort_order=sort_order,
-                    service_item=self.service_item,
-                    active_modifiers=resolved_modifiers,
-                    est_qty=est_qty,
-                    est_worker_time=est_worker_time,
-                )
-            return task
-        else:  # EstWorksheet
-            return PlanTask.objects.create(
-                est_worksheet=container,
+        if not isinstance(container, Job):
+            raise ValueError(
+                'generate_task only supports a Job container (job-owns-atoms refactor).'
+            )
+        with transaction.atomic():
+            task = Task.objects.create(
+                job=container,
                 name=resolved_name,
                 description=resolved_description,
-                service_item=self.service_item,
+                assignee=assignee,
+                sort_order=sort_order,
+                rate_scheme=self.rate_scheme,
                 active_modifiers=resolved_modifiers,
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
-                sort_order=sort_order,
             )
+        return task
 
 
 class EstimateLineItem(BaseLineItem):
     """Line item for estimates - inherits shared functionality from BaseLineItem."""
 
     estimate = models.ForeignKey(Estimate, on_delete=models.CASCADE)
-    source_template = models.ForeignKey(
-        'estimates.TaskTemplate',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        help_text='TaskTemplate this line item was created from (preserves catalog ref for direct-estimate carry-over).',
-    )
     adjustment_service = models.ForeignKey(
-        'jobs.ServiceItem', on_delete=models.PROTECT,
+        'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
     )
@@ -589,20 +496,18 @@ class EstimateLineItem(BaseLineItem):
 
 
 class EstimateLineItemSource(models.Model):
-    """Polymorphic join between an EstimateLineItem and its source atom (PlanTask or PlanMaterial).
+    """Polymorphic join between an EstimateLineItem and its source atom (Task, Material, or Fee).
 
     The unique_together on (source_type, source_pk) enforces whole-atom claim at the
     database level: an atom can be referenced by at most one estimate line item.
-
-    Note: unlike InvoiceLineItemSource, this constraint is NOT scoped by Estimate status
-    on the plan side. Worksheet revisions copy atoms (creating new instances), so the
-    constraint never needs to fire across revisions in practice.
     """
-    SOURCE_PLAN_TASK = 'plan_task'
-    SOURCE_PLAN_MATERIAL = 'plan_material'
+    SOURCE_TASK = 'task'
+    SOURCE_MATERIAL = 'material'
+    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
-        (SOURCE_PLAN_TASK, 'PlanTask'),
-        (SOURCE_PLAN_MATERIAL, 'PlanMaterial'),
+        (SOURCE_TASK, 'Task'),
+        (SOURCE_MATERIAL, 'Material'),
+        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -619,13 +524,16 @@ class EstimateLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (PlanTask or PlanMaterial) referenced by this source."""
-        if self.source_type == self.SOURCE_PLAN_TASK:
-            from apps.jobs.models import PlanTask
-            return PlanTask.objects.get(pk=self.source_pk)
-        if self.source_type == self.SOURCE_PLAN_MATERIAL:
-            from apps.inventory.models import PlanMaterial
-            return PlanMaterial.objects.get(pk=self.source_pk)
+        """Return the concrete atom instance referenced by this source."""
+        if self.source_type == self.SOURCE_TASK:
+            from apps.jobs.models import Task
+            return Task.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_MATERIAL:
+            from apps.inventory.models import Material
+            return Material.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_FEE:
+            from apps.jobs.models import Fee
+            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):
@@ -652,11 +560,6 @@ class ChangeOrderLineItem(BaseLineItem):
         on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='co_amendments',
-    )
-    source_template = models.ForeignKey(
-        'estimates.TaskTemplate',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
     )
     inventory_item = models.ForeignKey(
         'inventory.InventoryItem',

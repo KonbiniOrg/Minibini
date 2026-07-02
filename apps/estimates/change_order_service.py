@@ -271,7 +271,6 @@ class ChangeOrderService:
                 units=li.units,
                 price=li.price,
                 line_number=li.line_number,
-                source_template=li.source_template,
                 inventory_item=li.inventory_item,
             )
 

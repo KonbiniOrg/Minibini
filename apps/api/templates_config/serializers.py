@@ -1,23 +1,38 @@
 from rest_framework import serializers
 from apps.estimates.models import (
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
 from apps.core.models import Configuration, AccountingCategory
 from apps.inventory.models import TemplateMaterialAssociation
 
 
-class TaskTemplateSerializer(serializers.ModelSerializer):
+class ServiceItemSerializer(serializers.ModelSerializer):
+    # Read-only rate snapshot so the Add Line picker can show price/unit per row
+    # without a second fetch (the saved-work item prices via its RateScheme).
+    rate_scheme_detail = serializers.SerializerMethodField()
+
     class Meta:
-        model = TaskTemplate
+        model = ServiceItem
         fields = [
             'template_id', 'template_name', 'description', 'is_active',
-            'service_item', 'default_active_modifiers', 'default_billable_qty',
+            'rate_scheme', 'rate_scheme_detail',
+            'default_active_modifiers',
         ]
         read_only_fields = ['template_id']
 
-    def validate_service_item(self, value):
-        from apps.jobs.models import ServiceItem
-        if value and value.algorithm == ServiceItem.PERCENTAGE:
+    def get_rate_scheme_detail(self, obj):
+        rs = getattr(obj, 'rate_scheme', None)
+        if not rs:
+            return None
+        return {
+            'rate_scheme_id': rs.rate_scheme_id, 'name': rs.name,
+            'rate': str(rs.rate), 'unit_label': rs.unit_label,
+            'algorithm': rs.algorithm,
+        }
+
+    def validate_rate_scheme(self, value):
+        from apps.jobs.models import RateScheme
+        if value and value.algorithm == RateScheme.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
@@ -25,12 +40,12 @@ class TaskTemplateSerializer(serializers.ModelSerializer):
 
 
 class TemplateAssociationSerializer(serializers.ModelSerializer):
-    task_template = TaskTemplateSerializer(read_only=True)
+    service_item = ServiceItemSerializer(read_only=True)
 
     class Meta:
         model = TemplateTaskAssociation
         fields = [
-            'id', 'task_template', 'est_qty', 'sort_order',
+            'id', 'service_item', 'est_qty', 'sort_order',
         ]
         read_only_fields = ['id']
 

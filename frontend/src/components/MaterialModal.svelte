@@ -205,12 +205,6 @@
         </label>
       </p>
 
-      {#if pliLocked}
-        <p style="background:#fff7e6;border:1px solid #ffc53d;padding:8px;">
-          Linked to an inventory item. Delete and re-add as freeform to change description, units, or category.
-        </p>
-      {/if}
-
       <p>
         <label><strong>Description</strong><br>
           <input type="text" bind:value={description} disabled={pliLocked} style="width:100%;box-sizing:border-box;">

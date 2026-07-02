@@ -1,30 +1,21 @@
 <script>
   import { api } from '../lib/api.js';
 
+  let templates = $state([]);
   let schemes = $state([]);
-  let categories = $state([]);
-  let unitsList = $state([]);
+  let allSchemes = $state([]);
   let loading = $state(true);
   let error = $state('');
   let editingId = $state(null);
-  let supersedingId = $state(null);
-  let showSuperseded = $state(false);
   let form = $state(emptyForm());
   let saving = $state(false);
   let saveError = $state('');
 
-  const ALGORITHM_LABELS = {
-    elapsed_time: 'Based on time worked',
-    entered_qty: 'Worker enters quantity',
-    flat_fee: 'Fixed charge',
-    percentage: 'Percentage of other lines',
-  };
-
   function emptyForm() {
     return {
-      name: '', description: '', algorithm: 'elapsed_time',
-      rate: '', unit_label: '',
-      modifiers: [], accounting_category: '',
+      template_name: '', description: '', rate_scheme: '',
+      default_active_modifiers: [],
+      is_active: true,
     };
   }
 
@@ -32,82 +23,62 @@
     loading = true;
     error = '';
     try {
-      const url = showSuperseded
-        ? '/api/service-items/?include_superseded=true'
-        : '/api/service-items/';
-      const [schemeResp, catResp, unitsResp] = await Promise.all([
-        api.get(url),
-        api.get('/api/accounting-categories/'),
-        api.get('/api/settings/units/'),
+      const [tmplResp, schemeResp, allSchemeResp] = await Promise.all([
+        api.get('/api/service-items/'),
+        api.get('/api/rate-schemes/'),
+        api.get('/api/rate-schemes/?include_superseded=true'),
       ]);
+      templates = tmplResp.results || tmplResp;
       schemes = schemeResp.results || schemeResp;
-      categories = catResp.results || catResp;
-      unitsList = unitsResp;
+      allSchemes = allSchemeResp.results || allSchemeResp;
     } catch (e) {
-      error = e.message || 'Could not load services.';
+      error = e.message || 'Could not load.';
     } finally {
       loading = false;
     }
   }
 
-  function isReferenced(s) {
-    const c = s.reference_counts || {};
-    return ((c.plan_task_count || 0) + (c.task_count || 0) + (c.task_template_count || 0)) > 0;
+  const selectedScheme = $derived(
+    schemes.find(s => s.rate_scheme_id === Number(form.rate_scheme)) || null
+  );
+
+  function schemeFor(id) {
+    return allSchemes.find(s => s.rate_scheme_id === id);
+  }
+
+  function isSuperseded(template) {
+    const s = schemeFor(template.rate_scheme);
+    return !!(s && s.superseded);
   }
 
   function startCreate() {
     form = emptyForm();
     editingId = 'new';
-    supersedingId = null;
     saveError = '';
   }
 
-  function startEdit(scheme) {
+  function startEdit(tmpl) {
+    // active_modifiers is always a list of modifier keys.
+    const dm = tmpl.default_active_modifiers;
     form = {
-      name: scheme.name,
-      description: scheme.description || '',
-      algorithm: scheme.algorithm,
-      rate: scheme.rate,
-      unit_label: scheme.unit_label,
-      modifiers: [...(scheme.modifiers || [])],
-      accounting_category: scheme.accounting_category || '',
+      template_name: tmpl.template_name,
+      description: tmpl.description || '',
+      rate_scheme: tmpl.rate_scheme || '',
+      default_active_modifiers: Array.isArray(dm) ? [...dm] : [],
+      is_active: tmpl.is_active,
     };
-    editingId = scheme.service_item_id;
-    supersedingId = null;
+    editingId = tmpl.template_id;
     saveError = '';
   }
 
-  function startSupersede(scheme) {
-    form = {
-      name: scheme.name,
-      description: scheme.description || '',
-      algorithm: scheme.algorithm,
-      rate: scheme.rate,
-      unit_label: scheme.unit_label,
-      modifiers: [...(scheme.modifiers || [])],
-      accounting_category: scheme.accounting_category || '',
-    };
-    supersedingId = scheme.service_item_id;
-    editingId = null;
-    saveError = '';
-  }
+  function cancelEdit() { editingId = null; saveError = ''; }
 
-  function cancelEdit() {
-    editingId = null;
-    supersedingId = null;
-    saveError = '';
-  }
-
-  function addModifier() {
-    form.modifiers = [...form.modifiers, { key: '', label: '', percent: '' }];
-  }
-
-  function removeModifier(index) {
-    form.modifiers = form.modifiers.filter((_, i) => i !== index);
-  }
-
-  function slugify(str) {
-    return str.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  function toggleModifier(key) {
+    if (form.default_active_modifiers.includes(key)) {
+      form.default_active_modifiers = form.default_active_modifiers.filter(k => k !== key);
+    } else {
+      form.default_active_modifiers = [...form.default_active_modifiers, key];
+    }
   }
 
   async function save() {
@@ -115,28 +86,18 @@
     saveError = '';
     try {
       const payload = {
-        name: form.name,
+        template_name: form.template_name,
         description: form.description,
-        algorithm: form.algorithm,
-        rate: form.rate,
-        unit_label: form.unit_label,
-        modifiers: form.modifiers.map(m => ({
-          key: m.key || slugify(m.label),
-          label: m.label,
-          percent: Number(m.percent),
-        })),
-        accounting_category: form.accounting_category,
+        rate_scheme: form.rate_scheme || null,
+        default_active_modifiers: form.default_active_modifiers,
+        is_active: form.is_active,
       };
-
-      if (supersedingId) {
-        await api.post(`/api/service-items/${supersedingId}/supersede/`, payload);
-      } else if (editingId === 'new') {
+      if (editingId === 'new') {
         await api.post('/api/service-items/', payload);
       } else {
         await api.patch(`/api/service-items/${editingId}/`, payload);
       }
       editingId = null;
-      supersedingId = null;
       await load();
     } catch (e) {
       if (e.data && typeof e.data === 'object') {
@@ -151,157 +112,90 @@
     }
   }
 
-  async function remove(scheme) {
-    if (!confirm(`Delete service "${scheme.name}"?`)) return;
+  async function remove(tmpl) {
+    if (!confirm(`Delete template "${tmpl.template_name}"?`)) return;
     try {
-      await api.delete(`/api/service-items/${scheme.service_item_id}/`);
+      await api.delete(`/api/service-items/${tmpl.template_id}/`);
       await load();
     } catch (e) {
       error = e.message || 'Could not delete.';
     }
   }
 
-  // flat_fee schemes carry no modifier catalog: the per-item price rides on
-  // the TaskTemplate/Task, and rate is only a fallback default.
-  const isFlatFee = $derived(form.algorithm === 'flat_fee');
-  // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
-  const isPercentage = $derived(form.algorithm === 'percentage');
-
-  const previewTotal = $derived.by(() => {
-    if (!form.rate) return null;
-    const rate = Number(form.rate);
-    const modPct = form.modifiers.reduce((sum, m) => sum + (Number(m.percent) || 0), 0);
-    const effRate = rate * (1 + modPct / 100);
-    const qty = 10;
-    return { qty, effRate: effRate.toFixed(2), total: (qty * effRate).toFixed(2) };
-  });
-
   load();
 </script>
 
-<h3>Services</h3>
+<h3>Service Items</h3>
 
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
 
-{#if !loading}
-  <p>
-    <label>
-      <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
-      Show superseded services
-    </label>
-  </p>
+{#if !loading && editingId === null}
   <table class="data-table">
     <thead>
-      <tr>
-        <th>Name</th><th>Type</th><th>Rate</th><th>Unit</th>
-        <th>Modifiers</th><th></th>
-      </tr>
+      <tr><th>Name</th><th>Rate Scheme</th><th>Active</th><th></th></tr>
     </thead>
     <tbody>
-      {#each schemes as s (s.service_item_id)}
+      {#each templates as t (t.template_id)}
+        {@const scheme = schemeFor(t.rate_scheme)}
         <tr>
-          <td>{s.name}</td>
-          <td>{ALGORITHM_LABELS[s.algorithm] || s.algorithm}</td>
-          <td>${s.rate}/{s.unit_label}</td>
-          <td>{s.unit_label}</td>
-          <td>{(s.modifiers || []).length}</td>
+          <td>{t.template_name}</td>
           <td>
-            {#if s.superseded}
-              <small>
-                Replaced by: scheme {s.replaced_by}
-                {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
-                | References: {s.reference_counts?.plan_task_count || 0} plan tasks,
-                {s.reference_counts?.task_count || 0} tasks,
-                {s.reference_counts?.task_template_count || 0} templates
-              </small>
-            {:else if isReferenced(s)}
-              <button type="button" onclick={() => startSupersede(s)}>Create new version</button>
-            {:else}
-              <button type="button" onclick={() => startEdit(s)}>Edit</button>
-              <button type="button" onclick={() => remove(s)}>Delete</button>
+            {scheme ? scheme.name : '—'}
+            {#if isSuperseded(t)}
+              <br><strong style="color:#a8071a">WARNING: Rate Scheme is superseded — update before next use</strong>
             {/if}
+          </td>
+          <td>{t.is_active ? 'Yes' : 'No'}</td>
+          <td>
+            <button type="button" onclick={() => startEdit(t)}>Edit</button>
+            <button type="button" onclick={() => remove(t)}>Delete</button>
           </td>
         </tr>
       {/each}
     </tbody>
   </table>
-  {#if !showSuperseded && editingId === null && supersedingId === null}
-    <p><button type="button" onclick={startCreate}>Add Service</button></p>
-  {/if}
+  <p><button type="button" onclick={startCreate}>Add Service Item</button></p>
 {/if}
 
-{#if editingId !== null || supersedingId !== null}
+{#if editingId !== null}
   <fieldset>
-    <legend><strong>{supersedingId ? 'New Version of Service' : (editingId === 'new' ? 'New Service' : 'Edit Service')}</strong></legend>
+    <legend><strong>{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</strong></legend>
     <p><label><strong>Name *</strong><br>
-      <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
-    </label>
-    {#if supersedingId}
-      <small>
-        You can keep this name. The retired version will be renamed
-        automatically (e.g. "(v1)").
-      </small>
-    {/if}
-    </p>
+      <input type="text" bind:value={form.template_name} style="width:100%;box-sizing:border-box;">
+    </label></p>
     <p><label><strong>Description</strong><br>
       <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
     </label></p>
-    <p><label><strong>Algorithm *</strong><br>
-      <select bind:value={form.algorithm}>
-        <option value="elapsed_time">Based on time worked</option>
-        <option value="entered_qty">Worker enters quantity</option>
-        <option value="flat_fee">Fixed charge</option>
-        <option value="percentage">Percentage of other lines</option>
+    <p><label><strong>Rate Scheme</strong><br>
+      <select bind:value={form.rate_scheme}>
+        <option value="">-- None --</option>
+        {#each schemes as s (s.rate_scheme_id)}
+          <option value={s.rate_scheme_id}>{s.name} ({s.algorithm})</option>
+        {/each}
       </select>
     </label></p>
-    <p>
-    {#if isPercentage}
-      <label><strong>Rate (%) *</strong><br>
-        <input type="number" step="0.01" bind:value={form.rate}>
-      </label>
-    {:else}
-      <label><strong>Rate *</strong><br>
-        <input type="number" step="0.01" bind:value={form.rate}>
-      </label>
-      <label><strong>Unit label *</strong><br>
-        <select bind:value={form.unit_label} required>
-          <option value="">-- select --</option>
-          {#each unitsList as u}
-            <option value={u}>{u}</option>
+
+    {#if selectedScheme}
+      <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
+      {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
+        <fieldset>
+          <legend><strong>Default Modifiers</strong></legend>
+          {#each selectedScheme.modifiers as mod}
+            <label>
+              <input type="checkbox"
+                checked={form.default_active_modifiers.includes(mod.key)}
+                onchange={() => toggleModifier(mod.key)}>
+              {mod.label} (+{mod.percent}%)
+            </label><br>
           {/each}
-        </select>
-      </label>
+        </fieldset>
+      {/if}
     {/if}
-    </p>
-    <p><label><strong>Accounting Category *</strong><br>
-      <select bind:value={form.accounting_category} required>
-        <option value="">-- select --</option>
-        {#each categories as cat (cat.id)}
-          <option value={cat.id}>{cat.code} — {cat.name}</option>
-        {/each}
-      </select>
+
+    <p><label>
+      <input type="checkbox" bind:checked={form.is_active}> Active
     </label></p>
-
-    {#if !isFlatFee && !isPercentage}
-      <fieldset>
-        <legend><strong>Modifiers</strong></legend>
-        {#each form.modifiers as mod, i}
-          <p>
-            <input type="text" bind:value={mod.label} placeholder="Label">
-            <input type="number" step="0.1" bind:value={mod.percent} placeholder="%" style="width:60px;">%
-            <button type="button" onclick={() => removeModifier(i)}>Remove</button>
-          </p>
-        {/each}
-        <p><button type="button" onclick={addModifier}>Add modifier</button></p>
-      </fieldset>
-    {/if}
-
-    {#if previewTotal && !isFlatFee && !isPercentage}
-      <p><strong>Preview:</strong>
-        {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
-      </p>
-    {/if}
 
     <p>
       <button type="button" onclick={save} disabled={saving}>

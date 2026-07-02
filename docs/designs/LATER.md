@@ -512,6 +512,52 @@ page stays whole.
   _Done when:_ the pipeline card's worksheet indicator reflects the worksheet's real (derived)
   state and never shows "Draft" against a sent/frozen estimate.
 
+- **Adjustment amount on a superseded estimate looks inconsistent (possible doubling).** — _added 2026-06-27_
+  Observed in dev data: estimate **110** (superseded by estimate **116**) shows a **$44**
+  percentage adjustment where, for consistency with that estimate's own line values, it
+  should be **$22**. $44 ≈ 2×$22 smells like a **doubling**. Adjustments are document-scoped
+  today: `compute_adjustment_amount` (`apps/core/adjustments.py`) = `(rate/100) × Σ(non-adjustment
+  sibling totals in the target-category set)`, re-run by `recompute_adjustments` via
+  `LineItemService.save_line_item` after any line mutation; and `revise_estimate`
+  (`apps/estimates/services.py` ~L149–153) **copies** `adjustment_service` + re-sets the
+  `adjustment_target_categories` M2M onto the new revision. Things to check: (a) whether a
+  superseded estimate's adjustment line is **frozen** at supersession or still gets
+  recomputed against a changed/duplicated sibling set; (b) whether `revise_estimate` double-counts
+  (e.g. the adjustment computed over a sibling set that includes copied/duplicated lines, or the
+  M2M set applied twice); (c) whether the value is simply stale vs. the displayed lines. Capture
+  est 110 / 116's line items + the adjustment's `adjustment_service.rate` and target categories
+  when investigating. NOTE: this whole area is slated to change in **Phase 8** (job-scoped,
+  auto-applied adjustments — `docs/plans/2026-06-26-phase8-job-scoped-adjustments.md`); decide
+  whether to fix the document-scoped bug now or fold the check into that rework.
+  _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
+  with the doubling explained.
+
+- **"Mark Work Complete" button shows on Draft jobs (task list).** — _added 2026-06-30_
+  On the job task-list page (`JobTaskListPage.svelte`), the "Mark Work Complete" action is
+  offered even on a **Draft** job. Marking work complete is meaningless before the job is
+  approved — the button should be hidden for Draft status (decide whether Submitted counts
+  too), alongside the existing `jobLocked` gating.
+  _Done when:_ "Mark Work Complete" is not shown for Draft jobs, with a test.
+
+- **"Send all to Estimate/Invoice" button on the source-pull (wizard) page.** — _added 2026-06-30_
+  On the estimate/invoice source-pull page (`EstimateWizardPage` / `InvoiceWizardPage` — the
+  "Show Tasks & Materials" / "Show Billables" view), atoms are added to the document one row at
+  a time. When the user just wants to copy **all** the job's atoms onto the document, add a
+  one-click **"Send all to Estimate" / "Send all to Invoice"** action that projects every
+  available (unclaimed / billable) atom at once. Prior art: the invoice detail page already has
+  "Apply everything" (`seed_all_atoms`), and a `send_all_atoms_to_estimate` service existed for
+  estimates before the plan-layer removal — re-introduce the equivalent at the wizard level for
+  both documents.
+  _Done when:_ the source-pull page has a one-click "send all atoms" action for both estimate
+  and invoice that projects all available atoms, with a test.
+
+- **Wizard "Done" should auto-save unsaved lines.** — _added 2026-06-30_
+  On the estimate/invoice source-pull page, pressing **"Done"** should commit any unsaved
+  (dirty/pending) line edits automatically, instead of leaving them unsaved or requiring a
+  separate save per line. This stays within the explicit-save convention — "Done" *is* the
+  deliberate commit action (not a blur), so flushing pending edits on it is correct.
+  _Done when:_ pressing "Done" on the source-pull page persists all pending line edits, with a test.
+
 ---
 
 ## Email
@@ -945,16 +991,11 @@ IMAP-SMTP machinery and tend to be worked together.
   - Future-coupled: when AC-grouping / multi-target adjustments land, revisit the same-percentage-service-twice case (keyed `{#each}` + `already_added` dedup in the panel assume one line per service).
   _Done when:_ the bundle is swept and the full suite + frontend gate stay green.
 
-- **"Add Manual Task" modal: offer "Save as Template based on this task".** — _added 2026-06-25_
-  The worksheet's Add Manual Task flow already builds a PlanTask from a ServiceItem
-  (+ qty + selected modifiers + name/description). Add an option to save that
-  configured task as a `TaskTemplate` (a reusable preset) directly from the modal —
-  capturing ServiceItem + default qty + default modifiers + name. Turns ad-hoc task
-  authoring into reusable presets without a separate template-builder trip; aligns
-  with the planning-consolidation direction (templates = presets that expand into
-  atoms — see `docs/plans/2026-06-24-planning-billing-consolidation-draft.md`).
-  _Done when:_ from the Add Manual Task modal the user can create a TaskTemplate from
-  the task they just configured, and it appears in the template catalog.
+- ~~**"Add Manual Task" modal: offer "Save as Template based on this task".**~~ —
+  _graduated 2026-06-27 to the "Add Line" rework (Phase 1)._ Inline "save this
+  free-text task to the **ServiceItems** catalog" (post-rename: `TaskTemplate` →
+  `ServiceItem`) is now a Phase-1 task, including decoupling the catalog *create* from
+  `can_manage_config`. See `docs/plans/2026-06-26-phase1-add-from-price-list.md`.
 
 - **Terminology: rename worksheet / estimate / wizard for the consolidated flow.** — _added 2026-06-25_
   Under the planning-consolidation direction (worksheet = the single authoring
@@ -993,3 +1034,132 @@ IMAP-SMTP machinery and tend to be worked together.
   intentionally uses the literal `'flat_fee'` so it works against historical models).
   _Done when:_ a sweep finds no bare choice/status/algorithm literals where a class
   constant exists (remaining ones are the deliberate migration-safe cases).
+
+- **DRY: combine the two near-identical material modals.** — _added 2026-06-27_
+  `frontend/src/components/PlanMaterialModal.svelte` (PlanMaterial, on the Plan/
+  worksheet) and `frontend/src/components/MaterialModal.svelte` (real Material, on the
+  Job) are highly similar — same fields (description, qty, units, price, AC),
+  inventory-item pre-seed, and freeform path — differing mainly in the API base /
+  parent (worksheet plan-material vs job material) and a few field names. Worth
+  collapsing into one shared modal parameterized by context (like `WorkItemForm` does
+  for job/worksheet/subtask), or a shared inner form both wrap. _Done when:_ one modal
+  (or shared form) serves both PlanMaterial and Material, with the component tests for
+  both consolidated and green.
+
+- **Phantom blep in the UI after a sub-minimum auto-clock-in start.** — _added 2026-06-28_
+  _(Low priority — rarely if ever happens in practice.)_ Scenario: a user who is **not**
+  clocked in starts a blep (which auto-clocks them in **and** creates the open blep),
+  then clocks out **before** `blep_minimum_minutes` has elapsed. The backend is correct
+  — the clock-out close path (`BlepService._resolve_open_blep` → `_cancel_blep`, the
+  under-minimum full-undo in `apps/jobs/services.py`) **deletes** the open blep, so no
+  row is created. But the SPA still shows the blep as created: the UI optimistically
+  reflects the blep from the start call and never reconciles it against the server's
+  silent discard on clock-out. _Fix direction:_ have the clock-out / close response
+  report which open bleps were discarded as sub-minimum (or have the UI refetch
+  open/recent bleps after clock-out) so the front end drops the phantom. **Likely folds
+  into the planned push-notification / live-refresh work** — a shared mechanism so pages
+  affected by work elsewhere can refresh themselves (still future); this phantom blep is
+  one instance of UI state drifting from the server, so fix it as part of that effort
+  rather than as a one-off. _Done when:_ clocking out under the minimum after an
+  auto-clock-in start leaves no blep visible in the UI, matching the (already-correct)
+  DB state.
+
+- **Lost per-material "order" link when the Materials pillar was folded into Tasks & Materials.** — _added 2026-06-28_
+  The old standalone Materials pillar on the job overview rendered, per material that
+  needed more stock, an **"order"** link (`#/purchase-orders/new?job={job_id}&material={material_id}`)
+  plus an **"On Order"** column (showing `qty_on_order` and a link to the existing PO).
+  Phase 5 (commit `0f989580`, "combine Tasks & Materials into one pillar via the Task
+  View") replaced that pillar with `TaskTree`, and the per-material **order** affordance
+  + On Order column did **not** carry over — `TaskTree` shows the sell-side columns and
+  grand total (mirroring the invoice projection) but has no "needs more → start a PO"
+  control. Surfaced 2026-06-28 while working an invoice flow that got blocked by missing
+  inventory. _To decide:_ whether the order-from-material shortcut should be restored
+  inside the combined pillar (or live elsewhere — Plan/worksheet materials, or a
+  materials/PO view), and whether the On Order / shortfall indicator comes back with it.
+  _Done when:_ a user can get from "this job's material is short" to starting/ viewing
+  its PO without leaving the job overview, or we've consciously decided that lives
+  somewhere else and documented where.
+
+- **Sweep test suite for `self.skipTest('… in fixture')` anti-pattern.** — _added 2026-06-30_
+  Several tests silently skip when ambient fixture data is absent (e.g. "Need at least two
+  users in fixture", "No ENTERED_QTY RateScheme in fixture"). Seven were fixed 2026-06-30
+  (self-setup or hard-assert). Grep the full suite for remaining `self.skipTest` calls that
+  rely on fixture content and convert them: either create the required data inline so the
+  test is self-sufficient, or replace the skip with `self.fail(…)` so a missing prerequisite
+  fails loudly. A skip that hides a broken prerequisite is worse than a red test.
+  _Done when:_ no test skips because ambient fixture data is absent; every prerequisite
+  is either created by the test itself or triggers a hard failure.
+
+- **Hand-added blep should mirror the start-path side effects (assign + consume materials).** — _added 2026-06-29_
+  Starting a blep on a pending/unassigned task runs the "first worker to start the task"
+  path (`apps/jobs/services.py` ~1174-1254): it **assigns** the task to that worker,
+  promotes it in the worker queue, and **consumes the task's linked materials**
+  (`MaterialService.consume`, ~line 1013). But adding a blep **by hand** (the time-edit
+  create path) does none of this — the task stays unassigned and its materials stay
+  unconsumed. A manually-entered blep should produce the same state as a started one:
+  (a) assign the task to the blep's worker, and (b) consume the task's linked materials.
+  _To check:_ confirm current hand-add behavior for both; _done when:_ creating a blep by
+  hand on a pending task assigns it to the blep's user and consumes its linked materials,
+  with tests.
+
+- **Service catalog item = rough work type; Task.Description carries the specifics.** — _added 2026-07-01_
+  A service catalog item (RateScheme) should name the _rough category_ of work, with the
+  Task's own `Description` field free to add the detail. E.g. pick **"CAM coding"** (a CAD
+  RateScheme) from the service catalog when adding a Task, then fill in the Description
+  with the specifics: _"V-Carve the lettering, but use AutoCAD to cut the perimeters with
+  dogbones."_ The catalog entry is the billing/type bucket; the Description is the
+  human instruction. Confirm the add-Task flow lets you set both — a RateScheme for the
+  rate/category **and** a distinct free-text Description on that same Task — and that the
+  Description isn't overwritten from the RateScheme name.
+  _Done when:_ adding a Task lets you choose a service (RateScheme) for the work type while
+  independently authoring the Task's Description, and neither clobbers the other.
+  _Corollary:_ if the catalog entry only ever supplies the rough type, then RateSchemes /
+  service catalog items may not need a `description` field at all — just a `name`. The
+  per-use detail lives on the Task. Review whether the RateScheme `description` field earns
+  its keep or should be dropped in favor of name-only, with Task.Description as the sole
+  place for specifics.
+
+- **Surface session-expiry instead of silently degrading fetched-list components.** — _added 2026-07-01_
+  When the session expires, `GET /api/settings/units/` returns 403 and
+  `UnitsSelect.svelte` swallows it in a `try/catch`, falling back to `['none']` — so a
+  logged-out user just sees a mysteriously empty/`none`-only units dropdown (observed in
+  the estimate Add-Line-Item modal) with no hint that they're logged out. Any
+  fetch-and-fallback component has the same failure mode. There should be a global
+  handler: when an authenticated-only API call returns 401/403, bounce to the login
+  screen (or show a "session expired, please log in again" banner) rather than letting
+  each component degrade silently. _To check:_ whether `api.js` / the auth store already
+  catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
+  session-expiry path instead of a silently broken widget.
+
+- **Hand-*typed* estimate material lines can't crystallize into Materials.** — _added 2026-07-01, moved to a plan 2026-07-02_
+  → Folded into `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md` (Part 2):
+  a freeform-typed material has no atom-type signal, so it becomes a Fee. The **unified picker**
+  is where an explicit Material-vs-Fee choice belongs (not accounting-category inference — ACs are
+  fully configurable). See the plan.
+
+- **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
+  A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
+  A first pass built this but it was **removed pending a design decision** — the code
+  (view-layer guard in `JobViewSet.perform_update`, a `hasTasks` disable on
+  `JobHeader.svelte`'s "Release to floor" button, and `tests/test_release_to_floor_guard.py`)
+  was reverted so it doesn't ship half-decided.
+  **Gating question (blocks any implementation):** *is a taskless, hand-billed, paid job a
+  supported flow?* This determines where the guard belongs — and it must be decided on
+  merits, not on test blast radius (see CLAUDE.md → Engineering Principles):
+    - **If NO** — `in_progress ⇒ has tasks` is a true invariant → enforce deep (in
+      `Job.clean()` or `JobService.update_job`). Then `maybe_complete_if_resolved` (which
+      today mechanically steps `approved → in_progress → work_complete → completed` because
+      `Job.VALID_TRANSITIONS` has no direct `approved → completed` edge) must be fixed so a
+      never-worked job doesn't fake-traverse `in_progress` — likely a direct terminal path.
+    - **If YES** — the completion cascade legitimately completes taskless jobs, so a hard
+      invariant would wrongly block it. Guard the *user action* at the view layer (as the
+      reverted pass did), justified by "release to floor is a deliberate user action distinct
+      from the cascade's status walk" — NOT by cascade-breakage/test convenience.
+  _Note:_ `mark_work_started` (blep-start) always reaches `in_progress` with the just-started
+  Task present, so it's unaffected either way. _Done when:_ the gating question is answered and
+  the guard is (re)placed accordingly, with the cascade fixed if the answer is "no".
+
+- **Reconcile inventory vs. service "Add line" crystallization timing.** — _added 2026-07-02, moved to a plan 2026-07-02_
+  → Promoted to a follow-on plan: `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`
+  (Part 1). Make the inventory pick immediate like the service pick, retire the acceptance
+  `inventory_item → Material` branch, and solve orphan-atom cleanup with provenance. See the plan.

@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, time
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
 from django.utils import timezone as dj_tz
 from django.utils.dateparse import parse_datetime
 from rest_framework import viewsets, status
@@ -75,7 +76,13 @@ class ShiftViewSet(viewsets.ModelViewSet):
             # before parsing so the filter doesn't choke on an invalid format.
             parsed = parse_datetime(since) or parse_datetime(since.replace(' ', '+'))
             if parsed is not None:
-                qs = qs.filter(start_time__gte=parsed)
+                # `since` means "shifts still active at/after this time", not
+                # "shifts that start after it" — so an overnight / multi-day
+                # shift that started earlier but ended after `since` (or is
+                # still open) is included. Filtering on start_time hid such
+                # shifts and falsely blocked blep entry ("no shift covers this
+                # time").
+                qs = qs.filter(Q(end_time__gte=parsed) | Q(end_time__isnull=True))
         return qs
 
     @action(detail=False, methods=['get'], url_path='active')

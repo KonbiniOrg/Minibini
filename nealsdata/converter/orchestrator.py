@@ -31,7 +31,7 @@ class NealsDataConverter:
         self._pk_counters = defaultdict(int)
         self.csv_cards = []
         self.ac_by_code = {}        # AccountingCategory code -> pk (from seed)
-        self.scheme_by_name = {}    # ServiceItem name -> pk (from seed)
+        self.scheme_by_name = {}    # RateScheme name -> pk (from seed)
         self.ac_svc_pk = None
         self.ac_mat_pk = None
         self.pli_map = {}
@@ -44,14 +44,12 @@ class NealsDataConverter:
         self.discarded_cards = []
         self.line_items = {}
         self.estimates = {}
-        self.flat_fee_by_rate = {}      # rate string -> pk (per-price flat-fee schemes)
         self.scheme_algorithm_by_pk = {}  # ratescheme pk -> algorithm (for actuals)
         self.user_by_username = {}      # username -> pk (build_seed assigns user pks)
         self.rotation_user_pks = []     # ordered blep-rotation pool (excludes system)
         self._mint_template = None      # a seed worker's fields, cloned when minting
         self._mint_seq = 1              # worker{N} mint counter
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
-        self.cut_plan_task = {}     # base_ref -> plan_task_pk (plan-side analogue)
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
         self.fake_deliverable_count = 0  # jobs that got a synthetic 'Fake Deliverable'
         self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'skip'
@@ -118,6 +116,10 @@ class NealsDataConverter:
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
         build.assign_current_work(self)  # after bleps: assign pending in_progress tasks
         build.build_purchasing(self)  # after reconcile: consumption, earmarks, QOH, POs/Bills
+        # Test-data synthesis (late, after atoms/bleps/purchasing are settled):
+        # round-robin assign each job's unclaimed Tasks as synthetic sources of
+        # its estimate lines so the Client View projects atoms.
+        build.build_synthetic_estimate_sources(self)
         build.build_history(self)     # last: emit a created entry per tracked object
         self._write_json()
         if self.verbose:

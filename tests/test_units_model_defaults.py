@@ -2,8 +2,8 @@
 from decimal import Decimal
 from tests.base import BaseTestCase
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, ServiceItem
-from apps.estimates.models import TaskTemplate
+from apps.jobs.models import Job, RateScheme
+from apps.estimates.models import ServiceItem
 from apps.inventory.models import InventoryItem
 from apps.invoicing.models import InvoiceLineItem
 

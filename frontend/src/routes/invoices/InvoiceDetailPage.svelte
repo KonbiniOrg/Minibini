@@ -20,12 +20,13 @@
   let success = $state(null);
 
   let canEditLineItems = $derived($canManageFinancials && invoice?.status === 'draft');
-  // "Show Billables" when the job has anything billable to pull from — tasks
-  // OR materials. (A job can carry materials with no tasks; Material.job is a
-  // direct FK and JobSerializer exposes both `tasks` and `materials`.) The pool
-  // may still be empty of logged actuals — that's fine, we still offer the view.
+  // "Show Billables" when the job has anything billable to pull from — tasks,
+  // materials, OR fees. (JobSerializer exposes all three.) The pool may still be
+  // empty of logged actuals — that's fine, we still offer the wizard view.
   let hasBillables = $derived(
-    (job?.tasks?.length ?? 0) > 0 || (job?.materials?.length ?? 0) > 0
+    (job?.tasks?.length ?? 0) > 0 ||
+    (job?.materials?.length ?? 0) > 0 ||
+    (job?.fees?.length ?? 0) > 0
   );
   // Revise placeholder: visible on sent invoices, not yet functional.
   let canSeeRevise = $derived(
@@ -40,6 +41,28 @@
   let lineItems = $derived(
     (invoice?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
   );
+
+  let allLinesHaveCategory = $derived(
+    lineItems.every(li => li.accounting_category != null)
+  );
+
+  async function applyEverything() {
+    try {
+      await api.post(`/api/invoices/${invoice.invoice_id}/apply-everything/`, {});
+      await loadInvoice();
+    } catch (e) {
+      // api.js surfaces error overlay automatically; nothing to do here
+    }
+  }
+
+  async function copyFromEstimate() {
+    try {
+      await api.post(`/api/invoices/${invoice.invoice_id}/copy-from-estimate/`, {});
+      await loadInvoice();
+    } catch (e) {
+      // api.js surfaces error overlay automatically; nothing to do here
+    }
+  }
 
   function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
   function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
@@ -134,9 +157,16 @@
     <span class="page-title">Invoice: {invoice.invoice_number}</span>
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
     {#if $canManageFinancials}
-      <a class="action-link" href="#/invoices/{invoice.invoice_id}/send">
-        {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
-      </a>
+      {#if allLinesHaveCategory}
+        <a class="action-link" href="#/invoices/{invoice.invoice_id}/send">
+          {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
+        </a>
+      {:else}
+        <button type="button" disabled class="action-link send-blocked">
+          {invoice.qbo_id ? 'Resend Invoice' : 'Send Invoice'}
+        </button>
+        <span class="send-blocked-note">Assign an accounting category to every line before sending.</span>
+      {/if}
     {/if}
     {#if canSeeRevise}
       <button type="button" disabled title="Invoice revisions are not available yet.">
@@ -170,6 +200,17 @@
 
   <h3>Line Items</h3>
   {#if canEditLineItems}
+    {#if lineItems.length === 0}
+      <p class="seed-buttons">
+        <button type="button" onclick={applyEverything}>Apply everything</button>
+        <button
+          type="button"
+          onclick={copyFromEstimate}
+          disabled={invoice.job_has_other_invoices}
+          title={invoice.job_has_other_invoices ? 'Not available once another invoice exists for this job' : undefined}
+        >Copy from estimate</button>
+      </p>
+    {/if}
     <p>
       <button type="button" onclick={openAddItem}>Add Line Item</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
@@ -241,4 +282,7 @@
   .metadata-table { border-collapse: collapse; margin: 0 24px 16px; }
   .metadata-table th, .metadata-table td { padding: 6px 10px; }
   h3 { padding: 0 24px; }
+  .seed-buttons { padding: 0 24px; }
+  .send-blocked { opacity: 0.5; cursor: not-allowed; }
+  .send-blocked-note { font-size: 12px; color: #6b7280; }
 </style>

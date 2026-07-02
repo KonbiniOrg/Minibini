@@ -101,7 +101,7 @@ class InventoryItem(models.Model):
 
 
 class MaterialBase(models.Model):
-    """Abstract base for PlanMaterial (planning) and Material (actual)."""
+    """Abstract base for Material (actual)."""
     description = models.CharField(max_length=255, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, default='none')
@@ -147,7 +147,7 @@ class MaterialBase(models.Model):
         """Uniform atom interface: total billable amount for this material.
 
         Materials have no modifier concept; the parameter is accepted to match
-        the BillableAtom interface shared with TaskCharge/PlanTask.
+        the BillableAtom interface shared with Task.
         """
         return self.quantity * self.sell_price
 
@@ -166,38 +166,6 @@ class MaterialBase(models.Model):
                 self.accounting_category = self.inventory_item.accounting_category
 
 
-class PlanMaterial(MaterialBase):
-    """Planning material on a Worksheet; optionally attached to a PlanTask. No inventory side effects."""
-    plan_material_id = models.AutoField(primary_key=True)
-    plan_task = models.ForeignKey(
-        'jobs.PlanTask', on_delete=models.CASCADE, related_name='plan_materials',
-        null=True, blank=True,
-    )
-    est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_materials',
-    )
-
-    class Meta:
-        db_table = 'plan_materials'
-
-    def clean(self):
-        super().clean()
-        if self.plan_task_id and self.est_worksheet_id and (
-            self.plan_task.est_worksheet_id != self.est_worksheet_id
-        ):
-            raise ValidationError('plan_task.est_worksheet must match est_worksheet')
-
-    def save(self, *args, **kwargs):
-        self._populate_from_pli()
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        if self.units and self.units != 'none':
-            return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
-        return f"{self.description} (qty: {self.quantity:.2f})"
-
-
 class TemplateMaterialAssociation(models.Model):
     """A reusable InventoryItem associated with a WorkTemplate.
 
@@ -205,12 +173,11 @@ class TemplateMaterialAssociation(models.Model):
     reusable materials, so a TemplateMaterial-as-separate-catalog was
     redundant. This model just pins which PLI belongs to which WorkTemplate
     (with quantity), optionally pairing to a TemplateTaskAssociation so the
-    generated PlanMaterial/Material attaches to the corresponding generated
-    PlanTask/Task.
+    generated Material attaches to the corresponding generated Task.
 
     Generation semantics: for `quantity` instances of the parent WorkTemplate,
-    each instance gets one PlanMaterial/Material per association, attached
-    to the same-instance PlanTask/Task when `template_task_association` is set.
+    each instance gets one Material per association, attached
+    to the same-instance Task when `template_task_association` is set.
     """
     template_material_association_id = models.AutoField(primary_key=True)
     work_template = models.ForeignKey(
@@ -226,7 +193,7 @@ class TemplateMaterialAssociation(models.Model):
         null=True, blank=True,
         related_name='material_associations',
         help_text='If set, generated material attaches to the corresponding '
-                  'generated PlanTask/Task.',
+                  'generated Task.',
     )
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     sort_order = models.IntegerField(default=0)
@@ -280,13 +247,6 @@ class Material(MaterialBase):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='+',
-    )
-    source_plan_material = models.OneToOneField(
-        'inventory.PlanMaterial',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='carried_material',
-        help_text='PlanMaterial this material was carried over from (carry-over idempotency)',
     )
 
     class Meta:

@@ -11,6 +11,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
+    qty_on_hand = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
     class Meta:
@@ -21,12 +22,17 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'accounting_category',
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
+            'qty_on_hand',
             'invoice',
         ]
         read_only_fields = fields
 
     def get_inventory_item_is_catalog(self, obj):
         return bool(obj.inventory_item and obj.inventory_item.is_catalog)
+
+    def get_qty_on_hand(self, obj):
+        from apps.inventory.serializer_helpers import material_qty_on_hand
+        return material_qty_on_hand(obj)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
@@ -73,15 +79,16 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
-    scheme_name = serializers.CharField(source='service_item.name', read_only=True, default=None)
-    scheme_algorithm = serializers.CharField(source='service_item.algorithm', read_only=True, default=None)
-    scheme_unit_label = serializers.CharField(source='service_item.unit_label', read_only=True, default=None)
+    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
+    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
+    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
     has_active_blep = serializers.SerializerMethodField()
     active_worker_count = serializers.SerializerMethodField()
     has_bleps = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
+    claimed = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -89,7 +96,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
-            'service_item', 'active_modifiers',
+            'rate_scheme', 'active_modifiers',
             'est_qty', 'est_worker_time', 'actual_qty',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
@@ -97,12 +104,13 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'has_active_blep', 'active_worker_count', 'has_bleps',
             'can_manage',
             'invoice',
+            'claimed',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
-    def validate_service_item(self, value):
-        from apps.jobs.models import ServiceItem
-        if value and value.algorithm == ServiceItem.PERCENTAGE:
+    def validate_rate_scheme(self, value):
+        from apps.jobs.models import RateScheme
+        if value and value.algorithm == RateScheme.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
@@ -141,6 +149,11 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 
     def get_has_bleps(self, obj):
         return len(obj.blep_set.all()) > 0
+
+    def get_claimed(self, obj):
+        """True iff a non-superseded estimate on this job has claimed this task."""
+        claims = self.context.get('estimate_claims') or frozenset()
+        return ('task', obj.pk) in claims
 
 
 class TaskDetailSerializer(TaskSerializer):

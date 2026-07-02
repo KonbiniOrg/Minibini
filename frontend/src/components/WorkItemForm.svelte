@@ -6,18 +6,21 @@
   let {
     open = false,
     mode = 'manual', // 'manual' | 'template'
-    context = 'job', // 'job' | 'worksheet' | 'subtask'
+    context = 'job', // 'job' | 'subtask'
     contextId = null, // job pk, worksheet pk, or parent task pk
     item = null,     // for edit mode; null for create
     isEdit = false,
     templates = [],
+    rateScheme = null, // optional pre-selected RateScheme (manual mode only)
+    presetTemplateId = null, // optional pre-selected ServiceItem id (template mode only)
+    presetName = '', // optional pre-fill for the name (manual / custom-task create only)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
   let templateId = $state('');
   let lastFilledTemplateId = $state('');
-  let serviceItemId = $state('');
+  let rateSchemeId = $state('');
   let name = $state('');
   let description = $state('');
   let activeModifiers = $state([]);
@@ -25,16 +28,18 @@
   let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
   let busy = $state(false);
   let error = $state('');
+  let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
+  let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
 
   let schemes = $state([]);
   let loading = $state(true);
 
   onMount(async () => {
     try {
-      const resp = await api.get('/api/service-items/');
+      const resp = await api.get('/api/rate-schemes/');
       schemes = resp.results || resp;
     } catch (e) {
-      error = e.message || 'Could not load services.';
+      error = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
     }
@@ -51,18 +56,25 @@
     if (isEdit && item) {
       name = item.name || '';
       description = item.description || '';
-      serviceItemId = item.service_item ?? '';
+      rateSchemeId = item.rate_scheme ?? '';
       loadModifiers(item.active_modifiers);
       estQty = item.est_qty ?? '';
       estWorkerTime = formatDuration(item.est_worker_time);
       templateId = '';
     } else {
-      name = ''; description = '';
-      serviceItemId = ''; activeModifiers = [];
+      name = (mode === 'manual' ? (presetName || '') : ''); description = '';
+      activeModifiers = [];
       estQty = ''; estWorkerTime = '';
-      templateId = '';
+      templateId = (mode === 'template' && presetTemplateId != null) ? String(presetTemplateId) : '';
       lastFilledTemplateId = '';
+      if (mode === 'manual' && rateScheme) {
+        rateSchemeId = rateScheme.rate_scheme_id;
+      } else {
+        rateSchemeId = '';
+      }
     }
+    saveToCatalog = false;
+    taskCreated = false;
     error = '';
   });
 
@@ -80,17 +92,15 @@
     name = selectedTemplate.template_name || '';
     description = selectedTemplate.description || '';
     loadModifiers(selectedTemplate.default_active_modifiers);
-    if (selectedTemplate.default_billable_qty) {
-      estQty = selectedTemplate.default_billable_qty;
-    }
-    serviceItemId = selectedTemplate.service_item ?? '';
+    estQty = '1'; // templates no longer carry a default qty; estimator sets the magnitude
+    rateSchemeId = selectedTemplate.rate_scheme ?? '';
   });
 
   const selectedScheme = $derived(
-    schemes.find(s => s.service_item_id === Number(serviceItemId)) || null
+    (mode === 'manual' && rateScheme && rateScheme.rate_scheme_id === Number(rateSchemeId))
+      ? rateScheme
+      : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
-
-  const estQtyRequired = $derived(context === 'worksheet');
 
   function formatDuration(value) {
     // Server returns ISO 8601 like "PT1H30M" or HH:MM:SS — accept either, render HH:MM
@@ -149,16 +159,12 @@
       error = 'Name is required.';
       return;
     }
-    if (estQtyRequired && !estQty) {
-      error = 'Estimated qty is required on the worksheet.';
-      return;
-    }
     if (!isEdit && mode === 'template' && !templateId) {
       error = 'Please pick a template.';
       return;
     }
-    if (mode === 'manual' && !serviceItemId) {
-      error = 'Please pick a service.';
+    if (mode === 'manual' && !rateSchemeId) {
+      error = 'Please pick a rate scheme.';
       return;
     }
 
@@ -174,23 +180,19 @@
       const payload = {
         name,
         description,
-        service_item: serviceItemId,
+        rate_scheme: rateSchemeId,
         active_modifiers: activeModifiers,
         est_qty: estQty || null,
         est_worker_time: estWorkerTimeISO,
       };
 
       if (isEdit && item) {
-        const url = context === 'worksheet'
-          ? `/api/est-worksheets/${contextId}/tasks/${item.plan_task_id || item.task_id}/`
-          : `/api/jobs/${contextId}/tasks/${item.task_id}/`;
+        const url = `/api/jobs/${contextId}/tasks/${item.task_id}/`;
         await api.patch(url, payload);
       } else if (mode === 'template') {
-        const url = context === 'worksheet'
-          ? `/api/est-worksheets/${contextId}/add-from-template/`
-          : `/api/jobs/${contextId}/add-from-template/`;
+        const url = `/api/jobs/${contextId}/add-from-template/`;
         await api.post(url, {
-          task_template_id: Number(templateId),
+          service_item_id: Number(templateId),
           name,
           description,
           est_qty: estQty || null,
@@ -199,14 +201,24 @@
         });
       } else {
         let url;
-        if (context === 'worksheet') {
-          url = `/api/est-worksheets/${contextId}/tasks/`;
-        } else if (context === 'subtask') {
+        if (context === 'subtask') {
           url = `/api/tasks/${contextId}/subtasks/`;
         } else {
           url = `/api/jobs/${contextId}/tasks/`;
         }
-        await api.post(url, payload);
+        // taskCreated guards a double create if the optional catalog save fails + retry.
+        if (!taskCreated) {
+          await api.post(url, payload);
+          taskCreated = true;
+        }
+        if (saveToCatalog) {
+          await api.post('/api/service-items/', {
+            template_name: name,
+            description,
+            rate_scheme: rateSchemeId,
+            default_active_modifiers: activeModifiers,
+          });
+        }
       }
       onSaved();
     } catch (e) {
@@ -229,7 +241,7 @@
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
       {#if loading}
-        <p>Loading services…</p>
+        <p>Loading rate schemes…</p>
       {:else}
         {#if !isEdit && mode === 'template'}
           <p>
@@ -245,16 +257,20 @@
         {/if}
 
         {#if mode === 'manual'}
-          <p>
-            <label><strong>Service *</strong><br>
-              <select bind:value={serviceItemId}>
-                <option value="">-- select --</option>
-                {#each schemes as s (s.service_item_id)}
-                  <option value={s.service_item_id}>{s.name}</option>
-                {/each}
-              </select>
-            </label>
-          </p>
+          {#if rateScheme}
+            <p><strong>Rate Scheme:</strong> {rateScheme.name}</p>
+          {:else}
+            <p>
+              <label><strong>Rate Scheme *</strong><br>
+                <select bind:value={rateSchemeId}>
+                  <option value="">-- select --</option>
+                  {#each schemes as s (s.rate_scheme_id)}
+                    <option value={s.rate_scheme_id}>{s.name}</option>
+                  {/each}
+                </select>
+              </label>
+            </p>
+          {/if}
         {/if}
 
         <p>
@@ -271,14 +287,14 @@
         {#if selectedScheme}
           {#if mode === 'template'}
             <p>
-              <strong>Service:</strong> {selectedScheme.name} —
+              <strong>Rate Scheme:</strong> {selectedScheme.name} —
               ${selectedScheme.rate}/{selectedScheme.unit_label}
               <small>(from template)</small>
             </p>
           {:else}
             <p>
               <strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label}
-              <small>(from service)</small>
+              <small>(from rate scheme)</small>
             </p>
           {/if}
           {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
@@ -300,7 +316,7 @@
           {/if}
 
           <p>
-            <label><strong>Estimated qty {estQtyRequired ? '*' : ''}</strong><br>
+            <label><strong>Estimated qty</strong><br>
               <input type="number" step="0.01" bind:value={estQty}>
               <small>{selectedScheme.unit_label}</small>
             </label>
@@ -313,6 +329,15 @@
             <small>HH:MM or decimal hours (1.5 = 1h30m)</small>
           </label>
         </p>
+
+        {#if mode === 'manual' && !isEdit}
+          <p>
+            <label>
+              <input type="checkbox" bind:checked={saveToCatalog}>
+              Save to catalog (reuse this as a service item)
+            </label>
+          </p>
+        {/if}
 
         <div class="buttons">
           <button type="button" onclick={save} disabled={busy}>Save</button>

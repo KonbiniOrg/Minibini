@@ -42,7 +42,7 @@
 
   function taskTotalInfo(task) {
     // Prefer the live computed_charge (driven by actuals: bleps for elapsed_time,
-    // actual_qty for entered_qty, est_qty x price for flat_fee). When actuals are absent
+    // actual_qty for entered_qty). When actuals are absent
     // the computed charge is 0 — fall back to est_qty * effective_rate as the
     // estimated total, marked so the UI can render it in grey.
     const actual = Number(task.computed_charge) || 0;
@@ -58,7 +58,6 @@
 
   function taskActual(task) {
     // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
-    // FLAT_FEE → estimated quantity (flat fee bills price x est_qty).
     // Unset/other → no actual to display.
     if (task.scheme_algorithm === 'elapsed_time') {
       const h = Number(task.actual_hours) || 0;
@@ -66,9 +65,6 @@
     }
     if (task.scheme_algorithm === 'entered_qty') {
       return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
-    }
-    if (task.scheme_algorithm === 'flat_fee') {
-      return task.est_qty != null && task.est_qty !== '' ? task.est_qty : 1;
     }
     return null;
   }
@@ -161,7 +157,7 @@
     </td>
     {#if showAssignee}<td></td>{/if}
     <td></td>
-    {#if showStatus}<td></td>{/if}
+    {#if showStatus}<td>{#if exp.invoice}{@render invoicedLink(exp.invoice)}{/if}</td>{/if}
     <td class="text-right">-</td>
     <td class="text-right">-</td>
     <td class="text-right">-</td>
@@ -245,7 +241,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_catalog}<span class="inv-badge" title="catalog item">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
@@ -312,7 +308,7 @@
               <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
             {/if}
             <td class="indent-2">
-              {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+              {#if mat.inventory_item_is_catalog}<span class="inv-badge" title="catalog item">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
             </td>
             {#if showAssignee}<td></td>{/if}
             <td></td>
@@ -349,7 +345,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_catalog}<span class="inv-badge" title="catalog item">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>

@@ -12,6 +12,10 @@ Minibini is a Django-based job shop management system for handling jobs, estimat
 
 **Never use the multiple-choice / AskUserQuestion framework when brainstorming with this user.** Conduct design discussions as unstructured, back-and-forth prose — one idea or question at a time, in conversational paragraphs. This overrides any skill or default that prefers multiple-choice questions.
 
+## Engineering Principles
+
+**Test-count is never an architecture argument.** How many tests would need updating — or how many a given placement "auto-fixes" — is *not* a valid reason to choose or reject where a guard, invariant, abstraction, or transition belongs. Decide placement on correctness alone: where the invariant is actually true and must hold. Then update whatever tests fall out. A large blast radius is *signal about the change's reach*, not a veto, and never a justification. Relocating or weakening a real invariant to spare test churn is exactly how real invariants get quietly lost. If you catch yourself citing test counts, broken tests, or "this avoids touching N files" as support for a design decision, stop — that reasoning is inadmissible; re-argue the decision on its merits, and if the correct placement is expensive, surface the trade-off explicitly instead of letting test cost silently pick the design.
+
 ## Essential Commands
 
 ```bash
@@ -323,6 +327,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
 - **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
+- **NEVER judge test pass/fail by a piped command's exit code.** `python manage.py test ... | tail` (or any pipe) reports the *last* command's exit code (`tail`'s, always 0), NOT Django's — so a green-looking exit can hide real failures. To gate on results, read the actual `OK` / `FAILED (failures=…, errors=…)` summary line and the `Ran N tests` count from the output (e.g. write to a file and grep it, or run without a pipe so the exit code is Django's). This applies to background runs especially.
 - **Front-end (Svelte SPA):** component/unit tests use Vitest, in `frontend/tests/`; run `npm run test:run` from `frontend/`. Extend TDD to the SPA — add/update a component's test in the same change. Patterns, conventions, and the behavior-vs-display triage live in `docs/designs/frontend-testing.md`.
 
 ## Development Features

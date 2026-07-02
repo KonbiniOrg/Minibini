@@ -17,9 +17,9 @@
     row,                           // optional snippet(item)
     selected,                      // optional snippet(label)
     header,                        // optional snippet(close)
+    query = $bindable(''),         // current search text (bindable so callers can reuse it)
   } = $props();
 
-  let query = $state('');
   let results = $state([]);
   let total = $state(0);            // total matches available (for the truncation hint)
   let showResults = $state(false);

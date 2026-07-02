@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, EmailRecord
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.jobs.models import Job, ServiceItem
+from apps.jobs.models import Job, RateScheme
 from apps.inventory.models import Material
 
 
@@ -26,8 +26,8 @@ def _make_adjustment_fixture(test_case):
         email='adj@test.com', mobile_number='555-0001',
     )
     cat = AccountingCategory.objects.create(name='AdjCat', code='ADJC')
-    svc = ServiceItem.objects.create(
-        name='Rush Fee', algorithm=ServiceItem.PERCENTAGE,
+    svc = RateScheme.objects.create(
+        name='Rush Fee', algorithm=RateScheme.PERCENTAGE,
         rate=Decimal('10.00'), unit_label='%',
         accounting_category=cat,
     )
@@ -191,9 +191,15 @@ class InvoiceSendTest(BaseTestCase):
             job=self.job, invoice_number='INV-SEND-001',
             status=Invoice.STATUS_DRAFT,
         )
+        # Every line needs an accounting category or the send-gate blocks it.
+        from apps.core.models import AccountingCategory
+        send_cat = AccountingCategory.objects.create(
+            name='Send Test', code='SNDT',
+        )
         InvoiceLineItem.objects.create(
             invoice=self.invoice, qty=Decimal('1.00'),
             price=Decimal('100.00'), description='Test',
+            accounting_category=send_cat,
         )
 
     def test_send_defaults_returns_form_prefills(self):
@@ -309,8 +315,8 @@ class BillabilityGateTest(BaseTestCase):
             email='bill@test.com', mobile_number='555-9999',
         )
         self.cat = AccountingCategory.objects.create(name='BillCat', code='BCAT')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly-bill', algorithm=ServiceItem.ELAPSED_TIME,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly-bill', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours',
             accounting_category=self.cat,
         )
@@ -321,13 +327,13 @@ class BillabilityGateTest(BaseTestCase):
 
         # An incomplete (pending) task — must appear as not_billable
         self.incomplete_task = Task.objects.create(
-            job=self.job, name='Pending Work', service_item=self.scheme,
+            job=self.job, name='Pending Work', rate_scheme=self.scheme,
         )
         # Status is STATUS_PENDING by default — don't change it.
 
         # A complete task — for contrast
         self.complete_task = Task.objects.create(
-            job=self.job, name='Done Work', service_item=self.scheme,
+            job=self.job, name='Done Work', rate_scheme=self.scheme,
         )
         self.complete_task.status = Task.STATUS_COMPLETE
         self.complete_task.save()
@@ -596,8 +602,8 @@ class InvoiceAdjustmentServiceTest(BaseTestCase):
         from django.core.exceptions import ValidationError
         from apps.invoicing.services import InvoiceService
         from apps.core.models import AccountingCategory
-        flat_svc = ServiceItem.objects.create(
-            name='Flat Labor', algorithm=ServiceItem.FLAT_FEE,
+        flat_svc = RateScheme.objects.create(
+            name='Flat Labor', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='ea',
             accounting_category=self.adj_cat,
         )

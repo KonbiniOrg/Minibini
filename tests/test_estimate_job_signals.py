@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.core.models import Configuration, User, AppState
+from apps.core.models import AccountingCategory, Configuration, User, AppState
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
@@ -17,6 +17,7 @@ class EstimateSentJobSubmittedTest(TestCase):
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='est_expire_days', value='30')
 
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
             email='test@example.com', work_number='555-0100',
@@ -31,7 +32,7 @@ class EstimateSentJobSubmittedTest(TestCase):
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Test item',
-            price=Decimal('100.00'),
+            price=Decimal('100.00'), accounting_category=self.cat,
         )
 
     def test_job_moves_to_submitted_when_estimate_sent(self):

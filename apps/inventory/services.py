@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import F, Sum
-from apps.inventory.models import Earmark, Material, PlanMaterial
+from apps.inventory.models import Earmark, Material
 from apps.inventory.models import InventoryItem
 
 
@@ -170,7 +170,6 @@ class InventoryService:
                     em.save(update_fields=['inventory_item'])
             # Repoint every remaining reference (pure FK swaps).
             Material.objects.filter(inventory_item=discard).update(inventory_item=keep)
-            PlanMaterial.objects.filter(inventory_item=discard).update(inventory_item=keep)
             EstimateLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             InvoiceLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             PurchaseOrderLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
@@ -333,118 +332,6 @@ class InventoryService:
         )
         return qty
 
-    # --- PlanMaterial CRUD (worksheet-side) ---
-
-    @staticmethod
-    def create_plan_material(plan_task_pk, **kwargs):
-        """Create a new PlanMaterial on a PlanTask."""
-        from apps.core.services import NotFoundError
-        from apps.jobs.models import PlanTask
-        try:
-            plan_task = PlanTask.objects.get(pk=plan_task_pk)
-        except PlanTask.DoesNotExist:
-            raise NotFoundError(f'PlanTask {plan_task_pk} not found')
-        mat = PlanMaterial(
-            plan_task=plan_task,
-            est_worksheet_id=plan_task.est_worksheet_id,
-            **kwargs,
-        )
-        mat.save()
-        return mat
-
-    @staticmethod
-    def update_plan_material(pk, **kwargs):
-        """Update an existing PlanMaterial by PK."""
-        from apps.core.services import NotFoundError
-        try:
-            mat = PlanMaterial.objects.get(pk=pk)
-        except PlanMaterial.DoesNotExist:
-            raise NotFoundError(f'PlanMaterial {pk} not found')
-        for field, value in kwargs.items():
-            setattr(mat, field, value)
-        mat.save()
-        return mat
-
-    @staticmethod
-    def delete_plan_material(pk):
-        """Delete a PlanMaterial by PK."""
-        from apps.core.services import NotFoundError
-        try:
-            mat = PlanMaterial.objects.get(pk=pk)
-        except PlanMaterial.DoesNotExist:
-            raise NotFoundError(f'PlanMaterial {pk} not found')
-        mat.delete()
-
-    @staticmethod
-    def update_plan_material_pricing(plan_material, *, unit_cost=None, sell_price=None, propagate_to_pli=False):
-        """Same as MaterialService.update_pricing but for PlanMaterial."""
-        from django.db import transaction
-        with transaction.atomic():
-            update_fields = []
-            cost_changed = False
-            price_changed = False
-            if unit_cost is not None and unit_cost != plan_material.unit_cost:
-                plan_material.unit_cost = unit_cost
-                update_fields.append('unit_cost')
-                cost_changed = True
-            if sell_price is not None and sell_price != plan_material.sell_price:
-                plan_material.sell_price = sell_price
-                update_fields.append('sell_price')
-                price_changed = True
-            if update_fields:
-                plan_material.save(update_fields=update_fields)
-
-            if propagate_to_pli and plan_material.inventory_item_id is not None:
-                pli = plan_material.inventory_item
-                pli_fields = []
-                if cost_changed and pli.purchase_price != plan_material.unit_cost:
-                    pli.purchase_price = plan_material.unit_cost
-                    pli_fields.append('purchase_price')
-                if price_changed and pli.selling_price != plan_material.sell_price:
-                    pli.selling_price = plan_material.sell_price
-                    pli_fields.append('selling_price')
-                if pli_fields:
-                    pli.save(update_fields=pli_fields)
-        return plan_material
-
-    @staticmethod
-    def create_plan_material_on_worksheet(worksheet, **kwargs):
-        """Create a task-less PlanMaterial on a worksheet."""
-        mat = PlanMaterial(est_worksheet=worksheet, plan_task=None, **kwargs)
-        mat.save()
-        return mat
-
-    @staticmethod
-    def assign_plan_task(plan_material, plan_task):
-        """Move a PlanMaterial to a different PlanTask (or make it taskless with plan_task=None).
-
-        Validates that plan_task (if given) belongs to the same worksheet as the material.
-        Raises ValidationError on mismatch.
-        """
-        from django.core.exceptions import ValidationError
-        if plan_task is not None:
-            if plan_task.est_worksheet_id != plan_material.est_worksheet_id:
-                raise ValidationError('PlanTask must belong to the same worksheet as the material')
-        plan_material.plan_task = plan_task
-        plan_material.save(update_fields=['plan_task_id'])
-
-    # --- Thin wrappers for legacy HTML view call sites (to be removed in Phase 4) ---
-
-    @staticmethod
-    def create_material(task_pk, **kwargs):
-        """Legacy wrapper; HTML views still call this on worksheet tasks."""
-        return InventoryService.create_plan_material(task_pk, **kwargs)
-
-    @staticmethod
-    def update_material(pk, **kwargs):
-        """Legacy wrapper; HTML views still call this."""
-        return InventoryService.update_plan_material(pk, **kwargs)
-
-    @staticmethod
-    def delete_material(pk):
-        """Legacy wrapper; HTML views still call this."""
-        return InventoryService.delete_plan_material(pk)
-
     # --- Earmark operations ---
 
     @staticmethod
@@ -484,14 +371,19 @@ class InventoryService:
 
         Aggregates inventoried Materials by PLI across all Materials on the job
         (both task-attached and task-less), then upserts Earmark records for the
-        job. Called as a hook after each job-population path (estimate, template,
-        worksheet copy).
+        job. Called as a hook after each job-population path (estimate,
+        template, duplication).
         """
         from apps.inventory.models import Material
 
+        # Exclude already-consumed materials: a material consumed pre-approval
+        # already drew down QOH and needs no reservation — re-earmarking it here
+        # would phantom-reserve stock that's already been used.
         materials = Material.objects.filter(
             job=job,
             inventory_item__isnull=False,
+        ).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
         ).values('inventory_item').annotate(
             total_qty=Sum('quantity'),
         )
@@ -624,7 +516,7 @@ class MaterialService:
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
                       inventory_item=None, accounting_category=None, units='none',
-                      source_plan_material=None, cost_source='document'):
+                      cost_source='document'):
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
         # Freeform (no-PLI) actual materials get their cost from a document
@@ -645,10 +537,16 @@ class MaterialService:
                 inventory_item=inventory_item,
                 accounting_category=accounting_category,
                 units=units,
-                source_plan_material=source_plan_material,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
-            InventoryService._mutate_earmark(inventory_item, job, quantity)
+            # Only earmark immediately for committed (approved or later) jobs.
+            # Pre-approval jobs (draft / submitted) do NOT reserve stock; their
+            # materials are earmarked in bulk when the estimate is accepted via
+            # EstimateAcceptanceService → InventoryService.create_earmarks_for_job.
+            from apps.jobs.models import Job as _Job
+            _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
+            if job.status not in _PRE_APPROVAL:
+                InventoryService._mutate_earmark(inventory_item, job, quantity)
         return m
 
     @staticmethod
@@ -695,6 +593,8 @@ class MaterialService:
             )
         MaterialService._assert_not_invoiced(material)
         qty = material.quantity
+        from apps.jobs.models import Job as _Job
+        _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
         with transaction.atomic():
             pli = material.inventory_item
             if pli and qty > Decimal('0.00'):
@@ -703,7 +603,11 @@ class MaterialService:
                 pli.qty_sold = F('qty_sold') - qty
                 pli.save(update_fields=['qty_on_hand', 'qty_sold'])
                 pli.refresh_from_db()
-                InventoryService._mutate_earmark(pli, material.job, qty)
+                # Mirror consume's earmark no-op on pre-approval jobs: they carry
+                # no earmarks (consume removed none), so unconsume restores none —
+                # keeping the "no reservations until approval" invariant intact.
+                if material.job.status not in _PRE_APPROVAL:
+                    InventoryService._mutate_earmark(pli, material.job, qty)
             material.consumption_state = Material.CONSUMPTION_STATE_PENDING
             material.save(update_fields=['consumption_state'])
         return material

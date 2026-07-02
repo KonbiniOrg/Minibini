@@ -1,5 +1,5 @@
 from decimal import Decimal
-from apps.core.models import JobHistory
+from apps.core.models import AccountingCategory, JobHistory
 from django.test import TestCase
 
 from apps.contacts.models import Contact
@@ -16,9 +16,11 @@ class UpdateStatusActorTest(TestCase):
             first_name='Pat', last_name='Customer', email='pat@acme.com')
         self.job = JobService.create_job(name='Actor Job', contact=self.contact)
         self.est = EstimateService.create_for_job(self.job.pk)
+        self.cat = AccountingCategory.objects.create(
+            name='Labor', is_active=True, code='LAB-ACT')
         EstimateLineItem.objects.create(
             estimate=self.est, description='Work', qty=Decimal('1'),
-            price=Decimal('100.00'))
+            price=Decimal('100.00'), accounting_category=self.cat)
         EstimateService.update_status(self.est.pk, Estimate.STATUS_OPEN)
 
     def test_actor_writes_customer_history_entry(self):

@@ -1,6 +1,8 @@
 """Bug 2: creating a Blep on a Task is rejected when the Job's status
-disallows it. Live start_work allows APPROVED/IN_PROGRESS only; backfilled
-create_historical also allows WORK_COMPLETE."""
+disallows it. Pre-approval work is now permitted: live start_work allows
+DRAFT/SUBMITTED/APPROVED/IN_PROGRESS; backfilled create_historical additionally
+allows WORK_COMPLETE and CANCELLED. Both still reject ON_HOLD; start_work also
+rejects WORK_COMPLETE/CANCELLED, and create_historical rejects COMPLETED/REJECTED."""
 
 from datetime import timedelta
 
@@ -31,17 +33,28 @@ class StartWorkJobStatusGuardTest(BaseTestCase):
         self.user = User.objects.get(username='admin')
 
     def _task(self, job):
-        return Task.objects.create(name='T', job=job, service_item_id=1)
+        return Task.objects.create(name='T', job=job, rate_scheme_id=1)
 
-    def test_start_work_rejected_on_draft_job(self):
+    def test_start_work_allowed_on_draft_job(self):
+        # Pre-approval work: a materialless task starts fine on a draft job.
         task = self._task(_job_at(self.contact))
-        with self.assertRaises(ValidationError):
-            TaskLifecycleService.start_work(task.pk, self.user)
+        result = TaskLifecycleService.start_work(task.pk, self.user)
+        self.assertIn('blep', result)
 
-    def test_start_work_rejected_on_submitted_job(self):
+    def test_start_work_allowed_on_submitted_job(self):
         task = self._task(_job_at(self.contact, Job.STATUS_SUBMITTED))
-        with self.assertRaises(ValidationError):
-            TaskLifecycleService.start_work(task.pk, self.user)
+        result = TaskLifecycleService.start_work(task.pk, self.user)
+        self.assertIn('blep', result)
+
+    def test_start_work_leaves_pre_approval_job_status_unchanged(self):
+        # mark_work_started is a no-op below APPROVED — the job stays draft while
+        # the task advances to in_progress.
+        job = _job_at(self.contact)
+        task = self._task(job)
+        TaskLifecycleService.start_work(task.pk, self.user)
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_DRAFT)
+        self.assertEqual(Task.objects.get(pk=task.pk).status, Task.STATUS_IN_PROGRESS)
 
     def test_start_work_rejected_on_work_complete_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
@@ -91,23 +104,25 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
         )
 
     def _task(self, job):
-        return Task.objects.create(name='T', job=job, service_item_id=1)
+        return Task.objects.create(name='T', job=job, rate_scheme_id=1)
 
     def _times(self):
         now = timezone.now()
         return now - timedelta(hours=2), now - timedelta(hours=1)
 
-    def test_rejected_on_draft_job(self):
+    def test_allowed_on_draft_job(self):
         task = self._task(_job_at(self.contact))
         start, end = self._times()
-        with self.assertRaises(ValidationError):
+        self.assertIsNotNone(
             BlepService.create_historical(self.user, task, start, end)
+        )
 
-    def test_rejected_on_submitted_job(self):
+    def test_allowed_on_submitted_job(self):
         task = self._task(_job_at(self.contact, Job.STATUS_SUBMITTED))
         start, end = self._times()
-        with self.assertRaises(ValidationError):
+        self.assertIsNotNone(
             BlepService.create_historical(self.user, task, start, end)
+        )
 
     def test_allowed_on_approved_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
@@ -179,9 +194,9 @@ class ActualQtyCancelledJobTest(BaseTestCase):
         self.contact = Job.objects.first().contact
 
     def _task(self, job):
-        from apps.jobs.models import ServiceItem
-        scheme = ServiceItem.objects.first()
-        return Task.objects.create(name='T', job=job, service_item=scheme)
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.first()
+        return Task.objects.create(name='T', job=job, rate_scheme=scheme)
 
     def test_actual_qty_settable_on_cancelled_job(self):
         from decimal import Decimal

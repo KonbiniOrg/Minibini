@@ -122,55 +122,6 @@ class JobViewSetPMAccessTest(BaseTestCase):
         self.assertFalse(resp.data['can_manage'])
 
 
-from apps.estimates.models import EstWorksheet
-
-
-class WorksheetPMAccessTest(BaseTestCase):
-    def setUp(self):
-        super().setUp()
-        self.contact = Contact.objects.first()
-        self.pm = User.objects.create_user(username='pm_ws', password='x')
-        self.other = User.objects.create_user(username='other_ws', password='x')
-        self.job = Job.objects.create(
-            job_number='JOB-WS-0001', name='WS', status=Job.STATUS_DRAFT,
-            contact=self.contact, project_manager=self.pm,
-        )
-        self.ws = EstWorksheet.objects.create(job=self.job)
-
-    def _client(self, user):
-        c = APIClient(); c.force_authenticate(user=user); return c
-
-    def test_pm_can_patch_worksheet(self):
-        resp = self._client(self.pm).patch(
-            f'/api/est-worksheets/{self.ws.pk}/', {}, format='json'
-        )
-        self.assertNotEqual(resp.status_code, 403)
-
-    def test_other_cannot_patch_worksheet(self):
-        resp = self._client(self.other).patch(
-            f'/api/est-worksheets/{self.ws.pk}/', {}, format='json'
-        )
-        self.assertEqual(resp.status_code, 403)
-
-    def test_pm_can_create_worksheet_on_own_job(self):
-        resp = self._client(self.pm).post(
-            '/api/est-worksheets/', {'job': self.job.pk}, format='json'
-        )
-        self.assertNotEqual(resp.status_code, 403)
-
-    def test_other_cannot_create_worksheet(self):
-        resp = self._client(self.other).post(
-            '/api/est-worksheets/', {'job': self.job.pk}, format='json'
-        )
-        self.assertEqual(resp.status_code, 403)
-
-    def test_serializer_can_manage(self):
-        resp = self._client(self.pm).get(f'/api/est-worksheets/{self.ws.pk}/')
-        self.assertTrue(resp.data['can_manage'])
-        resp2 = self._client(self.other).get(f'/api/est-worksheets/{self.ws.pk}/')
-        self.assertFalse(resp2.data['can_manage'])
-
-
 from apps.estimates.models import Estimate
 
 
@@ -221,51 +172,6 @@ class EstimatePMAccessTest(BaseTestCase):
         self.assertTrue(resp.data['can_manage'])
 
 
-from decimal import Decimal
-from apps.jobs.models import PlanTask, ServiceItem
-from apps.core.models import AccountingCategory
-
-
-class PlanTaskPMAccessTest(BaseTestCase):
-    def setUp(self):
-        super().setUp()
-        self.contact = Contact.objects.first()
-        self.pm = User.objects.create_user(username='pm_pt', password='x')
-        self.other = User.objects.create_user(username='other_pt', password='x')
-        self.job = Job.objects.create(
-            job_number='JOB-PT-0001', name='PT', status=Job.STATUS_DRAFT,
-            contact=self.contact, project_manager=self.pm,
-        )
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.cat = AccountingCategory.objects.create(code='LAB-pm-pt', name='Labor PM PT')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly PM PT', algorithm=ServiceItem.ENTERED_QTY,
-            rate=Decimal('50.00'), unit_label='hour',
-            accounting_category=self.cat,
-        )
-        self.pt = PlanTask.objects.create(
-            est_worksheet=self.ws, name='Cut',
-            service_item=self.scheme, est_qty=Decimal('1'),
-        )
-
-    def _client(self, user):
-        c = APIClient(); c.force_authenticate(user=user); return c
-
-    def test_pm_add_material_not_forbidden(self):
-        resp = self._client(self.pm).post(
-            f'/api/plan-tasks/{self.pt.pk}/materials/', {}, format='json'
-        )
-        self.assertNotEqual(resp.status_code, 403)
-
-    def test_other_add_material_forbidden(self):
-        resp = self._client(self.other).post(
-            f'/api/plan-tasks/{self.pt.pk}/materials/', {}, format='json'
-        )
-        self.assertEqual(resp.status_code, 403)
-
-    def test_serializer_can_manage(self):
-        resp = self._client(self.pm).get(f'/api/plan-tasks/{self.pt.pk}/')
-        self.assertTrue(resp.data['can_manage'])
 
 
 from apps.estimates.models import ChangeOrder
@@ -367,6 +273,9 @@ from apps.jobs.models import Task
 class TaskAndContactGuardTest(BaseTestCase):
     def setUp(self):
         super().setUp()
+        from decimal import Decimal
+        from apps.jobs.models import RateScheme
+        from apps.core.models import AccountingCategory
         self.contact = Contact.objects.first()
         self.pm = User.objects.create_user(username='pm_tk', password='x')
         self.other = User.objects.create_user(username='other_tk', password='x')
@@ -374,15 +283,15 @@ class TaskAndContactGuardTest(BaseTestCase):
             job_number='JOB-TK-0001', name='TK', status=Job.STATUS_DRAFT,
             contact=self.contact, project_manager=self.pm,
         )
-        # Task.service_item is NOT NULL at the DB level; supply one.
+        # Task.rate_scheme is NOT NULL at the DB level; supply one.
         self.cat = AccountingCategory.objects.create(code='LAB-tk', name='Labor TK')
-        self.scheme = ServiceItem.objects.create(
-            name='Hourly TK', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme = RateScheme.objects.create(
+            name='Hourly TK', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('50.00'), unit_label='hour',
             accounting_category=self.cat,
         )
         self.task = Task.objects.create(
-            job=self.job, name='Mill', service_item=self.scheme, sort_order=1,
+            job=self.job, name='Mill', rate_scheme=self.scheme, sort_order=1,
         )
 
     def _client(self, user):
@@ -420,7 +329,7 @@ class TaskAssignPMAccessTest(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from apps.jobs.models import Task, ServiceItem
+        from apps.jobs.models import Task, RateScheme
         from apps.core.models import AccountingCategory
         from decimal import Decimal
         self.contact = Contact.objects.first()
@@ -431,12 +340,12 @@ class TaskAssignPMAccessTest(BaseTestCase):
             contact=self.contact, project_manager=self.pm,
         )
         ac = AccountingCategory.objects.create(code='ASG-AC', name='ASG AC')
-        scheme = ServiceItem.objects.create(
-            name='ASG-S', algorithm='flat_fee', rate=Decimal('1'),
+        scheme = RateScheme.objects.create(
+            name='ASG-S', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=ac,
         )
         self.task = Task.objects.create(
-            job=self.job, name='T', service_item=scheme, sort_order=1,
+            job=self.job, name='T', rate_scheme=scheme, sort_order=1,
         )
 
     def _client(self, user):

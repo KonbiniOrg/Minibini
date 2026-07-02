@@ -7,8 +7,8 @@ from decimal import Decimal
 from datetime import timedelta
 from apps.contacts.models import Contact, Business, PaymentTerms
 from apps.core.models import User, Configuration, AccountingCategory
-from apps.jobs.models import Job, Task, Blep, ServiceItem
-from apps.estimates.models import Estimate, TaskTemplate
+from apps.jobs.models import Job, Task, Blep, RateScheme
+from apps.estimates.models import Estimate, ServiceItem
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
 from apps.estimates.models import EstimateLineItem
@@ -41,8 +41,8 @@ class ComprehensiveModelIntegrationTest(TestCase):
             business=self.business
         )
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.scheme = ServiceItem.objects.create(
-            name='S-cm-int', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-cm-int', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
 
@@ -66,7 +66,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             est_worker_time=timedelta(hours=1),
             job=job,
             name="Test Task",
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
 
         blep = Blep.objects.create(
@@ -214,20 +214,19 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        from apps.jobs.models import ServiceItem
-        scheme = ServiceItem.objects.create(
-            name='S-cmtw', algorithm=ServiceItem.FLAT_FEE,
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.create(
+            name='S-cmtw', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         task = Task.objects.create(
             job=job,
             name="Planning Task",
-            service_item=scheme,
+            rate_scheme=scheme,
         )
-        task_template = TaskTemplate.objects.create(
+        service_item = ServiceItem.objects.create(
             template_name="Planning Task Template",
-            service_item=scheme,
-            default_billable_qty=Decimal('1.00'),
+            rate_scheme=scheme,
         )
 
         self.assertEqual(task.job, job)
@@ -263,7 +262,7 @@ class ComprehensiveModelIntegrationTest(TestCase):
             contact=self.contact
         )
 
-        task = Task.objects.create(job=job, name="Test Task", service_item=self.scheme)
+        task = Task.objects.create(job=job, name="Test Task", rate_scheme=self.scheme)
 
         initial_task_count = Task.objects.count()
 
@@ -387,26 +386,17 @@ class LineItemValidationTest(TestCase):
             contact=self.contact,
             vendor_invoice_number="VIN_VALID001"
         )
-        # EstimateLineItem.task targets PlanTask, not Task
-        from apps.estimates.models import EstWorksheet
-        from apps.jobs.models import PlanTask, ServiceItem
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
+        from apps.jobs.models import RateScheme
         self.cm_ac = AccountingCategory.objects.create(code='CM-AC', name='cm-ac')
-        self.cm_scheme = ServiceItem.objects.create(
-            name='S-cm', algorithm=ServiceItem.FLAT_FEE,
+        self.cm_scheme = RateScheme.objects.create(
+            name='S-cm', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea',
             accounting_category=self.cm_ac,
         )
         self.task = Task.objects.create(
             job=self.job,
             name="Test Task",
-            service_item=self.cm_scheme,
-        )
-        self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet,
-            name="Plan Test Task",
-            service_item=self.cm_scheme,
-            est_qty=Decimal('1'),
+            rate_scheme=self.cm_scheme,
         )
 
         # Create price list item

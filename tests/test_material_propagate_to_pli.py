@@ -3,8 +3,7 @@ from django.contrib.auth.models import Permission
 from rest_framework.test import APITestCase
 from apps.core.models import AccountingCategory, Configuration, User
 from apps.contacts.models import Contact
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
-from apps.estimates.models import EstWorksheet
+from apps.inventory.models import Material, InventoryItem
 from apps.jobs.models import Job
 
 
@@ -94,18 +93,3 @@ class MaterialPropagateTests(_Setup):
         self.assertEqual(self.pli.purchase_price, Decimal('52.00'))
 
 
-class PlanMaterialPropagateTests(_Setup):
-    def test_propagate_via_plan_material_updates_pli(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
-        )
-        resp = self.client.patch(
-            f'/api/est-worksheets/{ws.pk}/plan-materials/{pm.pk}/',
-            {'unit_cost': '52.00', 'sell_price': '78.00', 'propagate_to_pli': True},
-            format='json',
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.pli.refresh_from_db()
-        self.assertEqual(self.pli.purchase_price, Decimal('52.00'))
-        self.assertEqual(self.pli.selling_price, Decimal('78.00'))

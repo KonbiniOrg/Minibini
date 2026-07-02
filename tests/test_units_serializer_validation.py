@@ -15,14 +15,14 @@ class TaskSerializerUnitsValidationTest(BaseTestCase):
         self.client.force_authenticate(user=self.user)
 
     # NOTE: Task serializer no longer carries a `units` field — billing identity
-    # (units, rate, accounting category) lives on ServiceItem via TaskCharge after
+    # (units, rate, accounting category) lives on RateScheme via TaskCharge after
     # the rate-scheme-billing-identity migration. Unit validation for Tasks is
-    # therefore not tested here. Unit validation for TaskTemplate (which still
+    # therefore not tested here. Unit validation for ServiceItem (which still
     # has a `units` field on the templates side) remains below.
 
-    def test_task_template_serializer_rejects_invalid_unit(self):
+    def test_service_item_serializer_rejects_invalid_unit(self):
         response = self.client.post(
-            '/api/task-templates/',
+            '/api/service-items/',
             {'template_name': 'Test', 'units': 'invalid_xyz'},
             format='json',
         )

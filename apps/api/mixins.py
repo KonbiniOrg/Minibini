@@ -303,61 +303,6 @@ class LineItemMixin:
             raise NotFound()
 
 
-class PlanTaskMixin:
-    """
-    Adds plan-task CRUD actions to the EstWorksheet viewset.
-
-    Works against PlanTask (worksheet-side model).
-
-    Subclasses declare:
-        plan_task_serializer_class = SomePlanTaskSerializer
-    """
-    plan_task_serializer_class = None
-
-    @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
-    def tasks(self, request, pk=None):
-        worksheet = self.get_object()
-        if request.method == 'GET':
-            from apps.jobs.models import PlanTask
-            tasks = PlanTask.objects.filter(
-                est_worksheet=worksheet,
-            ).select_related('service_item').order_by('sort_order')
-            serializer = self.plan_task_serializer_class(tasks, many=True)
-            return Response(serializer.data)
-
-        serializer = self.plan_task_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(est_worksheet=worksheet)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='tasks/(?P<task_id>[0-9]+)', url_name='task-detail')
-    def task_detail(self, request, pk=None, task_id=None):
-        worksheet = self.get_object()
-        task = self._get_plan_task_or_404(worksheet, task_id)
-
-        if request.method == 'DELETE':
-            task.delete()
-            return Response({'message': 'Task deleted.'})
-
-        serializer = self.plan_task_serializer_class(task, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-    def _get_plan_task_or_404(self, worksheet, task_id):
-        from apps.jobs.models import PlanTask
-        try:
-            return PlanTask.objects.get(pk=task_id, est_worksheet=worksheet)
-        except PlanTask.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
-
-
-# Backwards-compat alias — remove after all callers updated
-PlanTaskBundleMixin = PlanTaskMixin
-
-
 class JobTaskMixin:
     """
     Adds task CRUD actions to the Job viewset. Works against Task.
@@ -377,13 +322,13 @@ class JobTaskMixin:
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         data = request.data
         try:
             task = TaskService.create_direct(
                 job,
                 name=data.get('name', ''),
-                service_item_id=data.get('service_item'),
+                rate_scheme_id=data.get('rate_scheme'),
                 active_modifiers=data.get('active_modifiers') or [],
                 est_qty=data.get('est_qty'),
                 est_worker_time=data.get('est_worker_time'),
@@ -392,9 +337,9 @@ class JobTaskMixin:
                 parent_task_id=data.get('parent_task'),
                 assignee_id=data.get('assignee'),
             )
-        except ServiceItem.DoesNotExist:
+        except RateScheme.DoesNotExist:
             return Response(
-                {'detail': {'service_item': 'ServiceItem not found.'}},
+                {'detail': {'rate_scheme': 'RateScheme not found.'}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except ValidationError as e:
@@ -455,7 +400,7 @@ class JobScopedPermissionMixin:
 
     Configure per viewset:
       - job_object_path: attribute chain instance -> Job ('self' for JobViewSet,
-        'job', 'est_worksheet.job', 'estimate.job', 'change_order.job', ...).
+        'job', 'estimate.job', 'change_order.job', ...).
       - job_create_field: request.data key naming the parent Job on create.
       - job_url_kwarg: URL kwarg holding the job id (job-nested routes).
     """

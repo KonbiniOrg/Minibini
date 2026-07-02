@@ -69,6 +69,23 @@ describe('TimeEditModal', () => {
     expect(getByRole('button', { name: 'Save' })).not.toBeDisabled();
   });
 
+  it('queries shifts at the blep start with no 24h lookback offset', async () => {
+    // Regression: the shift check used `since = blepStart - 24h` to catch
+    // overnight shifts. The backend now returns shifts still active at/after
+    // `since`, so the offset is gone — `since` must be the blep start instant.
+    api.get.mockResolvedValue([]);
+    const { getByLabelText } = render(TimeEditModal, {
+      props: { open: true, recordType: 'blep', action: 'edit', record: blep, currentUser: { id: 2 } },
+    });
+    await fireEvent.blur(getByLabelText('Start'));
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
+    const shiftCall = api.get.mock.calls.find(([url]) => url.includes('/api/shifts/'));
+    expect(shiftCall).toBeTruthy();
+    const url = shiftCall[0];
+    expect(url).toContain('2026-03-01');   // the blep's start day
+    expect(url).not.toContain('2026-02-28'); // not 24h earlier
+  });
+
   it('blocks a blep edit when no shift covers it (control: the check runs)', async () => {
     api.get.mockResolvedValue([]); // no shifts at all
     const { getByLabelText, getByRole, findByText } = render(TimeEditModal, {

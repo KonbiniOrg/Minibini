@@ -48,7 +48,7 @@ class NotFoundError(ServiceError):
 
 
 class SchemeSupersededError(ServiceError):
-    """Raised when a template referencing a superseded ServiceItem is used."""
+    """Raised when a template referencing a superseded RateScheme is used."""
     pass
 
 

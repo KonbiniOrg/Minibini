@@ -27,7 +27,7 @@
 
   async function loadServices() {
     try {
-      const resp = await api.get('/api/service-items/?page_size=100');
+      const resp = await api.get('/api/rate-schemes/?page_size=100');
       const all = resp.results || resp;
       services = all.filter(s => s.algorithm === 'percentage');
     } catch (_) {
@@ -45,7 +45,7 @@
 
   async function submit() {
     if (!selectedServiceId) {
-      error = 'Please choose a percentage service before adding.';
+      error = 'Please choose a rate before adding.';
       return;
     }
     busy = true;
@@ -70,15 +70,14 @@
       <h3>Add Percentage Adjustment</h3>
 
       <p>
-        <label for="adj-service"><strong>Percentage Service *</strong></label><br>
         <select
           id="adj-service"
-          aria-label="Percentage service"
+          aria-label="Percentage rate scheme"
           bind:value={selectedServiceId}
         >
-          <option value="">-- Select a service --</option>
+          <option value="">-- Select a rate --</option>
           {#each services as svc}
-            <option value={svc.service_item_id}>
+            <option value={svc.rate_scheme_id}>
               {svc.name} ({svc.rate}%)
             </option>
           {/each}

@@ -311,7 +311,7 @@
         }
     },
     {
-        "model": "jobs.serviceitem",
+        "model": "jobs.ratescheme",
         "pk": 1,
         "fields": {
             "name": "Std Hourly",
@@ -324,7 +324,7 @@
         }
     },
     {
-        "model": "jobs.serviceitem",
+        "model": "jobs.ratescheme",
         "pk": 2,
         "fields": {
             "name": "Std CNC Router",
@@ -348,7 +348,7 @@
         }
     },
     {
-        "model": "jobs.serviceitem",
+        "model": "jobs.ratescheme",
         "pk": 3,
         "fields": {
             "name": "Std Setup Fee",
@@ -397,7 +397,7 @@
             "description": "",
             "sort_order": null,
             "job": 1,
-            "service_item": 1,
+            "rate_scheme": 1,
             "active_modifiers": [],
             "actual_qty": null,
             "est_qty": null
@@ -412,7 +412,7 @@
             "description": "",
             "sort_order": null,
             "job": 1,
-            "service_item": 1,
+            "rate_scheme": 1,
             "active_modifiers": [],
             "actual_qty": null,
             "est_qty": null
@@ -645,51 +645,47 @@
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 1,
         "fields": {
             "template_name": "Site Preparation",
             "description": "Standard site preparation and safety setup",
             "is_active": true,
             "created_date": "2023-01-15T10:30:00Z",
-            "service_item": 3,
-            "default_billable_qty": "1.00"
+            "rate_scheme": 3
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 2,
         "fields": {
             "template_name": "Material Delivery",
             "description": "Material procurement and delivery setup",
             "is_active": true,
             "created_date": "2023-01-15T11:00:00Z",
-            "service_item": 3,
-            "default_billable_qty": "1.00"
+            "rate_scheme": 3
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 3,
         "fields": {
             "template_name": "Electrical Installation",
             "description": "Standard electrical rough-in work",
             "is_active": true,
             "created_date": "2023-01-15T11:30:00Z",
-            "service_item": 1,
-            "default_billable_qty": "1.00"
+            "rate_scheme": 1
         }
     },
     {
-        "model": "estimates.tasktemplate",
+        "model": "estimates.serviceitem",
         "pk": 4,
         "fields": {
             "template_name": "Construction Work",
             "description": "General construction and installation",
             "is_active": true,
             "created_date": "2023-01-15T12:00:00Z",
-            "service_item": 1,
-            "default_billable_qty": "1.00"
+            "rate_scheme": 1
         }
     },
     {
@@ -697,7 +693,7 @@
         "pk": 1,
         "fields": {
             "work_template": 1,
-            "task_template": 1,
+            "service_item": 1,
             "est_qty": "1.00",
             "sort_order": 1
         }
@@ -707,7 +703,7 @@
         "pk": 2,
         "fields": {
             "work_template": 1,
-            "task_template": 2,
+            "service_item": 2,
             "est_qty": "2.00",
             "sort_order": 2
         }
@@ -717,7 +713,7 @@
         "pk": 3,
         "fields": {
             "work_template": 1,
-            "task_template": 3,
+            "service_item": 3,
             "est_qty": "150.00",
             "sort_order": 3
         }
@@ -727,7 +723,7 @@
         "pk": 4,
         "fields": {
             "work_template": 1,
-            "task_template": 4,
+            "service_item": 4,
             "est_qty": "200.00",
             "sort_order": 4
         }

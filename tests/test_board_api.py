@@ -30,7 +30,7 @@ class TaskWorkerQueueTest(FixtureTestCase):
             name='Test task',
             job=self.job,
             worker_queue=5,
-            service_item_id=1,
+            rate_scheme_id=1,
         )
         task.save()
         task.refresh_from_db()
@@ -41,7 +41,7 @@ class TaskWorkerQueueTest(FixtureTestCase):
             name='Test task',
             job=self.job,
             worker_queue=None,
-            service_item_id=1,
+            rate_scheme_id=1,
         )
         task.save()
         task.refresh_from_db()
@@ -96,15 +96,15 @@ class TaskReorderEndpointTest(FixtureTestCase):
         )
         self.task1 = Task.objects.create(
             name='Task 1', job=self.job, assignee=self.user, worker_queue=1,
-            service_item_id=1, est_worker_time=timedelta(hours=1),
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
         )
         self.task2 = Task.objects.create(
             name='Task 2', job=self.job, assignee=self.user, worker_queue=2,
-            service_item_id=1, est_worker_time=timedelta(hours=1),
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
         )
         self.task3 = Task.objects.create(
             name='Task 3', job=self.job, assignee=self.user, worker_queue=3,
-            service_item_id=1, est_worker_time=timedelta(hours=1),
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1),
         )
 
     def test_reorder_updates_worker_queue(self):
@@ -148,7 +148,7 @@ class TaskReorderEndpointTest(FixtureTestCase):
 
     def test_assign_task_via_patch(self):
         unassigned_task = Task.objects.create(
-            name='Unassigned', job=self.job, service_item_id=1,
+            name='Unassigned', job=self.job, rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
         response = self.client.post(
@@ -193,7 +193,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
         )
     def test_assign_task_to_worker(self):
         task = Task.objects.create(
-            name='Unassigned', job=self.job, service_item_id=1,
+            name='Unassigned', job=self.job, rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
         response = self.client.post(
@@ -210,7 +210,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
         """A task with no estimated worker time cannot be scheduled, so the
         assign endpoint signals the UI to prompt instead of assigning."""
         task = Task.objects.create(
-            name='No estimate', job=self.job, service_item_id=1,
+            name='No estimate', job=self.job, rate_scheme_id=1,
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
@@ -226,7 +226,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
         """Supplying est_worker_time alongside the assignee both schedules
         the duration and completes the assignment."""
         task = Task.objects.create(
-            name='No estimate', job=self.job, service_item_id=1,
+            name='No estimate', job=self.job, rate_scheme_id=1,
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
@@ -244,7 +244,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_task_that_already_has_worker_time(self):
         """No prompt when the task already carries an estimate."""
         task = Task.objects.create(
-            name='Has estimate', job=self.job, service_item_id=1,
+            name='Has estimate', job=self.job, rate_scheme_id=1,
             est_worker_time=timedelta(hours=2),
         )
         response = self.client.post(
@@ -258,7 +258,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
 
     def test_assign_with_zero_duration_rejected(self):
         task = Task.objects.create(
-            name='No estimate', job=self.job, service_item_id=1,
+            name='No estimate', job=self.job, rate_scheme_id=1,
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
@@ -274,7 +274,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
 
     def test_assign_with_unparseable_duration_rejected(self):
         task = Task.objects.create(
-            name='No estimate', job=self.job, service_item_id=1,
+            name='No estimate', job=self.job, rate_scheme_id=1,
         )
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
@@ -291,7 +291,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
         somehow holds an assignee without an estimate. The model invariant
         blocks creating one, so force the legacy state via .update()."""
         task = Task.objects.create(
-            name='Assigned, no estimate', job=self.job, service_item_id=1,
+            name='Assigned, no estimate', job=self.job, rate_scheme_id=1,
         )
         Task.objects.filter(pk=task.pk).update(
             assignee=self.user, worker_queue=1,
@@ -308,7 +308,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_unassign_task(self):
         task = Task.objects.create(
             name='Assigned', job=self.job,
-            assignee=self.user, worker_queue=1, service_item_id=1,
+            assignee=self.user, worker_queue=1, rate_scheme_id=1,
             est_worker_time=timedelta(hours=1),
         )
         response = self.client.post(
@@ -324,7 +324,7 @@ class TaskAssignEndpointTest(FixtureTestCase):
     def test_assign_requires_permission(self):
         viewer = User.objects.create_user(username='viewer', password='testpass')
         self.client.login(username='viewer', password='testpass')
-        task = Task.objects.create(name='Task', job=self.job, service_item_id=1)
+        task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
         response = self.client.post(
             f'/api/tasks/{task.pk}/assign/',
             data={'assignee': self.user.pk, 'worker_queue': 1},

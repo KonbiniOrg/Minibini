@@ -72,60 +72,6 @@ class InventoryServiceTest(TestCase):
             InventoryService.update_item(99999, description='Nope')
 
 
-class AssignPlanTaskServiceTest(TestCase):
-    """Tests for InventoryService.assign_plan_task — moves PlanMaterial across PlanTasks."""
-
-    def setUp(self):
-        from apps.contacts.models import Contact
-        from apps.jobs.models import Job, PlanTask, ServiceItem
-        from apps.estimates.models import EstWorksheet
-        from apps.inventory.models import PlanMaterial
-        self.cat = AccountingCategory.objects.get_or_create(
-            code='APT-CAT', defaults={'name': 'apt', 'taxable': False},
-        )[0]
-        self.contact = Contact.objects.create(first_name='Apt', last_name='User')
-        self.job = Job.objects.create(job_number='APT-JOB', contact=self.contact)
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServiceItem.objects.create(
-            name='apt-scheme', algorithm=ServiceItem.FLAT_FEE,
-            rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
-        )
-        self.task_a = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='A',
-            service_item=self.scheme, est_qty=Decimal('1'),
-        )
-        self.task_b = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='B',
-            service_item=self.scheme, est_qty=Decimal('1'),
-        )
-        # A second worksheet w/ its own PlanTask, for cross-worksheet rejection.
-        self.other_ws = EstWorksheet.objects.create(job=self.job)
-        self.other_task = PlanTask.objects.create(
-            est_worksheet=self.other_ws, name='Other',
-            service_item=self.scheme, est_qty=Decimal('1'),
-        )
-        self.mat = PlanMaterial.objects.create(
-            est_worksheet=self.worksheet, plan_task=self.task_a,
-            description='m', quantity=Decimal('1'),
-            accounting_category=self.cat,
-        )
-
-    def test_assign_plan_task_moves_fk(self):
-        InventoryService.assign_plan_task(self.mat, self.task_b)
-        self.mat.refresh_from_db()
-        self.assertEqual(self.mat.plan_task_id, self.task_b.pk)
-
-    def test_assign_plan_task_none_makes_taskless(self):
-        InventoryService.assign_plan_task(self.mat, None)
-        self.mat.refresh_from_db()
-        self.assertIsNone(self.mat.plan_task_id)
-
-    def test_assign_plan_task_cross_worksheet_rejected(self):
-        from django.core.exceptions import ValidationError
-        with self.assertRaises(ValidationError):
-            InventoryService.assign_plan_task(self.mat, self.other_task)
-        self.mat.refresh_from_db()
-        self.assertEqual(self.mat.plan_task_id, self.task_a.pk)
 
 
 class InventoryMarkupTest(TestCase):

@@ -187,7 +187,7 @@
       {saving ? 'Saving…' : 'Save'}
     </button>
     {#if isBundled && isOverridden}
-      <span style="color: #a55;">⚠ overridden (computed ${computedSum.toFixed(2)})</span>
+      <span style="color: #a55;">⚠ out of sync with atoms (computed ${computedSum.toFixed(2)})</span>
       <button type="button" onclick={resetToComputed}>reset to computed</button>
     {:else if !isBundled}
       <span style="color: #888;"><em>(manual)</em></span>

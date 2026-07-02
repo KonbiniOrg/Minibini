@@ -232,7 +232,8 @@ class ExpenseRejectNonInventoriedTest(TestCase):
 
         self.cat = AccountingCategory.objects.create(name='ni', code='NICAT1')
         self.user = User.objects.create(username='ni_user')
-        self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.pli_noninv = InventoryItem.objects.create(
             code='NI-PLI', accounting_category=self.cat, is_catalog=False,
             qty_on_hand=Decimal('5'),

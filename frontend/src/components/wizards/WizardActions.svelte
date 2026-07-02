@@ -3,8 +3,9 @@
   import { push } from 'svelte-spa-router';
 
   let {
-    apiBase,         // e.g. '/api/invoices/123' or '/api/estimates/123'
-    detailRoute,     // e.g. '/invoices/123' or '/estimates/123'
+    apiBase,            // e.g. '/api/invoices/123' or '/api/estimates/123'
+    detailRoute,        // e.g. '/invoices/123' or '/estimates/123'
+    discardRoute = '/', // where to go after discarding (default: home)
   } = $props();
 
   // No confirm: the draft is easily remade from its source on the page the
@@ -12,7 +13,7 @@
   async function discard() {
     try {
       await api.delete(`${apiBase}/?confirm=true`);
-      push('/');
+      push(discardRoute);
     } catch (e) {
       alert(e.message || 'Failed to discard');
     }

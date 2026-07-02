@@ -7,11 +7,11 @@ from rest_framework.response import Response
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.db.models import Prefetch
-from apps.jobs.models import Job, Task
+from apps.jobs.models import Job, Task, Fee
 from apps.inventory.models import Material
-from apps.jobs.services import JobService, TaskService
+from apps.jobs.services import JobService, TaskService, FeeService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
-from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
+from apps.estimates.models import WorkTemplate, Estimate, ServiceItem
 from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
@@ -26,7 +26,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             Prefetch(
                 'tasks',
                 queryset=Task.objects.select_related(
-                    'assignee', 'service_item', 'source_plan_task',
+                    'assignee', 'rate_scheme',
                 ).prefetch_related('blep_set').order_by('sort_order'),
             ),
             Prefetch(
@@ -34,6 +34,10 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 queryset=Material.objects.select_related(
                     'inventory_item', 'po_line_item__purchase_order',
                 ),
+            ),
+            Prefetch(
+                'fees',
+                queryset=Fee.objects.order_by('sort_order'),
             ),
         ) \
         .all().order_by('-created_date')
@@ -234,32 +238,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         job.refresh_from_db()
         return Response(self.get_serializer(job).data)
 
-    @action(detail=True, methods=['post'], url_path='copy-from-worksheet')
-    def copy_from_worksheet(self, request, pk=None):
-        job = self.get_object()
-        worksheet_pk = request.data.get('worksheet_id')
-        if not worksheet_pk:
-            return Response(
-                {'worksheet_id': ['This field is required.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            return Response(
-                {'worksheet_id': ['Worksheet not found.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            JobService.copy_from_worksheet(job.pk, ws.pk)
-        except (ValidationError, NotFoundError) as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        job.refresh_from_db()
-        return Response(self.get_serializer(job).data)
-
     @action(detail=True, methods=['post'], url_path='reorder-tasks')
     def reorder_tasks(self, request, pk=None):
         job = self.get_object()
@@ -328,6 +306,123 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['post'], url_path='fees', url_name='fees')
+    def create_fee(self, request, pk=None):
+        """Create a Fee atom on this job. Manager-or-PM gated (the viewset
+        default) — a fee is a billing decision, not worker self-service like
+        tasks/materials, so it is not in `authenticated_only_actions`."""
+        from apps.core.models import AccountingCategory
+        from .serializers import FeeSerializer
+        job = self.get_object()
+        data = request.data
+        ac = None
+        ac_id = data.get('accounting_category')
+        if ac_id:
+            try:
+                ac = AccountingCategory.objects.get(pk=ac_id)
+            except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {'accounting_category': ['Accounting category not found.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        task = None
+        task_id = data.get('task')
+        if task_id:
+            try:
+                task = Task.objects.get(pk=task_id, job=job)
+            except (Task.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {'task': ['Task not found on this job.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        try:
+            fee = FeeService.create_on_job(
+                job,
+                description=data.get('description', ''),
+                quantity=Decimal(str(data.get('quantity', '1'))),
+                unit_rate=Decimal(str(data.get('unit_rate', '0'))),
+                accounting_category=ac,
+                task=task,
+            )
+        except InvalidOperation:
+            return Response(
+                {'detail': 'quantity and unit_rate must be valid numbers.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValidationError as e:
+            if hasattr(e, 'message_dict'):
+                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(FeeSerializer(fee).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path='fees/(?P<fee_pk>[0-9]+)', url_name='fee-detail')
+    def fee_detail(self, request, pk=None, fee_pk=None):
+        """PATCH (edit) or DELETE a Fee on this job. DELETE returns 200 + JSON
+        body per the project convention (never 204)."""
+        from apps.core.models import AccountingCategory
+        from .serializers import FeeSerializer
+        job = self.get_object()
+        try:
+            fee = Fee.objects.get(pk=fee_pk, job=job)
+        except Fee.DoesNotExist:
+            return Response({'detail': 'Fee not found on this job.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if request.method == 'DELETE':
+            try:
+                FeeService.delete(fee.pk)
+            except ValidationError as e:
+                return Response({'detail': '; '.join(e.messages)},
+                                status=status.HTTP_400_BAD_REQUEST)
+            return Response({'message': 'Fee deleted.'}, status=status.HTTP_200_OK)
+
+        # PATCH — only the editable scalar fields plus AC/task relinks.
+        data = request.data
+        fields = {}
+        if 'description' in data:
+            fields['description'] = data['description'] or ''
+        try:
+            if 'quantity' in data:
+                fields['quantity'] = Decimal(str(data['quantity']))
+            if 'unit_rate' in data:
+                fields['unit_rate'] = Decimal(str(data['unit_rate']))
+        except InvalidOperation:
+            return Response(
+                {'detail': 'quantity and unit_rate must be valid numbers.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if 'sort_order' in data:
+            fields['sort_order'] = data['sort_order']
+        if 'accounting_category' in data:
+            ac_id = data['accounting_category']
+            try:
+                fields['accounting_category'] = AccountingCategory.objects.get(pk=ac_id)
+            except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {'accounting_category': ['Accounting category not found.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        if 'task' in data:
+            task_id = data['task']
+            if task_id is None:
+                fields['task'] = None
+            else:
+                try:
+                    fields['task'] = Task.objects.get(pk=task_id, job=job)
+                except (Task.DoesNotExist, ValueError, TypeError):
+                    return Response(
+                        {'task': ['Task not found on this job.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+        try:
+            fee = FeeService.update(fee.pk, **fields)
+        except ValidationError as e:
+            if hasattr(e, 'message_dict'):
+                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(FeeSerializer(fee).data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['get'], url_path='agreement', url_name='agreement')
     def agreement(self, request, pk=None):
         """Return the effective agreement for the job: accepted estimate lines with
@@ -354,23 +449,23 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
         job = self.get_object()
-        task_template_id = request.data.get('task_template_id')
+        service_item_id = request.data.get('service_item_id')
         est_qty_raw = request.data.get('est_qty')
         name = request.data.get('name') or None
         description = request.data.get('description')  # None means "not provided"
         active_modifiers = request.data.get('active_modifiers')  # None means use template default
         est_worker_time = request.data.get('est_worker_time') or None
 
-        if not task_template_id:
+        if not service_item_id:
             return Response(
-                {'task_template_id': ['This field is required.']},
+                {'service_item_id': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            template = TaskTemplate.objects.get(pk=task_template_id)
-        except TaskTemplate.DoesNotExist:
+            template = ServiceItem.objects.get(pk=service_item_id)
+        except ServiceItem.DoesNotExist:
             return Response(
-                {'task_template_id': ['Task template not found.']},
+                {'service_item_id': ['Task template not found.']},
                 status=status.HTTP_404_NOT_FOUND,
             )
         try:
