@@ -102,8 +102,10 @@ toggle + `AddServiceItemModal` + inventory picker) wants thinking-through, not a
 
 ### Notes toward the design
 
-- The old three-catalog search picker (worksheet-era) is the reference; check its git history
-  (`e600c331`/`d44a3510` "backend-search Price List picker") for the search UX to revive.
+- The search UX to revive already lives in main as `frontend/src/components/PriceListPicker.svelte`
+  (+ `frontend/tests/components/PriceListPicker.test.js`) — the evolved descendant of the original
+  worksheet-era three-catalog picker. Use it as the reference; its backends are
+  `/api/rate-schemes/?search=` and the inventory `is_catalog` catalog filter.
 - Consolidate today's separate estimate affordances (Add Line Item + Add from Service + inventory
   toggle) behind the one picker; keep the freeform/manual escape (hand-line → Fee).
 - **This picker is where the "which atom type" signal lives** — which resolves the standing
