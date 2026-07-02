@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
+  import { canManageFinancials } from '../../stores/permissions.js';
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
@@ -346,6 +347,8 @@
     readonly={false}
     {jobLocked}
     canManage={job?.can_manage}
+    canManageFinancials={$canManageFinancials}
+    jobId={job?.job_id}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}

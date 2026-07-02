@@ -35,6 +35,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     units = UnitsField()
     qty_on_order = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
+    qty_available = serializers.SerializerMethodField()
     propagate_to_pli = serializers.BooleanField(
         write_only=True, required=False,
     )
@@ -49,7 +50,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'restocked_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'units', 'qty_on_order', 'qty_on_hand',
+            'units', 'qty_on_order', 'qty_on_hand', 'qty_available',
             'propagate_to_pli',
             'invoice',
         ]
@@ -58,7 +59,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'restocked_qty', 'is_expense_bound',
             'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'qty_on_order', 'qty_on_hand',
+            'qty_on_order', 'qty_on_hand', 'qty_available',
         ]
 
     def validate(self, attrs):
@@ -119,6 +120,17 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             # Earmark-aware availability is surfaced separately (qty_available).
             return str(obj.inventory_item.qty_on_hand)
         return '0'
+
+    def get_qty_available(self, obj):
+        if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+            return None
+        if not obj.inventory_item_id:
+            return None
+        # Use the pre-annotated earmark total when available (avoids N+1).
+        earmarked = getattr(obj, '_inv_earmarked', None)
+        if earmarked is not None:
+            return str(obj.inventory_item.qty_on_hand - earmarked)
+        return str(obj.inventory_item.qty_available)
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (

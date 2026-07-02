@@ -5,10 +5,11 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery, Sum, DecimalField, Value
 from django.db.models import Prefetch
+from django.db.models.functions import Coalesce
 from apps.jobs.models import Job, Task
-from apps.inventory.models import Material
+from apps.inventory.models import Material, Earmark
 from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError, SchemeSupersededError
 from apps.estimates.models import WorkTemplate, Estimate, EstWorksheet, TaskTemplate
@@ -33,6 +34,17 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 'materials',
                 queryset=Material.objects.select_related(
                     'inventory_item', 'po_line_item__purchase_order',
+                ).annotate(
+                    _inv_earmarked=Coalesce(
+                        Subquery(
+                            Earmark.objects.filter(inventory_item_id=OuterRef('inventory_item_id'))
+                            .values('inventory_item_id')
+                            .annotate(total=Sum('quantity'))
+                            .values('total')
+                        ),
+                        Value(Decimal('0.00')),
+                        output_field=DecimalField(max_digits=10, decimal_places=2),
+                    )
                 ),
             ),
         ) \

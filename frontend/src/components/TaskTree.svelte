@@ -9,6 +9,8 @@
     readonly = false,
     jobLocked = false,
     canManage = false,
+    canManageFinancials = false,
+    jobId = null,
     showStatus = true,
     showAssignee = true,
     onEditTask = () => {},
@@ -150,7 +152,24 @@
     return mat.consumption_state === 'consumed'
       || (mat.is_expense_bound && Number(mat.quantity) === 0);
   }
+
+  function matQtyAvail(mat) {
+    if (!mat.inventory_item || mat.qty_available === null || mat.qty_available === undefined) return null;
+    return Number(mat.qty_available);
+  }
 </script>
+
+{#snippet availBadge(mat)}
+  {#if matQtyAvail(mat) !== null}
+    <span class={matQtyAvail(mat) >= 0 ? 'avail-ok' : 'avail-short'}>({mat.qty_available} avail)</span>
+  {/if}
+{/snippet}
+
+{#snippet orderLink(mat)}
+  {#if canManageFinancials && jobId && matQtyAvail(mat) !== null && matQtyAvail(mat) < 0}
+    <a href="#/purchase-orders/new" class="order-link">order</a>
+  {/if}
+{/snippet}
 
 {#snippet expenseRow(exp, deep)}
   <tr class="expense-row">
@@ -245,7 +264,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'} {@render availBadge(mat)}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
@@ -264,9 +283,10 @@
               {/if}
               <button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>
               <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
+              {@render orderLink(mat)}
             </td>
           {:else if !readonly}
-            <td class="actions-cell"></td>
+            <td class="actions-cell">{@render orderLink(mat)}</td>
           {/if}
         </tr>
       {/each}
@@ -312,7 +332,7 @@
               <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
             {/if}
             <td class="indent-2">
-              {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+              {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'} {@render availBadge(mat)}
             </td>
             {#if showAssignee}<td></td>{/if}
             <td></td>
@@ -331,9 +351,10 @@
                 {/if}
                 <button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>
                 <button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>
+                {@render orderLink(mat)}
               </td>
             {:else if !readonly}
-              <td class="actions-cell"></td>
+              <td class="actions-cell">{@render orderLink(mat)}</td>
             {/if}
           </tr>
         {/each}
@@ -349,7 +370,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'} {@render availBadge(mat)}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
@@ -368,9 +389,10 @@
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
               {/if}
               <button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>
+              {@render orderLink(mat)}
             </td>
           {:else if !readonly}
-            <td class="actions-cell"></td>
+            <td class="actions-cell">{@render orderLink(mat)}</td>
           {/if}
         </tr>
         {#if expenseByMaterial[mat.material_id]}
@@ -448,4 +470,8 @@
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .small-btn:hover { background: #f0f0f0; }
+
+  .avail-ok { font-size: 11px; color: #166534; margin-left: 4px; }
+  .avail-short { font-size: 11px; color: #991b1b; margin-left: 4px; }
+  .order-link { font-size: 11px; margin: 0 2px; }
 </style>
