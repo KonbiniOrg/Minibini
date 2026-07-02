@@ -40,6 +40,12 @@ class UnconsumeTest(TestCase):
         self.assertEqual(self.pli.qty_sold, Decimal('0'))
 
     def test_unconsume_restores_earmark(self):
+        # Earmark restoration applies to committed (approved+) jobs — that's where
+        # consume removed a real earmark. On an approved job create_on_job earmarks
+        # at creation, consume removes it, and unconsume must put it back.
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('4'), inventory_item=self.pli,
@@ -51,6 +57,22 @@ class UnconsumeTest(TestCase):
         MaterialService.unconsume(m)
         e = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('4'))
+
+    def test_unconsume_preapproval_does_not_create_earmark(self):
+        # self.job is DRAFT: consume made no earmark (pre-approval), so unconsume
+        # must not create one either — QOH is still restored. Mirrors consume's
+        # earmark no-op so draft jobs never carry earmarks (the D3 invariant).
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('4'), inventory_item=self.pli,
+        )
+        MaterialService.consume(m)
+        MaterialService.unconsume(m)
+        self.pli.refresh_from_db()
+        self.assertFalse(
+            Earmark.objects.filter(inventory_item=self.pli, job=self.job).exists()
+        )
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
 
     def test_unconsume_requires_consumed_state(self):
         m = MaterialService.create_on_job(

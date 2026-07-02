@@ -376,9 +376,14 @@ class InventoryService:
         """
         from apps.inventory.models import Material
 
+        # Exclude already-consumed materials: a material consumed pre-approval
+        # already drew down QOH and needs no reservation — re-earmarking it here
+        # would phantom-reserve stock that's already been used.
         materials = Material.objects.filter(
             job=job,
             inventory_item__isnull=False,
+        ).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
         ).values('inventory_item').annotate(
             total_qty=Sum('quantity'),
         )
@@ -588,6 +593,8 @@ class MaterialService:
             )
         MaterialService._assert_not_invoiced(material)
         qty = material.quantity
+        from apps.jobs.models import Job as _Job
+        _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
         with transaction.atomic():
             pli = material.inventory_item
             if pli and qty > Decimal('0.00'):
@@ -596,7 +603,11 @@ class MaterialService:
                 pli.qty_sold = F('qty_sold') - qty
                 pli.save(update_fields=['qty_on_hand', 'qty_sold'])
                 pli.refresh_from_db()
-                InventoryService._mutate_earmark(pli, material.job, qty)
+                # Mirror consume's earmark no-op on pre-approval jobs: they carry
+                # no earmarks (consume removed none), so unconsume restores none —
+                # keeping the "no reservations until approval" invariant intact.
+                if material.job.status not in _PRE_APPROVAL:
+                    InventoryService._mutate_earmark(pli, material.job, qty)
             material.consumption_state = Material.CONSUMPTION_STATE_PENDING
             material.save(update_fields=['consumption_state'])
         return material

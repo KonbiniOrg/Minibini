@@ -382,8 +382,9 @@ through `InventoryService._mutate_earmark`.
 
 | Operation | Effect |
 |---|---|
-| `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`, calls `_mutate_earmark(pli, job, +quantity)` |
-| `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` |
+| `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`; earmarks (`_mutate_earmark(pli, job, +quantity)`) **only for committed (`approved`+) jobs** — pre-approval jobs earmark later at acceptance |
+| `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` (a no-op on pre-approval jobs, which hold no earmark) |
+| `unconsume(material)` | State → `pending`; if inventoried: restores `qty_on_hand`/`qty_sold`, and restores the earmark **except on pre-approval jobs** (mirrors `consume`'s no-op) |
 | `restock(material, qty)` | `quantity -= qty`, earmark `-= qty`; manual-add full-restock deletes row; expense-bound bumps `restocked_qty` |
 | `draw_more(material, qty)` | `quantity += qty`, earmark `+= qty`; rejects if expense-bound |
 | `assign_task(material, task)` | Move Material to a different Task (or task=None); validates same job and non-terminal task |
@@ -455,11 +456,18 @@ Receipt only bumps QOH.
   `InventoryService.release_earmarks_for_job(job)` to sweep any
   remaining balance.
 - **Aggregator (`create_earmarks_for_job`)** runs at the end of the
-  `populate_from_template` path and on **estimate acceptance**
-  (`EstimateAcceptanceService.on_accept`) as a defensive re-aggregation.
-  Under the current regime where every Material write goes through
-  `MaterialService.create_on_job` (which earmarks on creation), this is
-  effectively a no-op.
+  `populate_from_template` path, on job duplication, and on **estimate
+  acceptance** (`EstimateAcceptanceService.on_accept`). `create_on_job`
+  earmarks at creation **only for committed (`approved`+) jobs** — for
+  pre-approval (`draft`/`submitted`) jobs it does not, so acceptance's
+  `create_earmarks_for_job` is the point where those jobs' earmarks are
+  first created (not a no-op for that path). It **excludes already-consumed
+  materials** (`.exclude(consumption_state='consumed')`): a material consumed
+  during pre-approval work already drew down QOH, so re-earmarking it would
+  phantom-reserve stock that's already used. Correspondingly, `unconsume`
+  skips earmark restoration on pre-approval jobs — they carry no earmarks by
+  design. See jobs-tasks-and-worksheets.md §"Job-status guard" for the
+  pre-approval-work flow that motivates both.
 
 ### Inventory history trail (InventoryHistory)
 

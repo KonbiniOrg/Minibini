@@ -680,12 +680,30 @@ Validation rules enforced inside `BlepService`:
    on the same task)
 3. 30h rolling window for non-managers (create / update / delete)
 4. **Job-status guard:** a Blep may only be created on a Task whose Job
-   is in a status where work belongs. Live `start_work` allows `approved`
-   and `in_progress` only; backfilled `create_historical` also allows
-   `work_complete` (you may log time after work was marked done). Any
-   other status — `draft`, `submitted`, `rejected`, `completed`,
-   `cancelled` — is rejected with `ValidationError`. The UI is expected
-   to prevent this; the guard is defensive.
+   is in a status where work belongs. **Pre-approval work is permitted:**
+   live `start_work` allows `draft`, `submitted`, `approved`, and
+   `in_progress`; backfilled `create_historical` additionally allows
+   `work_complete` (log time after work was marked done) and `cancelled`
+   (backfill forgotten time for billing). `start_work` rejects
+   `work_complete`/`cancelled`; both reject `on_hold`; `create_historical`
+   also rejects `completed`/`rejected`. Rejections raise `ValidationError`.
+   Starting a `draft`/`submitted` job leaves the **job** status unchanged
+   (`mark_work_started` is a no-op below `approved`) while the **task**
+   advances to `in_progress`. The UI is expected to prevent disallowed
+   cases; the guard is defensive.
+
+   **Pre-approval material consumption gotcha (handled):** starting a task
+   consumes its materials (`_promote_pending_task` → `MaterialService.consume`).
+   Pre-approval this means an in-stock PLI material is drawn down from QOH but
+   **no earmark is created** (consume's earmark step is a no-op when the job
+   has no earmark); an **out-of-stock** PLI material makes `consume` raise, and
+   because `start_work` is atomic the whole start rolls back (no blep, no
+   promotion) — so "material not in stock ⇒ can't start" is the effective
+   pre-approval gate. At approval, `create_earmarks_for_job` **excludes
+   already-consumed materials** so it can't phantom-reserve stock that's already
+   used, and `unconsume` (blep-cancel undo) skips earmark restoration on
+   pre-approval jobs to keep them earmark-free. (Freeform, non-PLI materials are
+   not stock-gated yet — deferred to the freeform-material-procurement spec.)
 5. **No future `end_time`:** a non-null `end_time` more than 30s ahead of
    `now` (`BlepService._CLOCK_SKEW_BUFFER`, tolerating mismatched device
    clocks) is rejected on create and update. You cannot have worked ahead

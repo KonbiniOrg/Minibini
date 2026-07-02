@@ -265,7 +265,8 @@ class BlepService:
         # logged against a stopped job for billing purposes.
         _assert_job_allows_blep(
             task.job,
-            (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+            (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+             Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
              Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED),
             'log time',
         )
@@ -1140,7 +1141,8 @@ class TaskLifecycleService:
             # Post-split: task is always a Task (work-order side); no container check needed.
             _assert_job_allows_blep(
                 task.job,
-                (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
+                (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                 Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS),
                 'start work',
             )
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
