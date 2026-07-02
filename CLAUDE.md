@@ -12,6 +12,10 @@ Minibini is a Django-based job shop management system for handling jobs, estimat
 
 **Never use the multiple-choice / AskUserQuestion framework when brainstorming with this user.** Conduct design discussions as unstructured, back-and-forth prose — one idea or question at a time, in conversational paragraphs. This overrides any skill or default that prefers multiple-choice questions.
 
+## Engineering Principles
+
+**Test-count is never an architecture argument.** How many tests would need updating — or how many a given placement "auto-fixes" — is *not* a valid reason to choose or reject where a guard, invariant, abstraction, or transition belongs. Decide placement on correctness alone: where the invariant is actually true and must hold. Then update whatever tests fall out. A large blast radius is *signal about the change's reach*, not a veto, and never a justification. Relocating or weakening a real invariant to spare test churn is exactly how real invariants get quietly lost. If you catch yourself citing test counts, broken tests, or "this avoids touching N files" as support for a design decision, stop — that reasoning is inadmissible; re-argue the decision on its merits, and if the correct placement is expensive, surface the trade-off explicitly instead of letting test cost silently pick the design.
+
 ## Essential Commands
 
 ```bash
