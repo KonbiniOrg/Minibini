@@ -1211,3 +1211,14 @@ IMAP-SMTP machinery and tend to be worked together.
   the scheme editor's save handler; optionally also guard server-side in `RateScheme` cleaning so a
   stray empty modifier never persists. Watch the `modifiers` JSON shape (`[{key, percent}, ...]`).
   _Done when:_ saving a scheme never persists a blank/zero modifier row.
+
+- **No shared `<Modal>` shell — every modal hand-rolls the same overlay CSS.** — _added 2026-07-03_
+  Each modal component copies its own `.overlay { position:fixed; inset:0; display:flex;
+  align-items:center; justify-content:center }` + `.modal { max-width:500px; width:90% }`. This
+  copy-paste is how `PriceListPicker` drifted (top-anchored, 560px) and got visibly out of place vs the
+  form modals (fixed in `fecccc86`). Extract a shared `<Modal>` shell (overlay + centered box +
+  `modalKeys` wiring) that every modal imports, then sweep the existing modals (`LineItemModal`,
+  `MaterialModal`, `FeeModal`, `EstimateAddLineForm`, `AdjustmentModal`, `AssignModal`,
+  `RecordPaymentModal`, `PriceListPicker`, …) to use it so geometry can't drift again. Mechanical but
+  touches many files.
+  _Done when:_ a single shared modal shell owns overlay/positioning and the modals adopt it.
