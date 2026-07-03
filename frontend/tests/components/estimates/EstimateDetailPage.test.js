@@ -182,34 +182,22 @@ describe('EstimateDetailPage line-item actions', () => {
     expect(queryByText('Delete')).toBeNull();
   });
 
-  it('shows an Add Line Item button on a draft estimate', async () => {
+  it('shows a single "Add line" button on a draft estimate', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [] }));
-    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
-    expect(await findByText('Add Line Item')).toBeInTheDocument();
-  });
-
-  it('shows an Add from Service button on a draft estimate', async () => {
-    user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'draft', line_items: [] }));
-    const { findByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
-    expect(await findByText('Add from Service')).toBeInTheDocument();
-  });
-
-  it('hides Add from Service when the estimate is not editable (sent)', async () => {
-    user.set({ permissions: ['can_manage_jobs'] });
-    mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [] }));
     const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
-    await findByText(/Estimate:/);
+    expect(await findByText('Add line')).toBeInTheDocument();
+    // Old separate affordances are retired
+    expect(queryByText('Add Line Item')).toBeNull();
     expect(queryByText('Add from Service')).toBeNull();
   });
 
-  it('hides Add Line Item when the estimate is not editable (sent)', async () => {
+  it('hides the "Add line" button when the estimate is not editable (sent)', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     mockApi(makeEstimate({ can_manage: true, status: 'open', line_items: [] }));
     const { findByText, queryByText } = render(EstimateDetailPage, { props: { params: { id: '7' } } });
     await findByText(/Estimate:/);
-    expect(queryByText('Add Line Item')).toBeNull();
+    expect(queryByText('Add line')).toBeNull();
   });
 
   it('Delete on a line calls the line-item delete endpoint', async () => {
