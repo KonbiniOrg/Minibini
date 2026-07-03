@@ -65,7 +65,10 @@
       name = (mode === 'manual' ? (presetName || '') : ''); description = '';
       activeModifiers = [];
       estQty = ''; estWorkerTime = '';
-      templateId = (mode === 'template' && presetTemplateId != null) ? String(presetTemplateId) : '';
+      // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
+      // (Svelte 5 selects match option values with strict ===; String() here left
+      // the preset unselected in the pulldown).
+      templateId = (mode === 'template' && presetTemplateId != null) ? presetTemplateId : '';
       lastFilledTemplateId = '';
       if (mode === 'manual' && rateScheme) {
         rateSchemeId = rateScheme.rate_scheme_id;

@@ -44,6 +44,19 @@ describe('WorkItemForm', () => {
     expect(queryByLabelText(/save to catalog/i)).not.toBeInTheDocument();
   });
 
+  it('selects the preset template in the pulldown (template mode)', async () => {
+    const templates = [
+      { template_id: 5, template_name: 'CNC Routing', rate_scheme: 1 },
+      { template_id: 6, template_name: 'Sanding', rate_scheme: 1 },
+    ];
+    const { findByLabelText } = render(WorkItemForm, {
+      props: { open: true, mode: 'template', context: 'job', contextId: 5, templates, presetTemplateId: 5 },
+    });
+    const select = await findByLabelText(/template/i);
+    // Was blank before the fix (numeric option value vs stringified preset).
+    expect(select.value).toBe('5');
+  });
+
   it('pre-fills the name from presetName on a manual (custom-task) create', async () => {
     const { findByLabelText } = render(WorkItemForm, {
       props: { open: true, mode: 'manual', context: 'job', contextId: 5, presetName: 'Special weld' },
