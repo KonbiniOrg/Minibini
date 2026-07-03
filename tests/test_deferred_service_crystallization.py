@@ -170,6 +170,25 @@ class LineItemsFromServiceApiTest(DeferredServiceBase):
         self.assertEqual(resp.status_code, 404)
 
 
+from apps.api.estimates.serializers import EstimateLineItemSerializer
+
+
+class ServiceLineSerializerTest(DeferredServiceBase):
+    def test_exposes_service_item_and_detail_and_price(self):
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('2'),
+        )
+        data = EstimateLineItemSerializer(line).data
+        self.assertEqual(data['service_item'], self.service_item.pk)
+        self.assertEqual(data['service_item_detail']['name'], 'CAM coding')
+        self.assertEqual(Decimal(data['price']), Decimal('40.00'))
+        self.assertEqual(Decimal(data['qty']), Decimal('2'))
+        # Amount is qty x price (self-contained snapshot): 2 x 40 = 80.
+        self.assertEqual(
+            Decimal(data['qty']) * Decimal(data['price']), Decimal('80.00'),
+        )
+
+
 from apps.estimates.acceptance import EstimateAcceptanceService
 from apps.estimates.models import EstimateLineItemSource
 
