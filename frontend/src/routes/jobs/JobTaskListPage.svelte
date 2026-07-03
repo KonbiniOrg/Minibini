@@ -8,6 +8,7 @@
   import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
 
   let { params = {} } = $props();
 
@@ -49,6 +50,14 @@
 
   let assignModalOpen = $state(false);
   let assignModalTask = $state(null);
+
+  // Picker state
+  let pickerOpen = $state(false);
+  let taskPresetTemplateId = $state(null);
+  let materialPresetPli = $state(null);
+  let materialPresetDescription = $state('');
+  let feePresetDescription = $state('');
+  let defaultMaterialCategoryId = $state(null);
 
   // Status action state
   let statusBusy = $state(false);
@@ -142,6 +151,17 @@
     }
   }
 
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      defaultMaterialCategoryId = s.default_material_accounting_category != null
+        ? Number(s.default_material_accounting_category)
+        : null;
+    } catch (e) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   async function reload() {
     await loadJob();
   }
@@ -151,22 +171,43 @@
       loadJob();
       loadTemplates();
       loadCategories();
+      loadSettings();
     }
   });
 
+  // Picker surface handler
+  function handleChoose(choice) {
+    pickerOpen = false;
+    if (choice.type === 'service') {
+      taskModalTask = null;
+      taskModalMode = 'template';
+      taskPresetTemplateId = choice.serviceItem.template_id;
+      taskModalOpen = true;
+    } else if (choice.type === 'inventory') {
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalJobId = job.job_id;
+      materialModalMode = 'create';
+      materialPresetPli = choice.inventoryItem;
+      materialPresetDescription = '';
+      materialModalOpen = true;
+    } else if (choice.isMaterial) {
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalJobId = job.job_id;
+      materialModalMode = 'create';
+      materialPresetPli = null;
+      materialPresetDescription = choice.typed;
+      materialModalOpen = true;
+    } else {
+      feeModalFee = null;
+      feeModalMode = 'create';
+      feePresetDescription = choice.typed;
+      feeModalOpen = true;
+    }
+  }
+
   // Task modal handlers
-  function openAddManualTask() {
-    taskModalTask = null;
-    taskModalMode = 'manual';
-    taskModalOpen = true;
-  }
-
-  function openAddTemplateTask() {
-    taskModalTask = null;
-    taskModalMode = 'template';
-    taskModalOpen = true;
-  }
-
   function openEditTask(task) {
     taskModalTask = task;
     taskModalMode = 'manual';
@@ -204,14 +245,6 @@
     materialModalMaterial = null;
     materialModalTaskId = task.task_id;
     materialModalJobId = null;
-    materialModalMode = 'create';
-    materialModalOpen = true;
-  }
-
-  function openAddJobMaterial() {
-    materialModalMaterial = null;
-    materialModalTaskId = null;
-    materialModalJobId = job.job_id;
     materialModalMode = 'create';
     materialModalOpen = true;
   }
@@ -279,12 +312,6 @@
   }
 
   // Fee modal handlers
-  function openAddJobFee() {
-    feeModalFee = null;
-    feeModalMode = 'create';
-    feeModalOpen = true;
-  }
-
   function openEditFee(fee) {
     feeModalFee = fee;
     feeModalMode = 'edit';
@@ -354,10 +381,7 @@
   <div class="toolbar">
     <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
-      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
-      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
-      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
-      <button type="button" onclick={openAddJobFee}>Add Fee</button>
+      <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
     {#if job?.can_manage}
@@ -428,6 +452,7 @@
     item={taskModalTask}
     isEdit={!!taskModalTask}
     {templates}
+    presetTemplateId={taskPresetTemplateId}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -439,6 +464,9 @@
     taskId={materialModalTaskId}
     jobId={materialModalJobId}
     {categories}
+    presetDescription={materialPresetDescription}
+    presetPli={materialPresetPli}
+    {defaultMaterialCategoryId}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
   />
@@ -449,9 +477,12 @@
     fee={feeModalFee}
     jobId={job.job_id}
     {categories}
+    presetDescription={feePresetDescription}
     onSaved={handleFeeSaved}
     onClose={() => { feeModalOpen = false; }}
   />
+
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
 
   <ExpenseModal
     open={expenseModalOpen}

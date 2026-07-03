@@ -15,9 +15,9 @@ const CATEGORIES = [
 
 // The fetched job carries can_manage = "atom-holder OR this job's PM". The page
 // toolbar gates "Mark Work Complete" on job.can_manage alone (not the global
-// atom), while "Add Manual Task" is open to any authenticated user. These tests
-// set the global atom to false (worker) to prove the per-object flag is what
-// drives the manager affordance, and that add-task ignores permissions entirely.
+// atom), while "Add Work" is open to any authenticated user on an unlocked job.
+// These tests set the global atom to false (worker) to prove the per-object flag
+// is what drives the manager affordance.
 function mockApi(jobOverrides = {}, categoriesOverride = []) {
   const job = {
     job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',
@@ -30,6 +30,7 @@ function mockApi(jobOverrides = {}, categoriesOverride = []) {
     if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve(categoriesOverride);
     if (url.startsWith('/api/contacts/')) return Promise.resolve({});
+    // /api/inventory/, /api/settings/, and anything else the picker or page needs
     return Promise.resolve([]);
   });
 }
@@ -40,10 +41,10 @@ beforeEach(() => {
 });
 
 describe('JobTaskListPage per-job can_manage', () => {
-  it('shows Add Manual Task even when atom off and can_manage false (add is open to all)', async () => {
+  it('shows Add Work button even when atom off and can_manage false (add is open to all)', async () => {
     mockApi({ can_manage: false });
     const { getByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    await waitFor(() => expect(getByRole('button', { name: /add manual task/i })).toBeInTheDocument());
+    await waitFor(() => expect(getByRole('button', { name: /add work/i })).toBeInTheDocument());
   });
 
   it('shows Mark Work Complete when can_manage is true (atom off)', async () => {
@@ -55,45 +56,73 @@ describe('JobTaskListPage per-job can_manage', () => {
   it('hides Mark Work Complete when can_manage is false (atom off)', async () => {
     mockApi({ can_manage: false });
     const { findByRole, queryByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    // wait for the toolbar to render (add manual task always shows)
-    await findByRole('button', { name: /add manual task/i });
+    // wait for the toolbar to render (Add Work always shows on unlocked jobs)
+    await findByRole('button', { name: /add work/i });
     expect(queryByRole('button', { name: /mark work complete/i })).toBeNull();
+  });
+
+  it('replaces the four granular add buttons with a single Add Work button', async () => {
+    mockApi({ can_manage: false });
+    const { findByRole, queryByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await findByRole('button', { name: /add work/i });
+    expect(queryByRole('button', { name: /add fee/i })).toBeNull();
+    expect(queryByRole('button', { name: /add manual task/i })).toBeNull();
+    expect(queryByRole('button', { name: /add task from template/i })).toBeNull();
+    expect(queryByRole('button', { name: /add material/i })).toBeNull();
   });
 });
 
-describe('JobTaskListPage — Add Fee', () => {
-  it('shows the Add Fee toolbar button', async () => {
+describe('JobTaskListPage — Add Work picker → FeeModal path', () => {
+  it('shows the Add Work toolbar button', async () => {
     mockApi({ can_manage: false });
     const { findByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    expect(await findByRole('button', { name: /add fee/i })).toBeInTheDocument();
+    expect(await findByRole('button', { name: /add work/i })).toBeInTheDocument();
   });
 
-  it('clicking Add Fee opens FeeModal (modal heading becomes visible)', async () => {
+  it('clicking Add Work opens the picker dialog', async () => {
     mockApi({ can_manage: false });
     const { findByRole, getByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    await findByRole('button', { name: /add fee/i });
-    await fireEvent.click(getByRole('button', { name: /add fee/i }));
-    // FeeModal renders an <h3>Add Fee</h3> when open
+    await findByRole('button', { name: /add work/i });
+    await fireEvent.click(getByRole('button', { name: /add work/i }));
+    await waitFor(() => expect(getByRole('dialog')).toBeInTheDocument());
+  });
+
+  it('freeform fee path through picker opens FeeModal', async () => {
+    mockApi({ can_manage: false });
+    const { findByRole, getByRole, getByPlaceholderText } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await findByRole('button', { name: /add work/i });
+    await fireEvent.click(getByRole('button', { name: /add work/i }));
+    await waitFor(() => getByRole('dialog'));
+    await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
+    // freeform button appears immediately (isMaterial checkbox defaults unchecked → fee)
+    const freeformBtn = await findByRole('button', { name: /use.*Rush.*as fee/i });
+    await fireEvent.click(freeformBtn);
+    // FeeModal opens (picker closes, FeeModal renders h3 "Add Fee")
     await waitFor(() => expect(getByRole('heading', { name: /add fee/i })).toBeInTheDocument());
   });
 
-  it('FeeModal receives the job id (posts to the correct endpoint)', async () => {
+  it('FeeModal seeded from picker receives the job id (posts to correct endpoint)', async () => {
     api.post.mockResolvedValue({});
     mockApi({ can_manage: false });
-    const { findByRole, getByRole, getByLabelText } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    await findByRole('button', { name: /add fee/i });
-    await fireEvent.click(getByRole('button', { name: /add fee/i }));
+    const { findByRole, getByRole, getByLabelText, getByPlaceholderText } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await findByRole('button', { name: /add work/i });
+    await fireEvent.click(getByRole('button', { name: /add work/i }));
+    await waitFor(() => getByRole('dialog'));
+    await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
+    await fireEvent.click(await findByRole('button', { name: /use.*Rush.*as fee/i }));
     await waitFor(() => getByRole('heading', { name: /add fee/i }));
-    await fireEvent.input(getByLabelText(/Description/i), { target: { value: 'Rush' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/3/fees/', expect.any(Object));
   });
 
   it('FeeModal receives non-empty categories when categories are loaded', async () => {
     mockApi({ can_manage: false }, CATEGORIES);
-    const { findByRole, getByRole, getByLabelText } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    await findByRole('button', { name: /add fee/i });
-    await fireEvent.click(getByRole('button', { name: /add fee/i }));
+    const { findByRole, getByRole, getByLabelText, getByPlaceholderText } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await findByRole('button', { name: /add work/i });
+    await fireEvent.click(getByRole('button', { name: /add work/i }));
+    await waitFor(() => getByRole('dialog'));
+    await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
+    await fireEvent.click(await findByRole('button', { name: /use.*Rush.*as fee/i }));
     await waitFor(() => getByRole('heading', { name: /add fee/i }));
     const select = getByLabelText(/Accounting Category/i);
     // Two real options plus "-- None --" placeholder
@@ -115,7 +144,7 @@ describe('JobTaskListPage — fees display', () => {
   it('does not render the fees section when there are no fees', async () => {
     mockApi({ can_manage: false, fees: [] });
     const { findByRole, queryByText } = render(JobTaskListPage, { props: { params: { id: 3 } } });
-    await findByRole('button', { name: /add fee/i });
+    await findByRole('button', { name: /add work/i });
     expect(queryByText('Fees')).toBeNull();
   });
 });
