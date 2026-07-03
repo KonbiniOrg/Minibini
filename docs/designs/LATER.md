@@ -1192,3 +1192,14 @@ IMAP-SMTP machinery and tend to be worked together.
   the two on transition. Also audit which UI affordance let the Job status be edited directly here.
   _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
   live estimate, or the transition drives acceptance) and the stray edit path is closed.
+
+- **Config page: ServiceItem's rate-scheme picker is stale after editing a RateScheme.** — _added 2026-07-03_
+  On the settings/config page, after updating a `RateScheme` and then adding a `ServiceItem`, the
+  scheme picker showed the *old* scheme values until a full page refresh. The scheme list the
+  ServiceItem form reads is fetched once and not re-fetched when a scheme is edited elsewhere on the
+  page. It should refresh automatically — ideally not a page-level reload but a targeted re-fetch of
+  the schemes list when a scheme is created/updated (e.g. the RateScheme save handler notifies/reloads
+  the shared schemes store, or the ServiceItem form re-fetches on open). Look at the config-page
+  components that own the schemes list and the ServiceItem-add form.
+  _Done when:_ editing a RateScheme makes the updated values available to the ServiceItem form (and any
+  other scheme consumers on the page) without a manual refresh.
