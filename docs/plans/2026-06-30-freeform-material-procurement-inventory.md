@@ -146,15 +146,15 @@ send-gate is on the **sell price**, not on establishment. **[SETTLED]**
   than sending a blank.
 
 **The proto-Material marker — built here. [SETTLED, owned by this plan.]** A bare (no-descriptor)
-estimate line must declare *what it will become* — a **material** vs. a **fee** (a task line already
-carries a `service_item` descriptor from Part 1, so the ambiguity is only material-vs-fee). This is
-the atom-type marker, and **because the material flow needs it first, it is built in this procurement
-work** rather than deferred to the picker. It retires the standing LATER item (hand-typed material
-lines silently becoming Fees): a bare line marked *material* crystallizes to a (provisional) Material;
-unmarked / *fee* → Fee. A proto-Material line with a sell price but no lot is the **estimate face of a
-provisional Material**. The unified picker (`2026-07-02-add-line-crystallization-and-unified-picker.md`
-Part 2) later *consumes* this marker and wraps the full three-way selection UX around it — it does not
-introduce the field.
+freeform estimate line needs exactly one bit: **"is this a material?"** — a simple checkbox. Checked →
+proto-Material (crystallizes to a provisional Material); unchecked → Fee. That is the whole marker.
+There is **no freeform *task*** option: a task can only come from picking a `ServiceItem` (Part 1), so
+a bare line is only ever material-or-fee. **Because the material flow needs this bit first, it is built
+in this procurement work** rather than deferred to the picker, and it retires the standing LATER item
+(hand-typed material lines silently becoming Fees). A checked (proto-Material) line with a sell price
+but no lot is the **estimate face of a provisional Material**. The unified picker
+(`2026-07-02-add-line-crystallization-and-unified-picker.md` Part 2) later *surfaces* this checkbox as
+the freeform-escape UX — it does not introduce the field.
 
 **Provisional cost via reverse-markup (the museum-polycarbonate case). [SETTLED]** Worked example:
 you're confident charging **$400/sheet** (your risk — remembered ~$300 two years ago + inflation +

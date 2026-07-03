@@ -1174,3 +1174,14 @@ IMAP-SMTP machinery and tend to be worked together.
   constraint actually holds server-side. See the single-live-estimate memory note.
   _Done when:_ we've confirmed where (if anywhere) the backend enforces one-open-chain, and
   either documented it as a real invariant or filed the gap.
+
+- **Pull `description` off `ServiceItem`; specifics live on the Task/line description.** — _added 2026-07-02_
+  A `ServiceItem` is meant to be a *rough work type* (name + rate scheme); the per-job specifics
+  belong on the **Task description**, sourced from the estimate line's editable description. So
+  `ServiceItem.description` should be removed. Confirmed direction from the add-line/picker work: a
+  service-picked estimate line prefills its description from the ServiceItem *name*, the user can
+  edit it, and at crystallization `Task.name` = the ServiceItem's name while `Task.description` = the
+  line's description. Once the line description carries the specifics, `ServiceItem.description` is
+  redundant. (Ties to the add-line/picker plan and the earlier "service item = rough work type" note.)
+  _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
+  sourced from the Task/line description everywhere.

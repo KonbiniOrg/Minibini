@@ -88,7 +88,10 @@ discriminating on which descriptor the line carries:
 ```
 on_accept, per hand-line (no source, not an adjustment):
     has service_item   → ServiceItem.generate_task(job, est_qty=li.qty,
+                            description=li.description,
                             allow_superseded_scheme=True)                     → Task
+                            # Task.name = ServiceItem name (fresh from FK);
+                            # Task.description = the line's (editable) description
     has inventory_item → MaterialService.create_on_job(…)                     → Material   (unchanged)
     neither            → Fee.objects.create(…)                               → Fee        (unchanged)
   …then source-link the line to the atom it created (SOURCE_TASK / SOURCE_MATERIAL / SOURCE_FEE),
@@ -155,12 +158,16 @@ unchanged by this plan.
 
 ### Settled decisions
 
-1. **No override capture [SETTLED].** The service pick captures `service_item` + `qty` plus the
-   snapshot values (`price`/`accounting_category`/`description`/`units`), but **no** modifier/name/time
-   *overrides* — `name` / `active_modifiers` / `est_worker_time` take template defaults at
-   crystallization. Users edit the resulting Task freely afterward, so there's no need to freeze
-   picked-time overrides on the estimate line. (The snapshot `price` is derived from those same
-   template defaults at pick, so the quoted line and the default-built Task agree.)
+1. **Editable description; name + rate come from the ServiceItem [SETTLED].** A service-picked line
+   carries `service_item` + `qty` + snapshot `price`/`accounting_category`/`units`, plus an
+   **editable `description`** (prefilled from the ServiceItem's *name* when picked, then user-editable
+   while writing the line). At crystallization: **`Task.name` = the ServiceItem's name** (pulled fresh
+   from the FK), **`Task.description` = the line's description**; `active_modifiers` / `est_worker_time`
+   take template defaults. So the user shapes the per-job specifics through the line description
+   (→ Task description), while the canonical name and rate always come from the ServiceItem, and can
+   still refine the Task after crystallization (before releasing to floor). (This editable-line-
+   description-as-Task-description is *why* `ServiceItem.description` becomes redundant — see the LATER
+   note to remove it.)
 2. **Invoices do not get a service descriptor [SETTLED].** The invoice `LineItemModal` inventory pick
    stays as-is; invoices bill *actuals* and never generate work, so a service pick there is
    meaningless. Service deferral is estimate-only (mirrors why "Add from Service" was estimate-only).
@@ -187,30 +194,49 @@ crystallizes at acceptance, per Part 1): **Service** (`ServiceItem`) → `servic
 the Plan side was torn out; the search backends survived (`/api/service-items/?search=`, the inventory
 catalog filter), only the unified UI was lost.
 
-**This part deserves deeper design before building** — the current split affordances *work*, so
-there's no rush, and the picker's UX (one control spanning three catalogs + a freeform escape, its
-placement on the overview vs. estimate vs. invoice, and how it supersedes today's `LineItemModal`
-toggle + `AddServiceItemModal` + inventory picker) wants thinking-through, not a mechanical rebuild.
+### Interaction design (settled with RM 2026-07-02)
 
-### Notes toward the design
+**Resurrect, don't rebuild.** `frontend/src/components/PriceListPicker.svelte` still exists on `main`
+but is **imported nowhere** — an orphan: its wiring was torn out when the Plan side went, but the
+component survived. It already implements the target UX and sits on the shared **`SearchPicker`** base
+(the debounced-search / focus-blur dropdown / race-guarded prefill core used by ~8 live pickers). So
+Part 2 **evolves this component**, it does not start clean. Its callbacks were written for the
+*immediate-atom* era, so the one substantive rewrite is repointing them at the **deferred descriptor**
+model (set a line descriptor/marker, don't create an atom). Its live search backends are already
+`/api/service-items/?search=` and `/api/inventory/?is_catalog=true&search=` (not rate-schemes).
 
-- The search UX to revive already lives in main as `frontend/src/components/PriceListPicker.svelte`
-  (+ `frontend/tests/components/PriceListPicker.test.js`) — the evolved descendant of the original
-  worksheet-era three-catalog picker. Use it as the reference; its backends are
-  `/api/rate-schemes/?search=` and the inventory `is_catalog` catalog filter.
-- Consolidate today's separate estimate affordances (Add Line Item + Add from Service + inventory
-  toggle) behind the one picker; keep the freeform/manual escape (hand-line → Fee).
-- **The "which atom type" marker is built earlier, in the freeform-procurement plan**
-  (`2026-06-30-freeform-material-procurement-inventory.md`) — materials needed it first, so the
-  material-vs-fee bit on a bare line ships there and retires the LATER item ("hand-typed material
-  lines can't crystallize into Materials"). The picker **consumes** that marker and wraps the full
-  three-way selection UX (task / material / fee) around it; it does not introduce the field. The
-  picker's job is to make choosing the type (and the catalog item behind it) fluid — see the
-  interaction design below.
-- Part 1 (deferred service descriptor + three-way crystallization) should land first — the picker
-  routes a pick to the right **descriptor** (service → `service_item`, material → `inventory_item` or
-  freeform marker, free-text → bare hand-line), all of which resolve to atoms at acceptance, not on
-  add.
+**The flow.**
+
+1. **Start typing** → the backend searches **all catalogs at once** (service items + catalog
+   inventory; non-catalog per-job transient lots are correctly excluded). No list until you type.
+2. **Pick a result** → create that descriptor line — a **service** row → a `service_item` line
+   (description prefilled from the ServiceItem name, editable — Settled decision 1); an **inventory**
+   row → an `inventory_item` line (snapshot cost/sell/units/description).
+3. **Don't pick anything → freeform escape.** What you typed becomes the line's name/description, and
+   you choose the type. **There is NO freeform *task*** — a task can only come from picking a
+   ServiceItem (it needs a rate scheme), and it crystallizes as the default Task to be refined before
+   release to floor. So the freeform choice is just the **"is this a material?" checkbox** (the marker
+   owned by the procurement plan): checked → proto-Material (provisional Material); unchecked → **Fee**.
+
+So a line is exactly one of these, and only the first two come from a catalog pick:
+
+| Picked / chosen | Line carries | Crystallizes to |
+|---|---|---|
+| Service row | `service_item` + editable description + qty | **Task** (name from ServiceItem, description from line) |
+| Inventory row | `inventory_item` + snapshot cost/sell | **Material** |
+| Freeform, "material?" ✔ | proto-Material marker + sell price | **provisional Material** |
+| Freeform, "material?" ✗ (default) | bare line | **Fee** |
+
+**Per-line fields stay minimal:** qty, name/description, rate (sell), and the type marker — nothing
+more. A Task's operational detail (worker time, modifiers, …) is refined on the **crystallized Task**
+before release to floor, not on the estimate line. This one control **consolidates** today's three
+estimate affordances (Add Line Item + Add from Service + inventory toggle).
+
+The **"which atom type" marker itself is built earlier**, in the freeform-procurement plan
+(`2026-06-30-freeform-material-procurement-inventory.md`) — materials need the material-vs-fee bit
+first. The picker only *surfaces* it as the checkbox above; it does not introduce the field. And
+**Part 1 lands before this** — the picker routes every pick/choice to a Part 1 descriptor, all of which
+resolve to atoms at acceptance, not on add.
 
 ### Open questions [OPEN]
 
