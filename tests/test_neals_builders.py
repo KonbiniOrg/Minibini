@@ -1832,3 +1832,12 @@ class PurchasingBuilderTest(unittest.TestCase):
         cfg = {r['pk']: r['fields']['value']
                for r in self._m('core.configuration')}
         self.assertEqual(cfg.get('default_material_markup_percent'), '20')
+        # The default material AC must be emitted and point at a real
+        # AccountingCategory — EstimateService._apply_material_ac_default RAISES
+        # if this key is absent, so a regen without it breaks freeform-material
+        # creation in the running app.
+        ac_pk = cfg.get('default_material_accounting_category')
+        self.assertIsNotNone(ac_pk)
+        self.assertNotEqual(ac_pk, 'None')
+        ac_pks = {str(r['pk']) for r in self._m('core.accountingcategory')}
+        self.assertIn(ac_pk, ac_pks)
