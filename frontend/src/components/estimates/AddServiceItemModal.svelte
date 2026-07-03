@@ -1,10 +1,10 @@
 <!-- frontend/src/components/estimates/AddServiceItemModal.svelte -->
 <!--
   Add an estimate line backed by a Service (ServiceItem / task template). Picking a
-  ServiceItem creates a real Task on the Job (POST add-from-template), then links it
-  as an atom-backed estimate line (POST line-items-from-atoms) — the same immediate-
-  atom path the wizard uses, initiated from a catalog pick. Estimate-only: invoices
-  bill actuals, so spawning a fresh (zero-actual) Task there makes no sense.
+  ServiceItem mints a deferred service line on the estimate (POST line-items-from-service)
+  — no Task is created yet. The Task is crystallized only when the estimate is accepted
+  (on_accept). Estimate-only: invoices bill actuals, so spawning a fresh Task there makes
+  no sense.
 -->
 <script>
   import { api } from '../../lib/api.js';
@@ -51,14 +51,9 @@
     busy = true;
     error = '';
     try {
-      // 1) Create the Task on the Job from the ServiceItem.
-      const task = await api.post(`/api/jobs/${jobId}/add-from-template/`, {
-        service_item_id: Number(selectedId),
-        est_qty: estQty || '1',
-      });
-      // 2) Link that Task as an atom-backed estimate line.
-      await api.post(`/api/estimates/${estimateId}/line-items-from-atoms/`, {
-        atoms: [{ type: 'task', id: task.task_id }],
+      await api.post(`/api/estimates/${estimateId}/line-items-from-service/`, {
+        service_item: Number(selectedId),
+        qty: String(estQty || 1),
       });
       onSaved();
     } catch (e) {
