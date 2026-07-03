@@ -73,7 +73,7 @@ describe('PriceListPicker (onChoose emitter)', () => {
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
-    await fireEvent.click(await findByRole('button', { name: /use .*Rush charge/i }));
+    await fireEvent.click(await findByRole('button', { name: /add line/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false });
   });
 
@@ -82,12 +82,19 @@ describe('PriceListPicker (onChoose emitter)', () => {
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
     await fireEvent.click(await findByRole('checkbox', { name: /material/i }));
-    await fireEvent.click(await findByRole('button', { name: /use .*plywood/i }));
+    await fireEvent.click(await findByRole('button', { name: /add line/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true });
   });
 
-  it('offers no freeform commit before anything is typed', () => {
-    const { queryByRole } = render(PriceListPicker, { props: baseProps() });
-    expect(queryByRole('button', { name: /^use /i })).toBeNull();
+  it('shows the material checkbox and Add Line button constantly, from the start', async () => {
+    const props = baseProps();
+    const { getByRole } = render(PriceListPicker, { props });
+    // Constant affordances — present before anything is typed, label never changes.
+    expect(getByRole('checkbox', { name: /material/i })).toBeInTheDocument();
+    const addBtn = getByRole('button', { name: /add line/i });
+    expect(addBtn).toBeInTheDocument();
+    // Clicking with nothing typed still emits a freeform commit (empty typed).
+    await fireEvent.click(addBtn);
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false });
   });
 });

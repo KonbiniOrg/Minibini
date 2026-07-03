@@ -66,14 +66,10 @@
         </SearchPicker>
       </div>
 
-      {#if pickerQuery.trim()}
-        <div class="plp-freeform">
-          <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
-          <button type="button" onclick={emitFreeform}>
-            Use "{pickerQuery.trim()}" as {isMaterial ? 'material' : 'fee'}
-          </button>
-        </div>
-      {/if}
+      <div class="plp-freeform">
+        <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
+        <button type="button" onclick={emitFreeform}>Add Line</button>
+      </div>
     </div>
   </div>
 {/if}
