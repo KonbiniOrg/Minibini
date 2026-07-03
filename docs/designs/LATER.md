@@ -1222,3 +1222,19 @@ IMAP-SMTP machinery and tend to be worked together.
   `RecordPaymentModal`, `PriceListPicker`, …) to use it so geometry can't drift again. Mechanical but
   touches many files.
   _Done when:_ a single shared modal shell owns overlay/positioning and the modals adopt it.
+
+- **Sweep for Svelte 5 numeric `<select>` strict-=== mismatches.** — _added 2026-07-03_
+  Recurring bug: a `<select bind:value={x}>` whose options use a **numeric** value expression
+  (`<option value={row.id}>` where `id` is a number) silently shows **no selection** when `x` is set to
+  a **string** (e.g. `String(presetId)`, or a value read from `/api/settings/` as a string). Svelte 5
+  matches the bound value to option values with strict `===`, so `'5' !== 5`. Already bitten and fixed
+  in: `MaterialModal`, `EstimateAddLineForm` (AC selects), and `WorkItemForm` (template pulldown,
+  `25107590`). Do a proactive pass: grep for `<option value={` with a numeric field and check the bound
+  var's type on every preset/prefill path (manual user-picking usually works because it sets the numeric
+  option value directly — it's the **programmatic set** that breaks). Fix by keeping the bound value the
+  **same type as the option value** (prefer numeric to match numeric ids; don't `String()` it).
+  Candidate spots: any modal/form with a template / rate-scheme / accounting-category / job / contact
+  `<select>` that gets a preset. Consider a tiny shared select helper or a lint/test guard to prevent
+  regressions.
+  _Done when:_ every prefilled `<select>` selects its preset, and the type-match convention is
+  documented (or enforced) so new selects don't reintroduce it.
