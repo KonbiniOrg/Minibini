@@ -1179,3 +1179,16 @@ IMAP-SMTP machinery and tend to be worked together.
   redundant. (Ties to the add-line/picker plan and the earlier "service item = rough work type" note.)
   _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
   sourced from the Task/line description everywhere.
+
+- **Job status can be changed independently of estimate status → incoherent states.** — _added 2026-07-03_
+  Observed in browser: while testing acceptance crystallization, a Job was set directly to **Approved**
+  while its Estimate was still **Open**, and the transition was allowed. This is incoherent: Job
+  approval is meant to flow from **estimate acceptance** (the `estimate_accepted` signal both approves
+  the Job *and* runs `EstimateAcceptanceService.on_accept` crystallization). Setting `Job → Approved`
+  directly bypasses acceptance entirely — no crystallization runs, the estimate never leaves Open, and
+  the Job looks committed with nothing crystallized behind it. Decide the coupling: either gate direct
+  Job status transitions so `approved` can only be reached via estimate acceptance (not a bare
+  status edit), or make a direct Job approval with a live Open estimate a validation error, or reconcile
+  the two on transition. Also audit which UI affordance let the Job status be edited directly here.
+  _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
+  live estimate, or the transition drives acceptance) and the stray edit path is closed.
