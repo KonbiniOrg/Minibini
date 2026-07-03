@@ -79,13 +79,17 @@
 {/if}
 
 <style>
+  /* Match the app-wide modal geometry (centered, ~500px) so the picker and the
+     follow-up form modal open in the same place — no jump on selection. The
+     results list is an absolutely-positioned dropdown (.plp-body is relative),
+     so centering doesn't shift the modal as results load. */
   .plp-overlay {
     position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
-    display: flex; align-items: flex-start; justify-content: center;
-    padding-top: 80px; z-index: var(--z-modal);
+    display: flex; align-items: center; justify-content: center;
+    z-index: var(--z-modal);
   }
   .plp-modal {
-    background: white; border: 1px solid #ccc; width: 560px; max-width: 95vw;
+    background: white; border: 1px solid #ccc; width: 500px; max-width: 95vw;
     display: flex; flex-direction: column;
   }
   .plp-header {
