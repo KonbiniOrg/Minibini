@@ -298,6 +298,10 @@ class EstimateBuilderTest(unittest.TestCase):
         self.c.loader.load()
         self.c.csv_cards = self.c.csv_loader.load()
         self.c.spine = self.c.select_spine()
+        # build_seed sets c.ac_svc_pk / c.ac_mat_pk (the default ACs) — the
+        # orchestrator runs it before build_jobs/build_estimates, so the test
+        # context must too, or emitted atoms/lines get a None accounting category.
+        build.build_seed(self.c)
         build.build_contacts_and_businesses(self.c)
         build.build_jobs(self.c)
 
@@ -331,6 +335,22 @@ class EstimateBuilderTest(unittest.TestCase):
             self.assertIn(li['fields']['units'], canon,
                           f"line item {li['pk']} has off-canon units "
                           f"{li['fields']['units']!r}")
+
+    def test_every_estimate_line_item_has_an_accounting_category(self):
+        # Current code (the AC-required rule) forbids an estimate line item
+        # without an accounting category, and the send-gate only exempts
+        # source-backed and adjustment lines. Discount/credit ('lineitem') and
+        # deliverable lines never get a source-linked atom to carry the AC, so
+        # the converter must emit one on every line or regen reproduces bare
+        # null-AC lines.
+        build.build_estimates(self.c)
+        for li in self._models('estimates.estimatelineitem'):
+            self.assertIsNotNone(
+                li['fields']['accounting_category'],
+                f"line item {li['pk']} "
+                f"({li['fields'].get('description')!r}) has no "
+                f"accounting_category — bare null-AC lines are invalid",
+            )
 
     def test_every_estimate_has_a_unique_public_token(self):
         # Estimate.save() mints public_token via secrets.token_urlsafe(32);

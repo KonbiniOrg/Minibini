@@ -921,7 +921,16 @@ def build_estimates(c):
                     'units':             units,
                     'description':       description,
                     'price':             f'{price:.2f}',
-                    'accounting_category': None,
+                    # Every line needs an AC: source-backed lines (task/material/
+                    # fee) carry it on their atom, but bare discount/credit
+                    # ('lineitem') and deliverable lines never get a source, so
+                    # emit a classification-matched default here (matches the AC
+                    # the eventual atom would carry) — current code forbids a
+                    # null-AC line item.
+                    'accounting_category': (
+                        c.ac_mat_pk if classification == 'material'
+                        else c.ac_svc_pk
+                    ),
                     'taxable_override':  None,
                     'tax_rate_override': None,
                 })
