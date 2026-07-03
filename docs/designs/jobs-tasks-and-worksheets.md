@@ -1032,14 +1032,26 @@ Authoring the Job's own work atoms happens on the **task-list page**
 (`JobTaskListPage.svelte`, `#/jobs/{id}/tasks`), reached from the Tasks &
 Materials pillar. It is available regardless of estimate state, so
 pre-approval / released effort is authored and shown there too. For managers
-it carries the **Add line** affordances:
+it carries two affordances:
 
-| Add-line button | Modal | Creates | Endpoint |
-|---|---|---|---|
-| **Add Task** (manual or from template) | `WorkItemForm` | `Task` | `POST /api/jobs/{id}/tasks/` (or `/add-from-template/`) |
-| **Add Material** | `MaterialModal` | `Material` | `POST /api/jobs/{id}/materials/` |
-| **Add Fee** | `FeeModal` | `Fee` | `POST /api/jobs/{id}/fees/` |
-| **Add Expense** | (expenses app) | `Expense` | — |
+- **"Add Work"** — single button that opens `PriceListPicker` (the unified
+  picker, see `estimates-and-prices.md` §6.4). The picker's `onChoose` result
+  routes to:
+  - `{type: 'service'}` → `WorkItemForm` pre-seeded for that `ServiceItem`
+    → `POST /api/jobs/{id}/add-from-template/` (creates a `Task` immediately)
+  - `{type: 'inventory'}` → `MaterialModal` with `presetPli` + `presetDescription`
+    → `POST /api/jobs/{id}/materials/`
+  - `{type: 'freeform', isMaterial: true}` → `MaterialModal` with
+    `presetDescription` + `defaultMaterialCategoryId`
+    → `POST /api/jobs/{id}/materials/`
+  - `{type: 'freeform', isMaterial: false}` → `FeeModal` with `presetDescription`
+    → `POST /api/jobs/{id}/fees/`
+- **"Add Expense"** — opens `ExpenseModal`; open to any authenticated user.
+
+`defaultMaterialCategoryId` is loaded from
+`GET /api/settings/` (`default_material_accounting_category` key) at page
+mount and passed to `MaterialModal` so freeform material lines default to the
+shop's configured material category.
 
 The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
 of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
@@ -1047,10 +1059,6 @@ a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
 the job is `on_hold`, **+ New change order** live on the overview's Estimate
 pillar. (These replaced the deleted Worksheet detail page; the old
 Plan/Client-View toggle is gone.)
-
-> Follow-on: the separate Add-Task/Material/Fee affordances are slated to be
-> unified into a single "Add line" picker — see
-> `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`.
 
 ## 10. UI: Task Detail page
 
@@ -1134,8 +1142,8 @@ general cross-client repolling mechanism is deferred (see Unfinished Work).
 > Where the work-authoring UI lives now:
 >
 > - **Authoring the Job's work atoms** → the **task-list page** (§9.5), not
->   the overview. `WorkItemForm` creates a `Task` (`POST /api/jobs/{id}/tasks/`),
->   `MaterialModal` a `Material` (`/materials/`), `FeeModal` a `Fee` (`/fees/`).
+>   the overview. The single **"Add Work"** picker (`PriceListPicker`) routes to
+>   `WorkItemForm` (Task), `MaterialModal` (Material), or `FeeModal` (Fee).
 > - **`InventoryItemPicker.svelte`** (type-ahead `InventoryItem` picker,
 >   built on `SearchPicker`) survives — reused by `MaterialModal` and the
 >   PO line-item form.

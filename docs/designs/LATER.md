@@ -1131,7 +1131,6 @@ IMAP-SMTP machinery and tend to be worked together.
   catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
   session-expiry path instead of a silently broken widget.
 
-
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
   A first pass built this but it was **removed pending a design decision** — the code
