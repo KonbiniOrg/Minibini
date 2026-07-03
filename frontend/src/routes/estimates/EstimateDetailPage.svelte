@@ -14,6 +14,7 @@
   let job = $state(null);
   let contact = $state(null);
   let categories = $state([]);
+  let defaultMaterialCategoryId = $state(null);
   let loading = $state(true);
   let error = $state('');
 
@@ -121,10 +122,21 @@
     }
   }
 
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      const raw = s.default_material_accounting_category;
+      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
+    } catch (_) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   $effect(() => {
     if (params.id) {
       loadEstimate();
       loadCategories();
+      loadSettings();
     }
   });
 
@@ -282,6 +294,8 @@
     apiBase={`/api/estimates/${estimate.estimate_id}`}
     item={modalItem}
     {categories}
+    showMaterialMarker={true}
+    {defaultMaterialCategoryId}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
   />
