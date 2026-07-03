@@ -74,8 +74,10 @@ Give the service pick the same treatment:
 - **Change the service-pick affordance to set the descriptor, not create a Task.** Replace the
   `AddServiceItemModal → add-from-template → line-items-from-atoms` chain with an
   `add_line_item_from_service(estimate_pk, service_item_pk, qty)` service method that mints a draft
-  document line carrying `service_item` + `qty` (mirroring `add_line_item_from_pli` for inventory).
-  No `Task`, no source link, until acceptance.
+  document line carrying `service_item` + `qty` **and snapshots the priced values at instantiation**
+  (`price`, `accounting_category`, `description`, `units`) — byte-for-byte the same shape as
+  `add_line_item_from_pli` does for inventory (see next section). No `Task`, no source link, until
+  acceptance.
 
 ### Symmetric three-way crystallization at acceptance
 
@@ -85,7 +87,8 @@ discriminating on which descriptor the line carries:
 
 ```
 on_accept, per hand-line (no source, not an adjustment):
-    has service_item   → ServiceItem.generate_task(job, est_qty=li.qty, …)   → Task
+    has service_item   → ServiceItem.generate_task(job, est_qty=li.qty,
+                            allow_superseded_scheme=True)                     → Task
     has inventory_item → MaterialService.create_on_job(…)                     → Material   (unchanged)
     neither            → Fee.objects.create(…)                               → Fee        (unchanged)
   …then source-link the line to the atom it created (SOURCE_TASK / SOURCE_MATERIAL / SOURCE_FEE),
@@ -96,59 +99,50 @@ This *keeps* the inventory→Material branch (it was going to be retired under t
 atom-on-add plan; under atom-on-approval it stays) and *adds* the service→Task branch. `on_accept`
 grows from two branches to three — the accepted, bounded cost of this direction.
 
-### How a deferred service line behaves before acceptance
+### How a deferred service line behaves before acceptance — snapshot at instantiation
 
-A service-descriptor line stores **only** `service_item` + `qty` (no override capture — see Settled
-decisions). Two consequences follow, both resolved so the sent estimate matches the crystallized Task:
+A service line **snapshots its priced values at instantiation**, exactly as the inventory descriptor
+already does (`add_line_item_from_pli` copies `description`/`units`/`price`/`accounting_category` off the
+`InventoryItem`). This is the "documents are self-contained records" principle: the line owns its
+numbers and never re-derives them from the catalog afterward.
 
-- **Amount projection [SETTLED].** The line has no Task and stores **no snapshot price / no pinned
-  scheme** — it derives the amount **live through the linked ServiceItem**:
-  `service_item.rate_scheme.compute_charge(li.qty, service_item.default_active_modifiers)`. Because no
-  overrides are stored, `default_active_modifiers` is exactly what crystallization feeds
-  `generate_task`, so **estimate projection == crystallized-Task projection** by construction, and no
-  price is duplicated onto the line.
-  _Why live-derive is safe (no drift):_ a `RateScheme` is **immutable** (`rate`/`algorithm`/`modifiers`
-  are in `IMMUTABLE_FIELDS`; edits go through `supersede()`, which mints a *new* scheme and never
-  changes an existing one's numbers), and `supersede()` does **not** repoint `ServiceItem.rate_scheme`.
-  So `service_item → rate_scheme` is a stable reference for the life of a draft; the derived amount
-  can only move if someone **deliberately repoints** that ServiceItem to a different scheme — a rare
-  catalog edit. If that happens mid-draft it re-prices the line *before approval / before the customer
-  has the document* — the **acceptable, low-risk** drift window (explicitly **not** the
-  hazardous "changed silently between the writer's last view and Send" case, which can't arise from a
-  supersede since the rate is immutable). Snapshotting was therefore judged unnecessary duplication.
-- **Accounting category [SETTLED].** A service line carries no hand-set AC; it derives from
-  `ServiceItem.effective_accounting_category` (= `rate_scheme.accounting_category`). So a line carrying
-  `service_item` is **exempt from the hand-line AC requirement** (`assert_all_hand_lines_have_ac` and
-  the add/update AC validation), exactly as an `inventory_item` line is; the AC is set from the
-  ServiceItem at crystallization.
+- **Price [SETTLED — snapshot].** At pick, `add_line_item_from_service` computes the effective unit rate
+  `service_item.rate_scheme.effective_rate(service_item.default_active_modifiers)` (e.g. base $40 + a
+  10% modifier → **$44**; pricing is linear, so a single unit rate fully captures it) and stores it as
+  `line.price`. The line's amount is then plain `qty × price` — self-contained, no live scheme lookup,
+  no pinned-scheme FK. `service_item` remains on the line purely as the **crystallization target**
+  (which template to `generate_task` from), not as a live price source.
+- **Accounting category [SETTLED — snapshot].** `line.accounting_category` is set at pick from
+  `service_item.effective_accounting_category` (= `rate_scheme.accounting_category`). So the line
+  simply **has** an AC and passes `assert_all_hand_lines_have_ac` like any other populated line — no
+  special exemption, uniform with inventory.
+- **Crystallization derives the atom fresh.** At acceptance, `generate_task` builds the Task from the
+  ServiceItem's **then-current** scheme. Absent any price change this equals the line's snapshot; if a
+  rate changed in between, the Task reflects the new rate and **differs** from the snapshot — see below.
 
-### Superseded scheme at crystallization — honor, don't block [SETTLED]
+### Price changes are a human/organizational event — no software guards [SETTLED]
 
-`generate_task` raises `SchemeSupersededError` when the ServiceItem's `rate_scheme.replaced_by` is set,
-and deferral moves that check from pick-time to **acceptance**. **Resolution: honor the quote, don't
-block.** If a service line's scheme is superseded by the time the estimate is accepted, crystallize the
-Task **against that superseded (but immutable) scheme** via `generate_task(..., allow_superseded_scheme=True)`
-— the bypass already exists (`apps/jobs/services.py:761`). The customer accepted the price computed from
-that exact scheme; reproducing it is correct, and a hard block would refuse to crystallize an
-already-accepted quote. Surface a **soft, non-blocking flag** on the line while the estimate is still a
-draft ("this line's rate scheme was superseded — re-pick to refresh at the current rate") so the writer
-can choose to re-quote *before* sending, but never force it.
+We deliberately build **no** superseded-scheme pre-flight guard, soft-flag, or honor/block decision.
+Per shop reality: **any price change is a big, rare, org-wide-known event** — everyone is aware it
+happened and is already watching jobs near that time for adjustments. So if a service line's snapshot
+and its crystallized Task diverge because the underlying rate moved, that divergence **surfaces on the
+Task** (and again at invoice, which bills actuals), exactly where a human is already looking, and is
+reconciled there. Software does not need to detect or prevent it.
 
-> **⚠️ Verify before building (added at RM's request; confirmed partially by reading `supersede()`):**
-> As written today, `RateScheme.supersede()` (`apps/jobs/models.py:538`) renames the old scheme,
-> mints the new one, and sets `old.replaced_by` — it does **not** repoint `ServiceItem.rate_scheme`
-> (or `Task.rate_scheme`). RM recalls supersession *used to* "update all its catalog users." **Confirm
-> whether any catalog-repoint mechanism still exists and is test-covered.** This fork decides how often
-> "honor" is even exercised:
-> - **If catalog users ARE repointed on supersede** → a live ServiceItem never points at a superseded
->   scheme, so acceptance never hits this path (and a draft line simply follows to the new price — the
->   accepted low-risk before-approval drift). The `allow_superseded_scheme` branch is belt-and-suspenders.
-> - **If they are NOT** (literal current behavior) → a picked ServiceItem keeps pointing at its
->   original scheme, which can later be marked superseded; the honor-via-`allow_superseded_scheme` path
->   is the one that actually runs, and the soft draft-time flag is what nudges a refresh.
->
-> Either way the design is the same (honor + soft-flag); the verification only tells us how common the
-> honor path is. (Search: `replaced_by` / `supersede` on `RateScheme` and its `ServiceItem` users.)
+The only code concession is defensive, not "handling": crystallize with
+`generate_task(..., allow_superseded_scheme=True)` (bypass exists, `apps/jobs/services.py:761`) so that
+a superseded scheme yields a Task instead of **aborting acceptance** with `SchemeSupersededError`. No
+flag, no guard, no re-pick prompt.
+
+> **⚠️ Verify before building (added at RM's request; partially confirmed by reading `supersede()`):**
+> `RateScheme.supersede()` (`apps/jobs/models.py:538`) renames the old scheme, mints the new one, and
+> sets `old.replaced_by` — it does **not** repoint `ServiceItem.rate_scheme` (or `Task.rate_scheme`).
+> RM recalls supersession *used to* "update all its catalog users." **Confirm whether any
+> catalog-repoint mechanism still exists and is test-covered.** This only affects *which benign path*
+> runs — either way we build no handling: if catalog users are repointed, the crystallized Task simply
+> reflects the new rate (human reconciles); if not, the `allow_superseded_scheme=True` bypass keeps
+> acceptance from aborting. (Search: `replaced_by` / `supersede` on `RateScheme` and its `ServiceItem`
+> users.)
 
 ### Orphan-atom cleanup — no longer a problem
 
@@ -161,10 +155,12 @@ unchanged by this plan.
 
 ### Settled decisions
 
-1. **No override capture [SETTLED].** The service descriptor is `service_item` + `qty` only. The Task
-   is generated from the template at crystallization; `name` / `description` / `active_modifiers` /
-   `est_worker_time` take template defaults. Users edit the Task freely afterward, so there's no need
-   to freeze picked-time overrides on the estimate line.
+1. **No override capture [SETTLED].** The service pick captures `service_item` + `qty` plus the
+   snapshot values (`price`/`accounting_category`/`description`/`units`), but **no** modifier/name/time
+   *overrides* — `name` / `active_modifiers` / `est_worker_time` take template defaults at
+   crystallization. Users edit the resulting Task freely afterward, so there's no need to freeze
+   picked-time overrides on the estimate line. (The snapshot `price` is derived from those same
+   template defaults at pick, so the quoted line and the default-built Task agree.)
 2. **Invoices do not get a service descriptor [SETTLED].** The invoice `LineItemModal` inventory pick
    stays as-is; invoices bill *actuals* and never generate work, so a service pick there is
    meaningless. Service deferral is estimate-only (mirrors why "Add from Service" was estimate-only).
@@ -240,19 +236,17 @@ toggle + `AddServiceItemModal` + inventory picker) wants thinking-through, not a
 No dev-DB migration (regenerate). TDD. Part 1:
 
 - a service pick on a draft estimate creates a document line carrying `service_item` + `qty` and
-  **no `Task`**;
-- the line's projected amount, derived live via `service_item.rate_scheme.compute_charge(qty,
-  default_active_modifiers)`, **matches** the amount of the Task it crystallizes into (same figure
-  before and after acceptance) and does **not** change when the scheme is *superseded* (rate is
-  immutable);
-- a service line needs **no hand-set AC** and is not blocked by the AC send-gate; its crystallized
-  Task's AC comes from `ServiceItem.effective_accounting_category`;
+  **no `Task`**, with `price`/`accounting_category`/`description`/`units` **snapshotted at pick** from
+  the ServiceItem (`price = effective_rate(default_modifiers)`);
+- the line's amount is plain `qty × price` from the snapshot (self-contained; unaffected by later
+  catalog changes), and matches the crystallized Task's amount absent an intervening price change;
+- the snapshotted AC populates the line so it passes `assert_all_hand_lines_have_ac` normally (no
+  exemption), uniform with inventory;
 - acceptance crystallizes the line into a `Task` (alongside inventory→`Material` and hand→`Fee`),
-  source-links it, and earmarks;
-- when a service line's scheme is superseded by accept-time, acceptance **honors** it —
-  crystallizes the Task against that scheme via `allow_superseded_scheme=True` (reproducing the
-  quoted amount), not blocked — while a soft draft-time flag offers a re-pick; plus the ⚠️
-  verification of whether supersession repoints catalog users (and is test-covered);
+  source-links it, and earmarks — using `generate_task(..., allow_superseded_scheme=True)` so a
+  superseded scheme does **not** abort acceptance (no guard / flag / re-pick prompt — divergence is
+  reconciled by humans at invoice time); plus the ⚠️ verification of whether supersession repoints
+  catalog users;
 - deleting a draft line strands no atom; direct Add Task / Add Material on a pre-approval job still
   create real atoms immediately and remain claimable by an estimate line via the wizard.
 
