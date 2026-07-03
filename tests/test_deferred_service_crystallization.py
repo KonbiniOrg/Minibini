@@ -129,3 +129,42 @@ class GenerateTaskSupersededBypassTest(DeferredServiceBase):
         self.assertEqual(task.name, 'CAM coding')          # from template_name
         self.assertEqual(task.description, 'desc from line')
         self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+
+
+from rest_framework.test import APIClient
+from apps.core.models import User
+
+
+class LineItemsFromServiceApiTest(DeferredServiceBase):
+    def setUp(self):
+        super().setUp()
+        self.user = User.objects.create_user(
+            username='mgr', password='pw', email='mgr@x.com',
+        )
+        # can_manage_jobs atom so CanManageJobOrPM passes for a non-PM job.
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.user.user_permissions.add(perm)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_posts_a_deferred_service_line(self):
+        from apps.jobs.models import Task
+        resp = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/line-items-from-service/',
+            {'service_item': self.service_item.pk, 'qty': '3'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['service_item'], self.service_item.pk)
+        self.assertEqual(resp.data['description'], 'CAM coding')
+        self.assertEqual(Decimal(resp.data['price']), Decimal('40.00'))
+        self.assertEqual(Decimal(resp.data['qty']), Decimal('3'))
+        # Still deferred: no Task minted.
+        self.assertFalse(Task.objects.filter(job=self.job).exists())
+
+    def test_missing_service_item_is_404(self):
+        resp = self.client.post(
+            f'/api/estimates/{self.estimate.pk}/line-items-from-service/',
+            {'service_item': 999999, 'qty': '1'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 404)
