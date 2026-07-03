@@ -76,6 +76,24 @@ describe('EstimateAddLineForm', () => {
       expect.objectContaining({ is_material: true }));
   });
 
+  it('shows the base unit next to quantity for a service pick', () => {
+    const choice = { type: 'service', serviceItem: {
+      template_id: 11, template_name: 'CNC Routing', rate_scheme_detail: { unit_label: 'hr' } } };
+    const { getByText } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByText('hr')).toBeInTheDocument();
+  });
+
+  it('shows the base unit next to quantity for an inventory pick', () => {
+    const choice = { type: 'inventory', inventoryItem: {
+      inventory_item_id: 22, code: 'BOLT-14', units: 'ea' } };
+    const { getByText } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+    });
+    expect(getByText('ea')).toBeInTheDocument();
+  });
+
   it('freeform fee blocks save with no accounting category (hand-line rule)', async () => {
     const choice = { type: 'freeform', typed: 'x', isMaterial: false };
     const { getByLabelText, getByRole, findByText } = render(EstimateAddLineForm, {

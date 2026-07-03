@@ -27,6 +27,13 @@
     choice?.type === 'inventory' ? `Add: ${choice.inventoryItem.code}` :
     'Add line'
   );
+  // The base object's unit, shown next to qty for reference (service/inventory
+  // picks carry a fixed unit; freeform has its own editable Units select).
+  const baseUnits = $derived(
+    choice?.type === 'service' ? (choice.serviceItem?.rate_scheme_detail?.unit_label || '') :
+    choice?.type === 'inventory' ? (choice.inventoryItem?.units || '') :
+    ''
+  );
 
   $effect(() => {
     if (!open || !choice) return;
@@ -78,7 +85,7 @@
       {#if isFreeform}
         <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
       {/if}
-      <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}></label></p>
+      <p><label>Quantity<br><input type="number" step="0.01" min="0" value={qty} oninput={(e) => qty = e.target.value}>{#if !isFreeform && baseUnits}<span class="qty-units">{baseUnits}</span>{/if}</label></p>
       {#if isFreeform}
         <p><label>Units<br><UnitsSelect bind:value={units} /></label></p>
         <p><label>Price<br><input type="number" step="0.01" value={price} oninput={(e) => price = e.target.value}></label></p>
@@ -103,6 +110,7 @@
     display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
   }
   .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
+  .qty-units { margin-left: 8px; color: #666; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
 </style>
