@@ -108,6 +108,23 @@ class EstimateService:
         return estimate
 
     @staticmethod
+    def _assert_is_material_only_on_bare_line(li):
+        """`is_material` is meaningful only on a bare line. A line with an
+        inventory_item is already a (catalog) material; an adjustment line is
+        document-only — the marker must not conflict with either."""
+        if not li.is_material:
+            return
+        if li.inventory_item_id is not None:
+            raise ValidationError({'is_material': (
+                'A line with an inventory item is already a material; '
+                'the "is material" marker only applies to a bare line.'
+            )})
+        if li.adjustment_service_id is not None:
+            raise ValidationError({'is_material': (
+                'An adjustment line cannot be marked as a material.'
+            )})
+
+    @staticmethod
     def assert_all_hand_lines_have_ac(estimate):
         """Raise if any hand-line (no atom source, not a percentage adjustment)
         lacks an accounting category. Enforced at send-time (mark_open / email)
@@ -281,6 +298,7 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
+        EstimateService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
@@ -336,6 +354,7 @@ class EstimateService:
                     '(lines with no atom source).'
                 )}
             )
+        EstimateService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         LineItemService.save_line_item(li)
         return li
