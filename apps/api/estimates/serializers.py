@@ -38,7 +38,7 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstimateLineItem
         fields = [
-            'line_item_id', 'line_number', 'inventory_item',
+            'line_item_id', 'line_number', 'inventory_item', 'is_material',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'adjustment_service', 'adjustment_target_categories',
