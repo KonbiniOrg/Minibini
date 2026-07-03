@@ -168,3 +168,53 @@ class LineItemsFromServiceApiTest(DeferredServiceBase):
             {'service_item': 999999, 'qty': '1'}, format='json',
         )
         self.assertEqual(resp.status_code, 404)
+
+
+from apps.estimates.acceptance import EstimateAcceptanceService
+from apps.estimates.models import EstimateLineItemSource
+
+
+class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
+    # Note: we do NOT change estimate.status in setUp — Estimate.save() blocks
+    # DRAFT→OPEN without line items, and on_accept does not require any particular
+    # status; it is driven by signals in production but callable directly in tests.
+
+    def test_service_line_becomes_a_task_and_source_links(self):
+        from apps.jobs.models import Task, Fee
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('2'),
+        )
+        # Edit the description as a user would; it becomes the Task description.
+        line.description = 'CAM coding for panel A'
+        line.save()
+
+        result = EstimateAcceptanceService.on_accept(self.estimate)
+
+        task = Task.objects.get(job=self.job)
+        self.assertEqual(task.name, 'CAM coding')                  # ServiceItem name
+        self.assertEqual(task.description, 'CAM coding for panel A')  # line description
+        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
+        self.assertEqual(task.est_qty, Decimal('2'))
+        self.assertEqual(result['tasks_created'], 1)
+        # It did NOT become a Fee.
+        self.assertFalse(Fee.objects.filter(job=self.job).exists())
+        # Source-linked to the Task.
+        src = EstimateLineItemSource.objects.get(estimate_line_item=line)
+        self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_TASK)
+        self.assertEqual(src.source_pk, task.pk)
+
+    def test_superseded_scheme_does_not_abort_acceptance(self):
+        from apps.jobs.models import Task
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+        )
+        new = RateScheme.objects.create(
+            name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.scheme.replaced_by = new
+        self.scheme.save()
+
+        # Does NOT raise SchemeSupersededError.
+        EstimateAcceptanceService.on_accept(self.estimate)
+        self.assertTrue(Task.objects.filter(job=self.job).exists())
