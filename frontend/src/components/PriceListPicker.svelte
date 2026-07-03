@@ -11,6 +11,12 @@
   let pickerQuery = $state('');
   let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
 
+  // Start fresh on every open: a cancelled add (or any other close) must not
+  // leave stale typing or a stale material toggle behind when reopened.
+  $effect(() => {
+    if (open) { pickerQuery = ''; isMaterial = false; }
+  });
+
   const search = async (q) => {
     const enc = encodeURIComponent(q);
     const [svc, inv] = await Promise.all([

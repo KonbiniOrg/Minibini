@@ -86,6 +86,19 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true });
   });
 
+  it('clears typed text and the material toggle when reopened', async () => {
+    const props = baseProps();
+    const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
+    await fireEvent.click(getByRole('checkbox', { name: /material/i }));
+    expect(getByPlaceholderText(/search/i)).toHaveValue('partial typing');
+    // Cancel (close), then reopen — the picker must start fresh.
+    await rerender({ ...props, open: false });
+    await rerender({ ...props, open: true });
+    expect(getByPlaceholderText(/search/i)).toHaveValue('');
+    expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
+  });
+
   it('shows the material checkbox and Add Line button constantly, from the start', async () => {
     const props = baseProps();
     const { getByRole } = render(PriceListPicker, { props });
