@@ -481,6 +481,14 @@ class EstimateLineItem(BaseLineItem):
         'core.AccountingCategory', blank=True, related_name='+',
         help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
     )
+    is_material = models.BooleanField(
+        default=False,
+        help_text=(
+            'Marks a bare (no inventory_item, non-adjustment) freeform line as a '
+            'material: at acceptance it crystallizes into a provisional Material '
+            '(sell price only, no lot) instead of a Fee.'
+        ),
+    )
 
     class Meta:
         db_table = 'est_li'
