@@ -1203,3 +1203,11 @@ IMAP-SMTP machinery and tend to be worked together.
   components that own the schemes list and the ServiceItem-add form.
   _Done when:_ editing a RateScheme makes the updated values available to the ServiceItem form (and any
   other scheme consumers on the page) without a manual refresh.
+
+- **Empty modifier row (blank name + 0%) shouldn't be saved.** — _added 2026-07-03_
+  When editing a `RateScheme`'s modifiers, a blank modifier row — empty name/key and `0` percent —
+  gets sent to the backend and persisted as a junk `{key: '', percent: 0}` entry. The form should drop
+  empty rows before saving (a modifier with no name and 0% is a no-op). Filter them out client-side in
+  the scheme editor's save handler; optionally also guard server-side in `RateScheme` cleaning so a
+  stray empty modifier never persists. Watch the `modifiers` JSON shape (`[{key, percent}, ...]`).
+  _Done when:_ saving a scheme never persists a blank/zero modifier row.
