@@ -54,6 +54,7 @@
   // Picker state
   let pickerOpen = $state(false);
   let taskPresetTemplateId = $state(null);
+  let taskPresetName = $state('');
   let materialPresetPli = $state(null);
   let materialPresetDescription = $state('');
   let feePresetDescription = $state('');
@@ -182,6 +183,15 @@
       taskModalTask = null;
       taskModalMode = 'template';
       taskPresetTemplateId = choice.serviceItem.template_id;
+      taskPresetName = '';
+      taskModalOpen = true;
+    } else if (choice.type === 'freeform-task') {
+      // Manual/freeform task — WorkItemForm's manual mode; user picks the rate
+      // scheme there. Typed text seeds the name.
+      taskModalTask = null;
+      taskModalMode = 'manual';
+      taskPresetTemplateId = null;
+      taskPresetName = choice.typed;
       taskModalOpen = true;
     } else if (choice.type === 'inventory') {
       materialModalMaterial = null;
@@ -427,6 +437,7 @@
     isEdit={!!taskModalTask}
     {templates}
     presetTemplateId={taskPresetTemplateId}
+    presetName={taskPresetName}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -456,7 +467,7 @@
     onClose={() => { feeModalOpen = false; }}
   />
 
-  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} allowFreeformTask={true} />
 
   <ExpenseModal
     open={expenseModalOpen}

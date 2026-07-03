@@ -87,6 +87,19 @@ describe('JobTaskListPage — Add Work picker → FeeModal path', () => {
     await waitFor(() => expect(getByRole('dialog')).toBeInTheDocument());
   });
 
+  it('freeform Add Task path opens the manual task form seeded with the typed name', async () => {
+    mockApi({ can_manage: false });
+    const { findByRole, getByRole, getByPlaceholderText, getByDisplayValue } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await findByRole('button', { name: /add work/i });
+    await fireEvent.click(getByRole('button', { name: /add work/i }));
+    await waitFor(() => getByRole('dialog'));
+    await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Custom milling' } });
+    await fireEvent.click(await findByRole('button', { name: /add task/i }));
+    // WorkItemForm manual create mode opens, name seeded from the typed text.
+    await waitFor(() => getByRole('heading', { name: /add manual task/i }));
+    await waitFor(() => expect(getByDisplayValue('Custom milling')).toBeInTheDocument());
+  });
+
   it('freeform fee path through picker opens FeeModal', async () => {
     mockApi({ can_manage: false });
     const { findByRole, getByRole, getByPlaceholderText } = render(JobTaskListPage, { props: { params: { id: 3 } } });

@@ -7,7 +7,7 @@
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
-  let { open = false, onChoose = null, onclose = null } = $props();
+  let { open = false, onChoose = null, onclose = null, allowFreeformTask = false } = $props();
   let pickerQuery = $state('');
   let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
 
@@ -44,6 +44,12 @@
   function emitFreeform() {
     onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial });
   }
+  function emitFreeformTask() {
+    // Task-list surface only: a manual/freeform Task (rate scheme picked in the
+    // follow-up WorkItemForm). Estimates never offer this (tasks come from a
+    // ServiceItem pick there).
+    onChoose?.({ type: 'freeform-task', typed: pickerQuery });
+  }
 </script>
 
 {#if open}
@@ -75,6 +81,9 @@
       <div class="plp-freeform">
         <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
         <button type="button" onclick={emitFreeform}>Add Line</button>
+        {#if allowFreeformTask}
+          <button type="button" onclick={emitFreeformTask}>Add Task</button>
+        {/if}
       </div>
     </div>
   </div>

@@ -99,6 +99,19 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
   });
 
+  it('does not offer Add Task by default (estimate surface)', () => {
+    const { queryByRole } = render(PriceListPicker, { props: baseProps() });
+    expect(queryByRole('button', { name: /add task/i })).toBeNull();
+  });
+
+  it('offers Add Task when allowFreeformTask and emits a freeform-task choice', async () => {
+    const props = { ...baseProps(), allowFreeformTask: true };
+    const { getByPlaceholderText, getByRole } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Custom milling' } });
+    await fireEvent.click(getByRole('button', { name: /add task/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform-task', typed: 'Custom milling' });
+  });
+
   it('shows the material checkbox and Add Line button constantly, from the start', async () => {
     const props = baseProps();
     const { getByRole } = render(PriceListPicker, { props });
