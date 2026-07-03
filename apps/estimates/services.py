@@ -237,6 +237,8 @@ class EstimateService:
                 price=li.price,
                 accounting_category=li.accounting_category,
                 adjustment_service_id=li.adjustment_service_id,
+                service_item=li.service_item,
+                is_material=li.is_material,
             )
             # Copy M2M adjustment target categories (empty set is fine — means "all lines")
             cats = li.adjustment_target_categories.all()

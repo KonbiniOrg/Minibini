@@ -258,3 +258,43 @@ class ServiceLineSendGateTest(DeferredServiceBase):
         )
         # Snapshot populated the AC → no ValidationError raised.
         EstimateService.assert_all_hand_lines_have_ac(self.estimate)
+
+
+class ReviseEstimateCarriesDescriptorFieldsTest(DeferredServiceBase):
+    """revise_estimate must copy service_item and is_material onto the new revision's lines."""
+
+    def setUp(self):
+        super().setUp()
+        # Add a deferred service line (requires DRAFT estimate).
+        self.service_line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('2'),
+        )
+        # Add a bare is_material=True line (requires DRAFT; supply AC explicitly).
+        self.material_line = EstimateService.add_line_item(
+            self.estimate.pk,
+            description='Raw stock',
+            qty=Decimal('5'),
+            price=Decimal('10'),
+            units='ft',
+            accounting_category=self.cat.pk,
+            is_material=True,
+        )
+        # revise_estimate requires a non-draft parent. Force OPEN bypassing
+        # model validation (the estimate has no deliverable, but that guard is
+        # only on the model's save transition — .update() skips it).
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        self.estimate.refresh_from_db()
+
+    def test_service_item_fk_preserved_on_revision(self):
+        revision = EstimateService.revise_estimate(self.estimate.pk)
+        lines = list(EstimateLineItem.objects.filter(estimate=revision).order_by('line_number'))
+        service_lines = [li for li in lines if li.service_item_id is not None]
+        self.assertEqual(len(service_lines), 1)
+        self.assertEqual(service_lines[0].service_item_id, self.service_item.pk)
+
+    def test_is_material_preserved_on_revision(self):
+        revision = EstimateService.revise_estimate(self.estimate.pk)
+        lines = list(EstimateLineItem.objects.filter(estimate=revision).order_by('line_number'))
+        material_lines = [li for li in lines if li.is_material]
+        self.assertEqual(len(material_lines), 1)
+        self.assertEqual(material_lines[0].description, 'Raw stock')
