@@ -423,7 +423,8 @@ class ServiceItem(models.Model):
     def generate_task(self, container, est_qty, bundle_identifier=None, product_instance=None,
                        assignee=None, sort_order=None,
                        name=None, description=None,
-                       active_modifiers=None, est_worker_time=None):
+                       active_modifiers=None, est_worker_time=None,
+                       allow_superseded_scheme=False):
         """Generate a Task on a Job from this template with specified quantity.
 
         Optional overrides:
@@ -431,12 +432,16 @@ class ServiceItem(models.Model):
           description     – if not None, replaces template description (empty string is kept as-is).
           active_modifiers – list of modifier keys; falls back to template defaults when None.
           est_worker_time – ISO 8601 duration string or None.
+          allow_superseded_scheme – if True, bypasses SchemeSupersededError so acceptance can
+                                    crystallize a line whose scheme was superseded after the estimate
+                                    was created. Default False preserves current behavior.
         """
         from apps.jobs.models import Job, Task, copy_active_modifiers
         from apps.core.services import SchemeSupersededError
         from django.db import transaction
 
-        if self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None:
+        if (self.rate_scheme_id and self.rate_scheme.replaced_by_id is not None
+                and not allow_superseded_scheme):
             raise SchemeSupersededError(
                 f'Template "{self.template_name}" references a superseded '
                 f'RateScheme. Update the template before adding tasks from it.'

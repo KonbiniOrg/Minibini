@@ -100,3 +100,32 @@ class ServiceItemFieldTest(DeferredServiceBase):
         )
         line.refresh_from_db()
         self.assertEqual(line.service_item_id, self.service_item.pk)
+
+
+from apps.core.services import SchemeSupersededError
+
+
+class GenerateTaskSupersededBypassTest(DeferredServiceBase):
+    def _supersede(self):
+        # Point the scheme at a replacement so replaced_by_id is set.
+        new = RateScheme.objects.create(
+            name='Hourly v2', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('45'), unit_label='hour', accounting_category=self.cat,
+        )
+        self.scheme.replaced_by = new
+        self.scheme.save()
+
+    def test_superseded_scheme_aborts_by_default(self):
+        self._supersede()
+        with self.assertRaises(SchemeSupersededError):
+            self.service_item.generate_task(self.job, est_qty=Decimal('1'))
+
+    def test_allow_superseded_scheme_bypasses_and_builds_task(self):
+        self._supersede()
+        task = self.service_item.generate_task(
+            self.job, est_qty=Decimal('1'),
+            description='desc from line', allow_superseded_scheme=True,
+        )
+        self.assertEqual(task.name, 'CAM coding')          # from template_name
+        self.assertEqual(task.description, 'desc from line')
+        self.assertEqual(task.rate_scheme_id, self.scheme.pk)
