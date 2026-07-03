@@ -1131,11 +1131,6 @@ IMAP-SMTP machinery and tend to be worked together.
   catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
   session-expiry path instead of a silently broken widget.
 
-- **Hand-*typed* estimate material lines can't crystallize into Materials.** — _added 2026-07-01, moved to a plan 2026-07-02_
-  → Folded into `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md` (Part 2):
-  a freeform-typed material has no atom-type signal, so it becomes a Fee. The **unified picker**
-  is where an explicit Material-vs-Fee choice belongs (not accounting-category inference — ACs are
-  fully configurable). See the plan.
 
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).

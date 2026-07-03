@@ -8,6 +8,8 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
      not a percentage adjustment, crystallizes it onto the job:
        - a hand-line with an `inventory_item` (added via "From Inventory") is a
          catalog material → becomes a **Material** atom;
+       - a bare hand-line marked `is_material=True` → becomes a **provisional
+         Material** (no inventory_item, sell price only, cost unset);
        - any other hand-line → becomes a **Fee** (the frozen fixed charge).
      Either way the estimate line is source-linked to the atom it created.
   2. Earmarks the job's inventoried materials.
@@ -15,9 +17,6 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
 Atom-backed lines (those with an EstimateLineItemSource) already have their
 Tasks/Materials on the job — nothing to convert. Adjustment lines stay
 document-only (they recompute against the live lines and never become Fees).
-
-(Hand-*typed* material lines with no `inventory_item` still become Fees — there's
-no signal that a freeform description is a material. See docs/designs/LATER.md.)
 """
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -62,6 +61,33 @@ class EstimateAcceptanceService:
                     quantity=li.qty or Decimal('1'),
                     sell_price=li.price or Decimal('0'),
                     inventory_item=li.inventory_item,
+                    accounting_category=li.accounting_category,
+                    units=li.units or 'none',
+                )
+                EstimateLineItemSource.objects.create(
+                    estimate_line_item=li,
+                    source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+                    source_pk=material.pk,
+                )
+                materials_created += 1
+                continue
+
+            # Bare line marked as a material → provisional Material atom.
+            # (No inventory_item, so no lot: it carries only a sell price; cost
+            # stays unset. Reverse-markup provisional cost, transient-lot minting,
+            # establishment, and the Order affordance are OUT of scope here — see
+            # docs/plans/2026-06-30-freeform-material-procurement-inventory.md.)
+            # NOTE (pinned discriminator): Plan 2 adds a `service_item → Task`
+            # branch ABOVE the inventory_item block; this is_material branch stays
+            # here, between inventory_item and Fee.
+            if li.is_material:
+                material = MaterialService.create_on_job(
+                    job=job,
+                    task=None,
+                    description=li.description or '',
+                    quantity=li.qty or Decimal('1'),
+                    sell_price=li.price or Decimal('0'),
+                    inventory_item=None,
                     accounting_category=li.accounting_category,
                     units=li.units or 'none',
                 )
