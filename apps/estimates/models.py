@@ -489,6 +489,13 @@ class EstimateLineItem(BaseLineItem):
             '(sell price only, no lot) instead of a Fee.'
         ),
     )
+    service_item = models.ForeignKey(
+        'estimates.ServiceItem',
+        null=True, blank=True,
+        on_delete=models.PROTECT,
+        related_name='+',
+        help_text='Deferred service descriptor: crystallizes to a Task at acceptance.',
+    )
 
     class Meta:
         db_table = 'est_li'
