@@ -103,18 +103,18 @@ frontend/
 │   │   ├── estimates/
 │   │   │   ├── AddServiceItemModal.svelte    ── DELETE (retired; superseded by picker)
 │   │   │   └── EstimateAddLineForm.svelte    ── NEW: estimate post-selection form
-│   │   ├── MaterialModal.svelte              ── EDIT: add `presetDescription` prop
+│   │   ├── MaterialModal.svelte              ── EDIT: + presetDescription, presetPli, defaultMaterialCategoryId
 │   │   ├── FeeModal.svelte                   ── EDIT: add `presetDescription` prop
 │   │   ├── WorkItemForm.svelte               ── (unchanged; already has presetTemplateId)
 │   │   └── LineItemModal.svelte              ── (unchanged; kept for EDIT only)
 │   └── routes/
 │       ├── estimates/EstimateDetailPage.svelte  ── EDIT: swap add affordances → picker + form
-│       └── jobs/JobTaskListPage.svelte          ── EDIT: add picker + surface handler
+│       └── jobs/JobTaskListPage.svelte          ── EDIT: replace 4 granular add buttons with one "Add Work" → picker + surface handler
 └── tests/
     └── components/
         ├── PriceListPicker.test.js           ── REWRITE to onChoose contract
         ├── EstimateAddLineForm.test.js       ── NEW
-        ├── MaterialModal.test.js             ── EXTEND (presetDescription)
+        ├── MaterialModal.test.js             ── EXTEND (presetDescription, presetPli, AC default)
         ├── FeeModal.test.js                  ── EXTEND (presetDescription)
         └── AddServiceItemModal.test.js       ── DELETE
 ```
@@ -384,7 +384,10 @@ describe('PriceListPicker (onChoose emitter)', () => {
 (**sell price** / qty; freeform also description + AC + units) and POST the right
 deferred-descriptor payload to `/api/estimates/{id}/line-items/`. Catalog picks
 (service/inventory) snapshot price server-side, so the form only needs **qty** for them;
-freeform needs the full manual shape because `add_line_item` requires an AC on hand-lines.
+freeform needs the full manual shape. A freeform **fee** requires an AC (`add_line_item`
+enforces it on hand-lines); a freeform **material** does **not** — its AC defaults from
+`default_material_accounting_category` (Plan 1 Task 4), so the form prefills that default
+(overridable) and never blocks save on a missing AC for materials.
 
 **Files**
 - `frontend/src/components/estimates/EstimateAddLineForm.svelte` (new)
@@ -392,8 +395,12 @@ freeform needs the full manual shape because `add_line_item` requires an AC on h
 
 **Interfaces**
 - Props:
-  `{ open, choice, estimateId, categories = [], onSaved = () => {}, onClose = () => {} }`
+  `{ open, choice, estimateId, categories = [], defaultMaterialCategoryId = null, onSaved = () => {}, onClose = () => {} }`
   where `choice` is the `onChoose` payload (or `null` when closed).
+  `defaultMaterialCategoryId` is the AC pk from `default_material_accounting_category`; the
+  estimate page reads it the same way the app reads other settings —
+  `const s = await api.get('/api/settings/'); s.default_material_accounting_category` — and
+  passes it down.
 - On save, POST to `/api/estimates/${estimateId}/line-items/`:
   - `choice.type === 'service'`   → `{ service_item: choice.serviceItem.template_id, qty }`
   - `choice.type === 'inventory'` → `{ inventory_item: choice.inventoryItem.inventory_item_id, qty }`
@@ -402,6 +409,9 @@ freeform needs the full manual shape because `add_line_item` requires an AC on h
   service/inventory the description is **not** collected here (the service line's
   description is editable after creation via the existing `openEditItem` path — Settled
   decision 1 in the spec).
+- A freeform **material** (`choice.isMaterial`) prefills `accounting_category` from
+  `defaultMaterialCategoryId` (overridable) and does **not** block save when it's empty
+  (the backend fills the default). A freeform **fee** blocks save when AC is empty.
 
 ### Steps
 
@@ -457,20 +467,36 @@ describe('EstimateAddLineForm', () => {
       expect.objectContaining({ description: 'Rush charge', is_material: false, accounting_category: 7, price: '50' }));
   });
 
-  it('freeform material carries is_material true', async () => {
+  it('freeform material prefills AC from the default and carries is_material true (no manual AC)', async () => {
     const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
     const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
-      props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
+      props: { open: true, choice, estimateId: 42, categories: cats,
+        defaultMaterialCategoryId: 7, onSaved: vi.fn() },
+    });
+    // AC is prefilled from the default — the user enters no AC.
+    expect(getByLabelText(/accounting category/i)).toHaveValue('7');
+    await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
+    await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
+    await fireEvent.click(getByRole('button', { name: /add/i }));
+    expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/',
+      expect.objectContaining({ is_material: true, accounting_category: 7 }));
+  });
+
+  it('freeform material does not block save when no default is configured (backend fills it)', async () => {
+    const choice = { type: 'freeform', typed: 'plywood', isMaterial: true };
+    const { getByLabelText, getByRole } = render(EstimateAddLineForm, {
+      props: { open: true, choice, estimateId: 42, categories: cats,
+        defaultMaterialCategoryId: null, onSaved: vi.fn() },
     });
     await fireEvent.input(getByLabelText(/quantity/i), { target: { value: '2' } });
     await fireEvent.input(getByLabelText(/price/i), { target: { value: '30' } });
-    await fireEvent.change(getByLabelText(/accounting category/i), { target: { value: '7' } });
     await fireEvent.click(getByRole('button', { name: /add/i }));
+    // Not blocked on AC — material defers to the backend default.
     expect(api.post).toHaveBeenCalledWith('/api/estimates/42/line-items/',
       expect.objectContaining({ is_material: true }));
   });
 
-  it('freeform blocks save with no accounting category (hand-line rule)', async () => {
+  it('freeform fee blocks save with no accounting category (hand-line rule)', async () => {
     const choice = { type: 'freeform', typed: 'x', isMaterial: false };
     const { getByLabelText, getByRole, findByText } = render(EstimateAddLineForm, {
       props: { open: true, choice, estimateId: 42, categories: cats, onSaved: vi.fn() },
@@ -494,7 +520,7 @@ describe('EstimateAddLineForm', () => {
   import UnitsSelect from '../UnitsSelect.svelte';
   import { modalKeys } from '../../lib/modalKeys.js';
 
-  let { open = false, choice = null, estimateId, categories = [], onSaved = () => {}, onClose = () => {} } = $props();
+  let { open = false, choice = null, estimateId, categories = [], defaultMaterialCategoryId = null, onSaved = () => {}, onClose = () => {} } = $props();
 
   let qty = $state('1');
   let description = $state('');
@@ -513,8 +539,12 @@ describe('EstimateAddLineForm', () => {
 
   $effect(() => {
     if (!open || !choice) return;
-    qty = '1'; units = 'none'; price = ''; accountingCategory = ''; error = '';
+    qty = '1'; units = 'none'; price = ''; error = '';
     description = choice.type === 'freeform' ? (choice.typed || '') : '';
+    // Freeform material prefills the AC from the config default (overridable); everything
+    // else starts blank.
+    accountingCategory = (choice.type === 'freeform' && choice.isMaterial && defaultMaterialCategoryId != null)
+      ? String(defaultMaterialCategoryId) : '';
   });
 
   async function save() {
@@ -528,9 +558,11 @@ describe('EstimateAddLineForm', () => {
     } else if (choice.type === 'inventory') {
       payload = { inventory_item: choice.inventoryItem.inventory_item_id, qty };
     } else {
-      if (!accountingCategory) { error = 'Accounting Category is required.'; return; }
+      // Fees require an AC; materials default it server-side (Plan 1 Task 4).
+      if (!accountingCategory && !choice.isMaterial) { error = 'Accounting Category is required.'; return; }
       payload = { description, qty: qty || '0', units, price: price || '0',
-        accounting_category: Number(accountingCategory), is_material: choice.isMaterial };
+        accounting_category: accountingCategory ? Number(accountingCategory) : null,
+        is_material: choice.isMaterial };
     }
     busy = true; error = '';
     try {
@@ -639,6 +671,7 @@ function handleLineAdded() {
   choice={addChoice}
   estimateId={estimate.estimate_id}
   {categories}
+  {defaultMaterialCategoryId}
   onSaved={handleLineAdded}
   onClose={() => { addChoice = null; }}
 />
@@ -646,7 +679,11 @@ function handleLineAdded() {
 
   Leave the existing `<LineItemModal ... mode={modalMode} .../>` in place (its only
   caller now is `openEditItem`). Confirm no remaining reference to `openAddItem` or
-  `serviceItemModalOpen`.
+  `serviceItemModalOpen`. Read the material AC default the same way the page reads its
+  other settings and expose it as `defaultMaterialCategoryId` — e.g. alongside the
+  existing settings/category load:
+  `const s = await api.get('/api/settings/'); defaultMaterialCategoryId = s.default_material_accounting_category != null ? Number(s.default_material_accounting_category) : null;`
+  (declare `let defaultMaterialCategoryId = $state(null);`).
 
 - [ ] **3e.** Delete `AddServiceItemModal.svelte` + its test:
   `git rm frontend/src/components/estimates/AddServiceItemModal.svelte frontend/tests/components/AddServiceItemModal.test.js`
@@ -720,10 +757,13 @@ it('seeds description from presetDescription on create', async () => {
 
 ## Task 5 — Wire the picker into the job task-list surface
 
-**Goal:** add an **Add line** button on `JobTaskListPage` that opens `PriceListPicker`,
-and route `onChoose` to the existing immediate-atom modals, prefilled. Existing granular
-add buttons stay (they are the immediate-atom affordances the picker now fronts). No new
-endpoints — reuse the modals' existing POSTs.
+**Goal:** the task-list's primary add affordance becomes a **single "Add Work" button**
+that opens `PriceListPicker`; route `onChoose` to the existing immediate-atom modals,
+prefilled. **Remove** the granular top-level launcher buttons ("Add Task From Template /
+Add Manual Task / Add Material / Add Fee") — the picker is now the one front door. The
+modals themselves (`WorkItemForm` / `MaterialModal` / `FeeModal`) are **still used** — the
+picker's handler opens them prefilled; they are just no longer launched by their own
+dedicated buttons. No new endpoints — reuse the modals' existing POSTs.
 
 **Files**
 - `frontend/src/routes/jobs/JobTaskListPage.svelte` (edit)
@@ -777,12 +817,33 @@ function handleChoose(choice) {
   Add the backing `$state` decls: `taskPresetTemplateId`, `materialPresetPli`,
   `materialPresetDescription`, `feePresetDescription` (all default `null`/`''`).
 
-- [ ] **5c.** Add the button to the toolbar (`{#if !jobLocked}` block), leaving the
-  existing granular buttons:
+- [ ] **5c.** Consolidate the toolbar (`{#if !jobLocked}` block). **Remove** the four
+  work-related granular launcher buttons and replace them with a single **Add Work**
+  button that opens the picker. Leave **Add Expense** and **Mark Work Complete** alone
+  (Expense is not a picker atom). Before:
 
 ```svelte
-<button type="button" onclick={() => { pickerOpen = true; }}>Add line</button>
+{#if !jobLocked}
+  <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
+  <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
+  <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+  <button type="button" onclick={openAddJobFee}>Add Fee</button>
+  <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
 ```
+
+After:
+
+```svelte
+{#if !jobLocked}
+  <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
+  <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
+```
+
+  The `WorkItemForm` / `MaterialModal` / `FeeModal` instances stay mounted (the picker
+  handler in 5b opens them prefilled); they are only losing their dedicated launcher
+  buttons. The now-unused `openAddTemplateTask` / `openAddManualTask` /
+  `openAddJobMaterial` / `openAddJobFee` launcher helpers can be removed or folded into
+  `handleChoose` — grep for stragglers after the edit.
 
 - [ ] **5d.** Pass the presets into the existing modal instances and mount the picker:
 
@@ -791,18 +852,21 @@ function handleChoose(choice) {
 ```
   - `WorkItemForm`: add `presetTemplateId={taskPresetTemplateId}` (it already reads this
     in template mode).
-  - `MaterialModal`: add `presetDescription={materialPresetDescription}`. For the
-    inventory prefill, pass the picked item through the existing selection path — simplest
-    is a new optional `presetPli={materialPresetPli}` seed OR (lighter) leave the user to
-    confirm the item in the modal's `InventoryItemPicker`. **Assumption / flag:** if RM
-    wants the inventory row auto-filled without re-picking, add a `presetPli` prop to
-    `MaterialModal` (calls its existing `handlePliSelect(presetPli)` on open) — a small,
-    testable addition mirroring Task 4. Otherwise the modal opens with description seeded
-    and the user reselects the catalog item. **Recommend building `presetPli`** for
-    parity with the estimate surface.
+  - `MaterialModal`: add `presetDescription={materialPresetDescription}`,
+    `presetPli={materialPresetPli}`, **and** `defaultMaterialCategoryId={defaultMaterialCategoryId}`.
+    `presetPli` is a **firm** part of this plan: the task-list inventory pick auto-fills
+    the item in `MaterialModal` (via its existing `handlePliSelect`) so it matches the
+    estimate surface — no re-picking. A `null` `presetPli` (the freeform-material path)
+    leaves the item unselected, seeds the description, and prefills the AC from
+    `defaultMaterialCategoryId` (overridable) — the same material-AC default the estimate
+    surface uses.
   - `FeeModal`: add `presetDescription={feePresetDescription}`.
 
-- [ ] **5e.** If `presetPli` is built, add a MaterialModal test:
+  Read the default on the page the same way its other settings load —
+  `const s = await api.get('/api/settings/'); defaultMaterialCategoryId = s.default_material_accounting_category != null ? Number(s.default_material_accounting_category) : null;`
+  (declare `let defaultMaterialCategoryId = $state(null);`).
+
+- [ ] **5e.** Build `presetPli` + the material-AC default on `MaterialModal`, with tests:
 
 ```js
 it('prefills from presetPli on create (PLI-locked)', async () => {
@@ -813,13 +877,26 @@ it('prefills from presetPli on create (PLI-locked)', async () => {
   });
   expect(getByLabelText(/description/i)).toHaveValue('Hex bolt');
 });
+
+it('freeform create (no presetPli) prefills AC from defaultMaterialCategoryId', async () => {
+  const cats = [{ id: 7, code: 'MAT', name: 'Materials' }];
+  const { getByLabelText } = render(MaterialModal, {
+    props: { open: true, mode: 'create', jobId: 5, categories: cats, defaultMaterialCategoryId: 7 },
+  });
+  expect(getByLabelText(/accounting category/i)).toHaveValue('7');
+});
 ```
-  Implement by calling `handlePliSelect(presetPli)` inside the open-effect create branch
-  when `presetPli` is set.
+  Add `presetPli = null` and `defaultMaterialCategoryId = null` to `$props()`. In the
+  open-effect **create** branch: if `presetPli` is set, call `handlePliSelect(presetPli)`
+  (which sets the AC from the item); otherwise, when `defaultMaterialCategoryId != null`,
+  seed `accountingCategory = String(defaultMaterialCategoryId)` (overridable). The
+  inventory pick's PLI-derived AC always wins over the default.
 
 - [ ] **5f.** Suite + build green: `cd frontend && npm run test:run && npm run build`.
 
-- [ ] **5g. Manual browser check:** on an unlocked job task-list, "Add line" → pick a
+- [ ] **5g. Manual browser check:** on an unlocked job task-list, confirm the four
+  granular add buttons are gone and a single **Add Work** button remains (plus Add
+  Expense). "Add Work" → pick a
   service → the task template modal opens prefilled → save → a real Task appears; pick
   inventory → material modal opens (PLI-locked / seeded) → save → Material appears;
   freeform material → material modal seeded with the typed description; freeform fee →
@@ -837,6 +914,9 @@ it('prefills from presetPli on create (PLI-locked)', async () => {
 - [ ] `grep -rn "AddServiceItemModal\|oncustomtask\|onfreeform" frontend/src frontend/tests`
   returns nothing (old callbacks + retired modal fully gone).
 - [ ] `grep -rn "PriceListPicker" frontend/src` shows exactly the two surfaces importing it.
+- [ ] `grep -rn "Add Task From Template\|Add Manual Task\|Add Material\|Add Fee" frontend/src/routes/jobs/JobTaskListPage.svelte`
+  returns nothing — the four granular launcher buttons are gone, replaced by one "Add
+  Work" button (Add Expense may still match a different string; verify by eye).
 - [ ] Leave the branch as-is for RM's review (no commit/merge/PR).
 
 ---
@@ -851,22 +931,28 @@ it('prefills from presetPli on create (PLI-locked)', async () => {
    → the shared `line-items/` POST (which already branches on `inventory_item`, and to which Plan 1
    added `is_material` pass-through). The service test asserts the `line-items-from-service/` URL. (This
    was the one cross-plan discrepancy; resolved in favor of Plan 2's backend design.)
-2. **Freeform requires an accounting category on the estimate surface.** `add_line_item`
-   enforces AC for hand-lines (`services.py:277`), so `EstimateAddLineForm` collects AC
-   for **both** freeform fee and freeform material. If Plan 2 exempts `is_material` lines
-   from the AC rule, the material branch could drop the AC field — flag if so.
-3. **Task-list existing granular buttons stay.** Scope item 6 (remove retired
-   affordances) is explicitly about the **estimate** side (`AddServiceItemModal` + the
-   manual/inventory `LineItemModal` *add* path). The task-list "Add Task From Template /
-   Add Manual Task / Add Material / Add Fee" buttons are left as-is; the picker is added
-   alongside as the unified front door. Confirm RM wants them retained.
+2. **RESOLVED — freeform AC differs by kind.** A freeform **fee** still requires an
+   explicit AC (`add_line_item` enforces it on hand-lines, `services.py:277`). A freeform
+   **material** does **not**: Plan 1 Task 4 defaults a material line's AC from the
+   `default_material_accounting_category` config, so `EstimateAddLineForm` (and the
+   task-list `MaterialModal`) **prefills** that default (overridable) and never blocks save
+   on a missing AC for materials. Both the estimate form and the task-list material modal
+   read the default via `/api/settings/` (`default_material_accounting_category`), passed
+   down as `defaultMaterialCategoryId`.
+3. **RESOLVED — task-list add affordances consolidate under one "Add Work" button.** The
+   four granular launcher buttons ("Add Task From Template / Add Manual Task / Add Material
+   / Add Fee") are **removed**; the task-list's primary add affordance is a single **Add
+   Work** button that opens the picker. The `WorkItemForm` / `MaterialModal` / `FeeModal`
+   modals are **still used** — the picker's handler opens them prefilled — they just no
+   longer have their own dedicated launcher buttons. (Add Expense stays; it isn't a picker
+   atom.) The estimate side's retirement (`AddServiceItemModal` + the manual/inventory
+   `LineItemModal` *add* path) is unchanged.
 4. **`LineItemModal` is kept for editing only** on the estimate surface (its create/`pli`
    add path is superseded by the picker + `EstimateAddLineForm`). It is still mounted and
    opened by `openEditItem`. Not deleted.
-5. **`presetPli` on `MaterialModal` (Task 5e) recommended but flagged.** Building it gives
-   the task-list inventory pick parity with the estimate surface (item auto-filled). If
-   RM prefers minimal modal churn, skip it and let the user reselect the catalog item in
-   the modal (description still seeds via `presetDescription`).
+5. **RESOLVED — `presetPli` on `MaterialModal` (Task 5e) is firm.** The task-list
+   inventory pick auto-fills the item in `MaterialModal` (via `handlePliSelect`) so it has
+   parity with the estimate surface — no re-picking. This is built, not skipped.
 6. **Confirmed endpoint paths (from current code):** task-list service →
    `POST /api/jobs/{id}/add-from-template/` (`WorkItemForm.svelte:193`); job material →
    `POST /api/jobs/{id}/materials/` (`MaterialModal.svelte:177`); job fee →
