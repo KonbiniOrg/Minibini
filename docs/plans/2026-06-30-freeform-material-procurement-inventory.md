@@ -145,11 +145,16 @@ send-gate is on the **sell price**, not on establishment. **[SETTLED]**
   never carries a line with no sell price"* is never weakened; the escape removes the thing rather
   than sending a blank.
 
-**The proto-Material marker.** A hand-authored estimate line must declare *what it will become* — a
-**material** (vs. a **fee** or a **task**). This "which atom type" marker is the same signal Part 2's
-unified picker adds (`2026-07-02-add-line-crystallization-and-unified-picker.md`) and the thing that
-retires the standing LATER item (hand-typed material lines silently becoming Fees). A line marked
-proto-Material with a sell price but no lot is the **estimate face of a provisional Material**.
+**The proto-Material marker — built here. [SETTLED, owned by this plan.]** A bare (no-descriptor)
+estimate line must declare *what it will become* — a **material** vs. a **fee** (a task line already
+carries a `service_item` descriptor from Part 1, so the ambiguity is only material-vs-fee). This is
+the atom-type marker, and **because the material flow needs it first, it is built in this procurement
+work** rather than deferred to the picker. It retires the standing LATER item (hand-typed material
+lines silently becoming Fees): a bare line marked *material* crystallizes to a (provisional) Material;
+unmarked / *fee* → Fee. A proto-Material line with a sell price but no lot is the **estimate face of a
+provisional Material**. The unified picker (`2026-07-02-add-line-crystallization-and-unified-picker.md`
+Part 2) later *consumes* this marker and wraps the full three-way selection UX around it — it does not
+introduce the field.
 
 **Provisional cost via reverse-markup (the museum-polycarbonate case). [SETTLED]** Worked example:
 you're confident charging **$400/sheet** (your risk — remembered ~$300 two years ago + inflation +
@@ -291,9 +296,9 @@ in hand and RM has decided whether drops get an unbacked lane or a lightweight l
 
 ## Open questions, collected
 
-1. **proto-Material marker** — the "this line is a material" signal is a **cross-plan dependency**
-   with `2026-07-02-add-line-crystallization-and-unified-picker.md` (Part 2's picker). Build it
-   once, there; this plan consumes it.
+1. **proto-Material marker — resolved: built in this plan.** The material-vs-fee bit on a bare
+   estimate line is built here (materials need it first); the picker plan (Part 2) consumes it and
+   adds the selection UX. (Previously flagged as a Part 2 dependency — ownership moved here.)
 2. `cost_provisional` / `cost_source='estimated'` — exact field/flag shape on the lot (or Material)
    and where the "cost unconfirmed" state surfaces + clears (PO write).
 3. Transient-lot **sell price** defaulting: use the **existing default-markup config** (resolved

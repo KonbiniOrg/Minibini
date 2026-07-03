@@ -200,11 +200,13 @@ toggle + `AddServiceItemModal` + inventory picker) wants thinking-through, not a
   `/api/rate-schemes/?search=` and the inventory `is_catalog` catalog filter.
 - Consolidate today's separate estimate affordances (Add Line Item + Add from Service + inventory
   toggle) behind the one picker; keep the freeform/manual escape (hand-line → Fee).
-- **This picker is where the "which atom type" signal lives** — which resolves the standing
-  `LATER` item *"Hand-typed estimate material lines can't crystallize into Materials"*: an explicit
-  Material-vs-Fee choice in the picker (not accounting-category inference) sets the line's
-  descriptor (`inventory_item` / freeform-material marker vs. bare hand-line), which then drives the
-  three-way crystallization at acceptance. Fold that concern in here.
+- **The "which atom type" marker is built earlier, in the freeform-procurement plan**
+  (`2026-06-30-freeform-material-procurement-inventory.md`) — materials needed it first, so the
+  material-vs-fee bit on a bare line ships there and retires the LATER item ("hand-typed material
+  lines can't crystallize into Materials"). The picker **consumes** that marker and wraps the full
+  three-way selection UX (task / material / fee) around it; it does not introduce the field. The
+  picker's job is to make choosing the type (and the catalog item behind it) fluid — see the
+  interaction design below.
 - Part 1 (deferred service descriptor + three-way crystallization) should land first — the picker
   routes a pick to the right **descriptor** (service → `service_item`, material → `inventory_item` or
   freeform marker, free-text → bare hand-line), all of which resolve to atoms at acceptance, not on
