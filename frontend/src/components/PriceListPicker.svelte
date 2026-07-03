@@ -1,14 +1,15 @@
 <script>
-  // Dual-source picker for the estimate atom-add flow.
-  // Shows service items (task-applicable) and catalog inventory items together,
-  // driven by backend search (no initial list — results appear after typing).
-  // Used in estimate forms and the job work surface.
+  // Dual-source picker for the line-add flow.
+  // Shows service items and catalog inventory items together, driven by backend
+  // search (no initial list — results appear after typing). Emits a single
+  // onChoose callback; carries zero surface-specific logic.
   import SearchPicker from './SearchPicker.svelte';
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
-  let { open = false, onselect = null, oncustomtask = null, onfreeform = null, onclose = null } = $props();
+  let { open = false, onChoose = null, onclose = null } = $props();
   let pickerQuery = $state('');
+  let isMaterial = $state(false); // freeform: unchecked → Fee, checked → Material
 
   const search = async (q) => {
     const enc = encodeURIComponent(q);
@@ -19,69 +20,60 @@
     const svcRows = svc.results || svc;
     const invRows = inv.results || inv;
     const rows = [
-      ...svcRows.map((s) => ({
-        kind: 'service',
-        id: s.template_id,
-        label: s.template_name,
-        sub: s.description || '',
-        price: s.rate_scheme_detail?.rate,
-        unit: s.rate_scheme_detail?.unit_label,
-        item: s,
-      })),
-      ...invRows.map((m) => ({
-        kind: 'material',
-        id: m.inventory_item_id,
-        label: m.code,
-        sub: m.description || '',
-        price: m.selling_price,
-        unit: m.units,
-        item: m,
-      })),
+      ...svcRows.map((s) => ({ kind: 'service', id: s.template_id, label: s.template_name,
+        sub: s.description || '', price: s.rate_scheme_detail?.rate, unit: s.rate_scheme_detail?.unit_label, item: s })),
+      ...invRows.map((m) => ({ kind: 'inventory', id: m.inventory_item_id, label: m.code,
+        sub: m.description || '', price: m.selling_price, unit: m.units, item: m })),
     ];
-    return {
-      rows,
-      total: (svc.count ?? svcRows.length) + (inv.count ?? invRows.length),
-    };
+    return { rows, total: (svc.count ?? svcRows.length) + (inv.count ?? invRows.length) };
   };
 
   const rowLabel = (r) => r.label;
   const resolveLabel = () => Promise.resolve(null);
+
+  function emitRow(r) {
+    if (r.kind === 'service') onChoose?.({ type: 'service', serviceItem: r.item });
+    else onChoose?.({ type: 'inventory', inventoryItem: r.item });
+  }
+  function emitFreeform() {
+    onChoose?.({ type: 'freeform', typed: pickerQuery, isMaterial });
+  }
 </script>
 
 {#if open}
   <div class="plp-overlay" role="dialog" aria-modal="true">
     <div class="plp-modal">
       <div class="plp-header">
-        <strong>Add item</strong>
+        <strong>Add line</strong>
         <button type="button" onclick={onclose}>Close</button>
       </div>
 
       <div class="plp-body">
         <SearchPicker
           bind:query={pickerQuery}
-          {search}
-          {resolveLabel}
-          {rowLabel}
-          onPick={(r) => onselect?.({ kind: r.kind, item: r.item })}
+          {search} {resolveLabel} {rowLabel}
+          onPick={emitRow}
           placeholder="Search services or materials…"
         >
           {#snippet row(r)}
             <span class="plp-row">
               <span class="plp-row-label">{r.label}</span>
               <span class="plp-row-sub">{r.sub}</span>
-              {#if r.price != null}
-                <span class="plp-row-price">${Number(r.price).toFixed(2)}</span>
-              {/if}
+              {#if r.price != null}<span class="plp-row-price">${Number(r.price).toFixed(2)}</span>{/if}
               {#if r.unit}<span class="plp-row-unit">/ {r.unit}</span>{/if}
             </span>
           {/snippet}
         </SearchPicker>
       </div>
 
-      <div class="plp-footer">
-        <button type="button" onclick={() => oncustomtask?.(pickerQuery)}>Add custom task</button>
-        <button type="button" onclick={() => onfreeform?.(pickerQuery)}>Add freeform material</button>
-      </div>
+      {#if pickerQuery.trim()}
+        <div class="plp-freeform">
+          <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
+          <button type="button" onclick={emitFreeform}>
+            Use "{pickerQuery.trim()}" as {isMaterial ? 'material' : 'fee'}
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -104,7 +96,7 @@
   /* Widen the search box to ~2x a default text input. Scoped under .plp-body so
      other SearchPicker instances elsewhere are unaffected. */
   .plp-body :global(input[type="text"]) { width: 40ch; max-width: 100%; }
-  .plp-footer { padding: 10px 14px; border-top: 1px solid #eee; }
+  .plp-freeform { padding: 10px 14px; border-top: 1px solid #eee; }
 
   /* Row layout inside SearchPicker's dropdown button (which is display:block,
      so the row needs its own flex container for the columns to align) */
