@@ -34,6 +34,58 @@ class DeferredServiceBase(TestCase):
         )
 
 
+from apps.estimates.services import EstimateService
+from apps.core.services import NotFoundError
+from django.core.exceptions import ValidationError
+
+
+class AddLineFromServiceTest(DeferredServiceBase):
+    def test_snapshots_priced_values_and_creates_no_task(self):
+        from apps.jobs.models import Task
+        # base 40 + 10% modifier -> 44.00 effective unit rate.
+        # RateScheme forbids editing a referenced scheme; create a fresh one
+        # with modifiers pre-set and point the service_item at it.
+        scheme_rush = RateScheme.objects.create(
+            name='Hourly Rush', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('40'), unit_label='hour',
+            modifiers=[{'key': 'rush', 'percent': 10}],
+            accounting_category=self.cat,
+        )
+        self.service_item.rate_scheme = scheme_rush
+        self.service_item.default_active_modifiers = ['rush']
+        self.service_item.save()
+
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('2'),
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.service_item_id, self.service_item.pk)
+        self.assertEqual(line.price, Decimal('44.00'))          # effective_rate snapshot
+        self.assertEqual(line.qty, Decimal('2'))
+        self.assertEqual(line.accounting_category_id, self.cat.pk)
+        self.assertEqual(line.units, 'hour')
+        self.assertEqual(line.description, 'CAM coding')         # from template_name, editable
+        # No Task minted on the job — deferral, not immediate atom.
+        self.assertFalse(Task.objects.filter(job=self.job).exists())
+        # No source row yet (crystallizes at acceptance).
+        self.assertFalse(line.sources.exists())
+
+    def test_rejects_non_draft_estimate(self):
+        # Force non-draft status via DB update to bypass the "needs a line item"
+        # model validation — this is test-setup-only state forcing, not production code.
+        Estimate.objects.filter(pk=self.estimate.pk).update(status=Estimate.STATUS_OPEN)
+        with self.assertRaises(ValidationError):
+            EstimateService.add_line_item_from_service(
+                self.estimate.pk, self.service_item.pk, Decimal('1'),
+            )
+
+    def test_missing_service_item_raises_not_found(self):
+        with self.assertRaises(NotFoundError):
+            EstimateService.add_line_item_from_service(
+                self.estimate.pk, 999999, Decimal('1'),
+            )
+
+
 class ServiceItemFieldTest(DeferredServiceBase):
     def test_line_can_carry_service_item_and_defaults_null(self):
         bare = EstimateLineItem.objects.create(

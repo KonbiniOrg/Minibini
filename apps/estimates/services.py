@@ -362,6 +362,39 @@ class EstimateService:
         return li
 
     @staticmethod
+    def add_line_item_from_service(estimate_pk, service_item_pk, qty):
+        """Add a deferred service line to a draft estimate.
+
+        Mirrors add_line_item_from_pli: snapshots the priced values off the
+        ServiceItem at instantiation (price/accounting_category/units/description)
+        and keeps `service_item` on the line purely as the crystallization target.
+        Mints NO Task — the Task is created at acceptance (on_accept)."""
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {estimate_pk} not found')
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft estimates.')
+        try:
+            service_item = ServiceItem.objects.get(pk=service_item_pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {service_item_pk} not found')
+        from apps.core.services import LineItemService
+        scheme = service_item.rate_scheme
+        li = EstimateLineItem(
+            estimate=estimate,
+            service_item=service_item,
+            description=service_item.template_name,
+            qty=qty,
+            units=scheme.unit_label or 'none',
+            price=scheme.effective_rate(service_item.default_active_modifiers),
+            accounting_category=service_item.effective_accounting_category,
+        )
+        li.full_clean()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
     def update_line_item(line_item_id, **kwargs):
         """Update an estimate line item — validates draft status."""
         try:
