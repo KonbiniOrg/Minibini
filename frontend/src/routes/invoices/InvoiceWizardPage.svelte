@@ -7,8 +7,11 @@
   import AgreementAdjustmentsPanel from '../../components/invoices/AgreementAdjustmentsPanel.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
   import WizardActions from '../../components/wizards/WizardActions.svelte';
+  import { createFlushRegistry } from '../../lib/wizardFlush.js';
 
   const { params = {} } = $props();
+
+  const flushRegistry = createFlushRegistry();
 
   let invoice = $state(null);
   let job = $state(null);
@@ -180,6 +183,7 @@
           {canAddHere}
           onAddHere={addAtomsToLineItem}
           onchange={reloadLineItems}
+          registerFlush={flushRegistry.register}
         />
       {/each}
       <div style="border: 1px dashed #aaa; padding: 8px; margin-bottom: 8px; color: #777;">
@@ -200,6 +204,7 @@
     apiBase={`/api/invoices/${invoice.invoice_id}`}
     detailRoute={`/invoices/${invoice.invoice_id}`}
     discardRoute={invoice.job ? `/jobs/${invoice.job}` : '/'}
+    onDone={flushRegistry.flushAll}
   />
 {/if}
 
