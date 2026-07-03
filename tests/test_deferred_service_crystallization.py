@@ -189,6 +189,7 @@ class ServiceLineSerializerTest(DeferredServiceBase):
         )
 
 
+from apps.deliverables.models import Deliverable
 from apps.estimates.acceptance import EstimateAcceptanceService
 from apps.estimates.models import EstimateLineItemSource
 
@@ -237,3 +238,23 @@ class OnAcceptCrystallizesServiceTest(DeferredServiceBase):
         # Does NOT raise SchemeSupersededError.
         EstimateAcceptanceService.on_accept(self.estimate)
         self.assertTrue(Task.objects.filter(job=self.job).exists())
+
+
+class ServiceLineSendGateTest(DeferredServiceBase):
+    def test_draft_with_only_a_service_line_can_be_marked_open(self):
+        EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+        )
+        Deliverable.objects.create(
+            job=self.job, description='widget', qty_ordered=Decimal('1'), units='each',
+        )
+
+        estimate = EstimateService.mark_open(self.estimate.pk)
+        self.assertEqual(estimate.status, Estimate.STATUS_OPEN)
+
+    def test_assert_all_hand_lines_have_ac_passes_for_service_line(self):
+        EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, Decimal('1'),
+        )
+        # Snapshot populated the AC → no ValidationError raised.
+        EstimateService.assert_all_hand_lines_have_ac(self.estimate)
