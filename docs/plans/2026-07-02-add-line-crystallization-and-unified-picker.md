@@ -238,15 +238,47 @@ first. The picker only *surfaces* it as the checkbox above; it does not introduc
 **Part 1 lands before this** — the picker routes every pick/choice to a Part 1 descriptor, all of which
 resolve to atoms at acceptance, not on add.
 
+### Two surfaces, one picker — no in-picker branching [SETTLED]
+
+The same picker serves **both** the estimate line-item surface **and** the job task-list surface,
+without the component carrying any `if (surface) …` logic. It does this by being a pure **selection
+emitter** — it searches, presents, and emits *what was chosen*, never *what to do with it*:
+
+```
+onChoose({ type: 'service',   serviceItem })
+onChoose({ type: 'inventory', inventoryItem })
+onChoose({ type: 'freeform',  typed, isMaterial })   // isMaterial = the checkbox
+```
+
+Each **surface passes its own handler** (decided once at mount, not per line):
+
+| Surface | What the handler does with a choice | Result |
+|---|---|---|
+| **Estimate line-item** | hits the Part 1 **deferred-descriptor** endpoints | `service_item` / `inventory_item` / bare+marker **line** → crystallizes at acceptance |
+| **Job task-list** | hits the **immediate-atom** endpoints (mostly exist: `add-from-template`, `create-material`, create-fee) | a **real Task / Material / Fee** atom now |
+
+Only the **post-selection form** differs by surface (estimate wants a **sell price** for the quote;
+task-list wants **cost / establishment** for procurement), so those remain small per-surface forms.
+The shared, expensive part — search-all-catalogs + choose-the-type — is one component with zero surface
+conditionals. `PriceListPicker`'s existing callback shape already fits this; the work is normalizing
+its emitted payload and writing the two surface handlers.
+
+### Resolved
+
+- **Scope of surfaces** — the picker serves the **estimate line-item** and **job task-list** surfaces
+  (via per-surface handlers; see "Two surfaces, one picker"). **Not** invoices: invoices bill *actuals*
+  and never create atoms (Part 1 decision 2).
+- **Relationship to the wizard** ("Show Tasks & Materials") — **left alone this batch.** The picker
+  *creates* new lines/atoms; the wizard *pulls existing* job atoms onto lines. Different jobs, no
+  overlap; no reason to touch the wizard now.
+
 ### Open questions [OPEN]
 
-1. **Scope of surfaces** — one picker shared by job overview + estimate + invoice, or per-surface
-   variants (invoice may differ — see Part 1 Q2).
-2. **Freeform material path** — how the picker mints a freeform (non-catalog) `Material` and its
-   transient lot (ties to the freeform-material-procurement follow-on plan).
-3. **Relationship to the wizard** ("Show Tasks & Materials") — the picker adds a *new* line (a
-   descriptor that crystallizes at acceptance); the wizard pulls an *existing* job atom onto a line
-   (atom-backed immediately). Keep both, or does the picker subsume the pull?
+1. **Freeform material path** — how the freeform-material choice mints its (non-catalog) transient lot
+   at establishment (ties to the freeform-material-procurement plan; the estimate surface defers to
+   acceptance, the task-list surface establishes now).
+2. **Per-surface forms** — the exact post-selection form fields for each surface (estimate: sell price;
+   task-list: cost/establishment) and how much of a form component can be shared vs. kept separate.
 
 ---
 
