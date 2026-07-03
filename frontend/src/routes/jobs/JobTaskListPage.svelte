@@ -467,7 +467,7 @@
     onClose={() => { feeModalOpen = false; }}
   />
 
-  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} allowFreeformTask={true} />
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} taskSurface={true} />
 
   <ExpenseModal
     open={expenseModalOpen}

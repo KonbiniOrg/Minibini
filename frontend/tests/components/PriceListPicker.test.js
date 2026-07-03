@@ -104,12 +104,18 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(queryByRole('button', { name: /add task/i })).toBeNull();
   });
 
-  it('offers Add Task when allowFreeformTask and emits a freeform-task choice', async () => {
-    const props = { ...baseProps(), allowFreeformTask: true };
-    const { getByPlaceholderText, getByRole } = render(PriceListPicker, { props });
+  it('task surface offers explicit Task/Material/Fee buttons (no checkbox/Add Line)', async () => {
+    const props = { ...baseProps(), taskSurface: true };
+    const { getByPlaceholderText, getByRole, queryByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Custom milling' } });
+    expect(queryByRole('button', { name: /add line/i })).toBeNull();
+    expect(queryByRole('checkbox')).toBeNull();
     await fireEvent.click(getByRole('button', { name: /add task/i }));
     expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform-task', typed: 'Custom milling' });
+    await fireEvent.click(getByRole('button', { name: /add material/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: true });
+    await fireEvent.click(getByRole('button', { name: /add fee/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: false });
   });
 
   it('shows the material checkbox and Add Line button constantly, from the start', async () => {

@@ -107,8 +107,8 @@ describe('JobTaskListPage — Add Work picker → FeeModal path', () => {
     await fireEvent.click(getByRole('button', { name: /add work/i }));
     await waitFor(() => getByRole('dialog'));
     await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
-    // freeform button appears immediately (isMaterial checkbox defaults unchecked → fee)
-    const freeformBtn = await findByRole('button', { name: /add line/i });
+    // task-list footer offers an explicit "Add Fee" button
+    const freeformBtn = await findByRole('button', { name: /add fee/i });
     await fireEvent.click(freeformBtn);
     // FeeModal opens (picker closes, FeeModal renders h3 "Add Fee")
     await waitFor(() => expect(getByRole('heading', { name: /add fee/i })).toBeInTheDocument());
@@ -122,7 +122,7 @@ describe('JobTaskListPage — Add Work picker → FeeModal path', () => {
     await fireEvent.click(getByRole('button', { name: /add work/i }));
     await waitFor(() => getByRole('dialog'));
     await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
-    await fireEvent.click(await findByRole('button', { name: /add line/i }));
+    await fireEvent.click(await findByRole('button', { name: /add fee/i }));
     await waitFor(() => getByRole('heading', { name: /add fee/i }));
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/3/fees/', expect.any(Object));
@@ -135,7 +135,7 @@ describe('JobTaskListPage — Add Work picker → FeeModal path', () => {
     await fireEvent.click(getByRole('button', { name: /add work/i }));
     await waitFor(() => getByRole('dialog'));
     await fireEvent.input(getByPlaceholderText(/search services or materials/i), { target: { value: 'Rush' } });
-    await fireEvent.click(await findByRole('button', { name: /add line/i }));
+    await fireEvent.click(await findByRole('button', { name: /add fee/i }));
     await waitFor(() => getByRole('heading', { name: /add fee/i }));
     const select = getByLabelText(/Accounting Category/i);
     // Two real options plus "-- None --" placeholder
