@@ -96,4 +96,11 @@ describe('MaterialModal', () => {
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '4' } });
     expect(await findByText(/Only 3.00 of 5.00/)).toBeInTheDocument();
   });
+
+  it('seeds description from presetDescription on create', async () => {
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: [], presetDescription: 'plywood' },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('plywood');
+  });
 });

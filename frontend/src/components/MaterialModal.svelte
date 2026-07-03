@@ -11,6 +11,7 @@
     taskId = null,
     jobId = null,
     categories = [],
+    presetDescription = '',
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -71,7 +72,7 @@
         pliUnitCost = pliLocked ? (material.unit_cost ?? null) : null;
         pliSellPrice = pliLocked ? (material.sell_price ?? null) : null;
       } else {
-        description = '';
+        description = (mode === 'create' && !material) ? (presetDescription || '') : '';
         quantity = '';
         units = 'none';
         unitCost = '';

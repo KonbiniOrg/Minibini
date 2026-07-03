@@ -9,6 +9,7 @@
     jobId = null,
     taskId = null,
     categories = [],
+    presetDescription = '',
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -29,7 +30,7 @@
         unitRate = fee.unit_rate != null ? String(fee.unit_rate) : '';
         accountingCategory = fee.accounting_category != null ? String(fee.accounting_category) : '';
       } else {
-        description = '';
+        description = (mode === 'edit' && fee) ? (fee.description || '') : (presetDescription || '');
         quantity = '1';
         unitRate = '';
         accountingCategory = '';
