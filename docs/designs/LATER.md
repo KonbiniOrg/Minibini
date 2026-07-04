@@ -272,13 +272,12 @@ page stays whole.
   _Done when:_ the shared paths live in one place (or we record why the duplication
   is acceptable).
 
-- **`is_amended` is an N+1 (duplication half delivered).** — _added 2026-06-08; duplication resolved 2026-07-04 (merge of the 2026-06-19 `later` work)_
-  The rule now lives once — `Estimate.is_amended()` — and both call sites
-  (`EstimateSerializer.get_is_amended`, `BoardService._serialize_pipeline_job`)
-  delegate to it. The per-row `.exists()` remains by choice (dataset is tens of
-  estimates); the N+1 half stays open.
-  _Done when:_ list endpoints don't pay a per-row query (e.g. an `Exists()`
-  annotation on the estimate queryset feeding the shared method).
+- ~~**`is_amended` is an N+1 (duplication half delivered).**~~ — _added 2026-06-08; fully delivered 2026-07-04_
+  `Estimate.with_amended_flag(qs)` annotates `Exists(accepted CO)`;
+  `is_amended()` answers from the annotation when present (falls back to the
+  per-row `.exists()` for single objects). Wired into `EstimateViewSet.get_queryset`
+  and the board pipeline's estimate loop. Tests:
+  `tests/test_estimate_is_amended.EstimateIsAmendedAnnotationTest` (0-query assertions).
 
 - **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
   An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a

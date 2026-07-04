@@ -195,6 +195,20 @@ class Estimate(models.Model):
                 new_job_status=Job.STATUS_REJECTED,
             )
 
+    @classmethod
+    def with_amended_flag(cls, qs):
+        """Annotate `_is_amended_anno` (Exists of an accepted CO) so
+        is_amended() answers query-free per row on list paths."""
+        from django.db.models import Exists, OuterRef
+        return qs.annotate(
+            _is_amended_anno=Exists(
+                ChangeOrder.objects.filter(
+                    estimate=OuterRef('pk'),
+                    status=ChangeOrder.STATUS_ACCEPTED,
+                )
+            )
+        )
+
     def is_amended(self):
         """True when this estimate is the accepted agreement-of-record AND at
         least one ACCEPTED change order amends it. Purely derived — the stored
@@ -202,9 +216,13 @@ class Estimate(models.Model):
         accepted COs count (they're the only ones in the agreement-of-record),
         and the accepted-status short-circuit keeps non-accepted estimates
         query-free. Single source of truth for the EstimateSerializer and the
-        board pipeline payload."""
+        board pipeline payload. Rows from a `with_amended_flag` queryset
+        answer from the annotation without a query."""
         if self.status != Estimate.STATUS_ACCEPTED:
             return False
+        anno = getattr(self, '_is_amended_anno', None)
+        if anno is not None:
+            return anno
         return self.change_orders.filter(
             status=ChangeOrder.STATUS_ACCEPTED,
         ).exists()

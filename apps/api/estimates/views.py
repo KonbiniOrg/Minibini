@@ -53,7 +53,8 @@ class EstimateViewSet(
     }
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # Pre-annotate the amended flag so is_amended() is query-free per row.
+        qs = Estimate.with_amended_flag(super().get_queryset())
         job = self.request.query_params.get('job')
         if job:
             qs = qs.filter(job_id=job)

@@ -1692,7 +1692,8 @@ class BoardService:
         data['worksheets'] = []
 
         estimates = []
-        for est in job.estimate_set.order_by('-pk'):
+        from apps.estimates.models import Estimate as _Estimate
+        for est in _Estimate.with_amended_flag(job.estimate_set.order_by('-pk')):
             total = EstimateLineItem.objects.filter(estimate=est).aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))
             )['total'] or Decimal('0.00')
