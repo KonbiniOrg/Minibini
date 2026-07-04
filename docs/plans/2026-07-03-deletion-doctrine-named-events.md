@@ -93,19 +93,42 @@ material it didn't end up using."* One rule replaces four per-path behaviors:
   | `pending` → `pending` (qty change) | `draw_more` / partial restock | earmark ±delta; QOH untouched (stock moves only at consume/receipt) |
   | `pending` → `consumed` | task start (`consume`) — physical reality | QOH −qty, earmark −qty |
   | `consumed` → `pending` | `unconsume` — the oops-Start undo | QOH +qty, earmark +qty |
-  | `pending` → `released` | the named events: full restock **while referenced**, job-completion loose release, PO sever, CO retirement | earmark backed out; claims intact; terminal |
+  | `pending` → `released` | the named events: full restock **while referenced**, job-completion loose release, PO sever, CO retirement | earmark backed out; **quantity moves to the released-qty field** (see below), so every released row is qty 0; claims intact; terminal |
   | `pending` → *(deleted)* | full restock / mistake-delete **while unreferenced** — scratch paper | earmark backed out; row gone |
   | `consumed` → anything but `pending` | **never** — consumed stock is physical history |
 
-  Note the quantity asymmetry on `released`: restock paths arrive at qty 0
-  (the decrement *is* the shelf accounting), descope paths (CO retirement)
-  keep their planned qty as the record ("planned 7, descoped 7"). Consumers
-  therefore filter by state, never by quantity — in particular
-  `create_earmarks_for_job` must exclude `released` alongside `consumed`, or
-  a descoped material's retained quantity would phantom-re-earmark on the
-  next sweep.
-- The expense-bound qty-0 limbo (restock keeps the row for `restocked_qty`
-  bookkeeping) reads naturally as `released` too — fold it in. [DEFAULT]
+  **Quantity moves on release — [SETTLED, RM 2026-07-03].** A released row
+  never keeps a live `quantity`: release zeroes it and adds it to the
+  released-qty field, preserving `quantity + released_qty = originally
+  planned`. This makes the aggregate consumers (`compute_job_financials`,
+  `create_earmarks_for_job`, COGS) **structurally safe with no filters** —
+  a released row sums to zero everywhere. Remaining `released` filters are
+  display tidiness only (keep a 0-qty row out of pickers/pools); a missed one
+  shows a harmless empty row, not a wrong number. This defuses the
+  filter-discipline cost that was the doctrine's main engineering objection.
+
+  This is a generalization of behavior the codebase already has: restock on
+  an **expense-bound** material already does exactly this — decrements
+  `quantity`, increments `restocked_qty`, and keeps the row at zero because
+  the Expense references it and the expense-void path relies on
+  `quantity + restocked_qty` reconstructing the original purchase. The
+  release design extends that same move to *all referenced* materials and
+  names the resulting state; the expense-bound qty-0 rows simply become
+  `released` rows. [SETTLED]
+
+  Field: reuse `restocked_qty`, likely **renamed `released_qty`** during the
+  pass ("restocked" mis-describes a CO descope, where stock never moved —
+  only the reservation lets go). Mechanical: readers are the expense-void
+  reversal, restock itself, and two serializers. [DEFAULT]
+
+  **Earmark-sweep timing.** `create_earmarks_for_job` is *not* only a
+  job-approval event: it re-runs at **every CO acceptance** (after
+  crystallization — that's how CO-added materials earmark) and incremental
+  earmarks fire whenever a material lands on an already-committed job. So
+  consumed rows already exist when sweeps run (hence the existing `consumed`
+  exclusion), and released rows will too — a CO accept *creates* released
+  rows and then immediately sweeps. Zeroed release quantity makes this moot
+  structurally rather than by exclusion.
 
 ### Expense reject — [SETTLED]
 
