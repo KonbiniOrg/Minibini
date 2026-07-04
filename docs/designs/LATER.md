@@ -1238,3 +1238,14 @@ IMAP-SMTP machinery and tend to be worked together.
   regressions.
   _Done when:_ every prefilled `<select>` selects its preset, and the type-match convention is
   documented (or enforced) so new selects don't reintroduce it.
+
+- **`WizardLineItemCard` `state_referenced_locally` warnings on `lastSyncedSnapshot` init.** — _added 2026-07-03_
+  `frontend/src/components/wizards/WizardLineItemCard.svelte` lines ~20–25 initialize
+  `lastSyncedSnapshot = $state({ description: lineItem.description, qty: lineItem.qty, ... })`, which
+  reads the `lineItem` prop at init and triggers Svelte 5's `state_referenced_locally` build warning
+  (only the initial prop value is captured). Harmless today — the re-sync `$effect` below already keeps
+  the snapshot current — but noisy in the build. Clean up so the initializer doesn't read a prop
+  directly (e.g. derive/seed it inside the effect, or restructure the snapshot). Behavior must stay
+  identical (the snapshot is the clean/in-sync baseline the re-sync effect compares against).
+  _Done when:_ the three warnings are gone and the card's dirty/re-sync behavior is unchanged (tests
+  still green).
