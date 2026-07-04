@@ -1249,3 +1249,16 @@ IMAP-SMTP machinery and tend to be worked together.
   identical (the snapshot is the clean/in-sync baseline the re-sync effect compares against).
   _Done when:_ the three warnings are gone and the card's dirty/re-sync behavior is unchanged (tests
   still green).
+
+- **Verify whether RateScheme supersession repoints its ServiceItem catalog users.** — _added 2026-07-03_
+  (Relocated from the now-retired add-line/picker plan.) `RateScheme.supersede()` (`apps/jobs/models.py`)
+  renames the old scheme, mints the new one, and sets `old.replaced_by` — but as read it does **not**
+  repoint `ServiceItem.rate_scheme` (or `Task.rate_scheme`). RM recalls supersession *used to* "update
+  all its catalog users." Confirm whether any catalog-repoint mechanism still exists and is test-covered.
+  **Not blocking:** the deferred-service crystallization handles it either way — if catalog users are
+  repointed, a crystallized Task just reflects the new rate (human reconciles at invoice); if not, the
+  `generate_task(..., allow_superseded_scheme=True)` bypass keeps acceptance from aborting. This is only
+  a "know the true behavior" verification. (Search: `replaced_by` / `supersede` on `RateScheme` and its
+  `ServiceItem` users.)
+  _Done when:_ the supersede→catalog-user behavior is confirmed and documented (repoints or not), and
+  matched by a test.

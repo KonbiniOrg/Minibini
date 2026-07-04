@@ -1,7 +1,14 @@
 # Freeform materials ride the inventory rails (procure + track arrival)
 
-> **Status: design spec — rough draft (direction agreed; mechanics being pinned).**
-> Design-level, not yet a TDD task plan. Will get its own branch to implement.
+> **Status: design spec — mostly pending; the `is_material` marker slice already SHIPPED.**
+> The **proto-Material marker** portion of this plan (the `is_material` field + a bare marked
+> estimate line crystallizing into a *provisional* Material at acceptance + the
+> `default_material_accounting_category` config) was built in the 2026-07-03 unification batch on
+> `feature/unification` (see §"proto-Material marker" below, now marked SHIPPED). **Everything else
+> here is still pending** and is the substance of this plan's own future batch: transient-lot minting
+> at establishment, the reverse-markup provisional cost, the three fulfillment paths (Order /
+> Attach-Expense / Mark-on-hand), the `consume()`-refusal for provisional (null-lot) materials, and the
+> UI. Design-level, not yet a TDD task plan. Will get its own branch to implement.
 > Decisions are tagged **[SETTLED]** (agreed in discussion), **[DEFAULT]** (chosen
 > here; flag to change), **[OPEN]** (needs a decision before the task plan).
 > Companion reference: `docs/designs/materials-inventory-and-purchasing.md` (the
@@ -145,7 +152,7 @@ send-gate is on the **sell price**, not on establishment. **[SETTLED]**
   never carries a line with no sell price"* is never weakened; the escape removes the thing rather
   than sending a blank.
 
-**The proto-Material marker — built here. [SETTLED, owned by this plan.]** A bare (no-descriptor)
+**The proto-Material marker — ✅ SHIPPED (2026-07-03 unification batch).** A bare (no-descriptor)
 freeform estimate line needs exactly one bit: **"is this a material?"** — a simple checkbox. Checked →
 proto-Material (crystallizes to a provisional Material); unchecked → Fee. That is the whole marker.
 There is **no freeform *task*** option: a task can only come from picking a `ServiceItem` (Part 1), so
