@@ -560,7 +560,33 @@ class MaterialService:
             _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
             if job.status not in _PRE_APPROVAL:
                 InventoryService._mutate_earmark(inventory_item, job, quantity)
+            # Attached to a task that already started? The promote-time
+            # consumption sweep already ran — consume now (stock permitting).
+            MaterialService.consume_if_task_started(m)
         return m
+
+    @staticmethod
+    def consume_if_task_started(material):
+        """Consume a pending material whose task is already IN_PROGRESS.
+
+        Consumption normally fires once, at the task's pending → in_progress
+        promotion — a material attached *after* that missed the sweep and
+        would stay pending (never billable) forever. Stock that physically
+        isn't there (PLI with insufficient QOH) stays pending instead of
+        raising: an in-flight procurement (add shortfall → order via PO) is a
+        legitimate pending state and must not block the add."""
+        from apps.jobs.models import Task
+        task = material.task
+        if task is None or task.status != Task.STATUS_IN_PROGRESS:
+            return material
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            return material
+        pli = material.inventory_item
+        if pli is not None and material.quantity > Decimal('0.00'):
+            pli.refresh_from_db()
+            if pli.qty_on_hand < material.quantity:
+                return material
+        return MaterialService.consume(material)
 
     @staticmethod
     def consume(material):
@@ -731,6 +757,9 @@ class MaterialService:
                 raise ValidationError('Cannot assign material to a completed or cancelled task')
         material.task = task
         material.save(update_fields=['task_id'])
+        # Moved onto a task that already started? The promote-time
+        # consumption sweep already ran — consume now (stock permitting).
+        MaterialService.consume_if_task_started(material)
 
     @staticmethod
     def link_to_po_line(material, po_line):

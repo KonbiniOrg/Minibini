@@ -432,19 +432,20 @@ page stays whole.
   confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
   whether on the detail page or in the wizard.
 
-- **Material added to an already-started Task is never consumed.** — _added 2026-06-17_
-  Adding a Material to a Task *after* the Task has started is allowed (correct), but the
-  newly-added material stays `pending` forever — continued work on the task doesn't consume
-  it. Consumption of a task's materials is a one-shot side effect triggered when the task is
-  *promoted* from `pending → in_progress` (the first blep: `start_work` /
-  `_promote_pending_task` → `MaterialService.consume` over `task.materials.all()`,
-  `apps/jobs/services.py`). A material attached later misses that already-fired trigger, so it
-  never consumes (no QOH/earmark decrement, never billable since billable ⟺ consumed). Decide
-  the intended behavior: e.g. consume a material on add when its task is already `in_progress`
-  (and only then), or re-run the consume sweep on subsequent bleps for not-yet-consumed
-  materials. Watch the `unconsume`/blep-cancel-undo interaction either way.
-  _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
-  test), or a recorded decision says it must be added before start.
+- **Material added to an already-started Task is never consumed — DELIVERED (consume-on-add); arrival-later case open.** — _added 2026-06-17; consume-on-add delivered 2026-07-04_
+  `MaterialService.consume_if_task_started` consumes a pending material on add
+  (`create_on_job`) or reassign (`assign_task`) when its task is already
+  `in_progress` — **unless** the stock physically isn't there (PLI with
+  insufficient QOH), in which case it stays `pending` so the procure-via-PO flow
+  (add shortfall → order → receive) keeps working. Tests:
+  `tests/test_late_material_consumption.py`. Unconsume interaction is safe: a
+  blep-cancel undo unconsumes and the next promote re-consumes.
+  **Remaining:** the *arrival-later* case — a pending material on an in-progress
+  task whose stock arrives afterwards (PO receive / expense receipt / restock)
+  still isn't consumed by anything; decide the trigger (consume on receive when
+  the task is in_progress, or a sweep on subsequent bleps).
+  _Done when:_ stock arriving for a pending material on an in-progress task gets
+  consumed (with the trigger decided), with a test.
 
 - ~~**Single task on an entered-qty scheme collapses to qty 1 / price = total.**~~ — _delivered 2026-07-04_
   `InvoiceWizardService._task_qty_and_price` now returns (actual qty, effective rate)
