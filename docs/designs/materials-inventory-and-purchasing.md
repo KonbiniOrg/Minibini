@@ -319,6 +319,16 @@ in_progress` promotion is just the first such sweep). The rule set:
    b. the **stock arrives** and the next blep's sweep consumes it — no
       PO-receive hook needed.
 
+**Completion is guarded the same way:** `complete_task` refuses while the
+task has pending materials ("if a material was used, consume it by hand;
+otherwise release it") — a complete task can never blep again, so nothing
+would ever consume a leftover. Task-attached pending rows carry a **consume**
+button for the by-hand path; the return action is labelled **"restock"** only
+when stock is on hand and **"release"** otherwise (for a *pending* material
+the action never touches QOH either way — it removes the earmark/quantity,
+and at full quantity applies the restock-to-zero rule: referenced →
+`released`, unreferenced → deleted).
+
 Only inventory-item-backed materials can be short; freeform materials consume
 unconditionally. "Waiting on materials" is **derived, never stored**: the task
 tree badges an `in_progress` task with a pending understocked material

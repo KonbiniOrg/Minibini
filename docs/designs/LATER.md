@@ -441,19 +441,16 @@ page stays whole.
   `materials-inventory-and-purchasing.md` (consumption rules) and
   `tests/test_blep_start_material_sweep.py`.
 
-- **Completing a never-started task leaves its materials pending.** — _added 2026-07-04_
-  Adjacent gap noticed while building the blep-start sweep: `complete_task`
-  allows `pending → complete` directly (an ENTERED_QTY task can be completed
-  with a typed qty and zero bleps), and it runs **no consumption sweep** — the
-  task's materials stay `pending` forever (unbillable), the same bug family the
-  sweep just fixed for bleps. A complete task takes no further bleps, so
-  nothing will ever consume them. Decide: sweep at completion too (refusing,
-  with the coaching error, when a material is out of stock — "can't have done
-  the work if the material never existed"), or require a blep before completion
-  for tasks with materials.
-  _Done when:_ completing a task consumes its pending materials (or is refused
-  while one is missing), with a test — or a recorded decision says the
-  bleps-first flow is mandatory.
+- ~~**Completing a never-started task leaves its materials pending.**~~ — _delivered 2026-07-04_
+  RM decision: `complete_task` **refuses** while the task has pending
+  materials — "if a material was used, consume it by hand; otherwise release
+  it" (no silent auto-consume: the human decides which it was). Task-attached
+  pending material rows gained a **consume** button to make the by-hand path
+  possible, and the return action's label is now honest about what it does:
+  **"restock"** only when stock is actually on hand, **"release"** for
+  freeform/not-on-hand materials (full-quantity restock was always the release
+  path server-side). Tests: `tests/test_complete_task_material_guard.py` +
+  TaskTree Vitest.
 
 - ~~**Single task on an entered-qty scheme collapses to qty 1 / price = total.**~~ — _delivered 2026-07-04_
   `InvoiceWizardService._task_qty_and_price` now returns (actual qty, effective rate)

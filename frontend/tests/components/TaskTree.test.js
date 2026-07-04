@@ -70,6 +70,39 @@ describe('TaskTree', () => {
     expect(queryByText('waiting on materials')).toBeNull();
   });
 
+  it('labels the return action "restock" only when stock is on hand', () => {
+    const stocked = task({
+      task_id: 21, name: 'S', status: 'in_progress',
+      materials: [{ material_id: 1, description: 'Ply', quantity: '2', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '4.00' }],
+    });
+    const awaited = task({
+      task_id: 22, name: 'W', status: 'in_progress',
+      materials: [{ material_id: 2, description: 'Special', quantity: '2', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 8, qty_on_hand: '0.00' }],
+    });
+    const freeform = task({
+      task_id: 23, name: 'F', status: 'in_progress',
+      materials: [{ material_id: 3, description: 'Finish', quantity: '1', sell_price: '5', units: 'ea',
+                    consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' }],
+    });
+    const { getAllByRole } = render(TaskTree, {
+      props: { tasks: [stocked, awaited, freeform], canManage: true },
+    });
+    expect(getAllByRole('button', { name: 'restock' })).toHaveLength(1);
+    expect(getAllByRole('button', { name: 'release' })).toHaveLength(2);
+  });
+
+  it('offers a consume button on task-attached pending materials', () => {
+    const t = task({
+      status: 'in_progress',
+      materials: [{ material_id: 4, description: 'Ply', quantity: '2', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '4.00' }],
+    });
+    const { getAllByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getAllByRole('button', { name: 'consume' })).toHaveLength(1);
+  });
+
   it('shows the catalog badge for an inventory-item-backed material', () => {
     const t = task({
       materials: [{

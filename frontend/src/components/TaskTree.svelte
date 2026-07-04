@@ -167,6 +167,15 @@
       && (task.materials || []).some(isMaterialAwaitingStock);
   }
 
+  function restockLabel(mat) {
+    // "restock" reads as "put my reserved stock back on the shelf" — only
+    // honest when there is stock on hand. For a freeform or not-on-hand
+    // material the same action is really a release: the job no longer plans
+    // to use it (full-quantity restock IS the release path server-side).
+    return mat.inventory_item != null && Number(mat.qty_on_hand) > 0
+      ? 'restock' : 'release';
+  }
+
   function isMaterialFinalized(mat) {
     // Consumed or released — terminal states with no further material actions.
     // (The expense-bound qty-0 clause covers pre-`released` rows.)
@@ -283,7 +292,8 @@
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
-              <button type="button" onclick={() => onRestockMaterial(mat, task)}>restock</button>
+              <button type="button" onclick={() => onConsumeMaterial(mat, task)}>consume</button>
+              <button type="button" onclick={() => onRestockMaterial(mat, task)}>{restockLabel(mat)}</button>
               {#if !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
               {/if}
@@ -350,7 +360,8 @@
             <td class="text-right">{fmt(materialTotal(mat))}</td>
             {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
               <td class="actions-cell">
-                <button type="button" onclick={() => onRestockMaterial(mat, sub)}>restock</button>
+                <button type="button" onclick={() => onConsumeMaterial(mat, sub)}>consume</button>
+                <button type="button" onclick={() => onRestockMaterial(mat, sub)}>{restockLabel(mat)}</button>
                 {#if !mat.is_expense_bound}
                   <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
                 {/if}
@@ -388,7 +399,7 @@
           {#if !readonly && !jobLocked && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               <button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>
-              <button type="button" onclick={() => onRestockMaterial(mat, null)}>restock</button>
+              <button type="button" onclick={() => onRestockMaterial(mat, null)}>{restockLabel(mat)}</button>
               {#if !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
               {/if}

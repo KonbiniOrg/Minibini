@@ -279,7 +279,11 @@
   }
 
   async function handleRestockMaterial(material, _task) {
-    const raw = window.prompt(`Restock quantity (max ${material.quantity}):`, material.quantity);
+    // Same predicate as TaskTree.restockLabel: with stock on hand this reads
+    // as returning it; otherwise it's a release of the planned quantity.
+    const verb = material.inventory_item != null && Number(material.qty_on_hand) > 0
+      ? 'Restock' : 'Release';
+    const raw = window.prompt(`${verb} quantity (max ${material.quantity}):`, material.quantity);
     if (raw === null) return;
     const quantity = raw.trim();
     if (!quantity) return;

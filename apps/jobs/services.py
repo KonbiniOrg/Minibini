@@ -1141,6 +1141,20 @@ class TaskLifecycleService:
             if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
                     and task.rate_scheme.get_actual_qty(task) <= 0):
                 raise TaskTimeRequired()
+            # A complete task can never blep again, so nothing would ever
+            # consume a leftover pending material — it would sit unbillable
+            # forever. Completion stops until the human decides.
+            from apps.inventory.models import Material
+            pending = task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_PENDING)
+            if pending.exists():
+                names = ', '.join(
+                    m.description or f'material {m.pk}' for m in pending[:3])
+                raise ValidationError(
+                    f'Cannot complete: this task has unconsumed materials '
+                    f'({names}). If a material was used, consume it by hand; '
+                    f'otherwise release it (restock its full quantity).'
+                )
             update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
             if actual_qty is not None:
                 update_fields['actual_qty'] = actual_qty
