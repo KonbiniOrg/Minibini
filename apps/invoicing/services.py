@@ -797,6 +797,26 @@ class InvoiceWizardService(BaseWizardService):
 
         return len(available)
 
+    @classmethod
+    def send_all_atoms(cls, invoice):
+        """Project every currently-available atom onto the invoice, one line
+        per atom (the wizard's one-click "send all"). Unlike seed_all_atoms
+        (the fresh-document "Apply everything"), this composes with existing
+        lines — the pool's claim state already excludes anything billed.
+        Returns the number of lines created."""
+        from django.db import transaction
+        cls._validate_draft(invoice)
+        pool = cls.get_source_pool(invoice)
+        available = [
+            {'type': a['type'], 'id': a['id']}
+            for group in pool['tasks'] for a in group['atoms']
+            if a['state'] == 'available'
+        ]
+        with transaction.atomic():
+            for ref in available:
+                cls.add_atoms_to_new_line_item(invoice, [ref])
+        return len(available)
+
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
     def _line_item_model(cls):

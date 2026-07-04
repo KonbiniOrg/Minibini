@@ -841,6 +841,7 @@ in the wizard.)
 |---|---|
 | `get_source_pool(estimate)` | Walks the estimate's **Job's** Tasks and Materials, returns a flat pool of atoms. Each atom carries `type` (`'task'`/`'material'`), `id`, `description`, the `qty`/`rate`/`units`/`amount` breakdown, `category_id`, and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). Task amounts use `compute_estimate_amount` (`est_qty`). |
 | `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
+| `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Estimate" button. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 

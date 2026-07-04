@@ -112,6 +112,19 @@ class EstimateViewSet(
         pool = EstimateWizardService.get_source_pool(estimate)
         return Response(_serialize_pool(pool))
 
+    @action(detail=True, methods=['post'], url_path='send-all-atoms')
+    def send_all_atoms(self, request, pk=None):
+        """Project every available atom onto the estimate, one line per atom
+        (the wizard's one-click "send all"). Claimed atoms are skipped, so it
+        composes with existing lines."""
+        estimate = self.get_object()
+        try:
+            created = EstimateWizardService.send_all_atoms(estimate)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'created': created}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='line-items-from-service')
     def line_items_from_service(self, request, pk=None):
         """Create a deferred service line (service_item descriptor + snapshot).

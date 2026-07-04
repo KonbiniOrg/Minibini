@@ -1176,6 +1176,24 @@ class EstimateWizardService(BaseWizardService):
                 f'Cannot modify line items on estimate in status "{container.status}".'
             )
 
+    @staticmethod
+    def send_all_atoms(estimate):
+        """Project every currently-available atom onto the estimate, one line
+        per atom (the wizard's one-click "send all"). Skips claimed atoms, so
+        it composes with lines already present — unlike the invoice's
+        fresh-document seed_all_atoms. Returns the number of lines created."""
+        from django.db import transaction
+        EstimateWizardService._validate_draft(estimate)
+        pool = EstimateWizardService.get_source_pool(estimate)
+        available = [
+            {'type': a['type'], 'id': a['id']}
+            for a in pool['atoms'] if a['state'] == 'available'
+        ]
+        with transaction.atomic():
+            for ref in available:
+                EstimateWizardService.add_atoms_to_new_line_item(estimate, [ref])
+        return len(available)
+
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
         if task.rate_scheme_id and task.est_qty is not None:

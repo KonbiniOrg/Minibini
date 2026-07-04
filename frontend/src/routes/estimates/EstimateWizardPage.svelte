@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import WizardSourcePool from '../../components/estimates/WizardSourcePool.svelte';
@@ -89,6 +89,15 @@
 
   // Post-action refresh — fetches estimate and line items, then updates
   // atom states in the existing source pool. Does NOT re-fetch the pool.
+  async function sendAllAtoms() {
+    try {
+      await api.post(`/api/estimates/${estimate.estimate_id}/send-all-atoms/`);
+      await reloadAfterAction();
+    } catch (e) {
+      alert(errorMessage(e, 'Could not send all atoms.'));
+    }
+  }
+
   async function reloadAfterAction() {
     try {
       const [est, items] = await Promise.all([
@@ -155,6 +164,8 @@
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
     <div>
       <h3>Source pool (job atoms)</h3>
+      <p><button type="button" onclick={sendAllAtoms}
+        title="Create one line item per available atom">Send all to Estimate</button></p>
       <WizardSourcePool {sourcePool} bind:selectedAtoms />
     </div>
     <div>

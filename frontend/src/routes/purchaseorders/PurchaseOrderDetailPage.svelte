@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { orderPrefillQty } from '../../lib/materials.js';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
@@ -85,7 +86,7 @@
         // stays model-agnostic. (PLI-backed → inventory_item drives it; freeform
         // → description/cost.)
         prefilledLine = {
-          qty: mat.quantity,
+          qty: orderPrefillQty(mat),
           inventory_item: mat.inventory_item || null,
           description: mat.description,
           price: mat.unit_cost,

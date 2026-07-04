@@ -546,17 +546,13 @@ page stays whole.
   on_hold, work_complete and terminal statuses (submitted decided in: no work
   exists to complete pre-approval).
 
-- **"Send all to Estimate/Invoice" button on the source-pull (wizard) page.** — _added 2026-06-30_
-  On the estimate/invoice source-pull page (`EstimateWizardPage` / `InvoiceWizardPage` — the
-  "Show Tasks & Materials" / "Show Billables" view), atoms are added to the document one row at
-  a time. When the user just wants to copy **all** the job's atoms onto the document, add a
-  one-click **"Send all to Estimate" / "Send all to Invoice"** action that projects every
-  available (unclaimed / billable) atom at once. Prior art: the invoice detail page already has
-  "Apply everything" (`seed_all_atoms`), and a `send_all_atoms_to_estimate` service existed for
-  estimates before the plan-layer removal — re-introduce the equivalent at the wizard level for
-  both documents.
-  _Done when:_ the source-pull page has a one-click "send all atoms" action for both estimate
-  and invoice that projects all available atoms, with a test.
+- ~~**"Send all to Estimate/Invoice" button on the source-pull (wizard) page.**~~ — _delivered 2026-07-04_
+  `EstimateWizardService.send_all_atoms` / `InvoiceWizardService.send_all_atoms`
+  (one line per available atom; claimed atoms skipped, so it composes with
+  existing lines — unlike the invoice's fresh-document `seed_all_atoms`),
+  behind `POST /api/{estimates,invoices}/{id}/send-all-atoms/`, with a
+  "Send all to Estimate/Invoice" button above each wizard's source pool.
+  Tests: `tests/test_send_all_atoms.py`.
 
 - ~~**Wizard "Done" should auto-save unsaved lines.**~~ — _delivered 2026-07-02 (`93aa7b20`)_
   Both wizards' "Done" now flushes pending line-item edits via the flush registry
@@ -785,7 +781,13 @@ IMAP-SMTP machinery and tend to be worked together.
   rendered as an "On order" column on `InventoryListPage` ("—" when zero).
   Tests: `tests/test_inventory_qty_on_order.py`.
 
-- **Material "order" link should default the qty, not just the inventory data.** — _added 2026-06-18_
+- ~~**Material "order" link should default the qty, not just the inventory data.**~~ — _delivered 2026-07-04_
+  (The qty half-landed as the full quantity at some point since this was
+  filed.) The prefill now defaults to the **outstanding shortfall**
+  (needed − stock on hand, mirroring consume's raw-QOH check — the number that
+  actually unblocks work), falling back to the full quantity when nothing is
+  short (`orderPrefillQty`, `frontend/src/lib/materials.js`, unit-tested).
+  Original entry:
   Clicking **order** on a material in the job view (`JobDetail.svelte:997`,
   `#/purchase-orders/new?job={job_id}&material={material_id}`) opens the PO line-item form
   with the material's inventory data (item/description/price) prefilled, but **qty is left

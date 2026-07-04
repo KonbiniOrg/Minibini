@@ -150,6 +150,21 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': 'Invoice discarded'})
 
+    @action(detail=True, methods=['post'], url_path='send-all-atoms')
+    def send_all_atoms(self, request, pk=None):
+        """Project every available atom onto the invoice, one line per atom
+        (the wizard's one-click "send all"). Unlike apply-everything
+        (seed_all_atoms), this composes with existing lines."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.invoicing.services import InvoiceWizardService
+        invoice = self.get_object()
+        try:
+            created = InvoiceWizardService.send_all_atoms(invoice)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'created': created}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):
         """Return the source pool tree for the wizard."""
