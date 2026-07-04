@@ -38,6 +38,16 @@ describe('TaskTree', () => {
     expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
   });
 
+  it('shows material units in the units column, not appended to qty', () => {
+    const t = task({
+      materials: [{ material_id: 9, description: 'Steel', quantity: '3', sell_price: '5',
+                    units: 'kg', consumption_state: 'pending' }],
+    });
+    const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('kg')).toBeInTheDocument();       // its own cell
+    expect(queryByText('3 kg')).toBeNull();            // no longer glued to qty
+  });
+
   it('badges an in-progress task waiting on understocked material', () => {
     const t = task({
       status: 'in_progress',

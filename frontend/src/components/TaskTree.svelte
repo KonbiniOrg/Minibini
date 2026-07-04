@@ -1,6 +1,5 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { formatQtyUnits } from '../lib/format.js';
   import TaskActivityIndicator from './tasks/TaskActivityIndicator.svelte';
 
   let {
@@ -222,9 +221,9 @@
       {#if showAssignee}<th>Assignee</th>{/if}
       <th class="text-right">Scheduled Time</th>
       {#if showStatus}<th>Status</th>{/if}
-      <th class="text-right">Units</th>
       <th class="text-right">Est Qty</th>
       <th class="text-right">Actual</th>
+      <th class="text-right">Units</th>
       <th class="text-right">Unit Cost</th>
       <th class="text-right">Sell Price</th>
       <th class="text-right"><span class="est-label">(Est)</span><br>Total</th>
@@ -245,9 +244,9 @@
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
         {#if showStatus}<td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-        <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">{task.est_qty ?? '-'}</td>
         <td class="text-right">{taskActual(task) ?? '-'}</td>
+        <td class="text-right">{task.scheme_unit_label || '-'}</td>
         <td class="text-right">-</td>
         <td class="text-right">{fmt(task.effective_rate)}</td>
         <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmt(taskTotal(task))}</td>
@@ -284,9 +283,9 @@
           {#if showAssignee}<td></td>{/if}
           <td></td>
           {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
+          <td class="text-right">{mat.quantity}</td>
           <td class="text-right">-</td>
-          <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
-          <td class="text-right">-</td>
+          <td class="text-right">{mat.units === 'none' ? '-' : mat.units}</td>
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -318,9 +317,9 @@
           {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
           {#if showStatus}<td>{#if sub.invoice}{@render invoicedLink(sub.invoice)}{:else}<TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}{/if}</td>{/if}
-          <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">{sub.est_qty ?? '-'}</td>
           <td class="text-right">{taskActual(sub) ?? '-'}</td>
+          <td class="text-right">{sub.scheme_unit_label || '-'}</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(sub.effective_rate)}</td>
           <td class="text-right" class:est-total={taskTotalInfo(sub).isEstimate}>{fmt(taskTotal(sub))}</td>
@@ -352,9 +351,9 @@
             {#if showAssignee}<td></td>{/if}
             <td></td>
             {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
+            <td class="text-right">{mat.quantity}</td>
             <td class="text-right">-</td>
-            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
-            <td class="text-right">-</td>
+            <td class="text-right">{mat.units === 'none' ? '-' : mat.units}</td>
             <td class="text-right">{fmt(mat.unit_cost)}</td>
             <td class="text-right">{fmt(mat.sell_price)}</td>
             <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -390,9 +389,9 @@
           {#if showAssignee}<td></td>{/if}
           <td></td>
           {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
+          <td class="text-right">{mat.quantity}</td>
           <td class="text-right">-</td>
-          <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
-          <td class="text-right">-</td>
+          <td class="text-right">{mat.units === 'none' ? '-' : mat.units}</td>
           <td class="text-right">{fmt(mat.unit_cost)}</td>
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
@@ -435,8 +434,8 @@
           {#if showAssignee}<td></td>{/if}
           <td></td>
           {#if showStatus}<td>{#if fee.invoice}{@render invoicedLink(fee.invoice)}{/if}</td>{/if}
-          <td class="text-right">-</td>
           <td class="text-right">{fee.quantity ?? '-'}</td>
+          <td class="text-right">-</td>
           <td class="text-right">-</td>
           <td class="text-right">-</td>
           <td class="text-right">{fmt(fee.unit_rate)}</td>
