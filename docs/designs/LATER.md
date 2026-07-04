@@ -573,12 +573,9 @@ page stays whole.
   _Done when:_ the source-pull page has a one-click "send all atoms" action for both estimate
   and invoice that projects all available atoms, with a test.
 
-- **Wizard "Done" should auto-save unsaved lines.** — _added 2026-06-30_
-  On the estimate/invoice source-pull page, pressing **"Done"** should commit any unsaved
-  (dirty/pending) line edits automatically, instead of leaving them unsaved or requiring a
-  separate save per line. This stays within the explicit-save convention — "Done" *is* the
-  deliberate commit action (not a blur), so flushing pending edits on it is correct.
-  _Done when:_ pressing "Done" on the source-pull page persists all pending line edits, with a test.
+- ~~**Wizard "Done" should auto-save unsaved lines.**~~ — _delivered 2026-07-02 (`93aa7b20`)_
+  Both wizards' "Done" now flushes pending line-item edits via the flush registry
+  (`flushRegistry.flushAll`) before navigating, with component tests.
 
 ---
 
@@ -801,40 +798,19 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ decided whether `@history` should grow delete tracking, or imperative delete entries remain
   the norm.
 
-- **Revisit finished-lot collection (hide vs. delete) comprehensively.** — _added 2026-06-15_
-  Background: the original plan was *delete-on-spend*, but the code review surfaced
-  that line items (estimate/invoice/PO/bill) and `TemplateMaterialAssociation`
-  reference items via **PROTECT**, so unconditional deletion raises
-  `ProtectedError`. The shipped model is **hide-on-spend**: a finished transient
-  lot (not catalog, QOH 0, no earmarks) is hidden by the list filter, not deleted.
-  On top of that, `InventoryService.collect_if_finished` now **deletes a finished
-  lot when it is genuinely reference-free** (`can_be_deleted`), else hides it —
-  but only at **demote** (`update_item`) and **write-off**, the deliberate,
-  non-undoable transitions. It is deliberately **NOT** applied at:
-  - **consume** — reversible via `unconsume()` (blep-cancel undo), which needs the
-    item to restore stock; deleting on consume would break that undo.
-  - **`release_earmarks_for_job`** (job cancel/complete) — a bulk
-    `Earmark.objects.filter(job=job).delete()` that can leave a QOH-0 lot
-    reference-free, but the cleanup hook isn't wired there yet.
-  Also note `can_be_deleted` ignores Materials (SET_NULL) by design, so a
-  consumed lot is "reference-free" even though a Material points at it — fine
-  because Materials are self-contained and history survives, but worth a
-  deliberate decision.
-  To revisit: (a) should consume/job-cancellation also collect, with a
-  reversibility-safe approach (e.g. collect on job close, or on unconsume-window
-  expiry)? (b) a periodic **pruner** for hidden tombstones that have since become
-  reference-free; (c) whether demote-deletes-when-unreferenced is the right UX or
-  should prompt. _Done when:_ a single documented policy covers every finished-lot
-  transition (demote, write-off, consume, job-cancel) and tombstone cleanup.
+- ~~**Revisit finished-lot collection (hide vs. delete) comprehensively.**~~ — _superseded 2026-07-04 by the deletion doctrine_
+  The 2026-07-03 doctrine settled this: `collect_if_finished` auto-delete was
+  **retired** entirely — finished lots are kept and hidden by the hide-on-spend
+  list filter, never auto-deleted (RM: inventory rows stay; searching, not
+  scrolling, is how the table is used). Deletion is now only the explicit,
+  guarded delete endpoint (`InventoryService.assert_item_deletable`). See
+  `materials-inventory-and-purchasing.md` (lifecycle) and `data-constraints.md`
+  (per-object deletion rules).
 
-- **Warn before unchecking Catalog can delete the item.** — _added 2026-06-15_
-  Unchecking "Catalog" on an empty (QOH 0, no earmarks), reference-free item now
-  hard-deletes it (`collect_if_finished` on demote). The InventoryItemForm gives
-  no warning — a user demoting to reorganize can lose the row unexpectedly. Add a
-  confirm/notice on the Catalog checkbox (or on save) when the item would become
-  a deletable finished lot — e.g. "This item has no stock and isn't referenced;
-  unchecking Catalog will remove it." _Done when:_ demoting an item that would be
-  collected prompts the user first (and ideally distinguishes delete vs. hide).
+- ~~**Warn before unchecking Catalog can delete the item.**~~ — _mooted 2026-07-04_
+  Demote no longer deletes anything (`collect_if_finished` retired by the
+  deletion doctrine; `update_item` only hides via the list filter), so there is
+  no surprise to warn about.
 
 - ~~**Generic server-side search picker (and the picker 100-cap).**~~ — _delivered 2026-06-21_ `SearchPicker.svelte` is the generic behavior core; `InventoryItemPicker` (renamed from `PriceListItemPicker`) uses server-side `?search=` and is the picker at all material/line-item call sites.
 
