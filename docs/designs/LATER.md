@@ -393,15 +393,12 @@ page stays whole.
   _Done when:_ the detail page can switch between the line-item view and the atom-pull view
   without a route change, and the standalone wizard routes are retired.
 
-- **Permission-store migration — residual cleanup.** — _added 2026-06-06_
-  The gating-parity mismatches are fixed and gates now route through
-  `frontend/src/stores/permissions.js`. Remaining: (a) **contact/business** gating
-  (`ContactDetail`/`BusinessDetail`) was done but each hand-rolls an identical read-only
-  tag list — converge on a `readonly` prop for `TagEditor` (or a shared `TagList`);
-  (b) the `userPermissions` **prop chain** (TaskDetailPage → TaskActions → BlepEditModal →
-  TimeEditModal/BlepList) is now dead after the store migration but can't be removed without
-  touching `TaskDetailPage` (deliberately left alone this pass). _Done when:_ the tag display
-  is de-duplicated and the dead `userPermissions` prop is removed end-to-end.
+- ~~**Permission-store migration — residual cleanup.**~~ — _delivered 2026-07-04_
+  (a) `TagEditor` grew a `readonly` prop (chips only, no controls, no tag-list
+  fetch); `ContactDetail`/`BusinessDetail` use it instead of hand-rolled
+  read-only lists (Vitest coverage). (b) The dead `userPermissions` prop chain
+  was removed end-to-end (TaskDetailPage, TaskQuickCard, TaskActions,
+  BlepEditModal); `TimeEditModal` had already stopped reading it.
 
 - ~~**Superuser still referenced in test fixtures + fixture JSON.**~~ — _delivered 2026-07-04_
   `fixtures/unit_test_data.json`'s admin now carries the four atoms explicitly
@@ -700,15 +697,11 @@ IMAP-SMTP machinery and tend to be worked together.
   Recorded in `quickbooks-integration.md` ("Inventory write-offs are not pushed"). Revisit only if QBO is
   ever switched to true inventory-asset tracking.
 
-- **Reimbursement batch delete/unwind isn't exposed in the SPA.** — _added 2026-06-22_
-  The backend fully supports unwinding a reimbursement batch — `ReimbursementService.delete`
-  voids the QBO Purchase (now symmetric: a failed void refuses the delete and retains the batch
-  marked `sync_failed`), flips its expenses back to `submitted`, and deletes the batch row, behind
-  the confirm-delete endpoint `DELETE /api/reimbursements/{id}/?confirm=true`. But **no SPA component
-  calls it** — `UserReimbursementPanel` only creates batches and retries sync; there's no
-  delete/unwind button. So a batch (e.g. one stuck in `sync_failed`) can't be unwound from the UI.
-  _Done when:_ the reimbursement panel (or a batch detail view) has a confirm-guarded delete/unwind
-  action wired to the existing endpoint, surfacing the 400 the same way the other delete actions do.
+- ~~**Reimbursement batch delete/unwind isn't exposed in the SPA.**~~ — _delivered 2026-07-04_
+  `UserReimbursementPanel` now has a confirm-guarded **unwind** button per past
+  batch, wired to `DELETE /api/reimbursements/{id}/?confirm=true`, surfacing
+  errors via `errorMessage`. Vitest coverage in
+  `frontend/tests/components/expenses/UserReimbursementPanel.test.js`.
 
 - ~~**Failed-*delete* batch vs. retry-sync ambiguity.**~~ — _resolved 2026-06-22_
   Resolved by the `qbo_pending_op` work: every `QBOSyncable` record now stores which operation it
@@ -808,18 +801,11 @@ IMAP-SMTP machinery and tend to be worked together.
   pre-fills the PO line with both the inventory data and a sensible default qty (with the
   full-vs-shortfall default decided).
 
-- **Inventory add/edit form opens at the top of the page — make it a modal.** — _added 2026-06-18_
-  `InventoryListPage.svelte` shows the create/edit form **inline at the top of the page**
-  (`{#if showForm}` block, ~lines 138-143; `editItem` just flips `showForm = true`). On a
-  catalog that can run **hundreds of rows long**, clicking "edit" on a row far down the list
-  pops the form up top — off-screen — so the user has to scroll up to use it and loses their
-  place in the list, and the row being edited isn't visible next to the form. Move the form
-  into a **modal/overlay** (or an in-row expander / side panel) so editing happens in place
-  without scrolling away. There's already an established modal pattern in the SPA to follow
-  (`MaterialModal`, `LineItemModal`, `PlanMaterialModal`). Keep the existing `{#key
-  editingItem}` re-seed behavior when switching rows. _Done when:_ adding/editing an inventory
-  item no longer jumps the user to a top-of-page form — the form appears in place (modal or
-  equivalent) and the list keeps its scroll position.
+- ~~**Inventory add/edit form opens at the top of the page — make it a modal.**~~ — _delivered 2026-07-04_
+  The create/edit form now renders in a fixed overlay modal (same pattern as
+  `ExpenseModal`), keeping the list's scroll position; the `{#key editingItem}`
+  re-seed behavior is preserved. The write-off panel and the merge panel remain
+  inline — merge has its own rework entry.
 
 - **Inventory merge is still awkward — rework the keep/discard selection + add a preview.** — _added 2026-06-18_
   The merge UI in `InventoryListPage.svelte` (the `{#if showMerge}` panel, ~lines 147-167) is
@@ -1036,22 +1022,16 @@ IMAP-SMTP machinery and tend to be worked together.
   deliberately not mirrored — reordering the live worker queue off a
   backdated entry would be wrong.
 
-- **Service catalog item = rough work type; Task.Description carries the specifics.** — _added 2026-07-01_
-  A service catalog item (RateScheme) should name the _rough category_ of work, with the
-  Task's own `Description` field free to add the detail. E.g. pick **"CAM coding"** (a CAD
-  RateScheme) from the service catalog when adding a Task, then fill in the Description
-  with the specifics: _"V-Carve the lettering, but use AutoCAD to cut the perimeters with
-  dogbones."_ The catalog entry is the billing/type bucket; the Description is the
-  human instruction. Confirm the add-Task flow lets you set both — a RateScheme for the
-  rate/category **and** a distinct free-text Description on that same Task — and that the
-  Description isn't overwritten from the RateScheme name.
-  _Done when:_ adding a Task lets you choose a service (RateScheme) for the work type while
-  independently authoring the Task's Description, and neither clobbers the other.
-  _Corollary:_ if the catalog entry only ever supplies the rough type, then RateSchemes /
-  service catalog items may not need a `description` field at all — just a `name`. The
-  per-use detail lives on the Task. Review whether the RateScheme `description` field earns
-  its keep or should be dropped in favor of name-only, with Task.Description as the sole
-  place for specifics.
+- ~~**Service catalog item = rough work type; Task.Description carries the specifics.**~~ — _confirmed 2026-07-04_
+  Verified the add-Task flow: `WorkItemForm` prefills the description from the
+  selected template and leaves it freely editable; the API
+  (`add-from-template`) passes `name`/`description` overrides through
+  `generate_task`, which honors them independently of the template. The one
+  nuance: *re-selecting* a template resets the description to the template's —
+  a defensible prefill (pick service first, then author specifics), not a
+  clobber of a saved value. The corollary (drop `ServiceItem.description`
+  entirely) is the separate "Pull `description` off `ServiceItem`" entry below,
+  which remains open.
 
 - ~~**Surface session-expiry instead of silently degrading fetched-list components.**~~ — _delivered 2026-07-04_
   `api.js` dispatches `minibini:session-expired` on a 401 or on DRF's
@@ -1090,14 +1070,17 @@ IMAP-SMTP machinery and tend to be worked together.
   _(Under active reconsideration 2026-07-02: leaning the other way — unify on **atom-on-approval**
   (make the service pick deferred too) rather than atom-on-add. Plan to be revised once decided.)_
 
-- **Is "one open estimate chain per job" enforced, or only a UI block?** — _added 2026-07-02_
-  We treat a job as having a single live estimate chain (then change orders), not multiple
-  concurrent open estimates — but it's unclear whether that's a real backend invariant or just
-  a UI-only affordance block. The atom-on-approval crystallization decision leans on this
-  (no concurrent draft estimates ⇒ no duplicate speculative atoms), so it's worth confirming the
-  constraint actually holds server-side. See the single-live-estimate memory note.
-  _Done when:_ we've confirmed where (if anywhere) the backend enforces one-open-chain, and
-  either documented it as a real invariant or filed the gap.
+- ~~**Is "one open estimate chain per job" enforced, or only a UI block?**~~ — _confirmed + strengthened 2026-07-04_
+  It was enforced only at the API boundary (`EstimateViewSet.perform_create`).
+  Now it's a service-level invariant too: `EstimateService.create_for_job`
+  refuses a second non-superseded estimate (tests in
+  `tests/test_later_verifications.py`). A *model*-level constraint is
+  deliberately not used: `revise_estimate` legitimately holds two live rows for
+  a moment (it creates the revision before superseding the parent), so the
+  invariant is really "new estimate *trees* come only through create_for_job;
+  new *versions* only through revise_estimate". Related standing caveat: accept
+  does not supersede sibling *open* estimates — creation-time enforcement is
+  what keeps siblings from existing in the first place.
 
 - **Pull `description` off `ServiceItem`; specifics live on the Task/line description.** — _added 2026-07-02_
   A `ServiceItem` is meant to be a *rough work type* (name + rate scheme); the per-job specifics
@@ -1163,18 +1146,14 @@ IMAP-SMTP machinery and tend to be worked together.
   inside the effect instead would blank the first paint, so the init was kept
   and acknowledged). Tests green; build warning-free.
 
-- **Verify whether RateScheme supersession repoints its ServiceItem catalog users.** — _added 2026-07-03_
-  (Relocated from the now-retired add-line/picker plan.) `RateScheme.supersede()` (`apps/jobs/models.py`)
-  renames the old scheme, mints the new one, and sets `old.replaced_by` — but as read it does **not**
-  repoint `ServiceItem.rate_scheme` (or `Task.rate_scheme`). RM recalls supersession *used to* "update
-  all its catalog users." Confirm whether any catalog-repoint mechanism still exists and is test-covered.
-  **Not blocking:** the deferred-service crystallization handles it either way — if catalog users are
-  repointed, a crystallized Task just reflects the new rate (human reconciles at invoice); if not, the
-  `generate_task(..., allow_superseded_scheme=True)` bypass keeps acceptance from aborting. This is only
-  a "know the true behavior" verification. (Search: `replaced_by` / `supersede` on `RateScheme` and its
-  `ServiceItem` users.)
-  _Done when:_ the supersede→catalog-user behavior is confirmed and documented (repoints or not), and
-  matched by a test.
+- ~~**Verify whether RateScheme supersession repoints its ServiceItem catalog users.**~~ — _confirmed 2026-07-04: it does NOT repoint_
+  Read `RateScheme.supersede()` end to end: it renames the old scheme in place,
+  mints the new row, sets `replaced_by`/`replaced_at` — and touches no
+  `ServiceItem.rate_scheme` or `Task.rate_scheme`. No repoint mechanism exists
+  anywhere (the recalled "updates all its catalog users" behavior is gone or
+  never shipped). Pinned by `tests/test_later_verifications.SupersedeDoesNotRepointTest`.
+  Acceptance stays safe via `generate_task(allow_superseded_scheme=True)`;
+  template-based creation rejects superseded-scheme templates loudly.
 
 - **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
   RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() }, errorMessage: (e, fb) => e?.message || fb }));
 vi.mock('@/lib/paymentAccounts.js', () => ({ getPaymentAccounts: vi.fn() }));
 
 import { api } from '@/lib/api.js';
@@ -12,6 +12,11 @@ const OUTSTANDING = [
   { id: 1, purchased_on: '2026-03-01', description: 'Lunch', accounting_category: 'Meals', amount: '12.50' },
 ];
 
+const BATCH = {
+  id: 9, paid_on: '2026-02-01', expense_count: 2, total: '40.00',
+  reference_number: '', qbo_sync_status: 'sync_failed',
+};
+
 beforeEach(() => {
   api.get.mockReset();
   getPaymentAccounts.mockReset();
@@ -20,8 +25,11 @@ beforeEach(() => {
   ]);
   api.get.mockImplementation((url) => {
     if (url.includes('/api/expenses/') && url.includes('status=submitted')) return Promise.resolve({ results: OUTSTANDING });
+    if (url.startsWith('/api/reimbursements/')) return Promise.resolve({ results: [BATCH] });
     return Promise.resolve({ results: [] });
   });
+  api.delete.mockReset();
+  api.delete.mockResolvedValue({});
 });
 
 describe('UserReimbursementPanel', () => {
@@ -36,6 +44,22 @@ describe('UserReimbursementPanel', () => {
     // [0] is the header select-all; [1] is the first row.
     await fireEvent.click(checkboxes[1]);
     expect(await findByText(/Reimburse selected/)).toBeInTheDocument();
+  });
+
+  it('unwinds a batch through the confirm-guarded delete endpoint', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { findByRole } = render(UserReimbursementPanel, { props: { user: { id: 7 } } });
+    await fireEvent.click(await findByRole('button', { name: 'unwind' }));
+    expect(api.delete).toHaveBeenCalledWith('/api/reimbursements/9/?confirm=true');
+    confirmSpy.mockRestore();
+  });
+
+  it('does not unwind when the confirm is declined', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { findByRole } = render(UserReimbursementPanel, { props: { user: { id: 7 } } });
+    await fireEvent.click(await findByRole('button', { name: 'unwind' }));
+    expect(api.delete).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it('blocks reimbursing with a message when no payment accounts are configured', async () => {

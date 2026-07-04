@@ -136,12 +136,16 @@
     {/if}
   </p>
   {#if showForm}
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
-      <h3>{editingItem ? 'Edit item' : 'New item'}</h3>
-      <!-- key on the edited item so the form re-seeds when switching rows -->
-      {#key editingItem}
-        <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
-      {/key}
+    <!-- Modal so editing a row far down a long catalog doesn't jump the user
+         to a top-of-page form and lose their scroll position. -->
+    <div class="overlay">
+      <div class="modal">
+        <h3>{editingItem ? 'Edit item' : 'New item'}</h3>
+        <!-- key on the edited item so the form re-seeds when switching rows -->
+        {#key editingItem}
+          <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
+        {/key}
+      </div>
     </div>
   {/if}
   {#if showMerge}
@@ -248,6 +252,15 @@
 {/if}
 
 <style>
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+    display: flex; align-items: flex-start; justify-content: center;
+    z-index: var(--z-modal); overflow-y: auto; padding: 2em 0;
+  }
+  .modal {
+    background: white; padding: 1.5em; border: 2px solid #333;
+    max-width: 520px; width: 90%;
+  }
   .finished {
     color: #888;
     font-style: italic;

@@ -1,7 +1,9 @@
 <script>
   import { api } from '../lib/api.js';
 
-  const { endpoint, initialTags = [] } = $props();
+  // readonly: render the same tag chips without the remove/add controls —
+  // the one shared tag display for viewers without write access.
+  const { endpoint = '', initialTags = [], readonly = false } = $props();
 
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let tags = $state([...initialTags]);
@@ -13,6 +15,7 @@
   let blurTimer = null;
 
   $effect(() => {
+    if (readonly) return;
     api.get('/api/tags/?page_size=200')
       .then(data => { allTags = data.results || []; })
       .catch(() => {});
@@ -83,7 +86,9 @@
     {#each tags as tag (tag.tag_id)}
       <span class="tag">
         {tag.name}
-        <button type="button" class="tag-remove" onclick={() => removeTag(tag.tag_id)}>×</button>
+        {#if !readonly}
+          <button type="button" class="tag-remove" onclick={() => removeTag(tag.tag_id)}>×</button>
+        {/if}
       </span>
     {/each}
     {#if tags.length === 0}
@@ -91,6 +96,7 @@
     {/if}
   </div>
 
+  {#if !readonly}
   <div class="tag-input-wrap">
     <div class="tag-input-row">
       <input
@@ -115,6 +121,7 @@
       </ul>
     {/if}
   </div>
+  {/if}
 
   {#if error}
     <p class="tag-error">{error}</p>

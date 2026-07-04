@@ -7,7 +7,6 @@
   let {
     task,
     user,
-    userPermissions = [],
     canManage = false,
     activeBlepOnThisTask = null,
     onChanged = () => {},
@@ -156,7 +155,6 @@
     mode="create"
     taskId={task.task_id}
     currentUser={user}
-    userPermissions={userPermissions}
     onSaved={onTimeLogged}
     onClose={() => { blepModal = false; }}
   />

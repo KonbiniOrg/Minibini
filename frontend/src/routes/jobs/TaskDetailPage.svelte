@@ -86,7 +86,6 @@
     return cb.task && cb.task.id === task.task_id ? cb : null;
   });
 
-  const userPermissions = $derived($userStore?.permissions || []);
 
   async function loadTask() {
     loading = true;
@@ -320,7 +319,6 @@
   <TaskActions
     {task}
     user={$userStore}
-    {userPermissions}
     canManage={task?.can_manage}
     {activeBlepOnThisTask}
     onChanged={refresh}
@@ -484,7 +482,6 @@
   <BlepList
     {bleps}
     currentUser={$userStore}
-    {userPermissions}
     onEdit={openEdit}
     onDelete={(b) => { editingBlep = b; modalMode = 'edit'; }}
     onAdd={openCreate}
@@ -496,7 +493,6 @@
     blep={editingBlep}
     taskId={task?.task_id}
     currentUser={$userStore}
-    {userPermissions}
     onSaved={handleSaved}
     onClose={closeModal}
   />
