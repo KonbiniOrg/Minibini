@@ -286,9 +286,18 @@ class LineItemMixin:
 
     def _get_line_items_qs(self, parent):
         model = self.line_item_serializer_class.Meta.model
-        return model.objects.filter(
+        qs = model.objects.filter(
             **{self.line_item_parent_field: parent}
         ).order_by('line_number')
+        # Estimate/invoice lines serialize adjustment_service details and
+        # target categories per row — fetch them up front (no-ops for the
+        # line-item models without adjustment fields).
+        field_names = {f.name for f in model._meta.get_fields()}
+        if 'adjustment_service' in field_names:
+            qs = qs.select_related('adjustment_service')
+        if 'adjustment_target_categories' in field_names:
+            qs = qs.prefetch_related('adjustment_target_categories')
+        return qs
 
     def _get_line_item_or_404(self, parent, item_id):
         model = self.line_item_serializer_class.Meta.model

@@ -196,7 +196,7 @@
         >Add Here</button>
       </div>
       <button type="button" onclick={addManualLineItem}>+ Manual</button>
-      <AgreementAdjustmentsPanel invoiceId={invoice.invoice_id} />
+      <AgreementAdjustmentsPanel invoiceId={invoice.invoice_id} onLineItemAdded={reloadLineItems} />
     </div>
   </div>
 

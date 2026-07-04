@@ -596,3 +596,14 @@ class RateSchemePercentageAlgorithmTest(BaseTestCase):
         )
         with self.assertRaises(ValueError):
             svc.get_actual_qty(object())
+
+    def test_effective_rate_rejects_percentage(self):
+        # Mirrors the get_actual_qty guard: percentage services compute at the
+        # document layer, never as a per-unit rate.
+        from apps.jobs.models import RateScheme
+        svc = RateScheme.objects.create(
+            name='Rush ER', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('15.00'), unit_label='%', accounting_category=self.ac,
+        )
+        with self.assertRaises(ValueError):
+            svc.effective_rate()

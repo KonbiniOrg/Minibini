@@ -518,6 +518,8 @@ class EstimateServiceDiscardDraftTest(EstimatesTestBase):
         estimate.refresh_from_db()
         with self.assertRaises(ValidationError):
             EstimateService.discard_draft(estimate)
+        # The rejected discard must leave the estimate in place.
+        self.assertTrue(Estimate.objects.filter(pk=estimate.pk).exists())
 
 
 # --- Adjustment line service methods ---

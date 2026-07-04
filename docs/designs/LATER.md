@@ -916,9 +916,18 @@ IMAP-SMTP machinery and tend to be worked together.
   "Flat Fee $X" scheme rows; it's referenced by nothing and will be replaced on
   the next converter regeneration.
 
-- **Percentage-adjustments cleanup bundle (Phase 2 deferred minors).** — _added 2026-06-23_
-  Non-blocking follow-ups from the Phase 2 (percentage adjustments) whole-branch
-  review, all triaged DEFER. Bundle into one cleanup pass:
+- ~~**Percentage-adjustments cleanup bundle (Phase 2 deferred minors).**~~ — _swept 2026-07-04_
+  All delivered (or mooted): the N+1 select_related/prefetch landed on
+  `compose_agreement`'s line query and `LineItemMixin._get_line_items_qs`
+  (field-aware, no-op for line-item models without adjustment fields); the
+  duplicate local `ValidationError` imports in `apps/jobs/models.py` are gone;
+  the `PlanTaskDetailSerializer` dead validator vanished with the plan layer;
+  the dropped `assertTrue` post-condition, `test_effective_rate_rejects_percentage`,
+  and the null-AC-sibling `compute_adjustment_amount` case are added; the dead
+  `find` predicate in the panel test is tidied; and the panel's Add now fires
+  `onLineItemAdded` → the wizard's `reloadLineItems`. The future-coupled item
+  (same-percentage-service-twice under AC-grouping) moves with that future work.
+  Original bundle list:
   - N+1: add `select_related('adjustment_service')` (and `prefetch_related('adjustment_target_categories')`) to `compose_agreement`'s estimate line query (`apps/estimates/agreement.py`) and to the estimate + invoice line-item querysets feeding `EstimateLineItemSerializer`/`InvoiceLineItemSerializer.get_adjustment_service_detail`.
   - Dead code: remove the never-run `validate_service_item` on `PlanTaskDetailSerializer` (`apps/api/plan_tasks/serializers.py`, read-only serializer); remove the duplicate local `ValidationError` import inside `ServiceItem.clean()` (`apps/jobs/models.py`, already imported at module top).
   - Tests: restore the `assertTrue(...exists())` post-condition dropped from `test_discard_draft_rejects_non_draft` (`tests/test_estimates_services.py`); add a `test_effective_rate_rejects_percentage` (mirrors the tested `get_actual_qty` guard); add a `compute_adjustment_amount` case for a null-AC sibling against a non-empty target set; tidy the dead `find` predicate in `AgreementAdjustmentsPanel.test.js` case 4.

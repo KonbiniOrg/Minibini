@@ -303,7 +303,6 @@ class Task(TaskBase):
         db_table = 'tasks'
 
     def clean(self):
-        from django.core.exceptions import ValidationError
         if self.pk:
             old_status = Task.objects.get(pk=self.pk).status
             if old_status != self.status:
@@ -466,18 +465,15 @@ class RateScheme(models.Model):
         super().clean()
         self._normalize_modifiers()
         if any(not (m.get('key') or '').strip() for m in self.modifiers):
-            from django.core.exceptions import ValidationError
             raise ValidationError({
                 'modifiers': 'Each modifier needs a name (key); a percent '
                              'without one can never be activated.',
             })
         if self.accounting_category_id is None:
-            from django.core.exceptions import ValidationError
             raise ValidationError({
                 'accounting_category': 'Required: every RateScheme must have an AccountingCategory.',
             })
         if self.algorithm != self.PERCENTAGE and self.rate is not None and self.rate < 0:
-            from django.core.exceptions import ValidationError
             raise ValidationError({'rate': 'Only percentage services may have a negative rate.'})
         if self.pk and self.is_referenced():
             old = RateScheme.objects.get(pk=self.pk)
@@ -486,8 +482,7 @@ class RateScheme(models.Model):
                 if getattr(self, f) != getattr(old, f)
             ]
             if changed:
-                from django.core.exceptions import ValidationError
-                raise ValidationError({
+                    raise ValidationError({
                     f: 'Scheme is referenced; create a new version instead of editing.'
                     for f in changed
                 })

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
 
-  let { invoiceId } = $props();
+  let { invoiceId, onLineItemAdded = () => {} } = $props();
 
   let adjustments = $state([]);
   let loaded = $state(false);
@@ -24,6 +24,9 @@
       target_category_ids: entry.target_category_ids,
     });
     await load();
+    // The new adjustment line lives in the wizard's line-item column —
+    // tell the parent so it appears without a manual reload.
+    onLineItemAdded();
   }
 
   onMount(load);
