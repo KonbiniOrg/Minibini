@@ -2,6 +2,8 @@
   import { push } from 'svelte-spa-router';
   import { login } from '../stores/auth.js';
 
+  let { notice = '' } = $props();
+
   let username = '';
   let password = '';
   let error = '';
@@ -18,6 +20,9 @@
 </script>
 
 <h2>Log In</h2>
+{#if notice}
+  <p class="notice">{notice}</p>
+{/if}
 <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
   <p>
     <label for="username"><strong>Username</strong></label><br>
@@ -32,3 +37,14 @@
   {/if}
   <p><button type="submit">Log In</button></p>
 </form>
+
+<style>
+  .notice {
+    color: #854d0e;
+    background: #fef9c3;
+    border: 1px solid #ca8a04;
+    padding: 8px 12px;
+    border-radius: 4px;
+    max-width: 320px;
+  }
+</style>

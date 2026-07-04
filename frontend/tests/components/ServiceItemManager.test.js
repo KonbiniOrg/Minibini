@@ -74,6 +74,17 @@ describe('ServiceItemManager', () => {
     expect(api.post).toHaveBeenCalledWith('/api/service-items/', expect.objectContaining({ template_name: 'Painting' }));
   });
 
+  it('re-fetches the rate-scheme list when the form opens (stale-picker guard)', async () => {
+    const { findByRole } = render(ServiceItemManager);
+    await findByRole('button', { name: 'Add Service Item' });
+    const schemeCallsAfterMount = api.get.mock.calls
+      .filter(([url]) => url.startsWith('/api/rate-schemes/')).length;
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
+    const schemeCallsAfterOpen = api.get.mock.calls
+      .filter(([url]) => url.startsWith('/api/rate-schemes/')).length;
+    expect(schemeCallsAfterOpen).toBeGreaterThan(schemeCallsAfterMount);
+  });
+
   it('deletes a service item after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { findAllByRole } = render(ServiceItemManager);

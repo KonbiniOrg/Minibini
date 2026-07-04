@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
+  import { canMarkWorkComplete } from '../../lib/jobActions.js';
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
@@ -394,7 +395,7 @@
       <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
-    {#if job?.can_manage}
+    {#if job?.can_manage && canMarkWorkComplete(job.status)}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     {/if}
   </div>

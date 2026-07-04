@@ -119,6 +119,24 @@
 
   checkAuth();
 
+  // Session expiry: api.js dispatches this when an authenticated-only call
+  // comes back unauthenticated. Drop to the login screen with a notice
+  // instead of letting each component degrade silently.
+  let sessionExpired = $state(false);
+  $effect(() => {
+    function onExpired() {
+      if ($user) {
+        sessionExpired = true;
+        user.set(null);
+      }
+    }
+    window.addEventListener('minibini:session-expired', onExpired);
+    return () => window.removeEventListener('minibini:session-expired', onExpired);
+  });
+  $effect(() => {
+    if ($user) sessionExpired = false;
+  });
+
   // Refresh the global current-Blep band on auth + every SPA route change.
   $effect(() => {
     if ($user) {
@@ -134,7 +152,7 @@
 {#if !$authChecked}
   <p>Loading...</p>
 {:else if !$user}
-  <LoginPage />
+  <LoginPage notice={sessionExpired ? 'Your session expired — please log in again.' : ''} />
 {:else}
   <CurrentBlepBand />
   <Sidebar />

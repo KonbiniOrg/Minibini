@@ -509,24 +509,10 @@ page stays whole.
   dataset shows workers with multi-blep days inside longer, non-coterminal shifts (with the
   enclosure/overlap invariants still holding).
 
-- **Pipeline job card hardcodes worksheet status to "Draft" (contradicts the estimate).** — _added 2026-06-18_
-  On the job board's Pipeline cards, a worksheet chip shows **"Draft"** even when the job's
-  estimate is **"Sent"** — and the worksheet page itself correctly shows **"Frozen"**. The
-  card is wrong: `PipelineColumn.svelte` (the `worksheets` loop, ~lines 21-23) pushes a chip
-  with a **hardcoded** `status: 'draft', statusLabel: 'Draft'` for every worksheet, while the
-  estimate chip beside it renders the estimate's real status. Worksheets no longer have an
-  independent status of their own — their editable-vs-**frozen** state is **derived** from the
-  job's live estimate ("editable while the estimate is draft/absent, frozen once sent" —
-  `apps/api/worksheets/serializers.py:101`; the worksheet page badge at
-  `WorksheetDetailPage.svelte:274`), and the pipeline payload
-  (`JobService._serialize_pipeline_job`, `apps/jobs/services.py:~1594`) emits only
-  `est_worksheet_id`/name, no status — so the card has nothing real to show and fakes "Draft".
-  Fix direction: either drop the worksheet status chip on the card entirely (worksheets have no
-  standalone status), or surface the **derived** state — add the same `editable`/frozen flag the
-  worksheet serializer computes to the pipeline payload and render "Frozen"/"Editable" — so the
-  card can never contradict the estimate.
-  _Done when:_ the pipeline card's worksheet indicator reflects the worksheet's real (derived)
-  state and never shows "Draft" against a sent/frozen estimate.
+- ~~**Pipeline job card hardcodes worksheet status to "Draft" (contradicts the estimate).**~~ — _mooted 2026-07-04_
+  The plan/worksheet layer's removal took the chip with it: the pipeline payload
+  emits `worksheets: []` and `PipelineColumn.buildDocs` renders only estimate
+  chips (with real status / amended labels). Nothing fakes "Draft" anymore.
 
 - **Adjustment amount on a superseded estimate looks inconsistent (possible doubling).** — _added 2026-06-27_
   Observed in dev data: estimate **110** (superseded by estimate **116**) shows a **$44**
@@ -548,12 +534,11 @@ page stays whole.
   _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
   with the doubling explained.
 
-- **"Mark Work Complete" button shows on Draft jobs (task list).** — _added 2026-06-30_
-  On the job task-list page (`JobTaskListPage.svelte`), the "Mark Work Complete" action is
-  offered even on a **Draft** job. Marking work complete is meaningless before the job is
-  approved — the button should be hidden for Draft status (decide whether Submitted counts
-  too), alongside the existing `jobLocked` gating.
-  _Done when:_ "Mark Work Complete" is not shown for Draft jobs, with a test.
+- ~~**"Mark Work Complete" button shows on Draft jobs (task list).**~~ — _delivered 2026-07-04_
+  `canMarkWorkComplete(status)` (`frontend/src/lib/jobActions.js`, unit-tested)
+  gates the button to `approved`/`in_progress` — hidden for draft, submitted,
+  on_hold, work_complete and terminal statuses (submitted decided in: no work
+  exists to complete pre-approval).
 
 - **"Send all to Estimate/Invoice" button on the source-pull (wizard) page.** — _added 2026-06-30_
   On the estimate/invoice source-pull page (`EstimateWizardPage` / `InvoiceWizardPage` — the
@@ -1086,17 +1071,13 @@ IMAP-SMTP machinery and tend to be worked together.
   its keep or should be dropped in favor of name-only, with Task.Description as the sole
   place for specifics.
 
-- **Surface session-expiry instead of silently degrading fetched-list components.** — _added 2026-07-01_
-  When the session expires, `GET /api/settings/units/` returns 403 and
-  `UnitsSelect.svelte` swallows it in a `try/catch`, falling back to `['none']` — so a
-  logged-out user just sees a mysteriously empty/`none`-only units dropdown (observed in
-  the estimate Add-Line-Item modal) with no hint that they're logged out. Any
-  fetch-and-fallback component has the same failure mode. There should be a global
-  handler: when an authenticated-only API call returns 401/403, bounce to the login
-  screen (or show a "session expired, please log in again" banner) rather than letting
-  each component degrade silently. _To check:_ whether `api.js` / the auth store already
-  catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
-  session-expiry path instead of a silently broken widget.
+- ~~**Surface session-expiry instead of silently degrading fetched-list components.**~~ — _delivered 2026-07-04_
+  `api.js` dispatches `minibini:session-expired` on a 401 or on DRF's
+  unauthenticated 403 ("Authentication credentials were not provided.") for any
+  non-`/api/auth/` call; permission-denied 403s don't trigger it. `App.svelte`
+  listens, clears the user store, and renders `LoginPage` with a "Your session
+  expired — please log in again." notice. Tests:
+  `frontend/tests/lib/apiSessionExpiry.test.js`.
 
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
@@ -1160,16 +1141,11 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
   live estimate, or the transition drives acceptance) and the stray edit path is closed.
 
-- **Config page: ServiceItem's rate-scheme picker is stale after editing a RateScheme.** — _added 2026-07-03_
-  On the settings/config page, after updating a `RateScheme` and then adding a `ServiceItem`, the
-  scheme picker showed the *old* scheme values until a full page refresh. The scheme list the
-  ServiceItem form reads is fetched once and not re-fetched when a scheme is edited elsewhere on the
-  page. It should refresh automatically — ideally not a page-level reload but a targeted re-fetch of
-  the schemes list when a scheme is created/updated (e.g. the RateScheme save handler notifies/reloads
-  the shared schemes store, or the ServiceItem form re-fetches on open). Look at the config-page
-  components that own the schemes list and the ServiceItem-add form.
-  _Done when:_ editing a RateScheme makes the updated values available to the ServiceItem form (and any
-  other scheme consumers on the page) without a manual refresh.
+- ~~**Config page: ServiceItem's rate-scheme picker is stale after editing a RateScheme.**~~ — _delivered 2026-07-04_
+  `ServiceItemManager` re-fetches its scheme lists whenever the add/edit form
+  opens (`refreshSchemes()` in `startCreate`/`startEdit`) — the picker can no
+  longer show pre-edit values. Test in
+  `frontend/tests/components/ServiceItemManager.test.js`.
 
 - ~~**Empty modifier row (blank name + 0%) shouldn't be saved.**~~ — _delivered 2026-07-04_
   Both sides: `RateSchemeManager.save()` filters blank rows from the payload, and

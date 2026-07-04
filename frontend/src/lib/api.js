@@ -30,6 +30,7 @@ async function request(method, url, data = null) {
   const json = await response.json();
 
   if (!response.ok) {
+    notifyIfSessionExpired(url, response.status, json);
     const error = new Error(json.detail || json.error || 'Request failed');
     error.status = response.status;
     error.data = json;
@@ -37,6 +38,24 @@ async function request(method, url, data = null) {
   }
 
   return json;
+}
+
+// DRF (SessionAuthentication) answers an *unauthenticated* request with this
+// exact detail (status 403; 401 from other authenticators). A 403 for a
+// logged-in user lacking permission says "You do not have permission…" and
+// must NOT be treated as expiry.
+const UNAUTHENTICATED_DETAIL = 'Authentication credentials were not provided.';
+
+function notifyIfSessionExpired(url, status, json) {
+  // The auth-check endpoint legitimately 401/403s while logged out.
+  if (url.startsWith('/api/auth/')) return;
+  const expired = status === 401
+    || (status === 403 && json?.detail === UNAUTHENTICATED_DETAIL);
+  if (expired && typeof window !== 'undefined') {
+    // App.svelte listens and bounces to the login screen — without this,
+    // every fetch-and-fallback component just degrades silently.
+    window.dispatchEvent(new CustomEvent('minibini:session-expired'));
+  }
 }
 
 async function postMultipart(url, formData) {
@@ -52,6 +71,7 @@ async function postMultipart(url, formData) {
   }
   const json = await response.json();
   if (!response.ok) {
+    notifyIfSessionExpired(url, response.status, json);
     const error = new Error(json.detail || json.error || 'Request failed');
     error.status = response.status;
     error.data = json;

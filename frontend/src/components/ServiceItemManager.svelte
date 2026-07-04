@@ -51,10 +51,27 @@
     return !!(s && s.superseded);
   }
 
+  async function refreshSchemes() {
+    // The schemes list is loaded once on mount, but a RateScheme can be
+    // edited/superseded elsewhere on the settings page while this component
+    // sits open — re-fetch on form open so the picker is never stale.
+    try {
+      const [schemeResp, allSchemeResp] = await Promise.all([
+        api.get('/api/rate-schemes/'),
+        api.get('/api/rate-schemes/?include_superseded=true'),
+      ]);
+      schemes = schemeResp.results || schemeResp;
+      allSchemes = allSchemeResp.results || allSchemeResp;
+    } catch {
+      // Keep the previously-loaded lists; save still validates server-side.
+    }
+  }
+
   function startCreate() {
     form = emptyForm();
     editingId = 'new';
     saveError = '';
+    refreshSchemes();
   }
 
   function startEdit(tmpl) {
@@ -69,6 +86,7 @@
     };
     editingId = tmpl.template_id;
     saveError = '';
+    refreshSchemes();
   }
 
   function cancelEdit() { editingId = null; saveError = ''; }
