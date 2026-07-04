@@ -116,8 +116,9 @@
   let visibleRows = $derived(rows.filter(r => !r._deleted));
 </script>
 
-<Modal open={true} busy={saving} onSave={() => { if (dirty) save(); }}
+<Modal open={true}
   onCancel={cancel} maxWidth="80vw" label="Edit deliverables">
+<form onsubmit={(e) => { e.preventDefault(); if (!saving && dirty) save(); }}>
   <h3>Edit deliverables</h3>
     {#if loading}
       <p>Loading...</p>
@@ -144,10 +145,11 @@
       <p><button type="button" onclick={addRow}>+ Add row</button></p>
       {#if errorMsg}<p class="err">{errorMsg}</p>{/if}
       <p>
-        <button type="button" onclick={save} disabled={saving || !dirty}>Save</button>
+        <button type="submit" disabled={saving || !dirty}>Save</button>
         <button type="button" onclick={cancel} disabled={saving}>Cancel</button>
       </p>
     {/if}
+</form>
 </Modal>
 
 <style>

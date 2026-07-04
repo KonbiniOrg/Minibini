@@ -19,7 +19,8 @@
   }
 </script>
 
-<Modal open={true} onSave={submit} onCancel={onClose} maxWidth="570px">
+<Modal open={true} onCancel={onClose} maxWidth="570px">
+<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
     <h3>Quantity needed</h3>
     <p>
       This task is billed per <strong>{unitLabel || 'unit'}</strong>.
@@ -33,9 +34,10 @@
     </p>
     {#if error}<p class="error">{error}</p>{/if}
     <div class="buttons">
-      <button type="button" onclick={submit}>Complete task</button>
+      <button type="submit">Complete task</button>
       <button type="button" onclick={onClose}>Cancel</button>
     </div>
+</form>
 </Modal>
 
 <style>

@@ -118,7 +118,11 @@ shell owns everything cross-cutting so it can't drift per-modal:
 
 New modals: prefer native-`<form>` content where the modal is genuinely a
 form (free `required` validation, one submit path); wrap it in `<Modal>` and
-wire only `onCancel`.
+wire only `onCancel`. As of 2026-07-04 **every** form modal in the app is a
+native form (`<form onsubmit>` + `type="submit"` save button, all other
+buttons `type="button"` — the HTML default inside a form is submit, so an
+untyped Cancel would save); the shell's `onSave`/`busy` path remains for
+future button-driven modals with an unambiguous primary action.
 
 ### API Responses
 

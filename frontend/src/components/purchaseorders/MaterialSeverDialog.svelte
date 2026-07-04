@@ -25,7 +25,8 @@
   }
 </script>
 
-<Modal open={true} onSave={submit} onCancel={onCancel} maxWidth="900px">
+<Modal open={true} onCancel={onCancel} maxWidth="900px">
+<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
     <h3>Linked Materials — still needed?</h3>
     <p>Each of these Materials is currently linked to a PO line you're about to sever. Decide whether the plan on the Job should stay.</p>
     <table class="data-table">
@@ -57,9 +58,10 @@
       </tbody>
     </table>
     <p>
-      <button onclick={submit}>Confirm</button>
-      <button onclick={onCancel}>Cancel</button>
+      <button type="submit">Confirm</button>
+      <button type="button" onclick={onCancel}>Cancel</button>
     </p>
+</form>
 </Modal>
 
 <style>

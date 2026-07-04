@@ -96,7 +96,8 @@
   }
 </script>
 
-<Modal {open} {busy} onSave={() => { if (!confirmDelete) save(); }} onCancel={() => { if (confirmDelete) confirmDelete = false; else onClose(); }} maxWidth="720px">
+<Modal {open} onCancel={() => { if (confirmDelete) confirmDelete = false; else onClose(); }} maxWidth="720px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy && !confirmDelete) save(); }}>
       <h3>{mode === 'edit' ? 'Edit Fee' : 'Add Fee'}</h3>
 
       <p>
@@ -129,7 +130,7 @@
       </p>
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
         {#if mode === 'edit' && fee}
           {#if confirmDelete}
@@ -141,6 +142,7 @@
         {/if}
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 

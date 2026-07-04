@@ -47,14 +47,15 @@
   }
 </script>
 
-<Modal {open} onSave={save} {busy} onCancel={onClose} maxWidth="600px">
+<Modal {open} onCancel={onClose} maxWidth="600px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
     <h3>Record Payment</h3>
     {#if error}<p class="error">{error}</p>{/if}
     {#if accountsLoaded && accounts.length === 0}
       <p>No payment accounts are configured. Set them up in
         <strong>Settings → QuickBooks</strong> before recording payments.</p>
       <div class="actions">
-        <button onclick={onClose}>Close</button>
+        <button type="button" onclick={onClose}>Close</button>
       </div>
     {:else}
       <label>Amount<input bind:value={amount} type="text" inputmode="decimal" /></label>
@@ -64,10 +65,11 @@
       <label>Reference<input bind:value={reference} /></label>
       <label>Date<input bind:value={paymentDate} type="date" /></label>
       <div class="actions">
-        <button onclick={save} disabled={busy}>Save</button>
-        <button onclick={onClose}>Cancel</button>
+        <button type="submit" disabled={busy}>Save</button>
+        <button type="button" onclick={onClose}>Cancel</button>
       </div>
     {/if}
+</form>
 </Modal>
 
 

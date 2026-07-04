@@ -37,7 +37,8 @@
   }
 </script>
 
-<Modal {open} onSave={submit} onCancel={onCancel} maxWidth="600px">
+<Modal {open} onCancel={onCancel} maxWidth="600px">
+<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
       <p>
         <label><strong>Estimated worker time *</strong><br>
           <input
@@ -47,10 +48,11 @@
         <small>HH:MM or decimal hours.</small>
       </p>
       <div class="buttons">
-        <button type="button" onclick={submit}>Assign</button>
+        <button type="submit">Assign</button>
         <button type="button" onclick={onCancel}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 

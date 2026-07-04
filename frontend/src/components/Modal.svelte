@@ -73,6 +73,7 @@
     >
       <div
         class="grab-bar"
+        role="presentation"
         title="Drag to move"
         onpointerdown={startDrag}
         onpointermove={moveDrag}

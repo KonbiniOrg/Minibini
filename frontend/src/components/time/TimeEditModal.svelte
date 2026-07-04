@@ -147,7 +147,8 @@
   }
 </script>
 
-<Modal {open} {busy} onSave={() => { if (!blocked) save(); }} onCancel={onClose} maxWidth="630px">
+<Modal {open} onCancel={onClose} maxWidth="630px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy && !blocked) save(); }}>
       <h3>{action === 'request' ? 'Request change' : action === 'create' ? 'Add' : 'Edit'}
           {recordType === 'shift' ? 'shift' : 'time entry'}</h3>
       <p><label><strong>Start</strong><br>
@@ -174,7 +175,7 @@
       {/if}
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy || blocked || (action === 'request' && !reason.trim())}>
+        <button type="submit" disabled={busy || blocked || (action === 'request' && !reason.trim())}>
           {action === 'request' ? 'Submit request' : 'Save'}
         </button>
         {#if action === 'edit' && record}
@@ -183,6 +184,7 @@
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 

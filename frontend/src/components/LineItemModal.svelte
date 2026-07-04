@@ -123,7 +123,8 @@
   }
 </script>
 
-<Modal {open} onSave={save} {busy} onCancel={onClose}>
+<Modal {open} onCancel={onClose}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{mode === 'edit' ? 'Edit Line Item' : 'Add Line Item'}</h3>
 
       {#if mode === 'create'}
@@ -190,10 +191,11 @@
       {/if}
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 <style>

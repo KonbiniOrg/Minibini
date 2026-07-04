@@ -82,7 +82,8 @@
   }
 </script>
 
-<Modal {open} onSave={save} {busy} onCancel={onClose} maxWidth="600px">
+<Modal {open} onCancel={onClose} maxWidth="600px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>Assign Task: {task?.name}</h3>
 
       <p>
@@ -106,10 +107,11 @@
       {/if}
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 <style>

@@ -353,18 +353,19 @@
 {/if}
 
 <Modal open={changeJobLine != null}
-  onSave={saveChangeJob}
   onCancel={() => { changeJobLine = null; }}
   label="Change Job">
+<form onsubmit={(e) => { e.preventDefault(); saveChangeJob(); }}>
   {#if changeJobLine}
     <h3>Change Job for Line #{changeJobLine.line_number}</h3>
       <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
       <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} />
       <p>
-        <button onclick={saveChangeJob}>Save</button>
-        <button onclick={() => { changeJobLine = null; }}>Cancel</button>
+        <button type="submit">Save</button>
+        <button type="button" onclick={() => { changeJobLine = null; }}>Cancel</button>
       </p>
   {/if}
+</form>
 </Modal>
 
 <style>

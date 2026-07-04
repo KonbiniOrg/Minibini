@@ -78,7 +78,8 @@
   }
 </script>
 
-<Modal open={open && choice} onSave={save} {busy} onCancel={onClose}>
+<Modal open={open && choice} onCancel={onClose}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{title}</h3>
       {#if isFreeform}
         <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
@@ -94,10 +95,11 @@
           </select></label></p>
       {/if}
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Add</button>
+        <button type="submit" disabled={busy}>Add</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 

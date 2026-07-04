@@ -204,9 +204,9 @@
   }
 </script>
 
-<Modal {open} {busy}
-  onSave={() => { if (!showPropagatePrompt) save(); }}
+<Modal {open}
   onCancel={() => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); }}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy && !showPropagatePrompt) save(); }}>
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 
       <p>
@@ -266,7 +266,7 @@
       </p>
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
@@ -281,6 +281,7 @@
           </div>
         </div>
       {/if}
+</form>
 </Modal>
 
 <style>

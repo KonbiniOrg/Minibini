@@ -238,7 +238,8 @@
   }
 </script>
 
-<Modal {open} onSave={save} {busy} onCancel={onClose}>
+<Modal {open} onCancel={onClose}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
       {#if loading}
@@ -341,11 +342,12 @@
         {/if}
 
         <div class="buttons">
-          <button type="button" onclick={save} disabled={busy}>Save</button>
+          <button type="submit" disabled={busy}>Save</button>
           <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
         </div>
         {#if error}<p class="error">{error}</p>{/if}
       {/if}
+</form>
 </Modal>
 
 

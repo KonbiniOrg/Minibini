@@ -65,7 +65,8 @@
   }
 </script>
 
-<Modal {open} onSave={submit} {busy} onCancel={onClose} label="Add Adjustment" maxWidth="720px">
+<Modal {open} onCancel={onClose} label="Add Adjustment" maxWidth="720px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) submit(); }}>
       <h3>Add Percentage Adjustment</h3>
 
       <p>
@@ -102,10 +103,11 @@
       </div>
 
       <div class="buttons">
-        <button type="button" onclick={submit} disabled={busy}>Add Adjustment</button>
+        <button type="submit" disabled={busy}>Add Adjustment</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
+</form>
 </Modal>
 
 
