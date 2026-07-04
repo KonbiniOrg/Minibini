@@ -14,6 +14,7 @@
     coId = null,
     item = null,       // existing CO line item when editing
     estimateLines = [],  // EstimateLineItem list for target picking
+    categories = [],     // AccountingCategory list for the add-line AC select
     // Pre-seed props (used when opening from an estimate row)
     initialAction = null,        // 'add' | 'replace' | 'remove' — overrides default
     initialTarget = null,        // target_line_item id (number) to pre-select
@@ -31,11 +32,15 @@
   let qty = $state('');
   let units = $state('none');
   let price = $state('');
+  let accountingCategory = $state('');
   let busy = $state(false);
   let error = $state('');
 
   // Whether description/qty/units/price fields are needed (not for plain 'remove')
   let needsLineFields = $derived(action !== 'remove');
+  // A bare add line crystallizes into a Fee at acceptance, so it needs an AC
+  // before send; replace lines inherit from the atom they replace.
+  let needsAccountingCategory = $derived(action === 'add');
 
   $effect(() => {
     if (open) {
@@ -46,6 +51,8 @@
         qty = item.qty ?? '';
         units = item.units || 'none';
         price = item.price ?? '';
+        // Raw number so Svelte 5's strict-=== select matching finds the option.
+        accountingCategory = item.accounting_category ?? '';
       } else {
         // Apply initial props if provided, otherwise use defaults
         action = initialAction ?? 'add';
@@ -54,6 +61,7 @@
         qty = initialQty ?? '';
         units = initialUnits ?? 'none';
         price = initialPrice ?? '';
+        accountingCategory = '';
       }
       error = '';
     }
@@ -73,6 +81,16 @@
       payload.qty = qty || '0';
       payload.units = units;
       payload.price = price || '0';
+    }
+    if (needsAccountingCategory) {
+      // Bare add lines need an AC to send (they crystallize into Fees);
+      // material lines get the config default server-side.
+      if (!accountingCategory && !item?.is_material) {
+        error = 'Accounting Category is required.';
+        busy = false;
+        return;
+      }
+      payload.accounting_category = accountingCategory ? Number(accountingCategory) : null;
     }
     try {
       if (mode === 'edit' && item) {
@@ -149,6 +167,19 @@
             <input type="number" step="0.01" bind:value={price}>
           </label>
         </p>
+
+        {#if needsAccountingCategory}
+          <p>
+            <label><strong>Accounting Category{item?.is_material ? '' : ' *'}</strong><br>
+              <select bind:value={accountingCategory}>
+                <option value="">-- Select --</option>
+                {#each categories as cat}
+                  <option value={cat.id}>{cat.code} - {cat.name}</option>
+                {/each}
+              </select>
+            </label>
+          </p>
+        {/if}
       {/if}
 
       <div class="buttons">

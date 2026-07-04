@@ -334,6 +334,14 @@ class Task(TaskBase):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom.
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('task', pk)
+        return result
+
     @property
     def effective_accounting_category(self):
         return self.rate_scheme.accounting_category
@@ -608,6 +616,14 @@ class Fee(models.Model):
 
     def compute_amount(self, active_modifiers=None):
         return (self.quantity * self.unit_rate).quantize(Decimal('0.01'))
+
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom.
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('fee', pk)
+        return result
 
     @property
     def effective_accounting_category(self):

@@ -20,7 +20,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category',
-            'consumption_state', 'restocked_qty',
+            'consumption_state', 'released_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
             'qty_on_hand',
             'invoice',

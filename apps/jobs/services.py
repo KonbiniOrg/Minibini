@@ -364,6 +364,17 @@ class BlepService:
 
     @staticmethod
     def delete(blep, actor):
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+        # Billed actuals are frozen for everyone: deleting a blep under an
+        # invoiced task would silently change the basis of a number already
+        # charged. (Estimate claims never block — estimates bill est_qty.)
+        if InvoiceClaimService.is_invoiced(
+                InvoiceLineItemSource.SOURCE_TASK, blep.task_id):
+            raise ValidationError(
+                "This time entry's task is on an invoice; its actuals are "
+                "frozen. Remove the task from the invoice first."
+            )
         is_own = blep.user_id == actor.pk
         if is_own:
             if not _within_edit_window(blep.start_time) and not _has_manage_time(actor):
@@ -521,6 +532,39 @@ class JobService:
     def update_status(pk, new_status):
         """Thin wrapper over update_job for a status-only change."""
         return JobService.update_job(pk, status=new_status)
+
+    @staticmethod
+    def assert_job_deletable(job):
+        """Hard delete is for unworked jobs only (Rule 1 at job scale).
+
+        A job with bleps, invoices, or any sent (non-draft) estimate or change
+        order has history the cascade would destroy — bleps wholesale, which
+        are absolute records of work that happened. Those jobs are cancelled,
+        not deleted; a draft quote that never went anywhere still deletes.
+        """
+        from apps.estimates.models import ChangeOrder, Estimate
+        from apps.invoicing.models import Invoice
+        if Blep.objects.filter(task__job=job).exists():
+            raise ValidationError(
+                'This job has recorded time and cannot be deleted. '
+                'Cancel it instead.'
+            )
+        if Invoice.objects.filter(job=job).exists():
+            raise ValidationError(
+                'This job has invoices and cannot be deleted. Cancel it instead.'
+            )
+        if Estimate.objects.filter(job=job).exclude(
+                status=Estimate.STATUS_DRAFT).exists():
+            raise ValidationError(
+                'This job has a sent estimate and cannot be deleted. '
+                'Cancel it instead.'
+            )
+        if ChangeOrder.objects.filter(job=job).exclude(
+                status=ChangeOrder.STATUS_DRAFT).exists():
+            raise ValidationError(
+                'This job has a sent change order and cannot be deleted. '
+                'Cancel it instead.'
+            )
 
     @staticmethod
     def maybe_complete_if_resolved(job):
@@ -689,8 +733,12 @@ class JobService:
                 new_task = task_map[task.pk]
                 new_task.parent_task = task_map[task.parent_task_id]
                 new_task.save()
-        # Materials (task-attached follow their remapped task; task-less stay loose).
-        for material in Material.objects.filter(job=source_job).order_by('pk'):
+        # Materials (task-attached follow their remapped task; task-less stay
+        # loose). Released materials are the SOURCE job's "planned it, didn't
+        # use it" history — copying them would mint empty qty-0 rows.
+        for material in Material.objects.filter(job=source_job).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_RELEASED,
+        ).order_by('pk'):
             MaterialService.create_on_job(
                 job=new_job,
                 task=task_map.get(material.task_id),
@@ -819,7 +867,14 @@ class TaskService:
         Rules:
         - In-progress and complete tasks cannot be deleted (cancel instead).
         - Tasks with bleps (time entries) cannot be deleted (cancel instead).
+        - Tasks claimed by a non-draft document or on an invoice cannot be
+          deleted (cancel instead) — Rule 1: once the claiming document has
+          been sent, the task is part of a promise. Draft claims stay
+          deletable (release them by removing the line/atoms first).
         """
+        from apps.estimates.claims import atom_claimed_by_non_draft_document
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
         try:
             task = Task.objects.get(pk=task_pk)
         except Task.DoesNotExist:
@@ -834,6 +889,13 @@ class TaskService:
         if Blep.objects.filter(task=task).exists():
             raise ValidationError(
                 "Cannot delete a task that has time entries. Cancel it instead."
+            )
+        if (atom_claimed_by_non_draft_document('task', task.pk)
+                or InvoiceClaimService.is_invoiced(
+                    InvoiceLineItemSource.SOURCE_TASK, task.pk)):
+            raise ValidationError(
+                "Cannot delete a task on a sent estimate, change order, or "
+                "invoice. Cancel it instead."
             )
 
         task.delete()
@@ -932,11 +994,30 @@ class FeeService:
 
     @staticmethod
     def delete(fee_pk):
+        """Delete a fee — but only while nothing references it (Rule 1).
+
+        A claimed fee is part of an agreement's story: removing an agreed
+        charge is a change order, not a delete. An invoiced fee is billed
+        money. Unreferenced fees (setup scratch, mistakes) delete freely.
+        """
+        from apps.estimates.claims import atom_is_claimed
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
         try:
             fee = Fee.objects.get(pk=fee_pk)
         except Fee.DoesNotExist:
             raise NotFoundError(f'Fee {fee_pk} not found')
         _assert_job_not_on_hold(fee.job, 'delete this fee')
+        if atom_is_claimed('fee', fee.pk):
+            raise ValidationError(
+                'This fee backs an estimate or change-order line. To stop '
+                'charging it, remove the line (draft) or issue a change order.'
+            )
+        if InvoiceClaimService.is_invoiced(
+                InvoiceLineItemSource.SOURCE_FEE, fee.pk):
+            raise ValidationError(
+                'This fee is on an invoice; remove it from the invoice first.'
+            )
         fee.delete()
 
 

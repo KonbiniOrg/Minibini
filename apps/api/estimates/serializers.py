@@ -12,8 +12,19 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
 
+    def _resolve_or_none(self, obj):
+        # A dangling row (atom deleted out from under the claim — pre-purge
+        # data, or a race) must render as null, never 500 the list endpoint.
+        from django.core.exceptions import ObjectDoesNotExist
+        try:
+            return obj.resolve()
+        except ObjectDoesNotExist:
+            return None
+
     def get_description(self, obj):
-        instance = obj.resolve()
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
         from apps.jobs.models import Task
         if isinstance(instance, Task):
             return instance.name
@@ -21,7 +32,9 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
 
     def get_computed_amount(self, obj):
         from decimal import Decimal
-        instance = obj.resolve()
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
         # Estimate line items project the ESTIMATE quote (est_qty), not actuals.
         # A Task bills actuals via compute_amount() — $0 until it's worked — so the
         # estimate must use compute_estimate_amount() instead; Material / Fee have
@@ -34,15 +47,16 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
+    service_item_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
         fields = [
-            'line_item_id', 'line_number', 'inventory_item',
+            'line_item_id', 'line_number', 'inventory_item', 'service_item', 'is_material',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'adjustment_service', 'adjustment_target_categories',
-            'adjustment_service_detail',
+            'adjustment_service_detail', 'service_item_detail',
             'sources',
         ]
         read_only_fields = ['line_item_id']
@@ -56,6 +70,12 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'rate': str(svc.rate),
             'algorithm': svc.algorithm,
         }
+
+    def get_service_item_detail(self, obj):
+        if obj.service_item_id is None:
+            return None
+        si = obj.service_item
+        return {'template_id': si.template_id, 'name': si.template_name}
 
 
 class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):

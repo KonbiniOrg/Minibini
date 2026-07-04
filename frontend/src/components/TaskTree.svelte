@@ -26,6 +26,8 @@
     onMoveMaterial = () => {},
     expenses = [],
     onEditExpense = () => {},
+    fees = [],
+    onEditFee = () => {},
     selectedTaskId = $bindable(null),
   } = $props();
 
@@ -75,6 +77,10 @@
     return qty * price;
   }
 
+  function feeTotal(fee) {
+    return (Number(fee.quantity) || 0) * (Number(fee.unit_rate) || 0);
+  }
+
   const TERMINAL = ['complete', 'cancelled'];
   const NON_DELETABLE = ['in_progress', 'complete'];
   function isTerminal(task) { return TERMINAL.includes(task.status); }
@@ -99,6 +105,9 @@
     }
     for (const m of (jobMaterials || [])) {
       total += materialTotal(m);
+    }
+    for (const f of (fees || [])) {
+      total += feeTotal(f);
     }
     return total;
   });
@@ -142,8 +151,10 @@
   }
 
   function isMaterialFinalized(mat) {
-    // Consumed, or expense-bound fully restocked (quantity depleted).
+    // Consumed or released — terminal states with no further material actions.
+    // (The expense-bound qty-0 clause covers pre-`released` rows.)
     return mat.consumption_state === 'consumed'
+      || mat.consumption_state === 'released'
       || (mat.is_expense_bound && Number(mat.quantity) === 0);
   }
 </script>
@@ -383,6 +394,30 @@
         {@render expenseRow(exp, false)}
       {/each}
     {/if}
+
+    {#if fees && fees.length}
+      <tr class="job-materials-header">
+        <td colspan={colCount}><strong>Fees</strong></td>
+      </tr>
+      {#each fees as fee (fee.fee_id)}
+        <tr class="fee-row">
+          {#if !readonly && !jobLocked}<td class="move-cell"></td>{/if}
+          <td class="indent"><span class="fee-marker">$</span> {fee.description || '(fee)'}</td>
+          {#if showAssignee}<td></td>{/if}
+          <td></td>
+          {#if showStatus}<td>{#if fee.invoice}{@render invoicedLink(fee.invoice)}{/if}</td>{/if}
+          <td class="text-right">-</td>
+          <td class="text-right">{fee.quantity ?? '-'}</td>
+          <td class="text-right">-</td>
+          <td class="text-right">-</td>
+          <td class="text-right">{fmt(fee.unit_rate)}</td>
+          <td class="text-right">{fmt(feeTotal(fee))}</td>
+          {#if !readonly}
+            <td class="actions-cell">{#if !jobLocked}<button type="button" onclick={() => onEditFee(fee)}>edit</button>{/if}</td>
+          {/if}
+        </tr>
+      {/each}
+    {/if}
   </tbody>
   <tfoot>
     <tr class="grand-total-row">
@@ -404,6 +439,9 @@
   .indent-2 { padding-left: 48px; }
   .move-cell { text-align: center; width: 40px; }
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
+  /* Fees are billable but not a task/material — tint them so they read distinctly. */
+  .fee-row { background: #f3e8ff; }
+  .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }
   .inv-badge { margin-left: 6px; font-size: 11px; }
   .badge-invoiced {
     font-size: 11px; font-weight: 600; text-transform: uppercase;

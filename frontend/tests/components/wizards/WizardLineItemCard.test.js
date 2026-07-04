@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
 
@@ -39,6 +39,35 @@ describe('WizardLineItemCard', () => {
     });
     await fireEvent.click(getByRole('button', { name: '×' }));
     expect(api.delete).toHaveBeenCalledWith('/api/estimates/3/line-items/7/');
+  });
+
+  it('registers a flush; flushing saves a dirty card and no-ops a clean one', async () => {
+    let flush;
+    const registerFlush = vi.fn((id, fn) => { if (fn) flush = fn; });
+    const { getByPlaceholderText } = render(WizardLineItemCard, {
+      props: { lineItem: lineItem(), apiBase: '/api/estimates/3', registerFlush },
+    });
+    await waitFor(() => expect(registerFlush).toHaveBeenCalledWith(7, expect.any(Function)));
+    // clean → no patch
+    await flush();
+    expect(api.patch).not.toHaveBeenCalled();
+    // dirty → patches
+    await fireEvent.input(getByPlaceholderText('Name this line item…'), { target: { value: 'Edited' } });
+    await flush();
+    expect(api.patch).toHaveBeenCalledWith('/api/estimates/3/line-items/7/',
+      expect.objectContaining({ description: 'Edited' }));
+  });
+
+  it('flush rejects when the save fails (so Done can block navigation)', async () => {
+    api.patch.mockRejectedValueOnce(new Error('boom'));
+    let flush;
+    const registerFlush = vi.fn((id, fn) => { if (fn) flush = fn; });
+    const { getByPlaceholderText } = render(WizardLineItemCard, {
+      props: { lineItem: lineItem(), apiBase: '/api/estimates/3', registerFlush },
+    });
+    await waitFor(() => expect(registerFlush).toHaveBeenCalled());
+    await fireEvent.input(getByPlaceholderText('Name this line item…'), { target: { value: 'Edited' } });
+    await expect(flush()).rejects.toThrow('boom');
   });
 
   it('flags a bundled price that is out of sync with its atoms', () => {

@@ -2,7 +2,7 @@
   import { api } from '../../lib/api.js';
   import UnitsSelect from '../UnitsSelect.svelte';
 
-  let { lineItem, apiBase, canAddHere = false, onAddHere, onchange } = $props();
+  let { lineItem, apiBase, canAddHere = false, onAddHere, onchange, registerFlush } = $props();
 
   let nameValue = $state(lineItem.description);
   let qtyValue = $state(lineItem.qty);
@@ -59,9 +59,10 @@
     lastSyncedSnapshot = snap;
   });
 
-  // Sum of source atom computed amounts (the "computed total")
+  // Sum of source atom computed amounts (the "computed total").
+  // computed_amount is null for a dangling source row (atom deleted) — count 0.
   const computedSum = $derived(
-    lineItem.sources.reduce((sum, s) => sum + parseFloat(s.computed_amount), 0)
+    lineItem.sources.reduce((sum, s) => sum + (parseFloat(s.computed_amount) || 0), 0)
   );
   // Per-unit price the wizard would compute from the SAVED qty: round(sum/qty, 2)
   const expectedPerUnit = $derived(
@@ -101,6 +102,9 @@
     priceManuallyEdited = true;
   }
 
+  // Saves the card's pending edit if dirty; a no-op when clean. THROWS on
+  // failure so callers (the manual Save button, and the Done flush) can react —
+  // the button catches to alert; the flush lets it propagate to block navigation.
   async function save() {
     if (!isDirty || saving) return;
     saving = true;
@@ -131,12 +135,16 @@
         price: updated.price,
       };
       onchange?.();
-    } catch (e) {
-      alert(e.message || 'Save failed');
     } finally {
       saving = false;
     }
   }
+
+  // Register this card's save with the wizard so "Done" can flush pending edits.
+  $effect(() => {
+    registerFlush?.(lineItem.line_item_id, save);
+    return () => registerFlush?.(lineItem.line_item_id, null);
+  });
 
   async function removeSource(sourceId) {
     await api.post(
@@ -159,7 +167,7 @@
 </script>
 
 <form
-  onsubmit={(e) => { e.preventDefault(); save(); }}
+  onsubmit={(e) => { e.preventDefault(); save().catch((err) => alert(err.message || 'Save failed')); }}
   style="border: 1px solid #aaa; padding: 8px; margin-bottom: 8px;"
 >
   <div style="display: flex; align-items: center; gap: 6px;">

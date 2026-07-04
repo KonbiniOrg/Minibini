@@ -5,7 +5,8 @@
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import LineItemModal from '../../components/LineItemModal.svelte';
-  import AddServiceItemModal from '../../components/estimates/AddServiceItemModal.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
+  import EstimateAddLineForm from '../../components/estimates/EstimateAddLineForm.svelte';
   import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
 
   let { params = {} } = $props();
@@ -14,19 +15,29 @@
   let job = $state(null);
   let contact = $state(null);
   let categories = $state([]);
+  let defaultMaterialCategoryId = $state(null);
   let loading = $state(true);
   let error = $state('');
 
 
   let adjustmentModalOpen = $state(false);
-  let serviceItemModalOpen = $state(false);
+  let pickerOpen = $state(false);
+  let addChoice = $state(null);
   let modalOpen = $state(false);
   let modalMode = $state('edit');
   let modalItem = $state(null);
 
-  function openAddItem() { modalItem = null; modalMode = 'create'; modalOpen = true; }
   function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
   function handleSaved() { modalOpen = false; modalItem = null; loadEstimate(); }
+
+  function handleChoose(choice) {
+    pickerOpen = false;
+    addChoice = choice;
+  }
+  function handleLineAdded() {
+    addChoice = null;
+    loadEstimate();
+  }
 
   async function handleDeleteItem(li) {
     // No confirm: draft-only line edit, re-addable via Show Tasks & Materials.
@@ -121,10 +132,21 @@
     }
   }
 
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      const raw = s.default_material_accounting_category;
+      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
+    } catch (_) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   $effect(() => {
     if (params.id) {
       loadEstimate();
       loadCategories();
+      loadSettings();
     }
   });
 
@@ -247,8 +269,7 @@
   <h3>Line Items</h3>
   {#if canEdit}
     <p>
-      <button type="button" onclick={openAddItem}>Add Line Item</button>
-      <button type="button" onclick={() => { serviceItemModalOpen = true; }}>Add from Service</button>
+      <button type="button" onclick={() => { pickerOpen = true; }}>Add line</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Tasks &amp; Materials</a>
     </p>
@@ -276,22 +297,28 @@
     <DeliverablesSection jobId={estimate.job} canManage={estimate.can_manage} />
   {/if}
 
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
+
+  <EstimateAddLineForm
+    open={addChoice != null}
+    choice={addChoice}
+    estimateId={estimate.estimate_id}
+    {categories}
+    {defaultMaterialCategoryId}
+    onSaved={handleLineAdded}
+    onClose={() => { addChoice = null; }}
+  />
+
   <LineItemModal
     open={modalOpen}
     mode={modalMode}
     apiBase={`/api/estimates/${estimate.estimate_id}`}
     item={modalItem}
     {categories}
+    showMaterialMarker={true}
+    {defaultMaterialCategoryId}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
-  />
-
-  <AddServiceItemModal
-    open={serviceItemModalOpen}
-    jobId={estimate.job}
-    estimateId={estimate.estimate_id}
-    onSaved={() => { serviceItemModalOpen = false; loadEstimate(); }}
-    onClose={() => { serviceItemModalOpen = false; }}
   />
 
   <AdjustmentModal

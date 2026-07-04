@@ -119,6 +119,13 @@ describe('FeeModal — create', () => {
       task: null,
     }));
   });
+
+  it('seeds description from presetDescription on create', async () => {
+    const { getByLabelText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: [], presetDescription: 'Rush charge' },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Rush charge');
+  });
 });
 
 describe('FeeModal — edit', () => {

@@ -8,6 +8,8 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
      not a percentage adjustment, crystallizes it onto the job:
        - a hand-line with an `inventory_item` (added via "From Inventory") is a
          catalog material → becomes a **Material** atom;
+       - a bare hand-line marked `is_material=True` → becomes a **provisional
+         Material** (no inventory_item, sell price only, cost unset);
        - any other hand-line → becomes a **Fee** (the frozen fixed charge).
      Either way the estimate line is source-linked to the atom it created.
   2. Earmarks the job's inventoried materials.
@@ -15,9 +17,6 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
 Atom-backed lines (those with an EstimateLineItemSource) already have their
 Tasks/Materials on the job — nothing to convert. Adjustment lines stay
 document-only (they recompute against the live lines and never become Fees).
-
-(Hand-*typed* material lines with no `inventory_item` still become Fees — there's
-no signal that a freeform description is a material. See docs/designs/LATER.md.)
 """
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -31,8 +30,9 @@ class EstimateAcceptanceService:
     def on_accept(estimate):
         """Crystallize the estimate's hand-lines into atoms, then earmark the job.
 
-        Catalog (inventory-backed) hand-lines become Materials; other hand-lines
-        become Fees. Returns: {'fees_created': int, 'materials_created': int}
+        Discriminator order: service_item → Task, inventory_item → Material,
+        is_material (bare) → provisional Material, else → Fee.
+        Returns: {'fees_created': int, 'materials_created': int, 'tasks_created': int}
         """
         from apps.jobs.models import Fee
         from apps.inventory.services import InventoryService, MaterialService
@@ -46,10 +46,25 @@ class EstimateAcceptanceService:
 
         fees_created = 0
         materials_created = 0
+        tasks_created = 0
         for li in estimate.estimatelineitem_set.all():
             if li.sources.exists():              # atom-backed → already on the job
                 continue
             if li.adjustment_service_id is not None:  # percentage adjustments stay document-only
+                continue
+
+            if li.service_item_id is not None:
+                task = li.service_item.generate_task(
+                    job, est_qty=li.qty or Decimal('1'),
+                    description=li.description or '',
+                    allow_superseded_scheme=True,
+                )
+                EstimateLineItemSource.objects.create(
+                    estimate_line_item=li,
+                    source_type=EstimateLineItemSource.SOURCE_TASK,
+                    source_pk=task.pk,
+                )
+                tasks_created += 1
                 continue
 
             if li.inventory_item_id is not None:
@@ -62,6 +77,32 @@ class EstimateAcceptanceService:
                     quantity=li.qty or Decimal('1'),
                     sell_price=li.price or Decimal('0'),
                     inventory_item=li.inventory_item,
+                    accounting_category=li.accounting_category,
+                    units=li.units or 'none',
+                )
+                EstimateLineItemSource.objects.create(
+                    estimate_line_item=li,
+                    source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+                    source_pk=material.pk,
+                )
+                materials_created += 1
+                continue
+
+            # Bare line marked as a material → provisional Material atom.
+            # (No inventory_item, so no lot: it carries only a sell price; cost
+            # stays unset. Reverse-markup provisional cost, transient-lot minting,
+            # establishment, and the Order affordance are OUT of scope here — see
+            # docs/plans/2026-06-30-freeform-material-procurement-inventory.md.)
+            # (pinned discriminator): the service_item branch sits above inventory_item;
+            # this is_material branch stays here, between inventory_item and Fee.
+            if li.is_material:
+                material = MaterialService.create_on_job(
+                    job=job,
+                    task=None,
+                    description=li.description or '',
+                    quantity=li.qty or Decimal('1'),
+                    sell_price=li.price or Decimal('0'),
+                    inventory_item=None,
                     accounting_category=li.accounting_category,
                     units=li.units or 'none',
                 )
@@ -100,4 +141,4 @@ class EstimateAcceptanceService:
             fees_created += 1
 
         InventoryService.create_earmarks_for_job(job)
-        return {'fees_created': fees_created, 'materials_created': materials_created}
+        return {'fees_created': fees_created, 'materials_created': materials_created, 'tasks_created': tasks_created}

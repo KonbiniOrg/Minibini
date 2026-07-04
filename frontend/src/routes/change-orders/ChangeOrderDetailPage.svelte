@@ -1,8 +1,10 @@
 <script>
   import { link, push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
+  import COAddLineForm from '../../components/changeorders/COAddLineForm.svelte';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
   import UnitsSelect from '../../components/UnitsSelect.svelte';
 
   let { params = {} } = $props();
@@ -33,6 +35,12 @@
   let modalOpen = $state(false);
   let modalMode = $state('create');
   let modalItem = $state(null);
+  // Add-line flow: PriceListPicker → COAddLineForm (service / inventory / freeform)
+  let pickerOpen = $state(false);
+  let addLineChoice = $state(null);
+  let addLineFormOpen = $state(false);
+  let categories = $state([]);
+  let defaultMaterialCategoryId = $state(null);
   // Pre-seed props for the modal
   let modalInitialAction = $state(null);
   let modalInitialTarget = $state(null);
@@ -235,8 +243,31 @@
     }
   }
 
+  async function loadCategories() {
+    try {
+      const resp = await api.get('/api/accounting-categories/?page_size=100');
+      categories = resp.results || resp;
+    } catch (_) {
+      categories = [];
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      const raw = s.default_material_accounting_category;
+      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
+    } catch (_) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   $effect(() => {
-    if (params.id) loadCO();
+    if (params.id) {
+      loadCO();
+      loadCategories();
+      loadSettings();
+    }
   });
 
   // --------------------------------------------------------------------------
@@ -557,17 +588,22 @@
     }
   }
 
-  /** [+ New line] button → add mode */
+  /** [+ New line] button → unified picker (service / inventory / freeform),
+      same entry point as the estimate detail page's Add Line. */
   function openAddItem() {
-    modalMode = 'create';
-    modalItem = null;
-    modalInitialAction = 'add';
-    modalInitialTarget = null;
-    modalInitialDescription = null;
-    modalInitialQty = null;
-    modalInitialUnits = null;
-    modalInitialPrice = null;
-    modalOpen = true;
+    pickerOpen = true;
+  }
+
+  function handleAddLineChoice(choice) {
+    pickerOpen = false;
+    addLineChoice = choice;
+    addLineFormOpen = true;
+  }
+
+  function handleAddLineSaved() {
+    addLineFormOpen = false;
+    addLineChoice = null;
+    loadCO();
   }
 
   function handleSaved() {
@@ -927,6 +963,7 @@
     coId={co.change_order_id}
     item={modalItem}
     {estimateLines}
+    {categories}
     initialAction={modalInitialAction}
     initialTarget={modalInitialTarget}
     initialDescription={modalInitialDescription}
@@ -935,6 +972,22 @@
     initialPrice={modalInitialPrice}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
+  />
+
+  <PriceListPicker
+    open={pickerOpen}
+    onChoose={handleAddLineChoice}
+    onclose={() => { pickerOpen = false; }}
+  />
+
+  <COAddLineForm
+    open={addLineFormOpen}
+    choice={addLineChoice}
+    coId={co.change_order_id}
+    {categories}
+    {defaultMaterialCategoryId}
+    onSaved={handleAddLineSaved}
+    onClose={() => { addLineFormOpen = false; addLineChoice = null; }}
   />
 {/if}
 

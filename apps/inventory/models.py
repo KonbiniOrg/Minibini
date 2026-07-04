@@ -219,12 +219,24 @@ class TemplateMaterialAssociation(models.Model):
 
 @history(exclude=['material_id'])
 class Material(MaterialBase):
-    """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows."""
+    """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows.
+
+    Lifecycle (consumption_state): born `pending` (planned; earmarked on
+    committed jobs) → `consumed` (task start drew the stock; reversible via
+    unconsume) or `released` (a named event said the job planned it and didn't
+    use it — full restock while referenced, job-completion loose release, PO
+    sever, CO descope; terminal). A pending material that nothing references
+    may instead be hard-deleted (mistake correction / scratch paper). Release
+    moves quantity into released_qty, so released rows sum to zero in every
+    aggregate consumer; quantity + released_qty = originally planned.
+    """
     CONSUMPTION_STATE_PENDING = 'pending'
     CONSUMPTION_STATE_CONSUMED = 'consumed'
+    CONSUMPTION_STATE_RELEASED = 'released'
     CONSUMPTION_STATE_CHOICES = [
         (CONSUMPTION_STATE_PENDING, 'Pending'),
         (CONSUMPTION_STATE_CONSUMED, 'Consumed'),
+        (CONSUMPTION_STATE_RELEASED, 'Released'),
     ]
 
     material_id = models.AutoField(primary_key=True)
@@ -239,8 +251,12 @@ class Material(MaterialBase):
         max_length=20, choices=CONSUMPTION_STATE_CHOICES,
         default=CONSUMPTION_STATE_PENDING,
     )
-    restocked_qty = models.DecimalField(
+    released_qty = models.DecimalField(
         max_digits=10, decimal_places=2, default=Decimal('0.00'),
+        help_text=(
+            'Quantity restocked/released back out of the plan. '
+            'quantity + released_qty = originally planned.'
+        ),
     )
     po_line_item = models.ForeignKey(
         'purchasing.PurchaseOrderLineItem',
@@ -260,8 +276,8 @@ class Material(MaterialBase):
         super().clean()
         if self.task_id and self.job_id and self.task.job_id != self.job_id:
             raise ValidationError('Material.task.job must match Material.job')
-        if self.restocked_qty < Decimal('0.00'):
-            raise ValidationError('restocked_qty must be non-negative')
+        if self.released_qty < Decimal('0.00'):
+            raise ValidationError('released_qty must be non-negative')
 
     def save(self, *args, **kwargs):
         self._populate_from_pli()
@@ -269,6 +285,15 @@ class Material(MaterialBase):
             self.consumption_state = self.CONSUMPTION_STATE_PENDING
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom — purge on every
+        # deletion path (restock-to-zero, PO sever, CO retirement, …).
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('material', pk)
+        return result
 
     def __str__(self):
         if self.units and self.units != 'none':

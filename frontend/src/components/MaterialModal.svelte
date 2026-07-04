@@ -11,6 +11,9 @@
     taskId = null,
     jobId = null,
     categories = [],
+    presetDescription = '',
+    presetPli = null,
+    defaultMaterialCategoryId = null,
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -71,16 +74,26 @@
         pliUnitCost = pliLocked ? (material.unit_cost ?? null) : null;
         pliSellPrice = pliLocked ? (material.sell_price ?? null) : null;
       } else {
-        description = '';
+        // Reset shared fields first
         quantity = '';
         units = 'none';
         unitCost = '';
         sellPrice = '';
-        pliId = null;
-        pliLocked = false;
-        accountingCategory = '';
         pliUnitCost = null;
         pliSellPrice = null;
+        if (presetPli) {
+          // PLI preset: auto-select the item (sets description, units, prices, AC, pliLocked)
+          pliId = null;
+          pliLocked = false;
+          description = '';
+          accountingCategory = '';
+          handlePliSelect(presetPli);
+        } else {
+          description = (mode === 'create' && !material) ? (presetDescription || '') : '';
+          pliId = null;
+          pliLocked = false;
+          accountingCategory = defaultMaterialCategoryId ?? '';
+        }
       }
       error = '';
       showPropagatePrompt = false;

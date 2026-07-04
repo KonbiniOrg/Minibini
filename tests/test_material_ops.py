@@ -92,9 +92,9 @@ class ConsumeTest(TestCase):
         )
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
-        # sanity: quantity=3, restocked_qty=2
+        # sanity: quantity=3, released_qty=2
         self.assertEqual(m.quantity, Decimal('3'))
-        self.assertEqual(m.restocked_qty, Decimal('2'))
+        self.assertEqual(m.released_qty, Decimal('2'))
         qoh_before = self.pli.qty_on_hand
         sold_before = self.pli.qty_sold
         e_before = Earmark.objects.get(
@@ -149,7 +149,9 @@ class RestockTest(TestCase):
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
         self.assertEqual(m.quantity, Decimal('3'))
-        self.assertEqual(m.restocked_qty, Decimal('0'))
+        # Restock tracks the return universally now (was expense-bound only):
+        # quantity + released_qty always reconstructs the original plan.
+        self.assertEqual(m.released_qty, Decimal('2'))
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         e = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('3'))
@@ -166,7 +168,7 @@ class RestockTest(TestCase):
         self.assertFalse(Earmark.objects.filter(
             inventory_item=self.pli, job=self.job).exists())
 
-    def test_partial_restock_expense_bound_shrinks_quantity_and_bumps_restocked_qty(self):
+    def test_partial_restock_expense_bound_shrinks_quantity_and_bumps_released_qty(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), inventory_item=self.pli,
@@ -175,13 +177,15 @@ class RestockTest(TestCase):
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
         self.assertEqual(m.quantity, Decimal('3'))
-        self.assertEqual(m.restocked_qty, Decimal('2'))
+        self.assertEqual(m.released_qty, Decimal('2'))
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         e = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('3'))
         self.assertTrue(Material.objects.filter(pk=m.pk).exists())
 
-    def test_full_restock_expense_bound_keeps_row_with_quantity_zero(self):
+    def test_full_restock_expense_bound_releases_row(self):
+        # An expense-bound material is referenced, so restock-to-zero lands it
+        # in the released state (the old keep-pending-at-zero limbo, named).
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), inventory_item=self.pli,
@@ -190,8 +194,8 @@ class RestockTest(TestCase):
         MaterialService.restock(m, Decimal('5'))
         m.refresh_from_db()
         self.assertEqual(m.quantity, Decimal('0'))
-        self.assertEqual(m.restocked_qty, Decimal('5'))
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(m.released_qty, Decimal('5'))
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_RELEASED)
         self.assertFalse(Earmark.objects.filter(
             inventory_item=self.pli, job=self.job).exists())
         self.assertTrue(Material.objects.filter(pk=m.pk).exists())

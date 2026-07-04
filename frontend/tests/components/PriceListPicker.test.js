@@ -5,137 +5,128 @@ vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
 import { api } from '@/lib/api.js';
 import PriceListPicker from '@/components/PriceListPicker.svelte';
 
-// A saved-work ServiceItem (the Add Line "service" source), priced via its RateScheme.
 const SVC_ITEM = {
-  template_id: 11,
-  template_name: 'CNC Routing',
-  description: 'Router pass',
+  template_id: 11, template_name: 'CNC Routing', description: 'Router pass',
   rate_scheme: 5,
-  rate_scheme_detail: { rate_scheme_id: 5, name: 'Machine time', rate: '75.00', unit_label: 'hr', algorithm: 'elapsed_time' },
+  rate_scheme_detail: { rate_scheme_id: 5, name: 'Machine time', rate: '75.00', unit_label: 'hr' },
 };
-
 const INV_ITEM = {
-  inventory_item_id: 22,
-  code: 'BOLT-14',
-  description: 'Hex bolt',
-  selling_price: '0.50',
-  units: 'ea',
-  is_catalog: true,
-  is_active: true,
+  inventory_item_id: 22, code: 'BOLT-14', description: 'Hex bolt',
+  selling_price: '0.50', units: 'ea', is_catalog: true, is_active: true,
 };
 
 function mockApiForQuery() {
   api.get.mockImplementation((url) => {
-    if (url.includes('/api/service-items/')) {
-      return Promise.resolve({ results: [SVC_ITEM], count: 1 });
-    }
-    if (url.includes('/api/inventory/')) {
-      return Promise.resolve({ results: [INV_ITEM], count: 1 });
-    }
+    if (url.includes('/api/service-items/')) return Promise.resolve({ results: [SVC_ITEM], count: 1 });
+    if (url.includes('/api/inventory/')) return Promise.resolve({ results: [INV_ITEM], count: 1 });
     return Promise.resolve({ results: [], count: 0 });
   });
 }
-
-const baseProps = () => ({
-  open: true, onselect: vi.fn(), oncustomtask: vi.fn(), onfreeform: vi.fn(), onclose: vi.fn(),
-});
+const baseProps = () => ({ open: true, onChoose: vi.fn(), onclose: vi.fn() });
 
 beforeEach(() => { api.get.mockReset(); });
 
-describe('PriceListPicker', () => {
-  it('renders nothing fetched or shown before typing', async () => {
+describe('PriceListPicker (onChoose emitter)', () => {
+  it('fetches nothing and shows no list before typing', () => {
     api.get.mockResolvedValue({ results: [], count: 0 });
-    const { queryByText, queryByRole } = render(PriceListPicker, { props: baseProps() });
+    const { queryByRole } = render(PriceListPicker, { props: baseProps() });
     expect(api.get).not.toHaveBeenCalled();
-    expect(queryByText('CNC Routing')).toBeNull();
-    expect(queryByText('BOLT-14')).toBeNull();
     expect(queryByRole('listbox')).toBeNull();
   });
 
-  it('shows saved-work and material results after typing (waits past debounce)', async () => {
+  it('searches both catalogs after typing (past debounce)', async () => {
     mockApiForQuery();
     const { getByPlaceholderText, findByText } = render(PriceListPicker, { props: baseProps() });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'cnc' } });
     expect(await findByText('CNC Routing')).toBeInTheDocument();
     expect(await findByText('BOLT-14')).toBeInTheDocument();
+    const invCall = api.get.mock.calls.find((c) => c[0].includes('/api/inventory/'));
+    expect(invCall[0]).toContain('is_catalog=true');
+    expect(invCall[0]).toContain('search=cnc');
   });
 
-  it('shows each row unit to the right of the price', async () => {
-    mockApiForQuery();
-    const { getByPlaceholderText, findByText } = render(PriceListPicker, { props: baseProps() });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'c' } });
-    expect(await findByText('/ hr')).toBeInTheDocument();
-    expect(await findByText('/ ea')).toBeInTheDocument();
-  });
-
-  it('searches the saved-work catalog (service-items) with the search param', async () => {
-    mockApiForQuery();
-    const { getByPlaceholderText } = render(PriceListPicker, { props: baseProps() });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
-    await new Promise((r) => setTimeout(r, 300));
-    const svcCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/service-items/'));
-    expect(svcCalls.length).toBeGreaterThan(0);
-    expect(svcCalls[0][0]).toContain('search=bolt');
-  });
-
-  it('calls inventory with is_active=true, is_catalog=true and search param', async () => {
-    mockApiForQuery();
-    const { getByPlaceholderText } = render(PriceListPicker, { props: baseProps() });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
-    await new Promise((r) => setTimeout(r, 300));
-    const invCalls = api.get.mock.calls.filter((c) => c[0].includes('/api/inventory/'));
-    expect(invCalls.length).toBeGreaterThan(0);
-    expect(invCalls[0][0]).toContain('is_active=true');
-    expect(invCalls[0][0]).toContain('is_catalog=true');
-    expect(invCalls[0][0]).toContain('search=bolt');
-  });
-
-  it('emits onselect with {kind:service, the ServiceItem} when a saved-work row is picked', async () => {
+  it('emits {type:service, serviceItem} when a service row is picked', async () => {
     mockApiForQuery();
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'cnc' } });
-    const btn = await findByRole('button', { name: /CNC Routing/ });
-    await fireEvent.mouseDown(btn);
-    expect(props.onselect).toHaveBeenCalledWith({
-      kind: 'service',
-      item: expect.objectContaining({ template_id: 11, template_name: 'CNC Routing' }),
+    await fireEvent.mouseDown(await findByRole('button', { name: /CNC Routing/ }));
+    expect(props.onChoose).toHaveBeenCalledWith({
+      type: 'service',
+      serviceItem: expect.objectContaining({ template_id: 11 }),
     });
   });
 
-  it('emits onselect with {kind:material, item} when an inventory row is picked', async () => {
+  it('emits {type:inventory, inventoryItem} when an inventory row is picked', async () => {
     mockApiForQuery();
     const props = baseProps();
     const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'bolt' } });
-    const btn = await findByRole('button', { name: /BOLT-14/ });
-    await fireEvent.mouseDown(btn);
-    expect(props.onselect).toHaveBeenCalledWith({
-      kind: 'material',
-      item: expect.objectContaining({ inventory_item_id: 22, code: 'BOLT-14' }),
+    await fireEvent.mouseDown(await findByRole('button', { name: /BOLT-14/ }));
+    expect(props.onChoose).toHaveBeenCalledWith({
+      type: 'inventory',
+      inventoryItem: expect.objectContaining({ inventory_item_id: 22 }),
     });
   });
 
-  it('emits oncustomtask with the typed query when the custom-task button is clicked', async () => {
+  it('freeform commit defaults to a fee (isMaterial false)', async () => {
     const props = baseProps();
-    const { findByText, getByPlaceholderText } = render(PriceListPicker, { props });
-    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Special weld' } });
-    const btn = await findByText(/custom task/i);
-    await fireEvent.click(btn);
-    expect(props.oncustomtask).toHaveBeenCalledWith('Special weld');
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Rush charge' } });
+    await fireEvent.click(await findByRole('button', { name: /add line/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Rush charge', isMaterial: false });
   });
 
-  it('emits onfreeform with the typed query when the freeform button is clicked', async () => {
+  it('freeform commit with the material checkbox set emits isMaterial true', async () => {
     const props = baseProps();
-    const { findByText, getByPlaceholderText } = render(PriceListPicker, { props });
+    const { getByPlaceholderText, findByRole } = render(PriceListPicker, { props });
     await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: '3/4 plywood' } });
-    const btn = await findByText(/freeform/i);
-    await fireEvent.click(btn);
-    expect(props.onfreeform).toHaveBeenCalledWith('3/4 plywood');
+    await fireEvent.click(await findByRole('checkbox', { name: /material/i }));
+    await fireEvent.click(await findByRole('button', { name: /add line/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '3/4 plywood', isMaterial: true });
   });
 
-  it('does not render when open=false', () => {
-    const { queryByText } = render(PriceListPicker, { props: { ...baseProps(), open: false } });
-    expect(queryByText(/Add item/)).toBeNull();
+  it('clears typed text and the material toggle when reopened', async () => {
+    const props = baseProps();
+    const { getByPlaceholderText, getByRole, rerender } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'partial typing' } });
+    await fireEvent.click(getByRole('checkbox', { name: /material/i }));
+    expect(getByPlaceholderText(/search/i)).toHaveValue('partial typing');
+    // Cancel (close), then reopen — the picker must start fresh.
+    await rerender({ ...props, open: false });
+    await rerender({ ...props, open: true });
+    expect(getByPlaceholderText(/search/i)).toHaveValue('');
+    expect(getByRole('checkbox', { name: /material/i })).not.toBeChecked();
+  });
+
+  it('does not offer Add Task by default (estimate surface)', () => {
+    const { queryByRole } = render(PriceListPicker, { props: baseProps() });
+    expect(queryByRole('button', { name: /add task/i })).toBeNull();
+  });
+
+  it('task surface offers explicit Task/Material/Fee buttons (no checkbox/Add Line)', async () => {
+    const props = { ...baseProps(), taskSurface: true };
+    const { getByPlaceholderText, getByRole, queryByRole } = render(PriceListPicker, { props });
+    await fireEvent.input(getByPlaceholderText(/search/i), { target: { value: 'Custom milling' } });
+    expect(queryByRole('button', { name: /add line/i })).toBeNull();
+    expect(queryByRole('checkbox')).toBeNull();
+    await fireEvent.click(getByRole('button', { name: /add task/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform-task', typed: 'Custom milling' });
+    await fireEvent.click(getByRole('button', { name: /add material/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: true });
+    await fireEvent.click(getByRole('button', { name: /add fee/i }));
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: 'Custom milling', isMaterial: false });
+  });
+
+  it('shows the material checkbox and Add Line button constantly, from the start', async () => {
+    const props = baseProps();
+    const { getByRole } = render(PriceListPicker, { props });
+    // Constant affordances — present before anything is typed, label never changes.
+    expect(getByRole('checkbox', { name: /material/i })).toBeInTheDocument();
+    const addBtn = getByRole('button', { name: /add line/i });
+    expect(addBtn).toBeInTheDocument();
+    // Clicking with nothing typed still emits a freeform commit (empty typed).
+    await fireEvent.click(addBtn);
+    expect(props.onChoose).toHaveBeenCalledWith({ type: 'freeform', typed: '', isMaterial: false });
   });
 });

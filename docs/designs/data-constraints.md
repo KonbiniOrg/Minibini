@@ -284,7 +284,12 @@ Depends on: AccountingCategory.
 - **qty_on_hand**, **qty_sold**, **qty_wasted**: non-negative decimals
 - **is_inventoried**: boolean. If false, all quantity fields should be 0.
 - **is_active**: boolean, default True (soft delete)
-- **Deletion blocked** if referenced by any line item, earmark, or adjustment
+- **Deletion blocked** (`InventoryService.assert_item_deletable`) if referenced
+  by any line item (PROTECT), Material, Earmark, or Expense stock receipt —
+  the SET_NULL FKs would otherwise silently demote established materials.
+  Never-referenced rows (mistake correction) delete; everything else retires
+  via `is_active` or lives on as a hidden finished lot. The old
+  `collect_if_finished` auto-delete on write-off/demote was retired 2026-07-03.
 
 ---
 
@@ -434,6 +439,12 @@ holds resume manually.
 
 Transitions **into** `on_hold` or `cancelled` are rejected by `JobService.update_job` if any `Blep` on the job's tasks is open (`end_time__isnull=True`).
 
+**Job deletion (Rule 1 at job scale)**: `JobService.assert_job_deletable` (run
+by the `DELETE /api/jobs/{id}/` endpoint) refuses when the job has any bleps,
+any invoice, or any non-draft estimate/change order — the cascade would destroy
+recorded work wholesale; those jobs are `cancelled` instead. An unworked draft
+quote still hard-deletes.
+
 While `on_hold`, the following are blocked (purely by status filter — no Task is touched):
 - New bleps (`BlepService` job-status guard).
 - Task and material mutations (`_assert_job_not_on_hold` in `JobService`).
@@ -468,6 +479,11 @@ always billable.
 
 `compute_amount() = (quantity × unit_rate).quantize('0.01')`. Writes go
 through `FeeService.create_on_job` / `update` / `delete` (on-hold guarded).
+
+- **Deletion (Rule 1)**: `FeeService.delete` refuses while the fee is claimed
+  by any estimate/CO line or on a live invoice — removing an agreed charge is
+  a change order, not a delete. Unreferenced fees (setup scratch, mistakes)
+  delete freely.
 
 ---
 
@@ -560,6 +576,10 @@ Valid transitions:
   such requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
+- **Deletion (Rule 1)**: `TaskService.delete_task` refuses when the task is
+  in-progress/complete, has bleps, is claimed by a **non-draft** estimate/CO,
+  or is on a live invoice — "cancel it instead." Draft claims stay deletable
+  (release them by removing the line/atoms first).
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`
   walks the Job toward `work_complete` (silent-fail on loose pending
   task-less Materials; see §2.6, §2.7).
@@ -611,6 +631,11 @@ Depends on: Task, User.
   §1.2a for the full invariant, the auto-clock-in / clock-out behaviour, and
   the backfill. Self-edit window for direct user blep edits is **30h** (matches
   the shift self-edit window — §1.2a).
+- **Deletion (invoiced-task freeze)**: `BlepService.delete` refuses — for
+  every actor, own-window or `can_manage_time` — when the blep's task is on a
+  live invoice: billed actuals are frozen (deleting a blep under an invoiced
+  ELAPSED_TIME task would change the basis of a charged number). Estimate
+  claims never block (estimates bill `est_qty`).
 
 ---
 
@@ -761,7 +786,9 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
 - **Create requires `on_hold`**: `ChangeOrderService.create` raises `ValidationError` unless `Job.status == on_hold` and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
+- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Fee / provisional Material at acceptance and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
 - **Job exit guard**: a Job cannot leave `on_hold` while any of its COs is `draft` or `open`.
+- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the job flips to `approved`. See `estimates-and-prices.md` §14.11.
 
 #### ChangeOrderLineItem
 
@@ -771,7 +798,19 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **action** (CharField, required): one of `add`, `remove`, `replace`
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
+- **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
+- **is_material** (bool, default False): marks a bare line as crystallizing into a provisional Material instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
+
+#### ChangeOrderLineItemSource
+
+`db_table = 'co_li_sources'`. The CO analog of EstimateLineItemSource (§ estimates doc §6.2/§14.4): polymorphic join from a ChangeOrderLineItem to the atom it crystallized at acceptance.
+
+- **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
+- **source_type**: `task` | `material` | `fee`; **source_pk**: positive int
+- `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
+- Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
 
 See `docs/designs/estimates-and-prices.md`.
 
@@ -853,10 +892,22 @@ Either a description or a `inventory_item` must be present.
 - **job** (required FK → Job, CASCADE)
 - **task** (optional FK → Task, SET_NULL): if null, the Material floats on
   the Job. `clean()` enforces `task.job == job` when both are set.
-- **consumption_state**: `pending` or `consumed`. Default `pending`. Flipped
-  to `consumed` by `MaterialService.consume`.
-- **restocked_qty**: decimal, default 0, non-negative. Tracks returned qty
-  for expense-bound materials.
+- **consumption_state**: `pending`, `consumed`, or `released`. Default
+  `pending`. Flipped to `consumed` by `MaterialService.consume` (reversible via
+  `unconsume`); to `released` (terminal) by `MaterialService.release` / the
+  restock-to-zero rule — the "planned it, didn't use it" retirement (full
+  restock while referenced, job-completion loose release, PO sever, CO
+  descope). Every other lifecycle op requires `pending`.
+- **released_qty** (renamed from `restocked_qty` 2026-07-03): decimal, default
+  0, non-negative. Quantity restocked/released back out of the plan —
+  universal, not just expense-bound. Invariant: `quantity + released_qty` =
+  originally planned (release zeroes `quantity` into it, so released rows sum
+  to zero in aggregates; the expense-void reversal reconstructs the purchase
+  from the sum).
+- **Deletion (Rule 1)**: a pending material that nothing references (no
+  expense, no PO link, no estimate/CO claim, not invoiced —
+  `MaterialService._is_referenced`) may hard-delete; referenced materials are
+  released instead.
 - **po_line_item** (optional FK → PurchaseOrderLineItem, SET_NULL)
 
 #### Implied state from other models
@@ -865,6 +916,11 @@ Either a description or a `inventory_item` must be present.
   upsert via `InventoryService._mutate_earmark(pli, job, +qty)`. See §2.6.
 - Consume / Restock flip earmarks back via `_mutate_earmark(..., -qty)`.
 - Job entering `work_complete` releases all remaining earmarks for the Job.
+- **Deletion purges document claims**: `Material.delete()` (like
+  `Fee.delete()` and `Task.delete()`) calls `purge_source_rows_for_atom`
+  (`apps/estimates/claims.py`) — no `EstimateLineItemSource` /
+  `ChangeOrderLineItemSource` / `InvoiceLineItemSource` row may outlive its
+  atom, on any deletion path (restock-to-zero, PO sever, CO retirement, …).
 
 ---
 

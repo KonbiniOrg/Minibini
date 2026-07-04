@@ -329,7 +329,7 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
   `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
-  reset: `consumption_state=pending`, `restocked_qty=0`,
+  reset: `consumption_state=pending`, `released_qty=0`,
   `po_line_item=None`.
 
 #### Outcome A — `path='approved'`
@@ -380,8 +380,11 @@ authenticated user**:
 - **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
   `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
   Delete is still refused by `TaskService.delete_task` when the task is
-  `in_progress`/`complete` or has any Bleps (→ 400) — that guard applies to
-  everyone.
+  `in_progress`/`complete`, has any Bleps, is claimed by a **non-draft**
+  estimate/change order, or is on a live invoice (→ 400, "cancel it
+  instead") — those guards apply to everyone. Draft-estimate claims stay
+  deletable (remove the line/atoms first). See the deletion doctrine
+  (`data-constraints.md` §1.11).
 - **Lifecycle** — complete / block / unblock / start-work / stop-work /
   cancel-work / actual-qty are `IsAuthenticated` (worker operations).
 
@@ -670,7 +673,7 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
 | `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
-| `delete(blep, actor)` | Same authorization rules |
+| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze**: refused for every actor when the blep's task is on a live invoice — billed actuals never change basis after the fact. Estimate claims don't block (estimates bill `est_qty`). |
 
 Validation rules enforced inside `BlepService`:
 
@@ -1032,14 +1035,26 @@ Authoring the Job's own work atoms happens on the **task-list page**
 (`JobTaskListPage.svelte`, `#/jobs/{id}/tasks`), reached from the Tasks &
 Materials pillar. It is available regardless of estimate state, so
 pre-approval / released effort is authored and shown there too. For managers
-it carries the **Add line** affordances:
+it carries two affordances:
 
-| Add-line button | Modal | Creates | Endpoint |
-|---|---|---|---|
-| **Add Task** (manual or from template) | `WorkItemForm` | `Task` | `POST /api/jobs/{id}/tasks/` (or `/add-from-template/`) |
-| **Add Material** | `MaterialModal` | `Material` | `POST /api/jobs/{id}/materials/` |
-| **Add Fee** | `FeeModal` | `Fee` | `POST /api/jobs/{id}/fees/` |
-| **Add Expense** | (expenses app) | `Expense` | — |
+- **"Add Work"** — single button that opens `PriceListPicker` (the unified
+  picker, see `estimates-and-prices.md` §6.4). The picker's `onChoose` result
+  routes to:
+  - `{type: 'service'}` → `WorkItemForm` pre-seeded for that `ServiceItem`
+    → `POST /api/jobs/{id}/add-from-template/` (creates a `Task` immediately)
+  - `{type: 'inventory'}` → `MaterialModal` with `presetPli` + `presetDescription`
+    → `POST /api/jobs/{id}/materials/`
+  - `{type: 'freeform', isMaterial: true}` → `MaterialModal` with
+    `presetDescription` + `defaultMaterialCategoryId`
+    → `POST /api/jobs/{id}/materials/`
+  - `{type: 'freeform', isMaterial: false}` → `FeeModal` with `presetDescription`
+    → `POST /api/jobs/{id}/fees/`
+- **"Add Expense"** — opens `ExpenseModal`; open to any authenticated user.
+
+`defaultMaterialCategoryId` is loaded from
+`GET /api/settings/` (`default_material_accounting_category` key) at page
+mount and passed to `MaterialModal` so freeform material lines default to the
+shop's configured material category.
 
 The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
 of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
@@ -1047,10 +1062,6 @@ a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
 the job is `on_hold`, **+ New change order** live on the overview's Estimate
 pillar. (These replaced the deleted Worksheet detail page; the old
 Plan/Client-View toggle is gone.)
-
-> Follow-on: the separate Add-Task/Material/Fee affordances are slated to be
-> unified into a single "Add line" picker — see
-> `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`.
 
 ## 10. UI: Task Detail page
 
@@ -1134,8 +1145,8 @@ general cross-client repolling mechanism is deferred (see Unfinished Work).
 > Where the work-authoring UI lives now:
 >
 > - **Authoring the Job's work atoms** → the **task-list page** (§9.5), not
->   the overview. `WorkItemForm` creates a `Task` (`POST /api/jobs/{id}/tasks/`),
->   `MaterialModal` a `Material` (`/materials/`), `FeeModal` a `Fee` (`/fees/`).
+>   the overview. The single **"Add Work"** picker (`PriceListPicker`) routes to
+>   `WorkItemForm` (Task), `MaterialModal` (Material), or `FeeModal` (Fee).
 > - **`InventoryItemPicker.svelte`** (type-ahead `InventoryItem` picker,
 >   built on `SearchPicker`) survives — reused by `MaterialModal` and the
 >   PO line-item form.

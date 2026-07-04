@@ -208,6 +208,13 @@
         }
     },
     {
+        "model": "core.configuration",
+        "pk": "default_material_accounting_category",
+        "fields": {
+            "value": "902"
+        }
+    },
+    {
         "model": "core.appstate",
         "pk": "job_counter",
         "fields": {

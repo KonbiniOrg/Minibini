@@ -134,6 +134,12 @@ def build_configuration(c):
         # item's selling_price from purchase_price × (1 + this/100). 20 => a
         # 20% markup over cost.
         ('default_material_markup_percent', '20'),
+        # Default AC for a material line that supplies none — bare is_material
+        # estimate lines and freeform materials. Read by
+        # EstimateService._apply_material_ac_default (which RAISES if this key is
+        # absent) and the SPA material forms. Points at MTL (the materials AC);
+        # build_seed runs before this, so c.ac_mat_pk is set.
+        ('default_material_accounting_category', str(c.ac_mat_pk)),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
         # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
@@ -921,7 +927,16 @@ def build_estimates(c):
                     'units':             units,
                     'description':       description,
                     'price':             f'{price:.2f}',
-                    'accounting_category': None,
+                    # Every line needs an AC: source-backed lines (task/material/
+                    # fee) carry it on their atom, but bare discount/credit
+                    # ('lineitem') and deliverable lines never get a source, so
+                    # emit a classification-matched default here (matches the AC
+                    # the eventual atom would carry) — current code forbids a
+                    # null-AC line item.
+                    'accounting_category': (
+                        c.ac_mat_pk if classification == 'material'
+                        else c.ac_svc_pk
+                    ),
                     'taxable_override':  None,
                     'tax_rate_override': None,
                 })
@@ -1408,7 +1423,7 @@ def derive_atoms(c):
                 'accounting_category': c.ac_mat_pk,
                 'inventory_item':     pli_pk,
                 'consumption_state':   'pending',
-                'restocked_qty':       '0.00',
+                'released_qty':       '0.00',
                 'po_line_item':        None,
             })
 

@@ -229,7 +229,21 @@ page stays whole.
   accepted estimate (`compose_change_order_diff` uses `co.estimate`), not
   `compose_agreement`, mirroring the shop edit page. With multiple accepted COs
   this can understate the true current agreement the customer sees. Resolve as
-  part of the multi-CO validation above.
+  part of the multi-CO validation above. (Note 2026-07-03: this is now
+  **display-only** — CO-acceptance *crystallization* resolves targets through
+  the accepted-CO replace chain correctly; see `estimates-and-prices.md`
+  §14.11.)
+
+- **Surface CO-remove atoms that crystallization deliberately skipped.** — _added 2026-07-03_
+  `ChangeOrderAcceptanceService` (estimates doc §14.11) leaves an atom alone when a
+  CO remove/replace targets it but it is already consumed / complete /
+  expense-bound / PO-linked / on a live invoice — physical or billed reality is
+  not unwound by a document. Right now that skip is silent (the atom just stays
+  on the job while the agreement line is struck); the human has to notice the
+  mismatch themselves. Consider surfacing it — a history entry per skipped atom,
+  or a "struck from agreement" badge on the task/material row — so the
+  reconciliation is prompted rather than remembered.
+  _Done when:_ decided and either implemented or recorded as acceptable-silent.
 
 - **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08_
   Building COs "as parallel to estimates as reasonably can be" deliberately
@@ -1131,12 +1145,6 @@ IMAP-SMTP machinery and tend to be worked together.
   catches 401/403 anywhere. _Done when:_ a 401/403 on any API call surfaces a clear
   session-expiry path instead of a silently broken widget.
 
-- **Hand-*typed* estimate material lines can't crystallize into Materials.** — _added 2026-07-01, moved to a plan 2026-07-02_
-  → Folded into `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md` (Part 2):
-  a freeform-typed material has no atom-type signal, so it becomes a Fee. The **unified picker**
-  is where an explicit Material-vs-Fee choice belongs (not accounting-category inference — ACs are
-  fully configurable). See the plan.
-
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
   A first pass built this but it was **removed pending a design decision** — the code
@@ -1163,3 +1171,134 @@ IMAP-SMTP machinery and tend to be worked together.
   → Promoted to a follow-on plan: `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`
   (Part 1). Make the inventory pick immediate like the service pick, retire the acceptance
   `inventory_item → Material` branch, and solve orphan-atom cleanup with provenance. See the plan.
+  _(Under active reconsideration 2026-07-02: leaning the other way — unify on **atom-on-approval**
+  (make the service pick deferred too) rather than atom-on-add. Plan to be revised once decided.)_
+
+- **Is "one open estimate chain per job" enforced, or only a UI block?** — _added 2026-07-02_
+  We treat a job as having a single live estimate chain (then change orders), not multiple
+  concurrent open estimates — but it's unclear whether that's a real backend invariant or just
+  a UI-only affordance block. The atom-on-approval crystallization decision leans on this
+  (no concurrent draft estimates ⇒ no duplicate speculative atoms), so it's worth confirming the
+  constraint actually holds server-side. See the single-live-estimate memory note.
+  _Done when:_ we've confirmed where (if anywhere) the backend enforces one-open-chain, and
+  either documented it as a real invariant or filed the gap.
+
+- **Pull `description` off `ServiceItem`; specifics live on the Task/line description.** — _added 2026-07-02_
+  A `ServiceItem` is meant to be a *rough work type* (name + rate scheme); the per-job specifics
+  belong on the **Task description**, sourced from the estimate line's editable description. So
+  `ServiceItem.description` should be removed. Confirmed direction from the add-line/picker work: a
+  service-picked estimate line prefills its description from the ServiceItem *name*, the user can
+  edit it, and at crystallization `Task.name` = the ServiceItem's name while `Task.description` = the
+  line's description. Once the line description carries the specifics, `ServiceItem.description` is
+  redundant. (Ties to the add-line/picker plan and the earlier "service item = rough work type" note.)
+  _Done when:_ `ServiceItem.description` is removed (migration + code + fixtures) and specifics are
+  sourced from the Task/line description everywhere.
+
+- **Job status can be changed independently of estimate status → incoherent states.** — _added 2026-07-03_
+  Observed in browser: while testing acceptance crystallization, a Job was set directly to **Approved**
+  while its Estimate was still **Open**, and the transition was allowed. This is incoherent: Job
+  approval is meant to flow from **estimate acceptance** (the `estimate_accepted` signal both approves
+  the Job *and* runs `EstimateAcceptanceService.on_accept` crystallization). Setting `Job → Approved`
+  directly bypasses acceptance entirely — no crystallization runs, the estimate never leaves Open, and
+  the Job looks committed with nothing crystallized behind it. Decide the coupling: either gate direct
+  Job status transitions so `approved` can only be reached via estimate acceptance (not a bare
+  status edit), or make a direct Job approval with a live Open estimate a validation error, or reconcile
+  the two on transition. Also audit which UI affordance let the Job status be edited directly here.
+  _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
+  live estimate, or the transition drives acceptance) and the stray edit path is closed.
+
+- **Config page: ServiceItem's rate-scheme picker is stale after editing a RateScheme.** — _added 2026-07-03_
+  On the settings/config page, after updating a `RateScheme` and then adding a `ServiceItem`, the
+  scheme picker showed the *old* scheme values until a full page refresh. The scheme list the
+  ServiceItem form reads is fetched once and not re-fetched when a scheme is edited elsewhere on the
+  page. It should refresh automatically — ideally not a page-level reload but a targeted re-fetch of
+  the schemes list when a scheme is created/updated (e.g. the RateScheme save handler notifies/reloads
+  the shared schemes store, or the ServiceItem form re-fetches on open). Look at the config-page
+  components that own the schemes list and the ServiceItem-add form.
+  _Done when:_ editing a RateScheme makes the updated values available to the ServiceItem form (and any
+  other scheme consumers on the page) without a manual refresh.
+
+- **Empty modifier row (blank name + 0%) shouldn't be saved.** — _added 2026-07-03_
+  When editing a `RateScheme`'s modifiers, a blank modifier row — empty name/key and `0` percent —
+  gets sent to the backend and persisted as a junk `{key: '', percent: 0}` entry. The form should drop
+  empty rows before saving (a modifier with no name and 0% is a no-op). Filter them out client-side in
+  the scheme editor's save handler; optionally also guard server-side in `RateScheme` cleaning so a
+  stray empty modifier never persists. Watch the `modifiers` JSON shape (`[{key, percent}, ...]`).
+  _Done when:_ saving a scheme never persists a blank/zero modifier row.
+
+- **No shared `<Modal>` shell — every modal hand-rolls the same overlay CSS.** — _added 2026-07-03_
+  Each modal component copies its own `.overlay { position:fixed; inset:0; display:flex;
+  align-items:center; justify-content:center }` + `.modal { max-width:500px; width:90% }`. This
+  copy-paste is how `PriceListPicker` drifted (top-anchored, 560px) and got visibly out of place vs the
+  form modals (fixed in `fecccc86`). Extract a shared `<Modal>` shell (overlay + centered box +
+  `modalKeys` wiring) that every modal imports, then sweep the existing modals (`LineItemModal`,
+  `MaterialModal`, `FeeModal`, `EstimateAddLineForm`, `AdjustmentModal`, `AssignModal`,
+  `RecordPaymentModal`, `PriceListPicker`, …) to use it so geometry can't drift again. Mechanical but
+  touches many files.
+  _Done when:_ a single shared modal shell owns overlay/positioning and the modals adopt it.
+
+- **Sweep for Svelte 5 numeric `<select>` strict-=== mismatches.** — _added 2026-07-03_
+  Recurring bug: a `<select bind:value={x}>` whose options use a **numeric** value expression
+  (`<option value={row.id}>` where `id` is a number) silently shows **no selection** when `x` is set to
+  a **string** (e.g. `String(presetId)`, or a value read from `/api/settings/` as a string). Svelte 5
+  matches the bound value to option values with strict `===`, so `'5' !== 5`. Already bitten and fixed
+  in: `MaterialModal`, `EstimateAddLineForm` (AC selects), and `WorkItemForm` (template pulldown,
+  `25107590`). Do a proactive pass: grep for `<option value={` with a numeric field and check the bound
+  var's type on every preset/prefill path (manual user-picking usually works because it sets the numeric
+  option value directly — it's the **programmatic set** that breaks). Fix by keeping the bound value the
+  **same type as the option value** (prefer numeric to match numeric ids; don't `String()` it).
+  Candidate spots: any modal/form with a template / rate-scheme / accounting-category / job / contact
+  `<select>` that gets a preset. Consider a tiny shared select helper or a lint/test guard to prevent
+  regressions.
+  _Done when:_ every prefilled `<select>` selects its preset, and the type-match convention is
+  documented (or enforced) so new selects don't reintroduce it.
+
+- **`WizardLineItemCard` `state_referenced_locally` warnings on `lastSyncedSnapshot` init.** — _added 2026-07-03_
+  `frontend/src/components/wizards/WizardLineItemCard.svelte` lines ~20–25 initialize
+  `lastSyncedSnapshot = $state({ description: lineItem.description, qty: lineItem.qty, ... })`, which
+  reads the `lineItem` prop at init and triggers Svelte 5's `state_referenced_locally` build warning
+  (only the initial prop value is captured). Harmless today — the re-sync `$effect` below already keeps
+  the snapshot current — but noisy in the build. Clean up so the initializer doesn't read a prop
+  directly (e.g. derive/seed it inside the effect, or restructure the snapshot). Behavior must stay
+  identical (the snapshot is the clean/in-sync baseline the re-sync effect compares against).
+  _Done when:_ the three warnings are gone and the card's dirty/re-sync behavior is unchanged (tests
+  still green).
+
+- **Verify whether RateScheme supersession repoints its ServiceItem catalog users.** — _added 2026-07-03_
+  (Relocated from the now-retired add-line/picker plan.) `RateScheme.supersede()` (`apps/jobs/models.py`)
+  renames the old scheme, mints the new one, and sets `old.replaced_by` — but as read it does **not**
+  repoint `ServiceItem.rate_scheme` (or `Task.rate_scheme`). RM recalls supersession *used to* "update
+  all its catalog users." Confirm whether any catalog-repoint mechanism still exists and is test-covered.
+  **Not blocking:** the deferred-service crystallization handles it either way — if catalog users are
+  repointed, a crystallized Task just reflects the new rate (human reconciles at invoice); if not, the
+  `generate_task(..., allow_superseded_scheme=True)` bypass keeps acceptance from aborting. This is only
+  a "know the true behavior" verification. (Search: `replaced_by` / `supersede` on `RateScheme` and its
+  `ServiceItem` users.)
+  _Done when:_ the supersede→catalog-user behavior is confirmed and documented (repoints or not), and
+  matched by a test.
+
+- **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
+  RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it
+  never needs redoing:
+  - *Origin:* the job-owns-atoms lenses spec (`2026-06-29-job-owns-atoms-documents-as-lenses.md`,
+    commit `23345f83`; retired from the tree in `c85fac6c`) defined Fee with "an optional `task` link
+    (for 'the work behind it')". Motive: `flat_fee` was removed from RateScheme ("its job is now
+    Fee's"); "Task stays pure work; money never sits on it" — so the link was the designed home for
+    **fixed-price work**: Task carries the labor (bleps/schedule/completion), Fee carries the frozen
+    price. Successor to the May flat-fee-on-task design (`2026-05-17-flat-fee-pricing-design.md`).
+  - *Why it's dormant:* both planned hooks fell out during implementation. Acceptance was to "link a
+    task if one was named" but `EstimateLineItem` never grew a task-naming field; the impl plan's
+    Task 7.3 specced `FeeModal` with an "optional task link" but the modal shipped with only an unused
+    `taskId` prop. No production reader exists: the invoice wizard pool is task-grouped yet files every
+    fee under a flat "Fees" group (`task_id: None`); only `validate_data` reads it (job-consistency).
+    The API PATCH accepts `task` but no UI sends it.
+  - *The unsolved design hole (why not to wire it casually):* a fee-linked Task is still metered
+    (`rate_scheme` NOT NULL), so it would bill in the invoice pool *alongside* the Fee that is its
+    price — fixed-price work needs either a $0/internal-scheme convention or pool logic suppressing a
+    task's metered billing when a linked Fee covers it. Neither exists.
+  - *Hazards while it sleeps:* it's a **OneToOne** — any future Fee-retirement state must null the link
+    or a retired fee blocks a replacement fee on the same task (MySQL: no conditional uniqueness; see
+    `docs/plans/2026-07-03-deletion-doctrine-named-events.md`). `Task.delete()` SET_NULLs it.
+  _Done when:_ fixed-price work gets designed as its own feature (Fee↔Task pairing + the
+  pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
+  that design's place.

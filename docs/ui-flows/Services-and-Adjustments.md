@@ -62,7 +62,7 @@ phase plans in `docs/plans/`.
 ## Dev note — percentage rate schemes are document-only
 
 A `percentage` Rate Scheme is meaningless on a task. The backend rejects assigning one
-to a Task/PlanTask (HTTP 400) and excludes it from
+to a Task (HTTP 400) and excludes it from
 `GET /api/rate-schemes/?task_applicable=true`. **Known gap (verify / likely bug):** the
 task rate picker (`WorkItemForm`) and the Service Item form's rate picker
 (`ServiceItemManager`) currently fetch `/api/rate-schemes/` *without*
@@ -85,8 +85,9 @@ Without these, whole branches below are silent no-ops:
 - [ ] **A draft Estimate** with line items spanning both categories — e.g. a
   **Labor** line `qty 2 × $50 = $100` and a **Materials** line `qty 1 × $40 =
   $40` (base subtotal **$140**). Adjustment math in §3 assumes these numbers.
-  *(Estimate lines are now a projection of the Plan — author them via the worksheet /
-  "Customize Client View" wizard, not directly on the estimate; see §3 note.)*
+  *(Author base lines via the estimate detail page's **Add line** picker or the
+  **Show Tasks & Materials** wizard — see `Add-Line-and-Work-Authoring.md`; the
+  old worksheet/"Plan" layer was removed in the job-owns-atoms refactor.)*
 - [ ] **An accepted Estimate that carries a percentage adjustment**, plus a
   **draft Invoice** on the same Job — required for the agreement-surfacing /
   wizard panel (§8).
@@ -142,11 +143,11 @@ Entry: task list **Add Work Item** (`#/jobs/{id}/tasklist`, `WorkItemForm`); and
 
 ## 3. Add an adjustment to a draft estimate (Jobs / PM persona)
 
-Entry: estimate detail / Client View (`#/estimates/{id}`) on a **draft** estimate. The
+Entry: estimate detail (`#/estimates/{id}`) on a **draft** estimate. The
 **Add Adjustment** button shows only when `can_manage_jobs` (or PM) **and** the
-estimate is `draft`. *(Note: the Client View no longer has an "Add Line Item" button —
-base lines come from the Plan via the wizard; **Add Adjustment** is the one authoring
-control here, alongside reorder arrows and the "out of sync with atoms" marker.)*
+estimate is `draft`. *(Base lines are authored here too — the **Add line** picker
+and the **Show Tasks & Materials** wizard; see `Add-Line-and-Work-Authoring.md` —
+alongside reorder arrows and the "out of sync with atoms" marker.)*
 
 - [ ] **Open the modal.** **Add Adjustment** opens **"Add Percentage Adjustment"**
   with a **rate dropdown** (placeholder **"-- Select a rate --"**, lists only

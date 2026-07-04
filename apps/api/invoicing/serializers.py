@@ -26,14 +26,27 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
 
+    def _resolve_or_none(self, obj):
+        # A dangling row (atom deleted out from under the claim — pre-purge
+        # data, or a race) must render as null, never 500 the list endpoint.
+        from django.core.exceptions import ObjectDoesNotExist
+        try:
+            return obj.resolve()
+        except ObjectDoesNotExist:
+            return None
+
     def get_description(self, obj):
         from apps.invoicing.services import InvoiceWizardService
-        instance = obj.resolve()
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
         return InvoiceWizardService._atom_description(instance)
 
     def get_computed_amount(self, obj):
         from apps.invoicing.services import InvoiceWizardService
-        instance = obj.resolve()
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
         return str(InvoiceWizardService._atom_computed_amount(instance))
 
 
