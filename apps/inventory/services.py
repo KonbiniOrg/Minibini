@@ -198,7 +198,6 @@ class InventoryService:
             # the unique constraint while discard still holds it.
             record_history(
                 'inventoryitem', entry_type='action', object_id=discard.pk,
-                user=user,
                 changes={
                     '_action': 'Merge (discarded)',
                     'qty_change': str((-moved).quantize(Decimal('0.01'))),
@@ -217,7 +216,7 @@ class InventoryService:
             keep.refresh_from_db()
             InventoryService._record_qoh_history(
                 keep, moved, action='Merge (received)',
-                reason=f'Merged from {discard_code}', user=user)
+                reason=f'Merged from {discard_code}')
         return keep
 
     @staticmethod

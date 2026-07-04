@@ -56,13 +56,25 @@ class EstimateService:
         """Create a new draft Estimate for a job by PK.
 
         The estimate number IS the job number; the revision lives in the
-        separate ``version`` field.
+        separate ``version`` field. Enforces the one-live-estimate-tree-per-job
+        invariant: a second concurrent estimate would let acceptance
+        crystallize duplicate speculative atoms — new versions come from
+        ``revise_estimate`` (which supersedes the parent), never a second
+        tree. (``revise_estimate`` creates its revision directly, so the
+        transient two-live-rows moment inside that operation is exempt.)
         """
         from apps.jobs.models import Job
         try:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
+
+        if Estimate.objects.filter(job=job).exclude(
+            status=Estimate.STATUS_SUPERSEDED
+        ).exists():
+            raise ValidationError(
+                'This job already has an estimate. Revise the existing one instead.'
+            )
 
         estimate = Estimate.objects.create(
             job=job,

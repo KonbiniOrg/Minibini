@@ -1078,9 +1078,11 @@ IMAP-SMTP machinery and tend to be worked together.
   deliberately not used: `revise_estimate` legitimately holds two live rows for
   a moment (it creates the revision before superseding the parent), so the
   invariant is really "new estimate *trees* come only through create_for_job;
-  new *versions* only through revise_estimate". Related standing caveat: accept
-  does not supersede sibling *open* estimates — creation-time enforcement is
-  what keeps siblings from existing in the first place.
+  new *versions* only through revise_estimate" — and even after supersession a
+  second v1 tree can't exist ((estimate_number, version) uniqueness), so
+  revision is the only continuation. Related standing caveat: accept does not
+  supersede sibling *open* estimates — creation-time enforcement is what keeps
+  siblings from existing in the first place.
 
 - **Pull `description` off `ServiceItem`; specifics live on the Task/line description.** — _added 2026-07-02_
   A `ServiceItem` is meant to be a *rough work type* (name + rate scheme); the per-job specifics
