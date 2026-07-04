@@ -1154,7 +1154,15 @@ def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
 
     quantity comes from the line qty (>0) or defaults to 1; unit_rate is the
     line price; the fee carries the services AccountingCategory.
+
+    A non-positive price emits nothing (returns None): validate_data requires
+    Fee.unit_rate > 0, and a $0 fixed charge carries no billing information —
+    the estimate line itself is kept, just unclaimed.
     """
+    if not li['price'] or li['price'] <= 0:
+        print(f"  fee skipped (non-positive price {li['price']}): "
+              f"{(li['description'] or '')[:60]!r}")
+        return None
     qty = li['qty'] if (li['qty'] and li['qty'] > 0) else Decimal('1')
     fee_pk = c.next_pk('jobs.fee')
     c.add_fixture('jobs.fee', fee_pk, {

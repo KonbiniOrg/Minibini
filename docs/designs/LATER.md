@@ -940,18 +940,15 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ a user can add a PO line for a job and explicitly choose which
   existing pending material it links to (or opt to create a new one), with tests.
 
-- **nealsdata converter mints a zero-rate flat-fee ServiceItem for $0 source lines.** — _added 2026-06-23_
-  After the ServiceItem reframe, the converter (`nealsdata/converter/build.py`,
-  `_match_seed_scheme`) mints one flat-fee `ServiceItem` per distinct price; a
-  source line priced at $0 yields a `rate=0.00` flat-fee service (seen in
-  regenerated `fixtures/large_datasets/nealsmall.json`, pk 18 "Flat Fee $0.00").
-  `validate_data` flags flat-fee services with non-positive `rate`, so this is
-  discoverable, but it's untidy dev seed data. Lowest-risk fix: a converter guard
-  that skips emitting a flat-fee service when `rate <= 0` (and logs the source
-  line) or routes it to a documented sentinel. Dev-data only; not test-path.
-  _Done when:_ regenerating the neals fixtures produces no zero-rate flat-fee
-  ServiceItem (or the case is deliberately documented), and `validate_data` is
-  clean on the regenerated dev data.
+- ~~**nealsdata converter mints a zero-rate flat-fee ServiceItem for $0 source lines.**~~ — _mooted/guarded 2026-07-04_
+  The original problem no longer exists: the Fee reframe removed flat-fee scheme
+  minting from the converter entirely (fixed charges emit `jobs.Fee` atoms, not
+  schemes — `_line_billing`). Its successor case — a $0 source line emitting a
+  `unit_rate=0.00` Fee that `validate_data.check_fees` flags — is now guarded:
+  `_emit_fee` skips (and logs) non-positive prices, keeping the estimate line
+  unclaimed. `fixtures/large_datasets/nealsmall.json` still contains old-era
+  "Flat Fee $X" scheme rows; it's referenced by nothing and will be replaced on
+  the next converter regeneration.
 
 - **Percentage-adjustments cleanup bundle (Phase 2 deferred minors).** — _added 2026-06-23_
   Non-blocking follow-ups from the Phase 2 (percentage adjustments) whole-branch
