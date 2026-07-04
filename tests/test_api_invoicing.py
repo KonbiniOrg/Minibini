@@ -9,6 +9,61 @@ from apps.jobs.models import Job, RateScheme
 from apps.inventory.models import Material
 
 
+# ---------------------------------------------------------------------------
+# Shared fixture helpers for adjustment tests
+# ---------------------------------------------------------------------------
+
+def _make_adjustment_fixture(test_case):
+    """Create job + estimate + accepted estimate + accounting cats + PERCENTAGE
+    service on test_case. Returns (job, cat, svc, estimate).
+    Called from setUp; populates test_case attributes."""
+    from apps.contacts.models import Contact
+    from apps.core.models import AccountingCategory
+    from apps.estimates.models import Estimate, EstimateLineItem
+
+    contact = Contact.objects.create(
+        first_name='Adj', last_name='Test',
+        email='adj@test.com', mobile_number='555-0001',
+    )
+    cat = AccountingCategory.objects.create(name='AdjCat', code='ADJC')
+    svc = RateScheme.objects.create(
+        name='Rush Fee', algorithm=RateScheme.PERCENTAGE,
+        rate=Decimal('10.00'), unit_label='%',
+        accounting_category=cat,
+    )
+    job = Job.objects.create(
+        contact=contact, status=Job.STATUS_APPROVED,
+        job_number='JOB-ADJ-001',
+    )
+    estimate = Estimate.objects.create(
+        job=job, status=Estimate.STATUS_ACCEPTED,
+        estimate_number='EST-ADJ-001',
+    )
+    # one normal line + one adjustment line
+    base_line = EstimateLineItem.objects.create(
+        estimate=estimate, line_number=1,
+        qty=Decimal('1'), units='hours',
+        description='Labor', price=Decimal('100.00'),
+        accounting_category=cat,
+    )
+    adj_line = EstimateLineItem.objects.create(
+        estimate=estimate, line_number=2,
+        qty=Decimal('1'), units='%',
+        description='Rush Fee', price=Decimal('10.00'),
+        accounting_category=cat,
+        adjustment_service=svc,
+    )
+    adj_line.adjustment_target_categories.set([cat.pk])
+
+    test_case.adj_contact = contact
+    test_case.adj_cat = cat
+    test_case.adj_svc = svc
+    test_case.adj_job = job
+    test_case.adj_estimate = estimate
+    test_case.adj_base_line = base_line
+    test_case.adj_adj_line = adj_line
+
+
 class InvoiceAPITest(BaseTestCase):
 
     def setUp(self):
@@ -136,9 +191,15 @@ class InvoiceSendTest(BaseTestCase):
             job=self.job, invoice_number='INV-SEND-001',
             status=Invoice.STATUS_DRAFT,
         )
+        # Every line needs an accounting category or the send-gate blocks it.
+        from apps.core.models import AccountingCategory
+        send_cat = AccountingCategory.objects.create(
+            name='Send Test', code='SNDT',
+        )
         InvoiceLineItem.objects.create(
             invoice=self.invoice, qty=Decimal('1.00'),
             price=Decimal('100.00'), description='Test',
+            accounting_category=send_cat,
         )
 
     def test_send_defaults_returns_form_prefills(self):
@@ -444,3 +505,204 @@ class BillabilityGateTest(BaseTestCase):
             InvoiceWizardService.add_atoms_to_line_item(
                 existing_li, [{'type': 'material', 'id': self.pending_material.pk}],
             )
+
+
+# ---------------------------------------------------------------------------
+# Task 7: compose_agreement adjustment surfacing
+# ---------------------------------------------------------------------------
+
+class ComposeAgreementAdjustmentTest(BaseTestCase):
+    """compose_agreement must surface is_adjustment / adjustment_service_id /
+    percent / target_category_ids on estimate-origin lines."""
+
+    def setUp(self):
+        super().setUp()
+        _make_adjustment_fixture(self)
+
+    def test_compose_agreement_marks_adjustment_lines(self):
+        from apps.estimates.agreement import compose_agreement
+        result = compose_agreement(self.adj_job)
+        adj = [l for l in result['lines'] if l.get('is_adjustment')]
+        self.assertEqual(len(adj), 1)
+        self.assertIn('adjustment_service_id', adj[0])
+        self.assertIn('percent', adj[0])
+
+    def test_compose_agreement_adjustment_fields_values(self):
+        from apps.estimates.agreement import compose_agreement
+        result = compose_agreement(self.adj_job)
+        adj = [l for l in result['lines'] if l.get('is_adjustment')][0]
+        self.assertEqual(adj['adjustment_service_id'], self.adj_svc.pk)
+        self.assertEqual(adj['percent'], self.adj_svc.rate)
+        self.assertIn(self.adj_cat.pk, adj['target_category_ids'])
+
+    def test_compose_agreement_non_adjustment_lines_have_falsey_is_adjustment(self):
+        from apps.estimates.agreement import compose_agreement
+        result = compose_agreement(self.adj_job)
+        non_adj = [l for l in result['lines'] if not l.get('is_adjustment')]
+        self.assertTrue(len(non_adj) >= 1)
+        for line in non_adj:
+            self.assertFalse(line.get('is_adjustment'))
+            self.assertIsNone(line.get('adjustment_service_id'))
+            self.assertEqual(line.get('target_category_ids'), [])
+
+
+# ---------------------------------------------------------------------------
+# Task 7: InvoiceService adjustment methods (service layer)
+# ---------------------------------------------------------------------------
+
+class InvoiceAdjustmentServiceTest(BaseTestCase):
+    """InvoiceService.add_adjustment_line and auto-recompute."""
+
+    def setUp(self):
+        super().setUp()
+        _make_adjustment_fixture(self)
+        self.invoice = Invoice.objects.create(
+            job=self.adj_job, status=Invoice.STATUS_DRAFT,
+        )
+        # seed a base line so recompute has something to sum
+        InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=1,
+            qty=Decimal('1'), units='hours',
+            description='Labor', price=Decimal('200.00'),
+            accounting_category=self.adj_cat,
+        )
+
+    def test_add_adjustment_line_creates_line(self):
+        from apps.invoicing.services import InvoiceService
+        line = InvoiceService.add_adjustment_line(
+            self.invoice,
+            adjustment_service_id=self.adj_svc.pk,
+            target_category_ids=[self.adj_cat.pk],
+        )
+        self.assertIsNotNone(line.pk)
+        self.assertEqual(line.adjustment_service_id, self.adj_svc.pk)
+
+    def test_add_adjustment_line_computes_price(self):
+        from apps.invoicing.services import InvoiceService
+        line = InvoiceService.add_adjustment_line(
+            self.invoice,
+            adjustment_service_id=self.adj_svc.pk,
+            target_category_ids=[self.adj_cat.pk],
+        )
+        # 10% of $200 = $20
+        self.assertEqual(line.price, Decimal('20.00'))
+
+    def test_add_adjustment_line_rejects_non_draft(self):
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceService
+        Invoice.objects.filter(pk=self.invoice.pk).update(status=Invoice.STATUS_OPEN)
+        self.invoice.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            InvoiceService.add_adjustment_line(
+                self.invoice,
+                adjustment_service_id=self.adj_svc.pk,
+            )
+
+    def test_add_adjustment_line_rejects_non_percentage_service(self):
+        from django.core.exceptions import ValidationError
+        from apps.invoicing.services import InvoiceService
+        from apps.core.models import AccountingCategory
+        flat_svc = RateScheme.objects.create(
+            name='Flat Labor', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('50.00'), unit_label='ea',
+            accounting_category=self.adj_cat,
+        )
+        with self.assertRaises(ValidationError):
+            InvoiceService.add_adjustment_line(
+                self.invoice,
+                adjustment_service_id=flat_svc.pk,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Invoice API actions for adjustments
+# ---------------------------------------------------------------------------
+
+class InvoiceAdjustmentAPITest(BaseTestCase):
+    """POST /api/invoices/{id}/adjustment-lines/ and
+    GET  /api/invoices/{id}/agreement-adjustments/"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        _make_adjustment_fixture(self)
+        self.invoice = Invoice.objects.create(
+            job=self.adj_job, status=Invoice.STATUS_DRAFT,
+        )
+        # seed a base line for adjustment to sum
+        self.base_li = InvoiceLineItem.objects.create(
+            invoice=self.invoice, line_number=1,
+            qty=Decimal('1'), units='hours',
+            description='Labor', price=Decimal('200.00'),
+            accounting_category=self.adj_cat,
+        )
+
+    def test_post_adjustment_lines_returns_201(self):
+        resp = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/adjustment-lines/',
+            {
+                'adjustment_service': self.adj_svc.pk,
+                'target_category_ids': [self.adj_cat.pk],
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertIn('line_item_id', resp.data)
+        self.assertEqual(resp.data['adjustment_service'], self.adj_svc.pk)
+
+    def test_post_adjustment_lines_non_draft_returns_400(self):
+        Invoice.objects.filter(pk=self.invoice.pk).update(status=Invoice.STATUS_OPEN)
+        resp = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/adjustment-lines/',
+            {'adjustment_service': self.adj_svc.pk},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_recalculate_endpoint_removed(self):
+        """The recalculate endpoint no longer exists (adjustments auto-recompute)."""
+        from apps.invoicing.services import InvoiceService
+        adj_line = InvoiceService.add_adjustment_line(
+            self.invoice,
+            adjustment_service_id=self.adj_svc.pk,
+            target_category_ids=[self.adj_cat.pk],
+        )
+        resp = self.client.post(
+            f'/api/invoices/{self.invoice.pk}/line-items/{adj_line.pk}/recalculate/',
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_agreement_adjustments_lists_adjustments(self):
+        resp = self.client.get(
+            f'/api/invoices/{self.invoice.pk}/agreement-adjustments/',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        adjustments = resp.data['adjustments']
+        self.assertEqual(len(adjustments), 1)
+        adj = adjustments[0]
+        self.assertEqual(adj['adjustment_service_id'], self.adj_svc.pk)
+        self.assertIn('percent', adj)
+        self.assertIn('target_category_ids', adj)
+
+    def test_agreement_adjustments_already_added_false_initially(self):
+        resp = self.client.get(
+            f'/api/invoices/{self.invoice.pk}/agreement-adjustments/',
+        )
+        self.assertEqual(resp.status_code, 200)
+        adj = resp.data['adjustments'][0]
+        self.assertFalse(adj['already_added'])
+
+    def test_agreement_adjustments_already_added_true_after_adding(self):
+        from apps.invoicing.services import InvoiceService
+        InvoiceService.add_adjustment_line(
+            self.invoice,
+            adjustment_service_id=self.adj_svc.pk,
+        )
+        resp = self.client.get(
+            f'/api/invoices/{self.invoice.pk}/agreement-adjustments/',
+        )
+        self.assertEqual(resp.status_code, 200)
+        adj = resp.data['adjustments'][0]
+        self.assertTrue(adj['already_added'])

@@ -45,6 +45,14 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             qs = qs.annotate(_em_count=Count('earmark')).exclude(
                 is_catalog=False, qty_on_hand=Decimal('0.00'), _em_count=0,
             )
+        is_catalog_param = self.request.query_params.get('is_catalog')
+        if is_catalog_param is not None:
+            is_catalog_value = is_catalog_param.lower() in ('true', '1', 'yes')
+            qs = qs.filter(is_catalog=is_catalog_value)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(Q(code__icontains=search) | Q(description__icontains=search))
         return qs
 
     def get_permissions(self):
@@ -53,6 +61,20 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancialsOrConfig()]
+
+    def destroy(self, request, *args, **kwargs):
+        """Hard delete is mistake correction: never-referenced rows only.
+
+        Referenced items retire by deactivation (is_active) or live on as
+        hidden finished lots — inventory rows are shop history.
+        """
+        item = self.get_object()
+        try:
+            InventoryService.assert_item_deletable(item)
+        except DjangoValidationError as e:
+            msg = e.message if hasattr(e, 'message') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         item = InventoryService.create_item(**serializer.validated_data)
@@ -73,11 +95,9 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         except DjangoValidationError as e:
             msg = e.message if hasattr(e, 'message') else str(e)
             return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            item.refresh_from_db()
-        except InventoryItem.DoesNotExist:
-            # A reference-free lot is collected (deleted) on write-off.
-            return Response({'message': 'Item written off and removed.', 'deleted': True})
+        # The row always survives a write-off now (finished lots are kept as
+        # hidden history, never auto-collected).
+        item.refresh_from_db()
         return Response(self.get_serializer(item).data)
 
     @action(detail=False, methods=['post'], url_path='merge')

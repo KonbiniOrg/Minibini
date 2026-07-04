@@ -15,7 +15,9 @@ const OUTSTANDING = [
 beforeEach(() => {
   api.get.mockReset();
   getPaymentAccounts.mockReset();
-  getPaymentAccounts.mockResolvedValue([]);
+  getPaymentAccounts.mockResolvedValue([
+    { qbo_account_id: '35', display_name: 'Checking', account_type: 'Bank' },
+  ]);
   api.get.mockImplementation((url) => {
     if (url.includes('/api/expenses/') && url.includes('status=submitted')) return Promise.resolve({ results: OUTSTANDING });
     return Promise.resolve({ results: [] });
@@ -34,5 +36,14 @@ describe('UserReimbursementPanel', () => {
     // [0] is the header select-all; [1] is the first row.
     await fireEvent.click(checkboxes[1]);
     expect(await findByText(/Reimburse selected/)).toBeInTheDocument();
+  });
+
+  it('blocks reimbursing with a message when no payment accounts are configured', async () => {
+    getPaymentAccounts.mockResolvedValue([]);
+    const { findAllByRole, findByText, queryByText } = render(UserReimbursementPanel, { props: { user: { id: 7 } } });
+    const checkboxes = await findAllByRole('checkbox');
+    await fireEvent.click(checkboxes[1]);
+    expect(await findByText(/Configure payment accounts/i)).toBeInTheDocument();
+    expect(queryByText(/Reimburse selected/)).toBeNull();
   });
 });

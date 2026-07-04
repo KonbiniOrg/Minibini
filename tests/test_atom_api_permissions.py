@@ -87,12 +87,11 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
     LIST_ENDPOINTS = [
         '/api/jobs/',
         '/api/estimates/',
-        '/api/est-worksheets/',
         '/api/contacts/',
         '/api/businesses/',
         '/api/payment-terms/',
         '/api/work-templates/',
-        '/api/task-templates/',
+        '/api/service-items/',
         '/api/accounting-categories/',
         '/api/inventory/',
         '/api/invoices/',
@@ -110,8 +109,6 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         '/api/jobs/1/tasks/',
         '/api/estimates/1/',
         '/api/estimates/1/line-items/',
-        '/api/est-worksheets/1/',
-        '/api/est-worksheets/1/tasks/',
         '/api/bleps/1/',
         '/api/contacts/1/',
         '/api/contacts/1/history/',
@@ -133,7 +130,7 @@ class TestAuthenticatedOnlyAPI(AtomPermissionTestBase):
         ('post', '/api/jobs/1/notes/', {'text': 'test note'}),
         ('post', '/api/contacts/1/notes/', {'text': 'test note'}),
         ('post', '/api/businesses/1/notes/', {'text': 'test note'}),
-        ('post', '/api/jobs/1/add-from-template/', {'task_template_id': 1}),
+        ('post', '/api/jobs/1/add-from-template/', {'service_item_id': 1}),
         # Adding a task to a job is open to any authenticated user.
         ('post', '/api/jobs/1/tasks/', {'name': 'New'}),
         # Editing and deleting a task are open to any authenticated user.
@@ -223,14 +220,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('post', '/api/estimates/1/revise/', {}),
     ]
 
-    # ── Worksheet writes ────────────────────────────────────────────
-    WORKSHEET_WRITE_ENDPOINTS = [
-        ('post', '/api/est-worksheets/', {'job': 1}),
-        ('patch', '/api/est-worksheets/1/', {'notes': 'test'}),
-        ('delete', '/api/est-worksheets/1/', None),
-        ('post', '/api/est-worksheets/1/tasks/', {'name': 'Test'}),
-    ]
-
     # ── Job task sub-resource + population writes (replaces WO endpoints) ──
     # Note: editing/deleting a task (PATCH/DELETE /api/jobs/1/tasks/1/) is now
     # IsAuthenticated (see TestAuthenticatedOnlyAPI.WRITE_ENDPOINTS). Cancelling
@@ -239,7 +228,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
         ('post', '/api/tasks/1/cancel/', {}),
         ('post', '/api/jobs/1/work-complete/', {}),
         ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
-        ('post', '/api/jobs/1/copy-from-worksheet/', {'worksheet_id': 1}),
         ('post', '/api/jobs/1/reorder-tasks/', {'task_id': 1, 'direction': 'up'}),
     ]
 
@@ -255,7 +243,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
             self.JOB_WRITE_ENDPOINTS
             + self.CONTACT_WRITE_ENDPOINTS
             + self.ESTIMATE_WRITE_ENDPOINTS
-            + self.WORKSHEET_WRITE_ENDPOINTS
             + self.WORK_ORDER_WRITE_ENDPOINTS
             + self.EMAIL_WRITE_ENDPOINTS
         )
@@ -275,12 +262,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
     def test_can_manage_jobs_allows_estimate_writes(self):
         user = self.users['can_manage_jobs']
         for method, url, data in self.ESTIMATE_WRITE_ENDPOINTS:
-            with self.subTest(url=url, method=method):
-                self.assert_allowed(user, method, url, data)
-
-    def test_can_manage_jobs_allows_worksheet_writes(self):
-        user = self.users['can_manage_jobs']
-        for method, url, data in self.WORKSHEET_WRITE_ENDPOINTS:
             with self.subTest(url=url, method=method):
                 self.assert_allowed(user, method, url, data)
 
@@ -308,11 +289,6 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
 
     def test_bare_user_denied_estimate_writes(self):
         for method, url, data in self.ESTIMATE_WRITE_ENDPOINTS:
-            with self.subTest(url=url, method=method):
-                self.assert_denied(self.bare_user, method, url, data)
-
-    def test_bare_user_denied_worksheet_writes(self):
-        for method, url, data in self.WORKSHEET_WRITE_ENDPOINTS:
             with self.subTest(url=url, method=method):
                 self.assert_denied(self.bare_user, method, url, data)
 
@@ -456,9 +432,9 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
         ('post', '/api/work-templates/', {'template_name': 'Test'}),
         ('patch', '/api/work-templates/1/', {'template_name': 'Updated'}),
         ('delete', '/api/work-templates/1/', None),
-        ('post', '/api/task-templates/', {'template_name': 'Test'}),
-        ('patch', '/api/task-templates/1/', {'template_name': 'Updated'}),
-        ('delete', '/api/task-templates/1/', None),
+        ('post', '/api/service-items/', {'template_name': 'Test'}),
+        ('patch', '/api/service-items/1/', {'template_name': 'Updated'}),
+        ('delete', '/api/service-items/1/', None),
         ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ('patch', '/api/accounting-categories/1/', {'name': 'Updated'}),
         ('delete', '/api/accounting-categories/1/', None),
@@ -493,9 +469,12 @@ class TestCanManageConfigAPI(AtomPermissionTestBase):
 
     def test_wrong_atom_manage_jobs_denied_template_writes(self):
         user = self.users['can_manage_jobs']
+        # NOTE: ServiceItem (saved-work catalog) *create* is intentionally NOT
+        # config-gated — a plan-builder (can_manage_jobs) may save to the catalog
+        # inline (see CanManageJobsOrConfig + test_api_templates_config). So
+        # /api/service-items/ POST is allowed and excluded from this denied set.
         sample = [
             ('post', '/api/work-templates/', {'template_name': 'Test'}),
-            ('post', '/api/task-templates/', {'template_name': 'Test'}),
             ('post', '/api/accounting-categories/', {'name': 'Test'}),
         ]
         for method, url, data in sample:

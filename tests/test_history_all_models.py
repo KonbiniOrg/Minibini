@@ -1,6 +1,6 @@
 from django.test import TestCase
 from apps.jobs.models import Job, Task
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate
 from apps.invoicing.models import Invoice
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.contacts.models import Contact, Business
@@ -42,12 +42,6 @@ class AllTrackedModelsTest(TestCase):
         for model, pk in expected.items():
             with self.subTest(model=model.__name__):
                 self.assertIn(pk, model._history_exclude)
-
-    def test_estworksheet_not_tracked(self):
-        self.assertFalse(
-            getattr(EstWorksheet, '_history_tracked', False),
-            'EstWorksheet should no longer be tracked',
-        )
 
     def test_time_and_workforce_models_not_tracked(self):
         # Their lifecycle is already first-class data (status/reviewed_at/...)

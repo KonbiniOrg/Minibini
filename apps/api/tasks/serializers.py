@@ -11,6 +11,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     inventory_item_is_catalog = serializers.SerializerMethodField()
+    qty_on_hand = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
     class Meta:
@@ -19,14 +20,19 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category',
-            'consumption_state', 'restocked_qty',
+            'consumption_state', 'released_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
+            'qty_on_hand',
             'invoice',
         ]
         read_only_fields = fields
 
     def get_inventory_item_is_catalog(self, obj):
         return bool(obj.inventory_item and obj.inventory_item.is_catalog)
+
+    def get_qty_on_hand(self, obj):
+        from apps.inventory.serializer_helpers import material_qty_on_hand
+        return material_qty_on_hand(obj)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):
@@ -82,6 +88,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     active_worker_count = serializers.SerializerMethodField()
     has_bleps = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
+    claimed = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -97,8 +104,17 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'has_active_blep', 'active_worker_count', 'has_bleps',
             'can_manage',
             'invoice',
+            'claimed',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
+
+    def validate_rate_scheme(self, value):
+        from apps.jobs.models import RateScheme
+        if value and value.algorithm == RateScheme.PERCENTAGE:
+            raise serializers.ValidationError(
+                'Percentage services are document adjustments and cannot bill a task.'
+            )
+        return value
 
     def get_assignee_name(self, obj):
         if obj.assignee:
@@ -133,6 +149,11 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 
     def get_has_bleps(self, obj):
         return len(obj.blep_set.all()) > 0
+
+    def get_claimed(self, obj):
+        """True iff a non-superseded estimate on this job has claimed this task."""
+        claims = self.context.get('estimate_claims') or frozenset()
+        return ('task', obj.pk) in claims
 
 
 class TaskDetailSerializer(TaskSerializer):

@@ -1,13 +1,12 @@
 <script>
-  import { api } from '../../lib/api.js';
   import { emailApi } from '../../lib/email.js';
   import { push } from 'svelte-spa-router';
+  import JobPicker from '../../components/JobPicker.svelte';
 
   const { params = {} } = $props();
 
   let email = $state(null);
-  let jobs = $state([]);
-  let selectedJobId = $state('');
+  let selectedJobId = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let submitting = $state(false);
@@ -17,12 +16,7 @@
     loading = true;
     loadError = null;
     try {
-      const [emailData, jobsData] = await Promise.all([
-        emailApi.get(params.id),
-        api.get('/api/jobs/?page_size=500'),
-      ]);
-      email = emailData;
-      jobs = jobsData.results || [];
+      email = await emailApi.get(params.id);
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -45,12 +39,6 @@
       submitError = err.message;
       submitting = false;
     }
-  }
-
-  function truncate(text, words = 10) {
-    if (!text) return '';
-    const parts = text.split(/\s+/);
-    return parts.length <= words ? text : parts.slice(0, words).join(' ') + '…';
   }
 
   $effect(() => {
@@ -84,15 +72,8 @@
 
   <form onsubmit={handleSubmit}>
     <p>
-      <label for="job_id"><strong>Job *</strong></label><br>
-      <select id="job_id" bind:value={selectedJobId} required>
-        <option value="">-- Select a Job --</option>
-        {#each jobs as job}
-          <option value={job.job_id}>
-            {job.job_number} - {job.contact_name} - {truncate(job.description || job.name)}
-          </option>
-        {/each}
-      </select>
+      <label><strong>Job *</strong></label><br>
+      <JobPicker bind:value={selectedJobId} />
     </p>
 
     <p>

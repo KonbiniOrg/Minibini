@@ -142,6 +142,15 @@ class InvoiceLineItem(BaseLineItem):
     """Line item for invoices - inherits shared functionality from BaseLineItem."""
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    adjustment_service = models.ForeignKey(
+        'jobs.RateScheme', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='+',
+        help_text='Set when this line is a percentage adjustment (rush/discount).',
+    )
+    adjustment_target_categories = models.ManyToManyField(
+        'core.AccountingCategory', blank=True, related_name='+',
+        help_text='Categories the adjustment applies to; empty = all non-adjustment lines.',
+    )
 
     class Meta:
         db_table = 'invoice_li'
@@ -170,10 +179,12 @@ class InvoiceLineItemSource(models.Model):
     SOURCE_MATERIAL = 'material'
     SOURCE_TASK = 'task'
     SOURCE_EXPENSE = 'expense'
+    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
         (SOURCE_EXPENSE, 'Expense'),
+        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -190,7 +201,7 @@ class InvoiceLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (Material or Task) referenced by this source."""
+        """Return the concrete atom instance referenced by this source."""
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
@@ -200,6 +211,9 @@ class InvoiceLineItemSource(models.Model):
         if self.source_type == self.SOURCE_EXPENSE:
             from apps.expenses.models import Expense
             return Expense.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_FEE:
+            from apps.jobs.models import Fee
+            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):

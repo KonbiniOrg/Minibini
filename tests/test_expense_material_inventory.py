@@ -58,10 +58,10 @@ class AdHocPurchaseTest(TestCase):
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), inventory_item=self.pli,
         )
-        # Simulate a prior partial restock directly: quantity=5, restocked_qty=2.
-        # Invariant: quantity + restocked_qty == original purchase (7).
-        m.restocked_qty = Decimal('2')
-        m.save(update_fields=['restocked_qty'])
+        # Simulate a prior partial restock directly: quantity=5, released_qty=2.
+        # Invariant: quantity + released_qty == original purchase (7).
+        m.released_qty = Decimal('2')
+        m.save(update_fields=['released_qty'])
         # PLI QOH starts at 10 per setUp. reverse should drop by full 7.
         InventoryService.reverse_ad_hoc_purchase(m)
         self.pli.refresh_from_db()
@@ -232,7 +232,8 @@ class ExpenseRejectNonInventoriedTest(TestCase):
 
         self.cat = AccountingCategory.objects.create(name='ni', code='NICAT1')
         self.user = User.objects.create(username='ni_user')
-        self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.pli_noninv = InventoryItem.objects.create(
             code='NI-PLI', accounting_category=self.cat, is_catalog=False,
             qty_on_hand=Decimal('5'),

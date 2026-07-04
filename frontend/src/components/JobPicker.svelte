@@ -1,44 +1,20 @@
 <script>
+  import SearchPicker from './SearchPicker.svelte';
   import { api } from '../lib/api.js';
-
-  let { value = $bindable(null) } = $props();
-  let query = $state('');
-  let results = $state([]);
-  let showResults = $state(false);
-
-  async function search() {
-    if (!query.trim()) { results = []; return; }
-    try {
-      const data = await api.get(`/api/jobs/?search=${encodeURIComponent(query)}&page_size=10`);
-      results = data.results || data;
-      showResults = true;
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  function pick(job) {
-    value = { job_id: job.job_id, job_number: job.job_number };
-    query = job.job_number;
-    showResults = false;
-  }
-
-  function clear() {
-    value = null;
-    query = '';
-    results = [];
-  }
+  import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
+  let { value = $bindable(null), selectedItem = null,
+        onSelect = () => {}, disabled = false } = $props();
+  const label = (j) => `${j.job_number} — ${j.name ?? j.description ?? ''}`;
+  const search = (q) =>
+    api.get(`/api/jobs/?search=${encodeURIComponent(q)}&page_size=${PICKER_PAGE_SIZE}`)
+       .then((d) => ({ rows: d.results || d, total: d.count ?? (d.results || d).length }));
+  const resolveLabel = (id, item) =>
+    item ? Promise.resolve(label(item))
+    : id == null ? Promise.resolve(null)
+    : api.get(`/api/jobs/${id}/`).then(label).catch(() => null);
 </script>
 
-{#if value}
-  <span>{value.job_number} <button type="button" onclick={clear}>Clear</button></span>
-{:else}
-  <input type="text" bind:value={query} oninput={search} placeholder="Search jobs…">
-  {#if showResults && results.length}
-    <ul>
-      {#each results as job}
-        <li><button type="button" onclick={() => pick(job)}>{job.job_number} — {job.description?.slice(0, 40)}</button></li>
-      {/each}
-    </ul>
-  {/if}
-{/if}
+<SearchPicker bind:value {selectedItem} {search} {resolveLabel} rowLabel={label}
+  onPick={(j) => { value = j.job_id; onSelect(j); }}
+  onClear={() => { value = null; onSelect(null); }}
+  {disabled} placeholder="Search jobs…" />

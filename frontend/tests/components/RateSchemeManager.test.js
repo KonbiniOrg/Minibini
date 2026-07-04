@@ -28,6 +28,17 @@ describe('RateSchemeManager', () => {
     expect(await findByText('Hourly')).toBeInTheDocument();
   });
 
+  it('shows "Rate Schemes" as the section heading', async () => {
+    const { findByRole } = render(RateSchemeManager);
+    expect(await findByRole('heading', { name: 'Rate Schemes' })).toBeInTheDocument();
+  });
+
+  it('has an "Add Rate Scheme" button (not "Add Service")', async () => {
+    const { findByRole, queryByRole } = render(RateSchemeManager);
+    expect(await findByRole('button', { name: 'Add Rate Scheme' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Add Service' })).not.toBeInTheDocument();
+  });
+
   it('creates a scheme', async () => {
     const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
@@ -36,11 +47,42 @@ describe('RateSchemeManager', () => {
     expect(api.post).toHaveBeenCalledWith('/api/rate-schemes/', expect.objectContaining({ name: 'Premium' }));
   });
 
+  it('keeps the existing-schemes list visible while adding a new one', async () => {
+    const { findByRole, getByText, queryByRole } = render(RateSchemeManager);
+    // Existing scheme is listed before adding.
+    expect(await findByRole('button', { name: 'Add Rate Scheme' })).toBeInTheDocument();
+    expect(getByText('Hourly')).toBeInTheDocument();
+    // Open the add form — the list must NOT be suppressed.
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    expect(getByText('Hourly')).toBeInTheDocument();           // existing rows still shown
+    expect(await findByRole('button', { name: 'Save' })).toBeInTheDocument(); // form is open
+    // The Add Rate Scheme button is hidden while the form is open (no double-add).
+    expect(queryByRole('button', { name: 'Add Rate Scheme' })).not.toBeInTheDocument();
+  });
+
   it('deletes an unreferenced scheme after confirmation', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { findByRole } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Delete' }));
     expect(api.delete).toHaveBeenCalledWith('/api/rate-schemes/1/');
     confirmSpy.mockRestore();
+  });
+
+  it('percentage algorithm: shows rate field (negative allowed), AC selector, and hides modifier editor', async () => {
+    const { findByRole, getByLabelText, queryByText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.change(getByLabelText(/Algorithm/), { target: { value: 'percentage' } });
+
+    // Rate field is present
+    const rateInput = getByLabelText(/Rate/);
+    expect(rateInput).toBeInTheDocument();
+    // Negative values allowed (min attribute not present or no constraint forcing positive)
+    expect(rateInput.getAttribute('min')).toBeNull();
+
+    // AC selector is present
+    expect(getByLabelText(/Accounting Category/)).toBeInTheDocument();
+
+    // Modifier editor is NOT rendered
+    expect(queryByText('Add modifier')).not.toBeInTheDocument();
   });
 });

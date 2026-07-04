@@ -91,7 +91,7 @@ class EstimateIsAmendedSerializerTest(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), price=Decimal('50'),
-            line_number=1)
+            line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
         return co
@@ -145,7 +145,7 @@ class BoardPipelineIsAmendedTest(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), price=Decimal('50'),
-            line_number=1)
+            line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(co.pk)
         # Accept -> job advances on_hold -> approved (lands in the pipeline panel).
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)

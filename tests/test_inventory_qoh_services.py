@@ -8,7 +8,6 @@ from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.models import InventoryHistory
 from apps.inventory.services import InventoryService, MaterialService
 from apps.jobs.models import Job, Task, RateScheme
-from apps.estimates.models import EstWorksheet, Estimate
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
 
@@ -27,7 +26,7 @@ class ConsumeMaterialTest(TestCase):
             is_catalog=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
         self.scheme = RateScheme.objects.create(
-            name='S-qohs1', algorithm=RateScheme.FLAT_FEE,
+            name='S-qohs1', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -171,7 +170,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             is_catalog=True, qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
         self.scheme = RateScheme.objects.create(
-            name='S-qohs2', algorithm=RateScheme.FLAT_FEE,
+            name='S-qohs2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(

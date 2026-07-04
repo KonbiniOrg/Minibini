@@ -112,7 +112,7 @@ class OnHoldAPIGuardBase(BaseTestCase):
 
         self.contact = Contact.objects.first()
         self.scheme = (
-            RateScheme.objects.filter(algorithm=RateScheme.FLAT_FEE).first()
+            RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
             or RateScheme.objects.first()
         )
         self.ac = AccountingCategory.objects.first()

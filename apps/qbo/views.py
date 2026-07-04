@@ -14,9 +14,9 @@ from rest_framework.response import Response
 from intuitlib.client import AuthClient
 from intuitlib.enums import Scopes
 
-from apps.api.permissions import CanManageConfig
+from apps.api.permissions import CanManageConfig, CanManageFinancials
 from apps.qbo.models import QBOConnection
-from apps.qbo.services import QBOAccountsService, QBOExpenseSyncService
+from apps.qbo.services import QBOAccountsService, QBOExpenseSyncService, QBOSyncFailureService
 
 
 # --- OAuth browser-redirect endpoints (not DRF) ---
@@ -136,3 +136,62 @@ def qbo_payment_accounts(request):
         return Response({'payment_accounts': accounts})
     except ValueError as e:
         return Response({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def qbo_sync_failures(request):
+    """Return all sync-failed records across Expense, Reimbursement, BillPayment."""
+    return Response({'failures': QBOSyncFailureService.list_failures()})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, CanManageFinancials])
+def qbo_sync_failures_retry_all(request):
+    """Retry every sync-failed record; returns {retried, still_failing}."""
+    from apps.expenses.models import Expense, Reimbursement
+    from apps.purchasing.models import BillPayment
+    from apps.expenses.services import ExpenseService, ReimbursementService
+    from apps.purchasing.services import BillPaymentService
+
+    failures = QBOSyncFailureService.list_failures()
+    attempted = 0
+
+    for item in failures:
+        attempted += 1
+        entity_type = item['entity_type']
+        pk = item['id']
+        try:
+            if entity_type == 'expense':
+                expense = Expense.objects.get(pk=pk)
+                ExpenseService.retry(expense=expense, actor=request.user)
+            elif entity_type == 'reimbursement':
+                batch = Reimbursement.objects.get(pk=pk)
+                ReimbursementService.retry(batch=batch, actor=request.user)
+            elif entity_type == 'bill_payment':
+                BillPaymentService.retry(pk)
+        except Exception:  # noqa: BLE001 — one failure must not abort the loop
+            pass
+
+    # Re-query each record to count how many are still failing.
+    still_failing = 0
+    for item in failures:
+        entity_type = item['entity_type']
+        pk = item['id']
+        try:
+            if entity_type == 'expense':
+                obj = Expense.objects.get(pk=pk)
+                if obj.qbo_sync_status == Expense.SYNC_FAILED:
+                    still_failing += 1
+            elif entity_type == 'reimbursement':
+                obj = Reimbursement.objects.get(pk=pk)
+                if obj.qbo_sync_status == Reimbursement.SYNC_FAILED:
+                    still_failing += 1
+            elif entity_type == 'bill_payment':
+                obj = BillPayment.objects.get(pk=pk)
+                if obj.qbo_sync_status == BillPayment.SYNC_FAILED:
+                    still_failing += 1
+        except Exception:  # noqa: BLE001 — deleted record = resolved
+            pass
+
+    return Response({'retried': attempted, 'still_failing': still_failing})

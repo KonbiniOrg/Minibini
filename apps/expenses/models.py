@@ -1,9 +1,12 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import models
+from apps.core.models import QBOSyncable
+from apps.core.history import history
 
 
-class Expense(models.Model):
+@history(exclude=['id', 'created_at', 'updated_at', 'qbo_id', 'qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])
+class Expense(QBOSyncable):
     PAYMENT_METHOD_COMPANY = 'company'
     PAYMENT_METHOD_PERSONAL = 'personal'
     PAYMENT_METHOD_CHOICES = [
@@ -14,14 +17,10 @@ class Expense(models.Model):
     STATUS_SUBMITTED = 'submitted'
     STATUS_REIMBURSED = 'reimbursed'
     STATUS_REJECTED = 'rejected'
-    STATUS_SYNCED = 'synced'
-    STATUS_SYNC_FAILED = 'sync_failed'
     STATUS_CHOICES = [
         (STATUS_SUBMITTED, 'Submitted'),
         (STATUS_REIMBURSED, 'Reimbursed'),
         (STATUS_REJECTED, 'Rejected'),
-        (STATUS_SYNCED, 'Synced to QBO'),
-        (STATUS_SYNC_FAILED, 'QBO sync failed'),
     ]
 
     entered_by = models.ForeignKey(
@@ -72,8 +71,6 @@ class Expense(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED,
     )
-    qbo_id = models.CharField(max_length=50, blank=True, default='')
-    qbo_sync_error = models.TextField(blank=True, default='')
 
     reimbursement = models.ForeignKey(
         'expenses.Reimbursement', on_delete=models.PROTECT,
@@ -126,16 +123,7 @@ class Expense(models.Model):
         return f"Expense {self.pk}: ${self.amount} ({self.status})"
 
 
-class Reimbursement(models.Model):
-    STATUS_PENDING = 'pending'
-    STATUS_SYNCED = 'synced'
-    STATUS_SYNC_FAILED = 'sync_failed'
-    STATUS_CHOICES = [
-        (STATUS_PENDING, 'Pending'),
-        (STATUS_SYNCED, 'Synced to QBO'),
-        (STATUS_SYNC_FAILED, 'QBO sync failed'),
-    ]
-
+class Reimbursement(QBOSyncable):
     purchased_by = models.ForeignKey(
         'core.User', on_delete=models.PROTECT,
         related_name='reimbursements',
@@ -149,12 +137,6 @@ class Reimbursement(models.Model):
         'core.User', on_delete=models.PROTECT,
         related_name='created_reimbursements',
     )
-
-    status = models.CharField(
-        max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING,
-    )
-    qbo_id = models.CharField(max_length=50, blank=True, default='')
-    qbo_sync_error = models.TextField(blank=True, default='')
 
     created_at = models.DateTimeField(auto_now_add=True)
 

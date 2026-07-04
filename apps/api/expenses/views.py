@@ -6,11 +6,19 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
+from apps.api.mixins import QBORetrySyncMixin
 from apps.api.permissions import CanManageFinancials
+from apps.api.history.serializers import HistoryEntrySerializer
+from apps.core.models import ExpensesHistory
 from .serializers import ExpenseSerializer
 
 
-class ExpenseViewSet(viewsets.ModelViewSet):
+class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
+    retry_deleted_message = 'Expense deleted.'
+
+    def retry_service_call(self, obj, request):
+        return ExpenseService.retry_sync(expense=obj, actor=request.user)
+
     queryset = Expense.objects.all().select_related(
         'entered_by', 'purchased_by', 'accounting_category',
         'job', 'material', 'material__job', 'reimbursement',
@@ -19,7 +27,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'create'):
+        if self.action in ('list', 'retrieve', 'create', 'history'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageFinancials()]
 
@@ -34,6 +42,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(purchased_by=params['purchased_by'])
         if params.get('status'):
             qs = qs.filter(status=params['status'])
+        if params.get('qbo_sync_status'):
+            qs = qs.filter(qbo_sync_status=params['qbo_sync_status'])
         if params.get('payment_method'):
             qs = qs.filter(payment_method=params['payment_method'])
         if params.get('accounting_category'):
@@ -99,8 +109,24 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         expense = self.get_object()
-        ExpenseService.delete(expense=expense, actor=request.user)
+        try:
+            ExpenseService.delete(expense=expense, actor=request.user)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=400)
         return Response({'message': 'Expense deleted.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='history', url_name='history')
+    def history(self, request, pk=None):
+        expense = self.get_object()
+        entries = ExpensesHistory.objects.filter(
+            object_type='expense', object_id=expense.pk,
+        ).select_related('user').order_by('-timestamp')
+        page = self.paginate_queryset(entries)
+        if page is not None:
+            serializer = HistoryEntrySerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = HistoryEntrySerializer(entries, many=True)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='reject', url_name='reject')
     def reject(self, request, pk=None):
@@ -109,17 +135,6 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ExpenseService.reject(expense=expense, actor=request.user)
         except DjangoValidationError as e:
             return Response({'detail': e.messages[0]}, status=400)
-        serializer = self.get_serializer(expense)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
-    def retry_sync(self, request, pk=None):
-        expense = self.get_object()
-        try:
-            ExpenseService.retry_sync(expense=expense, actor=request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
-        expense.refresh_from_db()
         serializer = self.get_serializer(expense)
         return Response(serializer.data)
 

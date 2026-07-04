@@ -35,9 +35,13 @@
       submitted: 'submitted',
       reimbursed: 'reimbursed',
       rejected: 'rejected',
-      synced: 'synced',
-      sync_failed: 'sync failed',
     }[s] || s;
+  }
+
+  function syncBadge(qboSyncStatus) {
+    if (qboSyncStatus === 'synced') return { text: 'synced', cls: 'synced-badge' };
+    if (qboSyncStatus === 'sync_failed') return { text: 'sync failed', cls: 'sync-failed-badge' };
+    return null;
   }
 
   load();
@@ -94,7 +98,12 @@
             </td>
             <td>{e.task_name || '—'}</td>
             <td style="text-align: right">${e.amount}</td>
-            <td><em>{statusLabel(e.status)}</em></td>
+            <td>
+              <em>{statusLabel(e.status)}</em>
+              {#if syncBadge(e.qbo_sync_status)}
+                <span class={syncBadge(e.qbo_sync_status).cls}>{syncBadge(e.qbo_sync_status).text}</span>
+              {/if}
+            </td>
             <td>{e.reimbursement_paid_on || '—'}</td>
           </tr>
         {/each}
@@ -102,3 +111,8 @@
     </table>
   {/if}
 </section>
+
+<style>
+  .synced-badge { font-size: 11px; color: #047857; font-weight: 600; }
+  .sync-failed-badge { font-size: 11px; color: #b91c1c; font-weight: 600; }
+</style>

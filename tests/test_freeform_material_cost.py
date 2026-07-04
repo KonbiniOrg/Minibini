@@ -99,7 +99,7 @@ class FreeformMaterialCostApiTest(TestCase):
         rejected (the same validate() guard as PATCH, on the create path)."""
         from apps.jobs.models import Task, RateScheme
         scheme = RateScheme.objects.create(
-            name='ff-scheme', algorithm=RateScheme.FLAT_FEE, rate=1,
+            name='ff-scheme', algorithm=RateScheme.ENTERED_QTY, rate=1,
             unit_label='ea', accounting_category=self.cat)
         task = Task.objects.create(job=self.job, name='t', rate_scheme=scheme)
         r = self.client_http.post(

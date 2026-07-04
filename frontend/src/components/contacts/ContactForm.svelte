@@ -1,4 +1,6 @@
 <script>
+  import BusinessPicker from '../BusinessPicker.svelte';
+
   const {
     contact = null,
     businesses = [],
@@ -23,15 +25,16 @@
     municipality: contact?.municipality || '',
     postal_code: contact?.postal_code || '',
     country_code: contact?.country_code || '',
-    business: contact?.business || '',
+    business: contact?.business?.business_id ?? null,
   });
 
   function handleSubmit(e) {
     e.preventDefault();
-    const data = { ...form };
-    if (data.business === '') {
-      data.business = null;
-    }
+    // The serializer's `business` field is read-only; the writable field is
+    // `business_id` (PrimaryKeyRelatedField, source='business'). Send that key
+    // or the association is silently dropped.
+    const { business, ...rest } = form;
+    const data = { ...rest, business_id: (business === '' || business == null) ? null : business };
     onSubmit(data);
   }
 </script>
@@ -107,13 +110,8 @@
   </fieldset>
 
   <p>
-    <label for="business"><strong>Business</strong></label><br>
-    <select id="business" bind:value={form.business}>
-      <option value="">-- None --</option>
-      {#each businesses as biz}
-        <option value={biz.business_id}>{biz.business_name}</option>
-      {/each}
-    </select>
+    <label><strong>Business</strong></label><br>
+    <BusinessPicker bind:value={form.business} selectedItem={contact?.business ?? null} />
   </p>
 
   <p>

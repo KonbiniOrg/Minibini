@@ -39,6 +39,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         write_only=True, required=False,
     )
     invoice = serializers.SerializerMethodField()
+    claimed = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
@@ -46,16 +47,17 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'job', 'task',
             'description', 'quantity', 'unit_cost', 'sell_price',
             'inventory_item', 'accounting_category',
-            'consumption_state', 'restocked_qty',
+            'consumption_state', 'released_qty',
             'is_expense_bound', 'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
             'invoice',
+            'claimed',
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
-            'consumption_state', 'restocked_qty', 'is_expense_bound',
+            'consumption_state', 'released_qty', 'is_expense_bound',
             'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_order', 'qty_on_hand',
@@ -107,18 +109,13 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         return str(max(outstanding, Decimal('0')))
 
     def get_qty_on_hand(self, obj):
-        if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
-            return '0'
-        if obj.po_line_item_id:
-            return str(obj.po_line_item.qty_received)
-        if obj.inventory_item_id:
-            # The item's real physical stock — NOT the material's required qty.
-            # Universal tracking: every item-backed material reports its item's
-            # QOH (catalog or transient lot), so the overview's "needs more /
-            # order" check sees a genuine shortfall instead of required==on_hand.
-            # Earmark-aware availability is surfaced separately (qty_available).
-            return str(obj.inventory_item.qty_on_hand)
-        return '0'
+        from apps.inventory.serializer_helpers import material_qty_on_hand
+        return material_qty_on_hand(obj)
+
+    def get_claimed(self, obj):
+        """True iff a non-superseded estimate on this job has claimed this material."""
+        claims = self.context.get('estimate_claims') or frozenset()
+        return ('material', obj.pk) in claims
 
     def update(self, instance, validated_data):
         from apps.inventory.serializer_helpers import (

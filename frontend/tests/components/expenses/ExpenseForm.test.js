@@ -62,7 +62,8 @@ describe('ExpenseForm', () => {
     await fireEvent.input(getByLabelText(/Amount/), { target: { value: '20' } });
     await fireEvent.change(getByLabelText(/Category/), { target: { value: '1' } });
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'JOB' } });
-    await fireEvent.click(await findByRole('button', { name: /JOB-7/ }));
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole('button', { name: /JOB-7/ }));
     await fireEvent.click(getByRole('button', { name: 'Submit expense' }));
     const [, body] = api.post.mock.calls[0];
     expect(body.job).toBe(7);
@@ -76,7 +77,8 @@ describe('ExpenseForm', () => {
     await fireEvent.input(getByLabelText(/Amount/), { target: { value: '20' } });
     await fireEvent.change(getByLabelText(/Category/), { target: { value: '1' } });
     await fireEvent.input(getByPlaceholderText('Search jobs…'), { target: { value: 'JOB' } });
-    await fireEvent.click(await findByRole('button', { name: /JOB-7/ }));
+    await new Promise((r) => setTimeout(r, 300));
+    await fireEvent.mouseDown(await findByRole('button', { name: /JOB-7/ }));
     await fireEvent.click(getByRole('button', { name: '+ Add a purchased item' }));
     await fireEvent.input(getByLabelText('Item description'), { target: { value: 'bracket' } });
     await fireEvent.input(getByLabelText('Quantity'), { target: { value: '3' } });

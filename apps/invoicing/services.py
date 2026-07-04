@@ -31,13 +31,14 @@ class InvoiceService:
         kwargs = LineItemService.normalize_fk_kwargs(InvoiceLineItem, kwargs)
         li = InvoiceLineItem(invoice=invoice, **kwargs)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
     def add_line_item_from_pli(invoice_pk, pli_pk, qty):
         """Add a line item from a InventoryItem to a draft invoice."""
         from apps.inventory.models import InventoryItem
+        from apps.core.services import LineItemService
         try:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
@@ -57,7 +58,7 @@ class InvoiceService:
             accounting_category=pli.accounting_category,
         )
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -73,7 +74,7 @@ class InvoiceService:
         for field, value in kwargs.items():
             setattr(li, field, value)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -145,6 +146,125 @@ class InvoiceService:
                 'Cannot modify line items on a non-draft invoice.'
             )
         return LineItemService.delete_line_item_with_renumber(line_item)
+
+    @staticmethod
+    def copy_from_estimate(invoice):
+        """Copy the job's accepted estimate agreement onto a fresh draft invoice.
+
+        Creates one InvoiceLineItem per line returned by compose_agreement(invoice.job),
+        preserving description, qty, price, units, and accounting_category. Adjustment
+        lines also receive adjustment_service and adjustment_target_categories so the
+        agreement panel dedup sees them as already_added.
+
+        Preconditions (raise ValidationError if violated):
+        - invoice.status == Invoice.STATUS_DRAFT
+        - invoice has no existing line items
+        - no other non-cancelled Invoice exists for invoice.job
+
+        Returns the number of line items created.
+        """
+        from django.db import transaction
+        from apps.estimates.agreement import compose_agreement
+
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError(
+                'Copy from estimate is only available on a draft invoice.'
+            )
+        if InvoiceLineItem.objects.filter(invoice=invoice).exists():
+            raise ValidationError(
+                'Cannot copy from estimate: invoice already has line items.'
+            )
+        other_invoices = Invoice.objects.filter(
+            job=invoice.job,
+        ).exclude(
+            pk=invoice.pk,
+        ).exclude(
+            status=Invoice.STATUS_CANCELLED,
+        )
+        if other_invoices.exists():
+            raise ValidationError(
+                'Copy from estimate is only available on the first invoice for a job.'
+            )
+
+        agreement = compose_agreement(invoice.job)
+        lines = agreement['lines']
+
+        from apps.core.services import LineItemService
+
+        from apps.invoicing.models import InvoiceLineItemSource
+
+        with transaction.atomic():
+            for line_number, line in enumerate(lines, start=1):
+                li = InvoiceLineItem(
+                    invoice=invoice,
+                    line_number=line_number,
+                    description=line['description'],
+                    qty=line['qty'],
+                    price=line['price'],
+                    units=line['units'],
+                    accounting_category_id=line.get('accounting_category_id'),
+                )
+                if line.get('is_adjustment') and line.get('adjustment_service_id'):
+                    li.adjustment_service_id = line['adjustment_service_id']
+
+                LineItemService.save_line_item(li)
+
+                # Set M2M after the initial save so the PK exists.
+                if line.get('is_adjustment') and line.get('target_category_ids'):
+                    li.adjustment_target_categories.set(line['target_category_ids'])
+
+                # If this line was crystallized from a hand-line into a Fee at
+                # acceptance time, create the InvoiceLineItemSource so the wizard
+                # pool marks the Fee as claimed and blocks double-billing.
+                if line.get('source_fee_id'):
+                    InvoiceLineItemSource.objects.create(
+                        invoice_line_item=li,
+                        source_type=InvoiceLineItemSource.SOURCE_FEE,
+                        source_pk=line['source_fee_id'],
+                    )
+
+        return len(lines)
+
+    @staticmethod
+    def add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=None):
+        """Add a percentage-adjustment line item to a draft invoice.
+
+        Creates an InvoiceLineItem backed by a PERCENTAGE RateScheme, sets
+        target categories (empty list = apply to all non-adjustment lines),
+        computes the initial price via ``compute_adjustment_amount``, and
+        returns the saved line.
+
+        Raises ValidationError if the invoice is not draft or the service is
+        not a PERCENTAGE algorithm.
+        """
+        from django.db import transaction
+        from django.db.models import Max
+        from apps.jobs.models import RateScheme
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError('Adjustments can only be added to a draft invoice.')
+        svc = RateScheme.objects.get(pk=adjustment_service_id)
+        if svc.algorithm != RateScheme.PERCENTAGE:
+            raise ValidationError('Adjustment line requires a percentage service.')
+        from apps.core.services import LineItemService
+        with transaction.atomic():
+            max_ln = (InvoiceLineItem.objects.filter(invoice=invoice)
+                      .aggregate(Max('line_number'))['line_number__max'] or 0)
+            line = InvoiceLineItem(
+                invoice=invoice,
+                line_number=max_ln + 1,
+                qty=Decimal('1'),
+                units=svc.unit_label or 'none',
+                description=svc.name,
+                price=Decimal('0.00'),
+                accounting_category=svc.accounting_category,
+                adjustment_service=svc,
+            )
+            line.save()
+            if target_category_ids:
+                line.adjustment_target_categories.set(target_category_ids)
+            LineItemService.save_line_item(line)
+            line.refresh_from_db()
+            return line
 
 
 class InvoiceEmailService:
@@ -223,6 +343,26 @@ class InvoiceEmailService:
         }
 
     @staticmethod
+    def _assert_all_lines_categorized(invoice):
+        """Raise ValidationError if any line item is missing an accounting category.
+
+        Called at the top of send_invoice so the gate fires before any
+        external call (QBO push, PDF generation, email send).
+        """
+        missing = list(
+            invoice.invoicelineitem_set
+            .filter(accounting_category_id__isnull=True)
+            .values_list('line_number', flat=True)
+            .order_by('line_number')
+        )
+        if missing:
+            nums = ', '.join(str(n) for n in missing)
+            raise ValidationError(
+                f'Every line item needs an accounting category before sending'
+                f' (line(s) {nums}).'
+            )
+
+    @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
                      extra_attachments=None, user=None):
         """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
@@ -235,6 +375,8 @@ class InvoiceEmailService:
         from apps.qbo.services import (
             QBOService, QBOInvoiceSyncService, QBOCustomerSyncService,
         )
+
+        InvoiceEmailService._assert_all_lines_categorized(invoice)
 
         if not to:
             raise ValidationError('Recipient email address is required.')
@@ -585,7 +727,75 @@ class InvoiceWizardService(BaseWizardService):
             'atoms': expense_atoms,
         })
 
+        # "Fees" group — job-owned Fee atoms; always billable (no completion gate).
+        from apps.jobs.models import Fee
+        fees = (
+            Fee.objects.filter(job=job)
+            .order_by('sort_order', 'pk')
+        )
+        fee_atoms = []
+        for fee in fees:
+            detail = InvoiceWizardService._atom_detail(fee)
+            key = (InvoiceLineItemSource.SOURCE_FEE, fee.pk)
+            state_info = claims.get(key, default_state)
+            fee_atoms.append({
+                'type': 'fee',
+                'id': fee.pk,
+                'description': fee.description,
+                'sub_info': '',
+                'qty': detail['qty'],
+                'rate': detail['rate'],
+                'units': detail['units'],
+                'amount': detail['amount'],
+                **state_info,
+            })
+        task_list.append({
+            'task_id': None,
+            'name': 'Fees',
+            'has_billable_atoms': len(fee_atoms) > 0,
+            'atoms': fee_atoms,
+        })
+
         return {'tasks': task_list}
+
+    @classmethod
+    def seed_all_atoms(cls, invoice):
+        """Create one line item per available atom on a fresh draft invoice.
+
+        Requires:
+        - invoice.status == Invoice.STATUS_DRAFT
+        - invoice has no existing line items
+
+        Enumerates all atoms in get_source_pool(invoice) whose state == 'available'
+        (tasks, nested materials, loose materials, expenses) and creates one line
+        per atom via add_atoms_to_new_line_item. Already-claimed and not-billable
+        atoms are skipped. Wraps all writes in a single transaction.
+
+        Returns the number of line items created.
+        """
+        from django.db import transaction
+
+        if invoice.status != Invoice.STATUS_DRAFT:
+            raise ValidationError(
+                'Can only seed line items on a draft invoice.'
+            )
+        if InvoiceLineItem.objects.filter(invoice=invoice).exists():
+            raise ValidationError(
+                'Cannot apply everything: invoice already has line items.'
+            )
+
+        pool = cls.get_source_pool(invoice)
+        available = []
+        for group in pool['tasks']:
+            for atom in group['atoms']:
+                if atom['state'] == 'available':
+                    available.append({'type': atom['type'], 'id': atom['id']})
+
+        with transaction.atomic():
+            for atom_ref in available:
+                cls.add_atoms_to_new_line_item(invoice, [atom_ref])
+
+        return len(available)
 
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
@@ -630,8 +840,8 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _resolve_atom(cls, atom_ref):
-        """Given {'type': 'material'|'task'|'expense', 'id': N}, return the instance."""
-        from apps.jobs.models import Task
+        """Given {'type': 'material'|'task'|'expense'|'fee', 'id': N}, return the instance."""
+        from apps.jobs.models import Task, Fee
         from apps.inventory.models import Material
         if atom_ref['type'] == 'material':
             return Material.objects.get(pk=atom_ref['id'])
@@ -639,11 +849,13 @@ class InvoiceWizardService(BaseWizardService):
             return Task.objects.get(pk=atom_ref['id'])
         if atom_ref['type'] == 'expense':
             return cls._expense_model().objects.get(pk=atom_ref['id'])
+        if atom_ref['type'] == 'fee':
+            return Fee.objects.get(pk=atom_ref['id'])
         raise ValueError(f"Unknown atom type: {atom_ref['type']}")
 
     @classmethod
     def _atom_source_type(cls, atom_instance):
-        from apps.jobs.models import Task
+        from apps.jobs.models import Task, Fee
         from apps.inventory.models import Material
         from apps.invoicing.models import InvoiceLineItemSource
         if isinstance(atom_instance, Task):
@@ -652,6 +864,8 @@ class InvoiceWizardService(BaseWizardService):
             return InvoiceLineItemSource.SOURCE_MATERIAL
         if isinstance(atom_instance, cls._expense_model()):
             return InvoiceLineItemSource.SOURCE_EXPENSE
+        if isinstance(atom_instance, Fee):
+            return InvoiceLineItemSource.SOURCE_FEE
         raise ValueError(f"Unknown atom instance type: {type(atom_instance)}")
 
     @classmethod
@@ -669,12 +883,18 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_category(cls, atom_instance):
+        from apps.jobs.models import Fee
+        if isinstance(atom_instance, Fee):
+            return atom_instance.accounting_category
         if isinstance(atom_instance, cls._expense_model()):
             return atom_instance.accounting_category
         return super()._atom_category(atom_instance)
 
     @classmethod
     def _atom_description(cls, atom_instance):
+        from apps.jobs.models import Fee
+        if isinstance(atom_instance, Fee):
+            return atom_instance.description
         if isinstance(atom_instance, cls._expense_model()):
             return atom_instance.description or (
                 atom_instance.accounting_category.name
@@ -684,6 +904,10 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_qty_and_price(cls, atom_instance, total_price):
+        from apps.jobs.models import Fee
+        # A fee line item copies over quantity × unit_rate directly.
+        if isinstance(atom_instance, Fee):
+            return atom_instance.quantity, atom_instance.unit_rate
         # A material-less expense bills at pass-through cost: qty 1 × amount.
         if isinstance(atom_instance, cls._expense_model()):
             return Decimal('1'), atom_instance.amount
@@ -691,6 +915,15 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _atom_detail(cls, atom_instance):
+        from apps.jobs.models import Fee
+        if isinstance(atom_instance, Fee):
+            amount = cls._atom_computed_amount(atom_instance)
+            return {
+                'qty': atom_instance.quantity,
+                'rate': atom_instance.unit_rate.quantize(Decimal('0.01')),
+                'units': 'none',
+                'amount': amount,
+            }
         if isinstance(atom_instance, cls._expense_model()):
             amount = cls._atom_computed_amount(atom_instance)
             return {'qty': Decimal('1'), 'rate': amount,

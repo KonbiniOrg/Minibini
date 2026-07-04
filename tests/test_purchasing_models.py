@@ -146,13 +146,12 @@ class BillBalanceTest(TestCase):
         self.assertEqual(bill.balance, Decimal('50.00'))
 
     def test_balance_zero_for_paid_cancelled_refunded(self):
-        for status in Bill.ZERO_BALANCE_STATUSES:
+        # Terminal statuses carry no outstanding balance (Bill.balance rule —
+        # payment-aware since the BillPayment work superseded the old
+        # ZERO_BALANCE_STATUSES coarse rule this test originally pinned).
+        for status in (Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED,
+                       Bill.STATUS_REFUNDED):
             bill = self._bill(status=status)
             self.assertEqual(
                 bill.balance, Decimal('0.00'),
                 f'{status} bills should report a zero balance')
-
-    def test_zero_balance_statuses_membership(self):
-        self.assertEqual(
-            set(Bill.ZERO_BALANCE_STATUSES),
-            {Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED})

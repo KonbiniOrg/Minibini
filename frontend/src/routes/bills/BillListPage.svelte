@@ -111,7 +111,6 @@
       {/each}
     </tbody>
   </table>
-  <p><small>Balance shows the full bill total for any bill that isn't fully paid — partial payments are not yet tracked.</small></p>
 
   {#if bills.count > 25}
     <p>

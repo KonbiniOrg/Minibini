@@ -5,15 +5,15 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.estimates.models import WorkTemplate, TaskTemplate
+from apps.estimates.models import WorkTemplate, ServiceItem
 from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
-from apps.api.permissions import CanManageConfig
+from apps.api.permissions import CanManageConfig, CanManageJobsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
 from .serializers import (
-    WorkTemplateSerializer, TaskTemplateSerializer,
+    WorkTemplateSerializer, ServiceItemSerializer,
     ConfigurationSerializer, AccountingCategorySerializer,
     TemplateMaterialAssociationSerializer,
 )
@@ -96,28 +96,42 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
-class TaskTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
-    queryset = TaskTemplate.objects.all().order_by('template_name')
-    serializer_class = TaskTemplateSerializer
+class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
+    queryset = ServiceItem.objects.all().order_by('template_name')
+    serializer_class = ServiceItemSerializer
     lookup_field = 'pk'
-    destroy_response_message = 'Task template deleted.'
+    destroy_response_message = 'Service item deleted.'
+
+    def get_queryset(self):
+        qs = ServiceItem.objects.all().order_by('template_name')
+        if self.action == 'list':
+            search = self.request.query_params.get('search', '').strip()
+            if search:
+                from django.db.models import Q
+                qs = qs.filter(
+                    Q(template_name__icontains=search) | Q(description__icontains=search)
+                )
+        return qs
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
+        if self.action == 'create':
+            # Inline "save to catalog" while plan-building — not config-gated.
+            return [IsAuthenticated(), CanManageJobsOrConfig()]
         return [IsAuthenticated(), CanManageConfig()]
 
     def perform_create(self, serializer):
-        template = WorkTemplateService.create_task_template(**serializer.validated_data)
+        template = WorkTemplateService.create_service_item(**serializer.validated_data)
         serializer.instance = template
 
     def perform_update(self, serializer):
-        WorkTemplateService.update_task_template(
+        WorkTemplateService.update_service_item(
             self.get_object().pk, **serializer.validated_data
         )
 
     def perform_destroy(self, instance):
-        WorkTemplateService.delete_task_template(instance.pk)
+        WorkTemplateService.delete_service_item(instance.pk)
 
 
 class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):

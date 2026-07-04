@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
-  import PriceListItemPicker from './PriceListItemPicker.svelte';
+  import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
   import { modalKeys } from '../lib/modalKeys.js';
 
@@ -11,6 +11,9 @@
     taskId = null,
     jobId = null,
     categories = [],
+    presetDescription = '',
+    presetPli = null,
+    defaultMaterialCategoryId = null,
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -71,16 +74,26 @@
         pliUnitCost = pliLocked ? (material.unit_cost ?? null) : null;
         pliSellPrice = pliLocked ? (material.sell_price ?? null) : null;
       } else {
-        description = '';
+        // Reset shared fields first
         quantity = '';
         units = 'none';
         unitCost = '';
         sellPrice = '';
-        pliId = null;
-        pliLocked = false;
-        accountingCategory = '';
         pliUnitCost = null;
         pliSellPrice = null;
+        if (presetPli) {
+          // PLI preset: auto-select the item (sets description, units, prices, AC, pliLocked)
+          pliId = null;
+          pliLocked = false;
+          description = '';
+          accountingCategory = '';
+          handlePliSelect(presetPli);
+        } else {
+          description = (mode === 'create' && !material) ? (presetDescription || '') : '';
+          pliId = null;
+          pliLocked = false;
+          accountingCategory = defaultMaterialCategoryId ?? '';
+        }
       }
       error = '';
       showPropagatePrompt = false;
@@ -200,16 +213,10 @@
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 
       <p>
-        <label><strong>Price List Item</strong><br>
-          <PriceListItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} />
+        <label><strong>Inventory Item</strong><br>
+          <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
         </label>
       </p>
-
-      {#if pliLocked}
-        <p style="background:#fff7e6;border:1px solid #ffc53d;padding:8px;">
-          Linked to a price list item. Delete and re-add as freeform to change description, units, or category.
-        </p>
-      {/if}
 
       <p>
         <label><strong>Description</strong><br>

@@ -50,7 +50,7 @@ class ExpenseSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'accounting_category', 'accounting_category_name',
             'payment_method', 'payment_account_id', 'reference_number',
             'job', 'material', 'task_name', 'job_id', 'job_number', 'job_name',
-            'status', 'qbo_id', 'qbo_sync_error',
+            'status', 'qbo_sync_status', 'qbo_id', 'qbo_sync_error',
             'reimbursement', 'reimbursement_paid_on',
             'created_at', 'updated_at',
             'new_material',
@@ -60,7 +60,7 @@ class ExpenseSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'id', 'entered_by', 'entered_by_name', 'purchased_by_name',
             'task_name', 'job_id', 'job_number', 'job_name',
             'accounting_category_name',
-            'status', 'qbo_id', 'qbo_sync_error', 'reimbursement',
+            'status', 'qbo_sync_status', 'qbo_id', 'qbo_sync_error', 'reimbursement',
             'created_at', 'updated_at',
             'invoice',
         ]

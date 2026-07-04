@@ -10,8 +10,10 @@ physical thing. A **catalog item** (`is_catalog=True`) is a reorderable *type*
 (survives at zero stock, allocation uncapped). A **transient lot**
 (`is_catalog=False`) is a one-time batch minted behind a freeform goods-Material;
 when it's **finished** (on-hand 0 AND no earmarks) it's **hidden** from the
-active list — or, when it's reached via demote/write-off and is **reference-free**
-(no line items/earmarks), **deleted outright**. Quantity tracking is **universal**
+active list. **Nothing auto-deletes inventory rows** (deletion doctrine,
+2026-07-03) — hidden finished lots are kept as shop history; the only hard delete
+is the guarded delete endpoint for **never-referenced** rows (mistake
+correction). Quantity tracking is **universal**
 — every item-backed material earmarks/consumes.
 See `docs/plans/2026-06-14-inventory-catalog-vs-lots-spec.md` and
 `docs/designs/materials-inventory-and-purchasing.md` §2.
@@ -31,10 +33,10 @@ Several flows are silent no-ops without the right data — set these up first:
   duplicate-consolidation story.
 - [ ] **A transient lot** (`is_catalog=False`) with stock — make it by recording
   a **freeform cost-item expense** on a job (see `Expenses.md` §3), which mints a
-  lot with on-hand. *(Note: you can't make one by creating an item and unchecking
-  Catalog — a freshly-created item has on-hand 0, so demoting it would delete it
-  as a reference-free finished lot.)* Needed for **write-off**, the finished-lot
-  behavior, and merge (the discard must be a lot).
+  lot with on-hand. *(Note: creating an item and unchecking Catalog also works
+  now — a freshly-created empty item just becomes a hidden finished lot on
+  demote, reachable via Show finished lots.)* Needed for **write-off**, the
+  finished-lot behavior, and merge (the discard must be a lot).
 - [ ] **An item earmarked by a job** — add a Material that draws a catalog item
   on an approved/in-progress job (so `qty_earmarked > 0`) — needed for the
   **allocation warning** (§7) and the available-vs-on-hand columns.
@@ -59,18 +61,16 @@ atom-gated).
   table** (read access), but **no** New / edit / write-off / merge controls and
   no Actions column.
 
-## 2. Finished lots — hidden, or deleted when reference-free
+## 2. Finished lots — always hidden, never auto-deleted
 
 - [ ] **A finished lot is hidden by default.** A lot at on-hand 0 with no
-  earmarks does **not** appear in the default list. (This covers lots reached by
-  *consume* or that still carry historical references — see also §3/§4 for the
-  reference-free case, which is deleted instead.)
+  earmarks does **not** appear in the default list.
 - [ ] **Show finished lots** toggle (`?include_finished=true`) reveals the hidden
   ones (greyed/italic) so they can be merged or written off.
-- [ ] **Reference-free finished lots are deleted, not hidden.** If a lot becomes
-  finished via **demote** or **write-off** and nothing references it (no line
-  items, no earmarks), it's removed outright (it won't even show under *Show
-  finished lots*). See §3 and §4.
+- [ ] **No auto-collection (changed 2026-07-03).** A lot that becomes finished via
+  **demote** or **write-off** is **kept** as a hidden row even when nothing
+  references it — it shows under *Show finished lots*. (Previously reference-free
+  finished lots were deleted outright; the deletion doctrine retired that.)
 - [ ] **Catalog items survive at zero.** A catalog item at on-hand 0 **stays**
   visible (the catalog flag exempts it) — never hidden or deleted.
 - [ ] **A lot with a live earmark stays visible** even at on-hand 0 (the earmark
@@ -91,10 +91,9 @@ atom-gated).
 - [ ] **Promote a lot → catalog:** edit a lot, **check** Catalog, save → it now
   survives at zero / is offered uncapped.
 - [ ] **Demote a catalog → lot:** uncheck Catalog → it becomes a lot. If it's
-  empty (on-hand 0, no earmarks) **and reference-free, it's deleted** on save;
-  if it's empty but still referenced (e.g. on a PO), it's **hidden** instead;
-  with stock it just stays as a visible lot. *(Heads-up: demoting an empty,
-  unused item removes it — see the LATER note about warning the user first.)*
+  empty (on-hand 0, no earmarks) it becomes a **hidden finished lot** (find it
+  via *Show finished lots*; it is never deleted on save); with stock it just
+  stays as a visible lot.
 - [ ] **Deactivate:** uncheck Active (edit) → it leaves the active list; re-find
   it by unchecking *Active only*.
 
@@ -109,7 +108,7 @@ atom-gated).
   a damaged sheet) → on-hand drops by that amount, that amount is booked to
   wasted, and the item **stays** (it still has stock).
 - [ ] **Full write-off:** leave the quantity at the full balance → on-hand goes
-  to 0. A lot then becomes hidden (or **deleted** if reference-free, §2); a
+  to 0. A lot then becomes a hidden finished lot (never deleted, §2); a
   catalog item stays (emptied).
 - [ ] **Validation:** quantity ≤ on-hand and > 0, else an inline error.
 - [ ] The wastage (and the **reason**, in the entry's `text`) is recorded in the
@@ -129,13 +128,25 @@ atom-gated).
 - [ ] **Catalog-as-discard is blocked:** (the picker already excludes them; if
   forced, the server returns an error) — demote to a lot first.
 
+## 5a. Delete (guarded — mistake correction only)
+
+- [ ] **Delete refuses referenced items.** Deleting an item that any job material,
+  earmark, document line, or expense stock receipt references returns a **400**
+  with a "Deactivate it instead" message — the row stays. (References via
+  documents are also DB-protected.)
+- [ ] **Delete allows never-referenced items.** A freshly-created item nothing
+  has touched deletes cleanly (the typo/mistake case).
+- [ ] **Deactivate is the retirement** for anything with history — uncheck
+  Active (§3) rather than deleting.
+
 ## 6. History / review
 
 - [ ] Every quantity event (receipt, consume, write-off, merge, PO receive/
   reverse, ad-hoc receive) records an **InventoryHistory** action entry with the
   quantity change, resulting on-hand, reason, and a code/description snapshot.
-- [ ] **Survives deletion:** after a lot is merged away or a finished lot is
-  gone, its history entries remain legible (the snapshot keeps the code/desc).
+- [ ] **Survives deletion:** after a lot is merged away (or a never-referenced
+  item is deleted), its history entries remain legible (the snapshot keeps the
+  code/desc).
 - [ ] *(Surfacing this trail in the UI — a per-item history panel — is a later
   refinement; today it's queryable via the InventoryHistory partition.)*
 
@@ -168,8 +179,8 @@ In the **Add Material** modal (task list → Add Material; pick a catalog/lot it
 | Dimension | Cases |
 |---|---|
 | Browse | columns (on-hand/earmarked/available) · search · active-only · worker sees nav link + list (read) |
-| Finished lots | hidden by default · include-finished reveals · reference-free deleted (demote/write-off) · catalog survives at 0 · earmarked lot stays · hidden lot reachable by pk |
-| CRUD | create (markup default) · edit/re-seed · promote · demote (delete-if-unreferenced / hide / stays) · deactivate |
+| Finished lots | hidden by default · include-finished reveals · never auto-deleted (demote/write-off keep the row) · catalog survives at 0 · earmarked lot stays · hidden lot reachable by pk |
+| CRUD | create (markup default) · edit/re-seed · promote · demote (hide-if-empty / stays) · deactivate · delete guarded (never-referenced only, 400 otherwise) |
 | Write-off | shown only with stock · panel (no immediate action) · partial leaves balance · full empties · qty validation · waste + reason in history |
 | Merge | keep/discard pick · fold + delete · refs repointed · unit-mismatch blocked · catalog-discard blocked |
 | History | every QOH event logged · reason in `text` · survives deletion |

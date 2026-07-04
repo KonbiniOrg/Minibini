@@ -1,21 +1,21 @@
-import { defineConfig } from 'vitest/config';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { mergeConfig, defineConfig } from 'vitest/config';
 import { svelteTesting } from '@testing-library/svelte/vite';
-import { resolve } from 'path';
+import viteConfig from './vite.config.js';
 
-// Test-only config. `vite build` reads vite.config.js, never this file, so the
-// production build is completely unaffected by anything here.
-export default defineConfig({
-  plugins: [svelte(), svelteTesting()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
+// Test config = production vite config + test-only layers. By merging
+// vite.config.js we inherit `resolve.alias` (and the svelte plugin) from the
+// single source of truth, so module resolution can never diverge between
+// `vite build` and the test runner. Only genuinely test-specific settings
+// (jsdom, setup files, the testing plugin, include globs) live here.
+export default mergeConfig(
+  viteConfig,
+  defineConfig({
+    plugins: [svelteTesting()],
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: ['./tests/setup.js'],
+      include: ['tests/**/*.{test,spec}.js'],
     },
-  },
-  test: {
-    environment: 'jsdom',
-    globals: true,
-    setupFiles: ['./tests/setup.js'],
-    include: ['tests/**/*.{test,spec}.js'],
-  },
-});
+  }),
+);

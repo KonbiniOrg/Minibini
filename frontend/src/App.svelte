@@ -16,7 +16,6 @@
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobEditPage from './routes/jobs/JobEditPage.svelte';
   import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
-  import CreateWorksheetPage from './routes/jobs/CreateWorksheetPage.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import InventoryListPage from './routes/inventory/InventoryListPage.svelte';
@@ -31,8 +30,6 @@
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
-  import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
-  import PlanTaskDetailPage from './routes/worksheets/PlanTaskDetailPage.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
   import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
@@ -79,14 +76,11 @@
     '/jobs/:id': JobDetailPage,
     '/jobs/:id/edit': JobEditPage,
     '/jobs/:id/duplicate': DuplicateJobPage,
-    '/jobs/:id/create-worksheet': CreateWorksheetPage,
     '/jobs/:id/tasklist': JobTaskListPage,
     '/jobs/:id/history': JobHistoryPage,
     '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/shipments/:sid/print': PackingListPrint,
-    '/worksheets/:id': WorksheetDetailPage,
-    '/worksheets/:wsId/plan-tasks/:planTaskId': PlanTaskDetailPage,
     '/estimates/:id/wizard': EstimateWizardPage,
     '/estimates/:id/send': EstimateSendPage,
     '/estimates/:id': EstimateDetailPage,

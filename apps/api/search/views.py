@@ -14,10 +14,11 @@ from apps.contacts.models import Contact, Business
 
 class ContactSearchSerializer(drf_serializers.ModelSerializer):
     name = drf_serializers.CharField(read_only=True)
+    business_name = drf_serializers.CharField(source='business.business_name', read_only=True, default=None)
 
     class Meta:
         model = Contact
-        fields = ['contact_id', 'name', 'email', 'mobile_number', 'work_number', 'home_number', 'city']
+        fields = ['contact_id', 'name', 'business_name', 'email', 'mobile_number', 'work_number', 'home_number', 'city']
 
 
 class BusinessSearchSerializer(drf_serializers.ModelSerializer):
@@ -93,16 +94,6 @@ def _serialize_categories(categories):
         out['inventory_items'] = InventoryItemSerializer(
             categories['inventory_items']['items'], many=True
         ).data
-
-    if 'est_worksheets' in categories:
-        out['est_worksheets'] = [
-            {
-                'worksheet_id': ws.pk,
-                'job_number': ws.job.job_number if ws.job else None,
-                'estimate_number': ws.estimate.estimate_number if ws.estimate else None,
-            }
-            for ws in categories['est_worksheets']
-        ]
 
     return out
 

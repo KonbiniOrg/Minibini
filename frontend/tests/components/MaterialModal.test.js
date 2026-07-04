@@ -10,7 +10,7 @@ beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
-  api.get.mockResolvedValue([]); // UnitsSelect / PLI picker
+  api.get.mockResolvedValue([]); // UnitsSelect / InventoryItemPicker
   api.post.mockResolvedValue({});
   api.patch.mockResolvedValue({});
 });
@@ -79,7 +79,8 @@ describe('MaterialModal', () => {
     const { getByPlaceholderText, findByText } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10 },
     });
-    await fireEvent.focus(getByPlaceholderText('Search price list items...'));
+    await fireEvent.input(getByPlaceholderText('Search inventory items…'), { target: { value: 'felt' } });
+    await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByText(/grey felt/));
     expect(await findByText(/earmarked for other jobs/)).toBeInTheDocument();
   });
@@ -89,9 +90,34 @@ describe('MaterialModal', () => {
     const { getByPlaceholderText, findByText, getByLabelText } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10 },
     });
-    await fireEvent.focus(getByPlaceholderText('Search price list items...'));
+    await fireEvent.input(getByPlaceholderText('Search inventory items…'), { target: { value: 'felt' } });
+    await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByText(/grey felt/));
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '4' } });
     expect(await findByText(/Only 3.00 of 5.00/)).toBeInTheDocument();
+  });
+
+  it('seeds description from presetDescription on create', async () => {
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: [], presetDescription: 'plywood' },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('plywood');
+  });
+
+  it('prefills from presetPli on create (PLI-locked)', async () => {
+    const pli = { inventory_item_id: 22, code: 'BOLT-14', description: 'Hex bolt',
+      purchase_price: '0.25', selling_price: '0.50', units: 'ea' };
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: [], presetPli: pli },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Hex bolt');
+  });
+
+  it('freeform create (no presetPli) prefills AC from defaultMaterialCategoryId', async () => {
+    const cats = [{ id: 7, code: 'MAT', name: 'Materials' }];
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: cats, defaultMaterialCategoryId: 7 },
+    });
+    expect(getByLabelText(/accounting category/i)).toHaveValue('7');
   });
 });

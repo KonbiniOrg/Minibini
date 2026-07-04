@@ -16,7 +16,7 @@
   const ALGORITHM_LABELS = {
     elapsed_time: 'Based on time worked',
     entered_qty: 'Worker enters quantity',
-    flat_fee: 'Fixed charge',
+    percentage: 'Percentage of other lines',
   };
 
   function emptyForm() {
@@ -43,7 +43,7 @@
       categories = catResp.results || catResp;
       unitsList = unitsResp;
     } catch (e) {
-      error = e.message || 'Could not load rate schemes.';
+      error = e.message || 'Could not load services.';
     } finally {
       loading = false;
     }
@@ -51,7 +51,7 @@
 
   function isReferenced(s) {
     const c = s.reference_counts || {};
-    return ((c.plan_task_count || 0) + (c.task_count || 0) + (c.task_template_count || 0)) > 0;
+    return ((c.task_count || 0) + (c.service_item_count || 0)) > 0;
   }
 
   function startCreate() {
@@ -151,7 +151,7 @@
   }
 
   async function remove(scheme) {
-    if (!confirm(`Delete rate scheme "${scheme.name}"?`)) return;
+    if (!confirm(`Delete service "${scheme.name}"?`)) return;
     try {
       await api.delete(`/api/rate-schemes/${scheme.rate_scheme_id}/`);
       await load();
@@ -160,9 +160,8 @@
     }
   }
 
-  // flat_fee schemes carry no modifier catalog: the per-item price rides on
-  // the TaskTemplate/Task, and rate is only a fallback default.
-  const isFlatFee = $derived(form.algorithm === 'flat_fee');
+  // percentage: rate holds the percent (negative = discount); no modifiers, no unit/qty fields.
+  const isPercentage = $derived(form.algorithm === 'percentage');
 
   const previewTotal = $derived.by(() => {
     if (!form.rate) return null;
@@ -181,11 +180,11 @@
 {#if error}<p><em>{error}</em></p>{/if}
 {#if loading}<p>Loading...</p>{/if}
 
-{#if !loading && editingId === null && supersedingId === null}
+{#if !loading}
   <p>
     <label>
       <input type="checkbox" bind:checked={showSuperseded} onchange={load} />
-      Show superseded schemes
+      Show superseded rates
     </label>
   </p>
   <table class="data-table">
@@ -208,9 +207,8 @@
               <small>
                 Replaced by: scheme {s.replaced_by}
                 {#if s.replaced_at}| Replaced at: {new Date(s.replaced_at).toLocaleString()}{/if}
-                | References: {s.reference_counts?.plan_task_count || 0} plan tasks,
-                {s.reference_counts?.task_count || 0} tasks,
-                {s.reference_counts?.task_template_count || 0} templates
+                | References: {s.reference_counts?.task_count || 0} tasks,
+                {s.reference_counts?.service_item_count || 0} templates
               </small>
             {:else if isReferenced(s)}
               <button type="button" onclick={() => startSupersede(s)}>Create new version</button>
@@ -223,7 +221,7 @@
       {/each}
     </tbody>
   </table>
-  {#if !showSuperseded}
+  {#if !showSuperseded && editingId === null && supersedingId === null}
     <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
   {/if}
 {/if}
@@ -248,24 +246,28 @@
       <select bind:value={form.algorithm}>
         <option value="elapsed_time">Based on time worked</option>
         <option value="entered_qty">Worker enters quantity</option>
-        <option value="flat_fee">Fixed charge</option>
+        <option value="percentage">Percentage of other lines</option>
       </select>
     </label></p>
-    <p><label><strong>{isFlatFee ? 'Fallback price *' : 'Rate *'}</strong><br>
-      <input type="number" step="0.01" bind:value={form.rate}>
-    </label>
-    {#if isFlatFee}
-      <small>Flat-fee items set their own price on each Task Template; this
-        value is only used when a task carries no price.</small>
+    <p>
+    {#if isPercentage}
+      <label><strong>Rate (%) *</strong><br>
+        <input type="number" step="0.01" bind:value={form.rate}>
+      </label>
+    {:else}
+      <label><strong>Rate *</strong><br>
+        <input type="number" step="0.01" bind:value={form.rate}>
+      </label>
+      <label><strong>Unit label *</strong><br>
+        <select bind:value={form.unit_label} required>
+          <option value="">-- select --</option>
+          {#each unitsList as u}
+            <option value={u}>{u}</option>
+          {/each}
+        </select>
+      </label>
     {/if}
-    <label><strong>Unit label *</strong><br>
-      <select bind:value={form.unit_label} required>
-        <option value="">-- select --</option>
-        {#each unitsList as u}
-          <option value={u}>{u}</option>
-        {/each}
-      </select>
-    </label></p>
+    </p>
     <p><label><strong>Accounting Category *</strong><br>
       <select bind:value={form.accounting_category} required>
         <option value="">-- select --</option>
@@ -275,7 +277,7 @@
       </select>
     </label></p>
 
-    {#if !isFlatFee}
+    {#if !isPercentage}
       <fieldset>
         <legend><strong>Modifiers</strong></legend>
         {#each form.modifiers as mod, i}
@@ -289,7 +291,7 @@
       </fieldset>
     {/if}
 
-    {#if previewTotal && !isFlatFee}
+    {#if previewTotal && !isPercentage}
       <p><strong>Preview:</strong>
         {previewTotal.qty} {form.unit_label}s @ ${previewTotal.effRate}/{form.unit_label} = ${previewTotal.total}
       </p>

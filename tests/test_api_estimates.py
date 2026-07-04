@@ -43,15 +43,49 @@ class EstimateAPITest(BaseTestCase):
             }, format='json')
             self.assertEqual(response.status_code, 200)
 
-    def test_add_line_item(self):
-        estimate = Estimate.objects.first()
+    def _draft_estimate(self):
+        est = Estimate.objects.filter(status=Estimate.STATUS_DRAFT).first()
+        if est is None:
+            est = Estimate.objects.create(
+                job=Job.objects.first(),
+                estimate_number='EST-ADDLINE-1',
+                status=Estimate.STATUS_DRAFT,
+            )
+        return est
+
+    def test_manual_line_item_create_succeeds(self):
+        # Add Line Item is back: a hand-line with an accounting category creates (201).
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
+        estimate = self._draft_estimate()
         response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
             'qty': '2.00',
             'units': 'ea',
             'description': 'API test item',
             'price': '100.00',
+            'accounting_category': cat.pk,
         }, format='json')
-        self.assertIn(response.status_code, [200, 201])
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['description'], 'API test item')
+
+    def test_manual_line_item_create_requires_accounting_category(self):
+        # Hand-line AC rule (Decision 1): a line with no atom source needs an AC.
+        estimate = self._draft_estimate()
+        response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
+            'qty': '2.00', 'units': 'ea', 'description': 'no cat', 'price': '5.00',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_manual_line_item_create_rejected_on_non_draft(self):
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
+        estimate = self._draft_estimate()
+        Estimate.objects.filter(pk=estimate.pk).update(status=Estimate.STATUS_OPEN)
+        response = self.client.post(f'/api/estimates/{estimate.pk}/line-items/', {
+            'qty': '1.00', 'units': 'ea', 'description': 'x', 'price': '5.00',
+            'accounting_category': cat.pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
 
     def test_list_line_items(self):
         estimate = Estimate.objects.first()
@@ -107,12 +141,15 @@ class EstimateSendTest(BaseTestCase):
             estimate_number='EST-SEND-001',
             status=Estimate.STATUS_DRAFT,
         )
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.first() or AccountingCategory.objects.create(name='c')
         EstimateLineItem.objects.create(
             estimate=self.estimate,
             line_number=1,
             qty='1.00', units='ea',
             description='Bracket assembly',
             price='100.00',
+            accounting_category=cat,  # hand-lines need an AC before send
         )
 
     def test_send_defaults_returns_to_subject_body_and_attachment_preview(self):
@@ -230,3 +267,72 @@ class EstimateSendTest(BaseTestCase):
         response = self.client.get(f'/api/estimates/{self.estimate.pk}/send-defaults/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('https://example.com/portal/?token=', response.data['body'])
+
+
+class EstimateAdjustmentLineAPITest(BaseTestCase):
+    """Tests for POST /api/estimates/{id}/adjustment-lines/ and auto-recompute."""
+
+    def setUp(self):
+        super().setUp()
+        from rest_framework.test import APIClient
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        self.client = APIClient()
+        self.user = User.objects.get(username='admin')
+        self.client.force_authenticate(user=self.user)
+        self.labor = AccountingCategory.objects.get(pk=901)
+        self.job = Job.objects.first()
+        self.est = Estimate.objects.create(
+            job=self.job,
+            estimate_number='EST-ADJ-001',
+            status=Estimate.STATUS_DRAFT,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=1, qty=Decimal('1'),
+            units='ea', description='Line A', price=Decimal('100.00'),
+            accounting_category=self.labor,
+        )
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=2, qty=Decimal('1'),
+            units='ea', description='Line B', price=Decimal('40.00'),
+            accounting_category=self.labor,
+        )
+
+    def test_adjustment_line_created_with_correct_price(self):
+        from decimal import Decimal
+        from apps.jobs.models import RateScheme
+        rush = RateScheme.objects.create(
+            name='Rush', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('15.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        resp = self.client.post(
+            f'/api/estimates/{self.est.pk}/adjustment-lines/',
+            {'adjustment_service': rush.pk, 'target_category_ids': []},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        # 15% of (100 + 40) = 21.00
+        self.assertEqual(resp.json()['price'], '21.00')
+
+    def test_recalculate_endpoint_removed(self):
+        """The recalculate endpoint no longer exists (adjustments auto-recompute)."""
+        from decimal import Decimal
+        from apps.jobs.models import RateScheme
+        rush = RateScheme.objects.create(
+            name='Rush5', algorithm=RateScheme.PERCENTAGE,
+            rate=Decimal('10.00'), unit_label='%',
+            accounting_category=self.labor,
+        )
+        resp = self.client.post(
+            f'/api/estimates/{self.est.pk}/adjustment-lines/',
+            {'adjustment_service': rush.pk, 'target_category_ids': []},
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        lid = resp.json()['line_item_id']
+        r2 = self.client.post(
+            f'/api/estimates/{self.est.pk}/line-items/{lid}/recalculate/',
+            content_type='application/json',
+        )
+        self.assertEqual(r2.status_code, 404)

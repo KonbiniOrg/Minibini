@@ -68,3 +68,23 @@ export const api = {
   delete: (url, data = null) => request('DELETE', url, data),
   postMultipart,
 };
+
+/**
+ * Extract a human-readable message from a thrown api error, digging into the
+ * DRF response envelopes: `{detail}`, `{error}`, or field errors
+ * `{field: ['msg']}` (returns the first field's first message). Falls back to
+ * the Error's message, then `fallback`. Use this instead of `e.data.detail`
+ * (which misses field-validation errors) or raw `JSON.stringify(e.data)`.
+ */
+export function errorMessage(err, fallback = 'Something went wrong.') {
+  const data = err?.data;
+  if (data && typeof data === 'object') {
+    if (typeof data.detail === 'string') return data.detail;
+    if (typeof data.error === 'string') return data.error;
+    for (const value of Object.values(data)) {
+      if (Array.isArray(value) && value.length && typeof value[0] === 'string') return value[0];
+      if (typeof value === 'string') return value;
+    }
+  }
+  return err?.message || fallback;
+}

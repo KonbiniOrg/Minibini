@@ -4,8 +4,36 @@ from datetime import timedelta
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
-from apps.contacts.models import Business
+from apps.contacts.models import Contact, Business
 from apps.purchasing.models import Bill, BillLineItem
+
+
+class BillSearchTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        dc = Contact.objects.create(first_name='DC', last_name='')
+        self.acme = Business.objects.create(business_name='Acme Steel', default_contact=dc)
+        self.match = Bill.objects.create(business=self.acme, vendor_invoice_number='INV-7788')
+        dc2 = Contact.objects.create(first_name='OC', last_name='')
+        other = Business.objects.create(business_name='Zenith Glass', default_contact=dc2)
+        self.other = Bill.objects.create(business=other, vendor_invoice_number='INV-0001')
+
+    def _ids(self, resp):
+        rows = resp.data['results'] if 'results' in resp.data else resp.data
+        return [r['bill_id'] for r in rows]
+
+    def test_search_by_vendor_invoice_number(self):
+        resp = self.client.get('/api/bills/?search=7788')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(self.match.bill_id, self._ids(resp))
+        self.assertNotIn(self.other.bill_id, self._ids(resp))
+
+    def test_search_by_vendor_name(self):
+        resp = self.client.get('/api/bills/?search=Acme')
+        self.assertIn(self.match.bill_id, self._ids(resp))
+        self.assertNotIn(self.other.bill_id, self._ids(resp))
 
 
 class BillListAPITest(BaseTestCase):
@@ -86,6 +114,15 @@ class BillListAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         ids = {r['bill_id'] for r in resp.data['results']}
         self.assertIn(bill.bill_id, ids)
+
+    def test_cancelled_bill_balance_is_zero(self):
+        """A cancelled bill with line items and no payments must report balance 0.00 via summary list."""
+        bill = self._bill(status=Bill.STATUS_CANCELLED, number='V-CANCEL')
+        resp = self.client.get('/api/bills/?summary=true&status=all')
+        self.assertEqual(resp.status_code, 200)
+        row = next(r for r in resp.data['results'] if r['bill_id'] == bill.bill_id)
+        self.assertEqual(row['balance'], '0.00',
+                         f"Expected balance 0.00 for cancelled bill, got {row['balance']}")
 
     def test_status_draft_preset(self):
         draft = self._bill(status=Bill.STATUS_DRAFT, number='V-DRAFT2')

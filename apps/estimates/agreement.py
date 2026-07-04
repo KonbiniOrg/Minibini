@@ -11,24 +11,52 @@ Amount convention: qty * price, matching BaseLineItem.total_amount.
 from collections import OrderedDict
 from decimal import Decimal
 
-from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate
+from apps.estimates.models import (
+    ChangeOrder, ChangeOrderLineItem, ChangeOrderLineItemSource,
+    Estimate, EstimateLineItemSource,
+)
 
 
-def _line_dict_from_estimate_item(eli):
-    """Build a line dict from an EstimateLineItem."""
+def _line_dict_from_estimate_item(eli, source_fee_id=None):
+    """Build a line dict from an EstimateLineItem.
+
+    source_fee_id: the Fee pk crystallized from this hand-line at acceptance time
+    (None for atom-backed lines and adjustment lines).  Populated by
+    compose_agreement via a bulk prefetch to avoid N+1 queries.
+    """
     amount = eli.qty * eli.price
+    is_adjustment = eli.adjustment_service_id is not None
     return {
         'description': eli.description,
         'qty': eli.qty,
         'units': eli.units,
         'price': eli.price,
         'amount': amount,
+        'accounting_category_id': eli.accounting_category_id,
         'origin': 'estimate',
+        'is_adjustment': is_adjustment,
+        'adjustment_service_id': eli.adjustment_service_id,
+        'percent': (eli.adjustment_service.rate if is_adjustment else None),
+        'target_category_ids': (
+            list(eli.adjustment_target_categories.values_list('pk', flat=True))
+            if is_adjustment else []
+        ),
+        'source_fee_id': source_fee_id,
     }
 
 
-def _line_dict_from_co_item(coli):
-    """Build a line dict from a ChangeOrderLineItem (replace or add)."""
+def _line_dict_from_co_item(coli, source_fee_id=None):
+    """Build a line dict from a ChangeOrderLineItem (replace or add).
+
+    CO-origin lines are never adjustment lines — adjustments are estimate-only
+    for now.  Keep is_adjustment falsey so agreement-adjustments filtering skips
+    them.
+
+    source_fee_id: the Fee pk crystallized from this CO line at CO acceptance
+    (None for lines that crystallized a Task/Material or nothing). Populated by
+    compose_agreement via a bulk prefetch, exactly parallel to the estimate
+    hand-line fee provenance, so copy_from_estimate claims the Fee once.
+    """
     amount = coli.qty * coli.price
     return {
         'description': coli.description,
@@ -36,7 +64,13 @@ def _line_dict_from_co_item(coli):
         'units': coli.units,
         'price': coli.price,
         'amount': amount,
+        'accounting_category_id': coli.accounting_category_id,
         'origin': 'change_order',
+        'is_adjustment': False,
+        'adjustment_service_id': None,
+        'percent': None,
+        'target_category_ids': [],
+        'source_fee_id': source_fee_id,
     }
 
 
@@ -60,11 +94,25 @@ def compose_agreement(job):
 
     # Build an ordered dict keyed by EstimateLineItem pk preserving line_number order.
     # Values are mutable line dicts (or None when removed).
-    est_line_items = estimate.estimatelineitem_set.order_by('line_number')
+    est_line_items = list(estimate.estimatelineitem_set.order_by('line_number'))
+
+    # Prefetch the fee-source mapping in a single query to avoid N+1.
+    # Each hand-line that was crystallized into a Fee has exactly one
+    # EstimateLineItemSource(source_type='fee') row created at acceptance time.
+    fee_source_map = {
+        src.estimate_line_item_id: src.source_pk
+        for src in EstimateLineItemSource.objects.filter(
+            estimate_line_item__in=[eli.pk for eli in est_line_items],
+            source_type=EstimateLineItemSource.SOURCE_FEE,
+        )
+    }
+
     # Use an OrderedDict so insertion order (= line_number order) is preserved.
     keyed_lines = OrderedDict()
     for eli in est_line_items:
-        keyed_lines[eli.pk] = _line_dict_from_estimate_item(eli)
+        keyed_lines[eli.pk] = _line_dict_from_estimate_item(
+            eli, source_fee_id=fee_source_map.get(eli.pk),
+        )
 
     # Added lines come after all estimate lines.
     added_lines = []
@@ -74,6 +122,17 @@ def compose_agreement(job):
         estimate=estimate,
         status=ChangeOrder.STATUS_ACCEPTED,
     ).order_by('closed_date', 'change_order_id')
+
+    # Prefetch the CO-line fee provenance in a single query (parallel to the
+    # estimate fee_source_map above): each add/replace line crystallized into
+    # a Fee at CO acceptance has one ChangeOrderLineItemSource(fee) row.
+    co_fee_source_map = {
+        src.change_order_line_item_id: src.source_pk
+        for src in ChangeOrderLineItemSource.objects.filter(
+            change_order_line_item__change_order__in=accepted_cos,
+            source_type=ChangeOrderLineItemSource.SOURCE_FEE,
+        )
+    }
 
     for co in accepted_cos:
         co_lines = co.changeorderlineitem_set.order_by('line_number')
@@ -89,10 +148,12 @@ def compose_agreement(job):
             elif action == ChangeOrderLineItem.ACTION_REPLACE:
                 target_pk = coli.target_line_item_id
                 if target_pk in keyed_lines and keyed_lines[target_pk] is not None:
-                    keyed_lines[target_pk] = _line_dict_from_co_item(coli)
+                    keyed_lines[target_pk] = _line_dict_from_co_item(
+                        coli, source_fee_id=co_fee_source_map.get(coli.pk))
 
             elif action == ChangeOrderLineItem.ACTION_ADD:
-                added_lines.append(_line_dict_from_co_item(coli))
+                added_lines.append(_line_dict_from_co_item(
+                    coli, source_fee_id=co_fee_source_map.get(coli.pk)))
 
     # Compose final ordered list: surviving estimate-position lines first, then added lines.
     lines = [v for v in keyed_lines.values() if v is not None]

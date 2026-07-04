@@ -37,8 +37,19 @@ core) plus a single `apps/api/` app that owns the REST layer.
 
 ### 2.2 Service layer
 
-Every model write goes through a service method in `apps/<app>/services.py`.
-API viewsets never call `.save()` or `.delete()` on a tracked model directly.
+**All model CRUD goes through the service layer.** Every create, update, and
+delete of a tracked model happens inside a service method in
+`apps/<app>/services.py`. No other layer — viewsets, the wizard, management
+commands, PDF/email code — calls `Model.save()`, `.delete()`, or
+`.objects.create()` on a tracked model directly. The point isn't ceremony: it's
+that a single write path lets cross-cutting side effects be **guaranteed instead
+of remembered**. Example: every line-item write routes through `LineItemService`
+(§4), whose `save_line_item` / `delete_line_item_with_renumber` recompute the
+document's percentage-adjustment lines, so an adjustment can never go stale no
+matter who edited a line (a viewset, the wizard, a future caller). Sanctioned
+exceptions: migrations, fixtures/seed loaders, and test `setUp` may write models
+directly; a bulk service method may batch its writes and recompute once at the
+end (e.g. `InvoiceService.copy_from_estimate`).
 
 **Rules:**
 
@@ -111,11 +122,13 @@ effects. Two different conventions coexist:
 
 - `apps/jobs/signals.py` — **0 lines**. Job status side effects are
   handled inside `apps/jobs/services.py`.
-- `apps/estimates/signals.py` — three receivers
-  (`estimate_status_changed_for_worksheet`, `estimate_status_changed_for_job`,
-  `estimate_accepted`) that mutate worksheets and jobs when an estimate
+- `apps/estimates/signals.py` — two receivers
+  (`estimate_status_changed_for_job`, `estimate_accepted`) that mutate jobs
+  (and, on accept, crystallize hand-lines into Fees) when an estimate
   status changes. The job-status receiver routes its changes through
-  `JobService.update_job` rather than mutating the Job directly.
+  `JobService.update_job` rather than mutating the Job directly. (The former
+  `estimate_status_changed_for_worksheet` receiver was removed with the
+  planning layer.)
 
 This is undecided convention, not deliberate design. Either approach
 works in isolation; mixing them makes it hard to reason about what
@@ -133,7 +146,7 @@ apps/api/
     permissions.py           # atom-permission factory + the four atom classes
     pagination.py            # StandardPagination
     mixins.py                # StatusTransitionMixin, LineItemMixin,
-                             # PlanTaskMixin, JobTaskMixin,
+                             # JobTaskMixin,
                              # JSONDestroyMixin, ConfirmDeleteMixin
     stubs.py                 # stub_501 factory
     auth/                    # session login/logout/me, password change, refresh stub
@@ -145,28 +158,28 @@ apps/api/
     history/                 # HistoryEntrySerializer (no urls of its own;
                              #  feeds live on Job/Contact/Business viewsets)
     home/                    # home dashboard, current blep band
-    inventory/               # PriceListItem, Material
+    inventory/               # InventoryItem, Material
     invoicing/               # Invoice
     jobs/                    # Job + board views
-    plan_tasks/              # PlanTask (worksheet-side tasks)
     purchasing/              # PurchaseOrder, Bill
     rate_schemes/            # RateScheme
     reimbursements/          # expense reimbursement batches
     search/                  # SearchService dispatch
     shifts/                  # Shift + clock-in/out + change-requests + report
     tasks/                   # Task (job-side tasks)
-    templates_config/        # WorkTemplate, TaskTemplate, AccountingCategory,
+    templates_config/        # WorkTemplate, ServiceItem, AccountingCategory,
                              #  settings, units
     time_tracking/           # urls only — re-exports apps.api.shifts.urls
                              #  (mounted at /api/shifts/); time-tracking/{status,active} still 501
     users/                   # User admin (CRUD, deactivate, reset password)
-    worksheets/              # EstWorksheet
     portal/                  # Customer portal (AllowAny; estimate read/accept/reject)
 ```
 
-The `WorkOrder` model has been removed; Tasks live directly on `Job`.
-See `docs/designs/jobs-tasks-and-worksheets.md` for the task-on-job
-shape.
+The `WorkOrder` model has been removed; Tasks live directly on `Job`. The
+planning layer (`EstWorksheet` / `PlanTask` / the `worksheets/` and
+`plan_tasks/` API apps) has also been removed — the Job owns its work atoms
+(`Task` / `Material` / `Fee`) directly. See
+`docs/designs/jobs-tasks-and-worksheets.md` for the job-owns-atoms shape.
 
 **Shared change-request viewset.** `apps/api/shifts/views.py` defines a
 `_ChangeRequestViewSet` base that `ShiftChangeRequestViewSet` and
@@ -242,9 +255,37 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > The anti-pattern to avoid: bumping `?page_size` to a big number and assuming
 > it's complete. If you bound a result deliberately, say so in the UI; never let
 > it look like "everything" when it's the first 100. Known instances fixed by
-> page-walking: `InventoryListPage` (2026-06). Known still-capped: the inventory
-> item picker (`PriceListItemPicker`) requests `page_size=9999` — slated for a
-> server-side-search rework, see `docs/designs/LATER.md`.
+> page-walking: `InventoryListPage` (2026-06). Fixed by server-side-search
+> rework (2026-06): `InventoryItemPicker` (formerly `InventoryItemPicker`),
+> email-association pickers (jobs/POs/bills).
+
+#### Type-ahead pickers: `SearchPicker` + per-entity wrappers
+
+All searchable entity pickers in the SPA are built on a shared behavior core,
+`frontend/src/components/SearchPicker.svelte`, which owns: debounced search
+(via a `search(query)` callback), focus/blur-managed results dropdown,
+prefill-by-id label resolution with a race guard (via `resolveLabel(value,
+selectedItem?)`), and selected/clear state. Callers supply row rendering and
+interaction through named snippets (`row`, `selected`, `header`) and callbacks
+(`onPick`, `onClear`). Props: `value` (bindable, opaque), `selectedItem`
+(optional prefill object), `disabled`, `placeholder`, `rowLabel(row)`.
+
+Per-entity pickers thin-wrap `SearchPicker` and own their API endpoint, search
+params, and row/selected rendering:
+
+| Component | Search endpoint | Notes |
+|---|---|---|
+| `BusinessPicker` | `/api/businesses/?search=` | |
+| `JobPicker` | `/api/jobs/?search=` | |
+| `ContactPicker` | `/api/contacts/?search=` | |
+| `PurchaseOrderPicker` | `/api/purchase-orders/?search=` | Global (po_number, vendor name) |
+| `BillPicker` | `/api/bills/?search=` | vendor_invoice_number, PO number, vendor name |
+| `InventoryItemPicker` | `/api/inventory/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
+| `CustomerPicker` | dual-source contacts + businesses | Emits `{type, id}` (not a plain id) |
+
+**Shared single-model picker contract:** `value` (bindable entity id), `onSelect(fullRow|null)`, optional `selectedItem` for id-based prefill. `CustomerPicker` deviates: its `value` is `{type, id}`.
+
+**Backend `?search=`** is hand-rolled in `get_queryset` for purchase-orders (po_number, vendor name), bills (vendor_invoice_number, PO number, vendor name), and inventory items (code, description) — the same pattern as contacts/jobs. DRF `SearchFilter` is not used.
 
 ### 3.4 Mixin catalog
 
@@ -254,13 +295,14 @@ All in `apps/api/mixins.py`.
 |---|---|---|
 | `StatusTransitionMixin` | Every document viewset | Auto-registers `@action` POST endpoints from a `status_actions` dict, with optional `requires_reason` validation and HistoryEntry attachment. |
 | `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet, BillViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. |
-| `PlanTaskMixin` | EstWorksheetViewSet | Adds `tasks/`, `tasks/{id}/` actions for `PlanTask` (worksheet-side). |
-| `PlanTaskBundleMixin` | n/a | Backwards-compat alias for `PlanTaskMixin`; remove after callers update. |
-| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. |
-| `JSONDestroyMixin` | JobViewSet, BillViewSet, PriceListItemViewSet, WorkTemplateViewSet, TaskTemplateViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` and `fees/` actions live on `JobViewSet` directly.) |
+| `JSONDestroyMixin` | JobViewSet, BillViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
 | `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
-| `JobScopedPermissionMixin` | JobViewSet, EstWorksheetViewSet, EstimateViewSet, PlanTaskViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
-| `JobScopedCanManageMixin` | Job/EstWorksheet/Estimate/PlanTaskDetail/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
+| `JobScopedPermissionMixin` | JobViewSet, EstimateViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
+| `JobScopedCanManageMixin` | Job/Estimate/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
+
+(The former `PlanTaskMixin` / `PlanTaskBundleMixin` were removed with the
+worksheet layer.)
 
 `StatusTransitionMixin.status_actions` shape:
 
@@ -300,7 +342,7 @@ CanManageConfig     = atom_permission('can_manage_config')
 Two composite classes (hand-written, not factory-generated) live alongside the atoms:
 
 - `CanManageTimeOrFinancials` — OR of `can_manage_time` and `can_manage_financials`; gates the payroll shift report.
-- `CanManageJobOrPM` — `can_manage_jobs` OR being the target Job's `project_manager`. View-authoritative: short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (via `JobScopedPermissionMixin.get_permission_target_job`) and PM-checks it with `JobService.user_can_manage`. `has_object_permission` stays as defense-in-depth for update/destroy. Gates writes on the job-owned viewsets (Job, EstWorksheet, Estimate, PlanTask, ChangeOrder, Deliverable) so a job's PM gets atom-equivalent access **scoped to that one job** — see `users-and-permissions.md` "Project-manager object access".
+- `CanManageJobOrPM` — `can_manage_jobs` OR being the target Job's `project_manager`. View-authoritative: short-circuits `SAFE_METHODS`, passes atom holders, and otherwise resolves the request's target Job (via `JobScopedPermissionMixin.get_permission_target_job`) and PM-checks it with `JobService.user_can_manage`. `has_object_permission` stays as defense-in-depth for update/destroy. Gates writes on the job-owned viewsets (Job, Estimate, ChangeOrder, Deliverable, Task) so a job's PM gets atom-equivalent access **scoped to that one job** — see `users-and-permissions.md` "Project-manager object access".
 
 Default for everything else: `IsAuthenticated`. See CLAUDE.md
 "Permissions" for the full atom-to-action mapping and the default
@@ -336,7 +378,6 @@ a runtime error in the SPA.
 
 - `EstimateViewSet` — `apps/api/estimates/views.py`
 - `InvoiceViewSet` — `apps/api/invoicing/views.py`
-- `EstWorksheetViewSet` — `apps/api/worksheets/views.py`
 - `PurchaseOrderViewSet` — `apps/api/purchasing/views.py`
 - `ContactViewSet` — `apps/api/contacts/views.py`
 - `BusinessViewSet` — `apps/api/contacts/views.py`
@@ -346,9 +387,9 @@ a runtime error in the SPA.
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
 - `JobViewSet` — `JSONDestroyMixin`
 - `BillViewSet` — `JSONDestroyMixin`
-- `PriceListItemViewSet` — `JSONDestroyMixin`
+- `InventoryItemViewSet` — `JSONDestroyMixin`
 - `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
-- `TaskTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
+- `ServiceItemViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
 - `AccountingCategoryViewSet` — `JSONDestroyMixin`
 - `MaterialViewSet` — returns 405 (top-level material delete is disallowed)
 - `UserViewSet` — raises `MethodNotAllowed` (use deactivate)
@@ -424,7 +465,7 @@ The mixin then exposes:
 | Verb + path | Mixin method | Calls |
 |---|---|---|
 | `GET /{id}/line-items/` | `line_items` | direct query, ordered by `line_number` |
-| `POST /{id}/line-items/` | `line_items` | `service.add_line_item_from_pli` if `price_list_item` is supplied without manual fields, else `service.add_line_item` |
+| `POST /{id}/line-items/` | `line_items` | `service.add_line_item_from_pli` if `inventory_item` is supplied without manual fields, else `service.add_line_item` |
 | `PATCH /{id}/line-items/{item_id}/` | `line_item_detail` | `service.update_line_item` |
 | `DELETE /{id}/line-items/{item_id}/` | `line_item_detail` | `service.delete_line_item` |
 | `POST /{id}/line-items/reorder/` | `reorder_line_items` | `service.reorder_line_items` |
@@ -435,7 +476,7 @@ enforces its own status guard (typically draft only); the mixin doesn't
 know what statuses are editable.
 
 `BaseLineItem.save()` has a `_populate_from_pli` safety net that fills
-in description/units/price/category from a linked `PriceListItem` if
+in description/units/price/category from a linked `InventoryItem` if
 they're missing — the model's last line of defence in case some new
 code path bypasses the service.
 
@@ -444,6 +485,20 @@ Always go through `LineItemService.delete_line_item_with_renumber()`
 (or the entity service's `delete_line_item`, which delegates to it),
 because plain delete leaves gaps in `line_number`. See CLAUDE.md
 "Code Conventions" for the rule.
+
+**Line item create/update: route through `LineItemService.save_line_item()`.**
+Mirroring the delete rule, every line-item create and update — in the entity
+services *and* in the wizard (`BaseWizardService`) — saves via
+`LineItemService.save_line_item(line_item)` instead of calling
+`line_item.save()` directly. That method saves the row, then recomputes any
+percentage-adjustment lines on the parent document (container resolved via
+`get_parent_container`), so adjustments stay correct after any line change with
+no manual "recalculate" step. `recompute_adjustments` writes the adjustment
+rows with a raw `.save()`, so there is no recursion. The wizard still owns
+creating its `…LineItemSource` rows (those aren't line items); only the
+line-item writes go through the chokepoint. The sanctioned bypass stays
+correct: `revise_estimate` is a faithful copy of an existing revision
+(adjustment prices carry over already correct).
 
 ---
 
@@ -629,7 +684,7 @@ with `rel="noopener noreferrer"`.
 URLs) — never `{@html}` — so it's XSS-safe by construction, same discipline
 as §5.6.
 
-**Applied at:** Job / Task / PlanTask descriptions and billing line-item
+**Applied at:** Job / Task descriptions and billing line-item
 descriptions (`LineItemTable`, `JobDetail` invoice + PO lines,
 `PurchaseOrderDetail`). Other free-text fields (notes, addresses, material
 descriptions) get the §5.6 wrap but are not linkified.
@@ -725,13 +780,15 @@ it to a user profile page — that move hasn't happened.
 
 ### 7.1 Model
 
-History is **partitioned by domain into three tables** (`apps/core/models.py`),
+History is **partitioned by domain into per-domain tables** (`apps/core/models.py`),
 all sharing the abstract `HistoryEntryBase`:
 
 - `JobHistory` (`job_history`) — Job + everything that hangs off it (task,
   estimate, change order, invoice, material, deliverable, shipment).
 - `CrmHistory` (`crm_history`) — contacts and businesses.
-- `PurchasingHistory` (`purchasing_history`) — purchase orders and bills.
+- `PurchasingHistory` (`purchasing_history`) — purchase orders, bills, **and bill payments** (a payment is an adjunct of its bill — see §7.4).
+- `InventoryHistory` (`inventory_history`) — inventory items.
+- `ExpensesHistory` (`expenses_history`) — expenses **and reimbursement batches** (a batch is an adjunct of its member expenses — see §7.4).
 
 Three entry types (on the base): `audit` (automatic field-change tracking on
 decorated models), `action` (system-generated state changes from
@@ -760,6 +817,9 @@ Models opt in with `@history(exclude=[...])` from `apps/core/history.py`:
 - `PurchaseOrder`, `Bill` — `apps/purchasing/models.py`
 - `Material` — `apps/inventory/models.py`
 - `Deliverable`, `Shipment` — `apps/deliverables/models.py`
+- `Expense` — `apps/expenses/models.py`. Excludes the four `qbo_*` fields (`qbo_id`, `qbo_sync_status`, `qbo_sync_error`, `qbo_pending_op`) so QBO sync-state churn never enters the expense timeline — the domain↔QBO seam (QBO sync state lives in `QBOSyncLog`, not here).
+
+`BillPayment` and `Reimbursement` are deliberately **not** decorated — they're adjuncts whose history is written imperatively onto their *primary* (§7.4), which the decorator (keyed to a model's own `object_type`) can't express.
 
 Time/workforce models (`Shift`, `ShiftChangeRequest`, `BlepChangeRequest`)
 are **not** tracked: their lifecycle is already first-class data
@@ -791,6 +851,36 @@ or its transaction rolled back, the entries are dropped.
 hooks. `StatusTransitionMixin` uses them to attach a status-change
 reason to the most recent pending audit entry
 (`apps/api/mixins.py`).
+
+### 7.4 `record_action`, imperative entries, and attribution
+
+`audit` entries are automatic (the decorator). `action` and `note` entries are
+**imperative** — a service calls into `apps/core/history.py`:
+
+- `record_history(object_type, entry_type, object_id, user=None, changes=…)` — the
+  single low-level write entry point.
+- `record_action(object_type, object_id, action, user=None)` — the thin convenience
+  wrapper for `entry_type='action'` (`changes={'_action': action}`). **Prefer this**
+  for system/service action entries over hand-writing `record_history(entry_type='action', …)`.
+
+**Attribution defaults to the request context.** `record_action` (and
+`QBOService.log_sync`) default their author to `current_request_user()` — the
+authenticated user resolved from the active `HistoryContext` — so a service does
+**not** thread a `user`/`actor` just for attribution. Pass an explicit `user=` only
+for a *deliberate non-request author*: a `system` user (signals, expiry commands),
+a customer (the portal puts the customer in the `changes` payload with `user=None`),
+or a historical author + backdated `timestamp` (`backfill_job_history`). (Many older
+imperative sites still thread `request.user` redundantly — converging them on the
+context default is a tracked follow-up in `LATER.md`.)
+
+**Adjunct → primary.** The `@history` decorator keys entries to a model's *own*
+`object_type`, so a sub-resource can't auto-route its history to its parent. Adjuncts
+therefore record imperatively on the **primary's** timeline: `BillPayment` lifecycle
+(recorded / edited / deleted) → `record_action(object_type='bill', object_id=bill_id, …)`;
+`Reimbursement` lifecycle (reimbursed-in-batch / unwound) → `record_action(object_type='expense', …)`
+on each member expense. Delete entries are written on the **success path only** (after
+the QBO void succeeds and just before the local row is removed — capture the parent id +
+amount first).
 
 **Important** (also in CLAUDE.md): never use `QuerySet.update()` on
 tracked models — it bypasses signals. Always load and `.save()`.

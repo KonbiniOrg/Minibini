@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
 
   let { user = null } = $props();  // { id, username, first_name, last_name } or similar
@@ -76,6 +76,7 @@
   async function submitBatch() {
     batchSaving = true;
     batchError = '';
+    if (!batchAccountId) { batchError = 'Choose a payment account.'; batchSaving = false; return; }
     try {
       await api.post('/api/reimbursements/', {
         purchased_by: user.id,
@@ -91,11 +92,7 @@
       batchNotes = '';
       await loadAll();
     } catch (err) {
-      if (err.data) {
-        batchError = JSON.stringify(err.data);
-      } else {
-        batchError = err.message || 'Could not create batch.';
-      }
+      batchError = errorMessage(err, 'Could not create batch.');
     } finally {
       batchSaving = false;
     }
@@ -178,11 +175,16 @@
     </table>
 
     {#if selectedIds.size > 0 && !showBatchForm}
-      <p>
-        <button type="button" onclick={() => { showBatchForm = true; }}>
-          Reimburse selected (${selectedTotal})
-        </button>
-      </p>
+      {#if paymentAccounts.length === 0}
+        <p><em>Configure payment accounts in <strong>Settings → QuickBooks</strong>
+          to reimburse.</em></p>
+      {:else}
+        <p>
+          <button type="button" onclick={() => { showBatchForm = true; }}>
+            Reimburse selected (${selectedTotal})
+          </button>
+        </p>
+      {/if}
     {/if}
 
     {#if showBatchForm}
@@ -243,9 +245,9 @@
             <td>{b.expense_count}</td>
             <td style="text-align: right">${b.total}</td>
             <td>{b.reference_number || '—'}</td>
-            <td><em>{b.status}</em></td>
+            <td><em>{b.qbo_sync_status}</em></td>
             <td>
-              {#if b.status === 'sync_failed'}
+              {#if b.qbo_sync_status === 'sync_failed'}
                 <button type="button" onclick={() => retryBatch(b)}>retry push</button>
               {/if}
             </td>

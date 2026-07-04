@@ -21,7 +21,7 @@ from apps.jobs.models import Job, RateScheme, Task
 def _make_scheme(name='S-b8'):
     ac, _ = AccountingCategory.objects.get_or_create(code='B8', defaults={'name': 'B8-Labor'})
     return RateScheme.objects.create(
-        name=name, algorithm=RateScheme.FLAT_FEE,
+        name=name, algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea',
         accounting_category=ac,
     )
@@ -90,7 +90,7 @@ class RateSchemeReverseManagerTest(TestCase):
         self.assertTrue(self.scheme.is_referenced())
 
     def test_unreferenced_scheme_is_not_referenced(self):
-        """Scheme with no Tasks/PlanTasks/Templates is not referenced."""
+        """Scheme with no Tasks/Templates is not referenced."""
         self.assertFalse(self.other.is_referenced())
 
 

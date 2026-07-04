@@ -22,18 +22,6 @@ class TaskComputeAmountTest(TestCase):
             job_number='JOB-2026-0001', contact=contact, status=Job.STATUS_DRAFT,
         )
 
-    def test_compute_amount_flat_fee(self):
-        scheme = RateScheme.objects.create(
-            name='Setup', algorithm=RateScheme.FLAT_FEE,
-            rate=Decimal('100.00'), unit_label='job',
-            accounting_category=self.ac,
-        )
-        task = Task.objects.create(
-            job=self.job, name='Setup',
-            rate_scheme=scheme, active_modifiers=[],
-        )
-        self.assertEqual(task.compute_amount(), Decimal('100.00'))
-
     def test_compute_amount_entered_qty(self):
         scheme = RateScheme.objects.create(
             name='Pieces', algorithm=RateScheme.ENTERED_QTY,
@@ -67,7 +55,7 @@ class TaskComputeAmountTest(TestCase):
 
     def test_effective_accounting_category_reads_from_scheme(self):
         scheme = RateScheme.objects.create(
-            name='Setup', algorithm=RateScheme.FLAT_FEE,
+            name='Setup', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100.00'), unit_label='job',
             accounting_category=self.ac,
         )

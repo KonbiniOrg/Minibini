@@ -3,12 +3,12 @@ from django.test import TestCase
 from apps.core.models import AccountingCategory, Configuration
 from apps.contacts.models import Contact
 from apps.inventory.models import (
-    Material, PlanMaterial, InventoryItem, TemplateMaterialAssociation,
+    Material, InventoryItem, TemplateMaterialAssociation,
 )
 from apps.estimates.models import (
-    EstWorksheet, WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
-from apps.jobs.models import Job, PlanTask, RateScheme, Task
+from apps.jobs.models import Job, RateScheme, Task
 
 
 class _Setup(TestCase):
@@ -30,83 +30,13 @@ class _Setup(TestCase):
             name='J', job_number='J-1', status=Job.STATUS_DRAFT, contact=cls.contact,
         )
         cls.wt = WorkTemplate.objects.create(template_name='T')
-        cls.tt = TaskTemplate.objects.create(
+        cls.tt = ServiceItem.objects.create(
             template_name='Cut', rate_scheme=cls.scheme,
-            default_billable_qty=Decimal('20'),
         )
         cls.tta = TemplateTaskAssociation.objects.create(
-            work_template=cls.wt, task_template=cls.tt,
+            work_template=cls.wt, service_item=cls.tt,
             est_qty=Decimal('20'), sort_order=0,
         )
-
-
-class WorksheetGenerationTests(_Setup):
-    def test_task_less_association_generates_task_less_plan_material(self):
-        TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, inventory_item=self.pli,
-            quantity=Decimal('5'),
-        )
-        ws = EstWorksheet.objects.create(job=self.job)
-        self.wt.generate_tasks_for_worksheet(ws)
-        self.wt.generate_materials_for_worksheet(ws)
-
-        pms = list(PlanMaterial.objects.filter(est_worksheet=ws, plan_task__isnull=True))
-        self.assertEqual(len(pms), 1)
-        self.assertEqual(pms[0].quantity, Decimal('5'))
-        self.assertEqual(pms[0].inventory_item_id, self.pli.pk)
-        self.assertEqual(pms[0].units, 'sheets')  # via _populate_from_pli
-
-    def test_task_paired_association_attaches_to_matching_plan_task(self):
-        TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, inventory_item=self.pli,
-            template_task_association=self.tta,
-            quantity=Decimal('2'),
-        )
-        ws = EstWorksheet.objects.create(job=self.job)
-        task_pairing = self.wt.generate_tasks_for_worksheet(ws)
-        self.wt.generate_materials_for_worksheet(ws, task_pairing=task_pairing)
-
-        pt = PlanTask.objects.get(est_worksheet=ws)
-        pm = PlanMaterial.objects.get(est_worksheet=ws)
-        self.assertEqual(pm.plan_task_id, pt.pk)
-        self.assertEqual(pm.quantity, Decimal('2'))
-
-    def test_pli_price_change_after_template_setup_reflected_at_generation(self):
-        TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, inventory_item=self.pli,
-            quantity=Decimal('5'),
-        )
-        # PLI price bumped after the template was set up
-        self.pli.purchase_price = Decimal('52.00')
-        self.pli.selling_price = Decimal('78.00')
-        self.pli.save()
-
-        ws = EstWorksheet.objects.create(job=self.job)
-        self.wt.generate_tasks_for_worksheet(ws)
-        self.wt.generate_materials_for_worksheet(ws)
-
-        pm = PlanMaterial.objects.get(est_worksheet=ws)
-        self.assertEqual(pm.unit_cost, Decimal('52.00'))
-        self.assertEqual(pm.sell_price, Decimal('78.00'))
-
-    def test_multi_instance_replicates_per_instance_with_pairing(self):
-        TemplateMaterialAssociation.objects.create(
-            work_template=self.wt, inventory_item=self.pli,
-            template_task_association=self.tta,
-            quantity=Decimal('2'),
-        )
-        ws = EstWorksheet.objects.create(job=self.job)
-        task_pairing = self.wt.generate_tasks_for_worksheet(ws, quantity=3)
-        self.wt.generate_materials_for_worksheet(ws, quantity=3, task_pairing=task_pairing)
-
-        # 3 PlanTasks, 3 PlanMaterials, each PlanMaterial paired with a unique PlanTask
-        pts = list(PlanTask.objects.filter(est_worksheet=ws).order_by('plan_task_id'))
-        pms = list(PlanMaterial.objects.filter(est_worksheet=ws).order_by('plan_material_id'))
-        self.assertEqual(len(pts), 3)
-        self.assertEqual(len(pms), 3)
-        # Each PlanMaterial's plan_task is one of the generated tasks, and they pair 1:1.
-        paired_task_ids = sorted(pm.plan_task_id for pm in pms)
-        self.assertEqual(paired_task_ids, sorted(pt.pk for pt in pts))
 
 
 class JobGenerationTests(_Setup):

@@ -7,25 +7,44 @@
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
     contact,
+    invoices = null,
     purchaseOrders = null,
     bills = null,
     history = null,
+    financials = null,
     onEdit = null,
     onDelete = null,
+    onInvoicePageChange = null,
     onPOPageChange = null,
     onBillPageChange = null,
     onAddNote = null,
   } = $props();
 
   const closedJobStatuses = ['completed', 'cancelled'];
+  const closedInvoiceStatuses = ['paid', 'cancelled', 'superseded'];
   const closedPOStatuses = ['received_in_full', 'cancelled'];
   const closedBillStatuses = ['paid_in_full', 'cancelled', 'refunded'];
+
+  function formatAmount(v) {
+    if (v == null || v === '') return '$—';
+    return Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  }
+
+  let profitNum = $derived(financials?.profit == null ? null : Number(financials.profit));
 
   let visibleJobs = $derived(
     contact.jobs
       ? $viewMode === 'full'
         ? contact.jobs
         : contact.jobs.filter(j => !closedJobStatuses.includes(j.status))
+      : []
+  );
+
+  let visibleInvoices = $derived(
+    invoices?.results
+      ? $viewMode === 'full'
+        ? invoices.results
+        : invoices.results.filter(inv => !closedInvoiceStatuses.includes(inv.status))
       : []
   );
 
@@ -47,6 +66,22 @@
 
 
 </script>
+
+<div class="customer-financials">
+  <h2 class="cf-name">{contact.name}</h2>
+  {#if financials}
+    <div class="cf-numbers">
+      <div class="cf-item">
+        <div class="cf-label">Total Invoiced</div>
+        <div class="cf-value cf-invoiced">{formatAmount(financials.invoiced)}</div>
+      </div>
+      <div class="cf-item">
+        <div class="cf-label">Total Profit</div>
+        <div class="cf-value" class:cf-profit-pos={profitNum != null && profitNum >= 0} class:cf-profit-neg={profitNum != null && profitNum < 0}>{formatAmount(financials.profit)}</div>
+      </div>
+    </div>
+  {/if}
+</div>
 
 <dl>
   <dt>Name</dt>
@@ -151,6 +186,40 @@
   <p>No {$viewMode === 'lite' ? 'open ' : ''}jobs.</p>
 {/if}
 
+<h3>Invoices</h3>
+{#if visibleInvoices.length > 0}
+  <table class="data-table">
+    <thead>
+      <tr><th>Invoice #</th><th>Job</th><th>Status</th><th>Total</th><th>Paid</th><th>Balance</th></tr>
+    </thead>
+    <tbody>
+      {#each visibleInvoices as inv}
+        <tr>
+          <td><a href="#/invoices/{inv.invoice_id}">{inv.invoice_number}</a></td>
+          <td><a href="#/jobs/{inv.job}">{inv.job_number}</a></td>
+          <td>{inv.status}</td>
+          <td>{formatAmount(inv.total)}</td>
+          <td>{formatAmount(inv.amount_paid)}</td>
+          <td>{formatAmount(inv.balance)}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  {#if invoices}
+    <p>
+      {pageRange(invoices)}
+      {#if invoices.previous}
+        | <button type="button" onclick={() => onInvoicePageChange(pageFromUrl(invoices.previous))}>Previous</button>
+      {/if}
+      {#if invoices.next}
+        | <button type="button" onclick={() => onInvoicePageChange(pageFromUrl(invoices.next))}>Next</button>
+      {/if}
+    </p>
+  {/if}
+{:else}
+  <p>No {$viewMode === 'lite' ? 'open ' : ''}invoices.</p>
+{/if}
+
 <h3>Purchase Orders</h3>
 {#if visiblePOs.length > 0}
   <table class="data-table">
@@ -221,3 +290,23 @@
     <button onclick={onDelete}>Delete</button>
   {/if}
 </p>
+
+<style>
+  .customer-financials {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1f2937;
+    padding: 14px 24px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .cf-name { font-size: 22px; font-weight: 700; color: #fff; margin: 0; padding-left: 52px; }
+  .cf-numbers { display: flex; gap: 22px; }
+  .cf-item { text-align: right; }
+  .cf-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.65); }
+  .cf-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; color: #fff; }
+  .cf-invoiced { color: #86efac; }
+  .cf-profit-pos { color: #86efac; }
+  .cf-profit-neg { color: #fca5a5; }
+</style>

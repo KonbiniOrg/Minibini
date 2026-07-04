@@ -57,9 +57,12 @@ class PaymentPollingTest(TestCase):
             object_type='invoice', object_id=inv.pk,
             changes__status__new=Invoice.STATUS_PAID,
         ).exists())
-        # Full payment of the job's only invoice auto-completes the job.
+        # A paid invoice does not auto-complete a job whose work never
+        # happened (no tasks; completion gate requires finished work — see
+        # tests/test_completion_gate.py). The polling mechanics above are this
+        # test's subject; completion is covered once the job's work is done:
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
     @patch('apps.qbo.services.QBOService.get_client')
     def test_partial_payment_marks_partly_paid(self, mock_get_client):

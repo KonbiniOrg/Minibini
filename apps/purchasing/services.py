@@ -1,7 +1,10 @@
+import logging
 from decimal import Decimal
-from apps.core.history import record_history
+from apps.core.history import record_history, record_action
 from django.core.exceptions import ValidationError
 from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 from apps.purchasing.models import (
     PurchaseOrder, Bill, PurchaseOrderLineItem, BillLineItem,
@@ -911,3 +914,150 @@ class BillService:
                 'Cannot modify line items on a non-draft bill.'
             )
         return LineItemService.delete_line_item_with_renumber(li)
+
+
+class BillPaymentService:
+    """Sole writer of BillPayment rows; recomputes Bill.status on every change."""
+
+    _PAYABLE = (Bill.STATUS_RECEIVED, Bill.STATUS_PARTLY_PAID)
+
+    @staticmethod
+    def _normalize_amount(value):
+        """Convert an incoming amount to an exact Decimal. A JSON number arrives
+        as a Python float whose binary value (e.g. 33.33 -> 33.32999...) would
+        trip the DecimalField's decimal_places=2 validator. ``str()`` yields the
+        shortest round-trip decimal, so 33.33 stays 33.33; genuine over-precision
+        (e.g. 33.333) survives and is still rejected by ``full_clean``."""
+        from decimal import Decimal, InvalidOperation
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValidationError('Invalid payment amount.')
+
+    @staticmethod
+    @transaction.atomic
+    def record_payment(bill, *, amount, payment_date, reference='', payment_account_id='', user=None):
+        from apps.purchasing.models import BillPayment
+        if bill.status not in BillPaymentService._PAYABLE:
+            raise ValidationError(
+                f'Cannot record a payment on a bill in status "{bill.status}". '
+                'The bill must be received or partly paid.'
+            )
+        amount = BillPaymentService._normalize_amount(amount)
+        payment = BillPayment(
+            bill=bill, amount=amount, payment_date=payment_date,
+            reference=reference, payment_account_id=payment_account_id or '',
+            created_by=user,
+        )
+        payment.full_clean()
+        payment.save()
+        bill.recompute_payment_status()
+        # Build history string: enrich with account display_name when resolvable.
+        history_action = f'Payment recorded: {amount}'
+        if payment_account_id:
+            try:
+                from apps.qbo.services import QBOPaymentAccountService
+                display_name = QBOPaymentAccountService.lookup(payment_account_id)['display_name']
+                history_action = f'Payment recorded: {amount} from {display_name}'
+            except (ValueError, KeyError):
+                pass
+        if reference:
+            history_action += f' (ref {reference})'
+        record_action(object_type='bill', object_id=bill.pk, action=history_action)
+        BillPaymentService._push_to_qbo(payment)
+        return payment
+
+    @staticmethod
+    def _push_create(payment):
+        from apps.qbo.services import QBOBillSyncService
+        QBOBillSyncService.push_bill_payment(payment)   # already orchestrates run_create internally
+
+    @staticmethod
+    def _push_update(payment):
+        from apps.qbo.services import QBOBillSyncService, QBOSyncService
+        QBOSyncService.run_update(payment, lambda: QBOBillSyncService.update_bill_payment(payment))
+
+    @staticmethod
+    def _push_to_qbo(payment):
+        """Immediate push-on-action. Failure is swallowed-and-logged because
+        inbound clearance polling self-heals state later."""
+        try:
+            BillPaymentService._push_create(payment)
+        except Exception:  # noqa: BLE001 - never block recording on a QBO hiccup
+            logger.exception('QBO bill-payment push failed for payment %s', payment.pk)
+
+    @staticmethod
+    @transaction.atomic
+    def update_payment(payment_id, **out_fields):
+        from apps.purchasing.models import BillPayment
+        try:
+            payment = BillPayment.objects.get(pk=payment_id)
+        except BillPayment.DoesNotExist:
+            raise NotFoundError(f'BillPayment {payment_id} not found')
+        if payment.bill.status in (Bill.STATUS_CANCELLED, Bill.STATUS_REFUNDED):
+            raise ValidationError(
+                'Cannot edit a payment on a cancelled or refunded bill.'
+            )
+        allowed = {'amount', 'payment_date', 'reference'}
+        for field, value in out_fields.items():
+            if field in allowed:
+                if field == 'amount':
+                    value = BillPaymentService._normalize_amount(value)
+                setattr(payment, field, value)
+        payment.full_clean()
+        payment.save()
+        payment.bill.recompute_payment_status()
+        edit_action = f'Payment edited: {payment.amount}'
+        if payment.reference:
+            edit_action += f' (ref {payment.reference})'
+        record_action(object_type='bill', object_id=payment.bill_id, action=edit_action)
+        # QBO resync (best-effort; never blocks the local edit).
+        if payment.qbo_id:
+            BillPaymentService._push_update(payment)
+        else:
+            BillPaymentService._push_create(payment)
+        return payment
+
+    @staticmethod
+    def delete_payment(payment_id):
+        from apps.purchasing.models import BillPayment
+        try:
+            payment = BillPayment.objects.get(pk=payment_id)
+        except BillPayment.DoesNotExist:
+            raise NotFoundError(f'BillPayment {payment_id} not found')
+        # QBO void runs OUTSIDE the atomic block so that mark_failed (a save) can commit
+        # even when the delete is refused.  run_delete → mark_failed → re-raises on failure.
+        if payment.qbo_id:
+            from apps.qbo.services import QBOBillSyncService, QBOSyncService
+            try:
+                QBOSyncService.run_delete(
+                    payment, lambda: QBOBillSyncService.void_bill_payment(payment))
+            except Exception:
+                raise ValidationError(
+                    'Could not delete this payment — its QuickBooks sync failed, so the payment '
+                    'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
+                )
+        # Local delete only runs when QBO void succeeded (or no qbo_id)
+        bill_id = payment.bill_id
+        amt = payment.amount
+        with transaction.atomic():
+            payment.delete()
+            payment.bill.recompute_payment_status()
+        record_action(object_type='bill', object_id=bill_id, action=f'Payment deleted: {amt}')
+
+    @staticmethod
+    def retry(payment_id):
+        from apps.purchasing.models import BillPayment
+        payment = BillPayment.objects.get(pk=payment_id)
+        if payment.qbo_sync_status != BillPayment.SYNC_FAILED:
+            raise ValidationError('Can only retry a sync that failed.')
+        op = payment.qbo_pending_op
+        if op == BillPayment.OP_DELETE:
+            BillPaymentService.delete_payment(payment_id)   # re-void + remove; raises if still failing
+            return None
+        if op == BillPayment.OP_UPDATE:
+            BillPaymentService._push_update(payment)
+        else:
+            BillPaymentService._push_create(payment)
+        payment.refresh_from_db()
+        return payment

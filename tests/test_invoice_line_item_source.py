@@ -34,7 +34,7 @@ class InvoiceLineItemSourceTest(TestCase):
             status=Job.STATUS_APPROVED,
         )
         self.scheme = RateScheme.objects.create(
-            name='S-ilis', algorithm=RateScheme.FLAT_FEE,
+            name='S-ilis', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(

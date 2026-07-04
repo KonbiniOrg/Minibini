@@ -302,7 +302,7 @@ class AccountingCategory(models.Model):
 
 
 class AbstractWorkContainer(models.Model):
-    """Abstract base class for work containers (Job, EstWorksheet) containing common fields."""
+    """Abstract base class for work containers (Job) containing common fields."""
 
     class Meta:
         abstract = True
@@ -311,9 +311,8 @@ class AbstractWorkContainer(models.Model):
         """Populate this container's tasks from a WorkTemplate.
 
         Subclasses implement by reading the template's TemplateTaskAssociations
-        and creating the appropriate task type
-        (PlanTask on EstWorksheet, Task on Job). The WorkTemplate is not
-        stored on the container — only its child tasks are materialized.
+        and creating Tasks on the Job. The WorkTemplate is not stored on the
+        container — only its child tasks are materialized.
         """
         raise NotImplementedError
 
@@ -515,6 +514,13 @@ class InventoryHistory(HistoryEntryBase):
         ordering = ['-timestamp']
 
 
+class ExpensesHistory(HistoryEntryBase):
+    """History for expenses and reimbursement batches."""
+    class Meta:
+        db_table = 'expenses_history'
+        ordering = ['-timestamp']
+
+
 class ScheduledProcessRun(models.Model):
     """One row per invocation of a scheduled management command (observability)."""
     OUTCOME_OK = 'ok'
@@ -602,3 +608,50 @@ class ShiftChangeRequest(TimeChangeRequest):
         return ShiftService.create(self.requester, actor=reviewer,
                                    start_time=self.requested_start,
                                    end_time=self.requested_end)
+
+
+class QBOSyncable(models.Model):
+    """Abstract base for records mirrored to a QBO object. Carries the QBO id
+    and a sync-state machine (pending → synced | sync_failed). Adopters:
+    Expense, Reimbursement, BillPayment."""
+    SYNC_PENDING = 'pending'
+    SYNC_SYNCED = 'synced'
+    SYNC_FAILED = 'sync_failed'
+    SYNC_STATUS_CHOICES = [
+        (SYNC_PENDING, 'Pending'),
+        (SYNC_SYNCED, 'Synced to QBO'),
+        (SYNC_FAILED, 'QBO sync failed'),
+    ]
+
+    OP_NONE = ''
+    OP_CREATE = 'create'
+    OP_UPDATE = 'update'
+    OP_DELETE = 'delete'
+    PENDING_OP_CHOICES = [
+        (OP_CREATE, 'Create'),
+        (OP_UPDATE, 'Update'),
+        (OP_DELETE, 'Delete'),
+    ]
+
+    qbo_id = models.CharField(max_length=50, blank=True, default='')
+    qbo_sync_status = models.CharField(
+        max_length=20, choices=SYNC_STATUS_CHOICES, default=SYNC_PENDING)
+    qbo_sync_error = models.TextField(blank=True, default='')
+    qbo_pending_op = models.CharField(
+        max_length=10, blank=True, default='', choices=PENDING_OP_CHOICES)
+
+    class Meta:
+        abstract = True
+
+    def mark_synced(self, qbo_id):
+        self.qbo_id = qbo_id
+        self.qbo_sync_status = self.SYNC_SYNCED
+        self.qbo_sync_error = ''
+        self.qbo_pending_op = self.OP_NONE
+        self.save(update_fields=['qbo_id', 'qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])
+
+    def mark_failed(self, error, op=OP_NONE):
+        self.qbo_sync_status = self.SYNC_FAILED
+        self.qbo_sync_error = str(error)
+        self.qbo_pending_op = op
+        self.save(update_fields=['qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])

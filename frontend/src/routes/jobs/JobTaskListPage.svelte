@@ -4,9 +4,11 @@
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
+  import FeeModal from '../../components/FeeModal.svelte';
   import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
 
   let { params = {} } = $props();
 
@@ -37,6 +39,10 @@
   let materialModalTaskId = $state(null);
   let materialModalJobId = $state(null);
 
+  let feeModalOpen = $state(false);
+  let feeModalMode = $state('create');
+  let feeModalFee = $state(null);
+
   let selectedTaskId = $state(null);
 
   let subtaskModalOpen = $state(false);
@@ -44,6 +50,15 @@
 
   let assignModalOpen = $state(false);
   let assignModalTask = $state(null);
+
+  // Picker state
+  let pickerOpen = $state(false);
+  let taskPresetTemplateId = $state(null);
+  let taskPresetName = $state('');
+  let materialPresetPli = $state(null);
+  let materialPresetDescription = $state('');
+  let feePresetDescription = $state('');
+  let defaultMaterialCategoryId = $state(null);
 
   // Status action state
   let statusBusy = $state(false);
@@ -121,7 +136,7 @@
 
   async function loadTemplates() {
     try {
-      const resp = await api.get('/api/task-templates/?page_size=100');
+      const resp = await api.get('/api/service-items/?page_size=100');
       templates = resp.results || resp;
     } catch (e) {
       templates = [];
@@ -137,6 +152,17 @@
     }
   }
 
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      defaultMaterialCategoryId = s.default_material_accounting_category != null
+        ? Number(s.default_material_accounting_category)
+        : null;
+    } catch (e) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   async function reload() {
     await loadJob();
   }
@@ -146,22 +172,52 @@
       loadJob();
       loadTemplates();
       loadCategories();
+      loadSettings();
     }
   });
 
+  // Picker surface handler
+  function handleChoose(choice) {
+    pickerOpen = false;
+    if (choice.type === 'service') {
+      taskModalTask = null;
+      taskModalMode = 'template';
+      taskPresetTemplateId = choice.serviceItem.template_id;
+      taskPresetName = '';
+      taskModalOpen = true;
+    } else if (choice.type === 'freeform-task') {
+      // Manual/freeform task — WorkItemForm's manual mode; user picks the rate
+      // scheme there. Typed text seeds the name.
+      taskModalTask = null;
+      taskModalMode = 'manual';
+      taskPresetTemplateId = null;
+      taskPresetName = choice.typed;
+      taskModalOpen = true;
+    } else if (choice.type === 'inventory') {
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalJobId = job.job_id;
+      materialModalMode = 'create';
+      materialPresetPli = choice.inventoryItem;
+      materialPresetDescription = '';
+      materialModalOpen = true;
+    } else if (choice.isMaterial) {
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalJobId = job.job_id;
+      materialModalMode = 'create';
+      materialPresetPli = null;
+      materialPresetDescription = choice.typed;
+      materialModalOpen = true;
+    } else {
+      feeModalFee = null;
+      feeModalMode = 'create';
+      feePresetDescription = choice.typed;
+      feeModalOpen = true;
+    }
+  }
+
   // Task modal handlers
-  function openAddManualTask() {
-    taskModalTask = null;
-    taskModalMode = 'manual';
-    taskModalOpen = true;
-  }
-
-  function openAddTemplateTask() {
-    taskModalTask = null;
-    taskModalMode = 'template';
-    taskModalOpen = true;
-  }
-
   function openEditTask(task) {
     taskModalTask = task;
     taskModalMode = 'manual';
@@ -199,14 +255,6 @@
     materialModalMaterial = null;
     materialModalTaskId = task.task_id;
     materialModalJobId = null;
-    materialModalMode = 'create';
-    materialModalOpen = true;
-  }
-
-  function openAddJobMaterial() {
-    materialModalMaterial = null;
-    materialModalTaskId = null;
-    materialModalJobId = job.job_id;
     materialModalMode = 'create';
     materialModalOpen = true;
   }
@@ -273,6 +321,19 @@
     reload();
   }
 
+  // Fee modal handlers
+  function openEditFee(fee) {
+    feeModalFee = fee;
+    feeModalMode = 'edit';
+    feeModalOpen = true;
+  }
+
+  function handleFeeSaved() {
+    feeModalOpen = false;
+    feeModalFee = null;
+    reload();
+  }
+
   // Subtask modal handlers
   function openAddSubtask(task) {
     subtaskModalParentTaskId = task.task_id;
@@ -330,9 +391,7 @@
   <div class="toolbar">
     <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
-      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
-      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
-      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
     {#if job?.can_manage}
@@ -361,8 +420,12 @@
     onMoveMaterial={handleMoveMaterial}
     expenses={jobExpenses}
     onEditExpense={openEditExpense}
+    fees={job.fees || []}
+    onEditFee={openEditFee}
     bind:selectedTaskId
   />
+
+  <!-- Fees now render inside the TaskTree table (above), included in the grand total. -->
 
   <!-- Modals -->
   <WorkItemForm
@@ -373,6 +436,8 @@
     item={taskModalTask}
     isEdit={!!taskModalTask}
     {templates}
+    presetTemplateId={taskPresetTemplateId}
+    presetName={taskPresetName}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -384,9 +449,25 @@
     taskId={materialModalTaskId}
     jobId={materialModalJobId}
     {categories}
+    presetDescription={materialPresetDescription}
+    presetPli={materialPresetPli}
+    {defaultMaterialCategoryId}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
   />
+
+  <FeeModal
+    open={feeModalOpen}
+    mode={feeModalMode}
+    fee={feeModalFee}
+    jobId={job.job_id}
+    {categories}
+    presetDescription={feePresetDescription}
+    onSaved={handleFeeSaved}
+    onClose={() => { feeModalOpen = false; }}
+  />
+
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} taskSurface={true} />
 
   <ExpenseModal
     open={expenseModalOpen}
@@ -427,4 +508,5 @@
   }
   .toolbar button:hover { background: #f3f4f6; }
   .toolbar button:disabled { opacity: 0.5; cursor: default; }
+
 </style>

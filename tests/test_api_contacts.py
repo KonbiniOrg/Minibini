@@ -40,6 +40,20 @@ class ContactAPITest(BaseTestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201)
 
+    def test_create_contact_with_business_id_persists_association(self):
+        dc = Contact.objects.create(first_name='DC', last_name='')
+        biz = Business.objects.create(business_name='Acme Steel', default_contact=dc)
+        response = self.client.post('/api/contacts/', {
+            'first_name': 'Linked',
+            'last_name': 'Contact',
+            'email': 'linked@example.com',
+            'mobile_number': '555-111-2222',
+            'business_id': biz.business_id,
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        created = Contact.objects.get(contact_id=response.data['contact_id'])
+        self.assertEqual(created.business_id, biz.business_id)
+
     def test_retrieve_contact(self):
         contact = Contact.objects.first()
         response = self.client.get(f'/api/contacts/{contact.pk}/')

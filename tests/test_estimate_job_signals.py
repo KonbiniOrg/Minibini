@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django.test import TestCase
-from apps.core.models import Configuration, User, AppState
+from apps.core.models import AccountingCategory, Configuration, User, AppState
 from apps.contacts.models import Contact, Business
 from apps.jobs.models import Job
 from apps.estimates.models import Estimate, EstimateLineItem
@@ -17,6 +17,7 @@ class EstimateSentJobSubmittedTest(TestCase):
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='est_expire_days', value='30')
 
+        self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
             email='test@example.com', work_number='555-0100',
@@ -31,7 +32,7 @@ class EstimateSentJobSubmittedTest(TestCase):
         )
         EstimateLineItem.objects.create(
             estimate=self.estimate, description='Test item',
-            price=Decimal('100.00'),
+            price=Decimal('100.00'), accounting_category=self.cat,
         )
 
     def test_job_moves_to_submitted_when_estimate_sent(self):
@@ -86,6 +87,19 @@ class LastInvoicePaidJobCompletedTest(TestCase):
         self.job = Job.objects.create(
             job_number='JOB-TEST-0001', contact=self.contact,
             status=Job.STATUS_APPROVED,
+        )
+        # The completion gate requires finished work (>=1 task, all terminal) —
+        # a task-less job is the deposit-paid-early shape and must not close.
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme, Task
+        cat = AccountingCategory.objects.create(name='Sig Labor', code='SIGL')
+        scheme = RateScheme.objects.create(
+            name='Sig hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=cat,
+        )
+        Task.objects.create(
+            job=self.job, name='Done', rate_scheme=scheme,
+            status=Task.STATUS_COMPLETE,
         )
 
     def test_job_completed_when_single_invoice_paid(self):

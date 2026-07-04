@@ -187,6 +187,10 @@ Open the invoice wizard for the job.
   **cost-item** material is deleted (earmark/ad-hoc receipt unwound); a **stock
   receipt's** QOH bump is reversed; rejection is **refused** if a cost-item
   material was already `consumed`.
+- [ ] **Refused while the material is claimed (2026-07-03).** If an estimate or
+  change-order line has claimed the expense's material, reject returns a 400
+  ("Remove the line first") — the deletion-doctrine Rule-1 guard; remove the
+  claiming line on the draft document, then reject.
 
 ---
 
@@ -202,4 +206,5 @@ Open the invoice wizard for the job.
 | Inventory | stock receipt bumps QOH · top-up unblocks task start · overage stays as stock · delete/reject reverses QOH |
 | Shortfall | task-start hard block + reduce-and-split suggestion + workaround |
 | Freezes | invoiced (self + via material) · reimbursed money-lock |
+| Reject guards | consumed material refused · claimed material refused (remove the line first) |
 | Billing | service expense offered · cost item via its material · stock receipt never · overhead never · pass-through then edit price · claimed state |

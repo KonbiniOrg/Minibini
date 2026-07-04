@@ -166,3 +166,34 @@ class CancelTaskPermissionTest(TestCase):
         self.client.force_login(self.pm)
         resp = self.client.post(self._url(), data={}, content_type='application/json')
         self.assertNotEqual(resp.status_code, 403, resp.content)
+
+
+class PercentageServiceTaskRejectionTest(TestCase):
+    """A RateScheme with algorithm=PERCENTAGE must be rejected when assigning
+    to a Task — percentage services are document-level adjustments only."""
+
+    def setUp(self):
+        from apps.core.models import AccountingCategory
+        from django.contrib.auth.models import Permission
+
+        ac = AccountingCategory.objects.create(code='LABD', name='LaborD')
+        self.contact = Contact.objects.create(first_name='Pct', last_name='Co')
+        self.job = Job.objects.create(
+            name='Pct Job', contact=self.contact, job_number='JOB-PCT-001'
+        )
+        self.rush = RateScheme.objects.create(
+            name='Rush', algorithm=RateScheme.PERCENTAGE, rate=Decimal('15'),
+            unit_label='%', accounting_category=ac,
+        )
+        self.manager = User.objects.create_user(
+            username='pct_mgr', password='testpass'
+        )
+        perm = Permission.objects.get(codename='can_manage_jobs')
+        self.manager.user_permissions.add(perm)
+
+    def test_cannot_assign_percentage_service_to_task(self):
+        self.client.force_login(self.manager)
+        resp = self.client.post(f'/api/jobs/{self.job.pk}/tasks/', {
+            'name': 'x', 'rate_scheme': self.rush.pk, 'est_qty': '1',
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400)

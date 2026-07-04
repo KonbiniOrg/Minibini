@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import PriceListItemPicker from '../PriceListItemPicker.svelte';
+  import InventoryItemPicker from '../InventoryItemPicker.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
   import JobPicker from '../JobPicker.svelte';
 
@@ -15,7 +15,8 @@
 
   let mode = $state('manual'); // 'manual' or 'pli'
   let selectedPLI = $state(null);
-  let selectedJob = $state(defaultJob);
+  let jobId = $state(defaultJob?.job_id ?? null);
+  let jobRow = $state(defaultJob ?? null);
 
   let form = $state({
     description: '',
@@ -79,8 +80,8 @@
       }
     }
 
-    if (selectedJob?.job_id) {
-      data.job = selectedJob.job_id;
+    if (jobId) {
+      data.job = jobId;
     }
     if (materialId) {
       data.material_id = materialId;
@@ -98,18 +99,19 @@
       <input type="radio" bind:group={mode} value="manual"> Manual
     </label>
     <label>
-      <input type="radio" bind:group={mode} value="pli"> From Price List
+      <input type="radio" bind:group={mode} value="pli"> From Inventory
     </label>
   </p>
 
   <form onsubmit={handleSubmit}>
     {#if mode === 'pli'}
       <p>
-        <label><strong>Price List Item *</strong></label><br>
-        <PriceListItemPicker
+        <label><strong>Inventory Item *</strong></label><br>
+        <InventoryItemPicker
           value={selectedPLI?.inventory_item_id}
           selectedItem={selectedPLI}
           onSelect={handlePLISelect}
+          params={{ is_active: true }}
         />
       </p>
       <p>
@@ -146,7 +148,7 @@
 
     <p>
       <label><strong>Job (optional)</strong></label><br>
-      <JobPicker bind:value={selectedJob} />
+      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
     </p>
 
     <p>

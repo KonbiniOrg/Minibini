@@ -21,6 +21,12 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(replaced_by__isnull=False)
             elif not include:
                 qs = qs.filter(replaced_by__isnull=True)
+            if self.request.query_params.get('task_applicable') == 'true':
+                qs = qs.exclude(algorithm=RateScheme.PERCENTAGE)
+            search = self.request.query_params.get('search', '').strip()
+            if search:
+                from django.db.models import Q
+                qs = qs.filter(Q(name__icontains=search) | Q(description__icontains=search))
         return qs
 
     def get_permissions(self):
@@ -31,7 +37,7 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         instance.delete()
-        return Response({'message': f'Rate scheme "{instance.name}" deleted.'})
+        return Response({'message': f'Service item "{instance.name}" deleted.'})
 
     def _block_if_referenced(self, instance, request):
         if instance.is_referenced():

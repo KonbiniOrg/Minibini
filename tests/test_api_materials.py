@@ -170,7 +170,7 @@ class MaterialAssignTaskApiTest(APITestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(name='c', code='MASGN1')
         self.scheme = RateScheme.objects.create(
-            name='S-masgn', algorithm=RateScheme.FLAT_FEE,
+            name='S-masgn', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.cat,
         )
         self.user = User.objects.create_user('masgn_u', password='p')

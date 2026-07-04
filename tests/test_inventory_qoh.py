@@ -5,9 +5,8 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, Task, RateScheme
-from apps.estimates.models import EstWorksheet
-from apps.inventory.models import PlanMaterial, Material
+from apps.jobs.models import Job, Task, RateScheme
+from apps.inventory.models import Material
 from apps.inventory.models import InventoryItem
 from apps.inventory.models import Earmark
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -35,7 +34,7 @@ class ConsumeMaterialTest(TestCase):
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.scheme = RateScheme.objects.create(
-            name='S-qoh2', algorithm=RateScheme.FLAT_FEE,
+            name='S-qoh2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -160,7 +159,7 @@ class CompleteTaskAdjustmentTest(TestCase):
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.scheme = RateScheme.objects.create(
-            name='S-qoh3', algorithm=RateScheme.FLAT_FEE,
+            name='S-qoh3', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(

@@ -342,14 +342,20 @@ class VoidExpenseTest(TestCase):
         QBOExpenseSyncService.void_expense(self.exp)  # no exception
 
     @patch('apps.qbo.services.QBOService.get_client')
-    def test_void_expense_logs_failure_but_does_not_raise(self, mock_get_client):
+    def test_void_expense_raises_on_qbo_failure(self, mock_get_client):
         mock_get_client.return_value = MagicMock()
         existing = MagicMock()
         existing.delete = MagicMock(side_effect=RuntimeError('qbo down'))
         with patch('quickbooks.objects.purchase.Purchase.get', return_value=existing):
-            QBOExpenseSyncService.void_expense(self.exp)  # must not raise
+            with self.assertRaises(RuntimeError):
+                QBOExpenseSyncService.void_expense(self.exp)
         log = QBOSyncLog.objects.get(entity_type='expense', action='delete')
         self.assertEqual(log.status, 'failed')
+
+    def test_void_expense_raises_without_connection(self):
+        """No active QBO client → raises ValueError."""
+        with self.assertRaises(ValueError):
+            QBOExpenseSyncService.void_expense(self.exp)
 
 
 class PushReimbursementTest(TestCase):
@@ -529,6 +535,18 @@ class VoidReimbursementTest(TestCase):
         self.batch.save(update_fields=['qbo_id'])
         QBOExpenseSyncService.void_reimbursement(self.batch)  # no exception
 
+    def test_void_reimbursement_raises_without_connection(self):
+        with patch('apps.qbo.services.QBOService.get_client', return_value=None):
+            with self.assertRaises(ValueError):
+                QBOExpenseSyncService.void_reimbursement(self.batch)
+
+    @patch('apps.qbo.services.QBOService.get_client')
+    def test_void_reimbursement_raises_on_qbo_failure(self, mock_get_client):
+        mock_get_client.return_value = MagicMock()
+        with patch('quickbooks.objects.purchase.Purchase.get', side_effect=Exception('QBO error')):
+            with self.assertRaises(Exception):
+                QBOExpenseSyncService.void_reimbursement(self.batch)
+
 
 class SFMOMAIntegrationTest(TestCase):
     """End-to-end scenarios for the SFMOMA paint use case."""
@@ -561,7 +579,7 @@ class SFMOMAIntegrationTest(TestCase):
         contact.save()
         self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
         self.scheme = RateScheme.objects.create(
-            name='S-sfmoma', algorithm=RateScheme.FLAT_FEE,
+            name='S-sfmoma', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
 
@@ -614,8 +632,8 @@ class SFMOMAIntegrationTest(TestCase):
 
         # Both expenses pushed to QBO
         self.assertEqual(mock_push.call_count, 2)
-        self.assertEqual(exp1.status, Expense.STATUS_SYNCED)
-        self.assertEqual(exp2.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp1.qbo_sync_status, Expense.SYNC_SYNCED)
+        self.assertEqual(exp2.qbo_sync_status, Expense.SYNC_SYNCED)
 
     @patch('apps.qbo.services.QBOService.get_client')
     def test_full_company_paid_push_happy_path(self, mock_get_client):
@@ -644,6 +662,72 @@ class SFMOMAIntegrationTest(TestCase):
             )
 
         exp.refresh_from_db()
-        self.assertEqual(exp.status, Expense.STATUS_SYNCED)
+        self.assertEqual(exp.qbo_sync_status, Expense.SYNC_SYNCED)
         self.assertEqual(exp.qbo_id, '9001')
         wrap_build.assert_called_once()
+
+
+class ExpenseServiceRetryTest(TestCase):
+    """ExpenseService.retry dispatches on qbo_pending_op."""
+
+    def setUp(self):
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "57", "display_name": "Amex", "account_type": "Credit Card"}]'
+            )},
+        )
+        self.cat = AccountingCategory.objects.create(
+            code='RET', name='Retry Cat', qbo_expense_account_id='500',
+        )
+        self.user = User.objects.create_user(username='retry_worker', password='testpass')
+
+    def _company_expense(self, qbo_id=''):
+        """Create a company expense, optionally already synced (qbo_id set)."""
+        return Expense.objects.create(
+            entered_by=self.user,
+            amount=Decimal('50.00'),
+            purchased_on=date(2026, 4, 9),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            qbo_id=qbo_id,
+            qbo_sync_status=Expense.SYNC_SYNCED if qbo_id else Expense.SYNC_PENDING,
+        )
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.update_expense')
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
+    def test_retry_of_failed_update_calls_update_not_create(self, mock_push, mock_update):
+        """The load-bearing fix: a failed UPDATE retry must call update_expense, not push_expense."""
+        exp = self._company_expense(qbo_id='q1')
+        exp.qbo_sync_status = Expense.SYNC_FAILED
+        exp.qbo_pending_op = Expense.OP_UPDATE
+        exp.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
+        ExpenseService.retry(expense=exp, actor=self.user)
+        mock_update.assert_called_once()
+        mock_push.assert_not_called()
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_expense')
+    def test_retry_of_failed_delete_voids_and_removes(self, mock_void):
+        """A failed DELETE retry re-runs delete, which voids and removes the expense."""
+        exp = self._company_expense(qbo_id='q1')
+        exp.qbo_sync_status = Expense.SYNC_FAILED
+        exp.qbo_pending_op = Expense.OP_DELETE
+        exp.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
+        pk = exp.pk
+        result = ExpenseService.retry(expense=exp, actor=self.user)
+        self.assertIsNone(result)
+        self.assertFalse(Expense.objects.filter(pk=pk).exists())
+        mock_void.assert_called_once()
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_expense')
+    def test_retry_of_failed_create_pushes(self, mock_push):
+        """A failed CREATE (or blank op) retry calls push_expense."""
+        mock_push.return_value = 'q2'
+        exp = self._company_expense(qbo_id='')
+        exp.qbo_sync_status = Expense.SYNC_FAILED
+        exp.qbo_pending_op = Expense.OP_NONE
+        exp.save(update_fields=['qbo_sync_status', 'qbo_pending_op'])
+        result = ExpenseService.retry(expense=exp, actor=self.user)
+        mock_push.assert_called_once()
+        self.assertIsNotNone(result)

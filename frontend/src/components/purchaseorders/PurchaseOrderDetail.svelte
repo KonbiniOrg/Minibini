@@ -33,7 +33,8 @@
   let editForm = $state({});
 
   let changeJobLine = $state(null);
-  let changeJobPick = $state(null);
+  let changeJobId = $state(null);
+  let changeJobRow = $state(null);
 
   function canChangeJob(li) {
     if (po.status === 'cancelled') return false;
@@ -42,10 +43,15 @@
   }
   function openChangeJob(li) {
     changeJobLine = li;
-    changeJobPick = li.effective_job_id
+    changeJobId = li.effective_job_id ?? null;
+    changeJobRow = li.effective_job_id
       ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
       : null;
   }
+
+  // Edit-mode job state (separate from editForm to use id contract)
+  let editJobId = $state(null);
+  let editJobRow = $state(null);
 
   let canReceive = $derived(
     po.status === 'issued' || po.status === 'partly_received'
@@ -76,14 +82,15 @@
 
   function startEdit(li) {
     editingId = li.line_item_id;
+    editJobId = li.effective_job_id ?? null;
+    editJobRow = li.effective_job_id
+      ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
+      : null;
     editForm = {
       description: li.description,
       qty: li.qty,
       units: li.units || 'none',
       price: li.price,
-      job: li.effective_job_id
-        ? { job_id: li.effective_job_id, job_number: li.effective_job_number }
-        : null,
       _hadLinkedMaterial: !!li.material,
       _linkedMaterial: li.material,
       _lineNumber: li.line_number,
@@ -94,12 +101,14 @@
   function cancelEdit() {
     editingId = null;
     editForm = {};
+    editJobId = null;
+    editJobRow = null;
   }
 
   function saveEdit() {
     const original = lineItems.find(li => li.line_item_id === editingId);
     const origJobId = original?.effective_job_id ?? null;
-    const newJobId = editForm.job?.job_id ?? null;
+    const newJobId = editJobId ?? null;
     const jobChanged = origJobId !== newJobId;
 
     if (onEditLineItem) {
@@ -219,7 +228,7 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
-            <td><JobPicker bind:value={editForm.job} /></td>
+            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} /></td>
             <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>
@@ -274,9 +283,10 @@
                 <button onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
                 <button onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
                 <button onclick={() => onDeleteLineItem(li)}>Delete</button>
-                {#if canChangeJob(li) && editingId !== li.line_item_id}
-                  <button onclick={() => openChangeJob(li)}>Change Job</button>
-                {/if}
+                <!-- No "Change Job" here: the Edit button already reassigns the
+                     job (saveEdit routes job changes through onChangeLineJob).
+                     The received/issued view keeps its Change Job button since
+                     that view has no Edit. -->
               </td>
             {/if}
             {#if showReceived}
@@ -312,18 +322,35 @@
   </table>
 {/if}
 
+{#if po.po_total}
+  <p>Billed: ${Number(po.billed_total).toFixed(2)} / ${Number(po.po_total).toFixed(2)}
+    {#if po.is_fully_billed}<strong>— fully billed</strong>{/if}</p>
+{/if}
+
+{#if po.bills?.length}
+  <p>Bills:
+    {#each po.bills as b}
+      <a href={`#/bills/${b.bill_id}`}>{b.vendor_invoice_number || `#${b.bill_id}`}</a>{' '}
+    {/each}
+  </p>
+{/if}
+
+{#if canManageFinancials && ['issued', 'partly_received', 'received_in_full'].includes(po.status)}
+  <p><a href={`#/bills/new?po=${po.po_id}`}>Create Bill</a></p>
+{/if}
+
 {#if changeJobLine}
   <div class="overlay">
     <div class="dialog">
       <h3>Change Job for Line #{changeJobLine.line_number}</h3>
       <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
-      <JobPicker bind:value={changeJobPick} />
+      <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} />
       <p>
         <button onclick={() => {
           if (onChangeLineJob) {
             onChangeLineJob(
               changeJobLine.line_item_id,
-              changeJobPick?.job_id ?? null,
+              changeJobId ?? null,
               changeJobLine.material,
             );
           }

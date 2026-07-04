@@ -10,8 +10,8 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.estimates.models import (
-    Estimate, EstimateLineItem, EstWorksheet,
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    Estimate, EstimateLineItem,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
     ChangeOrder,
 )
 from apps.core.services import NumberGenerationService, NotFoundError
@@ -28,11 +28,11 @@ class EstimateService:
     def create_direct(job, **kwargs):
         """
         Create Estimate directly. Starts in 'draft' status.
-        Estimate number is the job number plus the revision (one estimate tree
-        per job): ``{job_number}-{version}``.
+        Estimate number IS the job number (one estimate tree per job); the
+        revision lives in the separate ``version`` field, not in the number.
         """
         version = kwargs.pop('version', 1)
-        estimate_number = kwargs.pop('estimate_number', f'{job.job_number}-{version}')
+        estimate_number = kwargs.pop('estimate_number', job.job_number)
         return Estimate.objects.create(
             job=job,
             estimate_number=estimate_number,
@@ -45,8 +45,8 @@ class EstimateService:
     def create_for_job(job_pk):
         """Create a new draft Estimate for a job by PK.
 
-        The estimate number derives from the job number plus the revision:
-        ``{job_number}-1`` for the first version.
+        The estimate number IS the job number; the revision lives in the
+        separate ``version`` field.
         """
         from apps.jobs.models import Job
         try:
@@ -56,15 +56,23 @@ class EstimateService:
 
         estimate = Estimate.objects.create(
             job=job,
-            estimate_number=f'{job.job_number}-1',
+            estimate_number=job.job_number,
             version=1,
             status=Estimate.STATUS_DRAFT,
         )
         return estimate
 
     @staticmethod
+    @transaction.atomic
     def update_status(pk, new_status, actor=None):
         """Update estimate status. Model validates transitions.
+
+        Atomic: accepting an estimate fires a synchronous signal cascade
+        (``estimate.save()`` → job-status update(s) → atom carry-over → earmarking).
+        Wrapping the whole thing in one transaction keeps that cascade all-or-nothing
+        — a failure partway (e.g. the carry-over's job-state guard, or any DB error)
+        rolls back the status change too, instead of leaving a half-accepted estimate
+        (job approved but no tasks carried over, or tasks without earmarks).
 
         When ``actor`` is given (a dict describing a customer who acted via
         the portal link, e.g. ``{'contact_id': N, 'email': str,
@@ -100,6 +108,73 @@ class EstimateService:
         return estimate
 
     @staticmethod
+    def _apply_material_ac_default(li):
+        """A material line (is_material=True) with no AC defaults to the
+        `default_material_accounting_category` Configuration value (a string
+        AccountingCategory pk). An explicitly-supplied AC is respected. Raises
+        if the marker is set, no AC was supplied, and no default is configured.
+        Fees (is_material=False) are untouched — they still hit the hand-line
+        AC-required rule downstream."""
+        if not li.is_material or li.accounting_category_id is not None:
+            return
+        from apps.core.models import AccountingCategory, Configuration
+        cfg = Configuration.objects.filter(
+            key='default_material_accounting_category',
+        ).first()
+        pk = (cfg.value or '').strip() if cfg else ''
+        if not pk:
+            raise ValidationError({'accounting_category': (
+                'This material line has no accounting category and no default is '
+                'configured. Set the default_material_accounting_category setting '
+                'or supply an accounting category.'
+            )})
+        try:
+            li.accounting_category = AccountingCategory.objects.get(pk=pk)
+        except (AccountingCategory.DoesNotExist, ValueError, TypeError):
+            raise ValidationError({'accounting_category': (
+                f'The configured default material accounting category ({pk!r}) '
+                'does not exist.'
+            )})
+
+    @staticmethod
+    def _assert_is_material_only_on_bare_line(li):
+        """`is_material` is meaningful only on a bare line. A line with an
+        inventory_item is already a (catalog) material; an adjustment line is
+        document-only — the marker must not conflict with either."""
+        if not li.is_material:
+            return
+        if li.inventory_item_id is not None:
+            raise ValidationError({'is_material': (
+                'A line with an inventory item is already a material; '
+                'the "is material" marker only applies to a bare line.'
+            )})
+        if li.adjustment_service_id is not None:
+            raise ValidationError({'is_material': (
+                'An adjustment line cannot be marked as a material.'
+            )})
+
+    @staticmethod
+    def assert_all_hand_lines_have_ac(estimate):
+        """Raise if any hand-line (no atom source, not a percentage adjustment)
+        lacks an accounting category. Enforced at send-time (mark_open / email)
+        so the AC-required rule is caught before the estimate goes out — not only
+        at acceptance. Atom-backed and adjustment lines are exempt (same predicate
+        as EstimateAcceptanceService.on_accept)."""
+        missing = []
+        for li in estimate.estimatelineitem_set.all():
+            if li.sources.exists():
+                continue
+            if li.adjustment_service_id is not None:
+                continue
+            if li.accounting_category_id is None:
+                missing.append(li.description or f'line {li.line_number}')
+        if missing:
+            raise ValidationError(
+                'Cannot send: every line item needs an accounting category first. '
+                'Missing on: ' + ', '.join(missing) + '.'
+            )
+
+    @staticmethod
     def mark_open(pk):
         """Mark a draft estimate as open and finalize associated worksheet."""
         try:
@@ -114,10 +189,13 @@ class EstimateService:
         if not Deliverable.objects.filter(job=estimate.job).exists():
             raise ValidationError('Cannot send estimate: job has no deliverables.')
 
+        # Guard: every hand-line must have an accounting category before send.
+        EstimateService.assert_all_hand_lines_have_ac(estimate)
+
         estimate.status = Estimate.STATUS_OPEN
         estimate.save()
-        # The job's worksheet (if any) freezes automatically: editability is
-        # derived from the now-sent estimate (WorksheetService.is_editable).
+        # Once sent, the estimate freezes the job's quoting state: a sent
+        # (non-draft) live estimate blocks further wizard edits.
 
         return estimate
 
@@ -135,28 +213,40 @@ class EstimateService:
         new_version = parent.version + 1
         new_estimate = Estimate.objects.create(
             job=parent.job,
-            estimate_number=f'{parent.job.job_number}-{new_version}',
+            estimate_number=parent.job.job_number,
             version=new_version,
             status=Estimate.STATUS_DRAFT,
             parent=parent,
         )
 
-        # Copy line items, MOVING each line's source rows (atom claims) onto the
-        # revision so it stays worksheet-backed and the atom remains claimed
-        # exactly once. (Copying the rows would violate EstimateLineItemSource's
-        # unique_together on the atom.) source_template is copied too so a
-        # catalog-backed line keeps its origin for carry-over.
+        # Copy line items onto the new revision and MOVE each source row
+        # (EstimateLineItemSource) from the parent's line to the new revision's
+        # copied line.  Net effect: the superseded estimate keeps its
+        # EstimateLineItem rows as a frozen snapshot (description/qty/price
+        # intact) but has no source rows; the new revision's lines carry the
+        # live atom references by default.  Each atom remains claimed exactly
+        # once (unique_together is satisfied because the row is re-pointed, not
+        # duplicated).
         for li in EstimateLineItem.objects.filter(estimate=parent):
             new_li = EstimateLineItem.objects.create(
                 estimate=new_estimate,
                 inventory_item=li.inventory_item,
-                source_template=li.source_template,
                 qty=li.qty,
                 units=li.units,
                 description=li.description,
                 price=li.price,
                 accounting_category=li.accounting_category,
+                adjustment_service_id=li.adjustment_service_id,
+                service_item=li.service_item,
+                is_material=li.is_material,
             )
+            # Copy M2M adjustment target categories (empty set is fine — means "all lines")
+            cats = li.adjustment_target_categories.all()
+            if cats:
+                new_li.adjustment_target_categories.set(cats)
+            # Move the source rows to the new revision's line item so the atom
+            # is claimed by the revision (not dropped).  The parent line ends up
+            # with no sources — a correct frozen snapshot.
             for src in li.sources.all():
                 src.estimate_line_item = new_li
                 src.save()
@@ -212,9 +302,16 @@ class EstimateService:
                 JobService.update_status(job.pk, Job.STATUS_DRAFT)
         return new_estimate
 
+    # NOTE: direct line authoring (manual add_line_item + add_line_item_from_pli) was
+    # removed in Phase 6 — estimate lines come only from atoms (the wizard / Show
+    # Client View). Editing/deleting/reordering existing lines + adjustments remain.
+
     @staticmethod
     def add_line_item(estimate_pk, **kwargs):
-        """Add a manual line item to a draft estimate."""
+        """Add a manual (hand-authored) line item to a draft estimate.
+
+        A hand-line has no atom source and isn't an adjustment, so it must carry
+        an accounting category (Decision 1) — the same rule enforced on update."""
         try:
             estimate = Estimate.objects.get(pk=estimate_pk)
         except Estimate.DoesNotExist:
@@ -224,8 +321,79 @@ class EstimateService:
         from apps.core.services import LineItemService
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         li = EstimateLineItem(estimate=estimate, **kwargs)
+        # Material lines (is_material=True) get their AC from config if not supplied.
+        EstimateService._apply_material_ac_default(li)
+        # A freshly-added line has no sources; if it isn't an adjustment it needs an AC.
+        if li.adjustment_service_id is None and li.accounting_category_id is None:
+            raise ValidationError(
+                {'accounting_category': (
+                    'Accounting category is required for hand-line items '
+                    '(lines with no atom source).'
+                )}
+            )
+        EstimateService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
+    def add_line_item_from_pli(estimate_pk, pli_pk, qty):
+        """Add a line item from an InventoryItem to a draft estimate."""
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {estimate_pk} not found')
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft estimates.')
+        try:
+            pli = InventoryItem.objects.get(pk=pli_pk)
+        except InventoryItem.DoesNotExist:
+            raise NotFoundError(f'InventoryItem {pli_pk} not found')
+        from apps.core.services import LineItemService
+        li = EstimateLineItem(
+            estimate=estimate,
+            inventory_item=pli,
+            description=pli.description,
+            qty=qty,
+            units=pli.units,
+            price=pli.selling_price,
+            accounting_category=pli.accounting_category,
+        )
+        li.full_clean()
+        LineItemService.save_line_item(li)
+        return li
+
+    @staticmethod
+    def add_line_item_from_service(estimate_pk, service_item_pk, qty):
+        """Add a deferred service line to a draft estimate.
+
+        Mirrors add_line_item_from_pli: snapshots the priced values off the
+        ServiceItem at instantiation (price/accounting_category/units/description)
+        and keeps `service_item` on the line purely as the crystallization target.
+        Mints NO Task — the Task is created at acceptance (on_accept)."""
+        try:
+            estimate = Estimate.objects.get(pk=estimate_pk)
+        except Estimate.DoesNotExist:
+            raise NotFoundError(f'Estimate {estimate_pk} not found')
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft estimates.')
+        try:
+            service_item = ServiceItem.objects.get(pk=service_item_pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {service_item_pk} not found')
+        from apps.core.services import LineItemService
+        scheme = service_item.rate_scheme
+        li = EstimateLineItem(
+            estimate=estimate,
+            service_item=service_item,
+            description=service_item.template_name,
+            qty=qty,
+            units=scheme.unit_label or 'none',
+            price=scheme.effective_rate(service_item.default_active_modifiers),
+            accounting_category=service_item.effective_accounting_category,
+        )
+        li.full_clean()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -241,8 +409,22 @@ class EstimateService:
         kwargs = LineItemService.normalize_fk_kwargs(EstimateLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
+        # Hand-lines (no atom source, not an adjustment) must have an accounting category.
+        # Atom-backed lines (sources exist) and adjustment lines are exempt.
+        is_adjustment = li.adjustment_service_id is not None
+        has_source = li.sources.exists()
+        # Material lines (is_material=True) get their AC from config if not supplied.
+        EstimateService._apply_material_ac_default(li)
+        if not has_source and not is_adjustment and li.accounting_category_id is None:
+            raise ValidationError(
+                {'accounting_category': (
+                    'Accounting category is required for hand-line items '
+                    '(lines with no atom source).'
+                )}
+            )
+        EstimateService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
-        li.save()
+        LineItemService.save_line_item(li)
         return li
 
     @staticmethod
@@ -300,29 +482,44 @@ class EstimateService:
         estimate.delete()
 
     @staticmethod
-    def add_line_item_from_pli(estimate_pk, pli_pk, qty):
-        """Add a line item from a InventoryItem to a draft estimate."""
-        try:
-            estimate = Estimate.objects.get(pk=estimate_pk)
-        except Estimate.DoesNotExist:
-            raise NotFoundError(f'Estimate {estimate_pk} not found')
-        if estimate.status != Estimate.STATUS_DRAFT:
-            raise ValidationError('Can only add line items to draft estimates.')
-        try:
-            pli = InventoryItem.objects.get(pk=pli_pk)
-        except InventoryItem.DoesNotExist:
-            raise NotFoundError(f'InventoryItem {pli_pk} not found')
+    @transaction.atomic
+    def add_adjustment_line(estimate, *, adjustment_service_id, target_category_ids=None):
+        """Add a percentage-adjustment line item to a draft estimate.
 
-        li = EstimateLineItem.objects.create(
+        Creates an EstimateLineItem backed by a PERCENTAGE RateScheme, sets
+        target categories (empty list = apply to all non-adjustment lines),
+        computes the initial price via ``compute_adjustment_amount``, and
+        returns the saved line.
+
+        Raises ValidationError if the estimate is not draft or the service is
+        not a PERCENTAGE algorithm.
+        """
+        from django.db.models import Max
+        from apps.jobs.models import RateScheme
+        if estimate.status != Estimate.STATUS_DRAFT:
+            raise ValidationError('Adjustments can only be added to a draft estimate.')
+        svc = RateScheme.objects.get(pk=adjustment_service_id)
+        if svc.algorithm != RateScheme.PERCENTAGE:
+            raise ValidationError('Adjustment line requires a percentage service.')
+        max_ln = (EstimateLineItem.objects.filter(estimate=estimate)
+                  .aggregate(Max('line_number'))['line_number__max'] or 0)
+        from apps.core.services import LineItemService
+        line = EstimateLineItem(
             estimate=estimate,
-            inventory_item=pli,
-            description=pli.description,
-            qty=qty,
-            units=pli.units,
-            price=pli.selling_price,
-            accounting_category=pli.accounting_category,
+            line_number=max_ln + 1,
+            qty=Decimal('1'),
+            units=svc.unit_label or 'none',
+            description=svc.name,
+            price=Decimal('0.00'),
+            accounting_category=svc.accounting_category,
+            adjustment_service=svc,
         )
-        return li
+        line.save()
+        if target_category_ids:
+            line.adjustment_target_categories.set(target_category_ids)
+        LineItemService.save_line_item(line)
+        line.refresh_from_db()
+        return line
 
 
 class EstimateEmailService:
@@ -460,6 +657,9 @@ class EstimateEmailService:
             raise ValidationError(
                 'Cannot send an estimate with no line items.'
             )
+
+        # Every hand-line must have an accounting category before it goes out.
+        EstimateService.assert_all_hand_lines_have_ac(estimate)
 
         pdf_bytes = generate_estimate_pdf(estimate)
         pdf_filename = f'Estimate-{estimate.estimate_number}.pdf'
@@ -629,7 +829,7 @@ class ChangeOrderEmailService:
 
 
 class WorkTemplateService:
-    """Service for WorkTemplate and TaskTemplate CRUD."""
+    """Service for WorkTemplate and ServiceItem CRUD."""
 
     # --- WorkTemplate ---
 
@@ -663,23 +863,23 @@ class WorkTemplateService:
             raise NotFoundError(f'WorkTemplate {pk} not found')
         tmpl.delete()
 
-    # --- TaskTemplate ---
+    # --- ServiceItem ---
 
     @staticmethod
-    def create_task_template(**kwargs):
-        """Create a new TaskTemplate."""
-        tt = TaskTemplate(**kwargs)
+    def create_service_item(**kwargs):
+        """Create a new ServiceItem."""
+        tt = ServiceItem(**kwargs)
         tt.full_clean()
         tt.save()
         return tt
 
     @staticmethod
-    def update_task_template(pk, **kwargs):
-        """Update an existing TaskTemplate by PK."""
+    def update_service_item(pk, **kwargs):
+        """Update an existing ServiceItem by PK."""
         try:
-            tt = TaskTemplate.objects.get(pk=pk)
-        except TaskTemplate.DoesNotExist:
-            raise NotFoundError(f'TaskTemplate {pk} not found')
+            tt = ServiceItem.objects.get(pk=pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {pk} not found')
         for field, value in kwargs.items():
             setattr(tt, field, value)
         tt.full_clean()
@@ -687,13 +887,13 @@ class WorkTemplateService:
         return tt
 
     @staticmethod
-    def delete_task_template(pk):
-        """Delete a TaskTemplate if not used in any WorkTemplate."""
+    def delete_service_item(pk):
+        """Delete a ServiceItem if not used in any WorkTemplate."""
         try:
-            tt = TaskTemplate.objects.get(pk=pk)
-        except TaskTemplate.DoesNotExist:
-            raise NotFoundError(f'TaskTemplate {pk} not found')
-        if TemplateTaskAssociation.objects.filter(task_template=tt).exists():
+            tt = ServiceItem.objects.get(pk=pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {pk} not found')
+        if TemplateTaskAssociation.objects.filter(service_item=tt).exists():
             raise ValidationError(
                 f'Task Template "{tt.template_name}" cannot be deleted '
                 f'because it is used in one or more Work Order Templates.'
@@ -735,161 +935,6 @@ class WorkTemplateService:
         )
 
 
-class WorksheetService:
-    """Service for EstWorksheet operations."""
-
-    @staticmethod
-    def is_editable(worksheet):
-        """A worksheet is editable while the job is still quoting — its live
-        (non-superseded) estimate is a draft, or the job has no estimate yet.
-        It freezes once an estimate is sent (and stays frozen through accept);
-        revising a sent estimate yields a new draft, which unlocks it again.
-        """
-        live = (
-            Estimate.objects
-            .filter(job_id=worksheet.job_id)
-            .exclude(status=Estimate.STATUS_SUPERSEDED)
-            .order_by('-version', '-pk')
-            .first()
-        )
-        return live is None or live.status == Estimate.STATUS_DRAFT
-
-    @staticmethod
-    def create_worksheet(job_pk, **kwargs):
-        """Create a new EstWorksheet for a job (one per job)."""
-        from apps.jobs.models import Job
-        try:
-            job = Job.objects.get(pk=job_pk)
-        except Job.DoesNotExist:
-            raise NotFoundError(f'Job {job_pk} not found')
-        ws = EstWorksheet(job=job, **kwargs)
-        ws.save()
-        return ws
-
-    @staticmethod
-    def has_claimed_atoms(worksheet):
-        """True if any of the worksheet's plan tasks/materials are claimed by an
-        estimate line item source. Such a worksheet can't be deleted until those
-        line items are removed (the frontend uses this to suppress the Delete
-        button so the user never hits the 400)."""
-        from django.db.models import Q
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-        from apps.estimates.models import EstimateLineItemSource
-        pt_ids = list(
-            PlanTask.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
-        )
-        pm_ids = list(
-            PlanMaterial.objects.filter(est_worksheet=worksheet).values_list('pk', flat=True)
-        )
-        return EstimateLineItemSource.objects.filter(
-            Q(source_type=EstimateLineItemSource.SOURCE_PLAN_TASK, source_pk__in=pt_ids)
-            | Q(source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL, source_pk__in=pm_ids)
-        ).exists()
-
-    @staticmethod
-    def delete_worksheet(worksheet):
-        """Delete a worksheet. Refuses if any of its plan tasks/materials are
-        claimed by an estimate line item — those line items must be removed
-        first so their source rows don't outlive the atoms they reference.
-        """
-        if WorksheetService.has_claimed_atoms(worksheet):
-            raise ValidationError(
-                'Cannot delete a worksheet whose tasks or materials are used by '
-                'an estimate. Remove those estimate line items first.'
-            )
-        worksheet.delete()
-
-    @staticmethod
-    def add_task_from_template(
-        worksheet_pk, template_pk,
-        rate_scheme_id=None,
-        active_modifiers=None,
-        est_qty=None,
-        est_worker_time=None,
-        name=None,
-        description=None,
-    ):
-        """Add a PlanTask to a draft worksheet from a TaskTemplate.
-
-        Optional overrides:
-          name        – if truthy, replaces template_name; empty string falls back to template default.
-          description – if not None, replaces template description (empty string is kept as-is).
-        """
-        from apps.jobs.models import PlanTask
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if not WorksheetService.is_editable(ws):
-            raise ValidationError(
-                'Cannot add tasks to a worksheet whose estimate has been sent.'
-            )
-        try:
-            tt = TaskTemplate.objects.get(pk=template_pk)
-        except TaskTemplate.DoesNotExist:
-            raise NotFoundError(f'TaskTemplate {template_pk} not found')
-
-        # Guard: refuse to use a template whose RateScheme has been superseded.
-        # Only fires when the caller is relying on the template's rate_scheme
-        # (i.e. they didn't supply an explicit override).
-        if rate_scheme_id is None and tt.rate_scheme_id and tt.rate_scheme.replaced_by_id is not None:
-            from apps.core.services import SchemeSupersededError
-            raise SchemeSupersededError(
-                f'Template "{tt.template_name}" references a superseded '
-                f'RateScheme. Update the template before adding tasks from it.'
-            )
-
-        task = PlanTask.objects.create(
-            name=name if name else tt.template_name,
-            description=description if description is not None else tt.description,
-            est_worksheet=ws,
-            rate_scheme_id=rate_scheme_id if rate_scheme_id is not None else tt.rate_scheme_id,
-            active_modifiers=active_modifiers if active_modifiers is not None else (tt.default_active_modifiers or []),
-            est_qty=est_qty if est_qty is not None else tt.default_billable_qty,
-            est_worker_time=est_worker_time,
-        )
-        return task
-
-    @staticmethod
-    def add_task_manual(worksheet_pk, **kwargs):
-        """Add a PlanTask manually to a draft worksheet."""
-        from apps.jobs.models import PlanTask
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if not WorksheetService.is_editable(ws):
-            raise ValidationError(
-                'Cannot add tasks to a worksheet whose estimate has been sent.'
-            )
-        if not kwargs.get('rate_scheme_id') and not kwargs.get('rate_scheme'):
-            raise ValidationError(
-                {'rate_scheme': 'A RateScheme is required to add a task.'}
-            )
-        task = PlanTask(est_worksheet=ws, **kwargs)
-        task.full_clean()
-        task.save()
-        return task
-
-    @staticmethod
-    def reorder_items(worksheet_pk, item_type, item_id, direction):
-        """Reorder PlanTasks at container level on a draft worksheet."""
-        from apps.jobs.models import PlanTask
-        from apps.core.services import BundlingService
-        try:
-            ws = EstWorksheet.objects.get(pk=worksheet_pk)
-        except EstWorksheet.DoesNotExist:
-            raise NotFoundError(f'EstWorksheet {worksheet_pk} not found')
-        if not WorksheetService.is_editable(ws):
-            raise ValidationError('Cannot reorder a worksheet whose estimate has been sent.')
-
-        items_qs = PlanTask.objects.filter(est_worksheet=ws)
-        BundlingService.reorder_container_items(
-            items_qs, item_type, item_id, direction,
-        )
-
-
 class EstimateClaimConflict(Exception):
     """Raised when the estimate wizard tries to claim an atom already claimed elsewhere."""
 
@@ -911,118 +956,99 @@ class EstimateWizardService(BaseWizardService):
     claim_conflict_exc = EstimateClaimConflict
 
     @staticmethod
-    def open_for_worksheet(worksheet):
-        """Return the job's draft Estimate, creating one if none exists.
-
-        Worksheet and estimate are related only through the job (one estimate
-        tree per job). Adopts the job's existing draft estimate rather than
-        minting a second. Refuses if the worksheet is frozen (its job already
-        has a sent/accepted estimate).
-        """
-        from apps.estimates.models import Estimate
-        if not WorksheetService.is_editable(worksheet):
-            raise ValidationError(
-                'Cannot generate an estimate from a worksheet whose estimate '
-                'has already been sent.'
-            )
-
-        existing = (
-            Estimate.objects
-            .filter(job=worksheet.job, status=Estimate.STATUS_DRAFT)
-            .order_by('pk')
-            .first()
-        )
-        if existing is not None:
-            return existing
-
-        return Estimate.objects.create(
-            job=worksheet.job,
-            estimate_number=f'{worksheet.job.job_number}-1',
-            version=1,
-            status=Estimate.STATUS_DRAFT,
-        )
-
-    @staticmethod
     def _resolve_atom(atom_ref):
-        """Convert {'type': 'plan_task'|'plan_material', 'id': N} to a model instance."""
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
+        """Convert {'type': 'task'|'material', 'id': N} to a model instance.
+
+        The estimate now projects the Job's own atoms (Tasks + Materials),
+        per the job-owns-atoms refactor.
+        """
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
         atom_type = atom_ref.get('type')
         atom_id = atom_ref.get('id')
-        if atom_type == 'plan_task':
+        if atom_type == 'task':
             try:
-                return PlanTask.objects.get(pk=atom_id)
-            except PlanTask.DoesNotExist:
-                raise ValidationError(f'PlanTask {atom_id} not found')
-        if atom_type == 'plan_material':
+                return Task.objects.get(pk=atom_id)
+            except Task.DoesNotExist:
+                raise ValidationError(f'Task {atom_id} not found')
+        if atom_type == 'material':
             try:
-                return PlanMaterial.objects.get(pk=atom_id)
-            except PlanMaterial.DoesNotExist:
-                raise ValidationError(f'PlanMaterial {atom_id} not found')
+                return Material.objects.get(pk=atom_id)
+            except Material.DoesNotExist:
+                raise ValidationError(f'Material {atom_id} not found')
         raise ValidationError(f'Unknown atom type: {atom_type}')
 
     @staticmethod
     def _atom_source_type(atom_instance):
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
         from apps.estimates.models import EstimateLineItemSource
-        if isinstance(atom_instance, PlanTask):
-            return EstimateLineItemSource.SOURCE_PLAN_TASK
-        if isinstance(atom_instance, PlanMaterial):
-            return EstimateLineItemSource.SOURCE_PLAN_MATERIAL
+        if isinstance(atom_instance, Task):
+            return EstimateLineItemSource.SOURCE_TASK
+        if isinstance(atom_instance, Material):
+            return EstimateLineItemSource.SOURCE_MATERIAL
         raise ValueError(f'Unknown atom instance type: {type(atom_instance)}')
+
+    @classmethod
+    def _atom_computed_amount(cls, atom_instance):
+        """Estimate-side billable amount, quantized to cents.
+
+        Tasks bill est_qty here (compute_estimate_amount), NOT actuals — the
+        estimate projects expected cost. The invoice wizard keeps the base
+        implementation (compute_amount → actuals). Materials use compute_amount
+        either way (quantity × sell_price; no actuals divergence).
+        """
+        from apps.jobs.models import Task
+        if isinstance(atom_instance, Task):
+            return atom_instance.compute_estimate_amount().quantize(Decimal('0.01'))
+        return super()._atom_computed_amount(atom_instance)
 
     @staticmethod
     def _atom_units(atom_instance):
         """Return the units label for an atom.
 
-        PlanTask: from rate_scheme.unit_label (or 'none' if no scheme).
-        PlanMaterial: from the atom's own units field (which is populated
-                      from the linked PLI at create time via _populate_from_pli,
-                      so PLI-linked PMs reflect the PLI's units; freeform PMs
-                      carry whatever units the user set).
+        Task: from rate_scheme.unit_label (rate_scheme is NOT NULL on Task).
+        Material: from the atom's own units field (which is populated from the
+                  linked PLI at create time via _populate_from_pli, so PLI-linked
+                  materials reflect the PLI's units; freeform materials carry
+                  whatever units the user set).
         """
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-        if isinstance(atom_instance, PlanTask):
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
+        if isinstance(atom_instance, Task):
             if atom_instance.rate_scheme_id:
                 return atom_instance.rate_scheme.unit_label
             return 'none'
-        if isinstance(atom_instance, PlanMaterial):
+        if isinstance(atom_instance, Material):
             return atom_instance.units or 'none'
         return 'none'
 
     @staticmethod
-    def get_source_pool(worksheet):
-        """Walk the worksheet's atoms and return a flat pool with claim state.
+    def get_source_pool(estimate):
+        """Walk the estimate's Job's atoms (Tasks + Materials) and return a flat
+        pool with claim state (job-owns-atoms refactor).
 
         Returns: {'atoms': [
-            {'type': 'plan_task'|'plan_material', 'id': N, 'description': str,
+            {'type': 'task'|'material', 'id': N, 'description': str,
              'qty': Decimal, 'rate': Decimal, 'amount': Decimal,
              'state': 'available'|'claimed_by_current'|'claimed_by_other',
              'category_id': N or None, 'units': str}
         ]}
         """
         from apps.estimates.models import EstimateLineItemSource
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
+        from apps.jobs.models import Task
+        from apps.inventory.models import Material
 
-        # Build the claim lookup: (source_type, source_pk) -> state info
-        # Plan-side does NOT release on supersede, so we don't filter by status.
+        job = estimate.job
+
+        # Build the claim lookup: (source_type, source_pk) -> state info.
         claimed_sources = (
             EstimateLineItemSource.objects
-            .filter(estimate_line_item__estimate__job=worksheet.job)
+            .filter(estimate_line_item__estimate__job=job)
             .select_related('estimate_line_item', 'estimate_line_item__estimate')
         )
-        # "Current" = the job's draft estimate (the one being built). Worksheet
-        # and estimate relate only through the job now.
-        current_estimate = (
-            Estimate.objects
-            .filter(job=worksheet.job, status=Estimate.STATUS_DRAFT)
-            .order_by('pk')
-            .first()
-        )
-        current_estimate_pk = current_estimate.pk if current_estimate else None
+        # "Current" = the estimate being built (passed in).
+        current_estimate_pk = estimate.pk
         claims = {}
         for src in claimed_sources:
             li = src.estimate_line_item
@@ -1055,17 +1081,17 @@ class EstimateWizardService(BaseWizardService):
 
         atoms = []
 
-        for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
+        for task in Task.objects.filter(job=job).select_related(
             'rate_scheme', 'rate_scheme__accounting_category',
         ):
-            key = (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk)
+            key = (EstimateLineItemSource.SOURCE_TASK, task.pk)
             state_info = claims.get(key, default_state)
-            eff_cat = pt.effective_accounting_category
-            detail = EstimateWizardService._atom_detail(pt)
+            eff_cat = task.effective_accounting_category
+            detail = EstimateWizardService._atom_detail(task)
             atoms.append({
-                'type': 'plan_task',
-                'id': pt.pk,
-                'description': pt.name,
+                'type': 'task',
+                'id': task.pk,
+                'description': task.name,
                 'qty': detail['qty'],
                 'rate': detail['rate'],
                 'amount': detail['amount'],
@@ -1074,102 +1100,29 @@ class EstimateWizardService(BaseWizardService):
                 **state_info,
             })
 
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
+        # Released materials (descoped/returned — qty moved to released_qty)
+        # are job history, not quotable work; keep them out of the pool.
+        for mat in Material.objects.filter(job=job).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_RELEASED,
+        ).select_related(
             'accounting_category', 'inventory_item',
         ):
-            key = (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk)
+            key = (EstimateLineItemSource.SOURCE_MATERIAL, mat.pk)
             state_info = claims.get(key, default_state)
-            detail = EstimateWizardService._atom_detail(pm)
+            detail = EstimateWizardService._atom_detail(mat)
             atoms.append({
-                'type': 'plan_material',
-                'id': pm.pk,
-                'description': pm.description,
+                'type': 'material',
+                'id': mat.pk,
+                'description': mat.description,
                 'qty': detail['qty'],
                 'rate': detail['rate'],
                 'amount': detail['amount'],
                 'units': detail['units'],
-                'category_id': pm.accounting_category_id,
+                'category_id': mat.accounting_category_id,
                 **state_info,
             })
 
         return {'atoms': atoms}
-
-    @staticmethod
-    def send_all_atoms_to_estimate(worksheet):
-        """Bulk 1:1 conversion of unclaimed atoms on the worksheet to EstimateLineItems.
-
-        Iterates all PlanTasks and PlanMaterials on the worksheet that aren't yet
-        claimed by any EstimateLineItemSource, and creates one EstimateLineItem per
-        atom (with one source row pointing at the atom).
-
-        Deliberately NOT wrapped in a transaction: if one atom fails (e.g. concurrent
-        claim), the successful conversions are kept so the caller can re-run to finish.
-
-        Returns: {'estimate': Estimate, 'created_count': int}
-        """
-        from apps.estimates.models import EstimateLineItem, EstimateLineItemSource
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-
-        estimate = EstimateWizardService.open_for_worksheet(worksheet)
-        EstimateWizardService._validate_draft(estimate)
-
-        # Build set of currently-claimed (type, pk) pairs, scoped to this job's estimates
-        claimed = set(
-            EstimateLineItemSource.objects
-            .filter(estimate_line_item__estimate__job=worksheet.job)
-            .values_list('source_type', 'source_pk')
-        )
-
-        created_count = 0
-
-        # PlanTasks
-        for pt in PlanTask.objects.filter(est_worksheet=worksheet).select_related(
-            'rate_scheme', 'rate_scheme__accounting_category',
-        ):
-            if (EstimateLineItemSource.SOURCE_PLAN_TASK, pt.pk) in claimed:
-                continue
-            total = pt.compute_amount().quantize(Decimal('0.01'))
-            qty, price = EstimateWizardService._atom_qty_and_price(pt, total)
-            li = EstimateLineItem.objects.create(
-                estimate=estimate,
-                description=pt.name,
-                qty=qty,
-                units=EstimateWizardService._atom_units(pt),
-                price=price,
-                accounting_category=pt.effective_accounting_category,
-            )
-            EstimateLineItemSource.objects.create(
-                estimate_line_item=li,
-                source_type=EstimateLineItemSource.SOURCE_PLAN_TASK,
-                source_pk=pt.pk,
-            )
-            created_count += 1
-
-        # PlanMaterials
-        for pm in PlanMaterial.objects.filter(est_worksheet=worksheet).select_related(
-            'accounting_category', 'inventory_item',
-        ):
-            if (EstimateLineItemSource.SOURCE_PLAN_MATERIAL, pm.pk) in claimed:
-                continue
-            total = pm.compute_amount().quantize(Decimal('0.01'))
-            qty, price = EstimateWizardService._atom_qty_and_price(pm, total)
-            li = EstimateLineItem.objects.create(
-                estimate=estimate,
-                description=pm.description,
-                qty=qty,
-                units=EstimateWizardService._atom_units(pm),
-                price=price,
-                accounting_category=pm.accounting_category,
-            )
-            EstimateLineItemSource.objects.create(
-                estimate_line_item=li,
-                source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL,
-                source_pk=pm.pk,
-            )
-            created_count += 1
-
-        return {'estimate': estimate, 'created_count': created_count}
 
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
@@ -1184,13 +1137,13 @@ class EstimateWizardService(BaseWizardService):
 
     @classmethod
     def _task_model(cls):
-        from apps.jobs.models import PlanTask
-        return PlanTask
+        from apps.jobs.models import Task
+        return Task
 
     @classmethod
     def _material_model(cls):
-        from apps.inventory.models import PlanMaterial
-        return PlanMaterial
+        from apps.inventory.models import Material
+        return Material
 
     @classmethod
     def _validate_draft(cls, container):

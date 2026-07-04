@@ -104,4 +104,39 @@ describe('invoices/WizardSourcePool', () => {
     const checkbox = container.querySelector('input[type="checkbox"]');
     expect(checkbox === null || checkbox.disabled).toBe(true);
   });
+
+  it('renders fee atoms in a Fees group', () => {
+    // Job-level fees appear as a separate group in the invoice wizard pool.
+    const { getByText } = render(WizardSourcePool, {
+      props: {
+        sourcePool: {
+          tasks: [
+            { task_id: null, name: 'Fees', has_billable_atoms: true,
+              atoms: [{ type: 'fee', id: 3, description: 'Setup Fee', qty: 1, rate: '100.00',
+                        amount: '100.00', units: 'none', state: 'available' }] },
+          ],
+        },
+      },
+    });
+    expect(getByText('Fees')).toBeInTheDocument();
+    expect(getByText(/Setup Fee/)).toBeInTheDocument();
+  });
+
+  it('renders fee atoms as selectable checkboxes', async () => {
+    const { getByRole } = render(WizardSourcePool, {
+      props: {
+        sourcePool: {
+          tasks: [
+            { task_id: null, name: 'Fees', has_billable_atoms: true,
+              atoms: [{ type: 'fee', id: 4, description: 'Rush Fee', qty: 1, rate: '50.00',
+                        amount: '50.00', units: 'none', state: 'available' }] },
+          ],
+        },
+      },
+    });
+    const checkbox = getByRole('checkbox');
+    expect(checkbox).not.toBeChecked();
+    await fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+  });
 });

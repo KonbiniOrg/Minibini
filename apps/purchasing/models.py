@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from apps.core.models import BaseLineItem
+from apps.core.models import BaseLineItem, QBOSyncable
 from apps.core.history import history
 
 
@@ -163,6 +163,23 @@ class PurchaseOrder(models.Model):
             )
         return super().delete(*args, **kwargs)
 
+    @property
+    def po_total(self):
+        return sum((li.total_amount
+                    for li in self.purchaseorderlineitem_set.all()),
+                   Decimal('0.00'))
+
+    @property
+    def billed_total(self):
+        return sum(
+            (bill.total for bill in self.bills.exclude(status=Bill.STATUS_CANCELLED)),
+            Decimal('0.00'))
+
+    @property
+    def is_fully_billed(self):
+        total = self.po_total
+        return total > 0 and self.billed_total >= total
+
     class Meta:
         db_table = 'pos'
 
@@ -188,18 +205,17 @@ class Bill(models.Model):
         (STATUS_REFUNDED, 'Refunded'),
     ]
 
-    # Statuses for which the bill carries no outstanding balance. Single source
-    # of truth for the coarse-balance rule: the `balance` property below, the
-    # detail serializer, and the A/P list's SQL `balance_anno` annotation all
-    # key off this set so they can never drift apart.
-    ZERO_BALANCE_STATUSES = (STATUS_PAID_IN_FULL, STATUS_CANCELLED, STATUS_REFUNDED)
-
     bill_id = models.AutoField(primary_key=True)
-    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True)
+    purchase_order = models.ForeignKey(
+        PurchaseOrder, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='bills',
+    )
     # Business is required; Contact is optional but if provided, must have a Business
     business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
-    vendor_invoice_number = models.CharField(max_length=50)
+    # Blank-able: a draft Bill created from a PO exists before the real vendor
+    # invoice arrives; the number is filled in when the invoice is matched.
+    vendor_invoice_number = models.CharField(max_length=50, blank=True, default='')
     status = models.CharField(max_length=20, choices=BILL_STATUS_CHOICES, default=STATUS_DRAFT)
 
     # Date fields
@@ -257,6 +273,11 @@ class Bill(models.Model):
             try:
                 old_bill = Bill.objects.get(pk=self.pk)
                 old_status = old_bill.status
+
+                # Payment-driven recompute bypasses the forward-only guard and
+                # date protection (status moves backward when payments are removed).
+                if getattr(self, '_payment_driven', False):
+                    return
 
                 # Protect immutable date fields
                 if old_bill.created_date and self.created_date != old_bill.created_date:
@@ -346,25 +367,100 @@ class Bill(models.Model):
 
     @property
     def total(self):
-        """Sum of line items (qty * price), quantized to cents."""
-        total = sum((li.qty * li.price for li in self.billlineitem_set.all()),
-                    Decimal('0'))
-        return total.quantize(Decimal('0.01'))
+        return sum((li.total_amount for li in self.billlineitem_set.all()),
+                   Decimal('0.00'))
+
+    @property
+    def amount_paid(self):
+        return sum((p.amount for p in self.billpayment_set.all()),
+                   Decimal('0.00'))
 
     @property
     def balance(self):
-        """Outstanding balance: zero once the bill is resolved
-        (paid/cancelled/refunded), otherwise the full line-item total. This is
-        the one definition of the coarse-balance rule — see ZERO_BALANCE_STATUSES."""
-        if self.status in Bill.ZERO_BALANCE_STATUSES:
+        TERMINAL_STATUSES = {
+            Bill.STATUS_PAID_IN_FULL,
+            Bill.STATUS_CANCELLED,
+            Bill.STATUS_REFUNDED,
+        }
+        if self.status in TERMINAL_STATUSES:
             return Decimal('0.00')
-        return self.total
+        return self.total - self.amount_paid
+
+    def recompute_payment_status(self):
+        """Derive status from BillPayment totals. Payment-driven: bypasses the
+        forward-only transition guard and date protection in clean().
+
+        Only acts on payment-related statuses (received, partly_paid,
+        paid_in_full). Returns immediately for draft, cancelled, and refunded
+        bills to avoid silently overwriting a terminal or pre-payment status.
+        """
+        PAYMENT_STATUSES = {
+            Bill.STATUS_RECEIVED,
+            Bill.STATUS_PARTLY_PAID,
+            Bill.STATUS_PAID_IN_FULL,
+        }
+        if self.status not in PAYMENT_STATUSES:
+            return
+
+        paid = self.amount_paid
+        total = self.total
+        if paid <= 0:
+            new_status = Bill.STATUS_RECEIVED
+        elif paid < total:
+            new_status = Bill.STATUS_PARTLY_PAID
+        else:
+            new_status = Bill.STATUS_PAID_IN_FULL
+        self._payment_driven = True
+        self.status = new_status
+        if new_status == Bill.STATUS_PAID_IN_FULL and not self.paid_date:
+            self.paid_date = timezone.now()
+        elif new_status != Bill.STATUS_PAID_IN_FULL and self.paid_date:
+            self.paid_date = None
+        try:
+            self.save()
+        finally:
+            self._payment_driven = False
 
     class Meta:
         db_table = 'bills'
 
     def __str__(self):
         return f"Bill {self.vendor_invoice_number or self.pk}"
+
+
+class BillPayment(QBOSyncable):
+    payment_id = models.AutoField(primary_key=True)
+    bill = models.ForeignKey(Bill, on_delete=models.CASCADE)
+    # Payment OUT — entered in Minibini
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_date = models.DateTimeField()
+    reference = models.CharField(max_length=100, blank=True, default='')
+    # Which QBO bank/CC account the money came from (a qbo_account_id from
+    # Configuration['qbo_payment_accounts']). Required by the QBO BillPayment push.
+    # Drives the QBO PayType and replaces the old free-standing `method` field —
+    # the human label is derived from the account display name + reference.
+    payment_account_id = models.CharField(max_length=50, blank=True, default='')
+    created_by = models.ForeignKey(
+        'core.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recorded_bill_payments',
+    )
+    created_date = models.DateTimeField(default=timezone.now)
+    # qbo_id (the QBO BillPayment Id) + qbo_sync_status + qbo_sync_error come
+    # from QBOSyncable. qbo_id is written by the PUSH; cleared_date is written
+    # later by the (deferred) clearance poller.
+    cleared_date = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'bill_payments'
+        ordering = ['payment_date']
+
+    def clean(self):
+        super().clean()
+        if self.amount is not None and self.amount <= 0:
+            raise ValidationError('Payment amount must be greater than zero.')
+
+    def __str__(self):
+        return f"Payment {self.amount} on Bill {self.bill_id}"
 
 
 class PurchaseOrderLineItem(BaseLineItem):

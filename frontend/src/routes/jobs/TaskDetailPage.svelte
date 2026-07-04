@@ -60,7 +60,7 @@
 
   async function loadTemplates() {
     try {
-      const resp = await api.get('/api/task-templates/?page_size=100');
+      const resp = await api.get('/api/service-items/?page_size=100');
       templates = resp.results || resp;
     } catch (e) {
       templates = [];
@@ -376,9 +376,6 @@
       {:else if task.scheme_algorithm === 'elapsed_time'}
         <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
           <td>{Number(task.actual_hours) || 0}</td></tr>
-      {:else if task.scheme_algorithm === 'flat_fee'}
-        <tr><td><strong>Quantity</strong></td>
-          <td>{Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</td></tr>
       {/if}
       {#if task.computed_charge}
         <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>

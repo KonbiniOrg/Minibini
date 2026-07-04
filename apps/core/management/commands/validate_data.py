@@ -31,10 +31,8 @@ Per-model field checks:
                    E  draft: must not have sent_date or closed_date
                    W  open: missing sent_date
                    W  accepted/rejected/superseded/expired: missing closed_date
-  EstWorksheet     E  valid status value
   Task             E  must belong to a Job
                    E  valid status value
-  PlanTask         E  must belong to an EstWorksheet
   Material         E  must have description or inventory_item
                    E  negative quantity
                    W  has PLI but empty description (--fix: auto-fill)
@@ -76,13 +74,6 @@ Cross-model relationship checks:
                    E  open estimate's job must not be draft/rejected (signal should
                       have moved job to submitted+)
                    E  completed/cancelled job must not have draft/open estimates
-  Est/Worksheet    E  worksheet with linked estimate must be 'final' (not 'draft')
-                   E  worksheet with superseded estimate must be 'superseded'
-  Worksheet/Job    E  worksheet's job must match its linked estimate's job
-  Worksheet ver.   E  parent version must be lower than child
-                   E  parent must belong to same job
-                   W  parent should be 'superseded'
-  EstLineItem/Job  E  PlanTask/PlanMaterial source row's job must match estimate's job
   PO contact/biz   E  contact's business must match PO's business
   Bill/PO biz      E  bill's business must match linked PO's business
   Earmark/Job      W  earmark on completed/cancelled/rejected job
@@ -94,7 +85,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Sum
 
 from apps.jobs.models import Job
-from apps.estimates.models import Estimate, EstWorksheet
+from apps.estimates.models import Estimate
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.invoicing.models import Invoice
 
@@ -121,7 +112,7 @@ class Command(BaseCommand):
         self.check_jobs()
         self.check_rate_schemes()
         self.check_estimates()
-        self.check_worksheets()
+        self.check_fees()
         self.check_tasks()
         self.check_bleps_and_shifts()
         self.check_materials()
@@ -138,11 +129,12 @@ class Command(BaseCommand):
         # Cross-model relationship invariants
         self.check_estimate_versioning()
         self.check_job_estimate_status_alignment()
-        self.check_estimate_line_item_job_consistency()
         self.check_po_contact_business_match()
         self.check_bill_po_business_match()
         self.check_earmark_job_status()
         self.check_invoice_job_status()
+        self.check_estimate_source_job_consistency()
+        self.check_invoice_source_job_consistency()
 
         # Report
         self.stdout.write('')
@@ -315,18 +307,11 @@ class Command(BaseCommand):
                     f'Job {job.job_number}: has {draft_count} draft estimates (max 1)'
                 )
 
-    # ── Worksheets ────────────────────────────────────────────
-
-    def check_worksheets(self):
-        # Worksheets are decoupled from estimates and carry no status/version/
-        # parent of their own — nothing to validate here beyond the FK to a job
-        # (enforced by the schema).
-        return
-
     # ── Tasks ─────────────────────────────────────────────────
 
     def check_tasks(self):
-        from apps.jobs.models import Task, PlanTask
+        from apps.jobs.models import Task
+        from apps.estimates.models import ServiceItem
         valid_task_statuses = {s[0] for s in Task.TASK_STATUS_CHOICES}
         # Tasks now belong directly to a Job (post-WorkOrder-removal).
         for t in Task.objects.select_related('job').all():
@@ -334,31 +319,22 @@ class Command(BaseCommand):
                 self.errors.append(f'Task {t.pk} ({t.name}): not attached to a Job')
             if t.status not in valid_task_statuses:
                 self.errors.append(f'Task {t.pk} ({t.name}): invalid status "{t.status}"')
-        # Plan tasks: PlanTask is worksheet-only
-        for t in PlanTask.objects.select_related('est_worksheet').all():
-            if not t.est_worksheet_id:
-                self.errors.append(f'PlanTask {t.pk} ({t.name}): not attached to an EstWorksheet')
+            if isinstance(t.active_modifiers, dict):
+                self.errors.append(
+                    f'Task {t.pk} ({t.name}): active_modifiers is a dict; must be a list of keys'
+                )
+        # ServiceItems: default_active_modifiers must be a list
+        for tt in ServiceItem.objects.all():
+            if isinstance(tt.default_active_modifiers, dict):
+                self.errors.append(
+                    f'ServiceItem {tt.pk} ({tt.template_name}): '
+                    f'default_active_modifiers is a dict; must be a list of keys'
+                )
 
     # ── Materials ─────────────────────────────────────────────
 
     def check_materials(self):
-        from apps.inventory.models import Material, PlanMaterial
-        # Check PlanMaterials (worksheet-side)
-        for m in PlanMaterial.objects.select_related('inventory_item', 'plan_task').all():
-            if not m.description and not m.inventory_item:
-                self.errors.append(
-                    f'PlanMaterial {m.pk}: no description and no inventory_item (nothing to derive from)'
-                )
-            if m.inventory_item and not m.description:
-                if self.fix:
-                    m.description = m.inventory_item.description[:255]
-                    m.save()
-                    self.fixes.append(f'PlanMaterial {m.pk}: set description from PLI')
-                else:
-                    self.warnings.append(f'PlanMaterial {m.pk}: has PLI but empty description')
-            if m.quantity < 0:
-                self.errors.append(f'PlanMaterial {m.pk}: negative quantity {m.quantity}')
-
+        from apps.inventory.models import Material
         # Check Materials (work-order side)
         for m in Material.objects.select_related('inventory_item', 'task').all():
             if not m.description and not m.inventory_item:
@@ -472,7 +448,7 @@ class Command(BaseCommand):
             if inv.status not in valid_statuses:
                 self.errors.append(f'Invoice {inv.invoice_number}: invalid status "{inv.status}"')
 
-    # ── Rate Schemes ──────────────────────────────────────────
+    # ── Service Prices ────────────────────────────────────────
 
     def check_rate_schemes(self):
         from apps.jobs.models import RateScheme
@@ -491,6 +467,10 @@ class Command(BaseCommand):
                 self.errors.append(
                     f'RateScheme {rs.pk} ({rs.name}): replaced_by and replaced_at '
                     f'must both be set or both be null'
+                )
+            if rs.algorithm != RateScheme.PERCENTAGE and rs.rate is not None and rs.rate < 0:
+                self.errors.append(
+                    f'RateScheme {rs.pk} ({rs.name}): negative rate not allowed for {rs.algorithm}'
                 )
 
     # ── Deliverables ──────────────────────────────────────────
@@ -705,49 +685,6 @@ class Command(BaseCommand):
                         f'but job {job.job_number} is "{job.status}"'
                     )
 
-    def check_estimate_line_item_job_consistency(self):
-        """EstimateLineItemSource rows must point at atoms (PlanTask or PlanMaterial)
-        belonging to the same job as the line item's estimate."""
-        from apps.estimates.models import EstimateLineItemSource
-        from apps.jobs.models import PlanTask
-        from apps.inventory.models import PlanMaterial
-
-        for source in EstimateLineItemSource.objects.filter(
-            source_type=EstimateLineItemSource.SOURCE_PLAN_TASK
-        ).select_related('estimate_line_item__estimate__job'):
-            try:
-                pt = PlanTask.objects.select_related('est_worksheet').get(pk=source.source_pk)
-            except PlanTask.DoesNotExist:
-                self.errors.append(
-                    f'EstimateLineItemSource {source.pk}: dangling PlanTask ref pk={source.source_pk}'
-                )
-                continue
-            ws = pt.est_worksheet
-            li = source.estimate_line_item
-            if ws and ws.job_id != li.estimate.job_id:
-                self.errors.append(
-                    f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
-                    f'but PlanTask {source.source_pk} belongs to job {ws.job_id}'
-                )
-
-        for source in EstimateLineItemSource.objects.filter(
-            source_type=EstimateLineItemSource.SOURCE_PLAN_MATERIAL
-        ).select_related('estimate_line_item__estimate__job'):
-            try:
-                pm = PlanMaterial.objects.select_related('est_worksheet').get(pk=source.source_pk)
-            except PlanMaterial.DoesNotExist:
-                self.errors.append(
-                    f'EstimateLineItemSource {source.pk}: dangling PlanMaterial ref pk={source.source_pk}'
-                )
-                continue
-            ws = pm.est_worksheet
-            li = source.estimate_line_item
-            if ws and ws.job_id != li.estimate.job_id:
-                self.errors.append(
-                    f'EstimateLineItem {li.pk}: estimate is for job {li.estimate.job_id} '
-                    f'but PlanMaterial {source.source_pk} belongs to job {ws.job_id}'
-                )
-
     def check_po_contact_business_match(self):
         """If a PO has both contact and business, contact's business must match."""
         from apps.purchasing.models import PurchaseOrder
@@ -799,4 +736,83 @@ class Command(BaseCommand):
                 self.warnings.append(
                     f'Invoice {inv.invoice_number}: job {inv.job.job_number} '
                     f'status is "{inv.job.status}" (expected approved or later)'
+                )
+
+    def check_fees(self):
+        """For each Fee, validate unit_rate > 0, quantity >= 0,
+        and (if task is set) task.job_id == fee.job_id.
+        (accounting_category is NOT NULL on the model; no need to check it here.)"""
+        from apps.jobs.models import Fee
+        for fee in Fee.objects.select_related('task', 'job').all():
+            if fee.unit_rate <= 0:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): unit_rate must be positive '
+                    f'(got {fee.unit_rate})'
+                )
+            if fee.quantity < 0:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): negative quantity {fee.quantity}'
+                )
+            if fee.task_id and fee.task.job_id != fee.job_id:
+                self.errors.append(
+                    f'Fee {fee.pk} ({fee.description!r}): task {fee.task_id} belongs to '
+                    f'job {fee.task.job_id} but Fee belongs to job {fee.job_id}'
+                )
+
+    def check_estimate_source_job_consistency(self):
+        """For each EstimateLineItemSource (task/material/fee), the atom's job_id
+        must match the owning estimate's job_id."""
+        from apps.estimates.models import EstimateLineItemSource
+        atom_source_types = {
+            EstimateLineItemSource.SOURCE_TASK,
+            EstimateLineItemSource.SOURCE_MATERIAL,
+            EstimateLineItemSource.SOURCE_FEE,
+        }
+        for source in EstimateLineItemSource.objects.select_related(
+            'estimate_line_item__estimate__job'
+        ).filter(source_type__in=atom_source_types):
+            estimate_job_id = source.estimate_line_item.estimate.job_id
+            try:
+                atom = source.resolve()
+            except Exception:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): atom not found'
+                )
+                continue
+            atom_job_id = getattr(atom, 'job_id', None)
+            if atom_job_id != estimate_job_id:
+                self.errors.append(
+                    f'EstimateLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): '
+                    f'atom job_id={atom_job_id} does not match estimate job_id={estimate_job_id}'
+                )
+
+    def check_invoice_source_job_consistency(self):
+        """For each InvoiceLineItemSource (task/material/fee), the atom's job_id
+        must match the owning invoice's job_id."""
+        from apps.invoicing.models import InvoiceLineItemSource
+        atom_source_types = {
+            InvoiceLineItemSource.SOURCE_TASK,
+            InvoiceLineItemSource.SOURCE_MATERIAL,
+            InvoiceLineItemSource.SOURCE_FEE,
+        }
+        for source in InvoiceLineItemSource.objects.select_related(
+            'invoice_line_item__invoice__job'
+        ).filter(source_type__in=atom_source_types):
+            invoice_job_id = source.invoice_line_item.invoice.job_id
+            try:
+                atom = source.resolve()
+            except Exception:
+                self.errors.append(
+                    f'InvoiceLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): atom not found'
+                )
+                continue
+            atom_job_id = getattr(atom, 'job_id', None)
+            if atom_job_id != invoice_job_id:
+                self.errors.append(
+                    f'InvoiceLineItemSource {source.pk} '
+                    f'({source.source_type}:{source.source_pk}): '
+                    f'atom job_id={atom_job_id} does not match invoice job_id={invoice_job_id}'
                 )

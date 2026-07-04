@@ -38,6 +38,9 @@ def _add_co_line(co):
         qty=1,
         price=Decimal('250'),
         line_number=1,
+        # A bare add line needs an AC to pass the send guard (it crystallizes
+        # into a Fee at acceptance). 901 = 'SVC' in unit_test_data.json.
+        accounting_category_id=901,
     )
 
 
@@ -111,7 +114,9 @@ class ChangeOrderServiceCreateTests(FixtureTestCase):
 
 
 class ChangeOrderServiceAcceptTests(FixtureTestCase):
-    """update_status(accepted) advances job to approved, writes history, leaves Tasks+Materials alone."""
+    """update_status(accepted) advances job to approved, writes history, and
+    crystallizes the CO's deltas onto the Job's atoms (full coverage in
+    tests/test_change_order_acceptance.py)."""
 
     def setUp(self):
         super().setUp()
@@ -146,8 +151,11 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         history_after = JobHistory.objects.filter(object_type='changeorder').count()
         self.assertGreater(history_after, history_before)
 
-    def test_accept_does_not_create_tasks_or_materials(self):
+    def test_accept_crystallizes_added_line_into_fee(self):
+        """A bare add line becomes a Fee atom on the job at acceptance (it used
+        to stay document-only); no Task or Material is minted for it."""
         from apps.estimates.change_order_service import ChangeOrderService
+        from apps.jobs.models import Fee
         task_count_before = Task.objects.count()
         mat_count_before = Material.objects.count()
 
@@ -156,6 +164,8 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
+        fee = Fee.objects.get(job=self.job, description='Extra scope')
+        self.assertEqual(fee.unit_rate, Decimal('250'))
         self.assertEqual(Task.objects.count(), task_count_before)
         self.assertEqual(Material.objects.count(), mat_count_before)
 
@@ -231,6 +241,7 @@ class ChangeOrderServiceSeedNewTests(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co_src, action=ChangeOrderLineItem.ACTION_ADD,
             description='Another item', qty=2, price=Decimal('75'), line_number=2,
+            accounting_category_id=901,
         )
         ChangeOrderService.mark_open(co_src.pk)
         ChangeOrderService.update_status(co_src.pk, ChangeOrder.STATUS_REJECTED)

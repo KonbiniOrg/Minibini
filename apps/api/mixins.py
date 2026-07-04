@@ -79,6 +79,27 @@ class ConfirmDeleteMixin:
         return self.perform_confirmed_destroy(obj)
 
 
+class QBORetrySyncMixin:
+    """Shared retry-sync action: dispatch to a service retry that may return
+    None (delete branch) and shape the response uniformly."""
+    retry_deleted_message = 'Deleted.'
+
+    def retry_service_call(self, obj, request):
+        raise NotImplementedError
+
+    @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
+    def retry_sync(self, request, pk=None):
+        obj = self.get_object()
+        try:
+            result = self.retry_service_call(obj, request)
+        except ValidationError as e:
+            return Response({'detail': e.messages[0]}, status=400)
+        if result is None:
+            return Response({'message': self.retry_deleted_message})
+        obj.refresh_from_db()
+        return Response(self.get_serializer(obj).data)
+
+
 class StatusTransitionMixin:
     """
     Mixin that auto-registers action endpoints from a status_actions dict.
@@ -282,61 +303,6 @@ class LineItemMixin:
             raise NotFound()
 
 
-class PlanTaskMixin:
-    """
-    Adds plan-task CRUD actions to the EstWorksheet viewset.
-
-    Works against PlanTask (worksheet-side model).
-
-    Subclasses declare:
-        plan_task_serializer_class = SomePlanTaskSerializer
-    """
-    plan_task_serializer_class = None
-
-    @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
-    def tasks(self, request, pk=None):
-        worksheet = self.get_object()
-        if request.method == 'GET':
-            from apps.jobs.models import PlanTask
-            tasks = PlanTask.objects.filter(
-                est_worksheet=worksheet,
-            ).select_related('rate_scheme').order_by('sort_order')
-            serializer = self.plan_task_serializer_class(tasks, many=True)
-            return Response(serializer.data)
-
-        serializer = self.plan_task_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(est_worksheet=worksheet)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='tasks/(?P<task_id>[0-9]+)', url_name='task-detail')
-    def task_detail(self, request, pk=None, task_id=None):
-        worksheet = self.get_object()
-        task = self._get_plan_task_or_404(worksheet, task_id)
-
-        if request.method == 'DELETE':
-            task.delete()
-            return Response({'message': 'Task deleted.'})
-
-        serializer = self.plan_task_serializer_class(task, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-    def _get_plan_task_or_404(self, worksheet, task_id):
-        from apps.jobs.models import PlanTask
-        try:
-            return PlanTask.objects.get(pk=task_id, est_worksheet=worksheet)
-        except PlanTask.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
-
-
-# Backwards-compat alias — remove after all callers updated
-PlanTaskBundleMixin = PlanTaskMixin
-
-
 class JobTaskMixin:
     """
     Adds task CRUD actions to the Job viewset. Works against Task.
@@ -434,7 +400,7 @@ class JobScopedPermissionMixin:
 
     Configure per viewset:
       - job_object_path: attribute chain instance -> Job ('self' for JobViewSet,
-        'job', 'est_worksheet.job', 'estimate.job', 'change_order.job', ...).
+        'job', 'estimate.job', 'change_order.job', ...).
       - job_create_field: request.data key naming the parent Job on create.
       - job_url_kwarg: URL kwarg holding the job id (job-nested routes).
     """

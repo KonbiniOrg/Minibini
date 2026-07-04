@@ -1,13 +1,12 @@
 <script>
-  import { api } from '../../lib/api.js';
   import { emailApi } from '../../lib/email.js';
   import { push } from 'svelte-spa-router';
+  import PurchaseOrderPicker from '../../components/PurchaseOrderPicker.svelte';
 
   const { params = {} } = $props();
 
   let email = $state(null);
-  let pos = $state([]);
-  let selectedPoId = $state('');
+  let selectedPoId = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
   let submitting = $state(false);
@@ -17,12 +16,7 @@
     loading = true;
     loadError = null;
     try {
-      const [emailData, posData] = await Promise.all([
-        emailApi.get(params.id),
-        api.get('/api/purchase-orders/?page_size=100'),
-      ]);
-      email = emailData;
-      pos = posData.results || [];
+      email = await emailApi.get(params.id);
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -78,15 +72,8 @@
 
   <form onsubmit={handleSubmit}>
     <p>
-      <label for="po_id"><strong>Purchase Order *</strong></label><br>
-      <select id="po_id" bind:value={selectedPoId} required>
-        <option value="">-- Select a Purchase Order --</option>
-        {#each pos as po}
-          <option value={po.po_id}>
-            {po.po_number} — {po.business_name || ''} — {po.status}
-          </option>
-        {/each}
-      </select>
+      <label><strong>Purchase Order *</strong></label><br>
+      <PurchaseOrderPicker bind:value={selectedPoId} />
     </p>
 
     <p>

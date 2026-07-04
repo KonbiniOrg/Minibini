@@ -12,12 +12,12 @@ class ReimbursementSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'purchased_by', 'purchased_by_name',
             'paid_on', 'payment_account_id', 'reference_number', 'notes',
-            'created_by', 'status',
+            'created_by', 'qbo_sync_status',
             'qbo_id', 'qbo_sync_error',
             'created_at', 'total', 'expense_count',
         ]
         read_only_fields = [
-            'id', 'purchased_by_name', 'created_by', 'status',
+            'id', 'purchased_by_name', 'created_by', 'qbo_sync_status',
             'qbo_id', 'qbo_sync_error', 'created_at', 'total', 'expense_count',
         ]
 

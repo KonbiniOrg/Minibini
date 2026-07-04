@@ -1,24 +1,28 @@
 # Materials, Inventory & Purchasing
 
 This document is the consolidated reference for the inventory catalog
-(`InventoryItem`), the materials lifecycle (`Material` / `PlanMaterial`,
-earmarks, consumption state), the configurable units system, and purchasing
+(`InventoryItem`), the materials lifecycle (`Material`, earmarks,
+consumption state), the configurable units system, and purchasing
 (POs, Bills, receiving, PO ↔ Material integration).
+
+> **Job-owns-atoms model.** A `Material` is created **directly on the
+> Job** (via the Work surface or a job-attributed PO line); the former
+> worksheet-side `PlanMaterial` and worksheet→job carry-over are
+> **removed**. `Material` is a billable **atom** (alongside `Task` and
+> `Fee`) that the estimate and invoice lenses claim.
 
 Sibling docs:
 
 - `docs/designs/architecture-and-conventions.md` — service-layer pattern,
   `LineItemMixin`, `LineItemService.delete_line_item_with_renumber`,
   delete-confirm pattern.
-- `docs/designs/jobs-tasks-and-worksheets.md` — `Job`, `Task`, `EstWorksheet`,
-  `PlanTask`, `WorkTemplate`, populate-from-template / -estimate /
-  -worksheet paths.
+- `docs/designs/jobs-tasks-and-worksheets.md` — `Job`, `Task`, `Fee`,
+  `WorkTemplate`, populate-from-template path, the Work surface.
 - `docs/designs/estimates-and-prices.md` — `RateScheme`, billable atoms
-  (Materials are atoms), atom carry-over (`PlanMaterial → Material` on
-  estimate accept), AccountingCategory pass-through.
-- `docs/designs/invoicing-and-expenses.md` (forthcoming) — `Invoice` /
-  `InvoiceLineItem`, `Bill` payment lifecycle, expense-bound Materials.
-- `docs/designs/quickbooks-integration.md` (forthcoming) — Bill QBO sync.
+  (Materials are atoms), AccountingCategory pass-through.
+- `docs/designs/invoicing-and-expenses.md` — `Invoice` /
+  `InvoiceLineItem`, expense-bound Materials.
+- `docs/designs/quickbooks-integration.md` — Bill QBO sync.
 - `CLAUDE.md` — line-item delete rule, document numbering, `Configuration`
   key-value store, terminal-DB-write rules.
 
@@ -30,15 +34,18 @@ The data model splits into three layers:
 
 | Layer | Models | Purpose |
 |---|---|---|
-| Inventory | `InventoryItem` (was `PriceListItem`) | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
-| Plan & instance | `MaterialBase` (abstract) → `PlanMaterial`, `Material`, `TemplateMaterialAssociation` | Materials live on Worksheets (`PlanMaterial`), Jobs (`Material`), or Templates (`TemplateMaterialAssociation`) |
-| Procurement | `PurchaseOrder`, `PurchaseOrderLineItem`, `Bill`, `BillLineItem` | Order goods from vendors, receive them, record vendor invoices |
+| Inventory | `InventoryItem` | Every physical item — catalog *types* (`is_catalog`) and transient *lots* — with prices, units, accounting category, and universal QOH tracking |
+| Instance | `MaterialBase` (abstract) → `Material`, `TemplateMaterialAssociation` | Materials live on Jobs (`Material`) or Templates (`TemplateMaterialAssociation`) |
+| Procurement | `PurchaseOrder`, `PurchaseOrderLineItem`, `Bill`, `BillLineItem`, `BillPayment` | Order goods from vendors, receive them, record vendor invoices, record payments against bills |
 
-A `Material` on a Job represents a *commitment*. Every item-backed Material
-holds an `Earmark` against the linked InventoryItem from the moment the
-Material is created (universal tracking). Earmarks are released by Consume (decrements QOH and
-shrinks the earmark) or by Restock (shrinks the earmark, leaves QOH
-alone).
+A `Material` on a Job represents a *commitment*. It is created directly on
+the Job (Work surface, PO line, or template populate — there is no
+worksheet stage). Every item-backed Material holds an `Earmark` against
+the linked InventoryItem **from the moment the Material is created**
+(universal tracking) — there is no longer a deferred "earmark on
+estimate acceptance" step for plan materials. Earmarks are released by
+Consume (decrements QOH and shrinks the earmark) or by Restock (shrinks
+the earmark, leaves QOH alone).
 
 PO line items integrate with this model via `Material.po_line_item`:
 adding a job-attributed PO line creates (or claims) a Material on that
@@ -60,14 +67,14 @@ Files:
 
 `apps/inventory/models.py` — `InventoryItem`, `db_table='inventory_item'`.
 
-> **2026-06 catalog-vs-lots reframe.** The model was `PriceListItem`
+> **2026-06 catalog-vs-lots reframe.** The model was `InventoryItem`
 > (`db_table='price_list'`) and the flag was `is_inventoried`. The reframe
 > renamed both and flipped the model: **quantity tracking is now universal** —
 > every physical thing in the shop is tracked while it's here — and a catalog
 > flag distinguishes *types* you reorder from one-time *lots*. A follow-up
 > completed the rename so nothing says "price_list" anymore: the API route is now
 > `/api/inventory/`, the FK field on Material/Earmark/line items is `inventory_item`,
-> and the PK is `inventory_item_id` (all formerly `price_list_item*`). See
+> and the PK is `inventory_item_id` (all formerly `inventory_item*`). See
 > `docs/plans/2026-06-14-inventory-catalog-vs-lots-spec.md`.
 
 Every physical item flows through this one table — catalog items that estimates,
@@ -127,7 +134,10 @@ later hidden.
   deletion would raise `ProtectedError`. There is no pruner; the filter is derived.
 - **Write-off** (`InventoryService.write_off`, `POST …/{pk}/write-off/`): zeroes
   QOH, books the remainder to `qty_wasted` (recording the wastage history entry
-  first), making the lot a finished/hidden lot.
+  first), making the lot a finished/hidden lot. (The old `collect_if_finished`
+  auto-delete of reference-free finished lots on write-off/demote was retired
+  by the 2026-07-03 deletion doctrine — inventory rows are shop history and are
+  never auto-deleted; the hide-on-spend filter is the whole retirement.)
 - **Merge** (`InventoryService.merge`, `POST …/merge/`): the manual dedup tool —
   folds a discard item into a keep item (QOH + aggregates), repoints every
   reference, deletes the discard. Hard-blocks unit mismatch and catalog-as-discard.
@@ -136,12 +146,13 @@ later hidden.
 
 Line items and `TemplateMaterialAssociation` reference the item with `PROTECT`
 (preserves historical documents — and is why finished lots are hidden, not
-deleted). `MaterialBase.inventory_item` and `Expense.stock_pli` use `SET_NULL`.
-`can_be_deleted` still gates the (rare) hard delete:
-
-```python
-InventoryItem.can_be_deleted  # False if any line item or earmark references it
-```
+deleted). `MaterialBase.inventory_item` and `Expense.stock_pli` use `SET_NULL`
+— which is exactly why the delete endpoint guards beyond the PROTECT set:
+`InventoryService.assert_item_deletable` refuses when any line item
+(`can_be_deleted`), **Material, Earmark, or Expense stock receipt** references
+the item, since the SET_NULL cascades would silently demote established
+materials to provisional and orphan stock records. Hard delete is mistake
+correction for never-referenced rows only.
 
 Catalog admins use the `is_active` soft-delete instead of hard deletion. Write
 access to inventory items requires **either** `can_manage_financials` **or**
@@ -153,9 +164,8 @@ access to inventory items requires **either** `can_manage_financials` **or**
 
 ### MaterialBase abstract
 
-`apps/inventory/models.py` — fields shared by `PlanMaterial`,
-`Material`, and (via the related-but-separate `TemplateMaterialAssociation`)
-the template side.
+`apps/inventory/models.py` — fields shared by `Material` and (via the
+related-but-separate `TemplateMaterialAssociation`) the template side.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -186,10 +196,22 @@ Concrete job-side material that participates in QOH/earmark flows.
 |---|---|---|
 | `job` | FK CASCADE | **Required**; Material always belongs to a Job |
 | `task` | FK SET_NULL nullable | Optional Task attachment |
-| `consumption_state` | choices `pending` / `consumed` | Default `pending` |
-| `restocked_qty` | `Decimal(10,2)` default 0 | Tracks expense-bound restock for QOH reversal |
+| `consumption_state` | choices `pending` / `consumed` / `released` | Default `pending` |
+| `released_qty` | `Decimal(10,2)` default 0 | Quantity restocked/released back out of the plan (was `restocked_qty`, renamed 2026-07-03). Invariant: `quantity + released_qty` = originally planned — the expense-void reversal relies on it |
 | `po_line_item` | FK SET_NULL `related_name='+'` | Optional PO line attribution |
-| `source_plan_material` | OneToOne SET_NULL | Carry-over idempotency key |
+
+**Lifecycle** (deletion doctrine, 2026-07-03): born `pending` (planned;
+earmarked on committed jobs) → `consumed` (task start drew the stock;
+reversible via `unconsume`) or `released` (a named event said the job planned
+it and didn't use it — full restock while referenced, job-completion loose
+release, PO sever, CO descope; **terminal**). A pending material that nothing
+references (no expense, no PO link, no estimate/CO claim, not invoiced —
+`MaterialService._is_referenced`) may instead be hard-deleted (mistake
+correction / scratch paper). **Release zeroes `quantity` into `released_qty`**,
+so released rows sum to zero in every aggregate consumer (financials, earmark
+sweep, COGS) with no state filters; remaining filters (wizard pools) are
+display tidiness. Claims are never purged by release — a released material
+keeps supporting its estimate/CO/invoice lines as job history.
 
 `task` SET_NULL is deliberate: deleting a `Task` leaves Materials on
 the Job as task-less rather than orphaning their earmarks. Job
@@ -204,9 +226,9 @@ when one real-world purchase covers several jobs' needs. Uniqueness
 is not enforced at the DB level so that future model can be allowed
 without a migration.
 
-`source_plan_material` is the carry-over key used by
-`AtomCarryOverService` (see `docs/designs/estimates-and-prices.md`)
-to dedupe `PlanMaterial → Material` on estimate accept.
+(The former `source_plan_material` carry-over idempotency key was removed
+with the planning layer — Materials are authored directly on the Job, so
+there is nothing to carry over from.)
 
 #### Validation
 
@@ -217,13 +239,13 @@ to dedupe `PlanMaterial → Material` on estimate accept.
 
 #### `unit_cost` provenance & expenses (cost-model redesign 2026-06-14)
 
-`Material.unit_cost` comes from: PLI catalog (`_populate_from_pli` / carry-over),
+`Material.unit_cost` comes from: PLI catalog (`_populate_from_pli`),
 a PO line (`resolve_or_create_for_line(unit_cost=li.price)`), or — for a
 **cost-expense** — the user-entered `price` at creation (`create_on_job`,
 `cost_source='document'`). A **freeform** (no-PLI) actual Material's cost is still
 document-sourced only (no manual typing): `create_on_job`'s `cost_source` guard +
 `MaterialSerializer.validate` + the material-modal disabling the Unit Cost field
-when freeform. PLI materials and `PlanMaterial` estimates are unaffected.
+when freeform. PLI materials are unaffected.
 
 **Expenses & materials** (driven by `ExpenseService`): expenses **never link an
 existing material** — they only create their own (no recost, no clobber, no
@@ -240,24 +262,16 @@ division; the earlier link/unlink machinery was removed). Two modes:
   receipt tops up QOH, the existing material consumes once. See
   `docs/designs/invoicing-and-expenses.md` (Expense).
 
-### PlanMaterial
+### ~~PlanMaterial~~ (removed)
 
-`apps/inventory/models.py` — `PlanMaterial`, `db_table='plan_materials'`.
-
-Worksheet-side mirror. No QOH or earmark side effects.
-
-| Field | Type | Notes |
-|---|---|---|
-| `est_worksheet` | FK CASCADE | **Required** |
-| `plan_task` | FK CASCADE nullable | Optional PlanTask attachment |
-
-`PlanMaterial.clean()` enforces
-`plan_task.est_worksheet_id == est_worksheet_id` when `plan_task` is
-set.
+> **Removed.** `PlanMaterial` (`plan_materials`) was the worksheet-side
+> mirror of `Material`. It is gone with the planning layer — materials are
+> authored directly on the Job as `Material` rows. There is no
+> worksheet-side material model.
 
 ### PLI-linked vs freeform: the immutability rule
 
-A `Material` (or `PlanMaterial`) with a non-null `inventory_item` is a
+A `Material` with a non-null `inventory_item` is a
 faithful instance of that PLI. The labelling/categorization fields —
 `description`, `units`, `accounting_category` — are populated from the
 PLI at create time and locked thereafter. To change any of those, the
@@ -277,7 +291,7 @@ optional `propagate_to_pli` flag that, when true, also updates the
 linked PLI's `purchase_price` / `selling_price` in the same
 transaction. The propagate action is open to any authenticated user
 (deliberate carve-out from `can_manage_financials`). See
-`MaterialService.update_pricing` and `InventoryService.update_plan_material_pricing`.
+`MaterialService.update_pricing`.
 
 **Invoice freeze on `sell_price` and `unconsume`.** Once a Material is on a
 non-cancelled invoice (i.e. `InvoiceClaimService.is_invoiced('material', pk)`
@@ -327,11 +341,17 @@ Mechanical effects:
   `+= quantity`; state → `pending`). Not a user op — called by
   `TaskLifecycleService.cancel_work` to undo an oops-Start, so a later
   re-Start can consume the materials again.
-- **Restock(n)** — `quantity -= n`; if inventoried, earmark `-= n`. If
-  `n == quantity` (full restock) and Material is manual-add (not
-  expense-bound): the row is deleted server-side. If expense-bound:
-  `restocked_qty += n`, row stays (with `quantity` possibly 0); excluded
-  from invoice pool when `quantity == 0`.
+- **Restock(n)** — `quantity -= n`, `released_qty += n` (universal
+  tracking; conservation `quantity + released_qty` = originally planned);
+  if inventoried, earmark `-= n`. At `quantity == 0` the
+  **restock-to-zero rule** applies: a *referenced* material
+  (expense-bound, PO-linked, claimed by an estimate/CO line, or invoiced)
+  becomes `released` — kept as job history with its claims intact; an
+  *unreferenced* one is deleted (scratch paper).
+- **Release** — `MaterialService.release(material)`: the named
+  "planned it, didn't use it" retirement (CO descope, sever of a claimed
+  material). Earmark `-= quantity`, `released_qty += quantity`,
+  `quantity = 0`, state → `released`. Terminal; claims are not purged.
 - **Draw more(n)** — `quantity += n`; if inventoried, earmark `+= n`.
   Forbidden on expense-bound Materials.
 - **Edit description** — description-only change (subject to the
@@ -349,7 +369,10 @@ Validation:
 
 Computed: `self.expenses.exists()` (via reverse from `Expense.material`).
 Expense-bound Materials are user-undeletable and cannot be drawn-more —
-the only path that removes them is `ExpenseService.reject(expense)`.
+the only path that removes them is `ExpenseService.reject(expense)`, and
+reject refuses while the material is **consumed or claimed** by an
+estimate/CO line (block the upstream event; its delete is then always a
+Rule-1-legal delete of the rejected claim's artifact).
 
 ### `work_complete` gate
 
@@ -362,9 +385,11 @@ always represent an unresolved Consume-or-Restock decision.
 The one exception is the **invoice-paid auto-completion path**
 (`Invoice._maybe_complete_job`): it is unattended, so instead of being
 blocked it calls `JobService.release_loose_materials(job)` first, which
-restocks (releases) any loose pending Materials and records a
-`HistoryEntry`. By the time the Job reaches `work_complete` there are no
-loose materials, so the gate passes.
+restocks any loose pending Materials and records a `HistoryEntry`. Via
+the restock-to-zero rule this **releases** a referenced material (kept
+as history — a claimed material's estimate line keeps resolving) and
+deletes an unreferenced one. By the time the Job reaches
+`work_complete` there are no loose pending materials, so the gate passes.
 
 ### Earmark release on terminal transitions
 
@@ -385,15 +410,18 @@ through `InventoryService._mutate_earmark`.
 
 | Operation | Effect |
 |---|---|
-| `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`, calls `_mutate_earmark(pli, job, +quantity)` |
-| `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` |
-| `restock(material, qty)` | `quantity -= qty`, earmark `-= qty`; manual-add full-restock deletes row; expense-bound bumps `restocked_qty` |
+| `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`; earmarks (`_mutate_earmark(pli, job, +quantity)`) **only for committed (`approved`+) jobs** — pre-approval jobs earmark later at acceptance |
+| `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` (a no-op on pre-approval jobs, which hold no earmark) |
+| `unconsume(material)` | State → `pending`; if inventoried: restores `qty_on_hand`/`qty_sold`, and restores the earmark **except on pre-approval jobs** (mirrors `consume`'s no-op) |
+| `restock(material, qty)` | `quantity -= qty`, `released_qty += qty`, earmark `-= qty`; at zero: referenced → state `released`, unreferenced → row deleted |
+| `release(material)` | pending → `released`: earmark `-= quantity`, `released_qty += quantity`, `quantity = 0`; claims kept (job history). Terminal |
+| `_is_referenced(material)` | Rule-1 check: expense-bound, PO-linked, claimed (estimate/CO lens), or invoiced |
 | `draw_more(material, qty)` | `quantity += qty`, earmark `+= qty`; rejects if expense-bound |
 | `assign_task(material, task)` | Move Material to a different Task (or task=None); validates same job and non-terminal task |
 | `update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False)` | Update prices; optional one-shot PLI propagation |
 | `link_to_po_line(material, po_line)` | Set `po_line_item` FK; validates pending + unlinked |
 | `unlink_from_po_line(material)` | Clear `po_line_item` FK |
-| `sever(material, decision)` | `'keep'` clears FK; `'delete'` removes Material and backs out earmark. Raises if consumed |
+| `sever(material, decision)` | `'keep'` clears FK; `'delete'` unlinks then releases a referenced Material (claims/expense) or deletes an unreferenced one, backing out the earmark either way. Raises if consumed |
 | `resolve_or_create_for_line(po_line, *, job, ..., material_id=None)` | Three-step PO line ↔ Material resolver (see PO ↔ Material section) |
 
 `MaterialService` is the only writer of Material rows beyond fixtures
@@ -450,18 +478,26 @@ Receipt only bumps QOH.
 ### Earmark lifecycle on a Job
 
 - **Created** when an item-backed Material is added to the Job (any
-  task or job-scoped path: manual add, template population,
-  worksheet-to-job copy, PO line creation, expense submit). Under universal
-  tracking this is every goods-Material, not just inventoried ones.
+  task or job-scoped path: Work-surface add, template population, PO line
+  creation, expense submit). Under universal tracking this is every
+  goods-Material, not just inventoried ones.
 - **Released** as Materials Consume/Restock through normal flows. The
   `Job → work_complete` transition runs
   `InventoryService.release_earmarks_for_job(job)` to sweep any
   remaining balance.
-- **Aggregator (`create_earmarks_for_job`)** runs at the end of each
-  populate path (`populate_from_template`, `populate_from_estimate`,
-  `copy_from_worksheet`) as a defensive re-aggregation. Under the
-  current regime where every Material write goes through
-  `MaterialService.create_on_job`, this is effectively a no-op.
+- **Aggregator (`create_earmarks_for_job`)** runs at the end of the
+  `populate_from_template` path, on job duplication, and on **estimate
+  acceptance** (`EstimateAcceptanceService.on_accept`). `create_on_job`
+  earmarks at creation **only for committed (`approved`+) jobs** — for
+  pre-approval (`draft`/`submitted`) jobs it does not, so acceptance's
+  `create_earmarks_for_job` is the point where those jobs' earmarks are
+  first created (not a no-op for that path). It **excludes already-consumed
+  materials** (`.exclude(consumption_state='consumed')`): a material consumed
+  during pre-approval work already drew down QOH, so re-earmarking it would
+  phantom-reserve stock that's already used. Correspondingly, `unconsume`
+  skips earmark restoration on pre-approval jobs — they carry no earmarks by
+  design. See jobs-tasks-and-worksheets.md §"Job-status guard" for the
+  pre-approval-work flow that motivates both.
 
 ### Inventory history trail (InventoryHistory)
 
@@ -487,21 +523,14 @@ existing `@history` → JobHistory), and global/searchable.
 
 ---
 
-## 6. PlanMaterial (worksheet mirror)
+## 6. ~~PlanMaterial~~ (removed)
 
-`apps/inventory/models.py` — `PlanMaterial`, `db_table='plan_materials'`.
-
-Same `MaterialBase` field shape; lives on `EstWorksheet` (required) and
-optionally on a `PlanTask`. No `consumption_state`, no `restocked_qty`,
-no inventory side effects. The PLI-linked immutability rule applies in
-the same form; `update_plan_material_pricing` mirrors
-`MaterialService.update_pricing` including the `propagate_to_pli` flag.
-
-PlanMaterial → Material carry-over is handled by the atom carry-over
-service (pointer:
-`docs/designs/estimates-and-prices.md`). The carry-over uses
-`Material.source_plan_material` as the idempotency key — a second
-acceptance of the same Estimate doesn't duplicate Materials.
+> **Removed.** `PlanMaterial` (`plan_materials`) — the worksheet-side
+> material mirror — is gone with the planning layer, along with its
+> `update_plan_material_pricing` service and the
+> `Material.source_plan_material` carry-over key. Materials are authored
+> directly on the Job as `Material` rows (Work surface, PO line, template
+> populate). There is no plan→real material carry-over.
 
 ---
 
@@ -536,10 +565,10 @@ Configuration value: JSON array of strings
 
 ### Models with a `units` field
 
-- `PriceListItem.units`
-- `MaterialBase.units` (on `PlanMaterial`, `Material`)
+- `InventoryItem.units`
+- `MaterialBase.units` (on `Material`)
 - `BaseLineItem.units` (on every line item subclass)
-- `Task.units`, `TaskTemplate.units`
+- `Task.units`, `ServiceItem.units`
 
 `MaterialBase._populate_from_pli` copies `units` from the linked PLI
 when the value is `'none'` or empty.
@@ -567,9 +596,9 @@ when the value is `'none'` or empty.
 `apps/inventory/models.py` — `TemplateMaterialAssociation`,
 `db_table='template_material_assoc'`.
 
-Pins a `PriceListItem` to a `WorkTemplate`, optionally pairing to a
-`TemplateTaskAssociation` so the generated PlanMaterial/Material
-attaches to the corresponding generated PlanTask/Task.
+Pins a `InventoryItem` to a `WorkTemplate`, optionally pairing to a
+`TemplateTaskAssociation` so the generated Material attaches to the
+corresponding generated Task.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -591,16 +620,15 @@ catalog was redundant.
 
 ### Generation
 
-`apps/estimates/models.py` — `WorkTemplate.generate_materials_for_worksheet`
-and `WorkTemplate.generate_materials_for_job`. Both accept
-`task_pairing` (a list of `(TemplateTaskAssociation, instance_index, …)`
-tuples returned by `generate_tasks_for_*`) and an optional
-`quantity=N` for multi-instance templates.
+`apps/estimates/models.py` — `WorkTemplate.generate_materials_for_job`.
+It accepts `task_pairing` (a list of `(TemplateTaskAssociation,
+instance_index, Task)` tuples returned by `generate_tasks_for_job`) and an
+optional `quantity=N` for multi-instance templates.
 
 For each instance × association:
 
-- If `assoc.template_task_association_id` matches a paired
-  PlanTask/Task, the generated material attaches there.
+- If `assoc.template_task_association_id` matches a paired Task, the
+  generated material attaches there.
 - Otherwise, the generated material is task-less.
 
 Pointer: `docs/designs/jobs-tasks-and-worksheets.md` covers the
@@ -634,6 +662,18 @@ then `InventoryService.create_earmarks_for_job(job)`.
 | `cancel_date` | datetime nullable | Set on transition to `cancelled` |
 
 Date fields are protected after first save by `PurchaseOrder.clean()`.
+
+**Derived billing properties** (computed from associated Bills at query time; never stored):
+
+| Property | Type | Notes |
+|---|---|---|
+| `po_total` | Decimal | Sum of all `PurchaseOrderLineItem.total_amount` |
+| `billed_total` | Decimal | Sum of `Bill.total` for non-cancelled Bills linked to this PO via `related_name='bills'` |
+| `is_fully_billed` | bool | True when `po_total > 0` and `billed_total >= po_total` |
+
+`PurchaseOrderSerializer` exposes all three. Double-billing is **surfaced not blocked**: when a PO's billed total covers the PO total, a warning banner appears on the Bill detail page and Bill create form — the system does not prevent a second Bill from being created. Only a draft PO is a hard refusal (Bills cannot be linked to a PO in `draft` status).
+
+`Bill.purchase_order` FK carries `related_name='bills'`, enabling `po.bills.all()` and the `?purchase_order=<id>` filter on `GET /api/bills/`.
 
 ### Status machine
 
@@ -860,6 +900,23 @@ PurchaseOrder.objects.filter(
 Job.objects.filter(materials__po_line_item__purchase_order=po).distinct()
 ```
 
+### PO ↔ Bill relationship
+
+Each Bill carries a single optional `purchase_order` FK (`related_name='bills'`). A PO may have multiple Bills (e.g. partial vendor invoices or a corrected invoice), but each Bill references at most one PO. **A many-to-many model (one Bill spanning multiple POs) was considered and rejected** — the added complexity wasn't warranted for the shop's workflow; the single FK is retained.
+
+The Bill create form includes a **PO picker** (vendor-filtered). When navigating to a Bill from the email→bill flow, the vendor-correlated PO is pre-selected. All Bills for a PO are queryable via `?purchase_order=<id>` on `GET /api/bills/`.
+
+`BillSerializer` also returns a `po_billing` hint when a PO is linked:
+
+```json
+{
+  "other_bills": [{"bill_id": …, "vendor_invoice_number": …, "status": …, "total": …}],
+  "po_fully_billed": true
+}
+```
+
+`other_bills` lists sibling non-cancelled Bills on the same PO; `po_fully_billed` flags when the billed total already covers the PO total. The frontend uses this to render an informational notice on the Bill detail page and a warning banner on the Bill form — double-billing is surfaced, not blocked.
+
 ---
 
 ## 12. PDF and email
@@ -911,18 +968,25 @@ page's Send button navigates to this route instead.
 
 ## 13. Bill
 
-`apps/purchasing/models.py` — `Bill`, `db_table='bills'`. Vendor
-invoice, optionally linked to a `PurchaseOrder`.
+`apps/purchasing/models.py` — `Bill`, `db_table='bills'`, decorated with `@history(exclude=['bill_id'])`. Vendor invoice, optionally linked to a `PurchaseOrder`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `purchase_order` | FK PROTECT nullable | PO must be in `issued` or later (not `draft`) |
+| `purchase_order` | FK PROTECT nullable (`related_name='bills'`) | PO must be in `issued` or later (not `draft`) |
 | `business` | FK PROTECT | Required |
 | `contact` | FK PROTECT nullable | If set, must belong to `business` |
-| `vendor_invoice_number` | `CharField(50)` | Vendor's own invoice number; primary human-facing identifier for the Bill (no Minibini-side auto-number) |
-| `status` | choices | See state machine |
-| `due_date`, `received_date`, `paid_date`, `cancelled_date` | datetime nullable | |
+| `vendor_invoice_number` | `CharField(50)` `blank` | Vendor's own invoice number; primary human-facing identifier (no Minibini-side auto-number). Optional — a draft Bill created from a PO has none until the real invoice arrives. |
+| `status` | choices | **Derived** from payments via `recompute_payment_status()` for the payment statuses; see state machine |
+| `due_date`, `received_date`, `paid_date`, `cancelled_date` | datetime nullable | `paid_date` managed by `recompute_payment_status()` |
 | `qbo_id`, `qbo_payment_status` | char | QBO sync state |
+
+**Computed properties** (no stored columns):
+
+| Property | Notes |
+|---|---|
+| `total` | Sum of `BillLineItem.total_amount` |
+| `amount_paid` | Sum of `BillPayment.amount` for all payments on this Bill |
+| `balance` | `total − amount_paid` (exact) |
 
 Status machine:
 
@@ -934,14 +998,59 @@ Status machine:
 | `paid_in_full` | `refunded` |
 | `cancelled`, `refunded` | (terminal) |
 
-Date fields are protected after first save. `Bill.delete()` is
-draft-only.
+**Status is payment-driven** for the payment statuses (`received`, `partly_paid`, `paid_in_full`). `Bill.recompute_payment_status()` re-derives the status from `amount_paid` vs `total` every time a `BillPayment` is recorded, updated, or deleted:
+
+- `amount_paid == 0` → `received`
+- `0 < amount_paid < total` → `partly_paid`
+- `amount_paid >= total` → `paid_in_full`; sets `paid_date`; clears `paid_date` when moving back
+
+Status can move **backward** (e.g. `paid_in_full` → `partly_paid` when a payment is deleted). A `_payment_driven` flag on the instance bypasses the forward-only transition guard in `clean()` during these recomputes. `recompute_payment_status()` is a no-op for `draft`, `cancelled`, and `refunded` bills.
+
+Date fields are protected after first save (except `paid_date`, which is managed by the payment recompute). `Bill.delete()` is draft-only.
 
 ### Line items
 
 `BillLineItem`, `db_table='bill_li'`. Inherits from `BaseLineItem`.
 `task` FK PROTECT nullable. No receiving fields — Bills don't track
 physical receipt (the linked PO does).
+
+### `BillPayment`
+
+`apps/purchasing/models.py` — `BillPayment`, `db_table='bill_payments'`. No `@history` decorator. Child of `Bill` (FK CASCADE, `bill.billpayment_set`). `Meta.ordering = ['payment_date']`.
+
+**Payment-OUT fields** (entered in Minibini):
+
+| Field | Type | Notes |
+|---|---|---|
+| `payment_id` | PK | Auto |
+| `bill` | FK CASCADE | |
+| `amount` | `Decimal(10,2)` | Must be > 0 |
+| `payment_date` | datetime | |
+| `payment_account_id` | `CharField(50)` blank | Which QBO bank/CC account paid (a `qbo_account_id` from `Configuration['qbo_payment_accounts']`); drives the QBO `BillPayment` PayType. Required while QBO is connected. **Replaces the old `method` field** — the human descriptor is derived from the account + reference. |
+| `reference` | `CharField(100)` blank | Cheque number, transaction ID, etc.; becomes the QBO `DocNumber`. |
+| `created_by` | FK User SET_NULL nullable (`related_name='recorded_bill_payments'`) | |
+| `created_date` | datetime | auto |
+
+**QBO sync fields** (from the `QBOSyncable` base — `qbo_id` is written by the push, `cleared_date` by the deferred clearance poller):
+
+| Field | Type | Notes |
+|---|---|---|
+| `qbo_id` | `CharField(50)` blank | QBO `BillPayment` Id; written by `push_bill_payment` (was `qbo_payment_id`) |
+| `qbo_sync_status` | choices | `pending` / `synced` / `sync_failed` (from `QBOSyncable`) |
+| `qbo_sync_error` | text blank | Last push error message |
+| `cleared_date` | datetime nullable | Set by `QBOBillPaymentPollingService` when QBO confirms clearance (deferred — poller stubbed) |
+
+### `BillPaymentService`
+
+Sole writer of `BillPayment` rows (`apps/purchasing/services.py`). Every method recomputes Bill status after the write.
+
+| Method | Purpose |
+|---|---|
+| `record_payment(bill, *, amount, payment_date, method, reference='', user=None)` | Create a `BillPayment`; writes an `action` HistoryEntry on the Bill; triggers `_push_to_qbo` seam; bill must be `received` or `partly_paid` |
+| `update_payment(payment_id, **out_fields)` | Edit payment-OUT fields (`amount`, `payment_date`, `method`, `reference`); blocked on `cancelled`/`refunded` bills |
+| `delete_payment(payment_id)` | Delete payment and recompute Bill status (can move status backward) |
+
+`_push_to_qbo(payment)` calls `QBOBillSyncService.push_bill_payment(payment)` after recording; exceptions are swallowed-and-logged (QBO hiccups must never block recording a payment).
 
 ### `BillService`
 
@@ -950,38 +1059,25 @@ physical receipt (the linked PO does).
 | `create_bill(**kwargs)` | Create a Bill |
 | `create_bill_from_po(po_id, **kwargs)` | Create bill and copy PO line items |
 | `update_bill(pk, **kwargs)` | Draft-only header update (business, contact, vendor_invoice_number, dates) |
-| `update_status(pk, new_status)` | Status change |
+| `update_status(pk, new_status)` | Direct status change (used by `receive` and `cancel` status actions) |
 | `delete_bill(pk)` | Draft-only delete |
 | `add_line_item`, `add_line_item_from_pli`, `update_line_item`, `reorder_line_items`, `reorder_line_item`, `delete_line_item` | Line item CRUD; all draft-only |
 
 `BillService.update_bill` is the service entry point for PATCH on a Bill's header fields. `BillViewSet.perform_update` routes PATCH requests through it (draft-only; rejects updates on non-draft bills). All bill write actions require `CanManageFinancials`.
 
-`BillViewSet.status_actions` registers: `receive` (draft → received), `mark_paid` (received → paid_in_full), `cancel` (received → cancelled, requires reason).
+`BillViewSet.status_actions` registers: `receive` (draft → received), `cancel` (received → cancelled, requires reason). **`mark_paid` is removed** — the `paid_in_full` status is reached only via payments recorded through `BillPaymentService`.
 
-QBO sync: pointer to `docs/designs/quickbooks-integration.md`
-(forthcoming). The viewset action
-`POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill`
-(endpoint exists; not yet wired in the UI).
+**Payment endpoints** (all `CanManageFinancials`; DELETE returns 200 + JSON body):
 
-**Coarse balance — single source of truth.** The balance rule lives once, on
-the model: `Bill.balance` returns `0.00` when the status is in
-`Bill.ZERO_BALANCE_STATUSES` (`paid_in_full`/`cancelled`/`refunded`), otherwise
-`Bill.total` (sum of line-item `qty × price`). Both read paths reference it:
-`BillSerializer.get_balance` (detail) returns `str(obj.balance)`, and the A/P
-list's SQL `balance_anno` annotation (which exists so the list can sort by
-balance in the DB) is a `Case/When` keyed off the same `ZERO_BALANCE_STATUSES`
-constant, with `BillSummarySerializer.get_balance` falling back to `obj.balance`
-when the annotation is absent. Changing the rule in one place (the constant or
-the property) keeps detail and summary in lock-step.
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/bills/{id}/payments/` | Record a payment via `BillPaymentService.record_payment` |
+| `PATCH` | `/api/bills/{id}/payments/{pid}/` | Update payment-OUT fields |
+| `DELETE` | `/api/bills/{id}/payments/{pid}/` | Delete payment; may roll status backward |
 
-**Needed when bill payment sync lands:** `Bill` has no amount-paid field
-(only `qbo_payment_status`), so a `partly_paid` bill's outstanding balance is
-unknown. Add `qbo_amount_paid` to `Bill` (mirroring `Invoice.qbo_amount_paid`)
-and have the forthcoming bill payment polling populate it. Until then, the
-coarse balance above reports the full total for any non-fully-paid status —
-which overstates `partly_paid` bills. When that lands, `Bill.balance` becomes
-the place to fold in `total − qbo_amount_paid` for `partly_paid`, and the
-annotation mirrors it.
+**`?purchase_order=<id>` filter** on `GET /api/bills/` returns bills linked to a given PO.
+
+QBO sync: `POST /api/bills/{id}/send-to-qbo/` calls `QBOBillSyncService.push_bill` (endpoint exists; not yet wired in the UI). See `docs/designs/quickbooks-integration.md` for the push mechanics and the bill-payment push seam.
 
 ---
 
@@ -1009,6 +1105,8 @@ Routes (`#/`-prefixed hash routes):
 | `#/purchase-orders/:id` | `routes/purchaseorders/PurchaseOrderDetailPage.svelte` → `PurchaseOrderDetail.svelte` |
 | `#/purchase-orders/:id/edit` | `PurchaseOrderFormPage.svelte` (edit mode, draft only) |
 
+The PO detail page (`PurchaseOrderDetail.svelte`) shows `billed_total`, `po_total`, and an `is_fully_billed` marker sourced from `PurchaseOrderSerializer`. It lists the PO's linked Bills (from the serializer's `bills` field — `[{bill_id, vendor_invoice_number, status}]`, prefetched on the viewset to avoid N+1) and, for users with `can_manage_financials` on a billable PO (`issued` / `partly_received` / `received_in_full`), a **Create Bill** link to `#/bills/new?po=<id>`. The PO **list** (`PurchaseOrderList.svelte`) shows a **Bill** column linking each PO's bill(s).
+
 ### Bill surfaces
 
 Bill routes live under the **Financials** sidebar section (gated on `can_manage_financials`):
@@ -1027,26 +1125,28 @@ Bill routes live under the **Financials** sidebar section (gated on `can_manage_
 - Status presets: Open / Paid / Draft / Cancelled / Refunded / All.
 - Filters: status preset, due-date range, and a `CustomerPicker` (`?business=` / `?contact=`) for filtering by vendor.
 - **New Bill** button — visible to users with `can_manage_financials` only.
-- **Balance column note:** Balance is a coarse figure — full remaining total for any non-`paid_in_full` status. Partial payment amounts are not tracked in Minibini (see "Needed when bill payment sync lands" note in §13), so `partly_paid` bills overstate the balance until `qbo_amount_paid` is added.
+- **Balance column:** Exact balance (`total − amount_paid`) computed in summary mode via a Subquery on `BillPayment.amount` (fan-out-safe).
 
 **Bill detail page** (`BillDetailPage.svelte`):
 
-- Displays Bill header (vendor invoice#, vendor, PO link, status, dates) and balance.
+- Displays Bill header (vendor invoice#, vendor, PO link, status, dates), exact balance, and a payments section.
 - On `draft` Bills, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte`.
-- Status actions: **Mark Received** (draft → received), **Mark Paid in Full** (received → paid_in_full), **Cancel** (received → cancelled, requires a reason), **Delete** (draft only).
+- On `received` / `partly_paid` Bills, users with `can_manage_financials` can **Record Payment** (opens `RecordPaymentModal.svelte`; also offers a "Pay in full" shortcut that pre-fills the remaining balance) and edit or delete individual payments.
+- Status actions: **Mark Received** (draft → received), **Cancel** (received → cancelled, requires a reason), **Delete** (draft only). **"Mark Paid in Full" is removed** — `paid_in_full` status is reached automatically when payments cover the total.
+- When a PO is linked, an informational notice lists any sibling Bills on the same PO, and a warning banner appears if the PO is already fully billed.
 - No Send-to-QBO button in the UI for this phase (the `send-to-qbo` endpoint exists but is not yet wired).
 
 **Bill form page** (`BillFormPage.svelte`):
 
-- Create mode (`/bills/new`): full header form (vendor business/contact, vendor invoice number, dates). Accepts `?po=<id>` to pre-fill vendor and copy PO line items via `BillService.create_bill_from_po`.
+- Create mode (`/bills/new`): full header form (vendor business/contact, vendor invoice number, dates). Accepts `?po=<id>` to pre-fill vendor and copy PO line items via `BillService.create_bill_from_po`. Includes a **PO picker** (vendor-filtered via `PurchaseOrderPicker`). A warning banner appears when the selected PO is already fully billed.
 - Edit mode (`/bills/:id/edit`): draft-only header edit; routes through `BillService.update_bill`.
 
 **Serializers:**
 
-- `BillSummarySerializer` — lightweight list serializer; exposes `vendor_name`, `po_number`, `purchase_order`, `status`, dates, total, and coarse balance.
-- `BillSerializer` — full detail/create/update serializer; includes all header fields plus line items, total, coarse balance.
+- `BillSummarySerializer` — lightweight list serializer (summary mode); exposes `vendor_name`, `po_number`, `purchase_order`, `status`, dates, total, and exact balance (via annotations).
+- `BillSerializer` — full detail/create/update serializer; includes all header fields, line items, nested read-only `payments`, `amount_paid`, exact `balance`, and `po_billing` hint.
 
-**`?summary=true` opt-in (dual contract).** Like the invoice list, `BillViewSet` only uses `BillSummarySerializer` + the default-open status filter + presets/due-range/ordering in **summary mode** (the financials A/P list page calls `GET /api/bills/?summary=true`). **Without** `summary=true`, the list endpoint keeps its original contract — the full `BillSerializer` (with `line_items`) and **all** statuses — preserving pre-existing consumers: the **Business detail** (`?business=`) and **Contact detail** (`?contact=`) bill panels and the **email-associate-bill** picker. (`?business=`/`?contact=` filtering applies in both modes.)
+**`?summary=true` opt-in (dual contract).** Like the invoice list, `BillViewSet` only uses `BillSummarySerializer` + the default-open status filter + presets/due-range/ordering in **summary mode** (the financials A/P list page calls `GET /api/bills/?summary=true`). **Without** `summary=true`, the list endpoint keeps its original contract — the full `BillSerializer` (with `line_items` and `payments`) and **all** statuses — preserving pre-existing consumers: the **Business detail** (`?business=`) and **Contact detail** (`?contact=`) bill panels and the **email-associate-bill** picker. (`?business=`/`?contact=`/`?purchase_order=` filtering applies in both modes.)
 
 Components in `frontend/src/components/purchaseorders/`:
 
@@ -1057,7 +1157,8 @@ Components in `frontend/src/components/purchaseorders/`:
   actions, history; per-line "Change Job" action; consolidated sever
   modal on cancel-PO / cancel-line / delete-PO / line-job-change
 - `LineItemForm.svelte` — line entry; includes `JobPicker` (typeahead
-  against active jobs) and `PriceListItemPicker`
+  against active jobs, built on `SearchPicker`) and `InventoryItemPicker`
+  (server-side `?search=`, also built on `SearchPicker`)
 - `MaterialSeverDialog.svelte` — keep/delete decisions for affected
   Materials. Reused by all sever paths
 - `ReceiveItemsForm.svelte` — line-by-line receipt entry
@@ -1078,10 +1179,8 @@ Material edit lives on the Job detail page (covered in
 `docs/designs/jobs-tasks-and-worksheets.md`'s Job Detail section). Key
 components:
 
-- `frontend/src/components/MaterialModal.svelte` — Material create/edit;
-  freeform vs PLI-linked branches
-- `frontend/src/components/PlanMaterialModal.svelte` — same shape on
-  the worksheet side
+- `frontend/src/components/MaterialModal.svelte` — Material create/edit
+  (Work surface + full task list); freeform vs PLI-linked branches
 
 PLI-linked Material edit disables description / units /
 accounting_category and the linked PLI itself. Pricing fields stay
@@ -1097,13 +1196,13 @@ each Material row.
 Inventory-item CRUD + browse UI is the SPA `#/inventory` page
 (`routes/inventory/InventoryListPage.svelte`), plus the markup config under
 Settings → Catalog. Item pickers across the SPA use
-`frontend/src/components/PriceListItemPicker.svelte` (to be renamed
-`InventoryItemPicker`; see the generic-picker LATER note).
+`frontend/src/components/InventoryItemPicker.svelte` (renamed from
+`InventoryItemPicker`), built on `SearchPicker`.
 
-`PriceListItemPicker` fetches the full active catalog
-(`?page_size=9999&is_active=true`) and filters client-side per
-keystroke. Server-side `?search=` filtering is unfinished work for when
-the catalog grows.
+`InventoryItemPicker` queries server-side `?search=` (`code` and
+`description`) as the user types. Accepts a `params` prop for additional
+filters (e.g. `is_active=true`); offers a "None (freeform)" escape via the
+`header` snippet.
 
 `UnitsManager` (`frontend/src/components/UnitsManager.svelte`) is the
 settings UI for editing the `units_list` Configuration value.
@@ -1132,6 +1231,4 @@ settings UI for editing the `units_list` Configuration value.
   enforce it pre-submit. Worth a separate investigation.
 - **`PurchaseOrderLineItem.task` reserved for future "service PO"
   feature.** Field exists on the model, untouched by current flows.
-- **Server-side `?search=` filtering on `PriceListItemPicker`** once the
-  catalog grows.
 - **`accounting_category` required on `PurchaseOrderLineItem` and `BillLineItem`** — part of the project-wide line-item AC-NOT-NULL migration tracked in `architecture-and-conventions.md`.

@@ -1,12 +1,10 @@
-import logging
 from decimal import Decimal
 
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
+from apps.core.history import record_action
 from apps.expenses.models import Expense
-
-logger = logging.getLogger(__name__)
 
 
 class ExpenseService:
@@ -73,23 +71,15 @@ class ExpenseService:
                     reason=f'Stock receipt (expense {expense.pk})')
 
         if payment_method == Expense.PAYMENT_METHOD_COMPANY:
-            ExpenseService._push_and_set_status(expense)
+            ExpenseService._push_create(expense)
 
         return expense
 
     @staticmethod
-    def _push_and_set_status(expense):
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            QBOExpenseSyncService.push_expense(expense)
-            expense.status = Expense.STATUS_SYNCED
-            expense.qbo_sync_error = ''
-            expense.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO expense push failed for expense %s', expense.pk)
-            expense.status = Expense.STATUS_SYNC_FAILED
-            expense.qbo_sync_error = str(e)
-            expense.save(update_fields=['status', 'qbo_sync_error'])
+    def _push_create(expense):
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_create(
+            expense, lambda: QBOExpenseSyncService.push_expense(expense))
 
     @staticmethod
     def update(*, expense, actor, **fields):
@@ -129,7 +119,7 @@ class ExpenseService:
                         reason=f'Stock receipt adj (expense {expense.pk})')
 
         if expense.qbo_id:
-            ExpenseService._resync(expense)
+            ExpenseService._push_update(expense)
         return expense
 
     # ----- job/material cost & freeze helpers -------------------------------
@@ -203,29 +193,12 @@ class ExpenseService:
             InventoryService._mutate_earmark(pli, new_job, material.quantity)
 
     @staticmethod
-    def _resync(expense):
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            if expense.reimbursement_id:
-                QBOExpenseSyncService.update_reimbursement(expense.reimbursement)
-            else:
-                QBOExpenseSyncService.update_expense(expense)
-            if expense.status == Expense.STATUS_SYNC_FAILED:
-                expense.status = Expense.STATUS_SYNCED
-                expense.qbo_sync_error = ''
-                expense.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO resync failed for expense %s', expense.pk)
-            if expense.reimbursement_id:
-                batch = expense.reimbursement
-                from apps.expenses.models import Reimbursement
-                batch.status = Reimbursement.STATUS_SYNC_FAILED
-                batch.qbo_sync_error = str(e)
-                batch.save(update_fields=['status', 'qbo_sync_error'])
-            else:
-                expense.status = Expense.STATUS_SYNC_FAILED
-                expense.qbo_sync_error = str(e)
-                expense.save(update_fields=['status', 'qbo_sync_error'])
+    def _push_update(expense):
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        if expense.reimbursement_id:
+            QBOSyncService.run_update(expense.reimbursement, lambda: QBOExpenseSyncService.update_reimbursement(expense.reimbursement))
+        else:
+            QBOSyncService.run_update(expense, lambda: QBOExpenseSyncService.update_expense(expense))
 
     @staticmethod
     def delete(*, expense, actor):
@@ -234,16 +207,24 @@ class ExpenseService:
             raise ValidationError(
                 'Cannot delete a reimbursed expense; unwind the reimbursement first.'
             )
-        from apps.qbo.services import QBOExpenseSyncService
-        if expense.qbo_id and not expense.reimbursement_id:
-            QBOExpenseSyncService.void_expense(expense)
-        # Reverse a stock receipt's QOH bump.
-        if expense.stock_pli_id and expense.stock_qty:
-            from apps.inventory.services import InventoryService
-            InventoryService.receive_stock(
-                expense.stock_pli, -expense.stock_qty,
-                reason=f'Stock receipt void (expense {expense.pk})')
-        expense.delete()
+        # QBO void runs OUTSIDE the transaction so that on failure mark_failed→expense.save()
+        # commits (row retained as sync_failed) while the stock reversal + delete are never reached.
+        if expense.qbo_id:
+            from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+            try:
+                QBOSyncService.run_delete(expense, lambda: QBOExpenseSyncService.void_expense(expense))
+            except Exception:
+                raise ValidationError(
+                    'Could not delete this expense — its QuickBooks sync failed, so the expense '
+                    'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
+                )
+        with transaction.atomic():
+            if expense.stock_pli_id and expense.stock_qty:
+                from apps.inventory.services import InventoryService
+                InventoryService.receive_stock(
+                    expense.stock_pli, -expense.stock_qty,
+                    reason=f'Stock receipt void (expense {expense.pk})')
+            expense.delete()
 
     @staticmethod
     def reject(*, expense, actor):
@@ -259,6 +240,15 @@ class ExpenseService:
         if mat and mat.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
             raise ValidationError(
                 'Cannot reject expense with consumed materials; adjust inventory manually.'
+            )
+        # Rule 1: reject deletes the expense-created material, so it must not
+        # be claimed by a document. Same shape as the consumed-guard above —
+        # block the upstream event rather than invent deletion semantics.
+        from apps.estimates.claims import atom_is_claimed
+        if mat and atom_is_claimed('material', mat.pk):
+            raise ValidationError(
+                'Cannot reject: this expense’s material backs an estimate or '
+                'change-order line. Remove the line first.'
             )
         with transaction.atomic():
             if mat:
@@ -281,14 +271,23 @@ class ExpenseService:
         return expense
 
     @staticmethod
-    def retry_sync(*, expense, actor):
-        if expense.status != Expense.STATUS_SYNC_FAILED:
-            raise ValidationError(
-                'Can only retry sync on expenses in sync_failed status.'
-            )
-        ExpenseService._push_and_set_status(expense)
+    def retry(*, expense, actor):
+        if expense.qbo_sync_status != Expense.SYNC_FAILED:
+            raise ValidationError('Can only retry a sync that failed.')
+        op = expense.qbo_pending_op
+        if op == Expense.OP_DELETE:
+            ExpenseService.delete(expense=expense, actor=actor)  # re-void + remove
+            return None
+        if op == Expense.OP_UPDATE:
+            ExpenseService._push_update(expense)
+        else:  # create (or blank → treat as create)
+            ExpenseService._push_create(expense)
         expense.refresh_from_db()
         return expense
+
+    @staticmethod
+    def retry_sync(*, expense, actor):
+        return ExpenseService.retry(expense=expense, actor=actor)
 
 
 class ReimbursementService:
@@ -335,57 +334,74 @@ class ReimbursementService:
                 reference_number=reference_number,
                 notes=notes,
                 created_by=created_by,
-                status=Reimbursement.STATUS_PENDING,
             )
             for e in expenses:
                 e.reimbursement = batch
                 e.status = Expense.STATUS_REIMBURSED
                 e.save(update_fields=['reimbursement', 'status'])
+                record_action(
+                    object_type='expense',
+                    object_id=e.pk,
+                    action=f'Reimbursed in batch #{batch.pk} (paid to {purchased_by.username})',
+                )
 
         # After commit: attempt QBO push.
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            QBOExpenseSyncService.push_reimbursement(batch)
-            batch.status = Reimbursement.STATUS_SYNCED
-            batch.qbo_sync_error = ''
-            batch.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO reimbursement push failed for batch %s', batch.pk)
-            batch.status = Reimbursement.STATUS_SYNC_FAILED
-            batch.qbo_sync_error = str(e)
-            batch.save(update_fields=['status', 'qbo_sync_error'])
+        ReimbursementService._push_create(batch)
 
+        return batch
+
+    @staticmethod
+    def _push_create(batch):
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_create(batch, lambda: QBOExpenseSyncService.push_reimbursement(batch))
+
+    @staticmethod
+    def _push_update(batch):
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
+        QBOSyncService.run_update(batch, lambda: QBOExpenseSyncService.update_reimbursement(batch))
+
+    @staticmethod
+    def retry(*, batch, actor):
+        from apps.expenses.models import Reimbursement
+        if batch.qbo_sync_status != Reimbursement.SYNC_FAILED:
+            raise ValidationError('Can only retry a sync that failed.')
+        op = batch.qbo_pending_op
+        if op == Reimbursement.OP_DELETE:
+            ReimbursementService.delete(batch=batch, actor=actor)
+            return None
+        if op == Reimbursement.OP_UPDATE:
+            ReimbursementService._push_update(batch)
+        else:  # create (or blank → treat as create)
+            ReimbursementService._push_create(batch)
+        batch.refresh_from_db()
         return batch
 
     @staticmethod
     def retry_sync(*, batch, actor):
-        from apps.expenses.models import Reimbursement
-        if batch.status != Reimbursement.STATUS_SYNC_FAILED:
-            raise ValidationError(
-                'Can only retry sync on batches in sync_failed status.'
-            )
-        from apps.qbo.services import QBOExpenseSyncService
-        try:
-            QBOExpenseSyncService.push_reimbursement(batch)
-            batch.status = Reimbursement.STATUS_SYNCED
-            batch.qbo_sync_error = ''
-            batch.save(update_fields=['status', 'qbo_sync_error'])
-        except Exception as e:
-            logger.exception('QBO reimbursement retry failed for batch %s', batch.pk)
-            batch.qbo_sync_error = str(e)
-            batch.save(update_fields=['qbo_sync_error'])
-        return batch
+        return ReimbursementService.retry(batch=batch, actor=actor)
 
     @staticmethod
     def delete(*, batch, actor):
         """Unwind: void QBO, flip expenses back to submitted, delete the batch row."""
-        from apps.qbo.services import QBOExpenseSyncService
+        from apps.qbo.services import QBOExpenseSyncService, QBOSyncService
         if batch.qbo_id:
-            QBOExpenseSyncService.void_reimbursement(batch)
+            try:
+                QBOSyncService.run_delete(batch, lambda: QBOExpenseSyncService.void_reimbursement(batch))
+            except Exception:
+                raise ValidationError(
+                    'Could not delete this reimbursement — its QuickBooks sync failed, so the batch '
+                    'was kept (marked sync-failed). Retry once QuickBooks is reachable.'
+                )
 
         with transaction.atomic():
+            batch_pk = batch.pk
             for e in batch.expenses.all():
                 e.reimbursement = None
                 e.status = Expense.STATUS_SUBMITTED
                 e.save(update_fields=['reimbursement', 'status'])
+                record_action(
+                    object_type='expense',
+                    object_id=e.pk,
+                    action=f'Reimbursement unwound (batch #{batch_pk})',
+                )
             batch.delete()

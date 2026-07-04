@@ -17,8 +17,10 @@ class POChangeLineJobTest(TestCase):
         c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()
-        self.job_a = Job.objects.create(job_number='J-A', contact=c, description='a')
-        self.job_b = Job.objects.create(job_number='J-B', contact=c, description='b')
+        self.job_a = Job.objects.create(job_number='J-A', contact=c, description='a',
+                                        status=Job.STATUS_APPROVED)
+        self.job_b = Job.objects.create(job_number='J-B', contact=c, description='b',
+                                        status=Job.STATUS_APPROVED)
         self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
         self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),

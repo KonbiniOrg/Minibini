@@ -6,9 +6,8 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import Configuration, AccountingCategory, User
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
-from apps.estimates.models import EstWorksheet
-from apps.inventory.models import Material, PlanMaterial, InventoryItem, Earmark
+from apps.jobs.models import Job, Task, RateScheme
+from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.deliverables.models import Deliverable
 from apps.jobs.services import JobService
 
@@ -16,7 +15,7 @@ from apps.jobs.services import JobService
 def _make_scheme(suffix):
     ac = AccountingCategory.objects.create(code=f'DUP-{suffix}', name=f'dup-{suffix}')
     return RateScheme.objects.create(
-        name=f'S-dup-{suffix}', algorithm=RateScheme.FLAT_FEE,
+        name=f'S-dup-{suffix}', algorithm=RateScheme.ENTERED_QTY,
         rate=Decimal('1'), unit_label='ea', accounting_category=ac,
     )
 
@@ -128,7 +127,6 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertEqual(finish.status, Task.STATUS_PENDING)
         self.assertIsNone(finish.assignee_id)
         self.assertIsNone(finish.actual_qty)
-        self.assertIsNone(finish.source_plan_task_id)
         # carried fields
         self.assertEqual(finish.est_qty, Decimal('6'))
         self.assertEqual(finish.rate_scheme_id, self.scheme.pk)
@@ -147,7 +145,6 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertIsNone(loose.task_id)
         self.assertEqual(attached.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.assertIsNone(attached.po_line_item_id)
-        self.assertIsNone(attached.source_plan_material_id)
 
     def test_creates_earmarks(self):
         new_job = JobService.duplicate_job(
@@ -175,10 +172,9 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
             a.changes.get('_action') == f'Duplicated from {self.source.job_number}'
             for a in actions))
 
-    def test_no_estimate_or_worksheet_on_new_job(self):
+    def test_no_estimate_on_new_job(self):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='approved')
-        self.assertFalse(EstWorksheet.objects.filter(job=new_job).exists())
         self.assertFalse(new_job.estimate_set.exists())
 
     def test_source_job_unchanged(self):
@@ -190,6 +186,8 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
 
 
 class DuplicateEstimateTest(DuplicateJobTestBase):
+    """Estimate path: work is copied onto the new DRAFT job (job-owns-atoms —
+    no worksheet is created; estimates project from the Job's atoms)."""
 
     def test_creates_draft_job_no_status_walk(self):
         new_job = JobService.duplicate_job(
@@ -198,59 +196,35 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertIsNone(new_job.start_date)
         self.assertEqual(new_job.contact_id, self.other_contact.pk)
 
-    def test_creates_fresh_editable_worksheet(self):
-        from apps.estimates.services import WorksheetService
+    def test_copies_tasks_onto_job(self):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')
-        ws = EstWorksheet.objects.get(job=new_job)
-        # Decoupled model: the worksheet has no status/version/parent/estimate.
-        # A fresh worksheet on an estimate-less job is editable.
-        self.assertTrue(WorksheetService.is_editable(ws))
-
-    def test_maps_tasks_to_plan_tasks(self):
-        new_job = JobService.duplicate_job(
-            self.source, contact=self.contact, path='estimate')
-        ws = EstWorksheet.objects.get(job=new_job)
-        names = set(PlanTask.objects.filter(est_worksheet=ws).values_list('name', flat=True))
+        names = set(Task.objects.filter(job=new_job).values_list('name', flat=True))
         self.assertEqual(names, {'Build', 'Finish'})
-        build = PlanTask.objects.get(est_worksheet=ws, name='Build')
+        build = Task.objects.get(job=new_job, name='Build')
         self.assertEqual(build.est_qty, Decimal('6'))
         self.assertEqual(build.rate_scheme_id, self.scheme.pk)
         self.assertEqual(build.est_worker_time, timedelta(hours=4))  # carried over
+        # Hierarchy is preserved on the copied tasks.
+        finish = Task.objects.get(job=new_job, name='Finish')
+        self.assertEqual(finish.parent_task_id, build.pk)
 
-    def test_maps_materials_preserving_task_attachment(self):
+    def test_copies_materials_preserving_task_attachment(self):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')
-        ws = EstWorksheet.objects.get(job=new_job)
-        build = PlanTask.objects.get(est_worksheet=ws, name='Build')
-        attached = PlanMaterial.objects.get(est_worksheet=ws, inventory_item=self.plywood)
-        loose = PlanMaterial.objects.get(est_worksheet=ws, inventory_item=self.screws)
-        self.assertEqual(attached.plan_task, build)
-        self.assertIsNone(loose.plan_task_id)
+        build = Task.objects.get(job=new_job, name='Build')
+        attached = Material.objects.get(job=new_job, inventory_item=self.plywood)
+        loose = Material.objects.get(job=new_job, inventory_item=self.screws)
+        self.assertEqual(attached.task_id, build.pk)
+        self.assertIsNone(loose.task_id)
 
     def test_no_earmarks_on_estimate_path(self):
+        # Estimate path copies materials onto a new DRAFT job. Pre-approval jobs
+        # must NOT earmark on create (gate added in MaterialService.create_on_job);
+        # earmarks are created in bulk at estimate acceptance instead.
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')
         self.assertEqual(Earmark.objects.filter(job=new_job).count(), 0)
-
-    def test_est_qty_falls_back_to_actual_qty_then_zero(self):
-        # Task with no est_qty but an actual_qty -> PlanTask.est_qty = actual_qty.
-        Task.objects.create(
-            job=self.source, name='AdHoc', sort_order=3,
-            rate_scheme=self.scheme, est_qty=None, actual_qty=Decimal('3.00'),
-        )
-        # Task with neither -> PlanTask.est_qty = 0.00.
-        Task.objects.create(
-            job=self.source, name='Bare', sort_order=4,
-            rate_scheme=self.scheme, est_qty=None, actual_qty=None,
-        )
-        new_job = JobService.duplicate_job(
-            self.source, contact=self.contact, path='estimate')
-        ws = EstWorksheet.objects.get(job=new_job)
-        self.assertEqual(
-            PlanTask.objects.get(est_worksheet=ws, name='AdHoc').est_qty, Decimal('3.00'))
-        self.assertEqual(
-            PlanTask.objects.get(est_worksheet=ws, name='Bare').est_qty, Decimal('0.00'))
 
 
 class DuplicateApiTest(DuplicateJobTestBase):
@@ -290,8 +264,9 @@ class DuplicateApiTest(DuplicateJobTestBase):
                              {'contact_id': self.contact.pk, 'path': 'estimate'},
                              format='json')
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertTrue(
-            EstWorksheet.objects.filter(job_id=r.data['job_id']).exists())
+        new_job = Job.objects.get(pk=r.data['job_id'])
+        self.assertEqual(new_job.status, Job.STATUS_DRAFT)
+        self.assertTrue(Task.objects.filter(job=new_job).exists())
 
     def test_bad_path_is_400(self):
         self.client.force_authenticate(user=self.mgr)
@@ -355,6 +330,5 @@ class DuplicateEmptySourceTest(BaseTestCase):
         new_job = JobService.duplicate_job(
             self.source, contact=self.contact, path='estimate')
         self.assertEqual(new_job.status, Job.STATUS_DRAFT)
-        ws = EstWorksheet.objects.get(job=new_job)
-        self.assertEqual(PlanTask.objects.filter(est_worksheet=ws).count(), 0)
-        self.assertEqual(PlanMaterial.objects.filter(est_worksheet=ws).count(), 0)
+        self.assertEqual(Task.objects.filter(job=new_job).count(), 0)
+        self.assertEqual(Material.objects.filter(job=new_job).count(), 0)

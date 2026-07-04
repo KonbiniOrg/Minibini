@@ -1,9 +1,10 @@
 <script>
   import QBOConnectionCard from '../components/QBOConnectionCard.svelte';
+  import QBOSyncFailures from '../components/qbo/QBOSyncFailures.svelte';
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
-  import TaskTemplateManager from '../components/TaskTemplateManager.svelte';
+  import ServiceItemManager from '../components/ServiceItemManager.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
@@ -68,6 +69,8 @@
 {#if tab === 'accounting'}
   <QBOConnectionCard />
 
+  <QBOSyncFailures />
+
   <AccountingCategories />
 
   <h3>Payment accounts</h3>
@@ -112,18 +115,15 @@
 
   <UnitsManager />
 
-  <RateSchemeManager />
-
 {:else if tab === 'catalog'}
   <MaterialMarkupSetting />
 
-  <TaskTemplateManager />
+  <ServiceItemManager />
+
+  <RateSchemeManager />
 
   <h3>Work templates</h3>
   <p><em>Not yet implemented in Svelte.</em></p>
-
-  <h3>Price list items</h3>
-  <p><em>Managed on the <a href="#/inventory">Inventory</a> page.</em></p>
 
 {:else if tab === 'schedule'}
   <ScheduleSettings />

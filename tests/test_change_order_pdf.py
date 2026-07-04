@@ -49,7 +49,7 @@ class ChangeOrderPdfTests(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), units='ea',
-            price=Decimal('250.00'), line_number=1)
+            price=Decimal('250.00'), line_number=1, accounting_category_id=901)
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_REPLACE,
             target_line_item=self.l1, description='Base work (revised)',

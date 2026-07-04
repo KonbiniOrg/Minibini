@@ -4,8 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, User
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
-from apps.estimates.models import EstWorksheet
+from apps.inventory.models import Material, InventoryItem
 from apps.jobs.models import Job
 
 
@@ -14,11 +13,6 @@ class MaterialUnitsFieldTests(TestCase):
 
     def test_material_has_units_field(self):
         f = Material._meta.get_field('units')
-        self.assertEqual(f.max_length, 50)
-        self.assertEqual(f.default, 'none')
-
-    def test_plan_material_has_units_field(self):
-        f = PlanMaterial._meta.get_field('units')
         self.assertEqual(f.max_length, 50)
         self.assertEqual(f.default, 'none')
 
@@ -59,14 +53,6 @@ class PopulateFromPliCopiesUnitsTests(TestCase):
         )
         m.save()
         self.assertEqual(m.units, 'none')
-
-    def test_plan_material_pulls_units_from_pli(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        pm = PlanMaterial(
-            est_worksheet=ws, inventory_item=self.pli, quantity=Decimal('1'),
-        )
-        pm.save()
-        self.assertEqual(pm.units, 'sheets')
 
 class MaterialSerializerUnitsTests(APITestCase):
     @classmethod
@@ -132,21 +118,3 @@ class MaterialStrTests(TestCase):
             accounting_category=self.cat,
         )
         self.assertEqual(str(m), 'Misc (qty: 1.00)')
-
-    def test_plan_material_str_includes_units_when_not_none(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=ws, description='Plan Steel',
-            quantity=Decimal('3'), units='ea',
-            accounting_category=self.cat,
-        )
-        self.assertEqual(str(pm), 'Plan Steel (qty: 3.00 ea)')
-
-    def test_plan_material_str_omits_units_when_none(self):
-        ws = EstWorksheet.objects.create(job=self.job)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=ws, description='Plan Misc',
-            quantity=Decimal('2'),
-            accounting_category=self.cat,
-        )
-        self.assertEqual(str(pm), 'Plan Misc (qty: 2.00)')

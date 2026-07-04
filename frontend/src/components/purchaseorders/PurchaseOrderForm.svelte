@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import BusinessPicker from '../BusinessPicker.svelte';
 
   const {
     po = null,
@@ -11,7 +12,7 @@
   } = $props();
 
   let form = $state({
-    business: po?.business || '',
+    business: po?.business ?? null,
     contact: po?.contact || '',
     requested_date: po?.requested_date || '',
   });
@@ -19,8 +20,12 @@
   let contactsForBusiness = $state([]);
   let loadingContacts = $state(false);
   let lastFetchedBusiness = form.business;
+  let pickedBusiness = $state(null);
 
   function getDefaultContactId(businessId) {
+    if (pickedBusiness && String(pickedBusiness.business_id) === String(businessId)) {
+      return pickedBusiness.default_contact || null;
+    }
     const biz = businesses.find(b => String(b.business_id) === String(businessId));
     return biz?.default_contact || null;
   }
@@ -65,7 +70,7 @@
   function handleSubmit(e) {
     e.preventDefault();
     const data = { ...form };
-    if (data.business === '') {
+    if (data.business === '' || data.business == null) {
       data.business = null;
     } else {
       data.business = Number(data.business);
@@ -92,13 +97,11 @@
   {/if}
 
   <p>
-    <label for="business"><strong>Vendor (Business) *</strong></label><br>
-    <select id="business" bind:value={form.business} required>
-      <option value="">-- Select Business --</option>
-      {#each businesses as biz}
-        <option value={biz.business_id}>{biz.business_name}</option>
-      {/each}
-    </select>
+    <label><strong>Vendor (Business) *</strong></label><br>
+    <!-- business is a numeric id on the PO; label resolves via id fetch (no nested object to pass) -->
+    <BusinessPicker bind:value={form.business}
+      selectedItem={null}
+      onSelect={(b) => { pickedBusiness = b; }} />
   </p>
 
   <p>

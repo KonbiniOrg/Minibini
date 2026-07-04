@@ -72,8 +72,10 @@
             : `This shift would not cover blep(s) on ${names}.`;
         }
       } else {
-        const resp = await api.get(`/api/shifts/?user=${uid}&since=${encodeURIComponent(
-          new Date(new Date(s).getTime() - 86400000).toISOString())}`);
+        // `since` = the blep start: the backend returns shifts still active at/
+        // after that time (overnight, multi-day, and open shifts included), so
+        // no lookback offset is needed.
+        const resp = await api.get(`/api/shifts/?user=${uid}&since=${encodeURIComponent(s)}`);
         const shifts = resp.results || resp;
         // An ongoing shift (no end_time yet) is still running, so it encloses
         // any blep starting at/after its start — matches the backend's

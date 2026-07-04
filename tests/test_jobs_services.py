@@ -3,13 +3,13 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from apps.jobs.models import Job, Task, PlanTask, RateScheme
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskService
 from apps.estimates.models import (
-    Estimate, EstWorksheet,
-    WorkTemplate, TaskTemplate, TemplateTaskAssociation,
+    Estimate,
+    WorkTemplate, ServiceItem, TemplateTaskAssociation,
 )
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
+from apps.inventory.models import Material, InventoryItem
 from apps.inventory.services import InventoryService
 from apps.core.services import NotFoundError
 from apps.core.models import AccountingCategory
@@ -142,7 +142,7 @@ class TaskServiceUpdateTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         scheme = RateScheme.objects.create(
-            name='TSU scheme', algorithm=RateScheme.FLAT_FEE,
+            name='TSU scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
@@ -167,7 +167,7 @@ class TaskServiceReorderTest(JobsTestBase):
         super().setUp()
         self.job = JobService.create_job(name='Test', contact=self.contact)
         scheme = RateScheme.objects.create(
-            name='TSR scheme', algorithm=RateScheme.FLAT_FEE,
+            name='TSR scheme', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1.00'), unit_label='ea',
             accounting_category=self.lit,
         )
@@ -195,56 +195,6 @@ class TaskServiceReorderTest(JobsTestBase):
         self.assertEqual(self.t1.sort_order, 2)
 
 
-class MaterialServiceTest(JobsTestBase):
-    """Tests for InventoryService PlanMaterial CRUD."""
-
-    def setUp(self):
-        super().setUp()
-        self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
-        self.plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Task 1', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'),
-        )
-
-    def test_create_material(self):
-        mat = InventoryService.create_plan_material(
-            self.plan_task.pk, description='Steel plate',
-            quantity=Decimal('5.00'), unit_cost=Decimal('10.00'),
-            sell_price=Decimal('15.00'), accounting_category=self.lit,
-        )
-        self.assertIsNotNone(mat.pk)
-        self.assertEqual(mat.plan_task, self.plan_task)
-        self.assertEqual(mat.description, 'Steel plate')
-
-    def test_update_material(self):
-        mat = PlanMaterial.objects.create(
-            est_worksheet=self.worksheet,
-            plan_task=self.plan_task, description='Old', quantity=Decimal('1.00'),
-            accounting_category=self.lit,
-        )
-        updated = InventoryService.update_plan_material(
-            mat.pk, description='New', quantity=Decimal('3.00'),
-        )
-        self.assertEqual(updated.description, 'New')
-        self.assertEqual(updated.quantity, Decimal('3.00'))
-
-    def test_delete_material(self):
-        mat = PlanMaterial.objects.create(
-            est_worksheet=self.worksheet,
-            plan_task=self.plan_task, description='Delete me', quantity=Decimal('1.00'),
-            accounting_category=self.lit,
-        )
-        pk = mat.pk
-        InventoryService.delete_plan_material(pk)
-        self.assertFalse(PlanMaterial.objects.filter(pk=pk).exists())
-
-    def test_delete_material_not_found(self):
-        with self.assertRaises(NotFoundError):
-            InventoryService.delete_plan_material(99999)
-
-
 class JobServicePopulateFromTemplateTest(JobsTestBase):
     """Tests for JobService.populate_from_template."""
 
@@ -253,17 +203,17 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.job = JobService.create_job(name='Test', contact=self.contact)
         self.template = WorkTemplate.objects.create(template_name='Standard Build')
         self.scheme = RateScheme.objects.get(pk=1)  # from fixture
-        self.task_tmpl_1 = TaskTemplate.objects.create(
+        self.task_tmpl_1 = ServiceItem.objects.create(
             template_name='Cut',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
-        self.task_tmpl_2 = TaskTemplate.objects.create(
+            rate_scheme=self.scheme)
+        self.task_tmpl_2 = ServiceItem.objects.create(
             template_name='Weld',
-            rate_scheme=self.scheme, default_billable_qty=Decimal('1.00'))
+            rate_scheme=self.scheme)
         TemplateTaskAssociation.objects.create(
-            work_template=self.template, task_template=self.task_tmpl_1,
+            work_template=self.template, service_item=self.task_tmpl_1,
             est_qty=Decimal('2.00'), sort_order=1)
         TemplateTaskAssociation.objects.create(
-            work_template=self.template, task_template=self.task_tmpl_2,
+            work_template=self.template, service_item=self.task_tmpl_2,
             est_qty=Decimal('3.00'), sort_order=2)
 
     def test_generates_tasks_from_template(self):
@@ -283,7 +233,7 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.assertEqual(weld_task.name, 'Weld')
         self.assertEqual(weld_task.rate_scheme, self.scheme)
 
-    def test_skips_inactive_task_templates(self):
+    def test_skips_inactive_service_items(self):
         self.task_tmpl_2.is_active = False
         self.task_tmpl_2.save()
 
@@ -306,159 +256,3 @@ class JobServicePopulateFromTemplateTest(JobsTestBase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
         self.assertGreater(Task.objects.filter(job=self.job).count(), 0)
-
-
-class JobServiceCopyFromWorksheetTest(JobsTestBase):
-    """Tests for JobService.copy_from_worksheet."""
-
-    def setUp(self):
-        super().setUp()
-        self.job = JobService.create_job(name='Test', contact=self.contact)
-        self.estimate = Estimate.objects.create(
-            job=self.job, estimate_number='EST-001', status=Estimate.STATUS_ACCEPTED)
-        self.worksheet = EstWorksheet.objects.create(job=self.job)
-        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
-
-    def test_copies_tasks(self):
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Weld', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        job_tasks = Task.objects.filter(job=self.job).order_by('sort_order')
-        self.assertEqual(job_tasks.count(), 2)
-        self.assertEqual(job_tasks[0].name, 'Cut')
-        self.assertEqual(job_tasks[1].name, 'Weld')
-
-    def test_copies_task_fields(self):
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Paint',
-            description='Apply primer and topcoat',
-            sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        task = Task.objects.get(job=self.job)
-        self.assertEqual(task.name, 'Paint')
-        self.assertEqual(task.description, 'Apply primer and topcoat')
-
-    def test_copies_materials(self):
-        ws_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        pli = InventoryItem.objects.create(
-            code='STL-001', description='Steel plate',
-            purchase_price=Decimal('50.00'),
-            accounting_category=self.lit)
-        PlanMaterial(
-            plan_task=ws_task, est_worksheet=self.worksheet,
-            inventory_item=pli,
-            description='Steel plate', quantity=Decimal('5.00'),
-            unit_cost=Decimal('50.00'), sell_price=Decimal('75.00')).save()
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        job_task = Task.objects.get(job=self.job)
-        materials = Material.objects.filter(task=job_task)
-        self.assertEqual(materials.count(), 1)
-        mat = materials[0]
-        self.assertEqual(mat.description, 'Steel plate')
-        self.assertEqual(mat.quantity, Decimal('5.00'))
-        self.assertEqual(mat.unit_cost, Decimal('50.00'))
-        self.assertEqual(mat.sell_price, Decimal('75.00'))
-        self.assertEqual(mat.inventory_item, pli)
-
-    def test_empty_worksheet(self):
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 0)
-
-    def test_copy_flat_no_parent_task(self):
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Alpha', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Beta', sort_order=2,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-        for task in Task.objects.filter(job=self.job):
-            self.assertIsNone(task.parent_task)
-
-    def test_copy_preserves_plan_material_pli_linkage(self):
-        plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        pli = InventoryItem.objects.create(
-            code='LINK-001', description='Linked item',
-            purchase_price=Decimal('10.00'), selling_price=Decimal('20.00'),
-            accounting_category=self.lit)
-        PlanMaterial.objects.create(
-            est_worksheet=self.worksheet,
-            plan_task=plan_task, inventory_item=pli,
-            description='Linked', quantity=Decimal('2.00'))
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-        job_task = Task.objects.get(job=self.job)
-        material = job_task.materials.get()
-        self.assertEqual(material.inventory_item, pli)
-
-    def test_job_not_found(self):
-        with self.assertRaises(NotFoundError):
-            JobService.copy_from_worksheet(99999, self.worksheet.pk)
-
-    def test_worksheet_not_found(self):
-        with self.assertRaises(NotFoundError):
-            JobService.copy_from_worksheet(self.job.pk, 99999)
-
-    def test_copy_from_worksheet_carries_units(self):
-        """Units set on PlanMaterial are preserved on the resulting Material."""
-        plan_task = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        PlanMaterial.objects.create(
-            est_worksheet=self.worksheet, plan_task=plan_task,
-            description='task-attached', quantity=Decimal('5'),
-            units='lbs', unit_cost=Decimal('2.00'), sell_price=Decimal('3.00'),
-            accounting_category=self.lit)
-        PlanMaterial.objects.create(
-            est_worksheet=self.worksheet, plan_task=None,
-            description='task-less', quantity=Decimal('2'),
-            units='ea', unit_cost=Decimal('1.00'), sell_price=Decimal('2.00'),
-            accounting_category=self.lit)
-
-        new_job = JobService.create_job(name='Copy Target', contact=self.contact)
-        JobService.copy_from_worksheet(new_job.pk, self.worksheet.pk)
-
-        task_mat = Material.objects.get(job=new_job, task__isnull=False)
-        self.assertEqual(task_mat.units, 'lbs')
-        loose_mat = Material.objects.get(job=new_job, task__isnull=True)
-        self.assertEqual(loose_mat.units, 'ea')
-
-    def test_sets_provenance_on_copied_atoms(self):
-        pt = PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-        PlanMaterial.objects.create(
-            est_worksheet=self.worksheet, plan_task=pt, description='Steel',
-            quantity=Decimal('2'), units='ea', accounting_category=self.lit)
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-
-        task = Task.objects.get(job=self.job)
-        self.assertEqual(task.source_plan_task, pt)
-        material = Material.objects.get(job=self.job)
-        self.assertEqual(material.source_plan_material.plan_task, pt)
-
-    def test_manual_copy_then_acceptance_does_not_duplicate(self):
-        from apps.estimates.carry_over import AtomCarryOverService
-        PlanTask.objects.create(
-            est_worksheet=self.worksheet, name='Cut', sort_order=1,
-            rate_scheme=self.scheme, est_qty=Decimal('1'))
-
-        JobService.copy_from_worksheet(self.job.pk, self.worksheet.pk)
-        AtomCarryOverService.carry_over_for_estimate(self.estimate)
-
-        self.assertEqual(Task.objects.filter(job=self.job).count(), 1)

@@ -5,7 +5,8 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 
-from apps.core.models import AccountingCategory, Configuration
+from apps.core.models import AccountingCategory, Configuration, ExpensesHistory
+from apps.core.history import set_history_context, HistoryContext
 from apps.expenses.models import Expense, Reimbursement
 from apps.expenses.services import ReimbursementService
 
@@ -67,7 +68,7 @@ class ReimbursementCreateBatchTest(TestCase):
             notes='',
             created_by=self.admin,
         )
-        self.assertEqual(batch.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(batch.qbo_sync_status, Reimbursement.SYNC_SYNCED)
         self.assertEqual(batch.qbo_id, '9100')
         self.assertEqual(batch.total, Decimal('138.25'))
         for e in (e1, e2, e3):
@@ -92,7 +93,7 @@ class ReimbursementCreateBatchTest(TestCase):
         # Expenses are still flipped to reimbursed — real-world check was cut.
         e1.refresh_from_db()
         self.assertEqual(e1.status, Expense.STATUS_REIMBURSED)
-        self.assertEqual(batch.status, Reimbursement.STATUS_SYNC_FAILED)
+        self.assertEqual(batch.qbo_sync_status, Reimbursement.SYNC_FAILED)
         self.assertIn('qbo down', batch.qbo_sync_error)
 
     def test_create_batch_rejects_mixed_user_expenses(self):
@@ -161,21 +162,80 @@ class ReimbursementRetrySyncTest(TestCase):
         _seed_payment_accounts()
         self.worker = User.objects.create_user(username='worker', password='testpass')
         self.admin = User.objects.create_user(username='admin', password='testpass')
+        self.cat = AccountingCategory.objects.create(
+            code='RET', name='Reimb Supplies', qbo_expense_account_id='500',
+        )
         self.batch = Reimbursement.objects.create(
             purchased_by=self.worker,
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNC_FAILED,
+            qbo_sync_status=Reimbursement.SYNC_FAILED,
             qbo_sync_error='previous fail',
+        )
+
+    def _expense_on_batch(self):
+        return Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('20.00'), purchased_on=date(2026, 4, 5),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=self.batch,
         )
 
     @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
     def test_retry_sync_calls_push_and_flips_to_synced(self, mock_push):
         mock_push.return_value = '9100'
         result = ReimbursementService.retry_sync(batch=self.batch, actor=self.admin)
-        self.assertEqual(result.status, Reimbursement.STATUS_SYNCED)
+        self.assertEqual(result.qbo_sync_status, Reimbursement.SYNC_SYNCED)
         self.assertEqual(result.qbo_sync_error, '')
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.update_reimbursement')
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
+    def test_retry_failed_update_calls_update(self, mock_push, mock_update):
+        """A batch with qbo_id + OP_UPDATE must call update_reimbursement, not push_reimbursement."""
+        self.batch.qbo_id = 'q1'
+        self.batch.qbo_pending_op = Reimbursement.OP_UPDATE
+        self.batch.save(update_fields=['qbo_id', 'qbo_sync_status', 'qbo_pending_op'])
+        mock_update.return_value = 'q1'
+        result = ReimbursementService.retry(batch=self.batch, actor=self.admin)
+        mock_update.assert_called_once()
+        mock_push.assert_not_called()
+        self.assertIsNotNone(result)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
+    def test_retry_failed_create_calls_push(self, mock_push):
+        """A batch with no qbo_id (or OP_CREATE) must call push_reimbursement."""
+        mock_push.return_value = '9200'
+        result = ReimbursementService.retry(batch=self.batch, actor=self.admin)
+        mock_push.assert_called_once()
+        self.assertIsNotNone(result)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement')
+    def test_retry_failed_delete_unwinds_batch(self, mock_void):
+        """OP_DELETE retry: batch deleted + expenses flipped back to submitted on successful void."""
+        self.batch.qbo_id = 'q2'
+        self.batch.qbo_pending_op = Reimbursement.OP_DELETE
+        self.batch.save(update_fields=['qbo_id', 'qbo_sync_status', 'qbo_pending_op'])
+        expense = self._expense_on_batch()
+        batch_pk = self.batch.pk
+
+        result = ReimbursementService.retry(batch=self.batch, actor=self.admin)
+
+        self.assertIsNone(result)
+        self.assertFalse(Reimbursement.objects.filter(pk=batch_pk).exists())
+        expense.refresh_from_db()
+        self.assertEqual(expense.status, Expense.STATUS_SUBMITTED)
+        self.assertIsNone(expense.reimbursement)
+        mock_void.assert_called_once()
+
+    def test_retry_non_failed_raises(self):
+        """retry on a non-failed batch raises ValidationError."""
+        self.batch.qbo_sync_status = Reimbursement.SYNC_SYNCED
+        self.batch.save(update_fields=['qbo_sync_status'])
+        with self.assertRaises(ValidationError):
+            ReimbursementService.retry(batch=self.batch, actor=self.admin)
 
 
 class ReimbursementDeleteTest(TestCase):
@@ -191,7 +251,7 @@ class ReimbursementDeleteTest(TestCase):
             paid_on=date(2026, 4, 11),
             payment_account_id='42',
             created_by=self.admin,
-            status=Reimbursement.STATUS_SYNCED,
+            qbo_sync_status=Reimbursement.SYNC_SYNCED,
             qbo_id='9100',
         )
         self.e1 = Expense.objects.create(
@@ -212,3 +272,129 @@ class ReimbursementDeleteTest(TestCase):
         self.assertEqual(self.e1.status, Expense.STATUS_SUBMITTED)
         self.assertIsNone(self.e1.reimbursement)
         mock_void.assert_called_once()
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement', side_effect=Exception('QBO down'))
+    def test_delete_void_failure_raises_validation_error_and_retains_batch(self, mock_void):
+        """A failed QBO void must abort the unwind: batch stays, expenses stay reimbursed."""
+        batch_pk = self.batch.pk
+        with self.assertRaises(ValidationError):
+            ReimbursementService.delete(batch=self.batch, actor=self.admin)
+        # batch still exists
+        self.assertTrue(Reimbursement.objects.filter(pk=batch_pk).exists())
+        # batch marked sync_failed
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.qbo_sync_status, Reimbursement.SYNC_FAILED)
+        # expenses were NOT flipped back
+        self.e1.refresh_from_db()
+        self.assertEqual(self.e1.status, Expense.STATUS_REIMBURSED)
+        self.assertEqual(self.e1.reimbursement_id, batch_pk)
+
+    def test_delete_no_qbo_id_unwinds_locally(self):
+        """When there is no qbo_id, the batch is simply unwound locally with no QBO call."""
+        self.batch.qbo_id = ''
+        self.batch.save(update_fields=['qbo_id'])
+        batch_pk = self.batch.pk
+        ReimbursementService.delete(batch=self.batch, actor=self.admin)
+        self.assertFalse(Reimbursement.objects.filter(pk=batch_pk).exists())
+        self.e1.refresh_from_db()
+        self.assertEqual(self.e1.status, Expense.STATUS_SUBMITTED)
+        self.assertIsNone(self.e1.reimbursement)
+
+
+class ReimbursementHistoryTest(TestCase):
+    """record_action writes human-context action rows on member expenses."""
+
+    def setUp(self):
+        _seed_payment_accounts()
+        self.worker = User.objects.create_user(username='worker_h', password='testpass')
+        self.admin = User.objects.create_user(username='admin_h', password='testpass')
+        self.cat = AccountingCategory.objects.create(
+            code='HST', name='History Supplies', qbo_expense_account_id='500',
+        )
+        set_history_context(HistoryContext(user=self.admin))
+
+    def tearDown(self):
+        set_history_context(None)
+
+    def _expense(self, amt='30.00'):
+        return Expense.objects.create(
+            entered_by=self.worker,
+            purchased_by=self.worker,
+            amount=Decimal(amt),
+            purchased_on=date(2026, 5, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_SUBMITTED,
+        )
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.push_reimbursement')
+    def test_create_batch_writes_action_row_on_each_member_expense(self, mock_push):
+        mock_push.return_value = '9999'
+        e1 = self._expense('20.00')
+        e2 = self._expense('30.00')
+
+        batch = ReimbursementService.create_batch(
+            purchased_by=self.worker,
+            expense_ids=[e1.pk, e2.pk],
+            paid_on=date(2026, 5, 10),
+            payment_account_id='42',
+            reference_number='',
+            notes='',
+            created_by=self.admin,
+        )
+
+        for e in (e1, e2):
+            action_rows = ExpensesHistory.objects.filter(
+                object_type='expense',
+                object_id=e.pk,
+                entry_type='action',
+            )
+            self.assertEqual(action_rows.count(), 1,
+                             f'Expected 1 action row on expense {e.pk}')
+            row = action_rows.first()
+            self.assertIn(f'Reimbursed in batch #{batch.pk}', row.changes['_action'])
+            self.assertEqual(row.user, self.admin)
+
+    @patch('apps.qbo.services.QBOExpenseSyncService.void_reimbursement')
+    def test_delete_writes_unwind_action_row_on_each_member_expense(self, mock_void):
+        # Build a batch manually so we can test the delete path.
+        batch = Reimbursement.objects.create(
+            purchased_by=self.worker,
+            paid_on=date(2026, 5, 10),
+            payment_account_id='42',
+            created_by=self.admin,
+            qbo_sync_status=Reimbursement.SYNC_SYNCED,
+            qbo_id='8888',
+        )
+        e1 = Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('20.00'), purchased_on=date(2026, 5, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=batch,
+        )
+        e2 = Expense.objects.create(
+            entered_by=self.worker, purchased_by=self.worker,
+            amount=Decimal('30.00'), purchased_on=date(2026, 5, 1),
+            accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            status=Expense.STATUS_REIMBURSED,
+            reimbursement=batch,
+        )
+        batch_pk = batch.pk
+
+        ReimbursementService.delete(batch=batch, actor=self.admin)
+
+        for e in (e1, e2):
+            action_rows = ExpensesHistory.objects.filter(
+                object_type='expense',
+                object_id=e.pk,
+                entry_type='action',
+            )
+            self.assertEqual(action_rows.count(), 1,
+                             f'Expected 1 unwind action row on expense {e.pk}')
+            row = action_rows.first()
+            self.assertIn('Reimbursement unwound', row.changes['_action'])
+            self.assertIn(f'batch #{batch_pk}', row.changes['_action'])
+            self.assertEqual(row.user, self.admin)

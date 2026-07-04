@@ -242,6 +242,99 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             'line_item': InvoiceLineItemSerializer(line_item).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='apply-everything')
+    def apply_everything(self, request, pk=None):
+        """Seed all available atoms onto a fresh draft invoice, one line per atom.
+
+        Requires the invoice to be draft with no existing line items.
+        Already-claimed and not-billable atoms are skipped automatically.
+        Returns 200 with ``{'created': N}`` on success, 400 on ValidationError.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.invoicing.services import InvoiceWizardService
+        invoice = self.get_object()
+        try:
+            created = InvoiceWizardService.seed_all_atoms(invoice)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'created': created}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='copy-from-estimate')
+    def copy_from_estimate(self, request, pk=None):
+        """Copy the job's accepted estimate agreement onto a fresh draft invoice.
+
+        Creates one InvoiceLineItem per agreement line, including adjustment lines
+        (which carry adjustment_service so the agreement panel sees them as
+        already_added). Only available when the invoice is draft, has no lines, and
+        is the first/only non-cancelled invoice for the job.
+
+        Returns 200 with ``{'created': N}`` on success, 400 on ValidationError.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.invoicing.services import InvoiceService
+        invoice = self.get_object()
+        try:
+            created = InvoiceService.copy_from_estimate(invoice)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'created': created}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='adjustment-lines')
+    def adjustment_lines(self, request, pk=None):
+        """Add a percentage-adjustment line item to a draft invoice.
+
+        Body: ``adjustment_service`` (RateScheme PK, must be PERCENTAGE),
+        ``target_category_ids`` (list of AccountingCategory PKs; empty = all).
+        Returns 201 with the serialized line item.
+        Returns 400 when the invoice is not draft or the service is not PERCENTAGE.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.invoicing.services import InvoiceService
+        invoice = self.get_object()
+        try:
+            line = InvoiceService.add_adjustment_line(
+                invoice,
+                adjustment_service_id=request.data['adjustment_service'],
+                target_category_ids=request.data.get('target_category_ids') or [],
+            )
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(InvoiceLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='agreement-adjustments')
+    def agreement_adjustments(self, request, pk=None):
+        """Return the adjustment lines from the job's accepted estimate agreement,
+        annotated with whether this invoice already has a line for each one.
+
+        Returns ``{'adjustments': [{adjustment_service_id, description, percent,
+        target_category_ids, already_added}, ...]}``.
+        Already_added is True when this invoice already has an InvoiceLineItem
+        with that adjustment_service.
+        """
+        from apps.estimates.agreement import compose_agreement
+        from apps.invoicing.models import InvoiceLineItem
+        invoice = self.get_object()
+        agreement = compose_agreement(invoice.job)
+        existing = set(
+            InvoiceLineItem.objects
+            .filter(invoice=invoice, adjustment_service__isnull=False)
+            .values_list('adjustment_service_id', flat=True)
+        )
+        out = [
+            {
+                'adjustment_service_id': l['adjustment_service_id'],
+                'description': l['description'],
+                'percent': l['percent'],
+                'target_category_ids': l['target_category_ids'],
+                'already_added': l['adjustment_service_id'] in existing,
+            }
+            for l in agreement['lines'] if l.get('is_adjustment')
+        ]
+        return Response({'adjustments': out})
+
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):
         """Pre-populated values for the Send Email page."""

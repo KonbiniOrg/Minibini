@@ -26,7 +26,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         )
         cat = AccountingCategory.objects.create(name='WCG Cat', code='WCG1')
         self.scheme = RateScheme.objects.create(
-            name='S-wcg', algorithm=RateScheme.FLAT_FEE,
+            name='S-wcg', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=cat,
         )
         self.pli = InventoryItem.objects.create(
@@ -117,8 +117,9 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             quantity=Decimal('2'), inventory_item=self.pli,
         )
         t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
-        # Drive task completion the same way production does.
-        TaskLifecycleService.complete_task(t.pk)
+        # Drive task completion the same way production does. The scheme is
+        # entered_qty, so a quantity must be supplied to complete the task.
+        TaskLifecycleService.complete_task(t.pk, actual_qty=Decimal('1'))
         self.job.refresh_from_db()
         self.assertNotEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
         # Job should be in_progress (setUp walks to in_progress; loose materials

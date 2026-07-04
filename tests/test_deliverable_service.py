@@ -304,6 +304,7 @@ class ChangeOrderEditabilityTests(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Added scope', qty=1, price=100, line_number=1,
+            accounting_category_id=901,
         )
         co.status = ChangeOrder.STATUS_OPEN
         co.save()

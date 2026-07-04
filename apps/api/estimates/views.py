@@ -13,7 +13,7 @@ from apps.api.mixins import (
 )
 from apps.api.permissions import CanManageJobOrPM
 from apps.core.services import NotFoundError, ServiceError
-from apps.estimates.models import Estimate, EstimateLineItem, EstWorksheet
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.services import (
     EstimateClaimConflict,
     EstimateService,
@@ -86,6 +86,12 @@ class EstimateViewSet(
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': 'Estimate discarded'})
 
+    # Line-item GET (list) + POST (create) are provided by LineItemMixin.line_items;
+    # 'line_items' stays in get_permissions' mixed_actions so GET is IsAuthenticated
+    # and POST requires CanManageJobOrPM. Direct line authoring is supported again
+    # (hand-lines crystallize into Fees at acceptance); atom-backed lines still come
+    # via line-items-from-atoms / add-atoms.
+
     @action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):
         try:
@@ -100,17 +106,30 @@ class EstimateViewSet(
 
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):
-        """Return the source pool for the wizard, drawn from the job's worksheet."""
+        """Return the source pool for the wizard, drawn from the job's Tasks/Materials."""
         estimate = self.get_object()
-        worksheet = (
-            EstWorksheet.objects.filter(job_id=estimate.job_id)
-            .order_by('-est_worksheet_id')
-            .first()
-        )
-        if not worksheet:
-            return Response({'atoms': []})
-        pool = EstimateWizardService.get_source_pool(worksheet)
+        pool = EstimateWizardService.get_source_pool(estimate)
         return Response(_serialize_pool(pool))
+
+    @action(detail=True, methods=['post'], url_path='line-items-from-service')
+    def line_items_from_service(self, request, pk=None):
+        """Create a deferred service line (service_item descriptor + snapshot).
+
+        Mints NO Task; the Task crystallizes at acceptance (on_accept)."""
+        estimate = self.get_object()
+        try:
+            line_item = EstimateService.add_line_item_from_service(
+                estimate.pk,
+                request.data.get('service_item'),
+                request.data.get('qty'),
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = EstimateLineItemSerializer(line_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
     def line_items_from_atoms(self, request, pk=None):
@@ -182,6 +201,27 @@ class EstimateViewSet(
             'line_item_deleted': False,
             'line_item': EstimateLineItemSerializer(line_item).data,
         })
+
+    @action(detail=True, methods=['post'], url_path='adjustment-lines')
+    def adjustment_lines(self, request, pk=None):
+        """Add a percentage-adjustment line item to a draft estimate.
+
+        Body: ``adjustment_service`` (RateScheme PK, must be PERCENTAGE),
+        ``target_category_ids`` (list of AccountingCategory PKs; empty = all).
+        Returns 201 with the serialized line item.
+        Returns 400 when the estimate is not draft or the service is not PERCENTAGE.
+        """
+        estimate = self.get_object()
+        try:
+            line = EstimateService.add_adjustment_line(
+                estimate,
+                adjustment_service_id=request.data['adjustment_service'],
+                target_category_ids=request.data.get('target_category_ids') or [],
+            )
+        except DjangoValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(EstimateLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='send-defaults')
     def send_defaults(self, request, pk=None):

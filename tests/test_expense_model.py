@@ -34,8 +34,8 @@ class ExpenseModelTest(TestCase):
         self.assertIsNotNone(exp.created_at)
 
     def test_create_company_paid_expense_defaults_submitted(self):
-        # Company-paid also starts as 'submitted'; the service flips it to
-        # 'synced' after the QBO push. The model itself doesn't push.
+        # Company-paid also starts as 'submitted'; the service sets qbo_sync_status
+        # to 'synced' after the QBO push. The model itself doesn't push.
         exp = Expense.objects.create(
             entered_by=self.user,
             amount=Decimal('218.45'),
@@ -66,7 +66,7 @@ class ExpenseModelTest(TestCase):
         statuses = [s for s, _ in Expense.STATUS_CHOICES]
         self.assertEqual(
             set(statuses),
-            {'submitted', 'reimbursed', 'rejected', 'synced', 'sync_failed'},
+            {'submitted', 'reimbursed', 'rejected'},
         )
 
     def test_ordering_is_newest_first_by_purchase_date(self):
@@ -194,6 +194,19 @@ class ExpenseJobTest(TestCase):
     def test_material_without_explicit_job_ok(self):
         exp = self._build(material=self.material, job=self.job)
         exp.full_clean()  # should not raise
+
+
+class ExpenseQBOSyncableAdoptionTest(TestCase):
+    """Expense adopts QBOSyncable: status is business-only, sync state is qbo_sync_status."""
+
+    def test_expense_status_is_business_only(self):
+        from apps.expenses.models import Expense
+        from apps.core.models import QBOSyncable
+        self.assertTrue(issubclass(Expense, QBOSyncable))
+        status_values = {c[0] for c in Expense.STATUS_CHOICES}
+        self.assertEqual(status_values, {'submitted', 'reimbursed', 'rejected'})
+        names = {f.name for f in Expense._meta.get_fields()}
+        self.assertIn('qbo_sync_status', names)
 
 
 class ExpenseStockReceiptModelTest(TestCase):

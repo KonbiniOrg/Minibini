@@ -24,7 +24,7 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'history', 'notes'):
+        if self.action in ('list', 'retrieve', 'history', 'notes', 'financials'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
@@ -149,6 +149,22 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get'], url_path='financials', url_name='financials')
+    def financials(self, request, pk=None):
+        from decimal import Decimal
+        from apps.jobs.financials import compute_job_financials
+        contact = self.get_object()
+        total_invoiced = Decimal('0')
+        total_profit = Decimal('0')
+        for job in contact.job_set.all():
+            fin = compute_job_financials(job)
+            total_invoiced += fin['invoiced']
+            total_profit += fin['profit']
+        return Response({
+            'invoiced': str(total_invoiced.quantize(Decimal('0.01'))),
+            'profit': str(total_profit.quantize(Decimal('0.01'))),
+        })
+
     @action(detail=True, methods=['post'], url_path='add-tag')
     def add_tag(self, request, pk=None):
         contact = self.get_object()
@@ -175,7 +191,7 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'history', 'notes'):
+        if self.action in ('list', 'retrieve', 'history', 'notes', 'financials'):
             return [IsAuthenticated()]
         return [IsAuthenticated(), CanManageJobs()]
 
@@ -297,6 +313,23 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         )
         serializer = HistoryEntrySerializer(entry)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='financials', url_name='financials')
+    def financials(self, request, pk=None):
+        from decimal import Decimal
+        from apps.jobs.financials import compute_job_financials
+        from apps.jobs.models import Job
+        business = self.get_object()
+        total_invoiced = Decimal('0')
+        total_profit = Decimal('0')
+        for job in Job.objects.filter(contact__business=business):
+            fin = compute_job_financials(job)
+            total_invoiced += fin['invoiced']
+            total_profit += fin['profit']
+        return Response({
+            'invoiced': str(total_invoiced.quantize(Decimal('0.01'))),
+            'profit': str(total_profit.quantize(Decimal('0.01'))),
+        })
 
     @action(detail=True, methods=['post'], url_path='add-tag')
     def add_tag(self, request, pk=None):

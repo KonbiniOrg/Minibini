@@ -34,10 +34,9 @@
     { key: 'businesses', label: 'Businesses' },
     { key: 'invoices', label: 'Invoices' },
     { key: 'estimates', label: 'Estimates' },
-    { key: 'est_worksheets', label: 'Worksheets' },
     { key: 'bills', label: 'Bills' },
     { key: 'purchase_orders', label: 'Purchase Orders' },
-    { key: 'inventory_items', label: 'Price List Items' },
+    { key: 'inventory_items', label: 'Inventory Items' },
   ];
 
   const JOB_STATUSES = [
@@ -198,12 +197,13 @@
           <h3>Contacts</h3>
           <table class="data-table">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
+              <tr><th>Name</th><th>Business</th><th>Email</th><th>Mobile</th><th>Work</th><th>Home</th><th>City</th></tr>
             </thead>
             <tbody>
               {#each results.results.contacts as c}
                 <tr>
                   <td><a href="#/contacts/{c.contact_id}">{@html hl(c.name)}</a></td>
+                  <td>{#if c.business_name}{@html hl(c.business_name)}{:else}—{/if}</td>
                   <td>{@html hl(c.email)}</td>
                   <td>{@html hl(c.mobile_number)}</td>
                   <td>{@html hl(c.work_number)}</td>
@@ -274,23 +274,6 @@
           </table>
         {/if}
 
-        {#if results.results.est_worksheets?.length}
-          <h3>Worksheets</h3>
-          <table class="data-table">
-            <thead>
-              <tr><th>Job #</th><th>Estimate #</th></tr>
-            </thead>
-            <tbody>
-              {#each results.results.est_worksheets as ws}
-                <tr>
-                  <td>{ws.job_number || '—'}</td>
-                  <td>{ws.estimate_number || '—'}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-
         {#if results.results.bills?.length}
           <h3>Bills</h3>
           <table class="data-table">
@@ -333,7 +316,7 @@
         {/if}
 
         {#if results.results.inventory_items?.length}
-          <h3>Price List Items</h3>
+          <h3>Inventory Items</h3>
           <table class="data-table">
             <thead>
               <tr><th>Code</th><th>Description</th><th>Units</th><th>Selling Price</th></tr>
@@ -444,7 +427,7 @@
             </button>
           </legend>
           {#if sectionPrice}
-            <p><small>Applies to invoices, estimates, bills, POs, and price list items.</small></p>
+            <p><small>Applies to invoices, estimates, bills, POs, and inventory items.</small></p>
             <p>
               <label for="price-min"><strong>Min ($)</strong></label><br>
               <input type="number" id="price-min" min="0" step="0.01" bind:value={priceMin}>

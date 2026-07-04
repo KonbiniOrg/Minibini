@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -82,5 +82,22 @@ describe('ChangeOrderDetailPage per-object can_manage gating', () => {
     await findByText('Line items');
     expect(queryByText('+ New line')).not.toBeInTheDocument();
     expect(queryByText('+ New deliverable')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChangeOrderDetailPage add-line flow', () => {
+  it('"+ New line" opens the unified picker (service/inventory/freeform), not the CO modal', async () => {
+    user.set({ permissions: [] });
+    mockApi(makeCO({ can_manage: true, status: 'draft' }));
+
+    const { findByText, queryByText } = render(ChangeOrderDetailPage, {
+      props: { params: { id: '3' } },
+    });
+
+    await fireEvent.click(await findByText('+ New line'));
+    // The PriceListPicker's freeform footer is visible…
+    expect(await findByText('Is this a material?')).toBeInTheDocument();
+    // …and the legacy action-select modal did not open.
+    expect(queryByText('Add Change Order Line')).not.toBeInTheDocument();
   });
 });

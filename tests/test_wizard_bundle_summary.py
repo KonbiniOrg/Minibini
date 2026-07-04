@@ -11,12 +11,12 @@ from django.utils import timezone
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
-from apps.estimates.models import EstWorksheet
+from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
+from apps.inventory.models import Material, InventoryItem
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceWizardService
-from apps.jobs.models import Blep, Job, PlanTask, RateScheme, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 
 
 class InvoiceWizardBundleSummaryTest(TestCase):
@@ -177,7 +177,6 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-E1',
         )
-        self.ws = EstWorksheet.objects.create(job=self.job)
         self.scheme = RateScheme.objects.create(
             name='E-Widgets', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
@@ -194,16 +193,21 @@ class EstimateWizardBundleSummaryTest(TestCase):
             rate=Decimal('99.00'), unit_label='jobs',
             accounting_category=self.cat,
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
     def _pt(self, scheme, est_qty, modifiers=None):
-        return PlanTask.objects.create(
-            est_worksheet=self.ws, name='PT', rate_scheme=scheme,
+        # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks
+        # (est_qty-based), now owned directly by the Job.
+        return Task.objects.create(
+            job=self.job, name='PT', rate_scheme=scheme,
             est_qty=Decimal(str(est_qty)), active_modifiers=modifiers or [],
         )
 
     def _bundle(self, *pts):
-        atoms = [{'type': 'plan_task', 'id': p.pk} for p in pts]
+        atoms = [{'type': 'task', 'id': p.pk} for p in pts]
         return EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
     def test_same_scheme_no_modifiers_summarized(self):
@@ -222,16 +226,16 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.price, Decimal('15.00'))
 
     def test_flat_fee_same_scheme_summed(self):
-        # flat_fee carries its unit price as a dict in active_modifiers; same
-        # scheme + same price still summarizes — est_qty summed, not set to 1.
+        # flat_fee price now lives on RateScheme.rate; active_modifiers is [].
+        # Same scheme + same (empty) modifiers summarizes — est_qty summed, not set to 1.
         scheme_flat = RateScheme.objects.create(
-            name='E-Tapping', algorithm=RateScheme.FLAT_FEE,
-            rate=Decimal('0.00'), unit_label='holes',
+            name='E-Tapping', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('7.00'), unit_label='holes',
             accounting_category=self.cat,
         )
         li = self._bundle(
-            self._pt(scheme_flat, 4, {'flat_fee_price': '7.00'}),
-            self._pt(scheme_flat, 6, {'flat_fee_price': '7.00'}),
+            self._pt(scheme_flat, 4),
+            self._pt(scheme_flat, 6),
         )
         self.assertEqual(li.units, 'holes')
         self.assertEqual(li.qty, Decimal('10'))  # 4 + 6 est_qty, not 1
@@ -252,15 +256,15 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'none')
         self.assertEqual(li.qty, Decimal('1'))
 
-    def test_bundle_with_plan_material_falls_back(self):
+    def test_bundle_with_material_falls_back(self):
         a = self._pt(self.scheme, 3)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('2'),
+        mat = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('2'),
             sell_price=Decimal('5'), accounting_category=self.cat_mat,
         )
         atoms = [
-            {'type': 'plan_task', 'id': a.pk},
-            {'type': 'plan_material', 'id': pm.pk},
+            {'type': 'task', 'id': a.pk},
+            {'type': 'material', 'id': mat.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.units, 'none')

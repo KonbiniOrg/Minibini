@@ -21,6 +21,45 @@ describe('TaskTree', () => {
     expect(getByText('$65.00')).toBeInTheDocument();
   });
 
+  it('includes fees as rows in the same table and in the grand total', async () => {
+    const t = task({}); // task total 2*25 = $50.00
+    const onEditFee = vi.fn();
+    // fee 4 * 12.50 = $50.00 → grand total 50 + 50 = $100.00
+    const fee = { fee_id: 3, description: 'Setup fee', quantity: '4', unit_rate: '12.50' };
+    const { getByText, container } = render(TaskTree, {
+      props: { tasks: [t], fees: [fee], canManage: true, onEditFee },
+    });
+    expect(getByText('Setup fee')).toBeInTheDocument();          // fee row present in the same table
+    const feeRow = container.querySelector('.fee-row');
+    expect(feeRow).not.toBeNull();                               // distinguishable styling
+    expect(getByText('$100.00')).toBeInTheDocument();            // fee is in the grand total
+    // the fee's own edit affordance calls back with the fee
+    await fireEvent.click(feeRow.querySelector('button'));
+    expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
+  });
+
+  it('shows the catalog badge for an inventory-item-backed material', () => {
+    const t = task({
+      materials: [{
+        description: 'Steel', quantity: '3', sell_price: '5', units: 'kg',
+        consumption_state: 'pending', inventory_item_is_catalog: true,
+      }],
+    });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(container.querySelector('.inv-badge')).not.toBeNull();
+  });
+
+  it('omits the catalog badge for a freeform material', () => {
+    const t = task({
+      materials: [{
+        description: 'Glue', quantity: '1', sell_price: '2', units: 'ea',
+        consumption_state: 'pending', inventory_item_is_catalog: false,
+      }],
+    });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(container.querySelector('.inv-badge')).toBeNull();
+  });
+
   it('fires the edit callback when canManage', async () => {
     const onEditTask = vi.fn();
     const { getByRole } = render(TaskTree, { props: { tasks: [task()], canManage: true, onEditTask } });
@@ -156,5 +195,17 @@ describe('TaskTree', () => {
     const { getByRole } = render(TaskTree, { props: { tasks: [t] } });
     const link = getByRole('link', { name: 'INVOICED' });
     expect(link.getAttribute('href')).toBe('#/invoices/4');
+  });
+
+  it('offers no restock on a released material (terminal, like consumed)', () => {
+    const t = task({
+      status: 'pending',
+      materials: [{
+        material_id: 10, description: 'Acrylic', quantity: '0', sell_price: '5',
+        units: 'ea', consumption_state: 'released', released_qty: '7', invoice: null,
+      }],
+    });
+    const { queryByRole } = render(TaskTree, { props: { tasks: [t] } });
+    expect(queryByRole('button', { name: 'restock' })).toBeNull();
   });
 });

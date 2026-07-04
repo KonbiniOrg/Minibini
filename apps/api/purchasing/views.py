@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import (
     F, Sum, Value, Case, When, DecimalField, ExpressionWrapper,
+    OuterRef, Subquery, Q,
 )
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
@@ -11,7 +12,7 @@ from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
 from apps.purchasing.services import (
     PurchaseOrderService, PurchaseOrderEmailService,
-    PurchaseOrderReceivingService, BillService,
+    PurchaseOrderReceivingService, BillService, BillPaymentService,
 )
 from apps.core.services import ServiceError, NotFoundError
 from apps.core.models import PurchasingHistory
@@ -22,9 +23,20 @@ from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
     BillSerializer, BillSummarySerializer, BillLineItemSerializer,
+    BillPaymentSerializer,
 )
 
 _BILL_MONEY = DecimalField(max_digits=12, decimal_places=2)
+
+
+def _coerce_sever_decisions(raw):
+    """Normalize a sever-decisions map from the request body. JSON object keys
+    arrive as strings ({"42": "keep"}), but the service looks up line items by
+    int pk, so coerce keys to int. Returns None when nothing was supplied.
+    Raises ValueError on a non-int key."""
+    if not raw:
+        return None
+    return {int(k): v for k, v in raw.items()}
 
 BILL_STATUS_PRESETS = {
     'open': [Bill.STATUS_RECEIVED, Bill.STATUS_PARTLY_PAID],
@@ -47,6 +59,7 @@ BILL_ORDERING = {
 class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all().prefetch_related(
         'purchaseorderlineitem_set__task__job',
+        'bills',
     ).order_by('-created_date')
     serializer_class = PurchaseOrderSerializer
     lookup_field = 'pk'
@@ -79,6 +92,12 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         po_status = self.request.query_params.get('status')
         if po_status:
             qs = qs.filter(status=po_status)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(po_number__icontains=search)
+                | Q(business__business_name__icontains=search)
+            )
         return qs
 
     line_item_serializer_class = POLineItemSerializer
@@ -106,7 +125,12 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         """Delete a draft PO. Accepts `sever_decisions` in body for lines
         with pending linked Materials."""
         po = self.get_object()
-        sever_decisions = request.data.get('sever_decisions') if request.data else None
+        try:
+            sever_decisions = _coerce_sever_decisions(
+                request.data.get('sever_decisions') if request.data else None)
+        except (ValueError, AttributeError):
+            return Response({'detail': 'Invalid sever_decisions.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         try:
             PurchaseOrderService.delete_po(po.pk, sever_decisions=sever_decisions)
         except DjangoValidationError as e:
@@ -197,7 +221,11 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 {'reason': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        sever_decisions = request.data.get('sever_decisions')
+        try:
+            sever_decisions = _coerce_sever_decisions(request.data.get('sever_decisions'))
+        except (ValueError, AttributeError):
+            return Response({'detail': 'Invalid sever_decisions.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         try:
             po = PurchaseOrderService.cancel_po(pk, sever_decisions=sever_decisions)
         except DjangoValidationError as e:
@@ -443,28 +471,87 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         contact = self.request.query_params.get('contact')
         if contact:
             qs = qs.filter(contact_id=contact)
+        purchase_order = self.request.query_params.get('purchase_order')
+        if purchase_order:
+            qs = qs.filter(purchase_order_id=purchase_order)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(vendor_invoice_number__icontains=search)
+                | Q(purchase_order__po_number__icontains=search)
+                | Q(business__business_name__icontains=search)
+            )
 
-        if not (self.action == 'list' and self._summary_mode()):
-            return qs
+        if self.action == 'list' and not self._summary_mode():
+            # Non-summary list: BillSerializer reads obj.purchase_order,
+            # obj.purchase_order.bills (sibling bills) and each sibling's
+            # billlineitem_set (for bill.total), obj.purchase_order's own line
+            # items (for po_total / is_fully_billed), plus the bill's own
+            # payments and line items.  Prefetch all of these so serializing N
+            # bills does not fire per-row queries.
+            #
+            # Important: billpayment_set / billlineitem_set are only prefetched
+            # for the list action because prefetch caches become stale when the
+            # payment or line-item actions mutate those relations on the same
+            # in-memory Bill instance (causing recompute_payment_status to read
+            # the pre-mutation cached set and produce a wrong status).
+            return qs.select_related('purchase_order', 'business', 'contact').prefetch_related(
+                'purchase_order__bills__billlineitem_set',
+                'purchase_order__purchaseorderlineitem_set',
+                'billpayment_set',
+                'billlineitem_set',
+            )
+
+        if not self._summary_mode():
+            # Non-list, non-summary (retrieve, payments, line_items, etc.):
+            # apply select_related for the PO / billing hints but do NOT
+            # prefetch billpayment_set / billlineitem_set so that mutation
+            # actions always read fresh data from the DB.
+            return qs.select_related('purchase_order', 'business', 'contact').prefetch_related(
+                'purchase_order__bills__billlineitem_set',
+                'purchase_order__purchaseorderlineitem_set',
+            )
 
         # Summary (financials A/P) mode only: select_related to avoid N+1 from
         # BillSummarySerializer
         qs = qs.select_related('business', 'contact', 'purchase_order')
 
-        # List-only: annotations, status presets, due-date range, ordering
+        # List-only: annotations, status presets, due-date range, ordering.
+        # Use a subquery for paid_anno to avoid fan-out when a bill has both
+        # multiple line items and multiple payments (two different reverse
+        # relations in the same queryset multiply rows in MySQL).
+        from apps.purchasing.models import BillPayment
+        paid_subquery = Coalesce(
+            Subquery(
+                BillPayment.objects.filter(bill=OuterRef('pk'))
+                .values('bill')
+                .annotate(s=Sum('amount'))
+                .values('s')[:1],
+                output_field=_BILL_MONEY,
+            ),
+            Value(0), output_field=_BILL_MONEY,
+        )
         qs = qs.annotate(
             total_anno=Coalesce(
                 Sum(ExpressionWrapper(
                     F('billlineitem__qty') * F('billlineitem__price'),
                     output_field=_BILL_MONEY)),
                 Value(0), output_field=_BILL_MONEY),
+            paid_anno=paid_subquery,
         ).annotate(
             balance_anno=Case(
-                # Same coarse-balance rule as Bill.balance / the serializers.
-                When(status__in=list(Bill.ZERO_BALANCE_STATUSES),
-                     then=Value(0, output_field=_BILL_MONEY)),
-                default=F('total_anno'),
-                output_field=_BILL_MONEY),
+                When(
+                    status__in=[
+                        Bill.STATUS_PAID_IN_FULL,
+                        Bill.STATUS_CANCELLED,
+                        Bill.STATUS_REFUNDED,
+                    ],
+                    then=Value(0, output_field=_BILL_MONEY),
+                ),
+                default=ExpressionWrapper(
+                    F('total_anno') - F('paid_anno'), output_field=_BILL_MONEY),
+                output_field=_BILL_MONEY,
+            ),
         )
 
         status_param = self.request.query_params.get('status', 'open')
@@ -493,10 +580,6 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             'service': lambda pk, reason=None: BillService.update_status(
                 pk, Bill.STATUS_RECEIVED),
         },
-        'mark_paid': {
-            'service': lambda pk, reason=None: BillService.update_status(
-                pk, Bill.STATUS_PAID_IN_FULL),
-        },
         'cancel': {
             'service': lambda pk, reason=None: BillService.update_status(
                 pk, Bill.STATUS_CANCELLED),
@@ -519,10 +602,75 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         data = serializer.validated_data
         po = data.get('purchase_order')
         if po:
-            bill = BillService.create_bill_from_po(po.pk if hasattr(po, 'pk') else po)
+            po_pk = po.pk if hasattr(po, 'pk') else po
+            # Carry the user-entered header fields through; business/contact come
+            # from the PO inside create_bill_from_po, so exclude them.
+            passthrough = {k: v for k, v in data.items()
+                           if k in ('vendor_invoice_number', 'due_date')}
+            bill = BillService.create_bill_from_po(po_pk, **passthrough)
         else:
             bill = BillService.create_bill(**data)
         serializer.instance = bill
+
+    @action(detail=True, methods=['post'], url_path='payments', url_name='payments')
+    def payments(self, request, pk=None):
+        bill = self.get_object()
+        data = request.data
+        payment_account_id = (data.get('payment_account_id') or '').strip()
+        # A payment account is necessary info regardless of QBO connectivity —
+        # the SPA blocks recording when none are configured. QBO being down is
+        # accepted silently (the push marks the payment sync_failed, retryable).
+        if not payment_account_id:
+            return Response(
+                {'payment_account_id': ['A payment account is required.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            payment = BillPaymentService.record_payment(
+                bill,
+                amount=data.get('amount'),
+                payment_date=data.get('payment_date'),
+                reference=data.get('reference', ''),
+                payment_account_id=payment_account_id,
+                user=request.user,
+            )
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response(BillPaymentSerializer(payment).data,
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path='payments/(?P<payment_id>[0-9]+)', url_name='payment-detail')
+    def payment_detail(self, request, pk=None, payment_id=None):
+        self.get_object()  # permission + existence check on the bill
+        try:
+            if request.method == 'DELETE':
+                BillPaymentService.delete_payment(int(payment_id))
+                return Response({'message': 'Payment deleted.'})
+            payment = BillPaymentService.update_payment(int(payment_id), **request.data)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages if hasattr(e, 'messages') else str(e)},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(BillPaymentSerializer(payment).data)
+
+    @action(detail=True, methods=['post'],
+            url_path='payments/(?P<payment_id>[0-9]+)/retry-sync',
+            url_name='payment-retry-sync')
+    def retry_sync(self, request, pk=None, payment_id=None):
+        self.get_object()  # permission + existence check on the bill
+        try:
+            payment = BillPaymentService.retry(int(payment_id))
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': e.messages[0] if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if payment is None:  # delete branch completed — the payment was removed
+            return Response({'message': 'Payment deleted.'})
+        return Response(BillPaymentSerializer(payment).data)
 
     @action(detail=True, methods=['post'], url_path='send-to-qbo')
     def send_to_qbo(self, request, pk=None):

@@ -1,7 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import UnitsSelect from './UnitsSelect.svelte';
-  import PriceListItemPicker from './PriceListItemPicker.svelte';
+  import InventoryItemPicker from './InventoryItemPicker.svelte';
   import { modalKeys } from '../lib/modalKeys.js';
 
   let {
@@ -10,6 +10,8 @@
     apiBase = '',             // e.g. '/api/estimates/123' or '/api/invoices/123'
     item = null,              // line item being edited (edit mode)
     categories = [],
+    showMaterialMarker = false,        // estimate surface only
+    defaultMaterialCategoryId = null,  // AC pk from default_material_accounting_category
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -22,6 +24,7 @@
   let units = $state('none');
   let price = $state('');
   let accountingCategory = $state('');
+  let isMaterial = $state(false);
   let busy = $state(false);
   let error = $state('');
 
@@ -35,12 +38,14 @@
         units = item.units || 'none';
         price = item.price ?? '';
         accountingCategory = item.accounting_category ?? '';
+        isMaterial = item.is_material ?? false;
       } else {
         description = '';
         qty = '';
         units = 'none';
         price = '';
         accountingCategory = '';
+        isMaterial = false;
       }
       error = '';
     }
@@ -57,13 +62,21 @@
     }
   }
 
+  function onMaterialToggle(event) {
+    // onchange fires before bind:checked updates isMaterial; read the DOM state directly.
+    // Keep the value as a number so Svelte's option-value comparison (===) matches cat.id.
+    if (event.target.checked && !accountingCategory && defaultMaterialCategoryId != null) {
+      accountingCategory = defaultMaterialCategoryId;
+    }
+  }
+
   async function save() {
     busy = true;
     error = '';
     try {
       if (mode === 'create' && entryMode === 'pli') {
         if (!selectedPLI) {
-          error = 'Select a price list item.';
+          error = 'Select an inventory item.';
           busy = false;
           return;
         }
@@ -72,13 +85,23 @@
           qty: qty || '1',
         });
       } else {
+        const isMaterialLine = showMaterialMarker && isMaterial;
+        // Accounting category is required for fees; materials default server-side.
+        if (!accountingCategory && !isMaterialLine) {
+          error = 'Accounting Category is required.';
+          busy = false;
+          return;
+        }
         const payload = {
           description,
           qty: qty || '0',
           units,
           price: price || '0',
-          accounting_category: accountingCategory || null,
+          accounting_category: accountingCategory ? Number(accountingCategory) : null,
         };
+        if (showMaterialMarker) {
+          payload.is_material = isMaterial;
+        }
         if (mode === 'edit' && item) {
           await api.patch(`${apiBase}/line-items/${item.line_item_id}/`, payload);
         } else {
@@ -108,17 +131,18 @@
       {#if mode === 'create'}
         <p>
           <label><input type="radio" bind:group={entryMode} value="manual"> Manual</label>
-          <label><input type="radio" bind:group={entryMode} value="pli"> From Price List</label>
+          <label><input type="radio" bind:group={entryMode} value="pli"> From Inventory</label>
         </p>
       {/if}
 
       {#if mode === 'create' && entryMode === 'pli'}
         <p>
-          <label><strong>Price List Item *</strong></label><br>
-          <PriceListItemPicker
+          <label><strong>Inventory Item *</strong></label><br>
+          <InventoryItemPicker
             value={selectedPLI?.inventory_item_id}
             selectedItem={selectedPLI}
             onSelect={handlePLISelect}
+            params={{ is_active: true }}
           />
         </p>
         <p>
@@ -148,15 +172,23 @@
           </label>
         </p>
         <p>
-          <label><strong>Line Item Type</strong><br>
+          <label><strong>Accounting Category *</strong><br>
             <select bind:value={accountingCategory}>
-              <option value="">-- None --</option>
+              <option value="">-- Select --</option>
               {#each categories as cat}
                 <option value={cat.id}>{cat.code} - {cat.name}</option>
               {/each}
             </select>
           </label>
         </p>
+        {#if showMaterialMarker}
+          <p>
+            <label>
+              <input type="checkbox" bind:checked={isMaterial} onchange={onMaterialToggle}>
+              Is this a material?
+            </label>
+          </p>
+        {/if}
       {/if}
 
       <div class="buttons">

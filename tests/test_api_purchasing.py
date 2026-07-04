@@ -3,6 +3,7 @@ from apps.core.models import PurchasingHistory
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, EmailRecord
+from apps.contacts.models import Contact, Business
 from apps.purchasing.models import PurchaseOrder, Bill
 
 
@@ -353,6 +354,34 @@ class PurchaseOrderSendRetrofitTest(BaseTestCase):
             direction=EmailRecord.OUTBOUND, purchase_order=self.po,
         )
         self.assertIsNotNone(outbound.sent_at)
+
+
+class PurchaseOrderSearchTest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        dc = Contact.objects.create(first_name='DC', last_name='')
+        self.acme = Business.objects.create(business_name='Acme Steel', default_contact=dc)
+        self.po_match = PurchaseOrder.objects.create(business=self.acme, po_number='PO-SEARCH-1')
+        other_dc = Contact.objects.create(first_name='OC', last_name='')
+        other = Business.objects.create(business_name='Zenith Glass', default_contact=other_dc)
+        self.po_other = PurchaseOrder.objects.create(business=other, po_number='PO-OTHER-9')
+
+    def _ids(self, resp):
+        rows = resp.data['results'] if 'results' in resp.data else resp.data
+        return [r['po_id'] for r in rows]
+
+    def test_search_by_po_number(self):
+        resp = self.client.get('/api/purchase-orders/?search=SEARCH-1')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(self.po_match.po_id, self._ids(resp))
+        self.assertNotIn(self.po_other.po_id, self._ids(resp))
+
+    def test_search_by_vendor_name(self):
+        resp = self.client.get('/api/purchase-orders/?search=Acme')
+        self.assertIn(self.po_match.po_id, self._ids(resp))
+        self.assertNotIn(self.po_other.po_id, self._ids(resp))
 
 
 class BillAPITest(BaseTestCase):

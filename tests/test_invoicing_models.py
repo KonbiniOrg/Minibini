@@ -136,7 +136,7 @@ class InvoiceLineItemModelTest(TestCase):
             estimate_number="EST001"
         )
         self.scheme = RateScheme.objects.create(
-            name='S-inv', algorithm=RateScheme.FLAT_FEE,
+            name='S-inv', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
