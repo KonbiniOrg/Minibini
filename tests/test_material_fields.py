@@ -22,7 +22,7 @@ class MaterialFieldsTest(TestCase):
         )
         self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
 
-    def test_material_has_job_consumption_state_restocked_qty(self):
+    def test_material_has_job_consumption_state_released_qty(self):
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='x', quantity=Decimal('2.00'),
@@ -30,7 +30,7 @@ class MaterialFieldsTest(TestCase):
         )
         self.assertEqual(m.job_id, self.job.pk)
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
-        self.assertEqual(m.restocked_qty, Decimal('0.00'))
+        self.assertEqual(m.released_qty, Decimal('0.00'))
 
     def test_non_inventoried_material_defaults_to_pending(self):
         m = Material.objects.create(
@@ -50,13 +50,13 @@ class MaterialFieldsTest(TestCase):
                 accounting_category=self.cat,
             )
 
-    def test_material_rejects_negative_restocked_qty(self):
+    def test_material_rejects_negative_released_qty(self):
         m = Material.objects.create(
             task=self.task, job=self.job,
             description='x', quantity=Decimal('2.00'),
             accounting_category=self.cat,
         )
-        m.restocked_qty = Decimal('-1.00')
+        m.released_qty = Decimal('-1.00')
         with self.assertRaises(ValidationError):
             m.save()
 

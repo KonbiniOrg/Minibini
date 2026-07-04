@@ -1,5 +1,9 @@
-"""Collect-if-finished: a finished lot is hard-deleted when reference-free,
-otherwise hidden. Applied on demote + write-off (NOT consume — reversible)."""
+"""Finished lots are kept as hidden rows, never auto-collected.
+
+Deletion doctrine (2026-07-03): inventory rows are shop history — write-off
+and demote leave a finished lot in place (the hide-on-spend list filter keeps
+it out of pickers); hard deletion is reserved for the never-referenced via the
+delete endpoint's guard. This retired the old collect_if_finished auto-delete."""
 from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
@@ -32,10 +36,11 @@ class CollectIfFinishedTest(TestCase):
 
     # --- demote ---
 
-    def test_demote_empty_unreferenced_deletes(self):
+    def test_demote_empty_unreferenced_keeps_hidden_row(self):
         it = self._item(code='D1', is_catalog=True, qty_on_hand=Decimal('0.00'))
         InventoryService.update_item(it.inventory_item_id, is_catalog=False)
-        self.assertFalse(InventoryItem.objects.filter(pk=it.pk).exists())
+        it.refresh_from_db()
+        self.assertTrue(it.is_finished_lot)  # hidden by the list filter, kept
 
     def test_demote_empty_referenced_hides_not_deletes(self):
         it = self._item(code='D2', is_catalog=True, qty_on_hand=Decimal('0.00'))
@@ -53,9 +58,42 @@ class CollectIfFinishedTest(TestCase):
 
     # --- write-off ---
 
-    def test_writeoff_unreferenced_lot_deletes(self):
+    def test_writeoff_unreferenced_lot_keeps_hidden_row(self):
         it = self._item(code='W1', is_catalog=False, qty_on_hand=Decimal('3.00'))
         InventoryService.write_off(it)
+        it.refresh_from_db()
+        self.assertEqual(it.qty_on_hand, Decimal('0.00'))
+        self.assertTrue(it.is_finished_lot)  # hidden by the list filter, kept
+
+    def test_delete_endpoint_refuses_referenced_item(self):
+        from rest_framework.test import APIClient
+        from django.contrib.auth.models import Permission
+        from apps.core.models import User
+        it = self._item(code='DEL1', is_catalog=True, qty_on_hand=Decimal('1.00'))
+        Material.objects.create(
+            job=self.job, description='uses it', quantity=Decimal('1.00'),
+            inventory_item=it)
+        user = User.objects.create_user(username='findel', password='x')
+        user.user_permissions.add(Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core'))
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=user.pk))
+        resp = client.delete(f'/api/inventory/{it.pk}/')
+        self.assertEqual(resp.status_code, 400, resp.data)
+        self.assertTrue(InventoryItem.objects.filter(pk=it.pk).exists())
+
+    def test_delete_endpoint_allows_never_referenced_item(self):
+        from rest_framework.test import APIClient
+        from django.contrib.auth.models import Permission
+        from apps.core.models import User
+        it = self._item(code='DEL2', is_catalog=True, qty_on_hand=Decimal('0.00'))
+        user = User.objects.create_user(username='findel2', password='x')
+        user.user_permissions.add(Permission.objects.get(
+            codename='can_manage_financials', content_type__app_label='core'))
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=user.pk))
+        resp = client.delete(f'/api/inventory/{it.pk}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
         self.assertFalse(InventoryItem.objects.filter(pk=it.pk).exists())
 
     def test_writeoff_referenced_lot_hides(self):

@@ -266,7 +266,7 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
         task.refresh_from_db()
         self.assertEqual(task.status, Task.STATUS_COMPLETE)
 
-    def test_remove_material_line_deletes_material_and_releases_earmark(self):
+    def test_remove_material_line_releases_material_and_earmark(self):
         line, material = self._material_backed_line()
         self.assertEqual(
             Earmark.objects.get(job=self.job, inventory_item=self.pli).quantity,
@@ -275,11 +275,16 @@ class CORemoveCrystallizationTests(ChangeOrderAcceptanceBase):
         self._remove_line(co, line)
         self._accept(co)
 
-        self.assertFalse(Material.objects.filter(pk=material.pk).exists())
+        # A CO target is by definition claimed → released, not deleted: the
+        # quantity moves to released_qty and the claim stays resolvable history.
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_RELEASED)
+        self.assertEqual(material.quantity, Decimal('0'))
+        self.assertEqual(material.released_qty, Decimal('7'))
         self.assertFalse(
             Earmark.objects.filter(job=self.job, inventory_item=self.pli).exists())
-        # The stale estimate-side source row is purged with the atom.
-        self.assertFalse(line.sources.exists())
+        self.assertEqual(line.sources.get().resolve().pk, material.pk)
 
     def test_remove_consumed_material_is_left_alone(self):
         line, material = self._material_backed_line()
@@ -383,7 +388,9 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         )
         self._accept(co)
 
-        self.assertFalse(Material.objects.filter(pk=old_material.pk).exists())
+        old_material.refresh_from_db()
+        self.assertEqual(
+            old_material.consumption_state, Material.CONSUMPTION_STATE_RELEASED)
         src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
         new_mat = Material.objects.get(pk=src.source_pk)

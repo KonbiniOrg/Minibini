@@ -1100,7 +1100,11 @@ class EstimateWizardService(BaseWizardService):
                 **state_info,
             })
 
-        for mat in Material.objects.filter(job=job).select_related(
+        # Released materials (descoped/returned — qty moved to released_qty)
+        # are job history, not quotable work; keep them out of the pool.
+        for mat in Material.objects.filter(job=job).exclude(
+            consumption_state=Material.CONSUMPTION_STATE_RELEASED,
+        ).select_related(
             'accounting_category', 'inventory_item',
         ):
             key = (EstimateLineItemSource.SOURCE_MATERIAL, mat.pk)

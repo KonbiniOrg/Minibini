@@ -57,31 +57,44 @@ class InventoryService:
             setattr(pli, field, value)
         pli.full_clean()
         pli.save()
-        # Demoting a catalog item to an empty, unreferenced lot collects it.
-        InventoryService.collect_if_finished(pli)
+        # A demoted catalog item that is empty becomes a finished lot — kept as
+        # shop history, hidden by the hide-on-spend list filter. (The old
+        # collect_if_finished auto-delete was retired by the deletion doctrine:
+        # inventory rows are never auto-deleted.)
         return pli
 
     @staticmethod
-    def collect_if_finished(item):
-        """Hard-delete a finished lot when it is genuinely reference-free,
-        otherwise leave it (the list filter keeps it hidden as a tombstone).
+    def assert_item_deletable(item):
+        """Hard delete is mistake correction: never-referenced rows only.
 
-        A finished lot is `not is_catalog and qty_on_hand == 0 and no earmarks`.
-        Deletion is only safe when `can_be_deleted` (no estimate/invoice/PO/bill
-        line items or earmarks reference it) — those FKs are PROTECT. Materials
-        and Expense.stock_pli are SET_NULL and stay self-contained; the
-        InventoryHistory trail survives via its loose object ref. Returns True if
-        the row was deleted.
-
-        Applied at deliberate, non-undoable transitions only (demote, write-off).
-        NOT at consume — consume is reversible via unconsume(), which needs the
-        item to restore stock. See docs/designs/LATER.md.
+        Estimate/invoice/PO/bill line items PROTECT at the DB level
+        (can_be_deleted); Materials and Expense stock receipts are SET_NULL, so
+        without this guard deleting an item would silently demote established
+        materials to provisional and orphan stock-receipt records. A referenced
+        item retires by deactivation (is_active) or lives on as a hidden
+        finished lot instead.
         """
-        item.refresh_from_db()
-        if item.is_finished_lot and item.can_be_deleted:
-            item.delete()
-            return True
-        return False
+        from django.core.exceptions import ValidationError
+        from apps.expenses.models import Expense
+        if not item.can_be_deleted:
+            raise ValidationError(
+                'This item is referenced by document line items and cannot be '
+                'deleted. Deactivate it instead.'
+            )
+        if Material.objects.filter(inventory_item=item).exists():
+            raise ValidationError(
+                'This item backs job materials and cannot be deleted. '
+                'Deactivate it instead.'
+            )
+        if Earmark.objects.filter(inventory_item=item).exists():
+            raise ValidationError(
+                'This item has earmarked stock and cannot be deleted.'
+            )
+        if Expense.objects.filter(stock_pli=item).exists():
+            raise ValidationError(
+                'This item has expense stock receipts and cannot be deleted. '
+                'Deactivate it instead.'
+            )
 
     # --- Inventory history (durable audit trail) ---
 
@@ -238,9 +251,9 @@ class InventoryService:
         InventoryService.manual_adjustment(
             item, -qty, reason=reason or 'Write-off', user=user,
         )
-        # If that emptied an unreferenced lot, collect it; otherwise it stays
-        # (partial write-off) or is hidden (full write-off of a referenced lot).
-        InventoryService.collect_if_finished(item)
+        # An emptied non-catalog lot becomes a finished lot — kept as shop
+        # history, hidden by the hide-on-spend filter (never auto-deleted).
+        item.refresh_from_db()
         return item
 
     # --- QOH operations ---
@@ -300,12 +313,12 @@ class InventoryService:
     @staticmethod
     def reverse_ad_hoc_purchase(material):
         """Decrease QOH to reverse a previously received ad-hoc purchase.
-        Reverses the full original purchase quantity (quantity + restocked_qty)."""
+        Reverses the full original purchase quantity (quantity + released_qty)."""
         from django.db.models import F
         pli = material.inventory_item
         if not pli:
             return
-        total = material.quantity + material.restocked_qty
+        total = material.quantity + material.released_qty
         pli.qty_on_hand = F('qty_on_hand') - total
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
@@ -613,24 +626,80 @@ class MaterialService:
         return material
 
     @staticmethod
-    def restock(material, qty):
+    def _is_referenced(material, *, ignore_po_link=False):
+        """True when anything references this material — an expense, a PO line,
+        or a document claim in any lens. Referenced materials are *released*
+        (a named retirement that keeps the row as job history), never deleted;
+        an unreferenced material is scratch paper and may be deleted (Rule 1 of
+        the deletion doctrine). ignore_po_link supports the PO-sever path,
+        where the PO link itself is what's being dissolved."""
+        from apps.estimates.claims import atom_is_claimed
+        from apps.invoicing.claims import InvoiceClaimService
+        from apps.invoicing.models import InvoiceLineItemSource
+        if material.is_expense_bound:
+            return True
+        if not ignore_po_link and material.po_line_item_id is not None:
+            return True
+        if atom_is_claimed('material', material.pk):
+            return True
+        return InvoiceClaimService.is_invoiced(
+            InvoiceLineItemSource.SOURCE_MATERIAL, material.pk)
+
+    @staticmethod
+    def release(material):
+        """pending → released: the named "planned it, didn't use it" retirement.
+
+        Backs out the earmark and moves the remaining quantity into
+        released_qty (conservation: quantity + released_qty = originally
+        planned), so a released row sums to zero in every aggregate consumer.
+        Claims are NOT purged — the row keeps supporting its estimate/CO/invoice
+        lines as history. Terminal: every other lifecycle op requires pending.
+        """
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError(
+                f'release requires pending state; got {material.consumption_state}'
+            )
+        with transaction.atomic():
+            InventoryService._mutate_earmark(
+                material.inventory_item, material.job, -material.quantity)
+            material.released_qty = material.released_qty + material.quantity
+            material.quantity = Decimal('0.00')
+            material.consumption_state = Material.CONSUMPTION_STATE_RELEASED
+            material.save(
+                update_fields=['quantity', 'released_qty', 'consumption_state'])
+        return material
+
+    @staticmethod
+    def restock(material, qty, *, ignore_po_link=False):
+        """Return `qty` of a pending material to the shelf.
+
+        Always tracks the return in released_qty. At quantity zero the
+        restock-to-zero rule applies: a referenced material becomes `released`
+        (job history — claims, expense/PO links, and the released_qty record
+        survive); an unreferenced one is deleted (scratch paper).
+        """
         from django.db import transaction
         from django.core.exceptions import ValidationError
         if qty <= Decimal('0.00') or qty > material.quantity:
             raise ValidationError('restock qty must be > 0 and <= quantity')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('restock requires pending state')
-        expense_bound = material.is_expense_bound
         with transaction.atomic():
             InventoryService._mutate_earmark(material.inventory_item, material.job, -qty)
             material.quantity = material.quantity - qty
-            update_fields = ['quantity']
-            if expense_bound:
-                material.restocked_qty = material.restocked_qty + qty
-                update_fields.append('restocked_qty')
-            material.save(update_fields=update_fields)
-            if material.quantity == Decimal('0.00') and not expense_bound:
-                material.delete()
+            material.released_qty = material.released_qty + qty
+            if material.quantity == Decimal('0.00'):
+                if MaterialService._is_referenced(
+                        material, ignore_po_link=ignore_po_link):
+                    material.consumption_state = Material.CONSUMPTION_STATE_RELEASED
+                    material.save(update_fields=[
+                        'quantity', 'released_qty', 'consumption_state'])
+                else:
+                    material.delete()
+            else:
+                material.save(update_fields=['quantity', 'released_qty'])
         return material
 
     @staticmethod
@@ -685,8 +754,10 @@ class MaterialService:
 
     @staticmethod
     def sever(material, decision):
-        """'keep' clears FK. 'delete' deletes the Material and backs out earmark.
-        Raises if decision is invalid or Material is consumed."""
+        """'keep' clears the PO-line FK. 'delete' retires the Material: released
+        if anything else still references it (claims, expenses — job history),
+        hard-deleted otherwise (scratch paper). Backs out the earmark either
+        way. Raises if decision is invalid or Material is consumed."""
         from django.core.exceptions import ValidationError
         from django.db import transaction
         if decision not in ('keep', 'delete'):
@@ -697,10 +768,14 @@ class MaterialService:
             MaterialService.unlink_from_po_line(material)
             return
         with transaction.atomic():
-            InventoryService._mutate_earmark(
-                material.inventory_item, material.job, -material.quantity,
-            )
-            material.delete()
+            MaterialService.unlink_from_po_line(material)
+            if MaterialService._is_referenced(material):
+                MaterialService.release(material)
+            else:
+                InventoryService._mutate_earmark(
+                    material.inventory_item, material.job, -material.quantity,
+                )
+                material.delete()
 
     @staticmethod
     def resolve_or_create_for_line(po_line, *, job=None, inventory_item=None,

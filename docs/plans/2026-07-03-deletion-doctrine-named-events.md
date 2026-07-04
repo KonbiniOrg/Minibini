@@ -1,11 +1,16 @@
 # Deletion doctrine: name the event, don't tombstone the row
 
-> **Status: design spec — agreed in discussion 2026-07-03, not yet a TDD plan.**
+> **Status: ✅ IMPLEMENTED 2026-07-03 on `feature/unification` — pending review.**
+> All [SETTLED]/[DEFAULT] items shipped (see the sibling implementation plan for
+> the task-by-task record); the two [DEFERRED] passes (post-approval expense
+> voiding, bill-payment voiding) remain open by choice. Durable reference now in
+> `data-constraints.md` (per-object deletion rules),
+> `materials-inventory-and-purchasing.md` (released lifecycle, restock rule,
+> released_qty), `jobs-tasks-and-worksheets.md` (task/blep guards), and
+> `estimates-and-prices.md` §14.11 (CO retirement releases materials).
+> Original spec below, kept for the rationale record.
 > Decisions tagged **[SETTLED]** (agreed with RM), **[DEFAULT]** (chosen here; flag to
-> change), **[OPEN]** (needs a decision before the task plan). Companion reference:
-> the deletion-semantics map artifact (2026-07-03) and
-> `docs/designs/estimates-and-prices.md` §6.2 (the source-row purge this partially
-> supersedes).
+> change). Companion reference: the deletion-semantics map artifact (2026-07-03).
 
 ## The principle
 

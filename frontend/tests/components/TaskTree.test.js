@@ -196,4 +196,16 @@ describe('TaskTree', () => {
     const link = getByRole('link', { name: 'INVOICED' });
     expect(link.getAttribute('href')).toBe('#/invoices/4');
   });
+
+  it('offers no restock on a released material (terminal, like consumed)', () => {
+    const t = task({
+      status: 'pending',
+      materials: [{
+        material_id: 10, description: 'Acrylic', quantity: '0', sell_price: '5',
+        units: 'ea', consumption_state: 'released', released_qty: '7', invoice: null,
+      }],
+    });
+    const { queryByRole } = render(TaskTree, { props: { tasks: [t] } });
+    expect(queryByRole('button', { name: 'restock' })).toBeNull();
+  });
 });

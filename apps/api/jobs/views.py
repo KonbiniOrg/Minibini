@@ -46,6 +46,20 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     task_serializer_class = TaskSerializer
     destroy_response_message = 'Job deleted.'
 
+    def destroy(self, request, *args, **kwargs):
+        """Hard delete is for unworked jobs only; everything else cancels.
+
+        The cascade would destroy bleps wholesale — recorded work is never
+        deleted by a document action (deletion doctrine, Rule 1 at job scale).
+        """
+        job = self.get_object()
+        try:
+            JobService.assert_job_deletable(job)
+        except ValidationError as e:
+            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement')
         # add-from-template and create_material are IsAuthenticated only (workers

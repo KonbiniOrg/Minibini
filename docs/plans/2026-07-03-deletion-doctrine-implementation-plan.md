@@ -1,5 +1,10 @@
 # Deletion doctrine — TDD implementation plan
 
+> **Status: ✅ EXECUTED 2026-07-03 on `feature/unification` — pending review.**
+> All nine tasks done; both suites green (backend fresh, frontend). One deviation
+> from the plan text: the invoice wizard pool needed no released-filter (it
+> already filters `quantity__gt=0`, which released rows satisfy structurally).
+>
 > Executes `2026-07-03-deletion-doctrine-named-events.md` (all [SETTLED]/[DEFAULT]
 > items; the two [DEFERRED] passes — post-approval expense voiding, bill-payment
 > voiding — are out of scope). TDD per task: failing test → verify red → implement

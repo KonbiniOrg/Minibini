@@ -13,10 +13,11 @@ Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
   ChangeOrderLineItemSource row.
 - **remove** — resolve the target estimate line to its *current* atom (through
   the accepted-CO replace chain) and retire it: cancel a Task (bleps preserved
-  — cancelled-task time stays on record), delete a pending un-invoiced Material
-  (releasing its earmark), delete an un-invoiced Fee. Consumed / invoiced /
-  PO-linked / terminal atoms are deliberately left alone — physical or billed
-  reality is not unwound by a document; the human reconciles those.
+  — cancelled-task time stays on record), **release** a pending un-invoiced
+  Material (earmark backed out, quantity moved to released_qty, claims kept as
+  job history), delete an un-invoiced Fee. Consumed / invoiced / PO-linked /
+  terminal atoms are deliberately left alone — physical or billed reality is
+  not unwound by a document; the human reconciles those.
 - **replace** — crystallize the replacement first (so a cancel never leaves the
   job transiently task-less and auto-advances it), then retire the old atom.
   A bare replace line mirrors the old atom's type: a Task target yields a new
@@ -292,7 +293,6 @@ class ChangeOrderAcceptanceService:
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
         from apps.inventory.models import Material
-        from apps.inventory.services import InventoryService
         from apps.jobs.models import Task
         from apps.jobs.services import TaskLifecycleService
 
@@ -311,11 +311,12 @@ class ChangeOrderAcceptanceService:
                     or InvoiceClaimService.is_invoiced(
                         InvoiceLineItemSource.SOURCE_MATERIAL, atom.pk)):
                 return  # consumed / document-bound / billed: leave it alone
-            InventoryService._mutate_earmark(
-                atom.inventory_item, job, -atom.quantity)
-            # Material.delete() purges the estimate/CO source rows pointing at
-            # it (purge_source_rows_for_atom), so no lens dangles.
-            atom.delete()
+            # A CO target is by definition claimed, so it is *released* — the
+            # named descope retirement — never deleted: the earmark is backed
+            # out, quantity moves to released_qty, and the estimate/CO claims
+            # keep resolving as job history.
+            from apps.inventory.services import MaterialService
+            MaterialService.release(atom)
             counts['materials_removed'] += 1
             return
 

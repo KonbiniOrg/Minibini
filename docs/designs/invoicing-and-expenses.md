@@ -615,7 +615,7 @@ submitted ──► reimbursed     (batch created — QBO Purchase push owned by
      └──────► rejected       (terminal; never pushes to QBO)
 ```
 
-`ExpenseService.reject` only accepts personal expenses in `submitted` status. Rejecting also unwinds any associated Materials: clears their inventory earmark, reverses the ad-hoc PLI receipt, and deletes the Material — refusing if any material is already in the `consumed` state.
+`ExpenseService.reject` only accepts personal expenses in `submitted` status. Rejecting also unwinds any associated Materials: clears their inventory earmark, reverses the ad-hoc PLI receipt, and deletes the Material — refusing if any material is already `consumed` **or claimed by an estimate/change-order line** (deletion doctrine Rule 1: block the upstream event so reject's delete is always of an unreferenced row; remove the claiming line first).
 
 **Company-paid:**
 
@@ -724,7 +724,7 @@ See `docs/designs/quickbooks-integration.md`. One `Purchase` per batch, with one
 | `submit(*, entered_by, payment_method, amount, purchased_on, accounting_category, description='', payment_account_id='', reference_number='', purchased_by=None, new_material=None, job=None, stock_pli=None, stock_qty=None) -> Expense` | Atomic create. `new_material` with an inventoried PLI → a stock receipt (QOH ↑, no material); otherwise a consumable material at the entered cost. No existing-material linking. Calls `_push_and_set_status` for company-paid; leaves personal `submitted`. |
 | `update(*, expense, actor, **fields) -> Expense` | Editable fields: amount, purchased_on, description, accounting_category, payment_method, payment_account_id, reference_number, purchased_by, job, **stock_qty** (adjusts the receipt's QOH by the delta). `material` is not editable post-create. Guards: invoiced-freeze + reimbursed-money lock; a linked material follows a job change. Calls `_resync` if `expense.qbo_id`. |
 | `delete(*, expense, actor)` | Voids the QBO Purchase if `qbo_id` and not in a batch. Hard-deletes the row. (Reimbursed expenses' QBO state is owned by the batch, so this path doesn't void QBO for them.) |
-| `reject(*, expense, actor) -> Expense` | Personal + `submitted` only. Unwinds materials (earmark, ad-hoc receipt, delete) — refuses if any material is `consumed`. Sets `STATUS_REJECTED`. |
+| `reject(*, expense, actor) -> Expense` | Personal + `submitted` only. Unwinds materials (earmark, ad-hoc receipt, delete) — refuses if any material is `consumed` or claimed by an estimate/CO line. Sets `STATUS_REJECTED`. |
 | `retry_sync(*, expense, actor) -> Expense` | `sync_failed` only. Re-pushes via `_push_and_set_status`. |
 
 `_resync` is QBO-aware: if the expense is in a reimbursement batch, it re-pushes the whole batch (`QBOExpenseSyncService.update_reimbursement`); otherwise it re-pushes the standalone expense (`QBOExpenseSyncService.update_expense`). On failure, it flips the owner (batch or expense) to `sync_failed`.

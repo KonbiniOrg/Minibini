@@ -329,7 +329,7 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
   `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
-  reset: `consumption_state=pending`, `restocked_qty=0`,
+  reset: `consumption_state=pending`, `released_qty=0`,
   `po_line_item=None`.
 
 #### Outcome A — `path='approved'`
@@ -380,8 +380,11 @@ authenticated user**:
 - **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
   `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
   Delete is still refused by `TaskService.delete_task` when the task is
-  `in_progress`/`complete` or has any Bleps (→ 400) — that guard applies to
-  everyone.
+  `in_progress`/`complete`, has any Bleps, is claimed by a **non-draft**
+  estimate/change order, or is on a live invoice (→ 400, "cancel it
+  instead") — those guards apply to everyone. Draft-estimate claims stay
+  deletable (remove the line/atoms first). See the deletion doctrine
+  (`data-constraints.md` §1.11).
 - **Lifecycle** — complete / block / unblock / start-work / stop-work /
   cancel-work / actual-qty are `IsAuthenticated` (worker operations).
 
@@ -670,7 +673,7 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
 | `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
-| `delete(blep, actor)` | Same authorization rules |
+| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze**: refused for every actor when the blep's task is on a live invoice — billed actuals never change basis after the fact. Estimate claims don't block (estimates bill `est_qty`). |
 
 Validation rules enforced inside `BlepService`:
 

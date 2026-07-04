@@ -1583,18 +1583,20 @@ transiently empties the live work set and trips the auto-advance to
   and retire it:
   - *Task*: `TaskLifecycleService.cancel_task` — **bleps are
     preserved**; already complete/cancelled tasks are left alone.
-  - *Material*: deleted with its earmark released
-    (`_mutate_earmark(-qty)`), but **only if** pending, not
-    expense-bound, not PO-linked, and not on a live invoice — physical
-    or billed reality is never unwound by a document; those are left for
-    the human to reconcile.
-  - *Fee*: deleted unless on a live invoice.
+  - *Material*: **released** (`MaterialService.release` — earmark backed
+    out, quantity moved to `released_qty`, state → `released`, claims
+    kept as job history), but **only if** pending, not expense-bound,
+    not PO-linked, and not on a live invoice — physical or billed
+    reality is never unwound by a document; those are left for the
+    human to reconcile.
+  - *Fee*: deleted unless on a live invoice (its estimate-line claim is
+    purged; the CO line remains the record of the removal — a Fee
+    `retired` state is deferred to the Fee.task / fixed-price pass).
   - A document-only target (adjustment line, or an atom already
     retired) is a no-op — the delta stays document-only, matching
     `compose_agreement`.
-  When an atom is deleted, source rows pointing at it (both
-  `EstimateLineItemSource` and `ChangeOrderLineItemSource`) are purged
-  so no lens dangles.
+  When an atom is hard-deleted, source rows pointing at it are purged so
+  no lens dangles; release never purges.
 - **replace** — crystallize the replacement **first**, then retire the
   old atom (as above). A CO line carrying its own descriptor
   (service/inventory/is_material) crystallizes per that descriptor; a

@@ -134,7 +134,10 @@ later hidden.
   deletion would raise `ProtectedError`. There is no pruner; the filter is derived.
 - **Write-off** (`InventoryService.write_off`, `POST …/{pk}/write-off/`): zeroes
   QOH, books the remainder to `qty_wasted` (recording the wastage history entry
-  first), making the lot a finished/hidden lot.
+  first), making the lot a finished/hidden lot. (The old `collect_if_finished`
+  auto-delete of reference-free finished lots on write-off/demote was retired
+  by the 2026-07-03 deletion doctrine — inventory rows are shop history and are
+  never auto-deleted; the hide-on-spend filter is the whole retirement.)
 - **Merge** (`InventoryService.merge`, `POST …/merge/`): the manual dedup tool —
   folds a discard item into a keep item (QOH + aggregates), repoints every
   reference, deletes the discard. Hard-blocks unit mismatch and catalog-as-discard.
@@ -143,12 +146,13 @@ later hidden.
 
 Line items and `TemplateMaterialAssociation` reference the item with `PROTECT`
 (preserves historical documents — and is why finished lots are hidden, not
-deleted). `MaterialBase.inventory_item` and `Expense.stock_pli` use `SET_NULL`.
-`can_be_deleted` still gates the (rare) hard delete:
-
-```python
-InventoryItem.can_be_deleted  # False if any line item or earmark references it
-```
+deleted). `MaterialBase.inventory_item` and `Expense.stock_pli` use `SET_NULL`
+— which is exactly why the delete endpoint guards beyond the PROTECT set:
+`InventoryService.assert_item_deletable` refuses when any line item
+(`can_be_deleted`), **Material, Earmark, or Expense stock receipt** references
+the item, since the SET_NULL cascades would silently demote established
+materials to provisional and orphan stock records. Hard delete is mistake
+correction for never-referenced rows only.
 
 Catalog admins use the `is_active` soft-delete instead of hard deletion. Write
 access to inventory items requires **either** `can_manage_financials` **or**
@@ -192,9 +196,22 @@ Concrete job-side material that participates in QOH/earmark flows.
 |---|---|---|
 | `job` | FK CASCADE | **Required**; Material always belongs to a Job |
 | `task` | FK SET_NULL nullable | Optional Task attachment |
-| `consumption_state` | choices `pending` / `consumed` | Default `pending` |
-| `restocked_qty` | `Decimal(10,2)` default 0 | Tracks expense-bound restock for QOH reversal |
+| `consumption_state` | choices `pending` / `consumed` / `released` | Default `pending` |
+| `released_qty` | `Decimal(10,2)` default 0 | Quantity restocked/released back out of the plan (was `restocked_qty`, renamed 2026-07-03). Invariant: `quantity + released_qty` = originally planned — the expense-void reversal relies on it |
 | `po_line_item` | FK SET_NULL `related_name='+'` | Optional PO line attribution |
+
+**Lifecycle** (deletion doctrine, 2026-07-03): born `pending` (planned;
+earmarked on committed jobs) → `consumed` (task start drew the stock;
+reversible via `unconsume`) or `released` (a named event said the job planned
+it and didn't use it — full restock while referenced, job-completion loose
+release, PO sever, CO descope; **terminal**). A pending material that nothing
+references (no expense, no PO link, no estimate/CO claim, not invoiced —
+`MaterialService._is_referenced`) may instead be hard-deleted (mistake
+correction / scratch paper). **Release zeroes `quantity` into `released_qty`**,
+so released rows sum to zero in every aggregate consumer (financials, earmark
+sweep, COGS) with no state filters; remaining filters (wizard pools) are
+display tidiness. Claims are never purged by release — a released material
+keeps supporting its estimate/CO/invoice lines as job history.
 
 `task` SET_NULL is deliberate: deleting a `Task` leaves Materials on
 the Job as task-less rather than orphaning their earmarks. Job
@@ -324,11 +341,17 @@ Mechanical effects:
   `+= quantity`; state → `pending`). Not a user op — called by
   `TaskLifecycleService.cancel_work` to undo an oops-Start, so a later
   re-Start can consume the materials again.
-- **Restock(n)** — `quantity -= n`; if inventoried, earmark `-= n`. If
-  `n == quantity` (full restock) and Material is manual-add (not
-  expense-bound): the row is deleted server-side. If expense-bound:
-  `restocked_qty += n`, row stays (with `quantity` possibly 0); excluded
-  from invoice pool when `quantity == 0`.
+- **Restock(n)** — `quantity -= n`, `released_qty += n` (universal
+  tracking; conservation `quantity + released_qty` = originally planned);
+  if inventoried, earmark `-= n`. At `quantity == 0` the
+  **restock-to-zero rule** applies: a *referenced* material
+  (expense-bound, PO-linked, claimed by an estimate/CO line, or invoiced)
+  becomes `released` — kept as job history with its claims intact; an
+  *unreferenced* one is deleted (scratch paper).
+- **Release** — `MaterialService.release(material)`: the named
+  "planned it, didn't use it" retirement (CO descope, sever of a claimed
+  material). Earmark `-= quantity`, `released_qty += quantity`,
+  `quantity = 0`, state → `released`. Terminal; claims are not purged.
 - **Draw more(n)** — `quantity += n`; if inventoried, earmark `+= n`.
   Forbidden on expense-bound Materials.
 - **Edit description** — description-only change (subject to the
@@ -346,7 +369,10 @@ Validation:
 
 Computed: `self.expenses.exists()` (via reverse from `Expense.material`).
 Expense-bound Materials are user-undeletable and cannot be drawn-more —
-the only path that removes them is `ExpenseService.reject(expense)`.
+the only path that removes them is `ExpenseService.reject(expense)`, and
+reject refuses while the material is **consumed or claimed** by an
+estimate/CO line (block the upstream event; its delete is then always a
+Rule-1-legal delete of the rejected claim's artifact).
 
 ### `work_complete` gate
 
@@ -359,9 +385,11 @@ always represent an unresolved Consume-or-Restock decision.
 The one exception is the **invoice-paid auto-completion path**
 (`Invoice._maybe_complete_job`): it is unattended, so instead of being
 blocked it calls `JobService.release_loose_materials(job)` first, which
-restocks (releases) any loose pending Materials and records a
-`HistoryEntry`. By the time the Job reaches `work_complete` there are no
-loose materials, so the gate passes.
+restocks any loose pending Materials and records a `HistoryEntry`. Via
+the restock-to-zero rule this **releases** a referenced material (kept
+as history — a claimed material's estimate line keeps resolving) and
+deletes an unreferenced one. By the time the Job reaches
+`work_complete` there are no loose pending materials, so the gate passes.
 
 ### Earmark release on terminal transitions
 
@@ -385,13 +413,15 @@ through `InventoryService._mutate_earmark`.
 | `create_on_job(*, job, task=None, ..., inventory_item=None, ...)` | Creates `Material`; earmarks (`_mutate_earmark(pli, job, +quantity)`) **only for committed (`approved`+) jobs** — pre-approval jobs earmark later at acceptance |
 | `consume(material)` | State → `consumed`; if inventoried: `qty_on_hand -= qty`, `qty_sold += qty`, earmark `-= qty` (a no-op on pre-approval jobs, which hold no earmark) |
 | `unconsume(material)` | State → `pending`; if inventoried: restores `qty_on_hand`/`qty_sold`, and restores the earmark **except on pre-approval jobs** (mirrors `consume`'s no-op) |
-| `restock(material, qty)` | `quantity -= qty`, earmark `-= qty`; manual-add full-restock deletes row; expense-bound bumps `restocked_qty` |
+| `restock(material, qty)` | `quantity -= qty`, `released_qty += qty`, earmark `-= qty`; at zero: referenced → state `released`, unreferenced → row deleted |
+| `release(material)` | pending → `released`: earmark `-= quantity`, `released_qty += quantity`, `quantity = 0`; claims kept (job history). Terminal |
+| `_is_referenced(material)` | Rule-1 check: expense-bound, PO-linked, claimed (estimate/CO lens), or invoiced |
 | `draw_more(material, qty)` | `quantity += qty`, earmark `+= qty`; rejects if expense-bound |
 | `assign_task(material, task)` | Move Material to a different Task (or task=None); validates same job and non-terminal task |
 | `update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False)` | Update prices; optional one-shot PLI propagation |
 | `link_to_po_line(material, po_line)` | Set `po_line_item` FK; validates pending + unlinked |
 | `unlink_from_po_line(material)` | Clear `po_line_item` FK |
-| `sever(material, decision)` | `'keep'` clears FK; `'delete'` removes Material and backs out earmark. Raises if consumed |
+| `sever(material, decision)` | `'keep'` clears FK; `'delete'` unlinks then releases a referenced Material (claims/expense) or deletes an unreferenced one, backing out the earmark either way. Raises if consumed |
 | `resolve_or_create_for_line(po_line, *, job, ..., material_id=None)` | Three-step PO line ↔ Material resolver (see PO ↔ Material section) |
 
 `MaterialService` is the only writer of Material rows beyond fixtures

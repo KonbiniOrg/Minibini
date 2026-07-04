@@ -74,14 +74,19 @@ class MaterialDeletePurgesSourceRowsTest(AtomDeletePurgeBase):
         material.delete()
         self.assertFalse(self.line.sources.exists())
 
-    def test_restock_to_zero_purges_estimate_source_row(self):
-        # The exact user-visible path: release_loose_materials → restock(full
-        # qty) → Material row deleted at qty 0.
+    def test_restock_to_zero_of_claimed_material_releases_instead(self):
+        # The path that originally motivated the purge (release_loose_materials
+        # → restock-to-zero → row deleted under a live claim) no longer deletes
+        # at all: a claimed material is *released* and the claim keeps
+        # resolving. The purge remains the backstop for unreferenced deletes
+        # (test_direct_delete_purges_estimate_source_row above).
         material = self._make_material()
-        self._claim(EstimateLineItemSource.SOURCE_MATERIAL, material.pk)
+        row = self._claim(EstimateLineItemSource.SOURCE_MATERIAL, material.pk)
         MaterialService.restock(material, material.quantity)
-        self.assertFalse(Material.objects.filter(pk=material.pk).exists())
-        self.assertFalse(self.line.sources.exists())
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_RELEASED)
+        self.assertEqual(row.resolve().pk, material.pk)
 
     def test_delete_purges_co_source_row(self):
         material = self._make_material()

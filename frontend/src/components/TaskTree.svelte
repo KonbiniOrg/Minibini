@@ -151,8 +151,10 @@
   }
 
   function isMaterialFinalized(mat) {
-    // Consumed, or expense-bound fully restocked (quantity depleted).
+    // Consumed or released — terminal states with no further material actions.
+    // (The expense-bound qty-0 clause covers pre-`released` rows.)
     return mat.consumption_state === 'consumed'
+      || mat.consumption_state === 'released'
       || (mat.is_expense_bound && Number(mat.quantity) === 0);
   }
 </script>

@@ -1423,7 +1423,7 @@ def derive_atoms(c):
                 'accounting_category': c.ac_mat_pk,
                 'inventory_item':     pli_pk,
                 'consumption_state':   'pending',
-                'restocked_qty':       '0.00',
+                'released_qty':       '0.00',
                 'po_line_item':        None,
             })
 

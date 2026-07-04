@@ -20031,7 +20031,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -20050,7 +20050,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -20745,7 +20745,7 @@
       "accounting_category": 2,
       "inventory_item": 22,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -21404,7 +21404,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 40,
       "source_plan_material": null
     }
@@ -21423,7 +21423,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 41,
       "source_plan_material": null
     }
@@ -21983,7 +21983,7 @@
       "accounting_category": 2,
       "inventory_item": 8,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 37,
       "source_plan_material": null
     }
@@ -22281,7 +22281,7 @@
       "accounting_category": 2,
       "inventory_item": 75,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 39,
       "source_plan_material": null
     }
@@ -22439,7 +22439,7 @@
       "accounting_category": 2,
       "inventory_item": 43,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 38,
       "source_plan_material": null
     }
@@ -23021,7 +23021,7 @@
       "accounting_category": 2,
       "inventory_item": 120,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -23151,7 +23151,7 @@
       "accounting_category": 2,
       "inventory_item": 75,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -23883,7 +23883,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 22,
       "source_plan_material": null
     }
@@ -23902,7 +23902,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 23,
       "source_plan_material": null
     }
@@ -23921,7 +23921,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 24,
       "source_plan_material": null
     }
@@ -23940,7 +23940,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 25,
       "source_plan_material": null
     }
@@ -23959,7 +23959,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 26,
       "source_plan_material": null
     }
@@ -23978,7 +23978,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 27,
       "source_plan_material": null
     }
@@ -23997,7 +23997,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 28,
       "source_plan_material": null
     }
@@ -24016,7 +24016,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 29,
       "source_plan_material": null
     }
@@ -24035,7 +24035,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 30,
       "source_plan_material": null
     }
@@ -24054,7 +24054,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 31,
       "source_plan_material": null
     }
@@ -24073,7 +24073,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 32,
       "source_plan_material": null
     }
@@ -24092,7 +24092,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 33,
       "source_plan_material": null
     }
@@ -24128,7 +24128,7 @@
       "accounting_category": 2,
       "inventory_item": 121,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 34,
       "source_plan_material": null
     }
@@ -24164,7 +24164,7 @@
       "accounting_category": 2,
       "inventory_item": 122,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 35,
       "source_plan_material": null
     }
@@ -24200,7 +24200,7 @@
       "accounting_category": 2,
       "inventory_item": 123,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 36,
       "source_plan_material": null
     }
@@ -24389,7 +24389,7 @@
       "accounting_category": 2,
       "inventory_item": 124,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 21,
       "source_plan_material": null
     }
@@ -25465,7 +25465,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -25484,7 +25484,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -27045,7 +27045,7 @@
       "accounting_category": 2,
       "inventory_item": 22,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 20,
       "source_plan_material": null
     }
@@ -27581,7 +27581,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 16,
       "source_plan_material": null
     }
@@ -27600,7 +27600,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 17,
       "source_plan_material": null
     }
@@ -27619,7 +27619,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 18,
       "source_plan_material": null
     }
@@ -27655,7 +27655,7 @@
       "accounting_category": 2,
       "inventory_item": 125,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 19,
       "source_plan_material": null
     }
@@ -27918,7 +27918,7 @@
       "accounting_category": 2,
       "inventory_item": 5,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 15,
       "source_plan_material": null
     }
@@ -28202,7 +28202,7 @@
       "accounting_category": 2,
       "inventory_item": 16,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 13,
       "source_plan_material": null
     }
@@ -28221,7 +28221,7 @@
       "accounting_category": 2,
       "inventory_item": 14,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 14,
       "source_plan_material": null
     }
@@ -29849,7 +29849,7 @@
       "accounting_category": 2,
       "inventory_item": 8,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 7,
       "source_plan_material": null
     }
@@ -29868,7 +29868,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 8,
       "source_plan_material": null
     }
@@ -29887,7 +29887,7 @@
       "accounting_category": 2,
       "inventory_item": 8,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 9,
       "source_plan_material": null
     }
@@ -29906,7 +29906,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 10,
       "source_plan_material": null
     }
@@ -29925,7 +29925,7 @@
       "accounting_category": 2,
       "inventory_item": 8,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 11,
       "source_plan_material": null
     }
@@ -29944,7 +29944,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 12,
       "source_plan_material": null
     }
@@ -30102,7 +30102,7 @@
       "accounting_category": 2,
       "inventory_item": 75,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 5,
       "source_plan_material": null
     }
@@ -30121,7 +30121,7 @@
       "accounting_category": 2,
       "inventory_item": 75,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 6,
       "source_plan_material": null
     }
@@ -32218,7 +32218,7 @@
       "accounting_category": 2,
       "inventory_item": 41,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 4,
       "source_plan_material": null
     }
@@ -32460,7 +32460,7 @@
       "accounting_category": 2,
       "inventory_item": 32,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 3,
       "source_plan_material": null
     }
@@ -33142,7 +33142,7 @@
       "accounting_category": 2,
       "inventory_item": 75,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 1,
       "source_plan_material": null
     }
@@ -33161,7 +33161,7 @@
       "accounting_category": 2,
       "inventory_item": 77,
       "consumption_state": "consumed",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": 2,
       "source_plan_material": null
     }
@@ -33786,7 +33786,7 @@
       "accounting_category": 2,
       "inventory_item": 25,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }
@@ -34476,7 +34476,7 @@
       "accounting_category": 2,
       "inventory_item": 30,
       "consumption_state": "pending",
-      "restocked_qty": "0.00",
+      "released_qty": "0.00",
       "po_line_item": null,
       "source_plan_material": null
     }

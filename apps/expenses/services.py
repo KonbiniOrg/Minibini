@@ -241,6 +241,15 @@ class ExpenseService:
             raise ValidationError(
                 'Cannot reject expense with consumed materials; adjust inventory manually.'
             )
+        # Rule 1: reject deletes the expense-created material, so it must not
+        # be claimed by a document. Same shape as the consumed-guard above —
+        # block the upstream event rather than invent deletion semantics.
+        from apps.estimates.claims import atom_is_claimed
+        if mat and atom_is_claimed('material', mat.pk):
+            raise ValidationError(
+                'Cannot reject: this expense’s material backs an estimate or '
+                'change-order line. Remove the line first.'
+            )
         with transaction.atomic():
             if mat:
                 # Release the earmark and delete the material. The cost-material

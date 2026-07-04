@@ -137,7 +137,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
 
         # PATCH — only metadata fields allowed; quantity changes go through
         # /api/materials/{id}/draw-more/ or /api/materials/{id}/restock/.
-        QUANTITY_FIELDS = {'quantity', 'restocked_qty'}
+        QUANTITY_FIELDS = {'quantity', 'released_qty'}
         disallowed = QUANTITY_FIELDS.intersection(request.data.keys())
         if disallowed:
             return Response(

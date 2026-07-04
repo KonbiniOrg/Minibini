@@ -8,6 +8,45 @@ from apps.estimates.models import (
 )
 
 
+def atom_is_claimed(source_type, source_pk):
+    """True when any estimate- or CO-lens source row points at the atom.
+
+    The Rule-1 reference check for document claims: a claimed atom is part of
+    a document's story and must be retired by a named event (change order,
+    release), never hard-deleted. Invoice claims are checked separately via
+    InvoiceClaimService.is_invoiced (which excludes cancelled invoices).
+    """
+    return (
+        EstimateLineItemSource.objects.filter(
+            source_type=source_type, source_pk=source_pk).exists()
+        or ChangeOrderLineItemSource.objects.filter(
+            source_type=source_type, source_pk=source_pk).exists()
+    )
+
+
+def atom_claimed_by_non_draft_document(source_type, source_pk):
+    """True when a non-draft estimate or change order claims the atom.
+
+    The Task variant of the Rule-1 check: draft claims stay deletable (the
+    wizard's remove-atoms / line-delete releases them — "remove it from the
+    line first"), but once the claiming document has been sent, the atom is
+    part of a promise and must be cancelled, not deleted.
+    """
+    from apps.estimates.models import ChangeOrder
+    return (
+        EstimateLineItemSource.objects.filter(
+            source_type=source_type, source_pk=source_pk,
+        ).exclude(
+            estimate_line_item__estimate__status=Estimate.STATUS_DRAFT,
+        ).exists()
+        or ChangeOrderLineItemSource.objects.filter(
+            source_type=source_type, source_pk=source_pk,
+        ).exclude(
+            change_order_line_item__change_order__status=ChangeOrder.STATUS_DRAFT,
+        ).exists()
+    )
+
+
 def purge_source_rows_for_atom(source_type, source_pk):
     """Drop the source rows of every document lens pointing at a deleted atom.
 
