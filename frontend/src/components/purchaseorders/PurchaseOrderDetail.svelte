@@ -1,5 +1,6 @@
 <script>
   import UnitsSelect from '../UnitsSelect.svelte';
+  import Modal from '../Modal.svelte';
   import JobPicker from '../JobPicker.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
 
@@ -339,10 +340,11 @@
   <p><a href={`#/bills/new?po=${po.po_id}`}>Create Bill</a></p>
 {/if}
 
-{#if changeJobLine}
-  <div class="overlay">
-    <div class="dialog">
-      <h3>Change Job for Line #{changeJobLine.line_number}</h3>
+<Modal open={changeJobLine != null}
+  onCancel={() => { changeJobLine = null; }}
+  label="Change Job">
+  {#if changeJobLine}
+    <h3>Change Job for Line #{changeJobLine.line_number}</h3>
       <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
       <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} />
       <p>
@@ -358,9 +360,8 @@
         }}>Save</button>
         <button onclick={() => { changeJobLine = null; }}>Cancel</button>
       </p>
-    </div>
-  </div>
-{/if}
+  {/if}
+</Modal>
 
 <style>
   .text-right { text-align: right; }
@@ -391,11 +392,4 @@
   .line-status.partial { background: #fef3c7; color: #92400e; }
   .line-status.pending { background: #f3f4f6; color: #374151; }
   .line-status.cancelled { background: #fee2e2; color: #991b1b; }
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .dialog {
-    background: white; padding: 20px; max-width: 600px; border-radius: 6px;
-  }
 </style>
