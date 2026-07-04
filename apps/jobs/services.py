@@ -297,7 +297,15 @@ class BlepService:
             blep = BlepService._create(
                 task, target_user, start_time=start_time, end_time=end_time,
             )
+            was_pending = task.status == Task.STATUS_PENDING
             TaskLifecycleService._promote_pending_task(task)
+            # Mirror start_work: the first worker whose blep promotes the
+            # task becomes its assignee. A blep on an already-started task
+            # is "helping" and doesn't claim it.
+            if (was_pending and task.status == Task.STATUS_IN_PROGRESS
+                    and not task.assignee_id):
+                Task.objects.filter(pk=task.pk).update(assignee=target_user)
+                task.assignee = target_user
             JobService.mark_work_started(task.job)
         return blep
 

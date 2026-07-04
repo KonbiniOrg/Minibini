@@ -218,6 +218,41 @@ class CreateHistoricalTest(BaseTestCase):
         mat.refresh_from_db()
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
+    def test_create_historical_assigns_unassigned_pending_task(self):
+        # Mirrors start_work: the first worker whose blep promotes the task
+        # becomes its assignee.
+        self.assertIsNone(self.task.assignee_id)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee_id, self.user.pk)
+
+    def test_create_historical_for_other_assigns_target_not_actor(self):
+        start, end = self._times(2, 1)
+        BlepService.create_historical(
+            self.manager, self.task, start, end, target_user=self.other_user,
+        )
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee_id, self.other_user.pk)
+
+    def test_create_historical_keeps_existing_assignee(self):
+        Task.objects.filter(pk=self.task.pk).update(assignee=self.other_user)
+        self.task.refresh_from_db()
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee_id, self.other_user.pk)
+
+    def test_create_historical_on_in_progress_task_does_not_assign(self):
+        # Assignment rides the pending→in_progress promotion only — a blep on
+        # an already-started task is "helping" (same rule as start_work).
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        self.task.refresh_from_db()
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.assignee_id)
+
 
 class UpdateBlepTest(BaseTestCase):
     def setUp(self):

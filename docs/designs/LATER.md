@@ -1063,17 +1063,15 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ no test skips because ambient fixture data is absent; every prerequisite
   is either created by the test itself or triggers a hard failure.
 
-- **Hand-added blep should mirror the start-path side effects (assign + consume materials).** — _added 2026-06-29_
-  Starting a blep on a pending/unassigned task runs the "first worker to start the task"
-  path (`apps/jobs/services.py` ~1174-1254): it **assigns** the task to that worker,
-  promotes it in the worker queue, and **consumes the task's linked materials**
-  (`MaterialService.consume`, ~line 1013). But adding a blep **by hand** (the time-edit
-  create path) does none of this — the task stays unassigned and its materials stay
-  unconsumed. A manually-entered blep should produce the same state as a started one:
-  (a) assign the task to the blep's worker, and (b) consume the task's linked materials.
-  _To check:_ confirm current hand-add behavior for both; _done when:_ creating a blep by
-  hand on a pending task assigns it to the blep's user and consumes its linked materials,
-  with tests.
+- ~~**Hand-added blep should mirror the start-path side effects (assign + consume materials).**~~ — _delivered 2026-07-04_
+  Checked: `BlepService.create_historical` already promoted the pending task and
+  consumed its materials (existing tests). The missing half was assignment —
+  it now mirrors `start_work`: the worker whose hand-added blep promotes the
+  task becomes its assignee (a blep on an already-started task is "helping" and
+  doesn't claim it; an existing assignee is kept). Tests in
+  `tests/test_blep_service.CreateHistoricalTest`. Queue-front promotion is
+  deliberately not mirrored — reordering the live worker queue off a
+  backdated entry would be wrong.
 
 - **Service catalog item = rough work type; Task.Description carries the specifics.** — _added 2026-07-01_
   A service catalog item (RateScheme) should name the _rough category_ of work, with the
