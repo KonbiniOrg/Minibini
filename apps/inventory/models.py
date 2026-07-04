@@ -58,6 +58,24 @@ class InventoryItem(models.Model):
         return self.qty_on_hand - self.qty_earmarked
 
     @property
+    def qty_on_order(self):
+        """Outstanding (un-received) quantity across this item's PO lines on
+        non-cancelled POs: Σ max(qty − qty_received − qty_cancelled, 0). The
+        same outstanding calc MaterialSerializer.get_qty_on_order does for a
+        single PO-linked material, aggregated per item. Per-line floor so an
+        over-received line can't eat another line's outstanding quantity."""
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        total = Decimal('0.00')
+        lines = PurchaseOrderLineItem.objects.filter(
+            inventory_item=self,
+        ).exclude(purchase_order__status=PurchaseOrder.STATUS_CANCELLED)
+        for li in lines:
+            outstanding = li.qty - li.qty_received - li.qty_cancelled
+            if outstanding > Decimal('0.00'):
+                total += outstanding
+        return total
+
+    @property
     def is_finished_lot(self):
         """A transient lot whose life is over: not a catalog type, nothing on
         hand, and nothing waiting for it. Hidden from the active inventory list

@@ -213,6 +213,7 @@
         <th style="text-align: right">On hand</th>
         <th style="text-align: right">Earmarked</th>
         <th style="text-align: right">Available</th>
+        <th style="text-align: right">On order</th>
         <th>Kind</th>
         <th style="text-align: right">Cost</th>
         <th style="text-align: right">Sell</th>
@@ -231,6 +232,7 @@
           <td style="text-align: right">{it.qty_on_hand}</td>
           <td style="text-align: right">{it.qty_earmarked}</td>
           <td style="text-align: right">{it.qty_available}</td>
+          <td style="text-align: right">{Number(it.qty_on_order) > 0 ? it.qty_on_order : '—'}</td>
           <td>{it.is_catalog ? 'catalog' : 'lot'}{!it.is_active ? ' · inactive' : ''}</td>
           <td style="text-align: right">${it.purchase_price}</td>
           <td style="text-align: right">${it.selling_price}</td>

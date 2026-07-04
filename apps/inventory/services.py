@@ -161,10 +161,16 @@ class InventoryService:
             raise ValidationError(
                 'Cannot discard a catalog item; uncheck its catalog flag to '
                 'demote it to a lot first, then merge.')
+        # 'none' means *unknown*, not a real unit — merging across it is fine
+        # and the known unit wins. A real-unit mismatch (sheets vs lbs) still
+        # blocks: the QOH addition would be nonsense.
         if keep.units != discard.units:
-            raise ValidationError(
-                f'Unit mismatch: cannot merge {discard.units!r} into '
-                f'{keep.units!r}.')
+            if 'none' not in (keep.units, discard.units):
+                raise ValidationError(
+                    f'Unit mismatch: cannot merge {discard.units!r} into '
+                    f'{keep.units!r}.')
+            if keep.units == 'none' and 'units' not in overrides:
+                overrides = {**overrides, 'units': discard.units}
 
         moved = discard.qty_on_hand
         discard_code = discard.code

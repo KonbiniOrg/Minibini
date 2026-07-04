@@ -773,17 +773,11 @@ IMAP-SMTP machinery and tend to be worked together.
 
 - ~~**Generic server-side search picker (and the picker 100-cap).**~~ — _delivered 2026-06-21_ `SearchPicker.svelte` is the generic behavior core; `InventoryItemPicker` (renamed from `PriceListItemPicker`) uses server-side `?search=` and is the picker at all material/line-item call sites.
 
-- **"Qty on order" column on the inventory list.** — _added 2026-06-15_
-  The inventory list shows on-hand / earmarked / available but not how much is
-  already **on order** (outstanding on open POs). Add a "On order" column: per
-  `InventoryItem`, sum the un-received quantity of `PurchaseOrderLineItem`s
-  referencing it on non-cancelled POs (`qty − qty_received − qty_cancelled`,
-  floored at 0) — the same outstanding calc `MaterialSerializer.get_qty_on_order`
-  already does for a single PO-linked material, but aggregated across all POs for
-  the item. Needs a computed field on the inventory-item serializer (annotate or
-  property) + the column in `InventoryListPage`. Helps decide whether to hit the
-  new per-row "order" button or wait on stock already coming.
-  _Done when:_ the inventory list shows an accurate on-order quantity per item.
+- ~~**"Qty on order" column on the inventory list.**~~ — _delivered 2026-07-04_
+  `InventoryItem.qty_on_order` property (Σ max(qty − received − cancelled, 0)
+  over non-cancelled POs, per-line floored), exposed on the item serializer and
+  rendered as an "On order" column on `InventoryListPage` ("—" when zero).
+  Tests: `tests/test_inventory_qty_on_order.py`.
 
 - **Material "order" link should default the qty, not just the inventory data.** — _added 2026-06-18_
   Clicking **order** on a material in the job view (`JobDetail.svelte:997`,
@@ -823,7 +817,14 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
-- **Inventory merge should probably accept an incoming `'none'` unit.** — _added 2026-06-19_
+- **Inventory merge accepts `'none'` units — DELIVERED 2026-07-04; converter-side unit inference still open.** — _added 2026-06-19_
+  Merge side done: a `'none'` unit on either side no longer blocks — the known
+  unit wins (a `'none'` keep adopts the discard's unit; explicit `units`
+  override still wins; real-unit mismatches still block). Tests:
+  `tests/test_inventory_merge.MergeNoneUnitTest`. Remaining (dev-data polish):
+  the converter still emits `units='none'` for every Material/minted lot —
+  infer raw-stock units from the description like catalog items do. Original
+  entry:
   `InventoryService.merge` hard-blocks when `keep.units != discard.units`
   (`apps/inventory/services.py:151`) — the QOH addition is nonsense across real
   unit mismatches (sheets into lbs). But `'none'` means *unknown*, not a real

@@ -149,3 +149,49 @@ class MergeEndpointTest(TestCase):
         resp = self.client.post('/api/inventory/merge/', {
             'keep_id': self.keep.pk}, format='json')
         self.assertEqual(resp.status_code, 400)
+
+
+class MergeNoneUnitTest(TestCase):
+    """'none' means *unknown*, not a real unit — merging across it is allowed
+    and the known unit wins. A real-unit mismatch (sheets vs lbs) still
+    hard-blocks (the QOH addition would be nonsense)."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.get_or_create(
+            code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
+
+    def _item(self, code, units, is_catalog, qoh='1.00'):
+        return InventoryItem.objects.create(
+            code=code, description=code, units=units,
+            qty_on_hand=Decimal(qoh), is_catalog=is_catalog,
+            accounting_category=self.cat)
+
+    def test_none_discard_merges_into_real_unit_keep(self):
+        keep = self._item('K-SHEET', 'sheet', True, '2.00')
+        discard = self._item('D-NONE', 'none', False, '3.00')
+        InventoryService.merge(keep.pk, discard.pk)
+        keep.refresh_from_db()
+        self.assertEqual(keep.qty_on_hand, Decimal('5.00'))
+        self.assertEqual(keep.units, 'sheet')
+
+    def test_none_keep_adopts_discard_real_unit(self):
+        keep = self._item('K-NONE', 'none', True, '2.00')
+        discard = self._item('D-SHEET', 'sheet', False, '3.00')
+        InventoryService.merge(keep.pk, discard.pk)
+        keep.refresh_from_db()
+        self.assertEqual(keep.units, 'sheet')
+        self.assertEqual(keep.qty_on_hand, Decimal('5.00'))
+
+    def test_real_unit_mismatch_still_blocks(self):
+        keep = self._item('K-LBS', 'lbs', True)
+        discard = self._item('D-SHEET2', 'sheet', False)
+        with self.assertRaises(ValidationError):
+            InventoryService.merge(keep.pk, discard.pk)
+
+    def test_explicit_units_override_still_wins(self):
+        keep = self._item('K-NONE2', 'none', True, '2.00')
+        discard = self._item('D-SHEET3', 'sheet', False, '3.00')
+        InventoryService.merge(keep.pk, discard.pk,
+                               overrides={'units': 'sheet'})
+        keep.refresh_from_db()
+        self.assertEqual(keep.units, 'sheet')
