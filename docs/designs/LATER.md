@@ -1175,13 +1175,12 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ editing a RateScheme makes the updated values available to the ServiceItem form (and any
   other scheme consumers on the page) without a manual refresh.
 
-- **Empty modifier row (blank name + 0%) shouldn't be saved.** — _added 2026-07-03_
-  When editing a `RateScheme`'s modifiers, a blank modifier row — empty name/key and `0` percent —
-  gets sent to the backend and persisted as a junk `{key: '', percent: 0}` entry. The form should drop
-  empty rows before saving (a modifier with no name and 0% is a no-op). Filter them out client-side in
-  the scheme editor's save handler; optionally also guard server-side in `RateScheme` cleaning so a
-  stray empty modifier never persists. Watch the `modifiers` JSON shape (`[{key, percent}, ...]`).
-  _Done when:_ saving a scheme never persists a blank/zero modifier row.
+- ~~**Empty modifier row (blank name + 0%) shouldn't be saved.**~~ — _delivered 2026-07-04_
+  Both sides: `RateSchemeManager.save()` filters blank rows from the payload, and
+  `RateScheme._normalize_modifiers` (run on save + clean) drops fully-blank rows
+  server-side; a percent with no key is rejected loudly (it could never be
+  activated). Tests: `tests/test_rate_scheme_modifiers.py` +
+  `frontend/tests/components/RateSchemeManager.test.js`.
 
 - **No shared `<Modal>` shell — every modal hand-rolls the same overlay CSS.** — _added 2026-07-03_
   Each modal component copies its own `.overlay { position:fixed; inset:0; display:flex;

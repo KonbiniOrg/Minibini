@@ -119,11 +119,15 @@
         algorithm: form.algorithm,
         rate: form.rate,
         unit_label: form.unit_label,
-        modifiers: form.modifiers.map(m => ({
-          key: m.key || slugify(m.label),
-          label: m.label,
-          percent: Number(m.percent),
-        })),
+        modifiers: form.modifiers
+          // An untouched "add modifier" row (no name, no percent) is a
+          // no-op — drop it rather than persist a blank modifier.
+          .filter(m => (m.label || m.key || '').trim() || Number(m.percent))
+          .map(m => ({
+            key: m.key || slugify(m.label),
+            label: m.label,
+            percent: Number(m.percent),
+          })),
         accounting_category: form.accounting_category,
       };
 

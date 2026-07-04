@@ -453,8 +453,24 @@ class RateScheme(models.Model):
     class Meta:
         db_table = 'rate_schemes'
 
+    def _normalize_modifiers(self):
+        """Drop fully-blank modifier rows (no key/label, no percent) — the
+        editor's untouched "add modifier" row is a no-op, not data."""
+        self.modifiers = [
+            m for m in (self.modifiers or [])
+            if (m.get('key') or '').strip() or (m.get('label') or '').strip()
+            or m.get('percent')
+        ]
+
     def clean(self):
         super().clean()
+        self._normalize_modifiers()
+        if any(not (m.get('key') or '').strip() for m in self.modifiers):
+            from django.core.exceptions import ValidationError
+            raise ValidationError({
+                'modifiers': 'Each modifier needs a name (key); a percent '
+                             'without one can never be activated.',
+            })
         if self.accounting_category_id is None:
             from django.core.exceptions import ValidationError
             raise ValidationError({
@@ -477,6 +493,8 @@ class RateScheme(models.Model):
                 })
 
     def save(self, *args, **kwargs):
+        # Normalize on create too — full_clean below only covers updates.
+        self._normalize_modifiers()
         # Belt-and-braces: ensure clean() runs even on bare .save() calls.
         if self.pk:
             self.full_clean()
