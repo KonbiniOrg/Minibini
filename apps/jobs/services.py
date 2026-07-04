@@ -681,6 +681,15 @@ class JobService:
             JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
 
     @staticmethod
+    def mark_work_reopened(job):
+        """Pull a WORK_COMPLETE Job back to IN_PROGRESS when a new incomplete
+        Task lands on it — work_complete means every task is terminal, and a
+        fresh open task contradicts that. No-op for any other status."""
+        if job.status == Job.STATUS_WORK_COMPLETE:
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+            job.refresh_from_db()
+
+    @staticmethod
     def populate_from_template(job, template):
         """Populate a Job's tasks and materials from a WorkTemplate. The
         template itself is not stored on the Job; only its generated children
@@ -824,6 +833,7 @@ class TaskService:
                 active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else Decimal('1'),
             )
+            JobService.mark_work_reopened(job)
         return task
 
     @staticmethod
@@ -859,6 +869,8 @@ class TaskService:
                 actual_qty=actual_qty,
                 **task_fields,
             )
+            if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+                JobService.mark_work_reopened(job)
         return task
 
     @staticmethod

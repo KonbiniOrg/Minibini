@@ -454,20 +454,20 @@ page stays whole.
   revisit landed on keeping it). Tests in `test_invoice_wizard_service` +
   `test_wizard_bundle_summary`.
 
-- **Adding a Task to a `work_complete` job doesn't reopen the job.** — _added 2026-06-17_
-  A new Task can be added to a Job that's already at `work_complete`, and the job stays
-  `work_complete` — even though it now has unfinished work, which contradicts what that status
-  means (all tasks done). Task creation (`TaskCreationService.create_direct` /
-  `create_from_template`, `apps/jobs/services.py`) only gates on `_assert_job_not_on_hold`, and
-  the only auto-advance is `JobService.mark_work_started`, which fires `approved → in_progress`
-  on a blep/complete — never on task creation, and a no-op for `work_complete`. The transition
-  map *does* allow `work_complete → in_progress`, so the fix is to pull the job back to
-  `in_progress` when an incomplete task is added (or its work begins) on a `work_complete` job.
-  Related, decide the harder case: task creation is also allowed on a **terminal `completed`**
-  job (only `on_hold` is blocked), which has no outgoing transition to reopen — so either block
-  adding tasks there or define a reopen path. _Done when:_ adding an incomplete task to a
-  `work_complete` job returns it to `in_progress` (with a test), and the `completed`-job case is
-  decided (blocked or reopenable).
+- **Adding a Task to a `work_complete` job doesn't reopen the job — DELIVERED; `completed`-job case still open.** — _added 2026-06-17; reopen delivered 2026-07-04_
+  `JobService.mark_work_reopened` (mirror of `mark_work_started`) pulls a
+  `work_complete` job back to `in_progress` when an incomplete task lands on it;
+  wired into all three creation paths (`TaskService.create_direct` /
+  `create_from_template`, `ServiceItem.generate_task`), with tests
+  (`tests/test_job_direct_tasks.WorkCompleteReopenTest`). **Remaining decision:**
+  task creation is also allowed on a **terminal `completed`** job (only `on_hold`
+  is blocked), which has no outgoing transition to reopen — either block adding
+  tasks there or define a reopen path. Also note: an on-hold job released back to
+  `work_complete` *after* a CO added incomplete tasks would still be incoherent
+  (release restores prior status without re-checking) — same family, decide with
+  the `completed` case.
+  _Done when:_ the `completed`-job case is decided (blocked or reopenable), and
+  the on-hold-release path re-checks task state.
 
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and

@@ -505,6 +505,8 @@ class ServiceItem(models.Model):
                 est_qty=est_qty,
                 est_worker_time=est_worker_time,
             )
+            from apps.jobs.services import JobService
+            JobService.mark_work_reopened(container)
         return task
 
 
