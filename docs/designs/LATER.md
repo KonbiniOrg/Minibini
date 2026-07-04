@@ -120,17 +120,6 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ we've decided whether no-estimate jobs need a status-based deliverable
   freeze and either added one or recorded why anchoring alone is sufficient.
 
-- **Reconcile inventory vs. service "Add line" crystallization timing.** — _added 2026-07-02, moved to a plan 2026-07-02_
-  → Promoted to a follow-on plan: `docs/plans/2026-07-02-add-line-crystallization-and-unified-picker.md`
-  (Part 1). Make the inventory pick immediate like the service pick, retire the acceptance
-  `inventory_item → Material` branch, and solve orphan-atom cleanup with provenance. See the plan.
-  _(Under active reconsideration 2026-07-02: leaning the other way — unify on **atom-on-approval**
-  (make the service pick deferred too) rather than atom-on-add. Plan to be revised once decided.)_
-  _(Note 2026-07-04: the referenced plan was executed and retired; the shipped
-  shape is **unified atom-on-approval** — service picks AND inventory picks
-  both crystallize at acceptance (`acceptance.py` / `co_acceptance.py`), which
-  is where the reconsideration was leaning. Verify nothing remains and close.)_
-
 - **Pull `description` off `ServiceItem`; specifics live on the Task/line description.** — _added 2026-07-02_
   A `ServiceItem` is meant to be a *rough work type* (name + rate scheme); the per-job specifics
   belong on the **Task description**, sourced from the estimate line's editable description. So
@@ -683,40 +672,3 @@ Cross-cutting UI/API conventions and shared components.
   but it needs more thought about the two-round-trip semantics and the partial-failure window.
   _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
   call made) or stays a bespoke sequence, and recorded why.
-
-## Dev data (Neal's converter)
-
-- **Neal's-data conversion emits some timestamps in the future.** — _added 2026-06-18_
-  Generated (Neal's-dataset) data contains timestamps that fall **after now**, which should
-  never happen for recorded activity. The converter anchors time to `_dataset_now(c)`
-  (`nealsdata/converter/build.py:1687`) and `convert.md:306` says bleps are "clamped to ≤
-  `_dataset_now` (no future bleps)" — so the leak is one of: (a) `_dataset_now` itself sits
-  ahead of the real load date (it's derived from the dataset's latest activity, so loading an
-  already-future-anchored dataset, or a stale `latest-time.json`, plants everything near a
-  future "now"); or (b) timestamp generators **other than** bleps aren't clamped — candidates
-  to chase: the per-task/schedule stamps built as `base_dt + timedelta(days=ordinal,
-  minutes=intra)` (`build.py:~2204`), forecast/scheduled/due dates, and any `created_date`
-  derivations — none of which obviously share the blep clamp. Pin down which field(s) and
-  which path produce the future values, capture an example row + its source field, then either
-  clamp those generators to `_dataset_now` too or re-anchor `_dataset_now` to the real load
-  time. _Done when:_ a freshly converted/loaded Neal's dataset contains no timestamps after
-  the load moment (with a check/test asserting it), or the future-dating is shown to be
-  intended and documented.
-
-- **Neal's-data generator: one blep per day, shift coterminal — want longer shifts with multiple bleps.** — _added 2026-06-18_
-  `build_bleps_and_shifts` (`nealsdata/converter/build.py:1809`) emits **one Blep per complete
-  Task** and then gives each (user, calendar day) **one Shift tightly enclosing that day's
-  bleps** (~lines 1903-1911), so in practice each worker-day shows a single blep with a shift
-  hugging its exact start/end. Unrealistic — a real workday is one longer shift containing
-  several bleps (different tasks/jobs) with gaps between them and slack at the ends. Make the
-  generated data look like that: (a) pack **multiple bleps per (user, day)** — let several
-  tasks' bleps land in the same day within the synthetic workday (`build.py:24`), via
-  `_place_blep`/`_earliest_slot` (~1750-1809) rather than spreading one-per-day; and (b) make
-  the enclosing Shift a **realistic workday span** (e.g. fixed start-to-end, or bleps + slack)
-  instead of coterminal with the bleps, so shift > sum-of-bleps and the shift↔blep enclosure
-  has breathing room. Keep the existing invariants (blep inside its job window, no per-user
-  overlap, shift encloses its bleps, `_dataset_now` upper clamp). _Done when:_ a generated
-  dataset shows workers with multi-blep days inside longer, non-coterminal shifts (with the
-  enclosure/overlap invariants still holding).
-
-
