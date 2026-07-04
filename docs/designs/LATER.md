@@ -446,19 +446,13 @@ page stays whole.
   _Done when:_ a material added to an in-progress task gets consumed by continued work (with a
   test), or a recorded decision says it must be added before start.
 
-- **Single task on an entered-qty scheme collapses to qty 1 / price = total.** — _added 2026-06-17_
-  Sending ONE Task atom with a user-entered-quantity scheme to a new line item shows qty 1 and
-  price = the full amount (observed: entered qty 2.2 × rate 22 → line item qty 1, price 48.40),
-  instead of qty 2.2 / price 22 with the total computed from them. Units copy fine here. Root
-  cause: `InvoiceWizardService._task_qty_and_price` (`apps/invoicing/services.py`) returns
-  `(Decimal('1'), total_price)` for *every* single task ("no single qty/price is meaningful across
-  all algorithms"). But for entered-qty (and flat) schemes a real qty×rate *does* exist —
-  `_atom_detail` already computes `qty = _task_actual_qty(task)` and `rate = effective_rate()` for
-  the source-pool display. Fix direction: for single-task lines, use the scheme's actual qty and
-  effective rate when the algorithm has a meaningful per-unit qty (entered/flat), falling back to
-  qty 1 / total only where it genuinely doesn't (e.g. elapsed bleps, if that's still desired).
-  _Done when:_ a single entered-qty task lands on the line item as qty=actual / price=rate with
-  the total derived, with a test; revisit the elapsed-scheme case deliberately.
+- ~~**Single task on an entered-qty scheme collapses to qty 1 / price = total.**~~ — _delivered 2026-07-04_
+  `InvoiceWizardService._task_qty_and_price` now returns (actual qty, effective rate)
+  for a single ENTERED_QTY task, matching what a uniform multi-task bundle already
+  did; ELAPSED_TIME deliberately keeps the qty 1 / price = total fallback (blep
+  roll-ups have no meaningful per-unit decomposition on the line — the deliberate
+  revisit landed on keeping it). Tests in `test_invoice_wizard_service` +
+  `test_wizard_bundle_summary`.
 
 - **Adding a Task to a `work_complete` job doesn't reopen the job.** — _added 2026-06-17_
   A new Task can be added to a Job that's already at `work_complete`, and the job stays

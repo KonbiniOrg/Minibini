@@ -137,18 +137,21 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'none')
         self.assertEqual(li.qty, Decimal('1'))
 
-    def test_single_task_unchanged(self):
+    def test_single_entered_qty_task_keeps_qty_and_rate(self):
+        # A single ENTERED_QTY task carries its real qty × rate onto the
+        # line (matching what a uniform multi-task bundle already did),
+        # instead of collapsing to qty 1 / price = total.
         a = self._task(self.scheme, 3)
         li = self._bundle(a)
-        self.assertEqual(li.qty, Decimal('1'))
-        self.assertEqual(li.price, Decimal('30.00'))
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('10.00'))
         self.assertEqual(li.units, 'widgets')
 
     def test_add_material_makes_non_uniform_falls_back_to_reprice(self):
         # Adding a material to a task line item makes the source set
         # non-uniform: qty is kept and the per-unit price is recomputed.
         a = self._task(self.scheme, 3)  # 3 * 10 = 30
-        li = self._bundle(a)            # single task: qty=1, price=30
+        li = self._bundle(a)            # single entered-qty task: qty=3, price=10
         mat = Material.objects.create(
             job=self.job, task=a, description='M',
             quantity=Decimal('1'), sell_price=Decimal('5.00'),
@@ -161,8 +164,8 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             li, [{'type': 'material', 'id': mat.pk}],
         )
         li.refresh_from_db()
-        self.assertEqual(li.qty, Decimal('1'))
-        self.assertEqual(li.price, Decimal('35.00'))
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('11.67'))  # round(35 / 3, 2)
 
 
 class EstimateWizardBundleSummaryTest(TestCase):
