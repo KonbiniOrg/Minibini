@@ -234,6 +234,15 @@ page stays whole.
   the accepted-CO replace chain correctly; see `estimates-and-prices.md`
   §14.11.)
 
+- **Voided-not-vanished for post-approval Expenses and BillPayments.** — _added 2026-07-04 (deferred from the deletion-doctrine pass)_
+  An approved, uninvoiced Expense is still hard-deletable, and `delete_payment`
+  removes money actuals outright. QBO already thinks in voids, so a `voided`
+  status (retained record, excluded from money math) fits the deletion doctrine
+  better than delete for both. Explicitly deferred out of the 2026-07-03
+  doctrine implementation; each deserves its own small pass.
+  _Done when:_ both have a voided path (or a recorded decision that delete is
+  fine), consistent with the doctrine's actuals-gravity rule.
+
 - **Surface CO-remove atoms that crystallization deliberately skipped.** — _added 2026-07-03_
   `ChangeOrderAcceptanceService` (estimates doc §14.11) leaves an atom alone when a
   CO remove/replace targets it but it is already consumed / complete /
@@ -1287,8 +1296,9 @@ IMAP-SMTP machinery and tend to be worked together.
     price — fixed-price work needs either a $0/internal-scheme convention or pool logic suppressing a
     task's metered billing when a linked Fee covers it. Neither exists.
   - *Hazards while it sleeps:* it's a **OneToOne** — any future Fee-retirement state must null the link
-    or a retired fee blocks a replacement fee on the same task (MySQL: no conditional uniqueness; see
-    `docs/plans/2026-07-03-deletion-doctrine-named-events.md`). `Task.delete()` SET_NULLs it.
+    or a retired fee blocks a replacement fee on the same task (MySQL: no conditional uniqueness; the
+    2026-07-03 deletion doctrine deferred the Fee `retired` state to this same future pass).
+    `Task.delete()` SET_NULLs it.
   _Done when:_ fixed-price work gets designed as its own feature (Fee↔Task pairing + the
   pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
   that design's place.

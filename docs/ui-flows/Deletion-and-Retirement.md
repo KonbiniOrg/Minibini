@@ -5,8 +5,8 @@ doctrine** (2026-07-03): committed records are never hard-deleted — they retir
 through named events (cancel, release, change order, deactivate) — while
 draft-phase scratch still deletes freely. Every guard here is a
 should-be-blocked case, the most-missed and highest-value class to automate.
-Reference: `docs/plans/2026-07-03-deletion-doctrine-named-events.md` and the
-per-object rules in `docs/designs/data-constraints.md`.
+Reference: the per-object deletion rules in `docs/designs/data-constraints.md`
+(and the material lifecycle in `materials-inventory-and-purchasing.md`).
 
 **The rule under test (Rule 1):** a thing may be hard-deleted only while
 *nothing references it* — no estimate/CO line claim, no invoice, no recorded
