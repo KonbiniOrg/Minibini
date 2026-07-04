@@ -2367,6 +2367,10 @@ def _job_timeline(job_pk, job_fields, related):
 # for task-less materials, imply the work happened (consumed).
 _TERMINAL_JOB_STATUSES = {'work_complete', 'completed', 'cancelled', 'rejected'}
 _WORKED_JOB_STATUSES = {'in_progress', 'work_complete', 'completed'}
+# Job statuses that DO hold reservations: earmarks exist only from approval
+# (create_on_job skips draft/submitted; the acceptance sweep creates them)
+# until release at completion/cancellation. Pre-approval jobs carry none.
+_EARMARKED_JOB_STATUSES = {'approved', 'in_progress', 'on_hold'}
 
 
 def build_purchasing(c):
@@ -2443,7 +2447,7 @@ def build_purchasing(c):
     for job_pk, mats in materials_by_job.items():
         base = base_by_jobpk.get(job_pk)
         received_job = base in bill_for_base
-        active = job_status.get(job_pk) not in _TERMINAL_JOB_STATUSES
+        active = job_status.get(job_pk) in _EARMARKED_JOB_STATUSES
         for mf in mats:
             item_pk = mf['inventory_item']
             qty = Decimal(mf['quantity'])
