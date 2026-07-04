@@ -1276,3 +1276,29 @@ IMAP-SMTP machinery and tend to be worked together.
   `ServiceItem` users.)
   _Done when:_ the supersede→catalog-user behavior is confirmed and documented (repoints or not), and
   matched by a test.
+
+- **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
+  RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it
+  never needs redoing:
+  - *Origin:* the job-owns-atoms lenses spec (`2026-06-29-job-owns-atoms-documents-as-lenses.md`,
+    commit `23345f83`; retired from the tree in `c85fac6c`) defined Fee with "an optional `task` link
+    (for 'the work behind it')". Motive: `flat_fee` was removed from RateScheme ("its job is now
+    Fee's"); "Task stays pure work; money never sits on it" — so the link was the designed home for
+    **fixed-price work**: Task carries the labor (bleps/schedule/completion), Fee carries the frozen
+    price. Successor to the May flat-fee-on-task design (`2026-05-17-flat-fee-pricing-design.md`).
+  - *Why it's dormant:* both planned hooks fell out during implementation. Acceptance was to "link a
+    task if one was named" but `EstimateLineItem` never grew a task-naming field; the impl plan's
+    Task 7.3 specced `FeeModal` with an "optional task link" but the modal shipped with only an unused
+    `taskId` prop. No production reader exists: the invoice wizard pool is task-grouped yet files every
+    fee under a flat "Fees" group (`task_id: None`); only `validate_data` reads it (job-consistency).
+    The API PATCH accepts `task` but no UI sends it.
+  - *The unsolved design hole (why not to wire it casually):* a fee-linked Task is still metered
+    (`rate_scheme` NOT NULL), so it would bill in the invoice pool *alongside* the Fee that is its
+    price — fixed-price work needs either a $0/internal-scheme convention or pool logic suppressing a
+    task's metered billing when a linked Fee covers it. Neither exists.
+  - *Hazards while it sleeps:* it's a **OneToOne** — any future Fee-retirement state must null the link
+    or a retired fee blocks a replacement fee on the same task (MySQL: no conditional uniqueness; see
+    `docs/plans/2026-07-03-deletion-doctrine-named-events.md`). `Task.delete()` SET_NULLs it.
+  _Done when:_ fixed-price work gets designed as its own feature (Fee↔Task pairing + the
+  pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
+  that design's place.

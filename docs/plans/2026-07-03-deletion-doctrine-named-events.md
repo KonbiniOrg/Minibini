@@ -61,8 +61,10 @@ There is no legitimate reason to delete a deliberate, referenced Fee.
 - Retirement **nulls the OneToOne `task` link** (a retired fee must not block a
   replacement fee on the same task; MySQL has no conditional uniqueness).
 - Field shape: a `retired` boolean or small status — [OPEN, minor].
-- The dormant `Fee.task` FK itself (no UI reaches it) is a separate question —
-  decide keep-and-wire vs drop during implementation. [OPEN, minor]
+- The dormant `Fee.task` FK stays as-is — **[SETTLED: leave it alone]**. Full
+  decision record (origin, why it's unwired, the fixed-price double-billing
+  hole, hazards) lives in `docs/designs/LATER.md` under "`Fee.task` is a
+  dormant field."
 
 ### Material — [SETTLED]
 
