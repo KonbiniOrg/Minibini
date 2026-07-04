@@ -89,7 +89,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         item = self.get_object()
         try:
             InventoryService.write_off(
-                item, qty=request.data.get('qty'), user=request.user,
+                item, qty=request.data.get('qty'),
                 reason=request.data.get('reason', '') or 'Write-off',
             )
         except DjangoValidationError as e:
@@ -112,7 +112,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             keep = InventoryService.merge(
-                keep_id, discard_id, user=request.user,
+                keep_id, discard_id,
                 overrides=request.data.get('overrides') or {},
             )
         except InventoryItem.DoesNotExist:

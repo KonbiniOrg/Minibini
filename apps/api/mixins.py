@@ -177,7 +177,6 @@ class StatusTransitionMixin:
                             entry_type='audit',
                             object_type=obj_type,
                             object_id=instance.pk,
-                            user=request.user if hasattr(request, 'user') and request.user.is_authenticated else None,
                             text=reason,
                         )
 

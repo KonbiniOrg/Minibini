@@ -143,7 +143,6 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             entry_type='note',
             object_type='contact',
             object_id=obj.pk,
-            user=request.user,
             text=text,
         )
         serializer = HistoryEntrySerializer(entry)
@@ -308,7 +307,6 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
             entry_type='note',
             object_type='business',
             object_id=obj.pk,
-            user=request.user,
             text=text,
         )
         serializer = HistoryEntrySerializer(entry)

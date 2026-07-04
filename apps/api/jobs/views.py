@@ -164,7 +164,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             entry_type='note',
             object_type='job',
             object_id=obj.pk,
-            user=request.user,
             text=text,
         )
         serializer = HistoryEntrySerializer(entry)

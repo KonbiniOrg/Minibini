@@ -638,7 +638,7 @@ class EstimateEmailService:
 
     @staticmethod
     def send_estimate(estimate, *, to, subject, body, cc=None, bcc=None,
-                      extra_attachments=None, user=None):
+                      extra_attachments=None):
         """Send an Estimate. Generates the PDF, persists an outbound
         EmailRecord via send_tracked, transitions draft → open on success.
 
@@ -649,7 +649,6 @@ class EstimateEmailService:
             cc / bcc: list or None
             extra_attachments: list of (filename, bytes, mime) tuples beyond
                 the auto-attached document PDF
-            user: User performing the send (for HistoryEntry; optional)
 
         Returns:
             The outbound EmailRecord.
@@ -801,7 +800,7 @@ class ChangeOrderEmailService:
 
     @staticmethod
     def send_change_order(co, *, to, subject, body, cc=None, bcc=None,
-                          extra_attachments=None, user=None):
+                          extra_attachments=None):
         """Send a ChangeOrder to the customer (portal link + generated CO PDF).
         Persists an outbound EmailRecord via send_tracked and transitions
         draft -> open on success.

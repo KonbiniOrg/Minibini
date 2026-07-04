@@ -374,7 +374,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
                 invoice,
                 to=to, subject=subject, body=body, cc=cc, bcc=bcc,
                 extra_attachments=extra_attachments,
-                user=request.user,
             )
         except DjangoValidationError as e:
             return Response(

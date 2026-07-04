@@ -48,7 +48,9 @@ class IsFinishedLotPropertyTest(TestCase):
 class HideOnSpendListTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create(username='hos_user', is_superuser=True)
+        from tests.base import grant_atoms
+        self.user = grant_atoms(
+            User.objects.create(username='hos_user'), 'can_manage_financials')
         self.client.force_authenticate(user=self.user)
         self.cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False})[0]

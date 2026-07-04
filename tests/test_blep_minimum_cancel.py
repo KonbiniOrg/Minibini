@@ -140,9 +140,10 @@ class CloseOpenAutocommitTest(TransactionTestCase):
         self.assertFalse(Blep.objects.filter(pk=blep.pk).exists())
 
     def test_deactivate_cancels_sub_minute_blep_without_crashing(self):
-        actor = User.objects.create_user(
-            username='deactivate_actor', password='x', is_superuser=True
-        )
+        from tests.base import grant_atoms
+        actor = grant_atoms(
+            User.objects.create_user(username='deactivate_actor', password='x'),
+            'can_manage_config')
         target = User.objects.create_user(
             username='deactivate_target', password='x'
         )

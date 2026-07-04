@@ -123,7 +123,7 @@
         "fields": {
             "password": "pbkdf2_sha256$870000$test$hash",
             "last_login": null,
-            "is_superuser": true,
+            "is_superuser": false,
             "username": "admin",
             "first_name": "Admin",
             "last_name": "User",
@@ -133,7 +133,12 @@
             "date_joined": "2024-01-01T00:00:00Z",
             "contact": 1,
             "groups": [],
-            "user_permissions": []
+            "user_permissions": [
+                ["can_manage_jobs", "core", "user"],
+                ["can_manage_financials", "core", "user"],
+                ["can_manage_time", "core", "user"],
+                ["can_manage_config", "core", "user"]
+            ]
         }
     },
     {

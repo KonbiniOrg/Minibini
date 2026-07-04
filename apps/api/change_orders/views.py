@@ -183,7 +183,7 @@ class ChangeOrderViewSet(
         try:
             record = ChangeOrderEmailService.send_change_order(
                 co, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
-                extra_attachments=extra_attachments, user=request.user,
+                extra_attachments=extra_attachments,
             )
         except DjangoValidationError as e:
             return Response(

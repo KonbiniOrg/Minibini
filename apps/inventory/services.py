@@ -131,7 +131,7 @@ class InventoryService:
     )
 
     @staticmethod
-    def merge(keep_id, discard_id, *, user=None, overrides=None):
+    def merge(keep_id, discard_id, *, overrides=None):
         """Consolidate two inventory items into one (the manual dedup tool).
 
         Moves the discard's on-hand onto keep, repoints EVERY reference
@@ -221,7 +221,7 @@ class InventoryService:
         return keep
 
     @staticmethod
-    def write_off(item, qty=None, *, user=None, reason=''):
+    def write_off(item, qty=None, *, reason=''):
         """Write off some on-hand stock as wasted.
 
         `qty` is how much to waste (e.g. one damaged sheet); omit it to write off
@@ -249,7 +249,7 @@ class InventoryService:
             raise ValidationError(
                 f'Cannot write off {qty}; only {remaining} on hand.')
         InventoryService.manual_adjustment(
-            item, -qty, reason=reason or 'Write-off', user=user,
+            item, -qty, reason=reason or 'Write-off',
         )
         # An emptied non-catalog lot becomes a finished lot — kept as shop
         # history, hidden by the hide-on-spend filter (never auto-deleted).
@@ -279,7 +279,7 @@ class InventoryService:
         pli.refresh_from_db()
 
     @staticmethod
-    def manual_adjustment(inventory_item, quantity_change, reason='', user=None):
+    def manual_adjustment(inventory_item, quantity_change, reason=''):
         """Manually adjust QOH and record an audit-trail entry.
         Negative adjustments track as waste."""
         inventory_item.qty_on_hand = F('qty_on_hand') + quantity_change
@@ -290,7 +290,7 @@ class InventoryService:
 
         InventoryService._record_qoh_history(
             inventory_item, quantity_change,
-            action='Manual adjustment', reason=reason, user=user,
+            action='Manual adjustment', reason=reason,
         )
 
     @staticmethod
@@ -751,9 +751,10 @@ class MaterialService:
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('assign_task requires pending state')
         if task is not None:
+            from apps.jobs.models import Task
             if task.job_id != material.job_id:
                 raise ValidationError('Task must belong to the same job as the material')
-            if task.status in ('complete', 'cancelled'):
+            if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 raise ValidationError('Cannot assign material to a completed or cancelled task')
         material.task = task
         material.save(update_fields=['task_id'])

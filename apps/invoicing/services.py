@@ -364,7 +364,7 @@ class InvoiceEmailService:
 
     @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
-                     extra_attachments=None, user=None):
+                     extra_attachments=None):
         """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
         and statement PDF, calls send_tracked, transitions status on success.
 

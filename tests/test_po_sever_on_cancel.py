@@ -35,7 +35,7 @@ class POSeverOnCancelTest(TestCase):
         self.po.save()
         with self.assertRaises(ValidationError):
             PurchaseOrderReceivingService.cancel_line_item(
-                self.po, self.line.pk, self.user, note='',
+                self.po, self.line.pk, note='',
             )
 
     def test_cancel_line_item_delete_deletes_material(self):
@@ -43,7 +43,7 @@ class POSeverOnCancelTest(TestCase):
         self.po.save()
         mat_id = self.line.linked_material.pk
         PurchaseOrderReceivingService.cancel_line_item(
-            self.po, self.line.pk, self.user, note='', sever_decision='delete',
+            self.po, self.line.pk, note='', sever_decision='delete',
         )
         self.assertFalse(Material.objects.filter(pk=mat_id).exists())
 
@@ -52,7 +52,7 @@ class POSeverOnCancelTest(TestCase):
         self.po.save()
         mat_id = self.line.linked_material.pk
         PurchaseOrderReceivingService.cancel_line_item(
-            self.po, self.line.pk, self.user, note='', sever_decision='keep',
+            self.po, self.line.pk, note='', sever_decision='keep',
         )
         mat = Material.objects.get(pk=mat_id)
         self.assertIsNone(mat.po_line_item_id)

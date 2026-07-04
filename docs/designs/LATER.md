@@ -295,18 +295,22 @@ page stays whole.
   _Done when:_ decided — either keep on_hold jobs in In Progress (implemented) or record why
   Pipeline is the right home.
 
-- **Sweep `apps/api/` for `serializer.save()` bypasses — every mutation must go through a Service.** — _added 2026-05-27_
-  We just found four API paths that called DRF `serializer.save()` (or `.update()`) directly
-  instead of routing through the service-layer method that holds the guards: the task PATCH,
-  the task-materials create + update, and the materials PATCH. Each one silently bypassed the
-  on_hold freeze and would similarly bypass any future service-layer guard, side-effect, or
-  invariant. The convention is **every mutating endpoint goes through a Service** — that's
-  where validation, guards, and side-effects live, with `ValidationError` translated to 400.
-  Direct DRF saves in views should be effectively zero in this codebase. Grep `apps/api/` for
-  `is_valid` + `serializer.save()` / `.update()` and route any remaining bypasses through the
-  appropriate service.
-  _Done when:_ no mutating API view writes via the DRF serializer directly; all go through a
-  Service.
+- **Sweep `apps/api/` for `serializer.save()` bypasses — re-audited 2026-07-04; residual tails enumerated.** — _added 2026-05-27_
+  Re-swept: 9 `serializer.save()` sites remain, none a guard bypass. The two
+  material PATCHes (tasks + inventory views) route pricing through
+  `MaterialService.update_pricing` and inline the on_hold / invoiced guards
+  before a metadata-only save; `task` is read-only on the serializer (reassign
+  goes through the `assign_task` action → service). The CO PATCH routes status
+  through `ChangeOrderService.update_status` and saves only non-status fields.
+  The estimate PATCH, auth (profile/password), and users (admin CRUD) use
+  serializers as their whole write surface — no domain service exists to
+  bypass. **Residual:** the metadata tails should still gain service methods
+  when those surfaces are next touched (a new serializer-writable field would
+  silently skip future service guards); until then this is convention debt,
+  not a live bypass.
+  _Done when:_ the material/CO/estimate metadata tails have service methods
+  owning their guards (or the convention is amended to bless thin
+  metadata-only saves).
 
 - **Notify the requester when an approval request is approved/denied.** — _added 2026-05-31_
   Workers get no feedback when a manager acts on their request — they only find out by
@@ -399,12 +403,12 @@ page stays whole.
   touching `TaskDetailPage` (deliberately left alone this pass). _Done when:_ the tag display
   is de-duplicated and the dead `userPermissions` prop is removed end-to-end.
 
-- **Superuser still referenced in test fixtures + fixture JSON.** — _added 2026-06-06_
-  App code is now superuser-free (authorization is atoms-only), but several test files create
-  `is_superuser=True` users as a privileged-actor shortcut (they still pass because Django
-  grants superusers every perm) and `fixtures/unit_test_data.json` seeds a superuser. Migrate
-  these to grant the four atoms explicitly so nothing references superuser. _Done when:_ no
-  test fixture or fixture JSON relies on `is_superuser` for authorization.
+- ~~**Superuser still referenced in test fixtures + fixture JSON.**~~ — _delivered 2026-07-04_
+  `fixtures/unit_test_data.json`'s admin now carries the four atoms explicitly
+  (natural-key `user_permissions`, `is_superuser: false`), and the five
+  privileged-actor shortcuts migrated to `tests.base.grant_atoms(user, *atoms)`.
+  `tests/test_api_users.py` still creates superusers deliberately — it *tests*
+  superuser semantics (bypass, patch-ignores-flag), which is the legitimate use.
 
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
@@ -726,24 +730,19 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
   call made) or stays a bespoke sequence, and recorded why.
 
-- **Drop `request.user` threading from imperative history; default to the request context.** — _added 2026-06-22_
-  Imperative history sites that fire from an authenticated request (`record_payment`, `cancel_line_item`,
-  the inventory/purchasing services, the PO email/cancel/receive paths) **thread `request.user` through
-  service-method signatures** purely to hand it to `record_history`. That's redundant: `record_history`
-  could default `user` to `current_request_user()` — the same request-scoped `HistoryContext` the `@history`
-  decorator already reads (middleware sets it; DRF auth has run by the time a view's service code executes).
-  The **deliberate-author sites need no change** — they call `record_history` directly with their own
-  explicit `user`, which overrides any default: portal (`user=None` + customer in the changes payload),
-  signals & the expiry commands (`user=system_user`), and `backfill_job_history` (a *specific historical
-  author* + backdated `timestamp=`, run with no request — the proof that `record_history` must keep an
-  *optional* `user=` param). So the refactor is bounded and mechanical: **(a)** make
-  `record_history`/`record_action` default `user` to `current_request_user()`; **(b)** drop the `user`/`actor`
-  params from the request-driven service methods; **(c)** leave the deliberate-author sites untouched.
-  Context: the 2026-06-22 QBO-attribution work (`record_action`, `QBOSyncLog.triggered_by` via `log_sync`)
-  already uses the context for its *new* code — deliberately inconsistent with the still-threaded older
-  sites; this item converges everything to one attribution style.
-  _Done when:_ request-driven services no longer thread a user just for history attribution, the
-  deliberate-author sites are unchanged, and there's a single attribution mechanism.
+- ~~**Drop `request.user` threading from imperative history; default to the request context.**~~ — _delivered 2026-07-04_
+  (a) `record_history` now defaults `user` to `current_request_user()` (the
+  same request-scoped context the `@history` decorator reads); explicit
+  `user=` still overrides for the deliberate-author sites (portal `user=None`
+  resolves to None because portal requests are anonymous; signals/expiry pass
+  `system_user`; backfill passes its historical author). (b) The
+  pure-attribution threading was dropped end-to-end: the four document-send
+  services (`send_estimate`/`send_invoice`/`send_po`/`send_change_order`),
+  `PurchaseOrderReceivingService.cancel_line_item`, and the inventory trio
+  (`write_off`/`merge`/`manual_adjustment`) lost their `user` params, and all
+  view-level `user=request.user` note/audit calls now rely on the default.
+  Params that carry real data stayed (`record_payment`'s `created_by`,
+  `receive_items`' `received_by`, blep/shift `actor` permission checks).
 
 - **`@history` decorator `anchor=` param — route an adjunct's auto-history to its primary.** — _added 2026-06-22_
   The `@history` decorator keys entries to the model's *own* `object_type`, so an adjunct (BillPayment→Bill,
@@ -970,19 +969,13 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
   with a regression test pinning the timezone behavior.
 
-- **Sweep for bare string literals that should be class constants.** — _added 2026-06-25_
-  Recurring smell: status / algorithm / type values hardcoded as bare strings
-  (e.g. `'completed'`, `'flat_fee'`, `'percentage'`, `'draft'`) instead of the
-  model's **class constant** (`Job.STATUS_COMPLETED`, `ServiceItem.FLAT_FEE`,
-  `ServiceItem.PERCENTAGE`, `Estimate.STATUS_DRAFT`). Per CLAUDE.md "Status
-  Constants" rule + the code-review checklist. Periodically grep `apps/` (and JS
-  where the value is mirrored, e.g. `algorithm === 'percentage'`) for bare
-  choice-value literals and swap in the constant — watch the recent
-  ServiceItem / percentage-adjustments code especially. Legitimate exceptions:
-  migration files and migration-safe helpers (e.g. `flat_fee_reframe.py`
-  intentionally uses the literal `'flat_fee'` so it works against historical models).
-  _Done when:_ a sweep finds no bare choice/status/algorithm literals where a class
-  constant exists (remaining ones are the deliberate migration-safe cases).
+- ~~**Sweep for bare string literals that should be class constants.**~~ — _swept 2026-07-04_
+  Grepped `apps/` for bare status/algorithm/choice literals: seven live sites
+  fixed (six `status__in=[…]` board queries in `apps/jobs/services.py`, one
+  task-status tuple in `MaterialService.assign_task`). Everything else matching
+  the pattern was API parameter vocabulary (`action == 'delete'`,
+  `direction == 'up'`), not model choices. Migration files remain the
+  deliberate exception. Re-run the grep when reviewing new code.
 
 - **DRY: combine the two near-identical material modals.** — _added 2026-06-27_
   `frontend/src/components/PlanMaterialModal.svelte` (PlanMaterial, on the Plan/
@@ -1029,15 +1022,9 @@ IMAP-SMTP machinery and tend to be worked together.
   its PO without leaving the job overview, or we've consciously decided that lives
   somewhere else and documented where.
 
-- **Sweep test suite for `self.skipTest('… in fixture')` anti-pattern.** — _added 2026-06-30_
-  Several tests silently skip when ambient fixture data is absent (e.g. "Need at least two
-  users in fixture", "No ENTERED_QTY RateScheme in fixture"). Seven were fixed 2026-06-30
-  (self-setup or hard-assert). Grep the full suite for remaining `self.skipTest` calls that
-  rely on fixture content and convert them: either create the required data inline so the
-  test is self-sufficient, or replace the skip with `self.fail(…)` so a missing prerequisite
-  fails loudly. A skip that hides a broken prerequisite is worse than a red test.
-  _Done when:_ no test skips because ambient fixture data is absent; every prerequisite
-  is either created by the test itself or triggers a hard failure.
+- ~~**Sweep test suite for `self.skipTest('… in fixture')` anti-pattern.**~~ — _verified clean 2026-07-04_
+  Grep of `tests/` finds zero remaining `skipTest` calls — the 2026-06-30 fix
+  of seven covered them all.
 
 - ~~**Hand-added blep should mirror the start-path side effects (assign + consume materials).**~~ — _delivered 2026-07-04_
   Checked: `BlepService.create_historical` already promoted the pending task and

@@ -252,7 +252,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 entry_type='audit',
                 object_type=obj_type,
                 object_id=po.pk,
-                user=request.user if hasattr(request, 'user') and request.user.is_authenticated else None,
                 text=reason,
             )
 
@@ -314,7 +313,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             po = PurchaseOrderEmailService.send_po(
                 po, to=to, subject=subject, body=body,
                 cc=cc, bcc=bcc, extra_attachments=extra_attachments,
-                user=request.user,
             )
         except DjangoValidationError as e:
             return Response(
@@ -343,7 +341,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             entry_type='note',
             object_type='purchaseorder',
             object_id=obj.pk,
-            user=request.user,
             text=text,
         )
         serializer = HistoryEntrySerializer(entry)
@@ -400,7 +397,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             )
         try:
             po = PurchaseOrderReceivingService.cancel_line_item(
-                po, line_item_id, request.user, note=note,
+                po, line_item_id, note=note,
                 sever_decision=sever_decision,
             )
         except Exception as e:

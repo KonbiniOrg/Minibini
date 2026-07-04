@@ -1419,7 +1419,8 @@ class BoardService:
         # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
         #           + on_hold (reverted-to-planning / paused)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved', 'on_hold']
+            status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
         ).select_related('contact', 'project_manager').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
@@ -1468,7 +1469,8 @@ class BoardService:
 
         # Closed: terminal states within retention
         closed_jobs = Job.objects.filter(
-            status__in=['completed', 'rejected', 'cancelled'],
+            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
+                        Job.STATUS_CANCELLED],
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date')
         closed = [BoardService._serialize_closed_job(job) for job in closed_jobs]
@@ -1496,7 +1498,8 @@ class BoardService:
         """Return pipeline jobs (draft + submitted + approved + on_hold) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved', 'on_hold']
+            status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
         ).select_related('contact', 'project_manager').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -1623,9 +1626,11 @@ class BoardService:
         outstanding invoice; .distinct() ensures each job appears only once.
         """
         from apps.jobs.models import Job
+        from apps.invoicing.models import Invoice
         unpaid_jobs = Job.objects.filter(
             Q(status=Job.STATUS_WORK_COMPLETE) |
-            Q(invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted'])
+            Q(invoice__status__in=[Invoice.STATUS_DRAFT, Invoice.STATUS_OPEN,
+                                   Invoice.STATUS_PARTLY_PAID, Invoice.STATUS_DEFAULTED])
         ).distinct().select_related('contact', 'project_manager').order_by('due_date')
 
         unpaid_list = [
@@ -1648,7 +1653,8 @@ class BoardService:
         cutoff = timezone.now() - timedelta(days=retention_days)
 
         closed_jobs = Job.objects.filter(
-            status__in=['completed', 'rejected', 'cancelled'],
+            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
+                        Job.STATUS_CANCELLED],
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date')
         return {'jobs': [BoardService._serialize_closed_job(job) for job in closed_jobs]}
@@ -1733,9 +1739,11 @@ class BoardService:
     @staticmethod
     def _serialize_unpaid_job(job):
         """Serialize an unpaid job with invoice details and profitability."""
+        from apps.invoicing.models import Invoice
         data = BoardService._serialize_job(job)
         invoices = []
-        for inv in job.invoice_set.exclude(status__in=['cancelled', 'superseded']).order_by('created_date'):
+        for inv in job.invoice_set.exclude(
+                status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]).order_by('created_date'):
             total = inv.invoicelineitem_set.aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))
             )['total'] or Decimal('0.00')
