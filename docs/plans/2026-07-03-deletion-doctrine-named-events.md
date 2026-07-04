@@ -54,13 +54,14 @@ There is no legitimate reason to delete a deliberate, referenced Fee.
 - Manual delete (`FeeService.delete`) **refuses while referenced** (any lens
   claim, any live invoice) with a message pointing at the change-order flow.
   Unreferenced accidental fees delete as today.
-- CO acceptance retirement marks the fee **`retired`** instead of deleting it,
-  and **stops purging its claim rows** — the estimate line's provenance stays
-  resolvable forever (the whole point: "still history on the job, still
-  supports an estimate line item").
-- Retirement **nulls the OneToOne `task` link** (a retired fee must not block a
-  replacement fee on the same task; MySQL has no conditional uniqueness).
-- Field shape: a `retired` boolean or small status — [OPEN, minor].
+- **No `retired` flag for now** — [SETTLED 2026-07-03]. A Fee that passes the
+  Rule-1 tests just deletes; CO acceptance retirement keeps its shipped
+  behavior (delete + purge source rows). Accepted consequence: a CO-removed
+  fee's estimate line loses its provenance trace (the CO line itself remains
+  the record of the removal). Revisit alongside the Fee.task / fixed-price-work
+  feature (see the LATER entry) — the retired state and the task-link design
+  belong to the same pass, and when `retired` arrives it must null the
+  OneToOne `task` link (MySQL has no conditional uniqueness).
 - The dormant `Fee.task` FK stays as-is — **[SETTLED: leave it alone]**. Full
   decision record (origin, why it's unwired, the fixed-price double-billing
   hole, hazards) lives in `docs/designs/LATER.md` under "`Fee.task` is a
@@ -82,9 +83,29 @@ material it didn't end up using."* One rule replaces four per-path behaviors:
   analogy: an unclaimed, unconsumed, fully returned material never mattered.
 - `released` keeps its claim rows (no purge), releases its earmark, and is
   excluded from live-work consumers. Earmark/QOH accounting is unchanged.
-- Field shape: third `consumption_state` value vs a separate flag — [OPEN,
-  minor]. A third state reads well (`pending / consumed / released`) but check
-  every `consumption_state` comparison first.
+- Field shape: **third `consumption_state` value** — [DEFAULT]. It is mutually
+  exclusive with the other two and is a consumption *outcome* ("never
+  consumed; returned/descoped"). The full lifecycle:
+
+  | Transition | Trigger | Accounting |
+  |---|---|---|
+  | *(born)* → `pending` | planning: task-list add, template, estimate/CO crystallization, PO/expense creation | earmark on committed jobs (`_mutate_earmark`), bulk at acceptance otherwise |
+  | `pending` → `pending` (qty change) | `draw_more` / partial restock | earmark ±delta; QOH untouched (stock moves only at consume/receipt) |
+  | `pending` → `consumed` | task start (`consume`) — physical reality | QOH −qty, earmark −qty |
+  | `consumed` → `pending` | `unconsume` — the oops-Start undo | QOH +qty, earmark +qty |
+  | `pending` → `released` | the named events: full restock **while referenced**, job-completion loose release, PO sever, CO retirement | earmark backed out; claims intact; terminal |
+  | `pending` → *(deleted)* | full restock / mistake-delete **while unreferenced** — scratch paper | earmark backed out; row gone |
+  | `consumed` → anything but `pending` | **never** — consumed stock is physical history |
+
+  Note the quantity asymmetry on `released`: restock paths arrive at qty 0
+  (the decrement *is* the shelf accounting), descope paths (CO retirement)
+  keep their planned qty as the record ("planned 7, descoped 7"). Consumers
+  therefore filter by state, never by quantity — in particular
+  `create_earmarks_for_job` must exclude `released` alongside `consumed`, or
+  a descoped material's retained quantity would phantom-re-earmark on the
+  next sweep.
+- The expense-bound qty-0 limbo (restock keeps the row for `restocked_qty`
+  bookkeeping) reads naturally as `released` too — fold it in. [DEFAULT]
 
 ### Expense reject — [SETTLED]
 
@@ -121,20 +142,23 @@ Keep rows; table size is a non-issue (search-driven pickers, indexed flags).
 - Merge is unchanged: it repoints references first, so the discard is genuinely
   unreferenced (catalog-level mistake correction).
 
-### Blep — [OPEN]
+### Blep — [SETTLED 2026-07-03]
 
-The own-blep 30-hour window stays (fat-finger fixes). The tension is
-`can_manage_time` deleting anyone's blep at any age — "it *happened*." Candidate:
-a `voided` flag (excluded from billing/payroll, retained as record), riding the
-existing `BlepChangeRequest` review machinery. Decide separately — time-record
-integrity may be its own pass.
+Deletion stays (own-blep 30-hour window; `can_manage_time` for anyone's, any
+age) **except when the blep's Task is on a live invoice**
+(`InvoiceClaimService.is_invoiced('task', task_pk)`) — billed actuals are
+frozen; deleting a blep under an invoiced ELAPSED_TIME task would silently
+change the basis of a number already charged. An **estimate-line claim does
+not block** — the estimate bills `est_qty`, so bleps never move it. The guard
+applies to every blep-delete path, not just managers (an own-window delete
+distorts an invoiced task just the same). No `voided` flag.
 
-### Expense (post-approval) / BillPayment — [OPEN]
+### Expense (post-approval) / BillPayment — [DEFERRED, RM 2026-07-03]
 
 An approved, uninvoiced expense is still hard-deletable; QBO already thinks in
 voids, so a `voided` status likely fits better than delete. Payments are money
-actuals and deserve the same voided-not-vanished look. Both deferred to their
-own pass; noted here so the doctrine list is complete.
+actuals and deserve the same voided-not-vanished look. Explicitly deferred to
+their own pass; noted here so the doctrine list is complete.
 
 ### Already compliant (no change)
 
