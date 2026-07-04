@@ -34,7 +34,7 @@
 
     if (matches.length === 1) {
       next.mode = 'existing';
-      next.selectedContactId = String(matches[0].id);
+      next.selectedContactId = matches[0].id;  // numeric — matches <option value={c.id}>
     } else if (matches.length === 0) {
       next.mode = 'new';
       const [firstName, ...rest] = (senderInfo.sender_name || '').split(' ');
@@ -44,14 +44,14 @@
       const bizMatches = senderInfo.matching_businesses || [];
       if (bizMatches.length > 0) {
         next.businessMode = 'existing';
-        next.selectedBusinessId = String(bizMatches[0].id);
+        next.selectedBusinessId = bizMatches[0].id;  // numeric — matches <option value={b.id}>
       } else if (senderInfo.extracted_company) {
         next.businessMode = 'new';
         next.newBusinessName = senderInfo.extracted_company;
       }
     } else {
       next.mode = 'existing';
-      next.selectedContactId = String(matches[0].id);
+      next.selectedContactId = matches[0].id;  // numeric — matches <option value={c.id}>
     }
     state = next;
   });

@@ -12,8 +12,11 @@
   } = $props();
 
   let form = $state({
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     business: po?.business ?? null,
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     contact: po?.contact || '',
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     requested_date: po?.requested_date || '',
   });
 

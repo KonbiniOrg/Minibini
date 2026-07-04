@@ -25,6 +25,7 @@
 
   // Which auto-attached PDFs to include (default all checked).
   let includeAutoAttachments = $state(
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     (sendDefaults?.attachments_preview || []).map(() => true),
   );
 

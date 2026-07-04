@@ -85,6 +85,21 @@ class AddLineFromServiceTest(DeferredServiceBase):
                 self.estimate.pk, 999999, Decimal('1'),
             )
 
+    def test_float_qty_normalized_via_str(self):
+        # A raw JSON float (2.2) must not expand to its binary value and trip
+        # the 2-decimal-places validator — the money-input float class bug.
+        line = EstimateService.add_line_item_from_service(
+            self.estimate.pk, self.service_item.pk, 2.2,
+        )
+        line.refresh_from_db()
+        self.assertEqual(line.qty, Decimal('2.2'))
+
+    def test_garbage_qty_rejected(self):
+        with self.assertRaises(ValidationError):
+            EstimateService.add_line_item_from_service(
+                self.estimate.pk, self.service_item.pk, 'lots',
+            )
+
 
 class ServiceItemFieldTest(DeferredServiceBase):
     def test_line_can_carry_service_item_and_defaults_null(self):

@@ -21,6 +21,16 @@ from apps.inventory.models import InventoryItem
 logger = logging.getLogger(__name__)
 
 
+def _decimal_or_invalid(value, field):
+    """Coerce an API-supplied number to Decimal via str() (a raw JSON float
+    would expand to its binary value and trip decimal_places validation)."""
+    from decimal import InvalidOperation
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError({field: 'Invalid decimal value.'})
+
+
 class EstimateService:
     """Service class for Estimate creation and management."""
 
@@ -387,7 +397,9 @@ class EstimateService:
             estimate=estimate,
             service_item=service_item,
             description=service_item.template_name,
-            qty=qty,
+            # str() first: a raw JSON float would expand to its binary value
+            # and trip the 2-decimal-places validator.
+            qty=_decimal_or_invalid(qty, 'qty'),
             units=scheme.unit_label or 'none',
             price=scheme.effective_rate(service_item.default_active_modifiers),
             accounting_category=service_item.effective_accounting_category,

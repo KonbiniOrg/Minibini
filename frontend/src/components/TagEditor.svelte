@@ -3,6 +3,7 @@
 
   const { endpoint, initialTags = [] } = $props();
 
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let tags = $state([...initialTags]);
   let allTags = $state([]);
   let input = $state('');

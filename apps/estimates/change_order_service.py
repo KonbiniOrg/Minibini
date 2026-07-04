@@ -400,13 +400,16 @@ class ChangeOrderService:
             service_item = ServiceItem.objects.get(pk=service_item_pk)
         except ServiceItem.DoesNotExist:
             raise NotFoundError(f'ServiceItem {service_item_pk} not found')
+        from apps.estimates.services import _decimal_or_invalid
         scheme = service_item.rate_scheme
         li = ChangeOrderLineItem(
             change_order=co,
             action=ChangeOrderLineItem.ACTION_ADD,
             service_item=service_item,
             description=service_item.template_name,
-            qty=qty,
+            # str() first: a raw JSON float would expand to its binary value
+            # and trip the 2-decimal-places validator.
+            qty=_decimal_or_invalid(qty, 'qty'),
             units=scheme.unit_label or 'none',
             price=scheme.effective_rate(service_item.default_active_modifiers),
             accounting_category=service_item.effective_accounting_category,

@@ -139,6 +139,16 @@ describe('FeeModal — edit', () => {
     expect(getByLabelText(/Unit Rate/).value).toBe('75');
   });
 
+  it('preselects the fee\'s accounting category in edit mode (numeric ===)', () => {
+    // Svelte 5 matches <option value={cat.id}> with strict === — a String()
+    // seed used to leave the select showing no selection.
+    const feeWithCat = { ...existingFee, accounting_category: 2 };
+    const { getByLabelText } = render(FeeModal, {
+      props: { open: true, mode: 'edit', fee: feeWithCat, jobId: 7, categories: CATEGORIES },
+    });
+    expect(getByLabelText(/Accounting Category/).value).toBe('2');
+  });
+
   it('patches the fee on save', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole } = render(FeeModal, {

@@ -28,7 +28,9 @@
         description = fee.description || '';
         quantity = fee.quantity != null ? String(fee.quantity) : '1';
         unitRate = fee.unit_rate != null ? String(fee.unit_rate) : '';
-        accountingCategory = fee.accounting_category != null ? String(fee.accounting_category) : '';
+        // Keep numeric: the AC <option value={cat.id}> is numeric and
+        // Svelte 5 matches with strict === — String() here shows no selection.
+        accountingCategory = fee.accounting_category ?? '';
       } else {
         description = (mode === 'edit' && fee) ? (fee.description || '') : (presetDescription || '');
         quantity = '1';

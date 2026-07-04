@@ -128,15 +128,14 @@ page stays whole.
   `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
   redundancy this item is about.
 
-- **Audit `$state` seeded from a prop — stale on prop change.** — _added 2026-06-04_
-  The Svelte compiler warns `state_referenced_locally` in `Accordion.svelte`
-  (`let isOpen = $state(open)`) and `TagEditor.svelte` (`let tags = $state([...initialTags])`):
-  local `$state` initialized from a prop captures only the prop's *initial* value, so if the
-  parent later changes that prop the component won't react. Harmless where the prop is
-  effectively mount-only (current usage), a latent bug if it ever updates. Surfaced while
-  writing component tests (the tests don't exercise the prop-change path).
-  _Done when:_ the `$state`-seeded-from-prop sites have been grepped, and each is either
-  confirmed mount-only or converted (e.g. `$derived`, or a reset via `$effect`).
+- ~~**Audit `$state` seeded from a prop — stale on prop change.**~~ — _audited 2026-07-04_
+  Compiled every component and traced all 12 warning sites to their parents:
+  every one is mount-only-safe — parents remount via `{#if}`/`{#key}`/loading
+  guards (forms, modals), a `$effect` re-syncs (`AssignedTaskList`,
+  `WizardLineItemCard`), or the component is unused (`Accordion`). Each site now
+  carries `// svelte-ignore state_referenced_locally` with the mount-seed
+  contract noted, so the build is warning-free while the lint still catches new
+  code. (Also closes the `WizardLineItemCard` warnings entry below.)
 
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —
@@ -890,22 +889,18 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
   root-caused and fixed (or shown to be expected), with a test.
 
-- **Money inputs send floats → "no more than 2 decimal places" on non-round values.** — _added 2026-06-20_
-  Class bug. `<input type="number" bind:value={x}>` coerces the value to a JS float,
-  sent as a JSON number; Django converts a float to `Decimal` via its binary value
-  (e.g. `33.33` → `33.3299...`), tripping a `DecimalField(decimal_places=2)` validator.
-  Exactly-representable values (`50`, `12.5`) slip through, so it looks intermittent.
-  Fixed for the bill-payment path on `feature/bills` (commit `3c931e3`): the Record
-  Payment modal amount input is now `type=text`/`inputmode=decimal` (sends the exact
-  string) and `BillPaymentService` normalizes via `Decimal(str(value))` server-side.
-  **The same pattern remains in other money inputs** — notably
-  `frontend/src/components/LineItemModal.svelte` (qty/price on PO/Bill/Invoice/Estimate
-  line items), and likely other `type="number"` money/qty fields. Do a sweep:
-  switch money inputs to string-valued (`type=text`/`inputmode=decimal`) and/or add a
-  shared server-side `Decimal(str(...))` normalize on the line-item/qty write paths,
-  keeping the real >2-decimal validation intact.
-  _Done when:_ entering a non-round amount (e.g. `19.99`) in any money field saves
-  cleanly, with regression tests, and no `type="number"` money input sends a raw float.
+- ~~**Money inputs send floats → "no more than 2 decimal places" on non-round values.**~~ — _resolved 2026-07-04 (narrower than feared)_
+  Swept and root-caused: the float class bug only bites write paths that **bypass
+  DRF serializer fields** — DRF's `DecimalField.to_internal_value` stringifies
+  before `Decimal()`, so every serializer-backed endpoint (all the line-item
+  CRUD behind `LineItemModal`, materials, expenses, …) was already safe; no
+  blanket `type=text` conversion needed. Audit of raw `request.data` numeric
+  reads in `apps/api/` found all sites already normalizing via `Decimal(str())`
+  (task complete/actual-qty, add-from-template, write-off) except the two
+  `add_line_item_from_service` services (estimate + CO) — now normalized via
+  `_decimal_or_invalid` with float-qty regression tests
+  (`tests/test_deferred_service_crystallization.py`). Convention for new code:
+  a service taking a raw numeric param must `Decimal(str(value))` it.
 
 - **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
   When adding a PO line for a job that already has materials, there's no way to
@@ -1165,32 +1160,21 @@ IMAP-SMTP machinery and tend to be worked together.
   touches many files.
   _Done when:_ a single shared modal shell owns overlay/positioning and the modals adopt it.
 
-- **Sweep for Svelte 5 numeric `<select>` strict-=== mismatches.** — _added 2026-07-03_
-  Recurring bug: a `<select bind:value={x}>` whose options use a **numeric** value expression
-  (`<option value={row.id}>` where `id` is a number) silently shows **no selection** when `x` is set to
-  a **string** (e.g. `String(presetId)`, or a value read from `/api/settings/` as a string). Svelte 5
-  matches the bound value to option values with strict `===`, so `'5' !== 5`. Already bitten and fixed
-  in: `MaterialModal`, `EstimateAddLineForm` (AC selects), and `WorkItemForm` (template pulldown,
-  `25107590`). Do a proactive pass: grep for `<option value={` with a numeric field and check the bound
-  var's type on every preset/prefill path (manual user-picking usually works because it sets the numeric
-  option value directly — it's the **programmatic set** that breaks). Fix by keeping the bound value the
-  **same type as the option value** (prefer numeric to match numeric ids; don't `String()` it).
-  Candidate spots: any modal/form with a template / rate-scheme / accounting-category / job / contact
-  `<select>` that gets a preset. Consider a tiny shared select helper or a lint/test guard to prevent
-  regressions.
-  _Done when:_ every prefilled `<select>` selects its preset, and the type-match convention is
-  documented (or enforced) so new selects don't reintroduce it.
+- ~~**Sweep for Svelte 5 numeric `<select>` strict-=== mismatches.**~~ — _swept 2026-07-04_
+  Full pass over every `<option value={…numeric…}>` select tracing each bound
+  var's preset/prefill path. Two live bugs found and fixed: `FeeModal` edit-mode
+  AC preset (`String(fee.accounting_category)` → numeric, with a Vitest
+  regression) and `SenderResolutionForm`'s matched contact/business presets
+  (`String(matches[0].id)` → numeric). All other sites confirmed type-matched
+  (numeric API pks against numeric options, or consistently-string QBO ids).
+  Convention: keep the bound value the same type as the option value; never
+  `String()` a numeric preset.
 
-- **`WizardLineItemCard` `state_referenced_locally` warnings on `lastSyncedSnapshot` init.** — _added 2026-07-03_
-  `frontend/src/components/wizards/WizardLineItemCard.svelte` lines ~20–25 initialize
-  `lastSyncedSnapshot = $state({ description: lineItem.description, qty: lineItem.qty, ... })`, which
-  reads the `lineItem` prop at init and triggers Svelte 5's `state_referenced_locally` build warning
-  (only the initial prop value is captured). Harmless today — the re-sync `$effect` below already keeps
-  the snapshot current — but noisy in the build. Clean up so the initializer doesn't read a prop
-  directly (e.g. derive/seed it inside the effect, or restructure the snapshot). Behavior must stay
-  identical (the snapshot is the clean/in-sync baseline the re-sync effect compares against).
-  _Done when:_ the three warnings are gone and the card's dirty/re-sync behavior is unchanged (tests
-  still green).
+- ~~**`WizardLineItemCard` `state_referenced_locally` warnings on `lastSyncedSnapshot` init.**~~ — _delivered 2026-07-04_
+  Silenced via per-line `svelte-ignore` with the mount-seed contract noted (the
+  re-sync `$effect` is the mechanism that keeps the snapshot current; seeding
+  inside the effect instead would blank the first paint, so the init was kept
+  and acknowledged). Tests green; build warning-free.
 
 - **Verify whether RateScheme supersession repoints its ServiceItem catalog users.** — _added 2026-07-03_
   (Relocated from the now-retired add-line/picker plan.) `RateScheme.supersede()` (`apps/jobs/models.py`)

@@ -23,28 +23,42 @@
   let isEdit = $derived(!!expense);
 
   // Form state
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let amount = $state(expense?.amount || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let purchased_on = $state(expense?.purchased_on || new Date().toISOString().slice(0, 10));
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let description = $state(expense?.description || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let accounting_category = $state(expense?.accounting_category || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let payment_method = $state(expense?.payment_method || 'personal');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let payment_account_id = $state(expense?.payment_account_id || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let reference_number = $state(expense?.reference_number || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let purchased_by = $state(expense?.purchased_by || $currentUser?.id || null);
   let newMaterial = $state(null);
 
   // Job is the cost anchor. jobId is the numeric id; jobRow is the full job
   // object fed as selectedItem to JobPicker for edit-mode / initialJob prefill.
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let jobId = $state(expense?.job ?? initialJob?.job_id ?? null);
   let jobRow = $state(
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     expense?.job
+      // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
       ? { job_id: expense.job, job_number: expense.job_number, name: expense?.job_name }
+      // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
       : (initialJob || null)
   );
 
   // Compound "paid by" select value: "personal" or "company:<account_id>"
   let paidByValue = $state(
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     expense?.payment_method === 'company' && expense?.payment_account_id
+      // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
       ? `company:${expense.payment_account_id}`
       : 'personal'
   );

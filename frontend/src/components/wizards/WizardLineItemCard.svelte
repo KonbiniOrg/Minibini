@@ -4,9 +4,13 @@
 
   let { lineItem, apiBase, canAddHere = false, onAddHere, onchange, registerFlush } = $props();
 
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let nameValue = $state(lineItem.description);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let qtyValue = $state(lineItem.qty);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let unitsValue = $state(lineItem.units);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let priceValue = $state(lineItem.price);
   // Tracks whether the user has manually touched the price field this edit session.
   // Reset on save / reset-to-computed.
@@ -18,9 +22,13 @@
   // re-sync effect below to distinguish a parent-driven prop refresh (e.g.
   // after add-atoms or remove-atoms) from user edits.
   let lastSyncedSnapshot = $state({
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     description: lineItem.description,
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     qty: lineItem.qty,
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     units: lineItem.units,
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     price: lineItem.price,
   });
 

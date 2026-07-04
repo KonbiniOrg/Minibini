@@ -15,6 +15,7 @@
 
   // Default every row to 'keep' — the non-destructive choice (the Material
   // stays planned on its Job; the user opts in to deleting it).
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   for (const it of items) {
     decisions[it.line_item_id] = 'keep';
   }
