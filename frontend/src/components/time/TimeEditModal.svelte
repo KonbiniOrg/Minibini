@@ -147,7 +147,7 @@
   }
 </script>
 
-<Modal {open} onSave={() => { if (!busy && !blocked) save(); }} onCancel={onClose} maxWidth="630px">
+<Modal {open} {busy} onSave={() => { if (!blocked) save(); }} onCancel={onClose} maxWidth="630px">
       <h3>{action === 'request' ? 'Request change' : action === 'create' ? 'Add' : 'Edit'}
           {recordType === 'shift' ? 'shift' : 'time entry'}</h3>
       <p><label><strong>Start</strong><br>

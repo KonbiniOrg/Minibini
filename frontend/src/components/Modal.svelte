@@ -10,19 +10,35 @@
   // - `maxWidth` is the one sanctioned geometry knob (forms ~600–780px).
   // - The grab bar makes the box draggable to peek at the page behind it;
   //   position resets every time the modal opens.
-  // - `onSave` is optional: omit it when Enter is already handled natively
-  //   by a <form> inside (binding both would double-fire) or when the
-  //   primary action is ambiguous — modalKeys then leaves Enter alone.
+  // THE KEYBOARD CONTRACT (see also frontend/README.md → Modals):
+  // - Every modal passes `onCancel` — Escape always closes. A modal with
+  //   internal sub-states (confirm-delete, a nested prompt) passes a smarter
+  //   onCancel that backs out one level before closing.
+  // - Enter: one decision — is the content a native <form>? If YES, the form
+  //   owns Enter (native submit + required-validation); omit `onSave` here,
+  //   binding both would double-fire. If NO (button-driven content), pass
+  //   `onSave`. Deliberately Esc-only modals (an ambiguous primary action)
+  //   omit onSave WITH a comment saying why.
+  // - `busy`: pass the modal's in-flight flag; the shell suppresses Enter
+  //   while it's true, so no modal needs its own `if (!busy)` wrapper (the
+  //   Save button still wants `disabled={busy}` for the click path).
   import { modalKeys } from '../lib/modalKeys.js';
 
   let {
     open = false,
     onSave = undefined,
     onCancel = () => {},
+    busy = false,
     maxWidth = '750px',
     label = undefined,
     children,
   } = $props();
+
+  // The busy-guard lives HERE, once — a double-Enter during a slow save must
+  // never fire the API twice.
+  const guardedSave = $derived(
+    onSave ? () => { if (!busy) onSave(); } : undefined
+  );
 
   // Drag offset, applied as a transform. Reset on every open so a modal
   // never reopens where its predecessor was dragged to.
@@ -47,7 +63,7 @@
 </script>
 
 {#if open}
-  <div class="overlay" use:modalKeys={{ onSave, onCancel }}>
+  <div class="overlay" use:modalKeys={{ onSave: guardedSave, onCancel }}>
     <div
       class="modal"
       role="dialog"

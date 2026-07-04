@@ -11,7 +11,8 @@
   } = $props();
 </script>
 
-<Modal {open} maxWidth="720px">
+<!-- Enter is owned by ExpenseForm's native <form>; the shell only wires Escape. -->
+<Modal {open} onCancel={onClose} maxWidth="720px">
       <h3>{expense ? 'Edit Expense' : 'Add Expense'}</h3>
       <ExpenseForm
         {expense}

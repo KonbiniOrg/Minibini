@@ -113,7 +113,7 @@
   }
 </script>
 
-<Modal {open} onSave={() => { if (!busy) save(); }} onCancel={onClose} maxWidth="780px">
+<Modal {open} onSave={save} {busy} onCancel={onClose} maxWidth="780px">
       <h3>{mode === 'edit' ? 'Edit Change Order Line' : 'Add Change Order Line'}</h3>
 
       <p>

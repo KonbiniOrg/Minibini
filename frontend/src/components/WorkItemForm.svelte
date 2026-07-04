@@ -238,7 +238,7 @@
   }
 </script>
 
-<Modal {open} onSave={() => { if (!busy) save(); }} onCancel={onClose}>
+<Modal {open} onSave={save} {busy} onCancel={onClose}>
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
       {#if loading}

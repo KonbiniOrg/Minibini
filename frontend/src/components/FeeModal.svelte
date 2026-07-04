@@ -96,7 +96,7 @@
   }
 </script>
 
-<Modal {open} onSave={() => { if (!busy && !confirmDelete) save(); }} onCancel={() => { if (confirmDelete) confirmDelete = false; else onClose(); }} maxWidth="720px">
+<Modal {open} {busy} onSave={() => { if (!confirmDelete) save(); }} onCancel={() => { if (confirmDelete) confirmDelete = false; else onClose(); }} maxWidth="720px">
       <h3>{mode === 'edit' ? 'Edit Fee' : 'Add Fee'}</h3>
 
       <p>

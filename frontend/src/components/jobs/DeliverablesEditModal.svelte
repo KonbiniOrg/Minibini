@@ -116,7 +116,7 @@
   let visibleRows = $derived(rows.filter(r => !r._deleted));
 </script>
 
-<Modal open={true} onSave={() => { if (!saving && dirty) save(); }}
+<Modal open={true} busy={saving} onSave={() => { if (dirty) save(); }}
   onCancel={cancel} maxWidth="80vw" label="Edit deliverables">
   <h3>Edit deliverables</h3>
     {#if loading}

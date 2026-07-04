@@ -123,7 +123,7 @@
   }
 </script>
 
-<Modal {open} onSave={() => { if (!busy) save(); }} onCancel={onClose}>
+<Modal {open} onSave={save} {busy} onCancel={onClose}>
       <h3>{mode === 'edit' ? 'Edit Line Item' : 'Add Line Item'}</h3>
 
       {#if mode === 'create'}

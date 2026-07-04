@@ -89,6 +89,37 @@ the jsdom storage shim), see `docs/designs/frontend-testing.md`.
 
 ## Design Decisions
 
+### Modals
+
+Every form modal rides the shared shell, `src/components/Modal.svelte`. The
+shell owns everything cross-cutting so it can't drift per-modal:
+
+- **Geometry:** one place on screen — horizontally centered, anchored
+  `--modal-top` (50px) from the top — so a modal handing off to another
+  (picker → form) never moves on the user. `maxWidth` is the single sanctioned
+  size knob. Every modal is draggable by its grab bar (position resets on each
+  open) to peek at the page behind.
+- **Keyboard contract:**
+  - Every modal passes `onCancel` — **Escape always closes**. A modal with an
+    internal sub-state (confirm-delete, a nested prompt) passes a smarter
+    `onCancel` that backs out one level before closing.
+  - **Enter** is decided by one question: *is the content a native `<form>`?*
+    If yes, the form owns Enter (native submit + `required` validation) and
+    you omit `onSave` — binding both would double-fire. If no (button-driven
+    content), pass `onSave`. Deliberately Esc-only modals (an ambiguous
+    primary action, e.g. `StartWorkConflictModal`'s join-vs-takeover) omit
+    `onSave` **with a comment saying why**.
+  - Pass the modal's in-flight flag as `busy` — the shell suppresses Enter
+    while it's true (the busy-guard lives once, in the shell), so a
+    double-Enter during a slow save can never fire the API twice. The Save
+    *button* still wants its own `disabled={busy}` for the click path.
+- **Not on the shell (deliberate):** `TaskQuickCard` — a positioned popup
+  card with backdrop-click close, not a form modal.
+
+New modals: prefer native-`<form>` content where the modal is genuinely a
+form (free `required` validation, one submit path); wrap it in `<Modal>` and
+wire only `onCancel`.
+
 ### API Responses
 
 - All API responses return JSON with a 200 status, even for operations like DELETE that normally have no meaningful data to return. No 204 responses. An empty response is `{}`.

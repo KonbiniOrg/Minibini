@@ -36,6 +36,13 @@ describe('Modal shell', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
+  it('suppresses Enter while busy (the shell owns the busy-guard)', async () => {
+    const onSave = vi.fn();
+    render(Modal, { props: { open: true, onSave, busy: true, children: content } });
+    await fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it('drags via the grab bar and resets when reopened', async () => {
     const { container, rerender } = render(Modal, {
       props: { open: true, children: content },

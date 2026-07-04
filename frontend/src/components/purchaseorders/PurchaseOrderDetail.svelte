@@ -34,6 +34,18 @@
   let editForm = $state({});
 
   let changeJobLine = $state(null);
+
+  function saveChangeJob() {
+    if (!changeJobLine) return;
+    if (onChangeLineJob) {
+      onChangeLineJob(
+        changeJobLine.line_item_id,
+        changeJobId ?? null,
+        changeJobLine.material,
+      );
+    }
+    changeJobLine = null;
+  }
   let changeJobId = $state(null);
   let changeJobRow = $state(null);
 
@@ -341,6 +353,7 @@
 {/if}
 
 <Modal open={changeJobLine != null}
+  onSave={saveChangeJob}
   onCancel={() => { changeJobLine = null; }}
   label="Change Job">
   {#if changeJobLine}
@@ -348,16 +361,7 @@
       <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
       <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} />
       <p>
-        <button onclick={() => {
-          if (onChangeLineJob) {
-            onChangeLineJob(
-              changeJobLine.line_item_id,
-              changeJobId ?? null,
-              changeJobLine.material,
-            );
-          }
-          changeJobLine = null;
-        }}>Save</button>
+        <button onclick={saveChangeJob}>Save</button>
         <button onclick={() => { changeJobLine = null; }}>Cancel</button>
       </p>
   {/if}

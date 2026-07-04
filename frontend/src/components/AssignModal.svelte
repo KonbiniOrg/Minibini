@@ -82,7 +82,7 @@
   }
 </script>
 
-<Modal {open} onSave={() => { if (!busy) save(); }} onCancel={onClose} maxWidth="600px">
+<Modal {open} onSave={save} {busy} onCancel={onClose} maxWidth="600px">
       <h3>Assign Task: {task?.name}</h3>
 
       <p>

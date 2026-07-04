@@ -78,7 +78,7 @@
   }
 </script>
 
-<Modal open={open && choice} onSave={() => { if (!busy) save(); }} onCancel={onClose}>
+<Modal open={open && choice} onSave={save} {busy} onCancel={onClose}>
       <h3>{title}</h3>
       {#if isFreeform}
         <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>

@@ -204,8 +204,8 @@
   }
 </script>
 
-<Modal {open}
-  onSave={() => { if (!busy && !showPropagatePrompt) save(); }}
+<Modal {open} {busy}
+  onSave={() => { if (!showPropagatePrompt) save(); }}
   onCancel={() => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); }}>
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 

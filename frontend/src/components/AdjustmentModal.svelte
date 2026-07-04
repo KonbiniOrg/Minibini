@@ -65,7 +65,7 @@
   }
 </script>
 
-<Modal {open} label="Add Adjustment" maxWidth="720px">
+<Modal {open} onSave={submit} {busy} onCancel={onClose} label="Add Adjustment" maxWidth="720px">
       <h3>Add Percentage Adjustment</h3>
 
       <p>
