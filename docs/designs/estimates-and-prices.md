@@ -675,6 +675,18 @@ the new line items (§5.3), so the live estimate is always the one lens
 over the atoms; superseding/rejecting/expiring otherwise does not touch
 claims.
 
+**No source row outlives its atom.** `Material.delete()`, `Fee.delete()`,
+and `Task.delete()` call `purge_source_rows_for_atom`
+(`apps/estimates/claims.py`), which drops the estimate-, CO-, and
+invoice-lens source rows pointing at the deleted atom. This holds on
+*every* deletion path — restock-to-zero (incl. the job-completion
+loose-material release), PO sever, fee/task delete, CO retirement — so
+`resolve()` consumers never hit a dangling pk. The source serializers
+additionally render a dangling row (pre-purge data) as `null` rather
+than 500ing. Paths that must not delete a billed atom guard *before*
+deleting (`_assert_not_invoiced`, the CO retirement skips); the purge is
+the consistency backstop, not the guard.
+
 ### 6.3 Atom-to-line-item shapes
 
 | Source rows on a line item | What it represents |

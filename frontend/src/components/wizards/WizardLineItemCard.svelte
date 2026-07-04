@@ -59,9 +59,10 @@
     lastSyncedSnapshot = snap;
   });
 
-  // Sum of source atom computed amounts (the "computed total")
+  // Sum of source atom computed amounts (the "computed total").
+  // computed_amount is null for a dangling source row (atom deleted) — count 0.
   const computedSum = $derived(
-    lineItem.sources.reduce((sum, s) => sum + parseFloat(s.computed_amount), 0)
+    lineItem.sources.reduce((sum, s) => sum + (parseFloat(s.computed_amount) || 0), 0)
   );
   // Per-unit price the wizard would compute from the SAVED qty: round(sum/qty, 2)
   const expectedPerUnit = $derived(

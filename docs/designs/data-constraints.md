@@ -879,6 +879,11 @@ Either a description or a `inventory_item` must be present.
   upsert via `InventoryService._mutate_earmark(pli, job, +qty)`. See §2.6.
 - Consume / Restock flip earmarks back via `_mutate_earmark(..., -qty)`.
 - Job entering `work_complete` releases all remaining earmarks for the Job.
+- **Deletion purges document claims**: `Material.delete()` (like
+  `Fee.delete()` and `Task.delete()`) calls `purge_source_rows_for_atom`
+  (`apps/estimates/claims.py`) — no `EstimateLineItemSource` /
+  `ChangeOrderLineItemSource` / `InvoiceLineItemSource` row may outlive its
+  atom, on any deletion path (restock-to-zero, PO sever, CO retirement, …).
 
 ---
 

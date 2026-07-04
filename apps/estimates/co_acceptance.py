@@ -313,9 +313,9 @@ class ChangeOrderAcceptanceService:
                 return  # consumed / document-bound / billed: leave it alone
             InventoryService._mutate_earmark(
                 atom.inventory_item, job, -atom.quantity)
-            atom_pk = atom.pk
+            # Material.delete() purges the estimate/CO source rows pointing at
+            # it (purge_source_rows_for_atom), so no lens dangles.
             atom.delete()
-            ChangeOrderAcceptanceService._purge_source_rows('material', atom_pk)
             counts['materials_removed'] += 1
             return
 
@@ -323,18 +323,5 @@ class ChangeOrderAcceptanceService:
             if InvoiceClaimService.is_invoiced(
                     InvoiceLineItemSource.SOURCE_FEE, atom.pk):
                 return
-            atom_pk = atom.pk
-            atom.delete()
-            ChangeOrderAcceptanceService._purge_source_rows('fee', atom_pk)
+            atom.delete()  # Fee.delete() purges its source rows
             counts['fees_removed'] += 1
-
-    @staticmethod
-    def _purge_source_rows(source_type, source_pk):
-        """Drop source rows pointing at a deleted atom so no lens dangles."""
-        from apps.estimates.models import (
-            ChangeOrderLineItemSource, EstimateLineItemSource,
-        )
-        EstimateLineItemSource.objects.filter(
-            source_type=source_type, source_pk=source_pk).delete()
-        ChangeOrderLineItemSource.objects.filter(
-            source_type=source_type, source_pk=source_pk).delete()

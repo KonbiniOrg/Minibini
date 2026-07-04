@@ -270,6 +270,15 @@ class Material(MaterialBase):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom — purge on every
+        # deletion path (restock-to-zero, PO sever, CO retirement, …).
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('material', pk)
+        return result
+
     def __str__(self):
         if self.units and self.units != 'none':
             return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
