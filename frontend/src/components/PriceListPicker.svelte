@@ -103,17 +103,21 @@
 {/if}
 
 <style>
-  /* Match the app-wide modal geometry (centered, ~500px) so the picker and the
-     follow-up form modal open in the same place — no jump on selection. The
-     results list is an absolutely-positioned dropdown (.plp-body is relative),
-     so centering doesn't shift the modal as results load. */
+  /* Match the shared <Modal> shell's geometry (top-anchored 50px, centered,
+     1.5x-scaled width) so the picker and the follow-up form modal open in the
+     same place — no jump on selection. If Modal.svelte's --modal-top changes,
+     change the padding-top here too. The results list is an absolutely-
+     positioned dropdown (.plp-body is relative), so anchoring doesn't shift
+     the modal as results load. */
   .plp-overlay {
     position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
-    display: flex; align-items: center; justify-content: center;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 50px 0 2em;
     z-index: var(--z-modal);
+    overflow-y: auto;
   }
   .plp-modal {
-    background: white; border: 1px solid #ccc; width: 500px; max-width: 95vw;
+    background: white; border: 1px solid #ccc; width: 750px; max-width: 95vw;
     display: flex; flex-direction: column;
   }
   .plp-header {
