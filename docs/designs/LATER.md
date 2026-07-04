@@ -564,27 +564,21 @@ IMAP-SMTP machinery and tend to be worked together.
 
 Cross-cutting UI/API conventions and shared components.
 
-- **No shared `<Modal>` shell — every modal hand-rolls the same overlay CSS.** — _added 2026-07-03_
-  Each modal component copies its own `.overlay { position:fixed; inset:0; display:flex;
-  align-items:center; justify-content:center }` + `.modal { max-width:500px; width:90% }`. This
-  copy-paste is how `PriceListPicker` drifted (top-anchored, 560px) and got visibly out of place vs the
-  form modals (fixed in `fecccc86`). Extract a shared `<Modal>` shell (overlay + centered box +
-  `modalKeys` wiring) that every modal imports, then sweep the existing modals (`LineItemModal`,
-  `MaterialModal`, `FeeModal`, `EstimateAddLineForm`, `AdjustmentModal`, `AssignModal`,
-  `RecordPaymentModal`, `PriceListPicker`, …) to use it so geometry can't drift again. Mechanical but
-  touches many files.
-  _Done when:_ a single shared modal shell owns overlay/positioning and the modals adopt it.
-
-- **DRY: combine the two near-identical material modals.** — _added 2026-06-27_
-  `frontend/src/components/PlanMaterialModal.svelte` (PlanMaterial, on the Plan/
-  worksheet) and `frontend/src/components/MaterialModal.svelte` (real Material, on the
-  Job) are highly similar — same fields (description, qty, units, price, AC),
-  inventory-item pre-seed, and freeform path — differing mainly in the API base /
-  parent (worksheet plan-material vs job material) and a few field names. Worth
-  collapsing into one shared modal parameterized by context (like `WorkItemForm` does
-  for job/worksheet/subtask), or a shared inner form both wrap. _Done when:_ one modal
-  (or shared form) serves both PlanMaterial and Material, with the component tests for
-  both consolidated and green.
+- **Modal stacking on the schedule quick card — Escape closes both layers.** — _added 2026-07-04 (found during the Modal-shell sweep)_
+  The one real modal-on-modal spot: `TaskQuickCard` (schedule bar click → popup
+  card at `--z-popover`, its own window-level Escape → onClose) hosts
+  `TaskActions`, which can open `ActualQtyModal` / `BlepEditModal→TimeEditModal`,
+  and the card itself mounts `AssignModal` + `StartWorkConflictModal` — all at
+  `--z-modal`, stacked above the card. Two issues to check in depth: (a) one
+  **Escape** fires both the modal's `modalKeys` cancel AND the card's own
+  listener — the card vanishes out from under the modal; (b) with top-anchored
+  modals the stack now visibly overlaps near the top. Note `--z-modal-nested`
+  (900) already exists in the scale but has **zero users** — it anticipated
+  exactly this. Fix shape to discuss: the card suspends its Escape/backdrop
+  handlers while a child modal is open (or the shell exposes an "is any modal
+  open" signal), and stacked modals take the nested tier.
+  _Done when:_ Escape on a stacked modal closes only the modal, and the layers
+  read clearly.
 
 - **Audit error-message surfacing across the SPA for consistency.** — _added 2026-05-29_
   Inconsistencies noticed in passing: some pages surface API errors via the global

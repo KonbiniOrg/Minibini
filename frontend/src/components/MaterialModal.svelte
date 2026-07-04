@@ -2,7 +2,7 @@
   import { api } from '../lib/api.js';
   import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
-  import { modalKeys } from '../lib/modalKeys.js';
+  import Modal from './Modal.svelte';
 
   let {
     open = false,
@@ -204,12 +204,9 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{
-    onSave: () => { if (!busy && !showPropagatePrompt) save(); },
-    onCancel: () => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); },
-  }}>
-    <div class="modal">
+<Modal {open}
+  onSave={() => { if (!busy && !showPropagatePrompt) save(); }}
+  onCancel={() => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); }}>
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 
       <p>
@@ -284,16 +281,9 @@
           </div>
         </div>
       {/if}
-    </div>
-  </div>
-{/if}
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
   .earmark-warning { margin: 6px 0 0; padding: 6px 8px; background: #fffbe6; border: 1px solid #ffe58f; font-size: 0.9em; }

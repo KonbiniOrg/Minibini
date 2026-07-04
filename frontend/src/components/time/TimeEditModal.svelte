@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import { notifyShiftChanged } from '../../stores/shift.js';
   import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
@@ -147,9 +147,7 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy && !blocked) save(); }, onCancel: onClose }}>
-    <div class="modal">
+<Modal {open} onSave={() => { if (!busy && !blocked) save(); }} onCancel={onClose} maxWidth="630px">
       <h3>{action === 'request' ? 'Request change' : action === 'create' ? 'Add' : 'Edit'}
           {recordType === 'shift' ? 'shift' : 'time entry'}</h3>
       <p><label><strong>Start</strong><br>
@@ -185,14 +183,10 @@
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</Modal>
+
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex;
-             align-items: center; justify-content: center; z-index: var(--z-modal); }
-  .modal { background: white; padding: 1.5em; border: 2px solid #333; max-width: 420px; width: 90%; }
   .buttons { display: flex; gap: 0.5em; margin-top: 1em; }
   .error { color: #b91c1c; }
   .warn { color: #b45309; }

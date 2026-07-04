@@ -1,5 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
+  import Modal from './Modal.svelte';
 
   let {
     open = false,
@@ -64,9 +65,7 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-label="Add Adjustment">
-    <div class="modal">
+<Modal {open} label="Add Adjustment" maxWidth="720px">
       <h3>Add Percentage Adjustment</h3>
 
       <p>
@@ -107,19 +106,10 @@
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</Modal>
+
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal, 100);
-  }
-  .modal {
-    background: white; padding: 16px; max-width: 480px; width: 90%;
-    border: 1px solid #ccc; border-radius: 4px;
-  }
   .category-list {
     display: flex; flex-direction: column; gap: 4px;
     max-height: 180px; overflow-y: auto;

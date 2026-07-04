@@ -1,6 +1,6 @@
 <script>
   import { parseDurationToISO } from '../../lib/format.js';
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
 
   // Interrupting prompt shown when a task with no estimated worker time is
   // dragged onto a worker. Assigned work has to be schedulable, which needs
@@ -37,9 +37,7 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{ onSave: submit, onCancel: onCancel }}>
-    <div class="modal">
+<Modal {open} onSave={submit} onCancel={onCancel} maxWidth="600px">
       <p>
         <label><strong>Estimated worker time *</strong><br>
           <input
@@ -53,16 +51,10 @@
         <button type="button" onclick={onCancel}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</Modal>
+
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 400px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
 </style>

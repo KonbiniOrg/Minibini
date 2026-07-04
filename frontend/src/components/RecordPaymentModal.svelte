@@ -1,5 +1,6 @@
 <script>
   import { api, errorMessage } from '../lib/api.js';
+  import Modal from './Modal.svelte';
   import { getPaymentAccounts } from '../lib/paymentAccounts.js';
   import PaymentAccountSelect from './qbo/PaymentAccountSelect.svelte';
   let { open = false, billId, defaultAmount = '', onSaved = () => {}, onClose = () => {} } = $props();
@@ -42,9 +43,7 @@
   }
 </script>
 
-{#if open}
-<div class="modal-backdrop">
-  <div class="modal">
+<Modal {open} maxWidth="600px">
     <h3>Record Payment</h3>
     {#if error}<p class="error">{error}</p>{/if}
     {#if accountsLoaded && accounts.length === 0}
@@ -65,17 +64,11 @@
         <button onclick={onClose}>Cancel</button>
       </div>
     {/if}
-  </div>
-</div>
-{/if}
+</Modal>
+
 
 <style>
   .error { color: #b00; }
-  .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal, 100);
-  }
-  .modal { background: white; padding: 16px; max-width: 400px; width: 90%; border: 1px solid #ccc; }
   .modal label { display: block; margin-bottom: 10px; }
   .actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

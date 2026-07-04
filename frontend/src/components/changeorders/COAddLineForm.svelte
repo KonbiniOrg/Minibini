@@ -6,7 +6,7 @@
   // manual line with AC + is_material marker.
   import { api } from '../../lib/api.js';
   import UnitsSelect from '../UnitsSelect.svelte';
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
 
   let {
     open = false,
@@ -82,9 +82,7 @@
   }
 </script>
 
-{#if open && choice}
-  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
-    <div class="modal">
+<Modal open={open && choice} onSave={() => { if (!busy) save(); }} onCancel={onClose}>
       <h3>{title}</h3>
       {#if isFreeform}
         <p><label>Description<br><input type="text" bind:value={description} style="width:100%;box-sizing:border-box;"></label></p>
@@ -104,16 +102,10 @@
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</Modal>
+
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .qty-units { margin-left: 8px; color: #666; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }

@@ -1,7 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import { parseDurationToISO } from '../lib/format.js';
-  import { modalKeys } from '../lib/modalKeys.js';
+  import Modal from './Modal.svelte';
 
   let {
     open = false,
@@ -82,9 +82,7 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
-    <div class="modal">
+<Modal {open} onSave={() => { if (!busy) save(); }} onCancel={onClose} maxWidth="600px">
       <h3>Assign Task: {task?.name}</h3>
 
       <p>
@@ -112,16 +110,9 @@
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal-nested);
-  }
-  .modal { background: white; padding: 16px; max-width: 400px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
 </style>
