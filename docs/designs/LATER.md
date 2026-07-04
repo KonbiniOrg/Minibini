@@ -639,36 +639,3 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the material/CO/estimate metadata tails have service methods
   owning their guards (or the convention is amended to bless thin
   metadata-only saves).
-
-## History & QBO plumbing
-
-- **`@history` decorator `anchor=` param — route an adjunct's auto-history to its primary.** — _added 2026-06-22_
-  The `@history` decorator keys entries to the model's *own* `object_type`, so an adjunct (BillPayment→Bill,
-  line item→parent document) can't use it to land its auto create/update entries on the **primary's**
-  timeline — those stay imperative (`record_action(object_type='<primary>', …)`). A declarative
-  `@history(anchor=('bill', 'bill_id'))` could route a child's auto-history to its parent (and would
-  generalize to line items, etc.). Caveats that keep it from being a clean win: parent-anchored *field
-  diffs* read ambiguously without a self-describing label ("amount 50→75" on the bill — whose amount?);
-  it still wouldn't cover deletes; and a many-anchor case (Reimbursement→many expenses) doesn't fit. It's a
-  change to a core mechanism on ~12 models. Deferred — adjunct lifecycle stays imperative via `record_action`.
-  _Done when:_ decided whether to add `anchor=` (+ a labeling mechanism) to the decorator, or keep adjunct
-  history imperative.
-
-- **`@history` doesn't track deletes (`post_delete`).** — _added 2026-06-22_
-  The decorator wires `post_init`/`pre_save`/`post_save` only — **no `post_delete`** — so a tracked model's
-  deletion records nothing automatically. Not a problem today: the decorated records (estimates, bills, POs,
-  …) and the newly-decorated `Expense` are *created-and-kept forever*; deletions are rare and are recorded
-  imperatively where they matter. Revisit only if a frequently-deleted model becomes `@history`-tracked.
-  _Done when:_ decided whether `@history` should grow delete tracking, or imperative delete entries remain
-  the norm.
-
-- **Maybe fold the invoice push into `save_and_log`?** — _added 2026-06-21_
-  Every QBO create/update push now routes through `QBOService.save_and_log` (and the deletes through
-  `delete_and_log`). The **invoice send** (`InvoiceEmailService.send_invoice`) is the lone holdout: it does
-  create-`save` → persist `qbo_id` → `_mark_as_sent` (a *second* QBO round trip) → *then* `log_sync` success,
-  so its success row means "created **and** marked-sent," not just "created." Folding the create-`save` step
-  into `save_and_log` would move the success log to right after the create (before mark-sent) — a deliberate
-  change to what the log row means (QBO-object-creation vs whole-send success). Possibly worth it for symmetry,
-  but it needs more thought about the two-round-trip semantics and the partial-failure window.
-  _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
-  call made) or stays a bespoke sequence, and recorded why.
