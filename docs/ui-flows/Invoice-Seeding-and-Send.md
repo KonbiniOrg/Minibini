@@ -4,7 +4,7 @@
 > the two **seed buttons** (Apply everything / Copy from estimate), the retained per-line
 > editing, the **agreement adjustments** panel, and the **accounting-category flag +
 > Send-gate**. Companion to `Services-and-Adjustments.md` (estimate-side pricing/adjustments)
-> and `Add-Line-and-Plan-Authoring.md` (the Plan). Reference: `docs/designs/invoicing-and-expenses.md`
+> and `Add-Line-and-Work-Authoring.md` (estimate/work authoring). Reference: `docs/designs/invoicing-and-expenses.md`
 > and the spec `docs/plans/2026-06-28-invoice-changes-spec.md`.
 
 **Purpose:** A from-the-user's-perspective walkthrough of building and sending an invoice
@@ -66,6 +66,10 @@ Entry: Invoice detail page, **Line Items** area, on a **draft invoice with no li
 - [ ] **Copy from estimate.** On a first invoice, click → the invoice fills with the
   **agreement-of-record**: the accepted estimate's lines amended by accepted change orders,
   including the estimate's adjustment line(s). Atoms are ignored.
+- [ ] **Crystallized fees arrive claimed (2026-07-03).** After Copy from estimate, open
+  **Show Billables** — every Fee behind an agreement line (from estimate hand-lines *and*
+  from accepted change-order add/replace lines) shows as **claimed by this invoice**, so
+  the wizard can't double-bill it.
 
 ## 3. Availability rules (most-missed)
 
@@ -112,7 +116,7 @@ tax and break the QBO item mapping).
 - [ ] **Missing category is flagged.** On a draft (editable) invoice, any line with **no
   accounting category** shows an amber **"needs category"** in the Category column instead of
   a bare "—". (A line can end up with no category after **joining atoms of different
-  categories** — see `Add-Line-and-Plan-Authoring.md` — or a freeform line you didn't
+  categories** — see `Add-Line-and-Work-Authoring.md` — or a freeform line you didn't
   categorize.)
 - [ ] **Send is blocked until every line has a category.** While any line is flagged, the
   **Send Invoice** action is **disabled** and a note reads "Assign an accounting category to
