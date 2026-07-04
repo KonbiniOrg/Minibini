@@ -103,7 +103,7 @@ class ChangeOrderSendTests(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), price=Decimal('200'),
-            line_number=1)
+            line_number=1, accounting_category_id=901)
 
     def test_get_email_defaults_has_to_link_and_pdf_preview(self):
         defaults = ChangeOrderEmailService.get_email_defaults(self.co)

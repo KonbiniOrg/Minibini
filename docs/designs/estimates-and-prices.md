@@ -1192,14 +1192,18 @@ are not COs — they're "cancel and start a new job" territory
 (`cancelled-with-invoice` for closing the current job early; see
 `invoicing-and-expenses.md`). Consequences baked into the model:
 
-- A CO is **document-only**: direct line-item composition (manual entry,
-  or pulls from `ServiceItem` / `InventoryItem`). It does not project or
-  mutate the Job's atoms, and it never runs the estimate wizard.
-- **No automated Task/Material changes.** Accepting a CO does not
-  spawn, mutate, or cancel any Task or Material. Accepting it advances
-  the parent Job and updates the agreement-of-record, full stop. The
-  living Job is then edited by hand — Tasks are mutable records of
-  what actually happened, and editing them is the normal motion.
+- While being authored, a CO is a **document**: direct line-item
+  composition (manual entry, or pulls from `ServiceItem` /
+  `InventoryItem`). It does not project or mutate the Job's atoms while
+  draft/open, and it never runs the estimate wizard.
+- **Acceptance crystallizes the deltas onto the Job's atoms** (§14.11),
+  exactly parallel to estimate acceptance (§9): an `add` line becomes a
+  Task / Material / Fee, a `remove` retires the target line's atom, a
+  `replace` retires the old atom and crystallizes its replacement. The
+  amended work becomes real — schedulable, blep-trackable, earmarked —
+  the moment the customer says yes. (The living Job can still be edited
+  by hand afterwards; crystallization sets the starting point, it
+  doesn't lock anything.)
 
 ### 14.2 Model
 
@@ -1255,7 +1259,12 @@ terminal.
 | `change_order` | FK → ChangeOrder (CASCADE) |
 | `action` | One of `add`, `remove`, `replace` |
 | `target_line_item` | FK → EstimateLineItem (PROTECT). Required for `remove` / `replace`; must be null for `add`. Enforced in `clean()`. |
-| `inventory_item` | Optional catalog pointer, parallel to `EstimateLineItem` provenance |
+| `inventory_item` | Optional catalog pointer, parallel to `EstimateLineItem` provenance. At acceptance the line crystallizes into a `Material` on this item. |
+| `service_item` | Nullable FK → `ServiceItem` (PROTECT). Deferred service descriptor, identical to `EstimateLineItem.service_item` (§6.1): the line snapshots the service's price at authoring and crystallizes to a `Task` at CO acceptance. |
+| `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into a **provisional Material** instead of a Fee, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
+
+`clean()` also rejects `service_item` / `is_material` on a `remove` line
+(its own fields are display-only; it never crystallizes anything).
 
 The `action` field is the heart of CO semantics:
 
@@ -1276,6 +1285,25 @@ the composition (Estimate + accepted COs); the underlying
 `EstimateLineItem` rows stay frozen as the historical record of what
 was first sold.
 
+**Send guard (AC).** `ChangeOrder.clean()` blocks `draft → open` while
+any bare `add` line (no `service_item`, no `inventory_item`) lacks an
+`accounting_category` — the CO parallel of
+`assert_all_hand_lines_have_ac` (§5.1/§15). Such a line crystallizes
+into a Fee or provisional Material at acceptance, and the category must
+be pinned *before* the customer can say yes, so acceptance can never
+fail on it. Living in the model's `clean()`, the guard holds on every
+send path (mark-open action, status PATCH, `send_change_order`).
+
+**`ChangeOrderLineItemSource`** (`db_table = 'co_li_sources'`) is the CO
+analog of `EstimateLineItemSource` (§6.2): a polymorphic join
+(`source_type ∈ {task, material, fee}` + `source_pk`, unique together)
+from a CO line to the atom it **crystallized** at acceptance. It is the
+provenance record (compose_agreement traces crystallized CO fees so the
+invoice claims them exactly once — §14.6) and the idempotency marker (a
+line with a source row is already crystallized). `resolve()` returns the
+concrete atom. Unlike the estimate table, rows exist only for
+add/replace lines of **accepted** COs — authoring never creates one.
+
 ### 14.5 Job on_hold gate
 
 COs are authored only while the parent Job is `on_hold` — a
@@ -1288,8 +1316,11 @@ work-paused state (see `jobs-tasks-and-worksheets.md`). The flow:
 3. The user edits the CO (line items), sends it (`draft → open`),
    and waits for customer response.
 4. **Accept:** `ChangeOrderService.update_status(pk, accepted)`
-   advances the Job `on_hold → approved` and writes a system-attributed
-   HistoryEntry. The CO's deltas are now part of the agreement.
+   advances the Job `on_hold → approved`, writes a system-attributed
+   HistoryEntry, and **crystallizes the CO's deltas onto the Job's
+   atoms** (`ChangeOrderAcceptanceService.on_accept` — §14.11), all in
+   one transaction. The CO's deltas are now part of the agreement and
+   the amended work is real on the Job.
 5. **Reject / Expire:** the Job stays `on_hold`. The CO snapshots its
    proposal (so the rejected/expired version is preserved verbatim
    even if the Estimate or its line items later change).
@@ -1339,6 +1370,17 @@ The composition rules:
 `amount = qty * price` on each line, matching `BaseLineItem.total_amount`.
 The grand total is the sum of all surviving line amounts.
 
+Every line also carries `source_fee_id` — the pk of the Fee the line
+crystallized into, when it did: for estimate-origin lines that's the
+hand-line fee provenance (`EstimateLineItemSource`, §9.1), and for
+CO-origin add/replace lines the `ChangeOrderLineItemSource` fee row
+written at CO acceptance (§14.11). Both are bulk-prefetched.
+`InvoiceService.copy_from_estimate` claims each `source_fee_id` with an
+`InvoiceLineItemSource` so the wizard pool marks the Fee as billed and
+double-billing is impossible — the agreement stays the **billing**
+source of truth; the crystallized atoms are the *work* mirror, and the
+source rows are what keep the two views counting each Fee once.
+
 This function is the single source of truth for what the customer owes.
 The Invoice wizard reads it; PDF rendering of the agreement reads it;
 the Estimate-detail page surfaces the composed view alongside the
@@ -1374,6 +1416,9 @@ all open COs are resolved).
 - `POST /api/change-orders/{id}/line-items/` — add line item
 - `POST /api/change-orders/{id}/line-items/from-pli/` — add from
   InventoryItem
+- `POST /api/change-orders/{id}/line-items-from-service/` — add a
+  deferred service line (body `{service_item, qty}`; snapshots price,
+  mints no Task — mirrors the estimate action, §6.4)
 - `PATCH /api/change-orders/{id}/line-items/{liid}/` — update
 - `POST /api/change-orders/{id}/line-items/reorder/`
 - `DELETE /api/change-orders/{id}/line-items/{liid}/`
@@ -1398,8 +1443,17 @@ is authoritative.
 
 `frontend/src/routes/change-orders/ChangeOrderDetailPage.svelte` is the
 CO edit view. It renders a merged baseline-vs-proposal diff using the
-CO's line items and the `deliverables-baseline` endpoint;
-`COLineItemModal.svelte` is the line-item editor. The Estimate detail
+CO's line items and the `deliverables-baseline` endpoint.
+**"+ New line"** opens the unified `PriceListPicker` (§6.4) — the same
+service / inventory / freeform (+ is-material checkbox) entry point as
+the estimate detail page — followed by `COAddLineForm.svelte`
+(`components/changeorders/`), which posts a service pick to
+`line-items-from-service/`, an inventory pick to `line-items/` (the
+from-pli path), and a freeform line manually with AC + `is_material`.
+`COLineItemModal.svelte` remains the editor for existing lines and the
+Change/replace flow; on `add`-action lines it carries an Accounting
+Category select (required for bare fee lines, config-defaulted for
+material lines — the send guard's authoring face). The Estimate detail
 page shows accepted COs as pills/badges in the deliverables and
 line-items sections.
 
@@ -1491,6 +1545,84 @@ login.
   section and the line-item table with prior/new/change totals — using
   print-safe change labels (Added/Removed/Changed/was). It is attached to
   the CO send email.
+
+### 14.11 Acceptance — crystallizing CO deltas onto Job atoms
+
+`ChangeOrderAcceptanceService.on_accept(co)`
+(`apps/estimates/co_acceptance.py`) is the CO parallel of §9's
+`EstimateAcceptanceService`. `ChangeOrderService._handle_accepted`
+invokes it after the Job flips `on_hold → approved`, inside
+`update_status`'s transaction — atom writes are blocked while on_hold,
+and a failed crystallization rolls the whole acceptance back.
+
+Lines are processed **adds → replaces → removes** (each group in
+`line_number` order) so a CO that swaps out the job's only task never
+transiently empties the live work set and trips the auto-advance to
+`work_complete`.
+
+- **add** — crystallize via the same four-way discriminator as estimate
+  acceptance (§9.1): `service_item` → Task
+  (`generate_task(allow_superseded_scheme=True)`; name from the
+  ServiceItem, description from the line), `inventory_item` → Material
+  (line price = sell price), `is_material` bare → provisional Material,
+  else → Fee (defensive ValidationError if no AC — normally unreachable
+  past the send guard). Write a `ChangeOrderLineItemSource` row.
+- **remove** — resolve the target estimate line to its **current** atom
+  and retire it:
+  - *Task*: `TaskLifecycleService.cancel_task` — **bleps are
+    preserved**; already complete/cancelled tasks are left alone.
+  - *Material*: deleted with its earmark released
+    (`_mutate_earmark(-qty)`), but **only if** pending, not
+    expense-bound, not PO-linked, and not on a live invoice — physical
+    or billed reality is never unwound by a document; those are left for
+    the human to reconcile.
+  - *Fee*: deleted unless on a live invoice.
+  - A document-only target (adjustment line, or an atom already
+    retired) is a no-op — the delta stays document-only, matching
+    `compose_agreement`.
+  When an atom is deleted, source rows pointing at it (both
+  `EstimateLineItemSource` and `ChangeOrderLineItemSource`) are purged
+  so no lens dangles.
+- **replace** — crystallize the replacement **first**, then retire the
+  old atom (as above). A CO line carrying its own descriptor
+  (service/inventory/is_material) crystallizes per that descriptor; a
+  **bare** replace line mirrors the retired atom's type — a Task target
+  yields a new pending Task with the same name / rate scheme /
+  modifiers / sort order / assignee (`TaskBase.copy_fields`) at the CO
+  line's qty and description; a Material target a new Material on the
+  same inventory item (AC/units inherited when the line omits them); a
+  Fee target a new Fee (AC inherited from the old fee if absent on the
+  line).
+
+**Current-atom resolution (multi-CO chain).** The target of a
+remove/replace is always an `EstimateLineItem`, but after an earlier
+accepted CO replaced that line, the live atom is the *earlier CO line's*
+crystallized atom, not the estimate's. Resolution therefore picks the
+sources of the latest accepted-CO replace line targeting the same
+estimate line (acceptance order: `closed_date`, then id), falling back
+to the estimate line's own sources. This is how consecutive COs against
+one line chain correctly. (The `compose_change_order_diff` display
+baseline still has the documented single-CO limitation — see LATER.md;
+crystallization does not share it.)
+
+After the walk, `InventoryService.create_earmarks_for_job(job)` re-runs
+the absolute earmark sweep — same as estimate acceptance — so
+crystallized and retired materials net out to correct reservations.
+
+**Idempotency** mirrors §9.2: crystallized lines carry a source row and
+are skipped on re-run; retirement re-checks atom state (a cancelled
+task, a deleted material) before acting.
+
+**Billing stays with the agreement.** Crystallization never creates
+billing lines; §14.6's `source_fee_id` plumbing is what keeps the
+document and atom views counting each crystallized Fee once. Bleps on a
+task cancelled by a remove/replace stay on record under the cancelled
+task (the invoice wizard's complete-task gate applies as usual — the
+cancelled work's time is reconciled by the human at invoicing).
+
+Returns `{'tasks_created', 'materials_created', 'fees_created',
+'tasks_cancelled', 'materials_removed', 'fees_removed'}`. Tests:
+`tests/test_change_order_acceptance.py`.
 
 ---
 

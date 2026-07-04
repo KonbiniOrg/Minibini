@@ -761,7 +761,9 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
 - **Create requires `on_hold`**: `ChangeOrderService.create` raises `ValidationError` unless `Job.status == on_hold` and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
+- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Fee / provisional Material at acceptance and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
 - **Job exit guard**: a Job cannot leave `on_hold` while any of its COs is `draft` or `open`.
+- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the job flips to `approved`. See `estimates-and-prices.md` §14.11.
 
 #### ChangeOrderLineItem
 
@@ -771,7 +773,19 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **action** (CharField, required): one of `add`, `remove`, `replace`
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
+- **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
+- **is_material** (bool, default False): marks a bare line as crystallizing into a provisional Material instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
+
+#### ChangeOrderLineItemSource
+
+`db_table = 'co_li_sources'`. The CO analog of EstimateLineItemSource (§ estimates doc §6.2/§14.4): polymorphic join from a ChangeOrderLineItem to the atom it crystallized at acceptance.
+
+- **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
+- **source_type**: `task` | `material` | `fee`; **source_pk**: positive int
+- `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
+- Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
 
 See `docs/designs/estimates-and-prices.md`.
 

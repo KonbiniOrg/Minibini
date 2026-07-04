@@ -53,7 +53,7 @@ class PortalChangeOrderTest(TestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), units='ea',
-            price=Decimal('250.00'), line_number=1)
+            price=Decimal('250.00'), line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(self.co.pk)
         self.co.refresh_from_db()
         self.token = self.co.public_token
@@ -202,7 +202,7 @@ class PortalChangeOrderSupersededTokenTest(TestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), units='ea',
-            price=Decimal('50'), line_number=1)
+            price=Decimal('50'), line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(self.co.pk)
         self.co.refresh_from_db()
 

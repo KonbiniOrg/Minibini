@@ -260,6 +260,27 @@ class ChangeOrder(models.Model):
                 if old.status == self.STATUS_DRAFT:
                     if not ChangeOrderLineItem.objects.filter(change_order=self).exists():
                         raise ValidationError('Cannot send a change order with no line items.')
+                    # Mirror the estimate send guard: a bare add line (no
+                    # service/inventory descriptor) crystallizes into a Fee or a
+                    # provisional Material at acceptance, and both need an
+                    # accounting category. Catch it at send so acceptance —
+                    # after the customer has said yes — can never fail on it.
+                    missing = [
+                        li.description or f'line {li.line_number}'
+                        for li in ChangeOrderLineItem.objects.filter(
+                            change_order=self,
+                            action=ChangeOrderLineItem.ACTION_ADD,
+                            service_item__isnull=True,
+                            inventory_item__isnull=True,
+                            accounting_category__isnull=True,
+                        )
+                    ]
+                    if missing:
+                        raise ValidationError(
+                            'Cannot send: every added line item needs an '
+                            'accounting category first. Missing on: '
+                            + ', '.join(missing) + '.'
+                        )
 
     def save(self, *args, **kwargs):
         from apps.core.models import Configuration
@@ -586,6 +607,22 @@ class ChangeOrderLineItem(BaseLineItem):
         on_delete=models.SET_NULL,
         null=True, blank=True,
     )
+    is_material = models.BooleanField(
+        default=False,
+        help_text=(
+            'Marks a bare (no inventory_item) freeform line as a material: at '
+            'CO acceptance it crystallizes into a provisional Material '
+            '(sell price only, no lot) instead of a Fee. Mirrors '
+            'EstimateLineItem.is_material.'
+        ),
+    )
+    service_item = models.ForeignKey(
+        'estimates.ServiceItem',
+        null=True, blank=True,
+        on_delete=models.PROTECT,
+        related_name='+',
+        help_text='Deferred service descriptor: crystallizes to a Task at CO acceptance.',
+    )
 
     class Meta:
         db_table = 'co_li'
@@ -610,6 +647,64 @@ class ChangeOrderLineItem(BaseLineItem):
                 raise ValidationError(
                     'action="add" must not have a target_line_item.'
                 )
+        if self.action == self.ACTION_REMOVE:
+            # A remove line's own fields are display-only; it never crystallizes
+            # a new atom, so crystallization descriptors are meaningless on it.
+            if self.service_item_id is not None or self.is_material:
+                raise ValidationError(
+                    'action="remove" cannot carry a service item or material marker.'
+                )
 
     def __str__(self):
         return f'CO Line Item {self.pk}: {self.action} — {self.description[:50]}'
+
+
+class ChangeOrderLineItemSource(models.Model):
+    """Polymorphic join between a ChangeOrderLineItem and the atom it crystallized.
+
+    The CO analog of EstimateLineItemSource: created at CO acceptance for each
+    add/replace line, pointing at the Task/Material/Fee the line produced. It is
+    both the provenance record (compose_agreement traces crystallized CO fees so
+    the invoice claims them once) and the idempotency marker (a line with a
+    source row is already crystallized and is skipped on re-run). The
+    unique_together on (source_type, source_pk) enforces whole-atom claim at the
+    database level within the CO lens.
+    """
+    SOURCE_TASK = 'task'
+    SOURCE_MATERIAL = 'material'
+    SOURCE_FEE = 'fee'
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_TASK, 'Task'),
+        (SOURCE_MATERIAL, 'Material'),
+        (SOURCE_FEE, 'Fee'),
+    ]
+
+    source_id = models.AutoField(primary_key=True)
+    change_order_line_item = models.ForeignKey(
+        ChangeOrderLineItem,
+        on_delete=models.CASCADE,
+        related_name='sources',
+    )
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES)
+    source_pk = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'co_li_sources'
+        unique_together = [('source_type', 'source_pk')]
+
+    def resolve(self):
+        """Return the concrete atom instance referenced by this source."""
+        if self.source_type == self.SOURCE_TASK:
+            from apps.jobs.models import Task
+            return Task.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_MATERIAL:
+            from apps.inventory.models import Material
+            return Material.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_FEE:
+            from apps.jobs.models import Fee
+            return Fee.objects.get(pk=self.source_pk)
+        raise ValueError(f'Unknown source_type: {self.source_type}')
+
+    def __str__(self):
+        return (f'CO Source {self.source_id}: {self.source_type}:{self.source_pk} '
+                f'→ COLineItem {self.change_order_line_item_id}')

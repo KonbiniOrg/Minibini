@@ -1,10 +1,39 @@
 # Change orders drive work atoms (CO-acceptance crystallization) — starter spec
 
-> **Status: rough starter spec.** Follow-on work, parked alongside the freeform-material
-> procurement, expenses, and schedule passes — the current billing-only CO behavior is
-> **acceptable and ships as-is** (no bugs; 166 CO tests green). Design-level, not a TDD plan.
+> **Status: ✅ IMPLEMENTED 2026-07-03 on `feature/unification` — pending review.**
+> Both parts shipped: Part A (CO line authoring parity — service pick via
+> `line-items-from-service`, `is_material` marker, unified `PriceListPicker` +
+> `COAddLineForm` on the CO detail page) and Part B
+> (`ChangeOrderAcceptanceService.on_accept`, `ChangeOrderLineItemSource`).
+> Durable reference now lives in `docs/designs/estimates-and-prices.md` §14
+> (esp. §14.11); tests in `tests/test_change_order_acceptance.py`.
+> The [OPEN] items were resolved as follows (flag any to revisit):
+>
+> 1. **Provenance / double-billing** → new `ChangeOrderLineItemSource`;
+>    `compose_agreement` emits `source_fee_id` for CO lines and
+>    `copy_from_estimate` claims them. Agreement stays the billing record;
+>    atoms are the work mirror (#2 as the spec's "simplest likely answer").
+> 2. **Service pick timing** → deferred (descriptor on the line, Task at
+>    acceptance), matching the estimate side exactly.
+> 3. **target → atom resolution** → estimate line's sources, overridden by the
+>    latest accepted-CO replace-line's sources (multi-CO chain); document-only
+>    targets (adjustments / already-retired) are a no-op.
+> 4. **Remove/replace per atom type** → Task: cancel (bleps preserved);
+>    Material: delete + release earmark, but skipped when consumed /
+>    expense-bound / PO-linked / invoiced; Fee: delete unless invoiced.
+>    Replace = crystallize-new-first, then retire old; bare replace lines
+>    mirror the old atom's type.
+> 5. **on_hold timing** → crystallize inside the accept transaction after the
+>    job flips to approved (no guard bypass needed).
+> 6. **Multi-CO ordering** → inherent (each CO crystallizes at its own
+>    acceptance) + the chain resolution in #3. The `compose_change_order_diff`
+>    multi-CO *display* baseline weakness is NOT fixed here (still in LATER).
+>    New: an AC send guard on bare add lines (ChangeOrder.clean, draft→open),
+>    mirroring the estimate's send guard.
+>
+> Original spec below, kept for the rationale record.
 > Decisions tagged **[SETTLED]** (agreed), **[DEFAULT]** (chosen here; flag to change),
-> **[OPEN]** (to resolve during full speccing).
+> **[OPEN]** (resolved as above).
 > Companion: `docs/designs/estimates-and-prices.md` §9 (estimate acceptance — the model to
 > mirror) and §"change orders"; the crystallization-timing reconciliation in
 > `docs/designs/LATER.md`.

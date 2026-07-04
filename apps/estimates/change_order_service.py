@@ -3,7 +3,10 @@ Service class for ChangeOrder lifecycle operations.
 
 Rules:
 - A CO can only be created while the job is on_hold.
-- Accepting a CO auto-advances the job on_hold -> approved (no Task/Material mutations).
+- Accepting a CO auto-advances the job on_hold -> approved, then crystallizes
+  the CO's line deltas onto the Job's atoms
+  (ChangeOrderAcceptanceService.on_accept — the CO parallel of
+  EstimateAcceptanceService).
 - Rejecting/expiring a CO snapshots the proposal and leaves the job on_hold.
 """
 
@@ -141,8 +144,10 @@ class ChangeOrderService:
     def update_status(pk, new_status):
         """Update a ChangeOrder's status with lifecycle side-effects.
 
-        - Accepted: advance job on_hold -> approved; write system HistoryEntry.
-          Does NOT create or modify any Task or Material.
+        - Accepted: advance job on_hold -> approved; write system HistoryEntry;
+          crystallize the CO's deltas onto the Job's atoms (add → new
+          Task/Material/Fee; remove/replace → retire the target's atom, with
+          the replacement crystallized from the CO line).
         - Rejected / Expired: snapshot the proposal (Trigger 2); leave job on_hold.
         """
         try:
@@ -166,8 +171,15 @@ class ChangeOrderService:
 
     @staticmethod
     def _handle_accepted(co):
-        """Advance the job on_hold -> approved and write a system-attributed HistoryEntry."""
+        """Advance the job on_hold -> approved, write a system-attributed
+        HistoryEntry, then crystallize the CO's deltas onto the Job's atoms.
+
+        Crystallization runs after the status flip because atom mutations are
+        blocked while the job is on_hold; update_status's transaction wraps
+        both, so a failed crystallization rolls the acceptance back whole.
+        """
         from apps.core.models import User
+        from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
         from apps.jobs.services import JobService
 
         job = co.job
@@ -194,6 +206,8 @@ class ChangeOrderService:
                     '_action': 'Change order accepted',
                 },
             )
+
+        ChangeOrderAcceptanceService.on_accept(co)
 
     @staticmethod
     def mark_open(pk):
@@ -272,6 +286,11 @@ class ChangeOrderService:
                 price=li.price,
                 line_number=li.line_number,
                 inventory_item=li.inventory_item,
+                service_item=li.service_item,
+                is_material=li.is_material,
+                accounting_category=li.accounting_category,
+                taxable_override=li.taxable_override,
+                tax_rate_override=li.tax_rate_override,
             )
 
         return new_co
@@ -298,6 +317,23 @@ class ChangeOrderService:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _assert_is_material_only_on_bare_line(li):
+        """`is_material` is meaningful only on a bare line — a line with an
+        inventory_item or service_item already knows its crystallization type.
+        Mirrors EstimateService._assert_is_material_only_on_bare_line."""
+        if not li.is_material:
+            return
+        if li.inventory_item_id is not None:
+            raise ValidationError({'is_material': (
+                'A line with an inventory item is already a material; '
+                'the "is material" marker only applies to a bare line.'
+            )})
+        if li.service_item_id is not None:
+            raise ValidationError({'is_material': (
+                'A service line cannot be marked as a material.'
+            )})
+
+    @staticmethod
     def add_line_item(co_pk, **kwargs):
         """Add a manual line item to a draft change order."""
         try:
@@ -307,8 +343,13 @@ class ChangeOrderService:
         if co.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only add line items to draft change orders.')
         from apps.core.services import LineItemService
+        from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         li = ChangeOrderLineItem(change_order=co, **kwargs)
+        # Material lines (is_material=True) get their AC from config if not
+        # supplied — same default the estimate side applies at authoring.
+        EstimateService._apply_material_ac_default(li)
+        ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         li.save()
         return li
@@ -341,6 +382,40 @@ class ChangeOrderService:
         return li
 
     @staticmethod
+    def add_line_item_from_service(co_pk, service_item_pk, qty):
+        """Add a deferred service line to a draft change order.
+
+        Mirrors EstimateService.add_line_item_from_service: snapshots the priced
+        values off the ServiceItem at instantiation and keeps `service_item` on
+        the line purely as the crystallization target. Mints NO Task — the Task
+        is created at CO acceptance (ChangeOrderAcceptanceService.on_accept)."""
+        from apps.estimates.models import ServiceItem
+        try:
+            co = ChangeOrder.objects.get(pk=co_pk)
+        except ChangeOrder.DoesNotExist:
+            raise NotFoundError(f'ChangeOrder {co_pk} not found')
+        if co.status != ChangeOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add line items to draft change orders.')
+        try:
+            service_item = ServiceItem.objects.get(pk=service_item_pk)
+        except ServiceItem.DoesNotExist:
+            raise NotFoundError(f'ServiceItem {service_item_pk} not found')
+        scheme = service_item.rate_scheme
+        li = ChangeOrderLineItem(
+            change_order=co,
+            action=ChangeOrderLineItem.ACTION_ADD,
+            service_item=service_item,
+            description=service_item.template_name,
+            qty=qty,
+            units=scheme.unit_label or 'none',
+            price=scheme.effective_rate(service_item.default_active_modifiers),
+            accounting_category=service_item.effective_accounting_category,
+        )
+        li.full_clean()
+        li.save()
+        return li
+
+    @staticmethod
     def update_line_item(line_item_id, **kwargs):
         """Update a change order line item — validates draft status."""
         try:
@@ -350,9 +425,12 @@ class ChangeOrderService:
         if li.change_order.status != ChangeOrder.STATUS_DRAFT:
             raise ValidationError('Can only modify line items on draft change orders.')
         from apps.core.services import LineItemService
+        from apps.estimates.services import EstimateService
         kwargs = LineItemService.normalize_fk_kwargs(ChangeOrderLineItem, kwargs)
         for field, value in kwargs.items():
             setattr(li, field, value)
+        EstimateService._apply_material_ac_default(li)
+        ChangeOrderService._assert_is_material_only_on_bare_line(li)
         li.full_clean()
         li.save()
         return li

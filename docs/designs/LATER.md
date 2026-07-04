@@ -229,7 +229,21 @@ page stays whole.
   accepted estimate (`compose_change_order_diff` uses `co.estimate`), not
   `compose_agreement`, mirroring the shop edit page. With multiple accepted COs
   this can understate the true current agreement the customer sees. Resolve as
-  part of the multi-CO validation above.
+  part of the multi-CO validation above. (Note 2026-07-03: this is now
+  **display-only** — CO-acceptance *crystallization* resolves targets through
+  the accepted-CO replace chain correctly; see `estimates-and-prices.md`
+  §14.11.)
+
+- **Surface CO-remove atoms that crystallization deliberately skipped.** — _added 2026-07-03_
+  `ChangeOrderAcceptanceService` (estimates doc §14.11) leaves an atom alone when a
+  CO remove/replace targets it but it is already consumed / complete /
+  expense-bound / PO-linked / on a live invoice — physical or billed reality is
+  not unwound by a document. Right now that skip is silent (the atom just stays
+  on the job while the agreement line is struck); the human has to notice the
+  mismatch themselves. Consider surfacing it — a history entry per skipped atom,
+  or a "struck from agreement" badge on the task/material row — so the
+  reconciliation is prompted rather than remembered.
+  _Done when:_ decided and either implemented or recorded as acceptable-silent.
 
 - **Consolidate the estimate↔change-order parallel code.** — _added 2026-06-08_
   Building COs "as parallel to estimates as reasonably can be" deliberately
