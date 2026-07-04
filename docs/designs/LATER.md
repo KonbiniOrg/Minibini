@@ -585,23 +585,12 @@ Outbound sending, inbound correlation, the reply/forward composer, threading, an
 email-association pickers. Grouped here because they share the EmailRecord / TempEmail /
 IMAP-SMTP machinery and tend to be worked together.
 
-- **IMAP fetch crashes a message on naive-vs-aware datetime compare.** — _added 2026-06-18_
-  Seen in fetch stats: `Error processing <…@…ip6.arpa>: can't compare offset-naive and
-  offset-aware datetimes` (the weird `ip6.arpa` Message-ID is incidental — any message can
-  trip it). In `EmailService.fetch_emails_by_date_range` the cursor `date_threshold` is read
-  back via `datetime.fromisoformat(latest_email_date)` (`apps/core/services.py:449`) and
-  compared against the IMAP `msg.date` at `msg.date > most_recent_email_date`
-  (`apps/core/services.py:485`, again at ~529). `msg.date` is usually tz-**aware** (parsed
-  from the Date header's offset) but is **naive** for messages with a missing/malformed Date
-  header, and the persisted cursor's awareness depends on what last wrote it
-  (`timezone.now()` is aware, but a naive `most_recent_email_date.isoformat()` round-trips
-  back naive) — so a mismatch on either side raises. It's caught per-message (appended to
-  `stats['errors']`), so it doesn't crash the run, but that email is **skipped** and the
-  cursor may not advance past it. Fix: normalize both operands to tz-aware before comparing
-  (coerce naive ones via `timezone.make_aware`, default UTC) at both compare sites, and store
-  the cursor aware so the `fromisoformat` round-trip stays aware.
-  _Done when:_ a message with a naive/missing Date header fetches without error (with a test
-  covering a naive `msg.date` against the stored cursor), and the cursor advances correctly.
+- ~~**IMAP fetch crashes a message on naive-vs-aware datetime compare.**~~ — _delivered 2026-07-04_
+  `_aware()` helper in `apps/core/services.py` normalizes the fetch cursor
+  (post-`fromisoformat`), each `msg.date` compare, and both `date_sent=` writes to
+  tz-aware (UTC assumed for naive values); the cursor persists aware. Tests: naive
+  `msg.date` vs aware cursor and naive stored cursor vs aware `msg.date`
+  (`tests/test_email_models.py`).
 
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer

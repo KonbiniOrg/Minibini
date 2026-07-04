@@ -2,7 +2,7 @@
 Service classes for core application functionality.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from django.db import transaction
 from django.core.exceptions import ValidationError
@@ -25,6 +25,17 @@ def _attachments_metadata(msg):
         }
         for att in (msg.attachments or [])
     ]
+
+
+def _aware(dt):
+    """Coerce a possibly-naive datetime to tz-aware (assumes UTC).
+
+    IMAP message dates are usually aware (parsed from the Date header's
+    offset) but come back naive when the header is missing/malformed, and the
+    persisted fetch cursor can round-trip naive — comparing the two raises."""
+    if dt is not None and timezone.is_naive(dt):
+        return timezone.make_aware(dt, dt_timezone.utc)
+    return dt
 
 
 def _header_value(msg, name):
@@ -283,7 +294,7 @@ class EmailService:
                             from_email=msg.from_ or 'unknown@example.com',
                             to_email=', '.join(msg.to) if msg.to else '',
                             cc_email=', '.join(msg.cc) if msg.cc else '',
-                            date_sent=msg.date,
+                            date_sent=_aware(msg.date),
                             has_attachments=bool(msg.attachments),
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
@@ -446,7 +457,8 @@ class EmailService:
             # Get or create the latest_email_date fetch cursor (machine state)
             try:
                 latest_date_state = AppState.objects.get(key='latest_email_date')
-                date_threshold = datetime.fromisoformat(latest_date_state.value)
+                date_threshold = _aware(
+                    datetime.fromisoformat(latest_date_state.value))
             except AppState.DoesNotExist:
                 # Create default cursor
                 date_threshold = timezone.now() - timedelta(days=days_back)
@@ -481,9 +493,11 @@ class EmailService:
                         # Get Message-ID from headers
                         message_id = msg.headers.get('message-id', [f'<{msg.uid}@unknown>'])[0]
 
-                        # Track most recent email date
-                        if msg.date and msg.date > most_recent_email_date:
-                            most_recent_email_date = msg.date
+                        # Track most recent email date (msg.date is naive when
+                        # the Date header is missing/malformed)
+                        msg_date = _aware(msg.date)
+                        if msg_date and msg_date > most_recent_email_date:
+                            most_recent_email_date = msg_date
 
                         # Check if we already have this email
                         if EmailRecord.objects.filter(message_id=message_id).exists():
@@ -504,7 +518,7 @@ class EmailService:
                             from_email=msg.from_ or 'unknown@example.com',
                             to_email=', '.join(msg.to) if msg.to else '',
                             cc_email=', '.join(msg.cc) if msg.cc else '',
-                            date_sent=msg.date,
+                            date_sent=_aware(msg.date),
                             has_attachments=bool(msg.attachments),
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
