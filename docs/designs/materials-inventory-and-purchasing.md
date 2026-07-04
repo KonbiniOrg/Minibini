@@ -140,7 +140,14 @@ later hidden.
   never auto-deleted; the hide-on-spend filter is the whole retirement.)
 - **Merge** (`InventoryService.merge`, `POST …/merge/`): the manual dedup tool —
   folds a discard item into a keep item (QOH + aggregates), repoints every
-  reference, deletes the discard. Hard-blocks unit mismatch and catalog-as-discard.
+  reference, deletes the discard. Hard-blocks a *real*-unit mismatch and
+  catalog-as-discard; a `'none'` unit on either side is treated as *unknown*
+  and the known unit wins (a `'none'` keep adopts the discard's unit unless an
+  explicit `units` override is given).
+- **On order** (`InventoryItem.qty_on_order`, read-only on the serializer +
+  the inventory list column): Σ max(qty − received − cancelled, 0) over the
+  item's PO lines on non-cancelled POs — the per-material outstanding calc
+  aggregated per item.
 
 ### Cascade rules
 
@@ -292,6 +299,16 @@ linked PLI's `purchase_price` / `selling_price` in the same
 transaction. The propagate action is open to any authenticated user
 (deliberate carve-out from `can_manage_financials`). See
 `MaterialService.update_pricing`.
+
+**Late-added materials consume immediately (2026-07-04).** Consumption
+normally fires once, at the task's `pending → in_progress` promotion. A
+material **added to** (`MaterialService.create_on_job`) or **reassigned onto**
+(`assign_task`) a task that is already `in_progress` missed that sweep — it now
+consumes on the spot via `MaterialService.consume_if_task_started`, **unless**
+the stock physically isn't there (PLI with insufficient QOH), in which case it
+stays `pending` so the procure-via-PO flow (add shortfall → order → receive)
+keeps its anchor row. The *arrival-later* consumption trigger (stock received
+for a pending material on an in-progress task) is still open — see LATER.
 
 **Invoice freeze on `sell_price` and `unconsume`.** Once a Material is on a
 non-cancelled invoice (i.e. `InvoiceClaimService.is_invoiced('material', pk)`

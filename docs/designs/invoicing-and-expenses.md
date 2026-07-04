@@ -272,7 +272,7 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 | Case | Description | Units | Qty | Price | Accounting category |
 |---|---|---|---|---|---|
-| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity` or `1` for tasks) | Atom-derived (`Material.sell_price` or `task.compute_amount()`) | Atom's effective category |
+| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity`; an ENTERED_QTY task's actual qty; `1` for ELAPSED_TIME tasks) | Atom-derived (`Material.sell_price`; an ENTERED_QTY task's `effective_rate()`; the blep roll-up total for ELAPSED_TIME) | Atom's effective category |
 | Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform-or-null |
 | Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
 

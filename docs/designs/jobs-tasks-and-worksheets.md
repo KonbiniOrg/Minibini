@@ -128,6 +128,14 @@ marked complete prematurely or cancelled by accident. They are exposed on
 the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
 `/api/jobs/{id}/`, which already requires that atom).
 
+`work_complete → in_progress` also fires **automatically** when a new
+incomplete Task lands on a `work_complete` job (`JobService.mark_work_reopened`,
+the mirror of `mark_work_started`) — `work_complete` means every task is
+terminal, and a fresh open task contradicts that. Wired into all three task
+creation paths (`TaskService.create_direct` / `create_from_template`,
+`ServiceItem.generate_task`). The terminal-`completed` case is still an open
+decision (see LATER).
+
 #### `on_hold` semantics
 
 `on_hold` is a general pause primitive — change orders are one consumer
