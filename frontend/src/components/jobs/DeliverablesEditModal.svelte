@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
 
   let { jobId, onClose } = $props();
@@ -116,14 +116,9 @@
   let visibleRows = $derived(rows.filter(r => !r._deleted));
 </script>
 
-<div
-  class="backdrop"
-  role="presentation"
-  use:modalKeys={{ onSave: () => { if (!saving && dirty) save(); }, onCancel: cancel }}
-  onclick={(e) => { if (e.target === e.currentTarget) cancel(); }}
->
-  <div class="modal" role="dialog" tabindex="-1">
-    <h3>Edit deliverables</h3>
+<Modal open={true} onSave={() => { if (!saving && dirty) save(); }}
+  onCancel={cancel} maxWidth="80vw" label="Edit deliverables">
+  <h3>Edit deliverables</h3>
     {#if loading}
       <p>Loading...</p>
     {:else}
@@ -153,19 +148,9 @@
         <button type="button" onclick={cancel} disabled={saving}>Cancel</button>
       </p>
     {/if}
-  </div>
-</div>
+</Modal>
 
 <style>
-  .backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-    display: flex; align-items: center; justify-content: center;
-    z-index: var(--z-modal);
-  }
-  .modal {
-    background: white; padding: 1rem; min-width: 520px; max-width: 80vw;
-    max-height: 80vh; overflow-y: auto;
-  }
   .err { color: #c00; }
   table { width: 100%; border-collapse: collapse; }
 </style>
