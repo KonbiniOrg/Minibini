@@ -715,6 +715,7 @@ def build_inventory_items(c):
     c.pli_map = {}
     c.pli_index = []                 # [{'code', 'description'}] for fuzzy matching
     c.pli_purchase_by_code = {}      # code -> purchase_price string
+    c.pli_units_by_code = {}         # code -> units (description-inferred)
 
     for row in rows:
         # The sheet uses header names; try both the spec names and common
@@ -759,6 +760,7 @@ def build_inventory_items(c):
         c.pli_map[code] = pk
         c.pli_index.append({'code': code, 'description': description})
         c.pli_purchase_by_code[code] = purchase_price
+        c.pli_units_by_code[code] = _unit_from_description(description)
 
 
 # Maps FreeAgent estimate Status values to Minibini estimate status constants.
@@ -1017,20 +1019,23 @@ _LABOR_VERB_PREFIXES = ('prepare', 'apply', 'glue', 'engrave')
 
 
 def _material_cost_and_pli(c, description, sell_price):
-    """Resolve (unit_cost_str, inventory_item_pk) for a material line.
+    """Resolve (unit_cost_str, inventory_item_pk, units) for a material line.
 
     Fuzzy-match the description to a PriceListItem (keyword + thickness). On a
-    match, link the FK and take the PLI's purchase_price as unit_cost. On a miss,
-    leave the FK null and derive unit_cost from the sell price via _COST_RATIO.
+    match, link the FK, take the PLI's purchase_price as unit_cost, and carry
+    the PLI's units (fixtures bypass Material.save(), so _populate_from_pli
+    never runs — the converter must copy the units itself). On a miss, leave
+    the FK null, derive unit_cost from the sell price via _COST_RATIO, and
+    return units=None for the caller to infer.
     """
     code = P.match_pli(description, getattr(c, 'pli_index', []))
     if code:
         pli_pk = c.pli_map.get(code)
         purchase = c.pli_purchase_by_code.get(code)
         if pli_pk is not None and purchase is not None:
-            return purchase, pli_pk
+            return purchase, pli_pk, c.pli_units_by_code.get(code)
     unit_cost = (sell_price * _COST_RATIO).quantize(Decimal('0.01'))
-    return f'{unit_cost:.2f}', None
+    return f'{unit_cost:.2f}', None, None
 
 
 # Mirrors the converter's default_material_markup_percent config (20%): a minted
@@ -1414,18 +1419,28 @@ def derive_atoms(c):
         # --- 2. Materials: raw stock only (after tasks so cut_task is set) --
         for li in raw_lines:
             mat_pk = c.next_pk('inventory.material')
-            unit_cost, pli_pk = _material_cost_and_pli(c, li['description'] or '', li['price'])
+            unit_cost, pli_pk, pli_units = _material_cost_and_pli(
+                c, li['description'] or '', li['price'])
+            # FreeAgent line items carry no unit signal for material lines
+            # (resolve_li_units_and_qty only ever yields hours/none), so
+            # resolve real units here: the matched catalog item's, else the
+            # same description inference catalog items get. The minted lot
+            # gets the SAME units so material↔item unit checks (consume,
+            # merge) hold.
+            units = li['units'] if li['units'] not in (None, '', 'none') else None
+            if units is None:
+                units = pli_units or _unit_from_description(li['description'] or '')
             if pli_pk is None:
                 # No catalog match — mint a transient lot so every Material is
                 # item-backed (uniform earmark/QOH/consumption handling).
                 pli_pk = _mint_transient_lot(
-                    c, li['description'] or '', li['units'] or 'none', unit_cost)
+                    c, li['description'] or '', units, unit_cost)
             c.add_fixture('inventory.material', mat_pk, {
                 'job':                 job_pk,
                 'task':                c.cut_task.get(base_ref),
                 'description':         (li['description'] or '')[:255],
                 'quantity':            f"{li['qty']:.2f}",
-                'units':               li['units'] or 'none',
+                'units':               units,
                 'unit_cost':           unit_cost,
                 'sell_price':          f"{li['price']:.2f}",
                 'accounting_category': c.ac_mat_pk,

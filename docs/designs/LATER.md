@@ -823,14 +823,16 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
 
-- **Inventory merge accepts `'none'` units — DELIVERED 2026-07-04; converter-side unit inference still open.** — _added 2026-06-19_
-  Merge side done: a `'none'` unit on either side no longer blocks — the known
-  unit wins (a `'none'` keep adopts the discard's unit; explicit `units`
-  override still wins; real-unit mismatches still block). Tests:
-  `tests/test_inventory_merge.MergeNoneUnitTest`. Remaining (dev-data polish):
-  the converter still emits `units='none'` for every Material/minted lot —
-  infer raw-stock units from the description like catalog items do. Original
-  entry:
+- ~~**Inventory merge accepts `'none'` units + converter unit inference.**~~ — _fully delivered 2026-07-04_
+  Merge side: a `'none'` unit on either side no longer blocks — the known unit
+  wins (tests: `tests/test_inventory_merge.MergeNoneUnitTest`). Converter side:
+  materials now resolve real units — the matched catalog item's units first
+  (fixtures bypass `Material.save()`, so the converter copies what
+  `_populate_from_pli` would have filled), else the same
+  `_unit_from_description` inference catalog items get; minted transient lots
+  carry the SAME units as their material so consume/merge unit checks hold.
+  Regenerated dataset: 80/80 materials with real units, zero material↔item
+  mismatches (was all `'none'`). Original entry:
   `InventoryService.merge` hard-blocks when `keep.units != discard.units`
   (`apps/inventory/services.py:151`) — the QOH addition is nonsense across real
   unit mismatches (sheets into lbs). But `'none'` means *unknown*, not a real
