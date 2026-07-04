@@ -150,6 +150,23 @@
     return mat.consumption_state === 'pending';
   }
 
+  function isMaterialAwaitingStock(mat) {
+    // Mirrors MaterialService.consume's stock check: only an inventory-item-
+    // backed material can be short; a freeform one consumes unconditionally.
+    return mat.consumption_state === 'pending'
+      && mat.inventory_item != null
+      && Number(mat.qty_on_hand) < Number(mat.quantity);
+  }
+
+  function taskAwaitingMaterials(task) {
+    // Derived, never stored (same doctrine as is_amended): an in-progress
+    // task with a pending understocked material refuses further bleps until
+    // the stock arrives — surface that here instead of auto-setting the
+    // human-owned `blocked` status.
+    return task.status === 'in_progress'
+      && (task.materials || []).some(isMaterialAwaitingStock);
+  }
+
   function isMaterialFinalized(mat) {
     // Consumed or released — terminal states with no further material actions.
     // (The expense-bound qty-0 clause covers pre-`released` rows.)
@@ -214,6 +231,7 @@
         {/if}
         <td>
           <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
+          {#if taskAwaitingMaterials(task)}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
         </td>
         {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
@@ -458,6 +476,17 @@
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
   .job-materials-header td { background: #fef9c3; padding-top: 8px; }
 
+  .badge-awaiting {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 11px;
+    border-radius: 3px;
+    background: #fef3c7;
+    border: 1px solid #d97706;
+    color: #92400e;
+    white-space: nowrap;
+  }
   .blocked-reason { font-size: 11px; color: #991b1b; }
 
   .actions-cell {

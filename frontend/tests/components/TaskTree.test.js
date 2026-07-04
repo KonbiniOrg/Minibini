@@ -38,6 +38,38 @@ describe('TaskTree', () => {
     expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
   });
 
+  it('badges an in-progress task waiting on understocked material', () => {
+    const t = task({
+      status: 'in_progress',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '1.00' }],
+    });
+    const { getByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('waiting on materials')).toBeInTheDocument();
+  });
+
+  it('no badge when the pending material is in stock, freeform, or the task is not started', () => {
+    const inStock = task({
+      task_id: 11, name: 'A', status: 'in_progress',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '9.00' }],
+    });
+    const freeform = task({
+      task_id: 12, name: 'B', status: 'in_progress',
+      materials: [{ description: 'Finish', quantity: '1', sell_price: '5', units: 'ea',
+                    consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' }],
+    });
+    const notStarted = task({
+      task_id: 13, name: 'C', status: 'pending',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '0.00' }],
+    });
+    const { queryByText } = render(TaskTree, {
+      props: { tasks: [inStock, freeform, notStarted], canManage: true },
+    });
+    expect(queryByText('waiting on materials')).toBeNull();
+  });
+
   it('shows the catalog badge for an inventory-item-backed material', () => {
     const t = task({
       materials: [{

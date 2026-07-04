@@ -299,11 +299,21 @@ class BlepService:
             )
             was_pending = task.status == Task.STATUS_PENDING
             TaskLifecycleService._promote_pending_task(task)
+            promoted = was_pending and task.status == Task.STATUS_IN_PROGRESS
+            if not promoted:
+                # The caller's instance may be stale (promotion is a
+                # conditional DB update) — read the true status before deciding
+                # whether the blep-start sweep applies.
+                task.refresh_from_db(fields=['status'])
+            if not promoted and task.status == Task.STATUS_IN_PROGRESS:
+                # A hand-added blep on a started task is still work happening:
+                # consume arrived stock, refuse while a material is missing.
+                # (The promotion above already swept a pending task's list.)
+                TaskLifecycleService._consume_pending_materials(task)
             # Mirror start_work: the first worker whose blep promotes the
             # task becomes its assignee. A blep on an already-started task
             # is "helping" and doesn't claim it.
-            if (was_pending and task.status == Task.STATUS_IN_PROGRESS
-                    and not task.assignee_id):
+            if promoted and not task.assignee_id:
                 Task.objects.filter(pk=task.pk).update(assignee=target_user)
                 task.assignee = target_user
             JobService.mark_work_started(task.job)
@@ -1089,6 +1099,22 @@ class TaskLifecycleService:
                 MaterialService.consume(material)
 
     @staticmethod
+    def _consume_pending_materials(task):
+        """Blep-start sweep: a blep means work is happening NOW, so every
+        pending material on the task must consume. consume() raising on
+        insufficient stock IS the guard — no blep can be recorded while a
+        required material is physically missing (same coaching error as the
+        first-blep promotion path). This is also what catches the
+        arrival-later case: a late-added material left pending because its
+        stock hadn't arrived (consume-on-add skips understocked adds) is
+        consumed by the next blep once the stock is in."""
+        from apps.inventory.models import Material
+        from apps.inventory.services import MaterialService
+        for material in task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_PENDING):
+            MaterialService.consume(material)
+
+    @staticmethod
     def complete_task(task_pk, actual_qty=None):
         """Transition task from pending/in_progress/blocked -> complete.
 
@@ -1324,6 +1350,9 @@ class TaskLifecycleService:
                 for b in list(other_bleps):
                     BlepService._resolve_open_blep(b, now)
                 return TaskLifecycleService.start_work(task_pk, target)
+            # A blep on an in-progress task must consume any materials that
+            # arrived (or refuse while one is still missing) — see the sweep.
+            TaskLifecycleService._consume_pending_materials(task)
             # Close target's open Blep on ANY task
             BlepService._close_open(user=target, now=now)
             blep = BlepService._create(task, target, start_time=now)

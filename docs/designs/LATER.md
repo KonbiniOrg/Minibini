@@ -431,20 +431,29 @@ page stays whole.
   confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
   whether on the detail page or in the wizard.
 
-- **Material added to an already-started Task is never consumed — DELIVERED (consume-on-add); arrival-later case open.** — _added 2026-06-17; consume-on-add delivered 2026-07-04_
-  `MaterialService.consume_if_task_started` consumes a pending material on add
-  (`create_on_job`) or reassign (`assign_task`) when its task is already
-  `in_progress` — **unless** the stock physically isn't there (PLI with
-  insufficient QOH), in which case it stays `pending` so the procure-via-PO flow
-  (add shortfall → order → receive) keeps working. Tests:
-  `tests/test_late_material_consumption.py`. Unconsume interaction is safe: a
-  blep-cancel undo unconsumes and the next promote re-consumes.
-  **Remaining:** the *arrival-later* case — a pending material on an in-progress
-  task whose stock arrives afterwards (PO receive / expense receipt / restock)
-  still isn't consumed by anything; decide the trigger (consume on receive when
-  the task is in_progress, or a sweep on subsequent bleps).
-  _Done when:_ stock arriving for a pending material on an in-progress task gets
-  consumed (with the trigger decided), with a test.
+- ~~**Material added to an already-started Task is never consumed.**~~ — _fully delivered 2026-07-04 (consume-on-add + blep-start sweep)_
+  RM-approved design: consumption fires at **every blep start** (live or
+  hand-added), not just the promotion — in-stock adds consume immediately
+  (`consume_if_task_started`); an out-of-stock add stays `pending`, then the
+  next blep is **refused** (consume's coaching error) until the stock arrives,
+  at which point the next blep's sweep consumes it. "Waiting on materials" is a
+  derived TaskTree badge, not a stored status. See
+  `materials-inventory-and-purchasing.md` (consumption rules) and
+  `tests/test_blep_start_material_sweep.py`.
+
+- **Completing a never-started task leaves its materials pending.** — _added 2026-07-04_
+  Adjacent gap noticed while building the blep-start sweep: `complete_task`
+  allows `pending → complete` directly (an ENTERED_QTY task can be completed
+  with a typed qty and zero bleps), and it runs **no consumption sweep** — the
+  task's materials stay `pending` forever (unbillable), the same bug family the
+  sweep just fixed for bleps. A complete task takes no further bleps, so
+  nothing will ever consume them. Decide: sweep at completion too (refusing,
+  with the coaching error, when a material is out of stock — "can't have done
+  the work if the material never existed"), or require a blep before completion
+  for tasks with materials.
+  _Done when:_ completing a task consumes its pending materials (or is refused
+  while one is missing), with a test — or a recorded decision says the
+  bleps-first flow is mandatory.
 
 - ~~**Single task on an entered-qty scheme collapses to qty 1 / price = total.**~~ — _delivered 2026-07-04_
   `InvoiceWizardService._task_qty_and_price` now returns (actual qty, effective rate)

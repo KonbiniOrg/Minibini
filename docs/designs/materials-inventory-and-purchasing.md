@@ -300,15 +300,34 @@ transaction. The propagate action is open to any authenticated user
 (deliberate carve-out from `can_manage_financials`). See
 `MaterialService.update_pricing`.
 
-**Late-added materials consume immediately (2026-07-04).** Consumption
-normally fires once, at the task's `pending → in_progress` promotion. A
-material **added to** (`MaterialService.create_on_job`) or **reassigned onto**
-(`assign_task`) a task that is already `in_progress` missed that sweep — it now
-consumes on the spot via `MaterialService.consume_if_task_started`, **unless**
-the stock physically isn't there (PLI with insufficient QOH), in which case it
-stays `pending` so the procure-via-PO flow (add shortfall → order → receive)
-keeps its anchor row. The *arrival-later* consumption trigger (stock received
-for a pending material on an in-progress task) is still open — see LATER.
+**Consumption fires at every blep start, not just the first (2026-07-04).**
+A blep means work is happening *now*, so recording one — live (`start_work`)
+or hand-added (`create_historical`) — sweeps the task's pending materials
+(`TaskLifecycleService._consume_pending_materials`; the `pending →
+in_progress` promotion is just the first such sweep). The rule set:
+
+1. A material added to (`MaterialService.create_on_job`) or reassigned onto
+   (`assign_task`) a task that is already `in_progress` consumes **immediately
+   when in stock** (`consume_if_task_started`) — so an after-the-fact "we used
+   more" add never depends on a future blep existing.
+2. Added while **out of stock** it stays `pending` (the procure-via-PO flow
+   needs the row as its anchor), and then:
+   a. the **next blep is refused** — `consume()`'s insufficient-stock error
+      (the same coaching message the first-blep path always raised) is the
+      guard: no work can be recorded while a required material is physically
+      missing; or
+   b. the **stock arrives** and the next blep's sweep consumes it — no
+      PO-receive hook needed.
+
+Only inventory-item-backed materials can be short; freeform materials consume
+unconditionally. "Waiting on materials" is **derived, never stored**: the task
+tree badges an `in_progress` task with a pending understocked material
+(`TaskTree.taskAwaitingMaterials`); the human-owned `blocked` status is not
+auto-set — nothing has to remember to un-set it. Blep-cancel undo nuance: only
+the *promoting* blep's cancellation un-consumes; a later blep's arrival
+consumption sticks (the material genuinely is allocated — manual unconsume
+exists). Tests: `tests/test_blep_start_material_sweep.py` +
+`tests/test_late_material_consumption.py`.
 
 **Invoice freeze on `sell_price` and `unconsume`.** Once a Material is on a
 non-cancelled invoice (i.e. `InvoiceClaimService.is_invoiced('material', pk)`
