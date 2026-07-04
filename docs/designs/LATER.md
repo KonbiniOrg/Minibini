@@ -128,15 +128,6 @@ page stays whole.
   `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
   redundancy this item is about.
 
-- ~~**Audit `$state` seeded from a prop — stale on prop change.**~~ — _audited 2026-07-04_
-  Compiled every component and traced all 12 warning sites to their parents:
-  every one is mount-only-safe — parents remount via `{#if}`/`{#key}`/loading
-  guards (forms, modals), a `$effect` re-syncs (`AssignedTaskList`,
-  `WizardLineItemCard`), or the component is unused (`Accordion`). Each site now
-  carries `// svelte-ignore state_referenced_locally` with the mount-seed
-  contract noted, so the build is warning-free while the lint still catches new
-  code. (Also closes the `WizardLineItemCard` warnings entry below.)
-
 - **Deliverable freeze under the no-estimate case.** — _added 2026-06-01_
   The job-duplicate "immediately approved" path produces a Job with **no estimate** —
   deliverables, tasks, materials only. `DeliverableService.is_editable` keys on estimate /
@@ -204,20 +195,6 @@ page stays whole.
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
 
-- **Should an Estimate with a change order on it stay `accepted`, or become `superseded`?** — _added 2026-05-26; RESOLVED 2026-06-07_
-  **Decision: keep it `accepted`** and let the display relabel to "amended". Reasoning: the
-  estimate is still the base of the agreement-of-record (a CO is a delta, usually on only
-  part of it), `compose_agreement` keys off `status = accepted`, and the "one accepted
-  estimate per job" rule + `ChangeOrder.estimate` FK both depend on it. `superseded` was
-  rejected because it already means "replaced by a newer *revision*" (the `revise_estimate`
-  path) and would overstate a partial change; a new stored `altered`/`amended` state was
-  rejected because the fact is fully derivable and a stored copy can drift. Instead "amended"
-  is a **derived** read: `EstimateSerializer.is_amended` (+ board pipeline payload), true when
-  the estimate is accepted and ≥1 *accepted* CO references it; the UI renders the word
-  "amended" off that flag (see `estimates-and-prices.md` §14.9). If "amended" ever needs to
-  *drive behavior* (transitions, board columns, reporting) rather than just label, revisit
-  promoting it to a real state.
-
 - **Validate the multi-change-order display (2+ COs).** — _added 2026-05-27_
   We spec'd `ch-1`/`ch-2` per-line tags but haven't built/validated how the CO view reads
   with two or more COs on a job: how the 1st CO's lines/deliverables show once a 2nd
@@ -270,13 +247,6 @@ page stays whole.
   lockstep until/unless the shop view reads the server composer too.)
   _Done when:_ the shared paths live in one place (or we record why the duplication
   is acceptable).
-
-- ~~**`is_amended` is an N+1 (duplication half delivered).**~~ — _added 2026-06-08; fully delivered 2026-07-04_
-  `Estimate.with_amended_flag(qs)` annotates `Exists(accepted CO)`;
-  `is_amended()` answers from the annotation when present (falls back to the
-  per-row `.exists()` for single objects). Wired into `EstimateViewSet.get_queryset`
-  and the board pipeline's estimate loop. Tests:
-  `tests/test_estimate_is_amended.EstimateIsAmendedAnnotationTest` (0-query assertions).
 
 - **Distinguish on-hold job varieties on the pipeline panel?** — _added 2026-05-27_
   An on-hold job shows a single "on-hold" sub-status. Consider surfacing whether it has a
@@ -393,20 +363,6 @@ page stays whole.
   _Done when:_ the detail page can switch between the line-item view and the atom-pull view
   without a route change, and the standalone wizard routes are retired.
 
-- ~~**Permission-store migration — residual cleanup.**~~ — _delivered 2026-07-04_
-  (a) `TagEditor` grew a `readonly` prop (chips only, no controls, no tag-list
-  fetch); `ContactDetail`/`BusinessDetail` use it instead of hand-rolled
-  read-only lists (Vitest coverage). (b) The dead `userPermissions` prop chain
-  was removed end-to-end (TaskDetailPage, TaskQuickCard, TaskActions,
-  BlepEditModal); `TimeEditModal` had already stopped reading it.
-
-- ~~**Superuser still referenced in test fixtures + fixture JSON.**~~ — _delivered 2026-07-04_
-  `fixtures/unit_test_data.json`'s admin now carries the four atoms explicitly
-  (natural-key `user_permissions`, `is_superuser: false`), and the five
-  privileged-actor shortcuts migrated to `tests.base.grant_atoms(user, *atoms)`.
-  `tests/test_api_users.py` still creates superusers deliberately — it *tests*
-  superuser semantics (bypass, patch-ignores-flag), which is the legitimate use.
-
 - **Stale-view error handling + live refresh after a concurrent change.** — _added 2026-06-03_
   Two users with the same job open: one creates the estimate, the other's Create-Estimate
   button is still present and clickable. The backend correctly rejects the second create with
@@ -431,50 +387,17 @@ page stays whole.
   confusing. Converge on one. _Done when:_ adding a manual line item uses the same component
   whether on the detail page or in the wizard.
 
-- ~~**Material added to an already-started Task is never consumed.**~~ — _fully delivered 2026-07-04 (consume-on-add + blep-start sweep)_
-  RM-approved design: consumption fires at **every blep start** (live or
-  hand-added), not just the promotion — in-stock adds consume immediately
-  (`consume_if_task_started`); an out-of-stock add stays `pending`, then the
-  next blep is **refused** (consume's coaching error) until the stock arrives,
-  at which point the next blep's sweep consumes it. "Waiting on materials" is a
-  derived TaskTree badge, not a stored status. See
-  `materials-inventory-and-purchasing.md` (consumption rules) and
-  `tests/test_blep_start_material_sweep.py`.
-
-- ~~**Completing a never-started task leaves its materials pending.**~~ — _delivered 2026-07-04_
-  RM decision: `complete_task` **refuses** while the task has pending
-  materials — "if a material was used, consume it by hand; otherwise release
-  it" (no silent auto-consume: the human decides which it was). Task-attached
-  pending material rows gained a **consume** button to make the by-hand path
-  possible, and the return action's label is now honest about what it does:
-  **"restock"** only when stock is actually on hand, **"release"** for
-  freeform/not-on-hand materials (full-quantity restock was always the release
-  path server-side). Tests: `tests/test_complete_task_material_guard.py` +
-  TaskTree Vitest.
-
-- ~~**Single task on an entered-qty scheme collapses to qty 1 / price = total.**~~ — _delivered 2026-07-04_
-  `InvoiceWizardService._task_qty_and_price` now returns (actual qty, effective rate)
-  for a single ENTERED_QTY task, matching what a uniform multi-task bundle already
-  did; ELAPSED_TIME deliberately keeps the qty 1 / price = total fallback (blep
-  roll-ups have no meaningful per-unit decomposition on the line — the deliberate
-  revisit landed on keeping it). Tests in `test_invoice_wizard_service` +
-  `test_wizard_bundle_summary`.
-
-- **Adding a Task to a `work_complete` job doesn't reopen the job — DELIVERED; `completed`-job case still open.** — _added 2026-06-17; reopen delivered 2026-07-04_
-  `JobService.mark_work_reopened` (mirror of `mark_work_started`) pulls a
-  `work_complete` job back to `in_progress` when an incomplete task lands on it;
-  wired into all three creation paths (`TaskService.create_direct` /
-  `create_from_template`, `ServiceItem.generate_task`), with tests
-  (`tests/test_job_direct_tasks.WorkCompleteReopenTest`). **Remaining decision:**
-  task creation is also allowed on a **terminal `completed`** job (only `on_hold`
-  is blocked), which has no outgoing transition to reopen — either block adding
-  tasks there or define a reopen path. Also note: an on-hold job released back to
-  `work_complete` *after* a CO added incomplete tasks would still be incoherent
-  (release restores prior status without re-checking) — same family, decide with
-  the `completed` case.
-  _Done when:_ the `completed`-job case is decided (blocked or reopenable), and
+- **Task creation on a terminal `completed` job — block it or define a reopen path.** — _added 2026-06-17; narrowed 2026-07-04_
+  (The `work_complete` half is delivered: `JobService.mark_work_reopened` pulls
+  the job back to `in_progress` when an incomplete task lands.) Remaining:
+  task creation is still allowed on a **terminal `completed`** job (only
+  `on_hold` is blocked), which has no outgoing transition to reopen — either
+  block adding tasks there or define a reopen path. Related: an on-hold job
+  released back to `work_complete` *after* a CO added incomplete tasks would
+  be incoherent (release restores prior status without re-checking) — decide
+  with the same pass.
+  _Done when:_ the `completed`-job case is decided (blocked or reopenable) and
   the on-hold-release path re-checks task state.
-
 - **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
   In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
   its "View Full Estimate" link correctly points to the old one. Open question: should clicking
@@ -515,11 +438,6 @@ page stays whole.
   dataset shows workers with multi-blep days inside longer, non-coterminal shifts (with the
   enclosure/overlap invariants still holding).
 
-- ~~**Pipeline job card hardcodes worksheet status to "Draft" (contradicts the estimate).**~~ — _mooted 2026-07-04_
-  The plan/worksheet layer's removal took the chip with it: the pipeline payload
-  emits `worksheets: []` and `PipelineColumn.buildDocs` renders only estimate
-  chips (with real status / amended labels). Nothing fakes "Draft" anymore.
-
 - **Adjustment amount on a superseded estimate looks inconsistent (possible doubling).** — _added 2026-06-27_
   Observed in dev data: estimate **110** (superseded by estimate **116**) shows a **$44**
   percentage adjustment where, for consistency with that estimate's own line values, it
@@ -540,24 +458,6 @@ page stays whole.
   _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
   with the doubling explained.
 
-- ~~**"Mark Work Complete" button shows on Draft jobs (task list).**~~ — _delivered 2026-07-04_
-  `canMarkWorkComplete(status)` (`frontend/src/lib/jobActions.js`, unit-tested)
-  gates the button to `approved`/`in_progress` — hidden for draft, submitted,
-  on_hold, work_complete and terminal statuses (submitted decided in: no work
-  exists to complete pre-approval).
-
-- ~~**"Send all to Estimate/Invoice" button on the source-pull (wizard) page.**~~ — _delivered 2026-07-04_
-  `EstimateWizardService.send_all_atoms` / `InvoiceWizardService.send_all_atoms`
-  (one line per available atom; claimed atoms skipped, so it composes with
-  existing lines — unlike the invoice's fresh-document `seed_all_atoms`),
-  behind `POST /api/{estimates,invoices}/{id}/send-all-atoms/`, with a
-  "Send all to Estimate/Invoice" button above each wizard's source pool.
-  Tests: `tests/test_send_all_atoms.py`.
-
-- ~~**Wizard "Done" should auto-save unsaved lines.**~~ — _delivered 2026-07-02 (`93aa7b20`)_
-  Both wizards' "Done" now flushes pending line-item edits via the flush registry
-  (`flushRegistry.flushAll`) before navigating, with component tests.
-
 ---
 
 ## Email
@@ -565,13 +465,6 @@ page stays whole.
 Outbound sending, inbound correlation, the reply/forward composer, threading, and the
 email-association pickers. Grouped here because they share the EmailRecord / TempEmail /
 IMAP-SMTP machinery and tend to be worked together.
-
-- ~~**IMAP fetch crashes a message on naive-vs-aware datetime compare.**~~ — _delivered 2026-07-04_
-  `_aware()` helper in `apps/core/services.py` normalizes the fetch cursor
-  (post-`fromisoformat`), each `msg.date` compare, and both `date_sent=` writes to
-  tz-aware (UTC assumed for naive values); the cursor persists aware. Tests: naive
-  `msg.date` vs aware cursor and naive stored cursor vs aware `msg.date`
-  (`tests/test_email_models.py`).
 
 - **Outbound drafts: save composed-but-not-sent state.** — _added 2026-05-30_
   Both the document-send pages (Estimate / PO / Invoice) and the inline reply composer
@@ -651,31 +544,6 @@ IMAP-SMTP machinery and tend to be worked together.
   filename in an `<a href>` to it. Decide at that time whether to cache attachment
   bytes on `TempEmail` (avoids IMAP-per-click) or keep the streaming-from-IMAP shape.
 
-- ~~**Email-association pickers cap the dropdown at 100 entries and sort poorly.**~~ — _delivered 2026-06-21_ All three email-association pickers (jobs, POs, bills) now use `SearchPicker`-based type-ahead against their respective `?search=` endpoints; the bulk `?page_size=500` loads are gone.
-
-- ~~**Link-email Job picker is an oversized `<select>`.**~~ — _delivered 2026-06-21_ Replaced with `JobPicker` (itself built on `SearchPicker`).
-
-- ~~**Consolidate the customer/contact pickers around `CustomerPicker`.**~~ — _superseded 2026-06-21_ The `SearchPicker` consolidation landed instead: a shared behavior core (`SearchPicker.svelte`) backs all per-entity pickers (`JobPicker`, `ContactPicker`, `BusinessPicker`, `PurchaseOrderPicker`, `BillPicker`, `InventoryItemPicker`, `CustomerPicker`). Each picker site was deliberately assigned; no audit of `CustomerPicker` reassignments is outstanding.
-
-- ~~**Consolidate `BillSerializer.get_balance` and `BillSummarySerializer.get_balance` into a shared helper.**~~ — _delivered by 2026-07-04 (BillPayment work + `later` merge)_
-  The rule now lives on the model: `Bill.total` / `Bill.amount_paid` / `Bill.balance`
-  (payment-aware, `total − amount_paid`, zero on terminal statuses). `BillSerializer.get_balance`
-  delegates to `obj.balance`; the A/P list's SQL `balance_anno` mirrors the same rule for
-  in-DB sorting (a necessary Python↔SQL duplication, now of one clearly-stated rule).
-
-- ~~**Invoice `cancel` action bypasses `Invoice.save()` (no job auto-complete).**~~ — _delivered 2026-07-04 (merge of the 2026-06-19 `later` work)_
-  Cancel now routes through `InvoiceService.cancel` (loads + `.save()`); `Invoice.save()` fires
-  the completion gate on entry to `cancelled` as well as `paid`. Tests in
-  `tests/test_completion_gate.py` (cancelling the last invoice completes an all-shipped job).
-
-- ~~**Reimbursement QBO push fails consistently with an error.**~~ — _resolved 2026-06-21 (ENV-ONLY)_
-  Root-caused: no code defect. `push_reimbursement` is structurally identical to the working expense
-  push; a characterization test with a mocked client passes on first run (`tests/test_qbo_reimbursement_push.py`).
-  The dev `sync_failed` is purely the missing QBO sandbox: `get_client()` → None →
-  `ValueError('No active QBO connection')` → `QBOSyncService.run_create` records `sync_failed`. The local
-  commit stands (batch + reimbursed expenses); recovery is the existing `ReimbursementService.retry_sync`
-  once a sandbox is connected.
-
 - **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
   An expense is single-mode (cost OR stock receipt) and records one purchased item.
   Real corner case: on one trip a worker buys 3 sheets of an **inventoried** PLI (the
@@ -693,27 +561,6 @@ IMAP-SMTP machinery and tend to be worked together.
   mixed receipt and prompts the user to split it — so a non-inventory cost can never be
   silently swallowed by a stock receipt.
 
-- ~~**Write-off → QBO?**~~ — _resolved 2026-06-21_ Decision: write-offs stay **inventory-only**, no QBO
-  push. Inventory cost is expensed at purchase time (bills/expenses post to expense/COGS accounts, not a
-  capitalized inventory asset), so a write-off has no QBO consequence and pushing one would double-count.
-  Recorded in `quickbooks-integration.md` ("Inventory write-offs are not pushed"). Revisit only if QBO is
-  ever switched to true inventory-asset tracking.
-
-- ~~**Reimbursement batch delete/unwind isn't exposed in the SPA.**~~ — _delivered 2026-07-04_
-  `UserReimbursementPanel` now has a confirm-guarded **unwind** button per past
-  batch, wired to `DELETE /api/reimbursements/{id}/?confirm=true`, surfacing
-  errors via `errorMessage`. Vitest coverage in
-  `frontend/tests/components/expenses/UserReimbursementPanel.test.js`.
-
-- ~~**Failed-*delete* batch vs. retry-sync ambiguity.**~~ — _resolved 2026-06-22_
-  Resolved by the `qbo_pending_op` work: every `QBOSyncable` record now stores which operation it
-  owes (`create`/`update`/`delete`), set by the orchestrator (`run_create`/`run_update`/`run_delete`)
-  on failure. `retry` dispatches on it — a failed-delete row re-runs the delete, a failed-update row
-  re-applies the update (the old retry's create-push short-circuit, which silently mis-handled both,
-  is gone). See `quickbooks-integration.md` "Retry & sync failures". The broader "should
-  Customers/Vendors/Invoices also get this base + appear in the failures view" is the remaining open
-  question (they use ad-hoc sync state today) — left below as its own consideration.
-
 - **Maybe fold the invoice push into `save_and_log`?** — _added 2026-06-21_
   Every QBO create/update push now routes through `QBOService.save_and_log` (and the deletes through
   `delete_and_log`). The **invoice send** (`InvoiceEmailService.send_invoice`) is the lone holdout: it does
@@ -724,20 +571,6 @@ IMAP-SMTP machinery and tend to be worked together.
   but it needs more thought about the two-round-trip semantics and the partial-failure window.
   _Done when:_ we've decided whether the invoice create-step joins `save_and_log` (with the log-semantics
   call made) or stays a bespoke sequence, and recorded why.
-
-- ~~**Drop `request.user` threading from imperative history; default to the request context.**~~ — _delivered 2026-07-04_
-  (a) `record_history` now defaults `user` to `current_request_user()` (the
-  same request-scoped context the `@history` decorator reads); explicit
-  `user=` still overrides for the deliberate-author sites (portal `user=None`
-  resolves to None because portal requests are anonymous; signals/expiry pass
-  `system_user`; backfill passes its historical author). (b) The
-  pure-attribution threading was dropped end-to-end: the four document-send
-  services (`send_estimate`/`send_invoice`/`send_po`/`send_change_order`),
-  `PurchaseOrderReceivingService.cancel_line_item`, and the inventory trio
-  (`write_off`/`merge`/`manual_adjustment`) lost their `user` params, and all
-  view-level `user=request.user` note/audit calls now rely on the default.
-  Params that carry real data stayed (`record_payment`'s `created_by`,
-  `receive_items`' `received_by`, blep/shift `actor` permission checks).
 
 - **`@history` decorator `anchor=` param — route an adjunct's auto-history to its primary.** — _added 2026-06-22_
   The `@history` decorator keys entries to the model's *own* `object_type`, so an adjunct (BillPayment→Bill,
@@ -759,56 +592,6 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ decided whether `@history` should grow delete tracking, or imperative delete entries remain
   the norm.
 
-- ~~**Revisit finished-lot collection (hide vs. delete) comprehensively.**~~ — _superseded 2026-07-04 by the deletion doctrine_
-  The 2026-07-03 doctrine settled this: `collect_if_finished` auto-delete was
-  **retired** entirely — finished lots are kept and hidden by the hide-on-spend
-  list filter, never auto-deleted (RM: inventory rows stay; searching, not
-  scrolling, is how the table is used). Deletion is now only the explicit,
-  guarded delete endpoint (`InventoryService.assert_item_deletable`). See
-  `materials-inventory-and-purchasing.md` (lifecycle) and `data-constraints.md`
-  (per-object deletion rules).
-
-- ~~**Warn before unchecking Catalog can delete the item.**~~ — _mooted 2026-07-04_
-  Demote no longer deletes anything (`collect_if_finished` retired by the
-  deletion doctrine; `update_item` only hides via the list filter), so there is
-  no surprise to warn about.
-
-- ~~**Generic server-side search picker (and the picker 100-cap).**~~ — _delivered 2026-06-21_ `SearchPicker.svelte` is the generic behavior core; `InventoryItemPicker` (renamed from `PriceListItemPicker`) uses server-side `?search=` and is the picker at all material/line-item call sites.
-
-- ~~**"Qty on order" column on the inventory list.**~~ — _delivered 2026-07-04_
-  `InventoryItem.qty_on_order` property (Σ max(qty − received − cancelled, 0)
-  over non-cancelled POs, per-line floored), exposed on the item serializer and
-  rendered as an "On order" column on `InventoryListPage` ("—" when zero).
-  Tests: `tests/test_inventory_qty_on_order.py`.
-
-- ~~**Material "order" link should default the qty, not just the inventory data.**~~ — _delivered 2026-07-04_
-  (The qty half-landed as the full quantity at some point since this was
-  filed.) The prefill now defaults to the **outstanding shortfall**
-  (needed − stock on hand, mirroring consume's raw-QOH check — the number that
-  actually unblocks work), falling back to the full quantity when nothing is
-  short (`orderPrefillQty`, `frontend/src/lib/materials.js`, unit-tested).
-  Original entry:
-  Clicking **order** on a material in the job view (`JobDetail.svelte:997`,
-  `#/purchase-orders/new?job={job_id}&material={material_id}`) opens the PO line-item form
-  with the material's inventory data (item/description/price) prefilled, but **qty is left
-  blank** — the link passes only `job` + `material`, no quantity. The plumbing to carry it
-  already exists: `PurchaseOrderFormPage.svelte` forwards `prefill_material=…` to the PO
-  detail page (~lines 63-66), and `LineItemForm.svelte` already applies `prefill.qty` when
-  present (`if (prefill.qty != null && prefill.qty !== '') form.qty = …`, ~line 36). The gap
-  is the step that derives the prefill **from the Material** — it sets the inventory fields
-  but not qty. Fix: include a default qty in that material-derived prefill. Decide the default:
-  the material's full needed `quantity`, or the **outstanding shortfall** (needed − on-hand/
-  earmarked − already on order) which is the more useful "how much to actually buy" number and
-  ties into the "Qty on order" / earmark data above. _Done when:_ ordering from a material
-  pre-fills the PO line with both the inventory data and a sensible default qty (with the
-  full-vs-shortfall default decided).
-
-- ~~**Inventory add/edit form opens at the top of the page — make it a modal.**~~ — _delivered 2026-07-04_
-  The create/edit form now renders in a fixed overlay modal (same pattern as
-  `ExpenseModal`), keeping the list's scroll position; the `{#key editingItem}`
-  re-seed behavior is preserved. The write-off panel and the merge panel remain
-  inline — merge has its own rework entry.
-
 - **Inventory merge is still awkward — rework the keep/discard selection + add a preview.** — _added 2026-06-18_
   The merge UI in `InventoryListPage.svelte` (the `{#if showMerge}` panel, ~lines 147-167) is
   a top-of-page block with two raw `<select>` dropdowns — "keep" and "discard" (`mergeKeep`/
@@ -824,38 +607,6 @@ IMAP-SMTP machinery and tend to be worked together.
   surface rather than a top-of-page panel. Related: the inventory-edit-modal note above.
   _Done when:_ merging is driven from the list rows with a searchable picker and an explicit
   before-commit preview of the outcome, no top-of-page dropdown hunting.
-
-- ~~**Inventory merge accepts `'none'` units + converter unit inference.**~~ — _fully delivered 2026-07-04_
-  Merge side: a `'none'` unit on either side no longer blocks — the known unit
-  wins (tests: `tests/test_inventory_merge.MergeNoneUnitTest`). Converter side:
-  materials now resolve real units — the matched catalog item's units first
-  (fixtures bypass `Material.save()`, so the converter copies what
-  `_populate_from_pli` would have filled), else the same
-  `_unit_from_description` inference catalog items get; minted transient lots
-  carry the SAME units as their material so consume/merge unit checks hold.
-  Regenerated dataset: 80/80 materials with real units, zero material↔item
-  mismatches (was all `'none'`). Original entry:
-  `InventoryService.merge` hard-blocks when `keep.units != discard.units`
-  (`apps/inventory/services.py:151`) — the QOH addition is nonsense across real
-  unit mismatches (sheets into lbs). But `'none'` means *unknown*, not a real
-  unit, so blocking a `'none'` discard from merging into a `'sheets'` keep is
-  over-strict. Consider: when the discard's unit is `'none'`, allow the merge and
-  adopt the keep's unit (and symmetrically, a `'none'` keep adopts the discard's).
-  Surfaced by the Neal's converter: the minted transient lots (`LOT-xxxx`,
-  `is_catalog=False`, from `build._mint_transient_lot`) all carry `units='none'`,
-  so deduping one into its real `'sheets'` catalog item is currently blocked.
-  Note this is *also* a data-gen roughness, not purely a model gap: in the
-  converter **every** Material (and therefore every minted lot) comes out
-  `units='none'` because FreeAgent estimate/invoice line items carry no unit
-  signal — `parsing.resolve_li_units_and_qty` only ever returns `'hours'`/`'none'`
-  — whereas catalog items get `'sheets'` from their description
-  (`_unit_from_description`). So the cleaner converter-side fix may be to infer
-  raw-stock Material units from the description the same way catalog items do (or
-  default sheet-stock to `'sheets'`), which would also shrink how often the merge
-  ever sees a `'none'`. Decide whether the fix belongs in merge, the converter, or
-  both. _Done when:_ merge handles a `'none'`-unit incoming sensibly (with a test),
-  and the converter's blanket `'none'` material units are either justified or
-  fixed.
 
 - **Expense invoice-freeze has no billability-readiness gate, by design.** — _added 2026-06-17_
   Expense atoms have an invoice-freeze (`ExpenseService._assert_not_invoiced`)
@@ -885,19 +636,6 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
   root-caused and fixed (or shown to be expected), with a test.
 
-- ~~**Money inputs send floats → "no more than 2 decimal places" on non-round values.**~~ — _resolved 2026-07-04 (narrower than feared)_
-  Swept and root-caused: the float class bug only bites write paths that **bypass
-  DRF serializer fields** — DRF's `DecimalField.to_internal_value` stringifies
-  before `Decimal()`, so every serializer-backed endpoint (all the line-item
-  CRUD behind `LineItemModal`, materials, expenses, …) was already safe; no
-  blanket `type=text` conversion needed. Audit of raw `request.data` numeric
-  reads in `apps/api/` found all sites already normalizing via `Decimal(str())`
-  (task complete/actual-qty, add-from-template, write-off) except the two
-  `add_line_item_from_service` services (estimate + CO) — now normalized via
-  `_decimal_or_invalid` with float-qty regression tests
-  (`tests/test_deferred_service_crystallization.py`). Convention for new code:
-  a service taking a raw numeric param must `Decimal(str(value))` it.
-
 - **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
   When adding a PO line for a job that already has materials, there's no way to
   deterministically attach the line to a *specific* existing pending material.
@@ -915,41 +653,6 @@ IMAP-SMTP machinery and tend to be worked together.
   second-line-to-second-material deterministic.
   _Done when:_ a user can add a PO line for a job and explicitly choose which
   existing pending material it links to (or opt to create a new one), with tests.
-
-- ~~**nealsdata converter mints a zero-rate flat-fee ServiceItem for $0 source lines.**~~ — _mooted/guarded 2026-07-04_
-  The original problem no longer exists: the Fee reframe removed flat-fee scheme
-  minting from the converter entirely (fixed charges emit `jobs.Fee` atoms, not
-  schemes — `_line_billing`). Its successor case — a $0 source line emitting a
-  `unit_rate=0.00` Fee that `validate_data.check_fees` flags — is now guarded:
-  `_emit_fee` skips (and logs) non-positive prices, keeping the estimate line
-  unclaimed. `fixtures/large_datasets/nealsmall.json` still contains old-era
-  "Flat Fee $X" scheme rows; it's referenced by nothing and will be replaced on
-  the next converter regeneration.
-
-- ~~**Percentage-adjustments cleanup bundle (Phase 2 deferred minors).**~~ — _swept 2026-07-04_
-  All delivered (or mooted): the N+1 select_related/prefetch landed on
-  `compose_agreement`'s line query and `LineItemMixin._get_line_items_qs`
-  (field-aware, no-op for line-item models without adjustment fields); the
-  duplicate local `ValidationError` imports in `apps/jobs/models.py` are gone;
-  the `PlanTaskDetailSerializer` dead validator vanished with the plan layer;
-  the dropped `assertTrue` post-condition, `test_effective_rate_rejects_percentage`,
-  and the null-AC-sibling `compute_adjustment_amount` case are added; the dead
-  `find` predicate in the panel test is tidied; and the panel's Add now fires
-  `onLineItemAdded` → the wizard's `reloadLineItems`. The future-coupled item
-  (same-percentage-service-twice under AC-grouping) moves with that future work.
-  Original bundle list:
-  - N+1: add `select_related('adjustment_service')` (and `prefetch_related('adjustment_target_categories')`) to `compose_agreement`'s estimate line query (`apps/estimates/agreement.py`) and to the estimate + invoice line-item querysets feeding `EstimateLineItemSerializer`/`InvoiceLineItemSerializer.get_adjustment_service_detail`.
-  - Dead code: remove the never-run `validate_service_item` on `PlanTaskDetailSerializer` (`apps/api/plan_tasks/serializers.py`, read-only serializer); remove the duplicate local `ValidationError` import inside `ServiceItem.clean()` (`apps/jobs/models.py`, already imported at module top).
-  - Tests: restore the `assertTrue(...exists())` post-condition dropped from `test_discard_draft_rejects_non_draft` (`tests/test_estimates_services.py`); add a `test_effective_rate_rejects_percentage` (mirrors the tested `get_actual_qty` guard); add a `compute_adjustment_amount` case for a null-AC sibling against a non-empty target set; tidy the dead `find` predicate in `AgreementAdjustmentsPanel.test.js` case 4.
-  - UX polish: `AgreementAdjustmentsPanel` "Add" re-fetches its own list but not the wizard's line-item columns — add an `onLineItemAdded` prop wired to the wizard's `reloadLineItems` so the new line appears without a manual reload.
-  - Future-coupled: when AC-grouping / multi-target adjustments land, revisit the same-percentage-service-twice case (keyed `{#each}` + `already_added` dedup in the panel assume one line per service).
-  _Done when:_ the bundle is swept and the full suite + frontend gate stay green.
-
-- ~~**"Add Manual Task" modal: offer "Save as Template based on this task".**~~ —
-  _graduated 2026-06-27 to the "Add Line" rework (Phase 1)._ Inline "save this
-  free-text task to the **ServiceItems** catalog" (post-rename: `TaskTemplate` →
-  `ServiceItem`) is now a Phase-1 task, including decoupling the catalog *create* from
-  `can_manage_config`. See `docs/plans/2026-06-26-phase1-add-from-price-list.md`.
 
 - **Terminology: rename worksheet / estimate / wizard for the consolidated flow.** — _added 2026-06-25_
   Under the planning-consolidation direction (worksheet = the single authoring
@@ -974,14 +677,6 @@ IMAP-SMTP machinery and tend to be worked together.
   proper issue/spec once reproduced; logged here per request so it isn't lost.
   _Done when:_ a Shift/Blep start_time displays the exact time entered across DST,
   with a regression test pinning the timezone behavior.
-
-- ~~**Sweep for bare string literals that should be class constants.**~~ — _swept 2026-07-04_
-  Grepped `apps/` for bare status/algorithm/choice literals: seven live sites
-  fixed (six `status__in=[…]` board queries in `apps/jobs/services.py`, one
-  task-status tuple in `MaterialService.assign_task`). Everything else matching
-  the pattern was API parameter vocabulary (`action == 'delete'`,
-  `direction == 'up'`), not model choices. Migration files remain the
-  deliberate exception. Re-run the grep when reviewing new code.
 
 - **DRY: combine the two near-identical material modals.** — _added 2026-06-27_
   `frontend/src/components/PlanMaterialModal.svelte` (PlanMaterial, on the Plan/
@@ -1028,39 +723,6 @@ IMAP-SMTP machinery and tend to be worked together.
   its PO without leaving the job overview, or we've consciously decided that lives
   somewhere else and documented where.
 
-- ~~**Sweep test suite for `self.skipTest('… in fixture')` anti-pattern.**~~ — _verified clean 2026-07-04_
-  Grep of `tests/` finds zero remaining `skipTest` calls — the 2026-06-30 fix
-  of seven covered them all.
-
-- ~~**Hand-added blep should mirror the start-path side effects (assign + consume materials).**~~ — _delivered 2026-07-04_
-  Checked: `BlepService.create_historical` already promoted the pending task and
-  consumed its materials (existing tests). The missing half was assignment —
-  it now mirrors `start_work`: the worker whose hand-added blep promotes the
-  task becomes its assignee (a blep on an already-started task is "helping" and
-  doesn't claim it; an existing assignee is kept). Tests in
-  `tests/test_blep_service.CreateHistoricalTest`. Queue-front promotion is
-  deliberately not mirrored — reordering the live worker queue off a
-  backdated entry would be wrong.
-
-- ~~**Service catalog item = rough work type; Task.Description carries the specifics.**~~ — _confirmed 2026-07-04_
-  Verified the add-Task flow: `WorkItemForm` prefills the description from the
-  selected template and leaves it freely editable; the API
-  (`add-from-template`) passes `name`/`description` overrides through
-  `generate_task`, which honors them independently of the template. The one
-  nuance: *re-selecting* a template resets the description to the template's —
-  a defensible prefill (pick service first, then author specifics), not a
-  clobber of a saved value. The corollary (drop `ServiceItem.description`
-  entirely) is the separate "Pull `description` off `ServiceItem`" entry below,
-  which remains open.
-
-- ~~**Surface session-expiry instead of silently degrading fetched-list components.**~~ — _delivered 2026-07-04_
-  `api.js` dispatches `minibini:session-expired` on a 401 or on DRF's
-  unauthenticated 403 ("Authentication credentials were not provided.") for any
-  non-`/api/auth/` call; permission-denied 403s don't trigger it. `App.svelte`
-  listens, clears the user store, and renders `LoginPage` with a "Your session
-  expired — please log in again." notice. Tests:
-  `frontend/tests/lib/apiSessionExpiry.test.js`.
-
 - **Release-to-floor should require at least one Task — placement undecided.** — _added 2026-07-02_
   A job with no Tasks shouldn't be releasable to the floor (`approved → in_progress`).
   A first pass built this but it was **removed pending a design decision** — the code
@@ -1090,20 +752,6 @@ IMAP-SMTP machinery and tend to be worked together.
   _(Under active reconsideration 2026-07-02: leaning the other way — unify on **atom-on-approval**
   (make the service pick deferred too) rather than atom-on-add. Plan to be revised once decided.)_
 
-- ~~**Is "one open estimate chain per job" enforced, or only a UI block?**~~ — _confirmed + strengthened 2026-07-04_
-  It was enforced only at the API boundary (`EstimateViewSet.perform_create`).
-  Now it's a service-level invariant too: `EstimateService.create_for_job`
-  refuses a second non-superseded estimate (tests in
-  `tests/test_later_verifications.py`). A *model*-level constraint is
-  deliberately not used: `revise_estimate` legitimately holds two live rows for
-  a moment (it creates the revision before superseding the parent), so the
-  invariant is really "new estimate *trees* come only through create_for_job;
-  new *versions* only through revise_estimate" — and even after supersession a
-  second v1 tree can't exist ((estimate_number, version) uniqueness), so
-  revision is the only continuation. Related standing caveat: accept does not
-  supersede sibling *open* estimates — creation-time enforcement is what keeps
-  siblings from existing in the first place.
-
 - **Pull `description` off `ServiceItem`; specifics live on the Task/line description.** — _added 2026-07-02_
   A `ServiceItem` is meant to be a *rough work type* (name + rate scheme); the per-job specifics
   belong on the **Task description**, sourced from the estimate line's editable description. So
@@ -1128,19 +776,6 @@ IMAP-SMTP machinery and tend to be worked together.
   _Done when:_ Job↔Estimate status coherence is enforced (a Job can't be `approved` with an un-accepted
   live estimate, or the transition drives acceptance) and the stray edit path is closed.
 
-- ~~**Config page: ServiceItem's rate-scheme picker is stale after editing a RateScheme.**~~ — _delivered 2026-07-04_
-  `ServiceItemManager` re-fetches its scheme lists whenever the add/edit form
-  opens (`refreshSchemes()` in `startCreate`/`startEdit`) — the picker can no
-  longer show pre-edit values. Test in
-  `frontend/tests/components/ServiceItemManager.test.js`.
-
-- ~~**Empty modifier row (blank name + 0%) shouldn't be saved.**~~ — _delivered 2026-07-04_
-  Both sides: `RateSchemeManager.save()` filters blank rows from the payload, and
-  `RateScheme._normalize_modifiers` (run on save + clean) drops fully-blank rows
-  server-side; a percent with no key is rejected loudly (it could never be
-  activated). Tests: `tests/test_rate_scheme_modifiers.py` +
-  `frontend/tests/components/RateSchemeManager.test.js`.
-
 - **No shared `<Modal>` shell — every modal hand-rolls the same overlay CSS.** — _added 2026-07-03_
   Each modal component copies its own `.overlay { position:fixed; inset:0; display:flex;
   align-items:center; justify-content:center }` + `.modal { max-width:500px; width:90% }`. This
@@ -1151,31 +786,6 @@ IMAP-SMTP machinery and tend to be worked together.
   `RecordPaymentModal`, `PriceListPicker`, …) to use it so geometry can't drift again. Mechanical but
   touches many files.
   _Done when:_ a single shared modal shell owns overlay/positioning and the modals adopt it.
-
-- ~~**Sweep for Svelte 5 numeric `<select>` strict-=== mismatches.**~~ — _swept 2026-07-04_
-  Full pass over every `<option value={…numeric…}>` select tracing each bound
-  var's preset/prefill path. Two live bugs found and fixed: `FeeModal` edit-mode
-  AC preset (`String(fee.accounting_category)` → numeric, with a Vitest
-  regression) and `SenderResolutionForm`'s matched contact/business presets
-  (`String(matches[0].id)` → numeric). All other sites confirmed type-matched
-  (numeric API pks against numeric options, or consistently-string QBO ids).
-  Convention: keep the bound value the same type as the option value; never
-  `String()` a numeric preset.
-
-- ~~**`WizardLineItemCard` `state_referenced_locally` warnings on `lastSyncedSnapshot` init.**~~ — _delivered 2026-07-04_
-  Silenced via per-line `svelte-ignore` with the mount-seed contract noted (the
-  re-sync `$effect` is the mechanism that keeps the snapshot current; seeding
-  inside the effect instead would blank the first paint, so the init was kept
-  and acknowledged). Tests green; build warning-free.
-
-- ~~**Verify whether RateScheme supersession repoints its ServiceItem catalog users.**~~ — _confirmed 2026-07-04: it does NOT repoint_
-  Read `RateScheme.supersede()` end to end: it renames the old scheme in place,
-  mints the new row, sets `replaced_by`/`replaced_at` — and touches no
-  `ServiceItem.rate_scheme` or `Task.rate_scheme`. No repoint mechanism exists
-  anywhere (the recalled "updates all its catalog users" behavior is gone or
-  never shipped). Pinned by `tests/test_later_verifications.SupersedeDoesNotRepointTest`.
-  Acceptance stays safe via `generate_task(allow_superseded_scheme=True)`;
-  template-based creation rejects superseded-scheme templates loudly.
 
 - **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
   RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it
