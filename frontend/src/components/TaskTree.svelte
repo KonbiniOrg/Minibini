@@ -350,7 +350,7 @@
           {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               {@render matFulfillActions(mat, task)}
-              {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, task)}>consume</button>{/if}
+              {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, task)}>mark used</button>{/if}
               {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, task)}>{restockLabel(mat)}</button>{/if}
               {#if onDrawMoreMaterial && !mat.is_expense_bound && mat.po_line_item_id == null}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
@@ -420,7 +420,7 @@
             {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
               <td class="actions-cell">
                 {@render matFulfillActions(mat, sub)}
-                {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, sub)}>consume</button>{/if}
+                {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, sub)}>mark used</button>{/if}
                 {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, sub)}>{restockLabel(mat)}</button>{/if}
                 {#if onDrawMoreMaterial && !mat.is_expense_bound && mat.po_line_item_id == null}
                   <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
@@ -460,7 +460,7 @@
           {#if !readonly && !jobLocked && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               {@render matFulfillActions(mat, null)}
-              {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>{/if}
+              {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, null)}>mark used</button>{/if}
               {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, null)}>{restockLabel(mat)}</button>{/if}
               {#if onDrawMoreMaterial && !mat.is_expense_bound && mat.po_line_item_id == null}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>

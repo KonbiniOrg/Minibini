@@ -113,7 +113,7 @@ describe('TaskTree', () => {
     const { getAllByRole } = render(TaskTree, {
       props: { tasks: [t], canManage: true, onConsumeMaterial: vi.fn() },
     });
-    expect(getAllByRole('button', { name: 'consume' })).toHaveLength(1);
+    expect(getAllByRole('button', { name: 'mark used' })).toHaveLength(1);
   });
 
   it('fires the edit callback when canManage', async () => {
@@ -336,7 +336,7 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     });
     expect(getByText('Needed')).toBeInTheDocument(); // chip still shows (passive)
     for (const name of ['Order', 'Attach expense', 'Mark on-hand', 'Mark received',
-                        'Set pricing', 'consume', 'restock', 'release', 'draw more', 'detach']) {
+                        'Set pricing', 'mark used', 'restock', 'release', 'draw more', 'detach']) {
       expect(queryByRole('button', { name })).toBeNull();
     }
   });
@@ -362,12 +362,12 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     const short = render(TaskTree, {
       props: { tasks: [matTask(shortMat)], canManage: true, onConsumeMaterial: vi.fn() },
     });
-    expect(short.queryByRole('button', { name: 'consume' })).toBeNull();
+    expect(short.queryByRole('button', { name: 'mark used' })).toBeNull();
     const covered = render(TaskTree, {
       props: { tasks: [matTask({ ...shortMat, qty_on_hand: '4' })],
                canManage: true, onConsumeMaterial: vi.fn() },
     });
-    expect(covered.queryByRole('button', { name: 'consume' })).not.toBeNull();
+    expect(covered.queryByRole('button', { name: 'mark used' })).not.toBeNull();
   });
 
   it('on-hold job hides the plan-edit actions but keeps procurement', () => {
