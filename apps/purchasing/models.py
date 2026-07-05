@@ -44,6 +44,16 @@ class PurchaseOrder(models.Model):
         """Validate PurchaseOrder state transitions and protect immutable date fields."""
         super().clean()
 
+        # Invariant: a PO that is not draft has a vendor. Unconditional (NOT
+        # inside the `if self.pk:` transition block) so it also catches a
+        # brand-new instance saved directly with a non-draft status, and an
+        # update that nulls the business on an issued PO. No cancelled
+        # exemption: cancelled is only reachable from issued, which already
+        # implies a vendor — vendor-less drafts are deleted, not cancelled.
+        if self.status != PurchaseOrder.STATUS_DRAFT and self.business_id is None:
+            raise ValidationError(
+                {'business': ['A purchase order needs a vendor before it can be issued.']})
+
         # Validate that if contact is provided, it must have a business
         if self.contact and not self.contact.business:
             raise ValidationError(
