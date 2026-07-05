@@ -415,6 +415,20 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     expect(onMarkOnHand).toHaveBeenCalledWith(expect.objectContaining({ material_id: 5 }));
   });
 
+  it('customer-supplied material offers no edit button (nothing is editable)', () => {
+    // Job-level material so the only possible "edit" button is the material's.
+    const mat = { material_id: 5, description: 'Panel', quantity: '4', sell_price: '0',
+      units: 'ea', consumption_state: 'pending', inventory_item: 7,
+      cost_source: 'customer_supplied', qty_on_hand: '0' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], jobMaterials: [mat], canManage: true,
+               onEditMaterial: vi.fn(), onMarkOnHand: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    // receiving still works — it's procurement, not editing
+    expect(queryByRole('button', { name: 'Mark received' })).not.toBeNull();
+  });
+
   it('flags an estimate-placeholder cost with a ⚠ warning', () => {
     const t = matTask({
       material_id: 6, description: 'Trim', quantity: '4', sell_price: '5', units: 'ea',

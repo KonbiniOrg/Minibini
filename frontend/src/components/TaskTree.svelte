@@ -196,6 +196,12 @@
       || (mat.is_expense_bound && Number(mat.quantity) === 0);
   }
 
+  function isCustomerSupplied(mat) {
+    // Nothing on a customer-supplied material is editable: descriptive
+    // fields are lot-locked, pricing is locked at $0 — so no edit button.
+    return mat.cost_source === 'customer_supplied';
+  }
+
   function isMaterialReleased(mat) {
     // Tombstone styling (struck through) — the released quantity lives in
     // released_qty; the row's own quantity is 0.
@@ -349,7 +355,7 @@
               {#if onDrawMoreMaterial && !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
               {/if}
-              {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>{/if}
+              {#if onEditMaterial && !jobOnHold && !isCustomerSupplied(mat)}<button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>{/if}
               {#if onMoveMaterial}<button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>{/if}
             </td>
           {:else if !readonly}
@@ -419,7 +425,7 @@
                 {#if onDrawMoreMaterial && !mat.is_expense_bound}
                   <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
                 {/if}
-                {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>{/if}
+                {#if onEditMaterial && !jobOnHold && !isCustomerSupplied(mat)}<button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>{/if}
                 {#if onMoveMaterial}<button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>{/if}
               </td>
             {:else if !readonly}
@@ -459,7 +465,7 @@
               {#if onDrawMoreMaterial && !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
               {/if}
-              {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>{/if}
+              {#if onEditMaterial && !jobOnHold && !isCustomerSupplied(mat)}<button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>{/if}
             </td>
           {:else if !readonly}
             <td class="actions-cell"></td>
