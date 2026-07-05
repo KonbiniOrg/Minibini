@@ -35,6 +35,16 @@ describe('StockOrderDialog', () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it('reports a zero quantity instead of silently doing nothing', async () => {
+    const { getByRole, getByText } = render(StockOrderDialog, {
+      props: { item, prefillQty: '0', onDone: () => {}, onCancel: () => {} },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Order' }));
+    expect(getByText('Enter a quantity greater than 0.')).toBeTruthy();
+    expect(api.get).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
   it('offers the draft chooser when drafts exist and appends on pick', async () => {
     api.get.mockResolvedValue({ results: [
       { po_id: 4, po_number: 'PO-2026-0004', status: 'draft' },

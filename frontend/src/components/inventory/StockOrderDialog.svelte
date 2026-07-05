@@ -9,12 +9,17 @@
   let qty = $state(prefillQty);
   let drafts = $state(null);   // null = qty phase; [] handled inline
   let busy = $state(false);
+  let qtyError = $state('');
 
   // Phase 1 → on Order: look for open drafts. Zero → order immediately
   // (silent create, same contract as the material order flow); some →
   // show the chooser.
   async function startOrder() {
-    if (!String(qty).trim() || Number(qty) <= 0) return;
+    qtyError = '';
+    if (!String(qty).trim() || Number(qty) <= 0) {
+      qtyError = 'Enter a quantity greater than 0.';
+      return;
+    }
     busy = true;
     try {
       const resp = await api.get('/api/purchase-orders/?status=draft&page_size=100');
@@ -58,7 +63,8 @@
   {#if drafts === null}
     <p><label for="stock-order-qty">Quantity</label><br>
       <input id="stock-order-qty" type="number" step="0.01" min="0"
-        bind:value={qty}></p>
+        bind:value={qty} oninput={() => qtyError = ''}></p>
+    {#if qtyError}<p style="color:#c00">{qtyError}</p>{/if}
     <p>
       <button type="button" disabled={busy} onclick={startOrder}>Order</button>
       <button type="button" disabled={busy} onclick={onCancel}>Cancel</button>
