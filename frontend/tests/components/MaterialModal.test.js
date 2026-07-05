@@ -19,29 +19,86 @@ beforeEach(() => {
 });
 
 describe('MaterialModal', () => {
-  it('creates a freeform material on a task (cost is document-sourced, not typed)', async () => {
+  it('creates a freeform material on a task with a typed cost (establishes it on save)', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10, onSaved },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '2' } });
-    // Unit Cost is disabled for a freeform material — not set here.
+    await fireEvent.input(getByLabelText(/Unit Cost/), { target: { value: '5' } });
     await fireEvent.input(getByLabelText(/Sell Price/), { target: { value: '8' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/tasks/10/materials/', {
-      description: 'Steel', quantity: 2, units: 'none', unit_cost: '0', sell_price: 8,
+      description: 'Steel', quantity: 2, units: 'none', unit_cost: 5, sell_price: 8,
       inventory_item: null, accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it('disables the unit cost field for a freeform (no-PLI) material', () => {
-    const { getByLabelText } = render(MaterialModal, {
+  it('enables the unit cost field for a freeform (no-PLI) material, with helper text', () => {
+    const { getByLabelText, getByText } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10 },
     });
+    expect(getByLabelText(/Unit Cost/)).not.toBeDisabled();
+    expect(getByText(/Entering a cost sets this material up for ordering/)).toBeInTheDocument();
+  });
+
+  it('customer-supplied checkbox zeroes and disables pricing, and posts customer_supplied with no pricing fields', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10, onSaved },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Customer trim' } });
+    await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Unit Cost/), { target: { value: '5' } });
+
+    await fireEvent.click(getByLabelText(/Customer-supplied/));
+
+    expect(getByLabelText(/Unit Cost/).value).toBe('');
     expect(getByLabelText(/Unit Cost/)).toBeDisabled();
+    expect(getByLabelText(/Sell Price/)).toBeDisabled();
+
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/10/materials/', {
+      description: 'Customer trim', quantity: 1, units: 'none',
+      inventory_item: null, accounting_category: null,
+      customer_supplied: true,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('shows "Set pricing" title and button when editing a genuinely provisional material', () => {
+    const { getByRole } = render(MaterialModal, {
+      props: {
+        open: true, mode: 'edit',
+        material: {
+          material_id: 5, inventory_item: null, cost_source: null,
+          unit_cost: 0, sell_price: 0, units: 'none', quantity: 1,
+          description: 'Raw board',
+        },
+      },
+    });
+    expect(getByRole('heading', { name: 'Set pricing' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Set pricing' })).toBeInTheDocument();
+  });
+
+  it('disables pricing with a locked note when editing a customer-supplied material', () => {
+    const { getByLabelText, getByText } = render(MaterialModal, {
+      props: {
+        open: true, mode: 'edit',
+        material: {
+          material_id: 6, inventory_item: 42, cost_source: 'customer_supplied',
+          unit_cost: 0, sell_price: 0, units: 'ea', quantity: 3,
+          description: 'Customer panel',
+        },
+      },
+    });
+    expect(getByLabelText(/Unit Cost/)).toBeDisabled();
+    expect(getByLabelText(/Sell Price/)).toBeDisabled();
+    expect(getByText(/Customer-supplied — carried at \$0/)).toBeInTheDocument();
   });
 
   it('prompts to propagate a PLI price change, then patches with the flag', async () => {

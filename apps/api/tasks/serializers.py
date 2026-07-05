@@ -19,7 +19,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category',
-            'consumption_state', 'released_qty',
+            'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'qty_on_hand',
             'invoice',
@@ -41,13 +41,16 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    customer_supplied = serializers.BooleanField(
+        write_only=True, required=False, default=False,
+    )
 
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'inventory_item',
-            'accounting_category', 'propagate_to_pli',
+            'accounting_category', 'propagate_to_pli', 'customer_supplied',
         ]
         read_only_fields = ['material_id']
 

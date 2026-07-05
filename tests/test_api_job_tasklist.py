@@ -124,6 +124,33 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.data['unit_cost'], '10.00')
         self.assertEqual(response.data['sell_price'], '20.00')
 
+    def test_create_material_customer_supplied_via_task_endpoint(self):
+        """Task 13: the task-nested materials POST must thread
+        customer_supplied through to MaterialService.create_on_job just like
+        the job-level endpoint — born established at a locked $0."""
+        response = self.client.post(
+            f'/api/tasks/{self.task.pk}/materials/',
+            {
+                'description': 'Customer-owned trim', 'quantity': '1.00',
+                'accounting_category': self.category.pk,
+                'customer_supplied': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        m = Material.objects.get(task=self.task, description='Customer-owned trim')
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        self.assertEqual(m.sell_price, Decimal('0.00'))
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_CUSTOMER)
+        # Pricing is locked afterward: a PATCH attempting to price it 400s.
+        patch_resp = self.client.patch(
+            f'/api/tasks/{self.task.pk}/materials/{m.pk}/',
+            {'unit_cost': '5.00'},
+            format='json',
+        )
+        self.assertEqual(patch_resp.status_code, 400, patch_resp.content)
+
     def test_update_material_description(self):
         """PATCH with description-only update succeeds."""
         response = self.client.patch(
