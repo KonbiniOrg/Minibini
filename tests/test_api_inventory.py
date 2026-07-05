@@ -72,17 +72,17 @@ class InventorySearchTest(BaseTestCase):
         self.assertIn(self.match.inventory_item_id, self._ids(resp))
         self.assertNotIn(self.other.inventory_item_id, self._ids(resp))
 
-    def test_list_ranks_in_stock_then_newest(self):
-        """Spec §Drop is_catalog: ranking replaces hiding."""
+    def test_list_orders_alphabetically_by_code(self):
+        """The main inventory list is browsed, not searched — alphabetical
+        by code, regardless of stock level or age. (In-stock-first ranking
+        was tried 2026-07-05 and reverted by RM.)"""
         cat = AccountingCategory.objects.get(pk=901)
         InventoryItem.objects.create(
-            code='OLD0', accounting_category=cat, units='ea')
-        InventoryItem.objects.create(
-            code='NEW0', accounting_category=cat, units='ea')
-        InventoryItem.objects.create(
-            code='STK', accounting_category=cat, units='ea',
+            code='ZZZ-STOCKED', accounting_category=cat, units='ea',
             qty_on_hand=Decimal('5'))
+        InventoryItem.objects.create(
+            code='AAA-EMPTY', accounting_category=cat, units='ea')
         resp = self.client.get('/api/inventory/?page_size=100')
         codes = [r['code'] for r in resp.json()['results']]
-        self.assertLess(codes.index('STK'), codes.index('NEW0'))
-        self.assertLess(codes.index('NEW0'), codes.index('OLD0'))
+        self.assertEqual(codes, sorted(codes))
+        self.assertLess(codes.index('AAA-EMPTY'), codes.index('ZZZ-STOCKED'))

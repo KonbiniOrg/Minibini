@@ -36,17 +36,10 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if search:
             from django.db.models import Q
             qs = qs.filter(Q(code__icontains=search) | Q(description__icontains=search))
-        # Ranking replaces the removed hide-on-spend filtering: in-stock items
-        # first, then newest. Overrides the base queryset's alphabetical
-        # order_by('code') — deterministic (ties broken by -inventory_item_id)
-        # so DRF pagination doesn't repeat/skip rows across pages.
-        from django.db.models import Case, When, Value, IntegerField
-        from decimal import Decimal
-        qs = qs.annotate(
-            _in_stock=Case(
-                When(qty_on_hand__gt=Decimal('0.00'), then=Value(0)),
-                default=Value(1), output_field=IntegerField()),
-        ).order_by('_in_stock', '-inventory_item_id')
+        # Order: alphabetical by code (the base queryset's order_by). The main
+        # /#/inventory list is browsed, not searched, so alphabetical wins;
+        # typeahead pickers are already narrowed by ?search and need no rank.
+        # (An in-stock-first ranking was tried 2026-07-05 and reverted.)
         return qs
 
     def get_permissions(self):

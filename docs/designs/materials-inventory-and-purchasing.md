@@ -107,17 +107,18 @@ Derived:
 (`is_catalog` and the computed `is_finished_lot` were **dropped** by the
 freeform-materials branch — there is no catalog/lot fork and no auto-hiding.)
 
-### One item kind — manual retirement, ranking not hiding
+### One item kind — manual retirement, no hiding
 
 There is no catalog-vs-lot distinction. Every item is a single kind:
 
 - **Everything active is visible and pickable.** There is no automatic hiding
   at QOH 0. The old hide-on-spend / `is_finished_lot` filter and the
   `?include_finished` reveal are **gone**.
-- **Clutter is handled by ranking, not hiding.** Pickers and the inventory list
-  sort **in-stock (`qty_on_hand > 0`) first, then newest** (`-inventory_item_id`);
-  dead QOH-0 lots sink but stay findable — useful history ("what did we pay last
-  time"). See §17 for the API annotation.
+- **Order is alphabetical by `code`.** The main list is browsed, so
+  alphabetical wins; typeahead pickers are already narrowed by `?search` and
+  need no ranking. Dead QOH-0 lots stay findable — useful history ("what did
+  we pay last time"). (An in-stock-first ranking was tried 2026-07-05 and
+  reverted.)
 - **Retirement is a manual `is_active` flip.** When an item genuinely won't be
   reordered, a human deactivates it; deactivated rows drop from the default
   `?is_active=true` picker but can still be shown/re-activated by admins.
@@ -149,11 +150,11 @@ when no sell is supplied (used by establishment when minting a `LOT-{pk}` lot).
   and `TemplateMaterialAssociation` reference items via **PROTECT**, so physical
   deletion would raise `ProtectedError`. The removed `is_finished_lot` hide-on-spend
   filter and the retired `collect_if_finished` auto-delete are both gone; a QOH-0
-  lot simply sinks in the ranking (§17) and can be flipped `is_active=false` by hand.
+  lot simply stays in the list and can be flipped `is_active=false` by hand.
 - **Write-off** (`InventoryService.write_off`, `POST …/{pk}/write-off/`): zeroes
   QOH, books the remainder to `qty_wasted` (recording the wastage history entry
-  first). The item stays visible (ranked low at QOH 0), available for reuse or a
-  manual `is_active` retirement.
+  first). The item stays visible, available for reuse or a manual `is_active`
+  retirement.
 - **Merge** (`InventoryService.merge`, `POST …/merge/`): the manual dedup tool —
   folds a discard item into a keep item (QOH + aggregates), repoints every
   reference, deletes the discard. With `is_catalog` gone, the old
@@ -1384,11 +1385,11 @@ Inventory-item CRUD + browse UI is the SPA `#/inventory` page
 Settings → Catalog. Item pickers across the SPA use
 `frontend/src/components/InventoryItemPicker.svelte`, built on `SearchPicker`.
 
-**Ranking, not hiding** (`is_catalog` drop). The list and every picker rank
-**in-stock (`qty_on_hand > 0`) first, then newest** — the API annotates
-`_in_stock` and orders `('_in_stock', '-inventory_item_id')` (`apps/api/inventory/views.py`),
-replacing the removed hide-on-spend/`?include_finished` filter. Dead QOH-0 lots
-sink but stay findable. The list's former **catalog|lot** column is now an
+**Nothing hidden** (`is_catalog` drop). The list and pickers show every active
+item, **alphabetical by `code`** (the viewset's base ordering,
+`apps/api/inventory/views.py`) — the hide-on-spend/`?include_finished` filter
+is gone and no stock-based ranking replaces it (tried and reverted 2026-07-05;
+pickers are `?search`-narrowed anyway). The list's former **catalog|lot** column is now an
 **active/inactive** column (`is_active`); the `?is_catalog=` filter, the
 `inventory_item_is_catalog` serializer fields, and the catalog badge are gone.
 
