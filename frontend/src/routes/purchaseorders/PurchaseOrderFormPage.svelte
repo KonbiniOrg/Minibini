@@ -1,5 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import PurchaseOrderForm from '../../components/purchaseorders/PurchaseOrderForm.svelte';
   import { push, querystring } from 'svelte-spa-router';
 
@@ -9,7 +11,8 @@
   let po = $state(null);
   let businesses = $state([]);
   let loading = $state(true);
-  let errors = $state(null);
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   // Context from query params (?job=…&material=… , or ?inventory_item=… from the
   // inventory "order" button). The inventory id is just forwarded through to the
@@ -46,14 +49,16 @@
         }
       }
     } catch (e) {
-      errors = e.message;
+      // Load failure has no form to land on — the global overlay is the venue.
+      showError(errorMessage(e, 'Could not load.'));
     } finally {
       loading = false;
     }
   }
 
   async function handleSubmit(data) {
-    errors = null;
+    formError = '';
+    fieldErrs = {};
     try {
       if (isEdit) {
         await api.patch(`/api/purchase-orders/${params.id}/`, data);
@@ -75,7 +80,13 @@
         push(`/purchase-orders/${created.po_id}${suffix}`);
       }
     } catch (e) {
-      errors = errorMessage(e);
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        formError = t.message;
+        fieldErrs = t.fields;
+      }
     }
   }
 
@@ -101,7 +112,8 @@
   <PurchaseOrderForm
     {po}
     {businesses}
-    {errors}
+    errors={fieldErrs}
+    {formError}
     {contextJob}
     onSubmit={handleSubmit}
     onCancel={handleCancel}

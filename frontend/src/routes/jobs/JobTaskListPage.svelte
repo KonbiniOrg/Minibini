@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { canMarkWorkComplete } from '../../lib/jobActions.js';
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
@@ -231,7 +232,7 @@
       await api.delete(`/api/jobs/${job.job_id}/tasks/${task.task_id}/`);
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not delete task.');
+      showError(errorMessage(e, 'Could not delete task.'));
     }
   }
 
@@ -241,7 +242,7 @@
       await api.post(`/api/tasks/${task.task_id}/cancel/`);
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not cancel task.');
+      showError(errorMessage(e, 'Could not cancel task.'));
     }
   }
 
@@ -274,7 +275,7 @@
       await api.post(`/api/materials/${material.material_id}/consume/`, {});
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not consume.');
+      showError(errorMessage(e, 'Could not consume.'));
     }
   }
 
@@ -291,7 +292,7 @@
       await api.post(`/api/materials/${material.material_id}/restock/`, { quantity });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not restock.');
+      showError(errorMessage(e, 'Could not restock.'));
     }
   }
 
@@ -304,7 +305,7 @@
       await api.post(`/api/materials/${material.material_id}/draw-more/`, { quantity });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not draw more.');
+      showError(errorMessage(e, 'Could not draw more.'));
     }
   }
 
@@ -314,7 +315,7 @@
       selectedTaskId = null;
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not move material.');
+      showError(errorMessage(e, 'Could not move material.'));
     }
   }
 
@@ -360,7 +361,7 @@
       });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not reorder.');
+      showError(errorMessage(e, 'Could not reorder.'));
     }
   }
 
@@ -379,7 +380,7 @@
       await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not mark work complete.');
+      showError(errorMessage(e, 'Could not mark work complete.'));
     } finally {
       statusBusy = false;
     }

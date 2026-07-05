@@ -1,5 +1,8 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
+  import FormMessage from '../FormMessage.svelte';
 
   // The 8 boilerplate Configuration keys (4 document types × subject + body).
   // The backend service for each document type falls back to a built-in
@@ -94,6 +97,7 @@
   let values = $state({});      // {key: stored value}
   let saving = $state({});      // {key: bool}
   let savedFlash = $state({});  // {key: timestamp ms of last successful save}
+  let saveErrors = $state({});  // {key: form-footer error message}
   let loadError = $state(null);
   let loading = $state(true);
 
@@ -121,11 +125,23 @@
 
   async function save(key) {
     saving = { ...saving, [key]: true };
+    saveErrors = { ...saveErrors, [key]: '' };
     try {
       await api.patch('/api/settings/', { [key]: values[key] });
       savedFlash = { ...savedFlash, [key]: Date.now() };
     } catch (e) {
-      alert(`Save failed: ${e.message}`);
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        // Field-keyed errors come back keyed by the config key itself —
+        // fold them into this key's footer message.
+        const fieldText = Object.values(t.fields).flat().join(' ');
+        saveErrors = {
+          ...saveErrors,
+          [key]: [t.message, fieldText].filter(Boolean).join(' ') || 'Save failed.',
+        };
+      }
     } finally {
       saving = { ...saving, [key]: false };
     }
@@ -172,6 +188,7 @@
         </button>
         {#if flashVisible(RETENTION_KEY)}<em class="ok">saved</em>{/if}
       </p>
+      <FormMessage error={saveErrors[RETENTION_KEY]} />
 
       <p>
         <label for={DISPLAY_LIMIT_KEY}><strong>Show at most</strong></label>
@@ -192,6 +209,7 @@
         </button>
         {#if flashVisible(DISPLAY_LIMIT_KEY)}<em class="ok">saved</em>{/if}
       </p>
+      <FormMessage error={saveErrors[DISPLAY_LIMIT_KEY]} />
     </fieldset>
   {/if}
 
@@ -251,6 +269,7 @@
           </button>
           {#if flashVisible(t.subject.key)}<em class="ok">saved</em>{/if}
         </p>
+        <FormMessage error={saveErrors[t.subject.key]} />
 
         <p>
           <label for={t.body.key}><strong>Body</strong></label><br>
@@ -269,6 +288,7 @@
           </button>
           {#if flashVisible(t.body.key)}<em class="ok">saved</em>{/if}
         </p>
+        <FormMessage error={saveErrors[t.body.key]} />
       </fieldset>
     {/each}
   {/if}

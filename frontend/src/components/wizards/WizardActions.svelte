@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { push } from 'svelte-spa-router';
 
   let {
@@ -19,7 +20,7 @@
       await api.delete(`${apiBase}/?confirm=true`);
       push(discardRoute);
     } catch (e) {
-      alert(e.message || 'Failed to discard');
+      showError(errorMessage(e, 'Failed to discard.'));
     }
   }
 
@@ -32,7 +33,7 @@
       await onDone?.();
       push(detailRoute);
     } catch (e) {
-      alert(e.message || 'Some changes could not be saved — please fix and try again.');
+      showError(errorMessage(e, 'Some changes could not be saved — please fix and try again.'));
     } finally {
       doneBusy = false;
     }

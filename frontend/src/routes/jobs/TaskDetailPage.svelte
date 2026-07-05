@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
@@ -226,7 +227,7 @@
       await api.delete(`/api/tasks/${params.taskId}/materials/${material.material_id}/`);
       await loadMaterials();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      showError(errorMessage(e, 'Could not delete material.'));
     }
   }
 
@@ -268,7 +269,7 @@
       await api.delete(`/api/tasks/${parentTask.task_id}/materials/${material.material_id}/`);
       await loadSubtasks();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      showError(errorMessage(e, 'Could not delete material.'));
     }
   }
 

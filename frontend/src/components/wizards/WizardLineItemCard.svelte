@@ -1,5 +1,9 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
+  import FieldError from '../FieldError.svelte';
+  import FormMessage from '../FormMessage.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
 
   let { lineItem, apiBase, canAddHere = false, onAddHere, onchange, registerFlush } = $props();
@@ -16,6 +20,8 @@
   // Reset on save / reset-to-computed.
   let priceManuallyEdited = $state(false);
   let saving = $state(false);
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   // Snapshot of the lineItem prop's saved fields the last time we treated the
   // local form state as "clean and in sync with the server". Used by the
@@ -112,10 +118,13 @@
 
   // Saves the card's pending edit if dirty; a no-op when clean. THROWS on
   // failure so callers (the manual Save button, and the Done flush) can react —
-  // the button catches to alert; the flush lets it propagate to block navigation.
+  // the submit handler catches to show the error in-form; the flush lets it
+  // propagate to block navigation.
   async function save() {
     if (!isDirty || saving) return;
     saving = true;
+    formError = '';
+    fieldErrs = {};
     try {
       const updated = await api.patch(
         `${apiBase}/line-items/${lineItem.line_item_id}/`,
@@ -175,7 +184,14 @@
 </script>
 
 <form
-  onsubmit={(e) => { e.preventDefault(); save().catch((err) => alert(err.message || 'Save failed')); }}
+  onsubmit={(e) => {
+    e.preventDefault();
+    save().catch((err) => {
+      const t = triageError(err);
+      if (t.overlay) showError(t.overlay);
+      else { formError = t.message; fieldErrs = t.fields; }
+    });
+  }}
   style="border: 1px solid #aaa; padding: 8px; margin-bottom: 8px;"
 >
   <div style="display: flex; align-items: center; gap: 6px;">
@@ -209,6 +225,12 @@
       <span style="color: #888;"><em>(manual)</em></span>
     {/if}
   </div>
+
+  <FieldError errors={fieldErrs} field="description" />
+  <FieldError errors={fieldErrs} field="qty" />
+  <FieldError errors={fieldErrs} field="units" />
+  <FieldError errors={fieldErrs} field="price" />
+  <FormMessage error={formError} />
 
   {#if lineItem.sources.length > 0}
     <div style="padding-left: 8px; font-size: 11px; color: #555;">

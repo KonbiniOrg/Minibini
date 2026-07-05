@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Error',
+}));
 
 import { api } from '@/lib/api.js';
 import ServiceItemManager from '@/components/ServiceItemManager.svelte';
@@ -92,5 +95,23 @@ describe('ServiceItemManager', () => {
     await fireEvent.click(deleteButtons[0]);
     expect(api.delete).toHaveBeenCalledWith('/api/service-items/1/');
     confirmSpy.mockRestore();
+  });
+
+  it('renders a field validation error under the offending input on save', async () => {
+    api.post.mockRejectedValue({ status: 400, data: { template_name: ['This field is required.'] } });
+    const { findByRole, getByRole, findByText } = render(ServiceItemManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('This field is required.')).toBeInTheDocument();
+  });
+
+  it('renders an operation error in the form footer on save', async () => {
+    api.post.mockRejectedValue({ status: 400, data: { detail: 'Nope, not like that.' } });
+    const { findByRole, getByLabelText, getByRole, findByText } = render(ServiceItemManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Service Item' }));
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Painting' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const msg = await findByText('Nope, not like that.');
+    expect(msg.closest('[role="alert"]')).not.toBeNull();
   });
 });

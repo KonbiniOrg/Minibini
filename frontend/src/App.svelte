@@ -2,6 +2,7 @@
   import Router, { location } from 'svelte-spa-router';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
+  import MessageOverlay from './components/MessageOverlay.svelte';
   import { user, authChecked, checkAuth } from './stores/auth.js';
   import { refreshCurrentBlep, currentBlep } from './stores/currentBlep.js';
   import LoginPage from './routes/LoginPage.svelte';
@@ -164,4 +165,5 @@
   <div class="page-content">
     <Router {routes} />
   </div>
+  <MessageOverlay />
 {/if}

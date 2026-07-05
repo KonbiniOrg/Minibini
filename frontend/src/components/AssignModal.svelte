@@ -1,7 +1,11 @@
 <script>
   import { api } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
   import { parseDurationToISO } from '../lib/format.js';
   import Modal from './Modal.svelte';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let {
     open = false,
@@ -14,7 +18,8 @@
   let selectedUserId = $state('');
   let estWorkerTime = $state('');
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   // A task with no estimated worker time can't be scheduled, so assigning
   // it requires the duration up front. Unassigning never does.
@@ -25,7 +30,8 @@
     if (open) {
       selectedUserId = task?.assignee ?? '';
       estWorkerTime = '';
-      error = '';
+      formError = '';
+      fieldErrs = {};
       loadUsers();
     }
   });
@@ -39,22 +45,23 @@
   }
 
   async function save() {
-    error = '';
+    formError = '';
+    fieldErrs = {};
     const body = { assignee: selectedUserId || null, worker_queue: null };
 
     if (isAssigning && needsWorkerTime) {
       const iso = parseDurationToISO(estWorkerTime);
       if (iso === null) {
-        error = 'Estimated worker time is required to assign this task.';
+        fieldErrs = { est_worker_time: ['Estimated worker time is required to assign this task.'] };
         return;
       }
       if (iso === false) {
-        error = `Could not read "${estWorkerTime}" as a duration. `
-          + 'Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).';
+        fieldErrs = { est_worker_time: [`Could not read "${estWorkerTime}" as a duration. `
+          + 'Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).'] };
         return;
       }
       if (iso === 'PT0H0M') {
-        error = 'Estimated worker time must be greater than zero.';
+        fieldErrs = { est_worker_time: ['Estimated worker time must be greater than zero.'] };
         return;
       }
       body.est_worker_time = iso;
@@ -64,17 +71,19 @@
     try {
       const resp = await api.post(`/api/tasks/${task.task_id}/assign/`, body);
       if (resp && resp.needs_worker_time) {
-        error = 'Estimated worker time is required to assign this task.';
+        // The duration field may not even be rendered in this state, so the
+        // form footer is the safe venue.
+        formError = 'Estimated worker time is required to assign this task.';
         return;
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || 'Could not assign task.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -95,13 +104,15 @@
             {/each}
           </select>
         </label>
+        <FieldError errors={fieldErrs} field="assignee" />
       </p>
 
       {#if needsWorkerTime && isAssigning}
         <p>
           <label><strong>Estimated worker time *</strong><br>
             <input type="text" bind:value={estWorkerTime} placeholder="e.g. 1:30 or 1.5">
-          </label><br>
+          </label>
+          <FieldError errors={fieldErrs} field="est_worker_time" /><br>
           <small>HH:MM or decimal hours.</small>
         </p>
       {/if}
@@ -110,11 +121,10 @@
         <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
-      {#if error}<p class="error">{error}</p>{/if}
+      <FormMessage error={formError} />
 </form>
 </Modal>
 
 <style>
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
 </style>

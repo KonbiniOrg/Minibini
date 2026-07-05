@@ -497,20 +497,26 @@ when the problem belongs to a specific input field, and a plain
 whichever shape you choose, so the choice made in the service is what the
 SPA renders.
 
-**Frontend readers.** `api.js` attaches `.status` and `.data` to every
+**Frontend display.** `api.js` attaches `.status` and `.data` to every
 thrown error (`.data` is `null` when the body wasn't JSON — nginx error
-pages still carry `.status`). Components must use the two sanctioned
-readers, never hand-parse:
+pages still carry `.status`). The display half of the contract routes
+every message to one of three venues via `lib/errorTriage.js`
+(`triageError(e)` → `{overlay, message, fields}`):
 
-- `errorMessage(err, fallback)` (`lib/api.js`) — one display string for a
-  toast/banner; digs through `detail` and field-keyed shapes.
-- `fieldErrors(errorBag, field)` (`lib/formErrors.js`) — per-field arrays
-  for inline `{#each}` rendering next to inputs; set the bag from
-  `err.data` when it's an object.
+1. field validation → `<FieldError>` slots under each input;
+2. operation errors + `non_field_errors` (+ in-form success acks) →
+   `<FormMessage>` under the form's button row, which also hosts
+   next-step affordances for coded conflicts (e.g. "Create new version"
+   on the referenced-scheme 409);
+3. everything form-less (row actions, 5xx, infrastructure, page-level
+   success) → the single global red/green overlay
+   (`stores/messages.js` `showError`/`showSuccess` +
+   `MessageOverlay.svelte` mounted once in App.svelte).
 
-Never `JSON.stringify(e.data)` at the user, and never rely on `e.message`
-alone for display (field-keyed errors reduce it to "Request failed").
-Branch on `err.status` (e.g. `=== 409`) for flow decisions.
+`window.alert()` for API results is banned; `confirm()` for irreversible
+deletes stays. Full frontend rules and the uniform catch-block snippet:
+`frontend/README.md` → Error Handling. Exemplar:
+`frontend/src/components/RateSchemeManager.svelte`.
 
 ---
 

@@ -1,5 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import ContactForm from '../../components/contacts/ContactForm.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
@@ -10,7 +12,8 @@
   let contact = $state(null);
   let businesses = $state([]);
   let loading = $state(true);
-  let errors = $state(null);
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   async function load() {
     loading = true;
@@ -22,14 +25,16 @@
         contact = await api.get(`/api/contacts/${params.id}/`);
       }
     } catch (e) {
-      errors = e.message;
+      // Load failure has no form to land on — the global overlay is the venue.
+      showError(errorMessage(e, 'Could not load.'));
     } finally {
       loading = false;
     }
   }
 
   async function handleSubmit(data) {
-    errors = null;
+    formError = '';
+    fieldErrs = {};
     try {
       if (isEdit) {
         await api.patch(`/api/contacts/${params.id}/`, data);
@@ -39,7 +44,13 @@
         push(`/contacts/${created.contact_id}`);
       }
     } catch (e) {
-      errors = errorMessage(e);
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        formError = t.message;
+        fieldErrs = t.fields;
+      }
     }
   }
 
@@ -67,7 +78,8 @@
   <ContactForm
     {contact}
     {businesses}
-    {errors}
+    errors={fieldErrs}
+    {formError}
     onSubmit={handleSubmit}
     onCancel={handleCancel}
   />

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  errorMessage: (e, fallback) => (e && e.message) || fallback || 'Request failed.',
+}));
 
 import { api } from '@/lib/api.js';
 import COLineItemModal from '@/components/changeorders/COLineItemModal.svelte';
@@ -75,6 +78,38 @@ describe('COLineItemModal', () => {
       props: { open: true, mode: 'edit', coId: 3, item, categories: cats },
     });
     expect(getByLabelText(/Accounting Category/)).toHaveValue('7');
+  });
+
+  it('renders API field errors under the matching inputs', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { qty: ['A valid number is required.'] },
+    });
+    const { getByLabelText, getByRole, findByText } = render(COLineItemModal, {
+      props: { open: true, mode: 'create', coId: 3, categories: cats },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'New line' } });
+    await fireEvent.change(getByLabelText(/Accounting Category/), { target: { value: '7' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByText('A valid number is required.')).toHaveClass('field-error');
+  });
+
+  it('renders an operation error in the form footer after the buttons', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Change order is not editable.',
+      data: { detail: 'Change order is not editable.' },
+    });
+    const { getByLabelText, getByRole, findByRole } = render(COLineItemModal, {
+      props: { open: true, mode: 'create', coId: 3, categories: cats },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'New line' } });
+    await fireEvent.change(getByLabelText(/Accounting Category/), { target: { value: '7' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByRole('alert')).toHaveTextContent('Change order is not editable.');
   });
 
   it('hides the line fields for a plain remove', async () => {

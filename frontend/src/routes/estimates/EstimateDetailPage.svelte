@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import AdjustmentModal from '../../components/AdjustmentModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
@@ -45,7 +46,7 @@
       await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
       await loadEstimate();
     } catch (e) {
-      alert(e.message || 'Could not delete line item.');
+      showError(errorMessage(e, 'Could not delete line item.'));
     }
   }
 
@@ -72,7 +73,7 @@
       const newEst = await api.post(`/api/estimates/${estimate.estimate_id}/revise/`);
       window.location.hash = `/estimates/${newEst.estimate_id}`;
     } catch (e) {
-      alert(e.message || 'Could not revise estimate.');
+      showError(errorMessage(e, 'Could not revise estimate.'));
       revising = false;
     }
   }
@@ -85,7 +86,7 @@
       await loadEstimate();
     } catch (err) {
       e.target.value = estimate.status;
-      alert(err.message || 'Status change failed');
+      showError(errorMessage(err, 'Status change failed.'));
     }
   }
 
@@ -163,7 +164,7 @@
       });
       await loadEstimate();
     } catch (e) {
-      alert(e.message || 'Could not reorder line items.');
+      showError(errorMessage(e, 'Could not reorder line items.'));
     }
   }
 

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  errorMessage: (e, fallback) => e?.data?.detail || e?.message || fallback || 'Error',
+}));
 
 import { api } from '@/lib/api.js';
 import WorkItemForm from '@/components/WorkItemForm.svelte';
@@ -117,6 +120,29 @@ describe('WorkItemForm', () => {
       name: 'Cut', rate_scheme: 1, est_worker_time: null,
     }));
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('renders a field validation error under the offending input on save', async () => {
+    api.post.mockRejectedValue({ status: 400, data: { est_qty: ['A valid number is required.'] } });
+    const { findByLabelText, getByLabelText, getByRole, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('A valid number is required.')).toBeInTheDocument();
+  });
+
+  it('renders an operation error in the form footer on save', async () => {
+    api.post.mockRejectedValue({ status: 400, data: { detail: 'Job is closed.' } });
+    const { findByLabelText, getByLabelText, getByRole, findByText } = render(WorkItemForm, {
+      props: { open: true, mode: 'manual', context: 'job', contextId: 5 },
+    });
+    await fireEvent.change(await findByLabelText(/Rate Scheme/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'Cut' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    const msg = await findByText('Job is closed.');
+    expect(msg.closest('[role="alert"]')).not.toBeNull();
   });
 });
 

@@ -1,10 +1,14 @@
 <script>
+  import FieldError from '../FieldError.svelte';
+  import FormMessage from '../FormMessage.svelte';
+
   const {
     business = null,
     paymentTerms = [],
     onSubmit,
     onCancel,
-    errors = null,
+    errors = {},      // field→messages bag (triageError(e).fields), keys match the API payload
+    formError = '',   // form-footer message (operation errors / non_field_errors)
   } = $props();
 
   const isEdit = $derived(!!business);
@@ -50,25 +54,25 @@
 </script>
 
 <form onsubmit={handleSubmit}>
-  {#if errors}
-    <p><strong>Error:</strong> {errors}</p>
-  {/if}
-
   <p>
     <label for="business_name"><strong>Business Name *</strong></label><br>
     <input type="text" id="business_name" bind:value={form.business_name} required>
+    <FieldError {errors} field="business_name" />
   </p>
   <p>
     <label for="business_phone"><strong>Phone</strong></label><br>
     <input type="text" id="business_phone" bind:value={form.business_phone}>
+    <FieldError {errors} field="business_phone" />
   </p>
   <p>
     <label for="business_address"><strong>Address</strong></label><br>
     <textarea id="business_address" bind:value={form.business_address}></textarea>
+    <FieldError {errors} field="business_address" />
   </p>
   <p>
     <label for="website"><strong>Website</strong></label><br>
     <input type="url" id="website" bind:value={form.website}>
+    <FieldError {errors} field="website" />
   </p>
 
   <fieldset>
@@ -76,10 +80,12 @@
     <p>
       <label for="tax_exemption_number"><strong>Tax Exemption Number</strong></label><br>
       <input type="text" id="tax_exemption_number" bind:value={form.tax_exemption_number}>
+      <FieldError {errors} field="tax_exemption_number" />
     </p>
     <p>
       <label for="tax_multiplier"><strong>Tax Multiplier</strong></label><br>
       <input type="number" id="tax_multiplier" bind:value={form.tax_multiplier} step="0.01" min="0" max="1">
+      <FieldError {errors} field="tax_multiplier" />
     </p>
   </fieldset>
 
@@ -91,6 +97,7 @@
         <option value={term.term_id}>{term.term_id}</option>
       {/each}
     </select>
+    <FieldError {errors} field="terms" />
   </p>
 
   {#if isEdit}
@@ -102,25 +109,32 @@
           <option value={c.contact_id}>{c.name}</option>
         {/each}
       </select>
+      <FieldError {errors} field="default_contact_id" />
     </p>
   {:else}
     <fieldset>
       <legend><strong>Default Contact</strong></legend>
+      <!-- Created via POST /api/contacts/ first, so its field errors carry
+           the contact payload keys (first_name, last_name, email, mobile_number). -->
       <p>
         <label for="contact_first_name"><strong>First Name *</strong></label><br>
         <input type="text" id="contact_first_name" bind:value={contactForm.first_name} required>
+        <FieldError {errors} field="first_name" />
       </p>
       <p>
         <label for="contact_last_name"><strong>Last Name *</strong></label><br>
         <input type="text" id="contact_last_name" bind:value={contactForm.last_name} required>
+        <FieldError {errors} field="last_name" />
       </p>
       <p>
         <label for="contact_email"><strong>Email *</strong></label><br>
         <input type="email" id="contact_email" bind:value={contactForm.email} required>
+        <FieldError {errors} field="email" />
       </p>
       <p>
         <label for="contact_mobile"><strong>Mobile *</strong></label><br>
         <input type="text" id="contact_mobile" bind:value={contactForm.mobile_number} required>
+        <FieldError {errors} field="mobile_number" />
       </p>
     </fieldset>
   {/if}
@@ -129,4 +143,5 @@
     <button type="submit">{business ? 'Save' : 'Create'}</button>
     <button type="button" onclick={onCancel}>Cancel</button>
   </p>
+  <FormMessage error={formError} />
 </form>

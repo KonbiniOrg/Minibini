@@ -2,7 +2,8 @@
 <script>
   import { onMount } from 'svelte';
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
@@ -74,7 +75,7 @@
       await api.delete(`/api/invoices/${invoice.invoice_id}/line-items/${li.line_item_id}/`);
       await loadInvoice();
     } catch (e) {
-      alert(e.message || 'Could not delete line item.');
+      showError(errorMessage(e, 'Could not delete line item.'));
     }
   }
 
@@ -83,7 +84,7 @@
       await api.post(`/api/invoices/${invoice.invoice_id}/line-items/reorder/`, { item_ids: itemIds });
       await loadInvoice();
     } catch (e) {
-      alert(e.message || 'Could not reorder line items.');
+      showError(errorMessage(e, 'Could not reorder line items.'));
     }
   }
 

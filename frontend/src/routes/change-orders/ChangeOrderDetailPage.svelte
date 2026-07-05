@@ -1,6 +1,10 @@
 <script>
   import { link, push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
+  import FieldError from '../../components/FieldError.svelte';
+  import FormMessage from '../../components/FormMessage.svelte';
   import COAddLineForm from '../../components/changeorders/COAddLineForm.svelte';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
@@ -31,6 +35,11 @@
   let delivNewQty = $state('1');
   let delivNewUnits = $state('ea');
   let delivSaving = $state(false);
+  // Inline-form error state (triaged: field bag + footer message per form)
+  let delivEditError = $state('');
+  let delivEditFields = $state({});
+  let delivNewError = $state('');
+  let delivNewFields = $state({});
 
   let modalOpen = $state(false);
   let modalMode = $state('create');
@@ -377,14 +386,20 @@
     delivEditDescription = liveRow.description;
     delivEditQty = String(Number(liveRow.qty_ordered));
     delivEditUnits = liveRow.units;
+    delivEditError = '';
+    delivEditFields = {};
   }
 
   function cancelDelivEdit() {
     delivEditId = null;
+    delivEditError = '';
+    delivEditFields = {};
   }
 
   async function saveDelivEdit(liveId) {
     delivSaving = true;
+    delivEditError = '';
+    delivEditFields = {};
     try {
       await api.patch(`/api/jobs/${co.job}/deliverables/${liveId}/`, {
         description: delivEditDescription,
@@ -394,7 +409,9 @@
       delivEditId = null;
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not save deliverable.');
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay);
+      else { delivEditError = t.message; delivEditFields = t.fields; }
     } finally {
       delivSaving = false;
     }
@@ -405,7 +422,7 @@
       await api.delete(`/api/jobs/${co.job}/deliverables/${liveId}/`);
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not delete deliverable.');
+      showError(errorMessage(e, 'Could not delete deliverable.'));
     }
   }
 
@@ -419,7 +436,7 @@
       });
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not undo change.');
+      showError(errorMessage(e, 'Could not undo change.'));
     }
   }
 
@@ -433,7 +450,7 @@
       });
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not restore deliverable.');
+      showError(errorMessage(e, 'Could not restore deliverable.'));
     }
   }
 
@@ -442,14 +459,23 @@
     delivNewQty = '1';
     delivNewUnits = 'ea';
     delivNewOpen = true;
+    delivNewError = '';
+    delivNewFields = {};
   }
 
   function cancelDelivNew() {
     delivNewOpen = false;
+    delivNewError = '';
+    delivNewFields = {};
   }
 
   async function saveDelivNew() {
-    if (!delivNewDescription.trim()) { alert('Description is required.'); return; }
+    delivNewError = '';
+    delivNewFields = {};
+    if (!delivNewDescription.trim()) {
+      delivNewFields = { description: ['Description is required.'] };
+      return;
+    }
     delivSaving = true;
     try {
       await api.post(`/api/jobs/${co.job}/deliverables/`, {
@@ -460,7 +486,9 @@
       delivNewOpen = false;
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not add deliverable.');
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay);
+      else { delivNewError = t.message; delivNewFields = t.fields; }
     } finally {
       delivSaving = false;
     }
@@ -489,7 +517,7 @@
       await api.patch(`/api/change-orders/${co.change_order_id}/`, { status: newStatus });
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not update status.');
+      showError(errorMessage(e, 'Could not update status.'));
     } finally {
       actionBusy = false;
     }
@@ -502,7 +530,7 @@
       await api.delete(`/api/change-orders/${co.change_order_id}/`);
       window.location.hash = `/jobs/${co.job}`;
     } catch (e) {
-      alert(e.message || 'Could not discard change order.');
+      showError(errorMessage(e, 'Could not discard change order.'));
       actionBusy = false;
     }
   }
@@ -514,7 +542,7 @@
       const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);
       window.location.hash = `/change-orders/${newCo.change_order_id}`;
     } catch (e) {
-      alert(e.message || 'Could not create new change order.');
+      showError(errorMessage(e, 'Could not create new change order.'));
       actionBusy = false;
     }
   }
@@ -551,7 +579,7 @@
       });
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not remove estimate line.');
+      showError(errorMessage(e, 'Could not remove estimate line.'));
     }
   }
 
@@ -574,7 +602,7 @@
       await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not undo change.');
+      showError(errorMessage(e, 'Could not undo change.'));
     }
   }
 
@@ -584,7 +612,7 @@
       await api.delete(`/api/change-orders/${co.change_order_id}/line-items/${coItem.line_item_id}/`);
       await loadCO();
     } catch (e) {
-      alert(e.message || 'Could not delete line item.');
+      showError(errorMessage(e, 'Could not delete line item.'));
     }
   }
 
@@ -716,6 +744,10 @@
                       <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
                       <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
                     </div>
+                    <FieldError errors={delivEditFields} field="qty_ordered" />
+                    <FieldError errors={delivEditFields} field="units" />
+                    <FieldError errors={delivEditFields} field="description" />
+                    <FormMessage error={delivEditError} />
                   </td>
                 </tr>
               {:else}
@@ -747,6 +779,10 @@
                       <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
                       <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
                     </div>
+                    <FieldError errors={delivEditFields} field="qty_ordered" />
+                    <FieldError errors={delivEditFields} field="units" />
+                    <FieldError errors={delivEditFields} field="description" />
+                    <FormMessage error={delivEditError} />
                   </td>
                 </tr>
               {:else}
@@ -794,6 +830,10 @@
                       <button type="button" onclick={() => saveDelivEdit(row.live.id)} disabled={delivSaving}>Save</button>
                       <button type="button" onclick={cancelDelivEdit} disabled={delivSaving}>Cancel</button>
                     </div>
+                    <FieldError errors={delivEditFields} field="qty_ordered" />
+                    <FieldError errors={delivEditFields} field="units" />
+                    <FieldError errors={delivEditFields} field="description" />
+                    <FormMessage error={delivEditError} />
                   </td>
                 </tr>
               {:else}
@@ -827,6 +867,10 @@
                 <button type="button" onclick={saveDelivNew} disabled={delivSaving}>Add</button>
                 <button type="button" onclick={cancelDelivNew} disabled={delivSaving}>Cancel</button>
               </div>
+              <FieldError errors={delivNewFields} field="qty_ordered" />
+              <FieldError errors={delivNewFields} field="units" />
+              <FieldError errors={delivNewFields} field="description" />
+              <FormMessage error={delivNewError} />
             </td>
           </tr>
         {/if}

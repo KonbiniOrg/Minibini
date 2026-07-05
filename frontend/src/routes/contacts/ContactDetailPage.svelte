@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
   import ContactDetail from '../../components/contacts/ContactDetail.svelte';
   import { push } from 'svelte-spa-router';
 
@@ -13,8 +14,6 @@
   let financials = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
-  let error = $state(null);
-  let success = $state(null);
   let deleteConfirm = $state(null);
 
   async function loadContact() {
@@ -55,7 +54,7 @@
       await api.post(`/api/contacts/${params.id}/notes/`, { text });
       await loadHistory();
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not add note.'));
     }
   }
 
@@ -67,7 +66,7 @@
           deleteConfirm = result.impact;
         }
       } catch (e) {
-        error = e.message;
+        showError(errorMessage(e, 'Could not delete contact.'));
       }
       return;
     }
@@ -75,9 +74,10 @@
     deleteConfirm = null;
     try {
       const result = await api.delete(`/api/contacts/${params.id}/?confirm=true`);
-      success = result.message || 'Contact deleted.';
+      showSuccess(result.message || 'Contact deleted.');
+      push('/contacts');
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not delete contact.'));
     }
   }
 
@@ -87,28 +87,10 @@
   });
 </script>
 
-{#if success}
-  <div class="success-overlay">
-    <div class="success-overlay-content">
-      <button class="success-overlay-close" onclick={() => push('/contacts')}>&times;</button>
-      <p>{success}</p>
-    </div>
-  </div>
-{/if}
-
-{#if error}
-  <div class="error-overlay">
-    <div class="error-overlay-content">
-      <button class="error-overlay-close" onclick={() => { error = null; }}>&times;</button>
-      <p><strong>Error:</strong> {error}</p>
-    </div>
-  </div>
-{/if}
-
 {#if loading}
   <p>Loading...</p>
 {:else if loadError}
-  <p>Error: {loadError}</p>
+  <p><em>Error: {loadError}</em></p>
 {:else if contact}
   <ContactDetail
     {contact}

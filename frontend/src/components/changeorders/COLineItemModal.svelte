@@ -5,8 +5,12 @@
      allow callers to pre-seed the form (e.g. opening "Change" on an estimate line). -->
 <script>
   import { api } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import UnitsSelect from '../UnitsSelect.svelte';
   import Modal from '../Modal.svelte';
+  import FieldError from '../FieldError.svelte';
+  import FormMessage from '../FormMessage.svelte';
 
   let {
     open = false,
@@ -34,7 +38,8 @@
   let price = $state('');
   let accountingCategory = $state('');
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   // Whether description/qty/units/price fields are needed (not for plain 'remove')
   let needsLineFields = $derived(action !== 'remove');
@@ -63,13 +68,15 @@
         price = initialPrice ?? '';
         accountingCategory = '';
       }
-      error = '';
+      formError = '';
+      fieldErrs = {};
     }
   });
 
   async function save() {
     busy = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     const payload = {
       action,
       target_line_item: (action === 'remove' || action === 'replace') && targetLineItem
@@ -86,7 +93,7 @@
       // Bare add lines need an AC to send (they crystallize into Fees);
       // material lines get the config default server-side.
       if (!accountingCategory && !item?.is_material) {
-        error = 'Accounting Category is required.';
+        fieldErrs = { accounting_category: ['Accounting Category is required.'] };
         busy = false;
         return;
       }
@@ -100,12 +107,12 @@
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || 'Could not save line item.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -125,6 +132,7 @@
             <option value="replace">Replace — replace an existing estimate line</option>
           </select>
         </label>
+        <FieldError errors={fieldErrs} field="action" />
       </p>
 
       {#if action === 'remove' || action === 'replace'}
@@ -139,6 +147,7 @@
               {/each}
             </select>
           </label>
+          <FieldError errors={fieldErrs} field="target_line_item" />
         </p>
       {/if}
 
@@ -147,24 +156,28 @@
           <label><strong>Description *</strong><br>
             <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
           </label>
+          <FieldError errors={fieldErrs} field="description" />
         </p>
 
         <p>
           <label><strong>Quantity</strong><br>
             <input type="number" step="0.01" bind:value={qty}>
           </label>
+          <FieldError errors={fieldErrs} field="qty" />
         </p>
 
         <p>
           <label><strong>Units</strong><br>
             <UnitsSelect bind:value={units} />
           </label>
+          <FieldError errors={fieldErrs} field="units" />
         </p>
 
         <p>
           <label><strong>Price</strong><br>
             <input type="number" step="0.01" bind:value={price}>
           </label>
+          <FieldError errors={fieldErrs} field="price" />
         </p>
 
         {#if needsAccountingCategory}
@@ -177,6 +190,7 @@
                 {/each}
               </select>
             </label>
+            <FieldError errors={fieldErrs} field="accounting_category" />
           </p>
         {/if}
       {/if}
@@ -185,12 +199,11 @@
         <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
-      {#if error}<p class="error">{error}</p>{/if}
+      <FormMessage error={formError} />
 </form>
 </Modal>
 
 
 <style>
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
 </style>

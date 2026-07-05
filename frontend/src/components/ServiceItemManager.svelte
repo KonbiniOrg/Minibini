@@ -1,5 +1,9 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let templates = $state([]);
   let schemes = $state([]);
@@ -9,7 +13,13 @@
   let editingId = $state(null);
   let form = $state(emptyForm());
   let saving = $state(false);
-  let saveError = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
+
+  function clearFormMessages() {
+    formError = '';
+    fieldErrs = {};
+  }
 
   function emptyForm() {
     return {
@@ -70,7 +80,7 @@
   function startCreate() {
     form = emptyForm();
     editingId = 'new';
-    saveError = '';
+    clearFormMessages();
     refreshSchemes();
   }
 
@@ -85,11 +95,11 @@
       is_active: tmpl.is_active,
     };
     editingId = tmpl.template_id;
-    saveError = '';
+    clearFormMessages();
     refreshSchemes();
   }
 
-  function cancelEdit() { editingId = null; saveError = ''; }
+  function cancelEdit() { editingId = null; clearFormMessages(); }
 
   function toggleModifier(key) {
     if (form.default_active_modifiers.includes(key)) {
@@ -101,7 +111,7 @@
 
   async function save() {
     saving = true;
-    saveError = '';
+    clearFormMessages();
     try {
       const payload = {
         template_name: form.template_name,
@@ -118,12 +128,12 @@
       editingId = null;
       await load();
     } catch (e) {
-      if (e.data && typeof e.data === 'object') {
-        saveError = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        saveError = e.message || 'Could not save.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       saving = false;
@@ -136,7 +146,8 @@
       await api.delete(`/api/service-items/${tmpl.template_id}/`);
       await load();
     } catch (e) {
-      error = e.message || 'Could not delete.';
+      // Non-form action: the global overlay is the venue.
+      showError(errorMessage(e, 'Could not delete.'));
     }
   }
 
@@ -181,10 +192,12 @@
     <legend><strong>{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</strong></legend>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.template_name} style="width:100%;box-sizing:border-box;">
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="template_name" /></p>
     <p><label><strong>Description</strong><br>
       <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="description" /></p>
     <p><label><strong>Rate Scheme</strong><br>
       <select bind:value={form.rate_scheme}>
         <option value="">-- None --</option>
@@ -192,7 +205,8 @@
           <option value={s.rate_scheme_id}>{s.name} ({s.algorithm})</option>
         {/each}
       </select>
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="rate_scheme" /></p>
 
     {#if selectedScheme}
       <p><strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label} <small>(from rate scheme)</small></p>
@@ -208,12 +222,14 @@
             </label><br>
           {/each}
         </fieldset>
+        <FieldError errors={fieldErrs} field="default_active_modifiers" />
       {/if}
     {/if}
 
     <p><label>
       <input type="checkbox" bind:checked={form.is_active}> Active
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="is_active" /></p>
 
     <p>
       <button type="button" onclick={save} disabled={saving}>
@@ -221,6 +237,6 @@
       </button>
       <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
     </p>
-    {#if saveError}<p><em style="color:#a8071a">{saveError}</em></p>{/if}
+    <FormMessage error={formError} />
   </fieldset>
 {/if}

@@ -165,15 +165,52 @@ Frontend rules:
 - The API client (`src/lib/api.js`) attaches `.status` and `.data` to every
   thrown error; `.data` is `null` when the body wasn't JSON (HTML error
   pages still carry `.status`).
-- Read error text ONLY via the two sanctioned readers: `errorMessage(err)`
-  (`lib/api.js`) for a single display string, `fieldErrors(bag, field)`
-  (`lib/formErrors.js`) for inline per-field lists (set the bag from
-  `err.data` when it's an object). Never `JSON.stringify(e.data)`; never
-  display bare `e.message` (field-keyed errors reduce it to "Request
-  failed"). Branch on `err.status` for flow decisions (e.g. `=== 409`).
-- Action errors (delete failures, validation errors) display in an overlay
-  on top of the current page, preserving the content underneath.
-- Load errors (page/object not found) replace the page content.
+
+**The three display venues** (every message goes to exactly one; users
+learn where to look):
+
+1. **Under the input** — field validation errors. Place
+   `<FieldError {errors} field="x" />` (components/) directly below each
+   input; the label stays above. Set the bag (`errors = t.fields`) once in
+   the catch; every slot lights up.
+2. **Under the form's buttons** — operation errors ("Job is on hold"),
+   `non_field_errors`, and the rare in-form success ack. Place
+   `<FormMessage error={...} success={...} />` immediately after the
+   button row. Conflict responses that carry a next step (`code` +
+   machine payload, e.g. the referenced-scheme 409) render an action
+   button in FormMessage's children — see RateSchemeManager for the
+   pattern.
+3. **The global red/green overlay** — everything with no form: failed row
+   actions, infrastructure errors (backend down, 5xx), page-level success
+   acknowledgements. Raise it with `showError(...)` / `showSuccess(...)`
+   from `stores/messages.js`; `MessageOverlay.svelte` (mounted once in
+   App.svelte) renders it. Pages never carry their own overlay markup.
+
+**The uniform catch block** for forms:
+
+```js
+import { triageError } from '../lib/errorTriage.js';
+import { showError } from '../stores/messages.js';
+
+} catch (e) {
+  const t = triageError(e);
+  if (t.overlay) showError(t.overlay);      // infrastructure → venue 3
+  else { formError = t.message; errors = t.fields; }  // venues 2 + 1
+}
+```
+
+Clear `formError`/`errors` at submit start and on open/cancel.
+
+- Never `JSON.stringify(e.data)`; never display bare `e.message`
+  (field-keyed errors reduce it to "Request failed"); never
+  `window.alert()` for API results (`confirm()` for irreversible deletes
+  is fine). Branch on `err.status` / `err.data?.code` for flow decisions.
+- Load errors (page/object not found on mount) are not "messages" — they
+  replace the page content, per the existing convention.
+- The exemplar conversion is `components/RateSchemeManager.svelte`; the
+  primitives are `lib/errorTriage.js`, `components/FieldError.svelte`,
+  `components/FormMessage.svelte`, `stores/messages.js`,
+  `components/MessageOverlay.svelte`.
 
 ### CSS
 

@@ -43,6 +43,7 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 'detail': 'Scheme is referenced; create a new version instead of editing.',
+                'code': 'referenced',
                 'supersede_url': request.build_absolute_uri(
                     f'/api/rate-schemes/{instance.pk}/supersede/'
                 ),

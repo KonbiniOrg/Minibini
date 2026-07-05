@@ -227,10 +227,15 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 - In services, raise `ValidationError({'field': ['msg']})` when the problem
   belongs to an input field, plain `ValidationError('sentence')` otherwise —
   that choice is what the SPA renders.
-- Frontend: read errors ONLY via `errorMessage(err)` (`lib/api.js`) for a
-  display string or `fieldErrors(bag, field)` (`lib/formErrors.js`) for
-  inline per-field lists. Never `JSON.stringify(e.data)`, never display
-  bare `e.message`; branch on `err.status` for flow (e.g. 409).
+- Frontend: route every error through `triageError(e)`
+  (`lib/errorTriage.js`) to its venue — `FieldError` slots under inputs,
+  `FormMessage` under the form's buttons, or the global overlay
+  (`stores/messages.js` `showError`/`showSuccess`) for form-less and
+  infrastructure errors. Never `JSON.stringify(e.data)`, never display
+  bare `e.message`, never `window.alert()` for API results; branch on
+  `err.status` / `err.data?.code` for flow (e.g. 409). Exemplar:
+  `RateSchemeManager.svelte`; rules: `frontend/README.md` → Error
+  Handling.
 
 ## UI Conventions
 

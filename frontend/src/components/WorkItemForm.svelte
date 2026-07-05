@@ -1,6 +1,10 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
   import Modal from './Modal.svelte';
 
   let {
@@ -27,7 +31,8 @@
   let estQty = $state('');
   let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
   let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
   let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
 
@@ -39,7 +44,7 @@
       const resp = await api.get('/api/rate-schemes/');
       schemes = resp.results || resp;
     } catch (e) {
-      error = e.message || 'Could not load rate schemes.';
+      formError = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
     }
@@ -78,7 +83,8 @@
     }
     saveToCatalog = false;
     taskCreated = false;
-    error = '';
+    formError = '';
+    fieldErrs = {};
   });
 
   // In template mode, when the user picks a template, defaults flow downward.
@@ -158,27 +164,28 @@
   }
 
   async function save() {
+    formError = '';
+    fieldErrs = {};
     if (!name || !name.trim()) {
-      error = 'Name is required.';
+      formError = 'Name is required.';
       return;
     }
     if (!isEdit && mode === 'template' && !templateId) {
-      error = 'Please pick a template.';
+      formError = 'Please pick a template.';
       return;
     }
     if (mode === 'manual' && !rateSchemeId) {
-      error = 'Please pick a rate scheme.';
+      formError = 'Please pick a rate scheme.';
       return;
     }
 
     const estWorkerTimeISO = durationToISO(estWorkerTime);
     if (estWorkerTimeISO === false) {
-      error = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
+      formError = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
       return;
     }
 
     busy = true;
-    error = '';
     try {
       const payload = {
         name,
@@ -225,12 +232,12 @@
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || 'Could not save.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -255,6 +262,7 @@
                 {/each}
               </select>
             </label>
+            <FieldError errors={fieldErrs} field="service_item_id" />
           </p>
         {/if}
 
@@ -271,6 +279,7 @@
                   {/each}
                 </select>
               </label>
+              <FieldError errors={fieldErrs} field="rate_scheme" />
             </p>
           {/if}
         {/if}
@@ -279,11 +288,13 @@
           <label><strong>Name *</strong><br>
             <input type="text" bind:value={name} style="width:100%;box-sizing:border-box;">
           </label>
+          <FieldError errors={fieldErrs} field="name" />
         </p>
         <p>
           <label><strong>Description</strong><br>
             <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
           </label>
+          <FieldError errors={fieldErrs} field="description" />
         </p>
 
         {#if selectedScheme}
@@ -314,6 +325,7 @@
                   </label>
                 </p>
               {/each}
+              <FieldError errors={fieldErrs} field="active_modifiers" />
             </fieldset>
           {/if}
 
@@ -322,6 +334,7 @@
               <input type="number" step="0.01" bind:value={estQty}>
               <small>{selectedScheme.unit_label}</small>
             </label>
+            <FieldError errors={fieldErrs} field="est_qty" />
           </p>
         {/if}
 
@@ -330,6 +343,7 @@
             <input type="text" placeholder="e.g. 1:30 or 1.5" bind:value={estWorkerTime}>
             <small>HH:MM or decimal hours (1.5 = 1h30m)</small>
           </label>
+          <FieldError errors={fieldErrs} field="est_worker_time" />
         </p>
 
         {#if mode === 'manual' && !isEdit}
@@ -345,7 +359,7 @@
           <button type="submit" disabled={busy}>Save</button>
           <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
         </div>
-        {#if error}<p class="error">{error}</p>{/if}
+        <FormMessage error={formError} />
       {/if}
 </form>
 </Modal>
@@ -353,5 +367,4 @@
 
 <style>
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
 </style>

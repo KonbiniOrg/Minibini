@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
   import BusinessDetail from '../../components/contacts/BusinessDetail.svelte';
   import { push } from 'svelte-spa-router';
 
@@ -15,8 +16,6 @@
   let billPage = $state(1);
   let loading = $state(true);
   let loadError = $state(null);
-  let error = $state(null);
-  let success = $state(null);
   let deleteConfirm = $state(null);
 
   async function loadBusiness() {
@@ -59,7 +58,7 @@
       await api.post(`/api/businesses/${params.id}/notes/`, { text });
       await loadHistory();
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not add note.'));
     }
   }
 
@@ -71,7 +70,7 @@
           deleteConfirm = result.impact;
         }
       } catch (e) {
-        error = e.message;
+        showError(errorMessage(e, 'Could not delete business.'));
       }
       return;
     }
@@ -79,9 +78,10 @@
     deleteConfirm = null;
     try {
       const result = await api.delete(`/api/businesses/${params.id}/?confirm=true`);
-      success = result.message || 'Business deleted.';
+      showSuccess(result.message || 'Business deleted.');
+      push('/businesses');
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not delete business.'));
     }
   }
 
@@ -91,28 +91,10 @@
   });
 </script>
 
-{#if success}
-  <div class="success-overlay">
-    <div class="success-overlay-content">
-      <button class="success-overlay-close" onclick={() => push('/businesses')}>&times;</button>
-      <p>{success}</p>
-    </div>
-  </div>
-{/if}
-
-{#if error}
-  <div class="error-overlay">
-    <div class="error-overlay-content">
-      <button class="error-overlay-close" onclick={() => { error = null; }}>&times;</button>
-      <p><strong>Error:</strong> {error}</p>
-    </div>
-  </div>
-{/if}
-
 {#if loading}
   <p>Loading...</p>
 {:else if loadError}
-  <p>Error: {loadError}</p>
+  <p><em>Error: {loadError}</em></p>
 {:else if business}
   <BusinessDetail
     {business}

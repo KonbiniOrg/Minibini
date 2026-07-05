@@ -7,6 +7,8 @@
   import AgreementAdjustmentsPanel from '../../components/invoices/AgreementAdjustmentsPanel.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
   import WizardActions from '../../components/wizards/WizardActions.svelte';
+  import FormMessage from '../../components/FormMessage.svelte';
+  import { showError } from '../../stores/messages.js';
   import { createFlushRegistry } from '../../lib/wizardFlush.js';
 
   const { params = {} } = $props();
@@ -21,10 +23,14 @@
   let selectedAtoms = $state([]);
   let loading = $state(true);
   let error = $state(null);
+  // Set when an add bounced off the atoms-claimed 409 — the message under the
+  // add controls then offers "Reload wizard" (the conflict's next step).
+  let conflictError = $state('');
 
   const canAddHere = $derived(selectedAtoms.length > 0);
 
   async function addAtomsToLineItem(lineItemId) {
+    conflictError = '';
     try {
       await api.post(
         `/api/invoices/${invoice.invoice_id}/line-items/${lineItemId}/add-atoms/`,
@@ -33,14 +39,15 @@
       await reloadLineItems();
     } catch (e) {
       if (e.status === 409) {
-        alert('Some atoms were claimed by another invoice. Reopen the wizard to refresh.');
+        conflictError = errorMessage(e, 'Some atoms were claimed by another invoice.');
       } else {
-        alert(e.message || 'Failed to add atoms');
+        showError(errorMessage(e, 'Failed to add atoms.'));
       }
     }
   }
 
   async function createNewLineItem() {
+    conflictError = '';
     try {
       await api.post(
         `/api/invoices/${invoice.invoice_id}/line-items-from-atoms/`,
@@ -49,11 +56,16 @@
       await reloadLineItems();
     } catch (e) {
       if (e.status === 409) {
-        alert('Some atoms were claimed by another invoice. Reopen the wizard to refresh.');
+        conflictError = errorMessage(e, 'Some atoms were claimed by another invoice.');
       } else {
-        alert(e.message || 'Failed to create line item');
+        showError(errorMessage(e, 'Failed to create line item.'));
       }
     }
+  }
+
+  function reloadFromConflict() {
+    conflictError = '';
+    loadAll();
   }
 
   async function addManualLineItem() {
@@ -63,7 +75,7 @@
       });
       await reloadLineItems();
     } catch (e) {
-      alert(e.message || 'Failed to add manual line item');
+      showError(errorMessage(e, 'Failed to add manual line item.'));
     }
   }
 
@@ -107,7 +119,7 @@
       await api.post(`/api/invoices/${invoice.invoice_id}/send-all-atoms/`);
       await loadAll();
     } catch (e) {
-      alert(errorMessage(e, 'Could not send all atoms.'));
+      showError(errorMessage(e, 'Could not send all atoms.'));
     }
   }
 
@@ -206,6 +218,9 @@
           title={canAddHere ? 'Create a new line item from selected atoms' : 'Select atoms first'}
         >Add Here</button>
       </div>
+      <FormMessage error={conflictError}>
+        <button type="button" onclick={reloadFromConflict}>Reload wizard</button>
+      </FormMessage>
       <button type="button" onclick={addManualLineItem}>+ Manual</button>
       <AgreementAdjustmentsPanel invoiceId={invoice.invoice_id} onLineItemAdded={reloadLineItems} />
     </div>

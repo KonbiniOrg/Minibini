@@ -1,6 +1,10 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
   import Modal from './Modal.svelte';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let {
     open = false,
@@ -19,7 +23,8 @@
   let unitRate = $state('');
   let accountingCategory = $state('');
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
   let confirmDelete = $state(false);
 
   $effect(() => {
@@ -37,20 +42,25 @@
         unitRate = '';
         accountingCategory = '';
       }
-      error = '';
+      formError = '';
+      fieldErrs = {};
       confirmDelete = false;
     }
   });
 
-  // Clear stale error when the user edits any field.
+  // Clear stale errors when the user edits any field. Don't read
+  // `formError`/`fieldErrs` here — that would track them as dependencies
+  // and re-clear the instant the catch block sets them.
   $effect(() => {
     description; quantity; unitRate; accountingCategory;
-    error = '';
+    formError = '';
+    fieldErrs = {};
   });
 
   async function save() {
     busy = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     const payload = {
       description,
       quantity: quantity !== '' ? Number(quantity) : 1,
@@ -65,12 +75,12 @@
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || e.data?.detail || 'Could not save fee.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -83,12 +93,14 @@
       return;
     }
     busy = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     try {
       await api.delete(`/api/jobs/${jobId}/fees/${fee.fee_id}/`);
       onSaved();
     } catch (e) {
-      error = e.message || e.data?.detail || 'Could not delete fee.';
+      // Non-form action: the global overlay is the venue.
+      showError(errorMessage(e, 'Could not delete fee.'));
       confirmDelete = false;
     } finally {
       busy = false;
@@ -104,18 +116,21 @@
         <label><strong>Description</strong><br>
           <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
         </label>
+        <FieldError errors={fieldErrs} field="description" />
       </p>
 
       <p>
         <label><strong>Quantity</strong><br>
           <input type="number" step="0.01" bind:value={quantity}>
         </label>
+        <FieldError errors={fieldErrs} field="quantity" />
       </p>
 
       <p>
         <label><strong>Unit Rate</strong><br>
           <input type="number" step="0.01" bind:value={unitRate}>
         </label>
+        <FieldError errors={fieldErrs} field="unit_rate" />
       </p>
 
       <p>
@@ -127,6 +142,7 @@
             {/each}
           </select>
         </label>
+        <FieldError errors={fieldErrs} field="accounting_category" />
       </p>
 
       <div class="buttons">
@@ -141,14 +157,13 @@
           {/if}
         {/if}
       </div>
-      {#if error}<p class="error">{error}</p>{/if}
+      <FormMessage error={formError} />
 </form>
 </Modal>
 
 
 <style>
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
   .btn-danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
   .btn-danger:hover:not(:disabled) { background: #fecaca; }
 </style>

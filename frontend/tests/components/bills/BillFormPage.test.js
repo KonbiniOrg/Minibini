@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, findByText, findByRole, queryByRole } from '@testing-library/svelte';
+import { render, fireEvent, findByText, findByRole, queryByRole } from '@testing-library/svelte';
 
 const { qsRef } = vi.hoisted(() => ({ qsRef: { value: '' } }));
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
@@ -124,5 +124,21 @@ describe('BillFormPage', () => {
     const invInput = container.querySelector('#vendor_invoice_number');
     expect(invInput).not.toBeNull();
     expect(invInput.value).toBe('V-5');
+  });
+
+  it('renders field validation errors under inputs and non_field_errors in the footer on save', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      data: { vendor_invoice_number: ['Duplicate invoice number.'], non_field_errors: ['Vendor mismatch.'] },
+    });
+
+    const { container } = render(BillFormPage, { props: { params: {} } });
+
+    const saveBtn = await findByRole(container, 'button', { name: 'Save' });
+    await fireEvent.click(saveBtn);
+
+    expect(await findByText(container, 'Duplicate invoice number.')).toBeInTheDocument();
+    const footer = await findByText(container, 'Vendor mismatch.');
+    expect(footer.closest('[role="alert"]')).not.toBeNull();
   });
 });

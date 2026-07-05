@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  errorMessage: (e, fallback) => (e && e.message) || fallback || 'Request failed.',
+}));
 
 import { api } from '@/lib/api.js';
 import LineItemModal from '@/components/LineItemModal.svelte';
@@ -111,6 +114,45 @@ describe('LineItemModal', () => {
 
     expect(await findByText('Select an inventory item.')).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('renders API field errors under the matching inputs', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { qty: ['A valid number is required.'], price: ['Ensure this value is greater than or equal to 0.'] },
+    });
+    const { getByLabelText, getByRole, findByText } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'create', apiBase: '/api/estimates/7',
+        categories: SAMPLE_CATEGORIES,
+      },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Widget' } });
+    await fireEvent.change(getByLabelText(/Accounting Category/), { target: { value: '42' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByText('A valid number is required.')).toHaveClass('field-error');
+    expect(await findByText('Ensure this value is greater than or equal to 0.')).toHaveClass('field-error');
+  });
+
+  it('renders an operation error in the form footer after the buttons', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Estimate is not editable.',
+      data: { detail: 'Estimate is not editable.' },
+    });
+    const { getByLabelText, getByRole, findByRole } = render(LineItemModal, {
+      props: {
+        open: true, mode: 'create', apiBase: '/api/estimates/7',
+        categories: SAMPLE_CATEGORIES,
+      },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Widget' } });
+    await fireEvent.change(getByLabelText(/Accounting Category/), { target: { value: '42' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByRole('alert')).toHaveTextContent('Estimate is not editable.');
   });
 
   it('closes via onClose', async () => {

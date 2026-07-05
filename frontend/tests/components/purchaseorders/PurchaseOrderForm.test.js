@@ -65,4 +65,17 @@ describe('PurchaseOrderForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('renders the field-error bag under inputs and formError in the footer', () => {
+    const { getByText } = render(PurchaseOrderForm, {
+      props: {
+        businesses: BUSINESSES, onSubmit: vi.fn(), onCancel: vi.fn(),
+        errors: { contact: ['This field may not be null.'] },
+        formError: 'Vendor and contact do not match.',
+      },
+    });
+    expect(getByText('This field may not be null.')).toBeInTheDocument();
+    const footer = getByText('Vendor and contact do not match.');
+    expect(footer.closest('[role="alert"]')).not.toBeNull();
+  });
 });

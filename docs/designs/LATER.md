@@ -237,9 +237,8 @@ Billing mechanics and money-record lifecycle.
   bill only the delta since invoice #1, or refuse the atom as already-claimed? The atom-claim
   model (`InvoiceLineItemSource`) tracks which invoice claimed an atom, but a Task whose
   actuals *grew* after being billed has no defined delta-billing behavior. Decide and enforce
-  the rule (likely: bill the unbilled delta, tracked per source).
-  _Done when:_ generating a later invoice for a Task already partially billed produces the
-  correct (non-duplicated) amount, with a test covering the grow-after-bill case.
+  the rule (likely: disallow billing anything on an incomplete Task).
+  _Done when:_ there is no conflict or confusion between items billed on an earlier vs on a later invoice.
 
 - **Invoice revisions — back the "Revise (coming soon)" placeholder.** — _added 2026-06-04_
   `InvoiceDetailPage.svelte` shows a **disabled** "Revise (coming soon)" button on sent

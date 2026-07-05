@@ -1,5 +1,7 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
+  import FormMessage from '../FormMessage.svelte';
 
   const {
     job,
@@ -56,6 +58,7 @@
   let holdReasonInput = $state('');
   let holdReasonBusy = $state(false);
   let pendingHoldStatus = $state('');
+  let holdError = $state('');
 
   async function handleStatusChange(e) {
     const newStatus = e.target.value;
@@ -63,6 +66,7 @@
     if (newStatus === 'on_hold') {
       // Reset & show inline hold-reason field rather than committing immediately
       holdReasonInput = '';
+      holdError = '';
       pendingHoldStatus = newStatus;
       showHoldReason = true;
       // Reset the select back to current status — the real change happens on confirm
@@ -74,23 +78,24 @@
       if (onStatusChange) onStatusChange();
     } catch (err) {
       e.target.value = job.status;
-      alert(err.message || 'Status change failed');
+      showError(errorMessage(err, 'Status change failed.'));
     }
   }
 
   async function confirmHold() {
     if (!holdReasonInput.trim()) {
-      alert('Please enter a reason for putting this job on hold.');
+      holdError = 'Please enter a reason for putting this job on hold.';
       return;
     }
     holdReasonBusy = true;
+    holdError = '';
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: 'on_hold', hold_reason: holdReasonInput.trim() });
       showHoldReason = false;
       holdReasonInput = '';
       if (onStatusChange) onStatusChange();
     } catch (e) {
-      alert(e.message || 'Failed to put job on hold.');
+      holdError = errorMessage(e, 'Failed to put job on hold.');
     } finally {
       holdReasonBusy = false;
     }
@@ -100,6 +105,7 @@
     showHoldReason = false;
     holdReasonInput = '';
     pendingHoldStatus = '';
+    holdError = '';
   }
 
   let releasingToFloor = $state(false);
@@ -111,7 +117,7 @@
       await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
       if (onStatusChange) onStatusChange();
     } catch (e) {
-      alert(e.message || 'Failed to release to floor.');
+      showError(errorMessage(e, 'Failed to release to floor.'));
     } finally {
       releasingToFloor = false;
     }
@@ -179,6 +185,7 @@
           {holdReasonBusy ? 'Saving…' : 'Confirm Hold'}
         </button>
         <button type="button" onclick={cancelHold} disabled={holdReasonBusy}>Cancel</button>
+        <FormMessage error={holdError} />
       </div>
     {/if}
   </div>

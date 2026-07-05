@@ -1,15 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { post: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 vi.mock('@/stores/blepActivity.js', () => ({ notifyBlepChanged: vi.fn() }));
 
+import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import TaskActions from '@/components/tasks/TaskActions.svelte';
 
 beforeEach(() => {
   api.post.mockReset();
   api.post.mockResolvedValue({});
+  clearMessage();
 });
 
 describe('TaskActions', () => {
@@ -56,5 +63,21 @@ describe('TaskActions', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel/', {});
     confirmSpy.mockRestore();
+  });
+
+  it('raises the global error overlay when an action fails', async () => {
+    api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      status: 400,
+      data: { detail: 'Task is already complete.' },
+    }));
+    const { getByRole, container } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 } },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Start Work' }));
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({ kind: 'error', text: 'Task is already complete.' });
+    });
+    // No component-local error line anymore.
+    expect(container.querySelector('.error')).toBeNull();
   });
 });

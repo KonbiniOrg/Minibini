@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) => (e && e.message) || fallback || 'Request failed.',
+}));
 
 import { api } from '@/lib/api.js';
 import FeeModal from '@/components/FeeModal.svelte';
@@ -69,15 +72,48 @@ describe('FeeModal — create', () => {
     expect(select.options[2].text).toContain('MISC');
   });
 
-  it('surfaces a save error when the API call fails', async () => {
-    // api.js sets err.message = json.detail when present; mock the same shape.
-    api.post.mockRejectedValue({ message: 'Invalid fee.' });
-    const { getByLabelText, getByRole, findByText } = render(FeeModal, {
+  it('surfaces an operation error in the form footer when the API call fails', async () => {
+    // api.js sets err.message = json.detail and err.data to the body; mock the same shape.
+    api.post.mockRejectedValue({ status: 400, message: 'Invalid fee.', data: { detail: 'Invalid fee.' } });
+    const { getByLabelText, getByRole, findByRole } = render(FeeModal, {
       props: { open: true, mode: 'create', jobId: 7, categories: [] },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Bad fee' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
-    expect(await findByText(/Invalid fee\./)).toBeInTheDocument();
+    expect(await findByRole('alert')).toHaveTextContent('Invalid fee.');
+  });
+
+  it('renders API field errors under the matching inputs', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { unit_rate: ['A valid number is required.'], description: ['This field may not be blank.'] },
+    });
+    const { getByLabelText, getByRole, findByText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Fee' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByText('A valid number is required.')).toHaveClass('field-error');
+    expect(await findByText('This field may not be blank.')).toHaveClass('field-error');
+  });
+
+  it('clears a stale field error when the user edits a field', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { unit_rate: ['A valid number is required.'] },
+    });
+    const { getByLabelText, getByRole, findByText, queryByText } = render(FeeModal, {
+      props: { open: true, mode: 'create', jobId: 7, categories: [] },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Fee' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('A valid number is required.')).toBeInTheDocument();
+
+    await fireEvent.input(getByLabelText(/Unit Rate/), { target: { value: '25' } });
+    expect(queryByText('A valid number is required.')).toBeNull();
   });
 
   it('defaults quantity to 1 in create mode', () => {

@@ -1,5 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import BusinessForm from '../../components/contacts/BusinessForm.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
@@ -10,7 +12,8 @@
   let business = $state(null);
   let paymentTerms = $state([]);
   let loading = $state(true);
-  let errors = $state(null);
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   async function load() {
     loading = true;
@@ -21,14 +24,16 @@
         business = await api.get(`/api/businesses/${params.id}/`);
       }
     } catch (e) {
-      errors = e.message;
+      // Load failure has no form to land on — the global overlay is the venue.
+      showError(errorMessage(e, 'Could not load.'));
     } finally {
       loading = false;
     }
   }
 
   async function handleSubmit(data) {
-    errors = null;
+    formError = '';
+    fieldErrs = {};
     try {
       if (isEdit) {
         await api.patch(`/api/businesses/${params.id}/`, data);
@@ -36,7 +41,9 @@
       } else {
         const contactData = data._contact;
         delete data._contact;
-        // Create the contact first
+        // Create the contact first. A field error from this call carries the
+        // contact's payload keys (first_name, email, ...), which land on the
+        // nested Default Contact inputs.
         const contact = await api.post('/api/contacts/', contactData);
         // Then create the business with default_contact_id
         data.default_contact_id = contact.contact_id;
@@ -44,7 +51,13 @@
         push(`/businesses/${created.business_id}`);
       }
     } catch (e) {
-      errors = errorMessage(e);
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        formError = t.message;
+        fieldErrs = t.fields;
+      }
     }
   }
 
@@ -72,7 +85,8 @@
   <BusinessForm
     {business}
     {paymentTerms}
-    {errors}
+    errors={fieldErrs}
+    {formError}
     onSubmit={handleSubmit}
     onCancel={handleCancel}
   />
