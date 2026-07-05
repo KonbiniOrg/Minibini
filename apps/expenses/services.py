@@ -14,17 +14,56 @@ class ExpenseService:
     def submit(*, entered_by, payment_method, amount, purchased_on, accounting_category,
                description='', payment_account_id='', reference_number='',
                purchased_by=None, new_material=None, job=None,
-               stock_pli=None, stock_qty=None):
-        """Create an expense in one of two modes:
+               stock_pli=None, stock_qty=None, material_id=None, attach_qty=None):
+        """Create an expense in one of three modes:
         - **cost**: optionally creates ONE consumable material from `new_material`
           (freeform or non-inventoried PLI); `amount` is the job cost.
         - **stock receipt**: an inventoried PLI (passed directly as
           `stock_pli`/`stock_qty`, or detected from an inventoried `new_material`)
           bumps QOH; `amount` is NOT job-costed (cost flows at consumption).
-        Expenses never link to an existing material."""
+        - **attach** (`material_id`): attach to a PENDING, non-customer material —
+          the cost AND the stock. Prices the target (establishing a provisional
+          one), stamps EXPENSE provenance, and receives `attach_qty` (default: the
+          material's quantity) into its lot. attach == receipt. Mutually exclusive
+          with `new_material`; `amount` flows through the material (as in the
+          new_material cost mode), not double-counted as job cost."""
         from apps.inventory.services import InventoryService
         material = None
+        if material_id and new_material:
+            raise ValidationError(
+                'Attach to an existing material or create a new one, not both.')
         with transaction.atomic():
+            if material_id:
+                from apps.inventory.models import Material
+                from apps.inventory.services import MaterialService
+                material = Material.objects.get(pk=material_id)
+                if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+                    raise ValidationError('Can only attach to a pending material.')
+                if material.is_customer_supplied:
+                    raise ValidationError(
+                        'A customer-supplied material has no purchase to attach.')
+                if job is None:
+                    job = material.job
+                qty = attach_qty if attach_qty is not None else material.quantity
+                if qty <= Decimal('0.00'):
+                    raise ValidationError({'attach_qty': ['Quantity must be positive.']})
+                unit_cost = (amount / qty).quantize(Decimal('0.01'))
+                if material.inventory_item_id is None:
+                    # Provisional target: one move prices AND backs it.
+                    MaterialService.establish(
+                        material, unit_cost=unit_cost,
+                        cost_source=Material.COST_SOURCE_EXPENSE)
+                else:
+                    MaterialService.update_pricing(material, unit_cost=unit_cost)
+                    material.cost_source = Material.COST_SOURCE_EXPENSE
+                    material.save(update_fields=['cost_source'])
+                material.refresh_from_db()
+                # attach == receipt: bump the lot QOH (even atop a partial PO
+                # receipt — don't block). `stock_qty` records the received qty so
+                # reject can back it off (stock bookkeeping, no new field).
+                InventoryService.receive_ad_hoc_purchase(material, qty=qty)
+                stock_qty = qty
+
             if new_material:
                 from apps.jobs.models import Job
                 from apps.inventory.models import InventoryItem, Material
@@ -241,17 +280,33 @@ class ExpenseService:
             raise ValidationError(
                 'Cannot reject expense with consumed materials; adjust inventory manually.'
             )
-        # Rule 1: reject deletes the expense-created material, so it must not
-        # be claimed by a document. Same shape as the consumed-guard above —
-        # block the upstream event rather than invent deletion semantics.
-        from apps.estimates.claims import atom_is_claimed
-        if mat and atom_is_claimed('material', mat.pk):
-            raise ValidationError(
-                'Cannot reject: this expense’s material backs an estimate or '
-                'change-order line. Remove the line first.'
-            )
+        # Attach mode records the received qty in stock_qty (with material set and
+        # no stock_pli). Its material predates the expense, so reject must NOT
+        # delete it — the faithful inverse is to back off the stock receipt and
+        # clear the EXPENSE provenance the attach stamped, leaving the material.
+        is_attach = bool(mat and expense.stock_qty and not expense.stock_pli_id)
+        # Rule 1: for a new_material expense, reject DELETES the created material,
+        # so it must not be claimed by a document. Attach leaves the material in
+        # place, so a claim there is no obstacle — only guard the delete path.
+        if mat and not is_attach:
+            from apps.estimates.claims import atom_is_claimed
+            if atom_is_claimed('material', mat.pk):
+                raise ValidationError(
+                    'Cannot reject: this expense’s material backs an estimate or '
+                    'change-order line. Remove the line first.'
+                )
         with transaction.atomic():
-            if mat:
+            if is_attach:
+                if mat.inventory_item_id is not None:
+                    InventoryService.receive_stock(
+                        mat.inventory_item, -expense.stock_qty,
+                        reason=f'Attach receipt void on reject (expense {expense.pk})')
+                # Clear provenance: the cost is no longer document-confirmed. We
+                # can't restore a prior non-null source (not stored), so drop to
+                # None — the honest "unconfirmed" state.
+                mat.cost_source = None
+                mat.save(update_fields=['cost_source'])
+            elif mat:
                 # Release the earmark and delete the material. The cost-material
                 # path earmarks but never bumps QOH (it's a job cost, not a stock
                 # receipt), so there is no ad-hoc receipt to reverse here — stock

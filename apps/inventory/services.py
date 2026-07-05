@@ -292,18 +292,21 @@ class InventoryService:
         )
 
     @staticmethod
-    def receive_ad_hoc_purchase(material):
+    def receive_ad_hoc_purchase(material, qty=None):
         """Increase QOH for an ad-hoc (job-level, no PO) purchase material.
-        QOH-only — earmark was already created by MaterialService.create_on_job."""
+        QOH-only — earmark was already created by MaterialService.create_on_job.
+        `qty` defaults to the material's full quantity; an attach receipt may
+        top up only part of it (e.g. the remainder after a partial PO receipt)."""
         from django.db.models import F
         pli = material.inventory_item
         if not pli:
             return
-        pli.qty_on_hand = F('qty_on_hand') + material.quantity
+        qty = qty if qty is not None else material.quantity
+        pli.qty_on_hand = F('qty_on_hand') + qty
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
         InventoryService._record_qoh_history(
-            pli, material.quantity, action='Ad-hoc receive',
+            pli, qty, action='Ad-hoc receive',
             reason=f'Ad-hoc receive on job {material.job.job_number}',
             job=material.job,
         )

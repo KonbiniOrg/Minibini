@@ -81,12 +81,16 @@ class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
         data = serializer.validated_data.copy()
         purchased_by = data.pop('purchased_by', None)
         new_material = data.pop('new_material', None)
-        # Expenses no longer link an existing material; ignore any inbound id.
+        material_id = data.pop('material_id', None)
+        attach_qty = data.pop('attach_qty', None)
+        # The `material` FK is not client-set; attach uses `material_id`.
         data.pop('material', None)
         expense = ExpenseService.submit(
             entered_by=self.request.user,
             purchased_by=purchased_by,
             new_material=new_material,
+            material_id=material_id,
+            attach_qty=attach_qty,
             **data,
         )
         serializer.instance = expense

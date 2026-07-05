@@ -59,6 +59,10 @@ class Expense(QBOSyncable):
     # Stock-receipt mode: an inventoried-PLI purchase. QOH goes up by stock_qty;
     # the amount is NOT job-costed (cost flows at consumption). Mutually exclusive
     # with `material` (the cost-expense mode).
+    # `stock_qty` also does double duty in ATTACH mode (material set, stock_pli
+    # null): it records how much the attach received into the material's lot, so
+    # reject can back exactly that off. stock_pli + material stays mutually
+    # exclusive (see clean); stock_qty + material does not.
     stock_pli = models.ForeignKey(
         'inventory.InventoryItem', on_delete=models.SET_NULL,
         null=True, blank=True,
