@@ -80,6 +80,21 @@ class EstablishTests(EstablishBase):
         self.assertIsNotNone(m.inventory_item_id)
         self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
 
+    def test_update_fields_atomic_failed_patch_rolls_back_establish(self):
+        """A PATCH mixing a pricing write (which establishes) with a field the
+        now-catalog-backed material refuses must roll back the mint/earmark —
+        no half-applied establish behind an HTTP 400."""
+        m = self._provisional()
+        with self.assertRaises(ValidationError):
+            MaterialService.update_fields(
+                m, unit_cost=Decimal('7.00'), description='renamed')
+        m.refresh_from_db()
+        self.assertIsNone(m.inventory_item_id)
+        self.assertIsNone(m.cost_source)
+        self.assertFalse(
+            InventoryItem.objects.filter(code=f'LOT-{m.pk}').exists())
+        self.assertFalse(Earmark.objects.filter(job=self.job).exists())
+
     def test_no_earmark_on_preapproval_job(self):
         # approved→draft is a blocked Job transition, so use a fresh DRAFT job.
         draft_job = Job.objects.create(

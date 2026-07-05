@@ -653,6 +653,7 @@ class MaterialService:
           invoiced freeze on any sell_price change.
         """
         from django.core.exceptions import ValidationError
+        from django.db import transaction
         from apps.jobs.services import _assert_job_not_on_hold
         if {'quantity', 'released_qty'} & set(fields):
             raise ValidationError(
@@ -660,44 +661,48 @@ class MaterialService:
         # Every mutation path below (establish, PLI pricing, metadata) edits the
         # material, so the on-hold guard applies uniformly up front.
         _assert_job_not_on_hold(material.job, 'edit this material')
-        if material.inventory_item_id is None:
-            inv = fields.pop('inventory_item', None)
-            uc = fields.pop('unit_cost', None)
-            sp = fields.pop('sell_price', None)
-            if inv is not None or (uc and uc != Decimal('0.00')):
-                MaterialService.establish(
-                    material, inventory_item=inv, unit_cost=uc, sell_price=sp)
+        # One PATCH = one transaction: a raise after the establish route (e.g.
+        # the descriptive-fields refusal below) must roll the mint/earmark back,
+        # never leave a half-applied establish behind an error response.
+        with transaction.atomic():
+            if material.inventory_item_id is None:
+                inv = fields.pop('inventory_item', None)
+                uc = fields.pop('unit_cost', None)
+                sp = fields.pop('sell_price', None)
+                if inv is not None or (uc and uc != Decimal('0.00')):
+                    MaterialService.establish(
+                        material, inventory_item=inv, unit_cost=uc, sell_price=sp)
+                    material.refresh_from_db()
+                    if not fields:
+                        return material
+                elif sp is not None:
+                    fields['sell_price'] = sp  # sell-only edit stays provisional
+            if material.inventory_item_id is not None:
+                # PLI-backed rows take description/units/AC from the inventory
+                # item and are locked (see materials doc: unit math depends on
+                # the pairing); only the pricing carve-out is editable.
+                non_pricing = set(fields) - {'unit_cost', 'sell_price'}
+                if non_pricing:
+                    raise ValidationError(
+                        'A catalog-backed material takes its descriptive fields '
+                        'from the inventory item, so they are immutable here; '
+                        'only unit cost / sell price are editable. Rejected: '
+                        + ', '.join(sorted(non_pricing)))
+            if material.inventory_item_id is not None and (
+                    'unit_cost' in fields or 'sell_price' in fields):
+                MaterialService.update_pricing(
+                    material,
+                    unit_cost=fields.get('unit_cost'),
+                    sell_price=fields.get('sell_price'),
+                    propagate_to_pli=propagate_to_pli,
+                )
                 material.refresh_from_db()
-                if not fields:
-                    return material
-            elif sp is not None:
-                fields['sell_price'] = sp  # sell-only edit stays provisional
-        if material.inventory_item_id is not None:
-            # PLI-backed rows take description/units/AC from the inventory
-            # item and are locked (see materials doc: unit math depends on
-            # the pairing); only the pricing carve-out is editable.
-            non_pricing = set(fields) - {'unit_cost', 'sell_price'}
-            if non_pricing:
-                raise ValidationError(
-                    'A catalog-backed material takes its descriptive fields '
-                    'from the inventory item, so they are immutable here; '
-                    'only unit cost / sell price are editable. Rejected: '
-                    + ', '.join(sorted(non_pricing)))
-        if material.inventory_item_id is not None and (
-                'unit_cost' in fields or 'sell_price' in fields):
-            MaterialService.update_pricing(
-                material,
-                unit_cost=fields.get('unit_cost'),
-                sell_price=fields.get('sell_price'),
-                propagate_to_pli=propagate_to_pli,
-            )
-            material.refresh_from_db()
-            return material
-        if 'sell_price' in fields and fields['sell_price'] != material.sell_price:
-            MaterialService._assert_not_invoiced(material)
-        for k, v in fields.items():
-            setattr(material, k, v)
-        material.save()
+                return material
+            if 'sell_price' in fields and fields['sell_price'] != material.sell_price:
+                MaterialService._assert_not_invoiced(material)
+            for k, v in fields.items():
+                setattr(material, k, v)
+            material.save()
         return material
 
     @staticmethod
