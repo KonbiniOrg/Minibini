@@ -80,10 +80,13 @@ class PurchaseOrderContactBusinessTest(TestCase):
 
         self.assertIn('does not have a Business associated', str(cm.exception))
 
-    def test_po_business_is_required(self):
-        """PO cannot be created without a Business"""
-        with self.assertRaises(Exception):
-            PurchaseOrder.objects.create(po_number="PO005")
+    def test_po_can_be_created_without_business(self):
+        """PO can be created without a Business — a draft PO exists before the
+        vendor is known (see tests.test_po_vendorless_draft for the issue-time
+        gate that requires a Business before the PO can move to Issued)."""
+        po = PurchaseOrder.objects.create(po_number="PO005")
+        self.assertIsNone(po.business_id)
+        self.assertEqual(po.status, PurchaseOrder.STATUS_DRAFT)
 
 
 class BillContactBusinessTest(TestCase):

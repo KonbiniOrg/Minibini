@@ -44,6 +44,9 @@ class PurchaseOrderService:
             po = PurchaseOrder.objects.get(pk=pk)
         except PurchaseOrder.DoesNotExist:
             raise NotFoundError(f'PurchaseOrder {pk} not found')
+        if new_status == PurchaseOrder.STATUS_ISSUED and po.business_id is None:
+            raise ValidationError(
+                {'business': ['A purchase order needs a vendor before it can be issued.']})
         po.status = new_status
         po.full_clean()
         po.save()
@@ -683,6 +686,9 @@ class PurchaseOrderEmailService:
                 raise ValidationError(
                     'Cannot issue a PO with no line items.'
                 )
+            if po.business_id is None:
+                raise ValidationError(
+                    {'business': ['A purchase order needs a vendor before it can be issued.']})
             po.status = PurchaseOrder.STATUS_ISSUED
             po.full_clean()
             po.save()

@@ -23,8 +23,12 @@ class PurchaseOrder(models.Model):
     ]
 
     po_id = models.AutoField(primary_key=True)
-    # Business is required; Contact is optional but if provided, must have a Business
-    business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
+    # Business is optional while draft (a PO can be created before a vendor is
+    # chosen, e.g. Order-from-material); PurchaseOrderService.update_status
+    # requires it before the PO can be issued. Contact is optional but if
+    # provided, must have a Business.
+    business = models.ForeignKey(
+        'contacts.Business', on_delete=models.PROTECT, null=True, blank=True)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
     po_number = models.CharField(max_length=50, unique=True)
     status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default=STATUS_DRAFT)
