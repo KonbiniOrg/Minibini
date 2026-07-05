@@ -1,6 +1,7 @@
 """Gap 4b: MaterialService.consume sets consumption_state=consumed."""
 from decimal import Decimal
 from django.test import TestCase
+from django.core.exceptions import ValidationError
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory
 from apps.inventory.models import Material, InventoryItem
@@ -19,12 +20,39 @@ class ConsumeMaterialUniformityTest(TestCase):
             first_name='Con', last_name='Sume',
             email='consume@test.com',
         )
-        self.job = Job.objects.create(job_number='JOB-CU-1', contact=self.contact)
+        self.job = Job.objects.create(
+            job_number='JOB-CU-1', contact=self.contact,
+            status=Job.STATUS_IN_PROGRESS,
+        )
         self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
+        self.started_task = Task.objects.create(
+            job=self.job, name='started', rate_scheme=self.scheme,
+            status=Task.STATUS_IN_PROGRESS,
+        )
         self.pli = InventoryItem.objects.create(
             code='CU-I', accounting_category=self.cat,
             qty_on_hand=Decimal('20'),
         )
+
+    def test_consume_provisional_raises(self):
+        """Spec §consume gating: a null-lot material must refuse, never flip."""
+        m = MaterialService.create_on_job(
+            job=self.job, description='mystery', quantity=Decimal('1'),
+            accounting_category=self.cat, units='ea')
+        self.assertIsNone(m.inventory_item_id)
+        with self.assertRaises(ValidationError):
+            MaterialService.consume(m)
+        m.refresh_from_db()
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+
+    def test_late_add_sweep_leaves_provisional_pending(self):
+        """consume_if_task_started must not raise on provisional — in-flight
+        pricing is a legitimate pending state (mirrors the understock rule)."""
+        m = MaterialService.create_on_job(
+            job=self.job, task=self.started_task, description='mystery',
+            quantity=Decimal('1'), accounting_category=self.cat, units='ea')
+        m.refresh_from_db()
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_consume_sets_state_consumed_on_task_attached(self):
         """MaterialService.consume must set consumption_state=consumed."""

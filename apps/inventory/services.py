@@ -745,7 +745,9 @@ class MaterialService:
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             return material
         pli = material.inventory_item
-        if pli is not None and material.quantity > Decimal('0.00'):
+        if pli is None:
+            return material  # provisional: stays pending, never silently consumed
+        if material.quantity > Decimal('0.00'):
             pli.refresh_from_db()
             if pli.qty_on_hand < material.quantity:
                 return material
@@ -759,6 +761,11 @@ class MaterialService:
             raise ValidationError(
                 f'consume requires pending state; got {material.consumption_state}'
             )
+        if material.inventory_item_id is None:
+            raise ValidationError(
+                'This material is provisional — set its pricing and receive it '
+                'before work can consume it.'
+            )
         qty = material.quantity
         with transaction.atomic():
             pli = material.inventory_item
@@ -769,7 +776,9 @@ class MaterialService:
                         f'Cannot consume {qty} {pli.units} of {pli.code}: '
                         f'only {pli.qty_on_hand} on hand. To start now, reduce '
                         f'this material to {pli.qty_on_hand} and add a second '
-                        f'task/material for the remainder while it is procured.'
+                        f'task/material for the remainder while it is procured. '
+                        f'If it is on order or coming from the customer, wait '
+                        f'for arrival.'
                     )
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') - qty

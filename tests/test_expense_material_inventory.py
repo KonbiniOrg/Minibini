@@ -220,8 +220,14 @@ class ExpenseRejectStockReceiptTest(TestCase):
         exp.refresh_from_db()
         self.assertEqual(exp.status, Expense.STATUS_REJECTED)
 
-    def test_reject_forbidden_when_freeform_material_consumed(self):
+    def test_reject_forbidden_when_material_consumed(self):
+        # The reject guard keys on the material's consumption_state. consume()
+        # now refuses provisional materials, and an expense-bound material stays
+        # provisional until the expense-establishment flow lands, so a consumed
+        # expense material can't arise through the service yet — construct the
+        # consumed state directly to exercise the guard.
         from django.core.exceptions import ValidationError
+        from apps.inventory.models import Material
         exp = ExpenseService.submit(
             entered_by=self.user, purchased_by=self.user,
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
@@ -231,7 +237,8 @@ class ExpenseRejectStockReceiptTest(TestCase):
                 'job_id': self.job.pk, 'description': 'freeform',
                 'quantity': Decimal('1'), 'price': Decimal('10')},
         )
-        MaterialService.consume(exp.material)  # freeform: no QOH effect
+        exp.material.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        exp.material.save(update_fields=['consumption_state'])
         with self.assertRaises(ValidationError):
             ExpenseService.reject(expense=exp, actor=self.user)
 

@@ -161,8 +161,16 @@ class MaterialAssignTaskApiTest(APITestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_reject_consumed_material(self):
-        m = self._make(task=None)
         from apps.inventory.services import MaterialService
+        # Established + stocked so it can be consumed (consume() refuses
+        # provisional): a nonzero unit_cost mints a lot, then bump its QOH.
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('1'), unit_cost=Decimal('5'),
+            accounting_category=self.cat,
+        )
+        m.inventory_item.qty_on_hand = m.quantity
+        m.inventory_item.save()
         MaterialService.consume(m)
         r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.task_a.pk}, format='json')
         self.assertEqual(r.status_code, 400)
@@ -248,15 +256,17 @@ class MaterialInvoicedFreezeTest(APITestCase):
         MaterialService.consume(m)
         return m
 
-    def _make_consumed_freeform_material(self):
-        """Freeform (no inventory_item) consumed material."""
+    def _make_freeform_material(self):
+        """Provisional (no inventory_item) material. Stays pending — consume()
+        now refuses provisional materials, and the sell-price freeze applies to
+        any invoiced material regardless of consumption state, so this still
+        exercises the freeform PATCH branch."""
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='freeform mat',
             quantity=Decimal('1'), inventory_item=None,
             accounting_category=self.cat,
         )
-        MaterialService.consume(m)
         return m
 
     def _invoice_material(self, material):
@@ -290,7 +300,7 @@ class MaterialInvoicedFreezeTest(APITestCase):
             MaterialService.unconsume(mat)
 
     def test_patch_sell_price_blocked_on_invoiced_freeform_material(self):
-        mat = self._make_consumed_freeform_material()
+        mat = self._make_freeform_material()
         self._invoice_material(mat)
         resp = self.client.patch(
             f'/api/materials/{mat.pk}/', {'sell_price': '77.00'},

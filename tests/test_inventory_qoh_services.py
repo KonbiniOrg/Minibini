@@ -120,8 +120,10 @@ class ConsumeMaterialTest(TestCase):
     # non-catalog lot is NOT skipped — only a None-item material is, covered by
     # test_skips_no_pli below.)
 
-    def test_skips_no_pli(self):
-        """Materials without a PLI are silently skipped."""
+    def test_provisional_material_refuses(self):
+        """A provisional (no-PLI) material now REFUSES consumption — it must be
+        priced and received before work can consume it."""
+        from django.core.exceptions import ValidationError
         material = Material(
             job=self.job,
             task=self.task,
@@ -130,8 +132,11 @@ class ConsumeMaterialTest(TestCase):
             accounting_category=self.category)
         material.save()
 
-        # Should not raise
-        MaterialService.consume(material)
+        with self.assertRaises(ValidationError):
+            MaterialService.consume(material)
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""

@@ -191,10 +191,11 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         TaskLifecycleService.start_work(self.task.pk, self.user)
         mock_consume.assert_called_once_with(mat)
 
-    def test_task_start_consumes_no_item_material_marker(self):
-        """Starting a task flips a no-inventory-item material to consumed
-        (marker-only). No QOH or earmark side effects — the only no-op path
-        under universal tracking.
+    def test_task_start_blocks_on_provisional_material(self):
+        """Starting a task whose material is provisional (no inventory_item)
+        now REFUSES — the promote-time consumption sweep raises rather than
+        silently flipping a not-yet-priced material to consumed. The atomic
+        start_work rolls back, leaving task and material pending.
         """
         from decimal import Decimal
         from apps.core.models import AccountingCategory
@@ -211,10 +212,13 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         )
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
-        TaskLifecycleService.start_work(self.task.pk, self.user)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(self.task.pk, self.user)
 
         mat.refresh_from_db()
-        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+        self.task.refresh_from_db()
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
         self.assertFalse(
             Earmark.objects.filter(job=self.job).exists()
         )

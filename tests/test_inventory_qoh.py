@@ -121,8 +121,11 @@ class ConsumeMaterialTest(TestCase):
             Earmark.objects.filter(inventory_item=self.plywood, job=self.job).count(), 0
         )
 
-    def test_consume_no_inventory_item_is_noop(self):
-        """Consuming a material without inventory_item does nothing."""
+    def test_consume_provisional_material_refuses(self):
+        """Consuming a provisional (no inventory_item) material now REFUSES
+        rather than silently flipping — pricing must be set and the lot received
+        first. No QOH side effect, state stays pending."""
+        from django.core.exceptions import ValidationError
         material = Material.objects.create(
             job=self.job,
             task=self.task,
@@ -132,7 +135,11 @@ class ConsumeMaterialTest(TestCase):
             sell_price=Decimal('20.00'),
             accounting_category=self.category,
         )
-        MaterialService.consume(material)
+        with self.assertRaises(ValidationError):
+            MaterialService.consume(material)
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.plywood.refresh_from_db()
         self.assertEqual(self.plywood.qty_on_hand, Decimal('20.00'))
 
