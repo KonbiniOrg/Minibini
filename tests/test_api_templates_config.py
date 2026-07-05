@@ -80,6 +80,61 @@ class ServiceItemAPITest(BaseTestCase):
         self.assertIn('CNC Routing', names)
         self.assertNotIn('Hand Sanding', names)
 
+    def _atom_client(self, username, *codenames):
+        from django.contrib.auth.models import Permission
+        u = User.objects.create_user(username=username, password='x')
+        for c in codenames:
+            u.user_permissions.add(Permission.objects.get(codename=c))
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=u.pk))
+        return client
+
+    def _make_item(self):
+        from apps.estimates.models import ServiceItem
+        from apps.jobs.models import RateScheme
+        return ServiceItem.objects.create(
+            template_name='Perm Target', rate_scheme=RateScheme.objects.get(pk=1)
+        )
+
+    def test_financials_atom_can_create_update_delete(self):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme.objects.get(pk=1)
+        client = self._atom_client('fin_user', 'can_manage_financials')
+        resp = client.post('/api/service-items/', {
+            'template_name': 'Fin Created', 'description': '',
+            'rate_scheme': scheme.pk,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+        item = self._make_item()
+        resp = client.patch(f'/api/service-items/{item.pk}/',
+                            {'description': 'x'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        resp = client.delete(f'/api/service-items/{item.pk}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_jobs_atom_can_update_and_delete(self):
+        # Was config-only; the catalog now belongs to plan-builders too.
+        client = self._atom_client('jobs_user', 'can_manage_jobs')
+        item = self._make_item()
+        resp = client.patch(f'/api/service-items/{item.pk}/',
+                            {'description': 'y'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        resp = client.delete(f'/api/service-items/{item.pk}/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_no_atom_user_reads_but_cannot_write(self):
+        client = self._atom_client('plain_user')
+        resp = client.get('/api/service-items/')
+        self.assertEqual(resp.status_code, 200)
+        resp = client.post('/api/service-items/', {
+            'template_name': 'Nope',
+        }, format='json')
+        self.assertEqual(resp.status_code, 403)
+        item = self._make_item()
+        resp = client.patch(f'/api/service-items/{item.pk}/',
+                            {'description': 'z'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
 
 class ConfigurationAPITest(BaseTestCase):
 
