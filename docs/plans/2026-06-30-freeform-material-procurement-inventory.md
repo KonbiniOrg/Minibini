@@ -1,26 +1,33 @@
 # Freeform materials ride the inventory rails (procure + track arrival)
 
-> **Status: design spec — mostly pending; the `is_material` marker slice already SHIPPED.**
-> The **proto-Material marker** portion of this plan (the `is_material` field + a bare marked
-> estimate line crystallizing into a *provisional* Material at acceptance + the
-> `default_material_accounting_category` config) was built in the 2026-07-03 unification batch on
-> `feature/unification` (see §"proto-Material marker" below, now marked SHIPPED). **Everything else
-> here is still pending** and is the substance of this plan's own future batch: transient-lot minting
-> at establishment, the reverse-markup provisional cost, the three fulfillment paths (Order /
-> Attach-Expense / Mark-on-hand), the `consume()`-refusal for provisional (null-lot) materials, and the
-> UI. Design-level, not yet a TDD task plan. Will get its own branch to implement.
-> Decisions are tagged **[SETTLED]** (agreed in discussion), **[DEFAULT]** (chosen
-> here; flag to change), **[OPEN]** (needs a decision before the task plan).
-> Companion reference: `docs/designs/materials-inventory-and-purchasing.md` (the
-> transient-lot design this finally implements).
+> **Status: design spec — settled 2026-07-04; ready for the implementation task plan.**
+> The **proto-Material marker** slice (the `is_material` field + bare marked estimate line
+> crystallizing into a *provisional* Material at acceptance + the
+> `default_material_accounting_category` config) SHIPPED in the 2026-07-03 unification batch.
+> Everything else here is this plan's own future batch: transient-lot minting at establishment,
+> the reverse-markup provisional cost, the **four** fulfillment paths (Order / Attach-Expense /
+> Mark-on-hand / Customer-supplied), the `consume()`-refusal for provisional (null-lot) materials,
+> **dropping `is_catalog`**, and the UI. Will get its own branch to implement.
+> Decisions are tagged **[SETTLED]** (agreed in discussion), **[DEFAULT]** (chosen here; flag to
+> change), **[OPEN]** (needs a decision before the task plan).
+> Companion reference: `docs/designs/materials-inventory-and-purchasing.md`.
 >
 > **Refined 2026-07-02 (mechanics pinned).** A Material is either **provisional** (no lot,
 > pricing pending) or **established** (lot-backed); **establishment = pricing**, and the lot is
 > minted/attached at that moment. There is **no permanently-unbacked Material** — the on-hand
-> "drops" case is explicitly **parked** (see §Parked). Estimate integration is pinned too: the
-> send-gate is on **sell price** (not cost), a material line may be sent before its cost is known
-> (crystallizing to a provisional-cost Material via reverse-markup), and a "this line is a
-> material" marker forks material-vs-fee at acceptance. Those sections below carry the detail.
+> "drops" case is explicitly **parked** (see §Parked). The estimate send-gate is on **sell price**
+> (not cost); a material line may be sent before its cost is known (crystallizing to a
+> provisional-cost Material via reverse-markup).
+>
+> **Refined 2026-07-04 (session with RM).** Aligned with the shipped **three-state Material
+> lifecycle** (`pending → consumed | released`; release is the terminal tombstone — see the
+> materials design doc §Consumption state machine). New decisions, all [SETTLED] below:
+> **drop `is_catalog`** (manual `is_active` retirement + search ranking replace auto-hiding);
+> Order = append-to-draft-or-create, actions live on the **task view page only** (pillar is
+> passive); expense-attach may **establish** a provisional material; consume stays
+> **all-or-nothing**; **customer-supplied materials** are pulled into this round; one
+> **`cost_source` provenance enum**; plus a consumed **visual flag**, a settings UI for the
+> default material AC, and the display-state vocabulary (final label: **On Hand**).
 
 ## The problem
 
@@ -32,9 +39,9 @@ scope here. **[SETTLED]**
 
 Today the app tracks physical existence for **PLI/catalog-backed** materials only:
 
-- The catalog `InventoryItem` carries `qty_on_hand` (QOH). Approval creates an
-  **earmark**; `consume()` refuses to draw more than QOH; PO receipt / expense stock
-  receipt bump QOH. Arrival gates consumption.
+- The `InventoryItem` carries `qty_on_hand` (QOH). Approval creates an **earmark**;
+  `consume()` refuses to draw more than QOH; PO receipt / expense stock receipt bump QOH.
+  Arrival gates consumption.
 
 But for a **freeform** material (`Material.inventory_item is None`) there is **no
 physical-existence signal at all**:
@@ -48,11 +55,11 @@ physical-existence signal at all**:
 - An **Expense** can only *create* a freeform material (supplying cost); it cannot mark
   it as arrived, and it cannot attach to a material that already exists.
 
-The documented **transient lot** (`is_catalog=False`) design — "mint a lot behind each
-freeform goods-Material" (`materials-inventory-and-purchasing.md` §2) — was never
-implemented. Only the *management* machinery exists (the `is_catalog` flag,
-`is_finished_lot`, the hide-on-spend list filter, write-off, merge). **Nothing mints the
-lot.** The only `InventoryService.create_item` caller is the manual catalog-creation API.
+The documented **transient lot** design — "mint a lot behind each freeform goods-Material"
+(`materials-inventory-and-purchasing.md` §2) — was never implemented. Only the *management*
+machinery exists (`is_finished_lot`, the hide-on-spend list filter, write-off, merge).
+**Nothing mints the lot.** The only `InventoryService.create_item` caller is the manual
+catalog-creation API.
 
 Net effect: the app cannot answer "has this material been ordered?" / "has it arrived?"
 for freeform materials, and — worse — **it is trivially easy to skip procurement
@@ -61,48 +68,47 @@ should be a *deliberate* act, not the silent default. **[SETTLED]**
 
 ## The core move — provisional vs. established Materials
 
-**A Material is always in one of two states, and there is no permanently-unbacked Material:**
+**A Material is always either provisional or established, and there is no
+permanently-unbacked Material:**
 
 - **Provisional** — `inventory_item IS NULL`. A placeholder: we know we need *something*
   (description + rough qty, often a sell price), but pricing/backing isn't set up yet — e.g.
   "research M77 ABS and get prices." **Not orderable, not consumable.**
-- **Established** — `inventory_item` points at a lot: a **catalog** `InventoryItem`, or a
-  **transient lot** (`is_catalog=False`) minted for a one-off. Has a real cost and rides the full
+- **Established** — `inventory_item` points at a lot with a real cost; rides the full
   inventory rails (QOH, earmark, arrival-gated `consume`, Order/receipt).
 
-**Establishment = pricing.** The act that turns provisional → established is supplying the price,
-which mints or attaches the lot (the lot is what physically holds `unit_cost` / `sell_price`) —
-"if there's a price, there can be a lot." Two ways to establish:
+**Establishment = pricing.** The act that turns provisional → established is supplying the
+price, which mints or attaches the lot (the lot is what physically holds `unit_cost` /
+`sell_price`) — "if there's a price, there can be a lot." Ways to establish:
 
-- **Attach a catalog item** — the material *is* a stocked/orderable type; cost and sell come from
-  the catalog `InventoryItem` (sell overridable).
-- **Mint a transient lot** — a genuine one-off; enter the researched/quoted `unit_cost`;
-  `sell_price` defaults from the **existing default-markup config** (overridable); QOH 0.
+- **Attach an existing inventory item** — cost and sell come from the item (sell overridable).
+- **Mint a lot** — enter the researched/quoted `unit_cost`; `sell_price` defaults from
+  `default_material_markup_percent` (overridable); QOH 0.
+- **Attach an expense** — the purchase document *is* the pricing event (see Path 2).
+- **Customer-supplied toggle** — $0 is a deliberate price (see §Customer-supplied).
 
-So "freeform" stops being a persistent tracking hole — it's just the *provisional* phase before
-establishment. Every Material that is actually acted on (ordered, quoted-and-accepted, consumed)
-is lot-backed.
+This is orthogonal to the (shipped) **consumption lifecycle**: `pending → consumed`
+(reversible via unconsume) or `pending → released` (terminal tombstone; quantity moves to
+`released_qty`, claims kept). Provisional/established says *what backs the row*;
+pending/consumed/released says *where it is in its life*. A released material keeps its
+`inventory_item` FK forever — the tombstone still references its lot. **[SETTLED]**
 
 ### Worked examples (RM's four)
 
 | Material | State / backing |
 |---|---|
-| 3/4" baltic birch ply — used often, stocked | Established — **catalog**, usually has QOH |
-| 1/4" clear acrylic — never stocked, always gettable | Established — **catalog**, ~always QOH 0 |
-| 1/8" dragon skin — one-off, researched a source + quote | Established — **transient lot** at the quoted cost |
-| 1/4" aluminum *drops* — on-hand, costed long ago | **Parked** (see §Parked) — the case "no unbacked" serves worst |
+| 3/4" baltic birch ply — used often, stocked | Established — stocked item, usually has QOH |
+| 1/4" clear acrylic — never stocked, always gettable | Established — known item, ~always QOH 0 |
+| 1/8" dragon skin — one-off, researched a source + quote | Established — minted lot at the quoted cost |
+| 1/4" aluminum *drops* — on-hand, costed long ago | **Parked** (see §Parked) |
 
-An established transient lot (the dragon-skin / one-off case) behaves identically to a catalog lot
-(see "What `is_catalog` means"). Its lot:
+A minted lot behaves identically to any other inventory item. It:
 
 - starts `qty_on_hand = 0`;
 - gets a **demand earmark** for the job (qty = `material.quantity`) at the same moment a
-  catalog material would be earmarked today (see mint timing below), which keeps a QOH-0
-  demand lot visible in pickers until it is fulfilled or released;
+  catalog material would be earmarked today (see establishment timing below);
 - snapshots the material's `description` / `units` / `unit_cost` / `sell_price` /
-  `accounting_category` (like catalog items do at create);
-- becomes a **finished lot** (QOH 0 + no earmark) once consumed → auto-hidden by the
-  existing hide-on-spend filter.
+  `accounting_category` (like catalog items do at create).
 
 Because the material now has a lot, **`consume()`'s existing QOH check runs** — task start
 **blocks** on an unfulfilled major material ("can't start: the steel isn't here yet")
@@ -110,340 +116,366 @@ instead of silently consuming nothing. That gate *is the point*. **[SETTLED]**
 
 Consumables (primer/staples/etc.) are unaffected because they are never Materials. **[SETTLED]**
 
-**What `is_catalog` actually means.** The catalog flag is **not** a behavioral fork. The
-*only* difference between a catalog item and a non-catalog (transient) lot is
-**search-list visibility at QOH 0**: catalog items stay shown in pickers/lists even with
-no stock (they're reorderable types); a non-catalog lot at QOH 0 with no earmark is a
-finished lot and is hidden. Everything else — QOH, earmarks, `consume()`, receipt,
-write-off, merge — is identical. (There may be a minor cosmetic exception in the inventory
-view, nothing structural.) So all fulfillment behavior below applies uniformly to every
-lot-backed material regardless of the flag; the flag just decides whether an empty lot
-lingers in the picker. **[SETTLED]**
+## Drop `is_catalog` — one item kind, manual retirement **[SETTLED 2026-07-04]**
 
-### Establishment timing (when the lot is minted) — resolves eager-vs-lazy
+The old framing kept a catalog-vs-transient-lot distinction whose *stated* job was
+search-list visibility at QOH 0. Decision: **drop the `is_catalog` field entirely.**
+An `InventoryItem` is just an item; `is_active` is the only flag.
 
-The lot is minted/attached **at establishment — the moment pricing is supplied.** That resolves
-the old eager-vs-lazy question: not unconditionally at material-create, and not lazily at
-first-order, but exactly when the price is known. **[SETTLED]**
+- **`is_active` semantics:** "we can't get this any more / won't get it again, but it is
+  still referenced by a Material or PO line." A *human judgment*, set manually. Everything
+  active is visible and pickable.
+- **No automatic hiding.** The computed `is_finished_lot` / hide-on-spend filter goes away.
+  Searches show any item; there is no scrolled list to protect. Clutter is handled by
+  **ranking, not hiding**: pickers sort QOH > 0 and recently-touched items first; dead
+  QOH-0 lots sink but stay findable (useful history — "what did we pay last time").
+  Accepted trade: the searchable namespace grows until someone flips things inactive;
+  nothing can auto-retire a lot without re-inventing the type/lot distinction. **[SETTLED]**
+- **Lot reuse replaces catalog conversion.** If next year someone searches "dragon skin"
+  and picks last year's lot, the new material attaches to it, the demand earmark lands on
+  it, Order writes a PO against it, receipt bumps its QOH — the lot *becomes* the ongoing
+  home of that material type through use. No un-mint / promote / demote path needed
+  (retires old open question 7). **[SETTLED]**
 
-- **Priced at authoring** (common — catalog pick, or you already have the quote): the material is
-  born **established**; the lot exists immediately.
-- **Priced later** (deferred research, e.g. M77 ABS): the material is born **provisional** and is
-  established when the research lands.
-- **Crystallized from an estimate** (see next section): established at **acceptance** — with a
-  *provisional cost* if only the sell price was known at send.
+The doc previously claimed the flag was "not a behavioral fork" — false; it had three
+behavioral uses, each of which re-homes:
+
+1. **Hide-on-spend / `is_finished_lot`** → deleted (ranking replaces it, above).
+2. **Expense classification** (`ExpenseService.create`: catalog item → stock receipt;
+   otherwise → consumable Material; plus the `Expense.clean` stock-receipt validation) →
+   rule becomes **"any inventory-item-backed purchase is a stock receipt"** — Path 2's
+   attach == receipt applied uniformly. **[SETTLED]**
+3. **Merge discard-guard** ("cannot discard a catalog item; demote first") and the
+   expense job-change earmark-move guard (`pli.is_catalog`) → merge guard becomes an
+   explicit confirm (**[DEFAULT]**: allow discarding any item, confirm dialog carries the
+   weight); the earmark-move guard becomes `pli is not None` (correct anyway once minted
+   lots carry demand earmarks).
+
+Also removed: the `?is_catalog=` API filter, the `inventory_item_is_catalog` serializer
+fields + catalog badge, the inventory list's catalog|lot column (replaced by
+active/inactive), and the `is_catalog` merge-override field.
+
+### Establishment timing (when the lot is minted)
+
+The lot is minted/attached **at establishment — the moment pricing is supplied.**
+Not unconditionally at material-create, and not lazily at first-order. **[SETTLED]**
+
+- **Priced at authoring** (common — item pick, or you already have the quote): born
+  **established**; the lot exists immediately.
+- **Priced later** (deferred research, e.g. M77 ABS): born **provisional**, established
+  when the research lands (or an expense attaches — Path 2).
+- **Crystallized from an estimate**: established at **acceptance** — with a *provisional
+  cost* if only the sell price was known at send.
+- **Customer-supplied**: born established at $0 (see below).
 
 **Earmark timing is unchanged**, still keyed to job status: an established material on an
-approved/committed job earmarks its lot at establishment (`_mutate_earmark`); on a pre-approval
-job, earmarks are created in bulk at acceptance (`create_earmarks_for_job`). A **provisional**
-material has no lot, so it cannot earmark until established — which is correct (there is nothing to
-reserve yet).
+approved/committed job earmarks its lot at establishment (`_mutate_earmark`); on a
+pre-approval job, earmarks are created in bulk at acceptance (`create_earmarks_for_job`).
+A **provisional** material has no lot, so it cannot earmark until established — correct
+(there is nothing to reserve yet).
 
 ## Materials on an estimate: sell-price send-gate, proto-Material, provisional cost
 
-Estimates quote a **sell price**; cost is internal and legitimately deferrable. So the estimate
-send-gate is on the **sell price**, not on establishment. **[SETTLED]**
+Estimates quote a **sell price**; cost is internal and legitimately deferrable. So the
+estimate send-gate is on the **sell price**, not on establishment. **[SETTLED]**
 
-- **A material line is sendable once it has a sell price** — the number the customer says yes to.
-  It does **not** need a cost or a lot at send.
-- If you can't even estimate a sell price, the escape is to **remove it from the estimate** (delete
-  the line; keep the Material on the job as **provisional**) and note in the estimate email that
-  pricing is TBD — bill it via a change order if the customer accepts. The invariant *"an estimate
-  never carries a line with no sell price"* is never weakened; the escape removes the thing rather
-  than sending a blank.
+- **A material line is sendable once it has a sell price.** It does **not** need a cost
+  or a lot at send.
+- If you can't even estimate a sell price, the escape is to **remove it from the estimate**
+  (delete the line; keep the Material on the job as **provisional**) and note in the
+  estimate email that pricing is TBD — bill via change order if accepted. The invariant
+  *"an estimate never carries a line with no sell price"* is never weakened.
 
-**The proto-Material marker — ✅ SHIPPED (2026-07-03 unification batch).** A bare (no-descriptor)
-freeform estimate line needs exactly one bit: **"is this a material?"** — a simple checkbox. Checked →
-proto-Material (crystallizes to a provisional Material); unchecked → Fee. That is the whole marker.
-There is **no freeform *task*** option: a task can only come from picking a `ServiceItem` (Part 1), so
-a bare line is only ever material-or-fee. **Because the material flow needs this bit first, it is built
-in this procurement work** rather than deferred to the picker, and it retires the standing LATER item
-(hand-typed material lines silently becoming Fees). A checked (proto-Material) line with a sell price
-but no lot is the **estimate face of a provisional Material**. The unified picker
-(`2026-07-02-add-line-crystallization-and-unified-picker.md` Part 2) later *surfaces* this checkbox as
-the freeform-escape UX — it does not introduce the field.
+**The proto-Material marker — ✅ SHIPPED (2026-07-03).** A bare (no-descriptor) freeform
+estimate line carries one bit: **"is this a material?"** Checked → crystallizes to a
+provisional Material at acceptance; unchecked → Fee. A checked line with a sell price but
+no lot is the **estimate face of a provisional Material**.
 
-**Provisional cost via reverse-markup (the museum-polycarbonate case). [SETTLED]** Worked example:
-you're confident charging **$400/sheet** (your risk — remembered ~$300 two years ago + inflation +
-markup) but don't know today's exact cost. You put **$400 as the sell price**, mark the line
-proto-Material, and send. On **acceptance** it crystallizes as a real Material with a **transient
-demand lot**:
+**Provisional cost via reverse-markup (the museum-polycarbonate case). [SETTLED]** You're
+confident charging **$400/sheet** but don't know today's exact cost. Put $400 as the sell
+price, mark the line proto-Material, send. On **acceptance** it crystallizes as a Material
+with a minted demand lot:
 
 - `sell_price = $400` — as quoted and accepted, **locked**;
-- `unit_cost = $400 ÷ (1 + default markup)` — a **placeholder**, the existing default-markup config
-  run **backwards**, flagged provisional (`cost_provisional = True` / `cost_source = 'estimated'`);
-- when the **PO** is written, the **real purchase cost overrides** the placeholder and the flag
-  clears; **sell stays $400**, so margin trues up against real cost — exactly where the writer chose
-  to carry the risk.
+- `unit_cost = $400 ÷ (1 + default_material_markup_percent/100)` — a placeholder, flagged
+  `cost_source = 'estimated'`;
+- when the **PO** is written (or an expense attaches), the **real cost overrides** the
+  placeholder and the provenance updates; **sell stays $400**, so margin trues up against
+  real cost — exactly where the writer chose to carry the risk.
 
-Why crystallize a real Material (Option 2) instead of a **Fee** (Option 1): a Fee has no Order
-affordance, no arrival gate, no COGS, and no reminder that a physical thing must be procured — it
-drops the polycarbonate back into the untracked hole. The provisional-cost Material keeps it on the
-materials list with an Order button and a visible "cost unconfirmed" state that *is* the reminder,
-and keeps COGS/margin **computable** (against the placeholder) while flagging that the number isn't
-real yet. (Rejected: **Option 3**, blocking send until cost is known — defeats the purpose of an
-estimate. Rejected: **Option 1**, crystallizing to a Fee — loses all physical tracking.)
+Why crystallize a Material rather than a Fee: a Fee has no Order affordance, no arrival
+gate, no COGS, and no reminder that a physical thing must be procured. The
+provisional-cost Material keeps the Order button and a visible "cost unconfirmed" state
+that *is* the reminder, and keeps COGS/margin computable while flagging the number isn't
+real yet.
 
-## Three fulfillment paths (how a demand lot gets its QOH)
+## `cost_source` — one provenance enum **[SETTLED 2026-07-04]**
 
-Once a material is **established** (its transient lot exists), fulfilling the demand = getting QOH
-into that lot. The first two reuse machinery that already bumps `li.inventory_item.qty_on_hand`.
-(Applies to any lot-backed material; a catalog material fulfills the same way via normal receipt.)
+One field on `Material` answers both "is this cost real?" and "who owns this thing?":
+
+| Value | Meaning |
+|---|---|
+| `NULL` | provisional — no lot, no meaningful pricing yet |
+| `estimated` | reverse-markup placeholder from an accepted estimate line — **cost unconfirmed** |
+| `entered` | user typed a researched/quoted cost (or attached an item and accepted its pricing) |
+| `po` | real document cost from a PO line (overrides `estimated`/`entered`) |
+| `expense` | real document cost from an attached expense |
+| `customer_supplied` | $0, deliberate and locked — customer owns the thing |
+
+"Cost unconfirmed" (`estimated`) is **not** a display state of its own — it can coexist
+with Needed/Ordered/On Hand — so it rides as a small warning mark next to the cost until
+a PO/expense clears it. **[OPEN — minor]** exact value name for the attach-an-item case
+(`entered` vs a distinct `catalog`); decide in the task plan.
+
+## Four fulfillment paths (how a demand lot gets its QOH)
+
+Once a material is **established**, fulfilling the demand = getting QOH into its lot.
+The first two reuse machinery that already bumps `li.inventory_item.qty_on_hand`.
 
 ### Path 1 — Order it (generate a PO from the material) — the common case
 
-Restore and extend the historical **"Order" affordance** (which only ever appeared for
-catalog materials) so it works for transient-lot (one-off) materials too. **[SETTLED]**
+Restore the historical **"Order" affordance**, now for every established material. **[SETTLED]**
 
-- From an established Material with an unfulfilled demand lot, **"Order"** creates (or appends
-  to a draft) `PurchaseOrder` with a line linked to this Material. The link path already
-  exists: `MaterialService.resolve_or_create_for_line` with an explicit `material_id`.
-- The PO line's `inventory_item` = the material's **minted lot**. So **the existing PO
-  receipt path Just Works** — `receive_items` already does
-  `li.inventory_item.qty_on_hand += qty`, which now lands on the lot. No new receipt code.
-- Answers both questions: **ordered?** = a linked PO line exists; **arrived?** =
-  `qty_received` / lot QOH.
+- From an established material with an unfulfilled demand lot, **Order**:
+  **if open draft POs exist**, offer a small choice — "add to PO-2026-NNNN (vendor)" per
+  draft, or "start new PO"; **if none exist, skip the dialog** and create a draft PO with
+  this line, vendor left blank to address afterward. **[SETTLED]** Supplier-unknown stays
+  painless.
+- The PO line's `inventory_item` = the material's lot, linked via the existing
+  `MaterialService.resolve_or_create_for_line` explicit path. **Existing PO receipt Just
+  Works** — `receive_items` already bumps `li.inventory_item.qty_on_hand`. No new receipt
+  code.
+- Answers both questions: **ordered?** = linked PO line exists; **arrived?** = lot QOH.
 
-**[OPEN]** Does "Order" always mint a *new* PO, or offer to append to an open draft PO for
-the same supplier? Supplier is often unknown at material-add time, which argues for a
-lightweight "start a PO with this line" that the user then addresses to a vendor.
+### Path 2 — Attach an Expense (bought off-process; it's here now)
 
-### Path 2 — Attach an Expense (bought off-process; it's here now) — new capability
+Today expenses can only **create** a material; add an **attach-to-existing-material**
+mode. **Attaching an expense is a pricing event, so it is allowed on any pending
+non-customer material — including a provisional one, where the attach itself
+establishes.** **[SETTLED]**
 
-"It's on the job, we went out and bought it without going through the official purchase
-process, now it's *here* and work can continue." Today expenses can only **create** a
-material; add an **attach-to-existing-material** mode. **[SETTLED]**
+- **Attach to established** — supplies/overrides cost (`cost_source = 'expense'`), bumps
+  the lot QOH by the expense quantity. **Attach == receipt**; work can start.
+- **Attach to provisional** — one move does everything: mints the lot at the expense's
+  unit cost (sell from `default_material_markup_percent` unless a sell price already
+  exists from an estimate line — that one stays locked), sets provenance, bumps QOH.
+  Covers "bought it off-process before anyone ever priced it" with no separate
+  Establish step.
+- **Preconditions:** material `pending` and not customer-supplied. That's it. **[SETTLED]**
+- **Partial-PO interaction — don't block.** Ordered 12, received 8, bought the last 4
+  locally: the expense adds QOH on top of the partial receipt. The loose end (PO line
+  still shows 4 outstanding) is the user's to settle by cancelling the remainder on the
+  PO; existing PO surfaces already show outstanding quantities. Documented, not
+  enforced. **[SETTLED]**
 
-- Attaching supplies the **cost** (document `cost_source`, satisfying the freeform-cost
-  rule) **and marks arrival**: bump the lot's QOH by the material quantity (a stock receipt
-  against the private lot).
-- Semantics: **attach == receipt.** After attaching, the lot has QOH and `consume()` can
-  fire.
-
-**[OPEN]** Preconditions: material pending + not already fulfilled? Interaction with a
-partial PO receipt already on the same lot (attach the remainder vs. reject)?
-
-### Path 3 — Mark on-hand without a document (deliberate escape) — the uncommon case
+### Path 3 — Mark on-hand without a document (deliberate escape) — uncommon
 
 For a major material genuinely already present with no PO and no Expense. An explicit
-**"Mark on-hand"** action bumps the lot QOH to satisfy the demand, recorded as a manual
-inventory adjustment. **[SETTLED]** This *replaces* today's silent "consume works on
-freeform regardless." It must be **visibly less prominent / more deliberate** than
-"Order" — the design intent is that the normal flow is *order → arrive*, and skipping
-straight to "it's here" is the exception, not the default. **[SETTLED]**
+**"Mark on-hand"** action bumps the lot QOH, recorded as a manual inventory adjustment.
+**[SETTLED]** Replaces today's silent "consume works on freeform regardless." Rendered
+**deliberately quiet** — a text link, not a button; the normal flow is *order → arrive*,
+and skipping straight to "it's here" is the exception. **[SETTLED]**
+
+### Path 4 — Customer-supplied (they're sending it; we didn't buy it) **[SETTLED 2026-07-04, in scope]**
+
+Not an exception to the establishment model — an established material at zero price:
+
+- **Creation:** a "customer-supplied" toggle in the material form. Flipping it zeroes and
+  **locks** the pricing fields and establishes on save (lot minted at cost $0 / sell $0,
+  `cost_source = 'customer_supplied'`). That deliberate gesture is what makes $0 a real
+  price rather than an unset one — a provisional material (no lot, "needs pricing") and a
+  customer-owned one (lot + provenance marker) never look alike, in data or on screen.
+- **Everything rides the same rails:** demand earmark at establishment; `consume()` blocks
+  until QOH arrives ("can't start until the customer's panels show up"); COGS $0; and
+  inventory valuation is right for free — cost × QOH = 0, so the customer's property never
+  inflates inventory value while sitting on the shelf.
+- **Arrival is a job-context action, not an inventory-page edit:** an "Awaiting customer"
+  material shows **Mark received** on the task view page. Click, optionally adjust the
+  quantity (they sent 8 of 12 — partial receipt, defaulting to the full remainder, same as
+  PO receiving), done. Recorded in inventory history as a *customer delivery*.
+  Mechanically Path 3's QOH bump, but a first-class named action because for this
+  provenance "it arrived, no document" is the legitimate primary flow.
+- **Suppressions:** no Order button, no pricing nag, no expense-attach (you don't buy the
+  customer's own panels).
+- **On the estimate:** omit, or show as a $0 line — the $0 line is nice documentation of
+  what the customer owes in kind. **[DEFAULT]** allow both; no special handling.
+- **Leftover after release:** QOH in the lot that is the *customer's* property —
+  return-or-scrap is a human decision; write-off covers it.
 
 ## consume() gating
 
-**Established materials — falls out for free.** Because an established material has a lot, its
-`if pli and qty > 0:` branch always runs, so `consume()` raises the existing "Cannot consume N:
-only X on hand" until the lot is fulfilled. Task start therefore blocks on unfulfilled major
-materials — surfacing procurement status at exactly the moment it matters. The existing
-partial-shortfall guidance ("reduce this material and add a second task/material for the remainder
-while it is procured") applies unchanged. **[SETTLED]**
+**Established materials — falls out for free.** The lot makes `consume()`'s existing QOH
+check run: task start blocks on an unfulfilled major material until the lot is fulfilled.
+**[SETTLED]**
 
-**Provisional materials — must refuse, not silently flip. [SETTLED, behavior change].** Today a
-material with `inventory_item IS NULL` hits the freeform branch and *silently* flips to consumed with
-no check — that is the untracked hole. Under this design a null-lot material is **provisional**, and
-`consume()` must **raise** ("establish and receive this material first"), never flip. You can't
-consume what hasn't been priced, ordered, and received. (This is the one change to `consume()`
-itself: replace the silent-freeform flip with a provisional-refusal.)
+**Provisional materials — must refuse, not silently flip. [SETTLED, behavior change].**
+Today a null-lot material silently flips to consumed with no check. Under this design
+`consume()` **raises** ("establish and receive this material first"), never flips. This is
+the one change to `consume()` itself.
 
-## UI surface
+**All-or-nothing per material row. [SETTLED 2026-07-04].** Partial *consumption* is
+rejected: a fractionally-consumed row would break the three-state lifecycle, prorate COGS,
+and muddy invoice claims. Partial *arrival* stays a **user** action prompted by the
+refusal message — split the row (restock the shortfall off this material, add a second
+material for the remainder, start work on what's here). Each row stays fully pending or
+fully consumed with clean claims. The system action is only ever the refusal. The
+existing shortfall message gets a light polish since richer states now sit behind it
+(ordered / awaiting customer).
 
-- **Materials list** (job overview + task list): each material shows a fulfillment state —
-  **Provisional (needs pricing) / Needed / Ordered (PO #…) / Arrived** — driven by whether it's
-  established, the lot QOH, and any linked PO line. A **provisional** material shows "needs pricing"
-  and an **Establish** action; an established one shows the fulfillment states.
-- Per-material actions: **Establish** (provisional → priced/lot), **Order** (Path 1, prominent),
-  **Attach Expense** (Path 2), and a de-emphasized **Mark on-hand** (Path 3).
-- The "Order" button that historically existed for catalog materials becomes available for
-  transient-lot materials as well (and requires the material be established first).
-- Because `is_catalog` is only a visibility flag (see above), **Order / Attach Expense /
-  Mark on-hand apply uniformly to every lot-backed material** — there is no catalog-vs-
-  freeform behavioral split to design around. **[SETTLED]**
-- **[OPEN]** Exact placement/labels only.
+## UI surface **[SETTLED 2026-07-04]**
 
-## Cascade / lifecycle
+**Venue rule: pillar items are passive; actions live on the task view page.** The job
+overview pillar (TaskTree) shows each material's status word and the consumed/released
+styling — no buttons, no links to act. All per-material actions appear on the task view
+page (`JobTaskListPage`) only. (This resolves the absorbed LATER item about the lost
+per-material "order" link — it comes back on the task view page, not the pillar.)
 
-- **Material delete** must collect/delete its private lot if reference-free (reuse
-  `InventoryService.collect_if_finished` / the finished-lot rules), so deleting a freeform
-  material doesn't strand a QOH-0 lot. **[DEFAULT]**
-- **Job terminal states** already `release_earmarks_for_job`; a released demand lot with
-  QOH 0 becomes finished/hidden, which is correct. **[SETTLED]**
-- **[OPEN]** Un-mint on freeform→catalog conversion (if that path exists): repoint the
-  material to the chosen catalog item and collect the private lot.
+**Display status — one derived label per material row.** Computable from fields already
+settled (lot present?, `cost_source`, lot QOH vs quantity, PO link, `consumption_state`);
+no new state machine, display logic only:
+
+| Status | Condition | Actions (task view page only) |
+|---|---|---|
+| **Needs pricing** | provisional (no lot) | *Set pricing* (opens the material modal — attaching an item or entering a cost on save *is* establishment; no separate ceremony), *Attach expense* (establishes + receives) |
+| **Needed** | established, stock short, no PO link | **Order** (prominent), *Attach expense*, *Mark on-hand* (quiet text link) |
+| **Ordered — PO-NNNN** | established, linked PO line outstanding | PO number links to the PO (receipt happens there); *Attach expense* stays for bought-the-remainder |
+| **Awaiting customer** | `customer_supplied`, stock short | **Mark received** (qty prompt, default remainder) |
+| **On Hand** | established, lot QOH covers quantity | none — the quiet good state |
+| **Consumed** | `consumption_state = consumed` | none (unconsume is not a user action) — **the visual consumed flag** |
+| **Released** | `consumption_state = released` | none — tombstone: greyed/struck, qty 0, visible as history |
+
+Cross-cutting:
+
+- **Cost-unconfirmed mark** (`cost_source = 'estimated'`): small warning next to the cost,
+  coexists with Needed/Ordered/On Hand, cleared by PO write / expense attach.
+- **Customer-supplied identity** comes from the status chip; no button-suppression
+  weirdness to explain.
+- **Pickers** (material modal item search, PO line form, etc.): show everything active,
+  ranked QOH > 0 and recently-touched first (see §Drop `is_catalog`).
+- **Settings UI for `default_material_accounting_category`:** the config key exists
+  (read by estimate acceptance) but has no UI. Add a picker in the existing Accounting
+  Categories settings block, gated `can_manage_config`. **[SETTLED]**
+- **Inventory list:** catalog|lot column → active/inactive; `?include_finished` /
+  hide-on-spend filtering removed.
+
+## Cascade / lifecycle **[rewritten 2026-07-04 for the three-state world]**
+
+- **Release, not delete, is the normal end-of-life** for anything referenced. A released
+  material keeps its `inventory_item` FK forever; its lot is **never collected/deleted**.
+  Hard-delete survives only for unreferenced pending scratch paper (existing
+  `remove()` / restock-to-zero / sever rules — already shipped).
+- **A released material's arrived-but-unused stock stays in inventory and is available
+  for future work. [SETTLED]** Release backs out the demand earmark; real QOH stays in
+  the lot, visible and pickable (it's genuinely on the shelf). A later material can
+  attach to it (lot reuse). Write-off handles true scrap; return-to-customer is manual
+  for customer-supplied leftovers.
+- **Job terminal states** already `release_earmarks_for_job`; correct unchanged.
 
 ## Data / rollout
 
-- **No data migration** for existing dev materials — dev data is regenerated per project norms.
-  New behavior applies going forward; the **converter / seed generator** must emit each material in
-  a valid state — **established** (lot-backed, priced) where a price exists, or **provisional**
-  (null lot) where it's a pending placeholder — consistent with the establishment rule. **[DEFAULT]**
-- **Tests** (TDD, to specify in the plan): establishing a material mints/attaches its lot (catalog
-  attach; transient mint with `sell_price` from default-markup config); a **provisional** material
-  (`inventory_item IS NULL`) **cannot be ordered or consumed** — `consume()` **raises** instead of
-  silently flipping; a proto-Material estimate line is **sendable with only a sell price** and
-  crystallizes at acceptance into a Material with a transient demand lot whose `unit_cost` is the
-  reverse-markup placeholder flagged `cost_provisional`; a PO write **overrides** that cost and
-  clears the flag while `sell_price` stays put; `consume()` blocks an established material until its
-  lot is received; PO receipt / expense-attach / mark-on-hand fulfill the lot; material delete
-  collects the private lot; earmarks do NOT appear on draft/submitted jobs (existing invariant
-  preserved).
+- **Migration:** drop `is_catalog` (plus the serializer fields, API filter, list filter,
+  merge-override entry). Per project norms, run the suite **fresh, without `--keepdb`**
+  after the migration lands.
+- **No data migration** for existing dev materials — dev data is regenerated. The
+  **nealsdata converter / seed generator** must emit each material in a valid state —
+  established (lot-backed, priced, `cost_source` set) or provisional (null lot) — and
+  stop writing `is_catalog`. Converter changes must run `tests.test_neals_builders`.
+- **Tests** (TDD, to specify in the task plan): establishing mints/attaches the lot
+  (item attach; mint with sell from `default_material_markup_percent`); a provisional
+  material cannot be ordered or consumed — `consume()` raises; proto-Material line
+  sendable with only a sell price, crystallizes to `cost_source='estimated'` with the
+  reverse-markup placeholder; PO write overrides cost + provenance while sell stays put;
+  `consume()` blocks an established material until its lot is fulfilled; PO receipt /
+  expense-attach (established *and* provisional) / mark-on-hand / customer Mark-received
+  (incl. partial) fulfill the lot; expense classification without `is_catalog` (any
+  item-backed purchase = stock receipt); merge without the catalog guard; released
+  material keeps its lot + QOH stays available; earmarks do NOT appear on draft/submitted
+  jobs (existing invariant preserved).
 
 ## Parked — the on-hand "drops" case
 
-Example 4 (1/4" aluminum drops: already in the shop, costed long ago, ad-hoc pricing) is the one
-case the **"no permanently-unbacked Material"** rule serves worst — forcing a transient lot means
-minting a lot with a made-up QOH and made-up price for a scrap you'll never track again. **RM is
-deliberately parking this**: build the provisional→established / lot process first, exercise it,
-and revisit whether the drops case justifies a genuine unbacked-Material category (a costed job
-line with no lot and no arrival gate — correct because on-hand stock has nothing to *arrive*).
-Until then: **require establishment (a lot) for every Material.** _Done when:_ the lot process is
-in hand and RM has decided whether drops get an unbacked lane or a lightweight lot.
+Example 4 (1/4" aluminum drops: already in the shop, costed long ago, ad-hoc pricing) is
+the case the **"no permanently-unbacked Material"** rule serves worst. **RM is
+deliberately parking this**: build the provisional→established / lot process first,
+exercise it, and revisit whether drops justify a genuine unbacked-Material category.
+Until then: **require establishment (a lot) for every Material.** _Done when:_ the lot
+process is in hand and RM has decided whether drops get an unbacked lane or a
+lightweight lot. (Note: mark-on-hand + lot reuse may already cover most drops cases in
+practice — a $0-ish minted lot marked on-hand.)
 
 ## Open questions, collected
 
-1. **proto-Material marker — resolved: built in this plan.** The material-vs-fee bit on a bare
-   estimate line is built here (materials need it first); the picker plan (Part 2) consumes it and
-   adds the selection UX. (Previously flagged as a Part 2 dependency — ownership moved here.)
-2. `cost_provisional` / `cost_source='estimated'` — exact field/flag shape on the lot (or Material)
-   and where the "cost unconfirmed" state surfaces + clears (PO write).
-3. Transient-lot **sell price** defaulting: use the **existing default-markup config** (resolved
-   direction); confirm the config key and the reverse-markup arithmetic for the provisional-cost
-   case.
-4. "Order": new PO vs append-to-draft; supplier-unknown ergonomics.
-5. Expense-attach preconditions and interaction with partial PO receipts.
-6. Partial receipt → partial consume policy (probably: keep all-or-nothing per material, lean on
-   the split-the-material guidance).
-7. Un-mint path on established-transient → catalog conversion / delete edge cases.
+All majors are settled. Remaining minors for the task plan:
 
-(Resolved: eager-vs-lazy minting → mint **at establishment**. Sell-price default → **default-markup
-config**. `is_catalog` is *not* a behavioral fork — it only governs search-list visibility at QOH 0,
-so all affordances apply uniformly.)
+1. `cost_source` value for the attach-an-item establishment case (`entered` vs distinct
+   `catalog`).
+2. Merge discard-guard replacement: plain confirm ([DEFAULT] above) vs requiring the
+   discard side be inactive.
+3. Picker ranking spec (QOH > 0 first, then recency — define "recently-touched").
+
+(Resolved this session: Order append-vs-new → **offer append when drafts exist, else
+create**; expense-attach preconditions → **pending + not customer-supplied; establishes
+provisional; no partial-PO block**; partial receipt vs consume → **all-or-nothing, user
+splits the row**; un-mint/conversion → **evaporated with `is_catalog`**; `cost_provisional`
+shape → **the `cost_source` enum**; sell-price default + reverse-markup →
+**`default_material_markup_percent`, sell = cost × (1 + pct/100), reverse = sell ÷ (1 +
+pct/100)**. Resolved earlier: minting timing → at establishment.)
+
+## Absorbed LATER items (2026-07-04)
+
+Moved from `docs/designs/LATER.md`; work as part of this plan or consciously punt back.
+
+- **Lost per-material "order" link when the Materials pillar was folded into Tasks &
+  Materials.** — _added 2026-06-28; **RESOLVED by this plan's venue rule**_: the Order
+  affordance returns on the **task view page only**; the pillar shows passive status
+  (including Ordered — PO-NNNN) but no actions. RM explicitly reversed the earlier
+  thought of putting "order" on the pillar — pillar items don't have actions.
+
+- **PO line form needs an explicit "attach to existing material" picker.** — _added
+  2026-06-20._ When adding a PO line for a job that already has materials, there's no way
+  to deterministically attach the line to a *specific* existing pending material — the
+  resolver only auto-claims on an exact single match, else silently creates a duplicate.
+  Fix: once a Job is selected on the PO line form, surface that job's pending unlinked
+  materials and let the user pick "attach to this one" (explicit `material_id`) or
+  "create new". _Done when:_ deterministic attach with tests.
+
+- **Reassigning a PO line's job/material is tricky — rethink the whole flow.** — _added
+  2026-06-21._ Draft PO: inline Edit changes the job; issued/received: standalone Change
+  Job modal gated by pending state. The rules differ by PO status × consumption state and
+  the cost/earmark implications aren't surfaced. Want a coherent mental model before
+  committing to a design. _Done when:_ settled and documented in
+  `materials-inventory-and-purchasing.md`.
+
+- **Earmarking is done per-material and then overwritten — do we need both layers?** —
+  _added 2026-06-05._ `MaterialService.create_on_job` calls `_mutate_earmark`
+  (incremental), but bulk job-population paths then call
+  `InventoryService.create_earmarks_for_job`, which **overwrites** each Earmark to the
+  absolute total. Work out the intended division of labor and whether one layer can be
+  dropped without breaking idempotency. (Full history of the 2026-06-05 regression fix in
+  git history of this file.) _Done when:_ documented why both exist or removed the
+  redundant layer.
+
+- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14._ An expense
+  is single-mode (cost OR stock receipt). One trip buying both an inventoried shortfall
+  and a special non-item finish silently drops one side. Note: dropping `is_catalog`
+  changes the classification rule (any item-backed purchase = stock receipt) but does
+  **not** fix the mixed case. _Done when:_ multi-item expenses or a split prompt exist so
+  a non-inventory cost can never be silently swallowed.
+
+- **Expense didn't count as a cost in the job overview — and NO catalog item was picked.
+  Investigate.** — _added 2026-06-18._ Reported: an expense missing from job cost with no
+  catalog item selected, so the stock-receipt classification shouldn't have fired — cause
+  unknown. Chase the actual row (`stock_pli_id`, `material_id`, `job_id`, `amount`) when
+  reproducing. _Done when:_ root-caused and fixed (or shown expected), with a test.
 
 ## Why this is the right shape
 
 - It **implements the design the docs already promised** rather than inventing a parallel
-  mechanism — the transient-lot machinery (flag, hide-on-spend, write-off, merge) is
-  already built and waiting for a minting hook.
-- The **receipt wiring is nearly free**: once a material is established (has a lot), the existing
-  PO-receipt and stock-receipt paths already bump `inventory_item.qty_on_hand`.
+  mechanism — the lot machinery (write-off, merge) is built and waiting for a minting hook.
+- The **receipt wiring is nearly free**: once a material has a lot, the existing PO-receipt
+  and stock-receipt paths already bump `inventory_item.qty_on_hand`.
 - It makes procurement **the default path and skipping it deliberate**, matching how the
   shop actually works: know it's ordered, know it's arrived, then work.
-
-## Absorbed LATER items (2026-07-04)
-
-Moved from `docs/designs/LATER.md`: these all touch the procurement machinery this plan reworks (earmarks, the PO↔material resolver, order-from-material affordances, the expense fulfillment path). Work them as part of this plan — or consciously punt them back to LATER when the task plan is cut.
-
-- **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
-  `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
-  calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
-  call `InventoryService.create_earmarks_for_job`, which aggregates all the job's
-  inventoried Materials by PLI and **overwrites** each Earmark to the absolute total.
-  In a copy/population path the per-material increments already produce the correct
-  total, so the final aggregate sweep looks redundant. Work out the intended division
-  of labor (steady-state incremental edits vs one-shot bulk-population sweep), whether
-  any path materializes Materials *without* `create_on_job` (which is what would make
-  the sweep load-bearing), and whether one layer can be dropped without breaking
-  idempotency. _Done when:_ we've documented why both exist (in
-  `materials-inventory-and-purchasing.md`) or removed the redundant layer.
-  _History (for context):_ earmarking was originally an `auto_earmark_inventory`
-  signal on `estimate_accepted`, which only fired on the acceptance path (template and
-  worksheet-copy paths got zero earmarks). Commit `9848a4c` (2026-04-05) deleted that
-  signal and made earmarking a step inside *each* materialization path, establishing the
-  invariant "every path that materializes work earmarks." Two weeks later `AtomCarryOverService`
-  (`fdc3650`/`09031e3`, 2026-04-20) re-attached materialization to `estimate_accepted`
-  but **without** the earmark step — silently breaking that invariant. A stale test
-  (`test_accepting_estimate_does_not_create_earmarks`, also from `9848a4c`) kept passing
-  because it guarded "the signal is gone," not "materialization earmarks," so it masked
-  the regression. Fixed 2026-06-05 by routing carry-over through the shared
-  `materialize_worksheet_onto_job` core, which earmarks; the test was inverted to
-  `test_accepting_estimate_creates_earmarks`. So both earmark layers now run on that path:
-  `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
-  redundancy this item is about.
-
-- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
-  When adding a PO line for a job that already has materials, there's no way to
-  deterministically attach the line to a *specific* existing pending material.
-  Today the backend resolver (`MaterialService.resolve_or_create_for_line`,
-  three steps: explicit `material_id` → claim → create) only auto-links
-  ("claim") when job + inventory_item match *exactly one* pending, unlinked
-  material on that (job, item); otherwise it **creates a new material** —
-  silently producing a duplicate for freeform materials, item mismatches, or
-  multiple candidates. The "order this material" flow sets `material_id` for the
-  *first* line only (one-shot prefill, cleared after add — see commit f3440447).
-  Fix: on the PO line form (`LineItemForm` via `PurchaseOrderDetailPage`), once a
-  Job is selected, surface that job's pending **unlinked** materials and let the
-  user pick "attach to this one" (sends `material_id`, routing through the
-  resolver's explicit path) or "create new". Removes the guessing and makes
-  second-line-to-second-material deterministic.
-  _Done when:_ a user can add a PO line for a job and explicitly choose which
-  existing pending material it links to (or opt to create a new one), with tests.
-
-- **Reassigning a PO line's job/material is tricky — rethink the whole flow.** — _added 2026-06-21_
-  Changing which job a PO line (and its linked material) belongs to currently has
-  awkward, split entry points. On a **draft** PO the inline **Edit** changes the job
-  (routed through `onChangeLineJob`); on an **issued/received** PO there's no Edit, so a
-  standalone **Change Job** modal is the only path, gated by `canChangeJob` (allowed when
-  the linked material's `consumption_state === 'pending'`). The draft-only duplicate
-  "Change Job" button was removed 2026-06-21 (Edit covers it), but the underlying model is
-  still murky: the rules differ by PO status × material consumption_state, and reassigning
-  an already-received line's material to a different job has cost/earmark implications that
-  aren't obviously surfaced. Want to think more about the right mental model and UX for
-  "this material actually belongs to a different job" before committing to a design.
-  _Done when:_ we've settled how (and when) a line's job/material allocation can change
-  across the PO lifecycle, with one coherent UX, and documented it in
-  `materials-inventory-and-purchasing.md`.
-
-- **Lost per-material "order" link when the Materials pillar was folded into Tasks & Materials.** — _added 2026-06-28_
-  The old standalone Materials pillar on the job overview rendered, per material that
-  needed more stock, an **"order"** link (`#/purchase-orders/new?job={job_id}&material={material_id}`)
-  plus an **"On Order"** column (showing `qty_on_order` and a link to the existing PO).
-  Phase 5 (commit `0f989580`, "combine Tasks & Materials into one pillar via the Task
-  View") replaced that pillar with `TaskTree`, and the per-material **order** affordance
-  + On Order column did **not** carry over — `TaskTree` shows the sell-side columns and
-  grand total (mirroring the invoice projection) but has no "needs more → start a PO"
-  control. Surfaced 2026-06-28 while working an invoice flow that got blocked by missing
-  inventory. _To decide:_ whether the order-from-material shortcut should be restored
-  inside the combined pillar (or live elsewhere — Plan/worksheet materials, or a
-  materials/PO view), and whether the On Order / shortfall indicator comes back with it.
-  _Done when:_ a user can get from "this job's material is short" to starting/ viewing
-  its PO without leaving the job overview, or we've consciously decided that lives
-  somewhere else and documented where.
-
-- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
-  An expense is single-mode (cost OR stock receipt) and records one purchased item.
-  Real corner case: on one trip a worker buys 3 sheets of an **inventoried** PLI (the
-  shortfall) **and** a special **non-PLI finish** the job needs. If they record the
-  inventoried item, the expense becomes a stock receipt — its `amount` is treated as
-  inventory (cost-at-consumption, excluded from `_spent`), so the finish's cost is
-  effectively **dropped** (absorbed into the amount as if it were tax/fee). If they
-  record the finish instead, the plywood never hits QOH and the task stays blocked.
-  Today the workaround is to record **two separate expenses** (one stock receipt, one
-  cost), but nothing surfaces that, so the cost can silently vanish. Not super likely,
-  but real. See `docs/plans/2026-06-14-expenses-cost-model-redesign.md` (single-mode
-  decision) and the deferred many-materials/line-item direction.
-  _Done when:_ either an expense supports multiple purchased items with per-item mode
-  handling (inventoried rows → receipts, cost rows → job cost), or the form detects a
-  mixed receipt and prompts the user to split it — so a non-inventory cost can never be
-  silently swallowed by a stock receipt.
-
-- **Expense didn't count as a cost in the job overview — and NO catalog item was picked. Investigate.** — _added 2026-06-18_
-  Observed: an expense didn't show up as an expense/cost in the job overview. The obvious
-  suspect is the single-mode classification — `ExpenseService.create`
-  (`apps/expenses/services.py:38-42`) silently treats a purchase as a **stock receipt**
-  (sets `stock_pli`/`stock_qty`, no consumable `Material`, `amount` excluded from `_spent`
-  / not job-costed) whenever the selected item resolves to an *inventoried* (catalog)
-  `InventoryItem`. BUT the user reports **no catalog item was selected at all**, so that
-  path shouldn't have fired — which means the real cause is unknown and needs digging.
-  Lines to chase: how did the expense get classified / what `stock_pli` vs `material` vs
-  neither did it end up with; whether a non-catalog expense can still land as a stock
-  receipt (e.g. `new_material` resolving to an inventoried item unexpectedly, or a default);
-  whether `material`/`job` even got linked; and what the overview's "spent" actually sums
-  (does it require a linked `Material`/`job`, so a cost expense with no material or a
-  detached `job` FK silently drops out?). Capture the actual row (`stock_pli_id`,
-  `material_id`, `job_id`, `amount`) when reproducing. Related: "Mixed-receipt expense
-  loses the non-inventory cost" (above) and
-  `docs/plans/2026-06-14-expenses-cost-model-redesign.md`.
-  _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
-  root-caused and fixed (or shown to be expected), with a test.
+- Dropping `is_catalog` **dissolves a distinction instead of managing it**: frequently
+  used items and one-off lots are the same thing at different usage frequencies, and lot
+  reuse lets one graduate into the other with zero ceremony.
