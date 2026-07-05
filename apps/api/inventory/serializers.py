@@ -48,7 +48,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'job', 'task',
             'description', 'quantity', 'unit_cost', 'sell_price',
             'inventory_item', 'accounting_category',
-            'consumption_state', 'released_qty',
+            'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound', 'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
@@ -58,7 +58,8 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         ]
         read_only_fields = [
             'material_id', 'job', 'task',
-            'consumption_state', 'released_qty', 'is_expense_bound',
+            'consumption_state', 'released_qty', 'cost_source',
+            'is_expense_bound',
             'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_order', 'qty_on_hand',

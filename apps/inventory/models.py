@@ -257,6 +257,22 @@ class Material(MaterialBase):
         (CONSUMPTION_STATE_RELEASED, 'Released'),
     ]
 
+    # Provenance: where this material's cost/backing came from. NULL =
+    # provisional (no lot, no meaningful pricing yet). One field answers both
+    # "is this cost real?" and "who owns this thing?" (spec §cost_source).
+    COST_SOURCE_ESTIMATED = 'estimated'          # reverse-markup placeholder — cost unconfirmed
+    COST_SOURCE_ENTERED = 'entered'              # user-entered / catalog-attached pricing
+    COST_SOURCE_PO = 'po'                        # real document cost from a PO line
+    COST_SOURCE_EXPENSE = 'expense'              # real document cost from an attached expense
+    COST_SOURCE_CUSTOMER = 'customer_supplied'   # $0, deliberate and locked
+    COST_SOURCE_CHOICES = [
+        (COST_SOURCE_ESTIMATED, 'Estimated'),
+        (COST_SOURCE_ENTERED, 'Entered'),
+        (COST_SOURCE_PO, 'PO'),
+        (COST_SOURCE_EXPENSE, 'Expense'),
+        (COST_SOURCE_CUSTOMER, 'Customer supplied'),
+    ]
+
     material_id = models.AutoField(primary_key=True)
     task = models.ForeignKey(
         'jobs.Task', on_delete=models.SET_NULL, related_name='materials',
@@ -282,6 +298,10 @@ class Material(MaterialBase):
         null=True, blank=True,
         related_name='+',
     )
+    cost_source = models.CharField(
+        max_length=20, choices=COST_SOURCE_CHOICES, null=True, blank=True,
+        help_text='Cost provenance; NULL means provisional (unpriced).',
+    )
 
     class Meta:
         db_table = 'materials'
@@ -289,6 +309,10 @@ class Material(MaterialBase):
     @property
     def is_expense_bound(self):
         return self.expenses.exists()
+
+    @property
+    def is_customer_supplied(self):
+        return self.cost_source == self.COST_SOURCE_CUSTOMER
 
     def clean(self):
         super().clean()
