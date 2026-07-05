@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor, fireEvent } from '@testing-library/svelte';
+import { render, waitFor, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
@@ -164,6 +164,86 @@ describe('JobTaskListPage — action failures go to the global overlay', () => {
       kind: 'error', text: 'Tasks are still open.',
     }));
     confirmSpy.mockRestore();
+  });
+});
+
+describe('JobTaskListPage — material fulfillment actions', () => {
+  // A job with one in-progress task carrying a single pending material. The
+  // material's fields drive its derived status (materialStatus.js).
+  function mockJobWithMaterial(material, { drafts = [] } = {}) {
+    const job = {
+      job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',
+      contact: null, materials: [], fees: [], can_manage: true,
+      tasks: [{ task_id: 10, name: 'Cut', status: 'in_progress', parent_task: null }],
+    };
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/jobs/3/')) return Promise.resolve(job);
+      if (url === '/api/tasks/10/materials/') return Promise.resolve([material]);
+      if (url === '/api/tasks/10/subtasks/') return Promise.resolve([]);
+      if (url.startsWith('/api/purchase-orders/')) return Promise.resolve(drafts);
+      if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+  }
+
+  const neededMat = {
+    material_id: 55, description: 'Steel', quantity: '4', sell_price: '5', units: 'kg',
+    consumption_state: 'pending', inventory_item: 7, cost_source: 'entered',
+    qty_on_hand: '0', po_line_item_id: null, po_number: null, job: 3, task: 10,
+  };
+
+  it('Order with zero drafts POSTs immediately and shows the PO number', async () => {
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    mockJobWithMaterial(neededMat, { drafts: [] });
+    api.post.mockResolvedValueOnce({ po_number: 'PO-2026-0007' });
+    const { findByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await fireEvent.click(await findByRole('button', { name: 'Order' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', {}));
+    await waitFor(() => expect(get(overlayMessage)).toEqual({
+      kind: 'success', text: 'Added to PO-2026-0007.',
+    }));
+  });
+
+  it('Order with drafts opens the chooser and posts the picked po_id', async () => {
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    mockJobWithMaterial(neededMat, {
+      drafts: [{ po_id: 5, po_number: 'PO-5', business_name: 'Acme' }],
+    });
+    api.post.mockResolvedValueOnce({ po_number: 'PO-5' });
+    const { findByRole, getByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await fireEvent.click(await findByRole('button', { name: 'Order' }));
+    // chooser dialog lists the draft with its vendor
+    await waitFor(() => getByRole('dialog'));
+    await fireEvent.click(await findByRole('button', { name: /PO-5 — Acme/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', { po_id: 5 }));
+  });
+
+  it('a draft with no vendor renders "no vendor"', async () => {
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    mockJobWithMaterial(neededMat, {
+      drafts: [{ po_id: 6, po_number: 'PO-6', business_name: null }],
+    });
+    const { findByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await fireEvent.click(await findByRole('button', { name: 'Order' }));
+    expect(await findByRole('button', { name: /PO-6 — no vendor/ })).toBeInTheDocument();
+  });
+
+  it('Mark received opens a qty prompt and POSTs mark-on-hand', async () => {
+    user.set({ id: 1, permissions: [] });
+    const customerMat = {
+      ...neededMat, material_id: 77, cost_source: 'customer_supplied',
+    };
+    mockJobWithMaterial(customerMat);
+    api.post.mockResolvedValueOnce({});
+    const { findByRole, getByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await fireEvent.click(await findByRole('button', { name: 'Mark received' }));
+    const dialog = await waitFor(() => getByRole('dialog'));
+    // defaults to the shortfall (4 needed − 0 on hand)
+    expect(within(dialog).getByLabelText(/quantity received/i).value).toBe('4');
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Mark received' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/77/mark-on-hand/', { quantity: '4' }));
   });
 });
 

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import TaskTree from '@/components/TaskTree.svelte';
+import { user } from '@/stores/auth.js';
 
 function task(overrides) {
   return {
@@ -260,5 +261,104 @@ describe('TaskTree', () => {
     });
     const { queryByRole } = render(TaskTree, { props: { tasks: [t] } });
     expect(queryByRole('button', { name: 'restock' })).toBeNull();
+  });
+});
+
+describe('TaskTree — material status vocabulary + fulfillment actions', () => {
+  afterEach(() => user.set(null));
+
+  function matTask(mat, over = {}) {
+    return task({ status: 'in_progress', materials: [mat], ...over });
+  }
+
+  it('renders a status chip on each material row (passive display)', () => {
+    const t = matTask({
+      material_id: 1, description: 'Steel', quantity: '4', sell_price: '5', units: 'kg',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '0', po_line_item_id: null, po_number: null,
+    });
+    const { getByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('Needed')).toBeInTheDocument();
+  });
+
+  it('provisional material → "Needs pricing" chip + Set pricing button (no financial atom needed)', async () => {
+    const onEditMaterial = vi.fn();
+    const t = matTask({
+      material_id: 2, description: 'Widget', quantity: '1', sell_price: '0', units: 'ea',
+      consumption_state: 'pending', inventory_item: null, cost_source: null, qty_on_hand: '0',
+    });
+    const { getByText, getByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true, onEditMaterial },
+    });
+    expect(getByText('Needs pricing')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Set pricing' }));
+    expect(onEditMaterial).toHaveBeenCalledWith(expect.objectContaining({ material_id: 2 }), expect.anything());
+  });
+
+  it('needed material gates the Order button behind can_manage_financials', () => {
+    const mat = {
+      material_id: 3, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'entered', qty_on_hand: '0',
+      po_line_item_id: null, po_number: null,
+    };
+    // worker (no atom): no Order button, but Attach expense + Mark on-hand remain
+    user.set({ id: 1, permissions: [] });
+    const worker = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true } });
+    expect(worker.queryByRole('button', { name: 'Order' })).toBeNull();
+    expect(worker.getByRole('button', { name: 'Attach expense' })).toBeInTheDocument();
+    expect(worker.getByRole('button', { name: 'Mark on-hand' })).toBeInTheDocument();
+    worker.unmount();
+    // financial atom present: Order shows
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    const fin = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true } });
+    expect(fin.getByRole('button', { name: 'Order' })).toBeInTheDocument();
+  });
+
+  it('ordered material → chip carries the PO number and a link to the PO', () => {
+    const t = matTask({
+      material_id: 4, description: 'Bar', quantity: '4', sell_price: '5', units: 'ea',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'po', qty_on_hand: '0',
+      po_line_item_id: 9, po_id: 42, po_number: 'PO-2026-0042',
+    });
+    const { getByText, getByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('Ordered — PO-2026-0042')).toBeInTheDocument();
+    expect(getByRole('link', { name: 'PO-2026-0042' }).getAttribute('href'))
+      .toBe('#/purchase-orders/42');
+  });
+
+  it('customer-supplied short → "Awaiting customer" chip + Mark received button', async () => {
+    const onMarkOnHand = vi.fn();
+    const t = matTask({
+      material_id: 5, description: 'Panel', quantity: '4', sell_price: '5', units: 'ea',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'customer_supplied',
+      qty_on_hand: '0', po_line_item_id: null, po_number: null,
+    });
+    const { getByText, getByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true, onMarkOnHand },
+    });
+    expect(getByText('Awaiting customer')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Mark received' }));
+    expect(onMarkOnHand).toHaveBeenCalledWith(expect.objectContaining({ material_id: 5 }));
+  });
+
+  it('flags an estimate-placeholder cost with a ⚠ warning', () => {
+    const t = matTask({
+      material_id: 6, description: 'Trim', quantity: '4', sell_price: '5', units: 'ea',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'estimated', qty_on_hand: '0',
+    });
+    const { getByTitle } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByTitle(/cost unconfirmed/i)).toBeInTheDocument();
+  });
+
+  it('released material row is struck through and shows no fulfillment actions', () => {
+    const t = matTask({
+      material_id: 7, description: 'Acrylic', quantity: '0', sell_price: '5', units: 'ea',
+      consumption_state: 'released', released_qty: '7', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '0',
+    }, { status: 'pending' });
+    const { container, queryByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(container.querySelector('.material-row.released')).not.toBeNull();
+    expect(queryByRole('button', { name: 'Order' })).toBeNull();
+    expect(queryByRole('button', { name: 'Set pricing' })).toBeNull();
   });
 });
