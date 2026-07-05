@@ -939,9 +939,16 @@ class MaterialService:
         restock-to-zero rule applies: a referenced material becomes `released`
         (job history — claims, expense/PO links, and the released_qty record
         survive); an unreferenced one is deleted (scratch paper).
+
+        Blocked while the job is on hold: restock is replanning (shrinking
+        the job's material plan), not procurement — on-hold freezes the plan.
+        Named system retirements (PO sever, CO descope, completion release)
+        route through release() or run on jobs that can't be on hold.
         """
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_on_hold
+        _assert_job_not_on_hold(material.job, 'restock this material')
         if qty <= Decimal('0.00') or qty > material.quantity:
             raise ValidationError('restock qty must be > 0 and <= quantity')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:

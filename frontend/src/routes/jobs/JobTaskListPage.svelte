@@ -511,6 +511,7 @@
     {jobMaterials}
     readonly={false}
     {jobLocked}
+    jobOnHold={job?.status === 'on_hold'}
     canManage={job?.can_manage}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}

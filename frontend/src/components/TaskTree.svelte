@@ -9,6 +9,9 @@
     jobMaterials = [],
     readonly = false,
     jobLocked = false,
+    // on_hold freezes plan edits (Set pricing / edit / restock) but NOT
+    // procurement (Order, receipts, attach) — mirror of the service guards.
+    jobOnHold = false,
     canManage = false,
     showStatus = true,
     showAssignee = true,
@@ -202,7 +205,13 @@
 
 {#snippet matStatusChip(mat)}
   {@const s = materialStatus(mat)}
-  <span class="mat-status mat-{s.key}">{s.label}</span>
+  {#if s.key === 'ordered' && mat.po_id}
+    <!-- The Ordered pill IS the PO link — navigation, so fine on every
+         venue (the venue rule bans actions, not links). -->
+    <a use:link href="#/purchase-orders/{mat.po_id}" class="mat-status mat-{s.key}" title="Open purchase order">{s.label}</a>
+  {:else}
+    <span class="mat-status mat-{s.key}">{s.label}</span>
+  {/if}
 {/snippet}
 
 {#snippet matUnitCost(mat)}
@@ -212,14 +221,15 @@
 {#snippet matFulfillActions(mat, task)}
   {@const s = materialStatus(mat)}
   {#if s.key === 'needs-pricing'}
-    {#if onEditMaterial}<button type="button" onclick={() => onEditMaterial(mat, task)}>Set pricing</button>{/if}
+    <!-- Set pricing edits the plan — frozen while the job is on hold.
+         Attach expense records a purchase that already happened (it
+         establishes a provisional material) — procurement reality, allowed. -->
+    {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, task)}>Set pricing</button>{/if}
+    {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
   {:else if s.key === 'needed'}
     {#if onOrderMaterial && $canManageFinancials}<button type="button" onclick={() => onOrderMaterial(mat)}>Order</button>{/if}
     {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
     {#if onMarkOnHand}<button type="button" class="quiet-link" onclick={() => onMarkOnHand(mat)}>Mark on-hand</button>{/if}
-  {:else if s.key === 'ordered'}
-    <!-- A link, not an action — navigation stays available on every surface. -->
-    <a use:link href="#/purchase-orders/{mat.po_id}" class="po-link">{mat.po_number || 'PO'}</a>
   {:else if s.key === 'awaiting-customer'}
     {#if onMarkOnHand}<button type="button" onclick={() => onMarkOnHand(mat)}>Mark received</button>{/if}
   {/if}
@@ -334,12 +344,12 @@
           {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               {@render matFulfillActions(mat, task)}
-              {#if onConsumeMaterial}<button type="button" onclick={() => onConsumeMaterial(mat, task)}>consume</button>{/if}
-              {#if onRestockMaterial}<button type="button" onclick={() => onRestockMaterial(mat, task)}>{restockLabel(mat)}</button>{/if}
+              {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, task)}>consume</button>{/if}
+              {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, task)}>{restockLabel(mat)}</button>{/if}
               {#if onDrawMoreMaterial && !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, task)}>draw more</button>
               {/if}
-              {#if onEditMaterial}<button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>{/if}
+              {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, task)}>edit</button>{/if}
               {#if onMoveMaterial}<button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>{/if}
             </td>
           {:else if !readonly}
@@ -404,12 +414,12 @@
             {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
               <td class="actions-cell">
                 {@render matFulfillActions(mat, sub)}
-                {#if onConsumeMaterial}<button type="button" onclick={() => onConsumeMaterial(mat, sub)}>consume</button>{/if}
-                {#if onRestockMaterial}<button type="button" onclick={() => onRestockMaterial(mat, sub)}>{restockLabel(mat)}</button>{/if}
+                {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, sub)}>consume</button>{/if}
+                {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, sub)}>{restockLabel(mat)}</button>{/if}
                 {#if onDrawMoreMaterial && !mat.is_expense_bound}
                   <button type="button" onclick={() => onDrawMoreMaterial(mat, sub)}>draw more</button>
                 {/if}
-                {#if onEditMaterial}<button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>{/if}
+                {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, sub)}>edit</button>{/if}
                 {#if onMoveMaterial}<button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>{/if}
               </td>
             {:else if !readonly}
@@ -444,12 +454,12 @@
           {#if !readonly && !jobLocked && isMaterialPending(mat) && !isMaterialFinalized(mat)}
             <td class="actions-cell">
               {@render matFulfillActions(mat, null)}
-              {#if onConsumeMaterial}<button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>{/if}
-              {#if onRestockMaterial}<button type="button" onclick={() => onRestockMaterial(mat, null)}>{restockLabel(mat)}</button>{/if}
+              {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, null)}>consume</button>{/if}
+              {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, null)}>{restockLabel(mat)}</button>{/if}
               {#if onDrawMoreMaterial && !mat.is_expense_bound}
                 <button type="button" onclick={() => onDrawMoreMaterial(mat, null)}>draw more</button>
               {/if}
-              {#if onEditMaterial}<button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>{/if}
+              {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>{/if}
             </td>
           {:else if !readonly}
             <td class="actions-cell"></td>

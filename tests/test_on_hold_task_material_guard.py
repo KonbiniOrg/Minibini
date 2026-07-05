@@ -411,3 +411,29 @@ class MaterialUpdatePricingOnHoldTest(OnHoldGuardBase):
         mat = _material(job, ac=self.ac)
         result = MaterialService.update_pricing(mat, unit_cost=Decimal('7.00'))
         self.assertEqual(result.unit_cost, Decimal('7.00'))
+
+
+class MaterialRestockOnHoldTest(OnHoldGuardBase):
+    """Restock is replanning (shrinking the material plan), not procurement —
+    on-hold freezes it. Procurement ops (order, mark_on_hand, expense attach)
+    deliberately stay open on held jobs."""
+
+    def test_restock_blocked_on_on_hold_job(self):
+        job = _in_progress_job(self.contact)
+        mat = _material(job, ac=self.ac)
+        job.status = Job.STATUS_ON_HOLD
+        job.save()
+        mat.refresh_from_db()
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.restock(mat, Decimal('1.00'))
+        self.assertIn('on hold', str(ctx.exception).lower())
+        mat.refresh_from_db()
+        self.assertEqual(mat.released_qty, Decimal('0.00'))
+
+    def test_restock_allowed_on_in_progress_job(self):
+        job = _in_progress_job(self.contact)
+        mat = _material(job, ac=self.ac)
+        # Full restock of an unreferenced material — the restock-to-zero
+        # rule deletes it (scratch paper).
+        MaterialService.restock(mat, Decimal('1.00'))
+        self.assertFalse(Material.objects.filter(pk=mat.pk).exists())
