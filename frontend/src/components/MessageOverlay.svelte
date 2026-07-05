@@ -15,7 +15,8 @@
         onclick={clearMessage}
         aria-label="Dismiss message"
       >&times;</button>
-      <p><strong>{kind === 'error' ? 'Error:' : ''}</strong> {$overlayMessage.text}</p>
+      <p><strong>{kind === 'error' ? 'Error:' : ''}</strong> {$overlayMessage.text}{#if $overlayMessage.link}
+          <a href={$overlayMessage.link.href} onclick={clearMessage}>{$overlayMessage.link.label}</a>{/if}</p>
     </div>
   </div>
 {/if}

@@ -30,4 +30,15 @@ describe('MessageOverlay', () => {
       .toContain('Invoice sent.');
     expect(container.querySelector('.error-overlay')).toBeNull();
   });
+
+  it('renders a success link and dismisses when it is followed', async () => {
+    const { container } = render(MessageOverlay);
+    showSuccess('Added to', { href: '#/purchase-orders/9', label: 'PO-2026-0007' });
+    await Promise.resolve();
+    const a = container.querySelector('.success-overlay-content a');
+    expect(a.getAttribute('href')).toBe('#/purchase-orders/9');
+    expect(a.textContent).toBe('PO-2026-0007');
+    await fireEvent.click(a);
+    expect(container.querySelector('.success-overlay')).toBeNull();
+  });
 });

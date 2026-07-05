@@ -365,7 +365,13 @@
         poId ? { po_id: poId } : {});
       orderDialogOpen = false;
       orderMaterial = null;
-      showSuccess(`Added to ${resp.po_number || 'a new purchase order'}.`);
+      if (resp.po_id && resp.po_number) {
+        showSuccess('Added to', {
+          href: `#/purchase-orders/${resp.po_id}`, label: resp.po_number,
+        });
+      } else {
+        showSuccess(`Added to ${resp.po_number || 'a new purchase order'}.`);
+      }
       await reload();
     } catch (e) {
       const t = triageError(e);

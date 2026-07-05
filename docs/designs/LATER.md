@@ -336,6 +336,16 @@ The atom-pull surfaces on estimates and invoices.
 
 (The procurement-machinery items moved into the freeform-materials plan, 2026-07-04.)
 
+- **Show a material's earmarks on the PO when ordering it.** — _added 2026-07-05_
+  Certain items are needed by more than one job at once. When adding/receiving a PO
+  line for such an item, the buyer can't see the total demand — the per-job earmarks
+  against the line's inventory item — so they can't easily decide to order for
+  several jobs in one purchase. Surface the item's earmark list (job + quantity)
+  on the PO line (and/or in the order-from-material flow) so multi-job demand is
+  visible at order time. _Done when:_ ordering an item with earmarks from multiple
+  jobs shows those earmarks on the PO surface, and the buyer can size the line
+  accordingly.
+
 - **Delete-after-reject of a `stock_pli` expense double-reverses QOH.** — _added 2026-07-05 (found during the freeform-materials Task 9 review; pre-existing)_
   `ExpenseService.reject` already reverses a stock-receipt expense's QOH bump. But
   the **delete** branch has no status guard: deleting an already-rejected

@@ -194,15 +194,16 @@ describe('JobTaskListPage — material fulfillment actions', () => {
     qty_on_hand: '0', po_line_item_id: null, po_number: null, job: 3, task: 10,
   };
 
-  it('Order with zero drafts POSTs immediately and shows the PO number', async () => {
+  it('Order with zero drafts POSTs immediately and links to the PO', async () => {
     user.set({ id: 1, permissions: ['can_manage_financials'] });
     mockJobWithMaterial(neededMat, { drafts: [] });
-    api.post.mockResolvedValueOnce({ po_number: 'PO-2026-0007' });
+    api.post.mockResolvedValueOnce({ po_id: 9, po_number: 'PO-2026-0007' });
     const { findByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
     await fireEvent.click(await findByRole('button', { name: 'Order' }));
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', {}));
     await waitFor(() => expect(get(overlayMessage)).toEqual({
-      kind: 'success', text: 'Added to PO-2026-0007.',
+      kind: 'success', text: 'Added to',
+      link: { href: '#/purchase-orders/9', label: 'PO-2026-0007' },
     }));
   });
 
