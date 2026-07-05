@@ -271,6 +271,20 @@ def settings_view(request):
                     {'average_labor_cost': 'must be a non-negative number'},
                     status=400,
                 )
+    if 'default_material_accounting_category' in request.data:
+        raw = request.data['default_material_accounting_category']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'default_material_accounting_category': 'must be a category id'},
+                    status=400)
+            if not AccountingCategory.objects.filter(pk=pk, is_active=True).exists():
+                return Response(
+                    {'default_material_accounting_category': 'unknown or inactive category'},
+                    status=400)
     for key, value in request.data.items():
         ConfigurationService.set(key, str(value))
     configs = Configuration.objects.all()

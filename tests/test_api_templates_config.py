@@ -97,6 +97,42 @@ class ConfigurationAPITest(BaseTestCase):
         response = self.client.get('/api/accounting-categories/')
         self.assertEqual(response.status_code, 200)
 
+    def test_default_material_accounting_category_roundtrip(self):
+        cat = AccountingCategory.objects.create(
+            name='Materials', is_active=True, code='MAT')
+        resp = self.client.patch('/api/settings/',
+                                 {'default_material_accounting_category': str(cat.pk)},
+                                 format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            Configuration.objects.get(
+                key='default_material_accounting_category').value, str(cat.pk))
+
+    def test_default_material_accounting_category_rejects_unknown(self):
+        resp = self.client.patch('/api/settings/',
+                                 {'default_material_accounting_category': '999999'},
+                                 format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_default_material_accounting_category_rejects_inactive(self):
+        cat = AccountingCategory.objects.create(
+            name='Old Materials', is_active=False, code='OLDMAT')
+        resp = self.client.patch('/api/settings/',
+                                 {'default_material_accounting_category': str(cat.pk)},
+                                 format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_default_material_accounting_category_blank_clears(self):
+        Configuration.objects.update_or_create(
+            key='default_material_accounting_category', defaults={'value': '5'})
+        resp = self.client.patch('/api/settings/',
+                                 {'default_material_accounting_category': ''},
+                                 format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            Configuration.objects.get(
+                key='default_material_accounting_category').value, '')
+
 
 class PercentageServiceServiceItemRejectionTest(BaseTestCase):
     """A RateScheme with algorithm=PERCENTAGE must be rejected when assigning

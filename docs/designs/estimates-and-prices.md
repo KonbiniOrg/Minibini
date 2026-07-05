@@ -730,7 +730,7 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 
 No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_superseded_scheme=True` so a line whose scheme was superseded after authoring can still crystallize.
 
-**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC.
+**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker in Settings (`AccountingCategories.svelte`); `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
 **API endpoint:**
 

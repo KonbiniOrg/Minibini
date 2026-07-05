@@ -92,6 +92,14 @@ persisting a closed blep; the UI's Stop control reads Cancel below the
 threshold. **Invariant: a sub-minimum close is never persisted — it is
 cancelled.** See `jobs-tasks-and-worksheets.md` §4.5/§5.5.
 
+Materials: `default_material_accounting_category` (unset) — string-encoded
+`AccountingCategory` PK applied to `is_material=True` hand-lines (Estimate and
+ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
+category field (`jobs-tasks-and-worksheets.md` §9.5). Editable in **Settings →
+Accounting Categories → Materials** (blank clears it). The settings API
+(`PATCH /api/settings/`) rejects a value that isn't blank or an existing
+**active** `AccountingCategory` id. See `estimates-and-prices.md` §6.4.
+
 ---
 
 ### 1.2 User
