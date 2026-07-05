@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn() },
+  errorMessage: (e, f) => e?.data?.detail || e?.message || f,
+}));
 vi.mock('svelte-spa-router', () => ({
   push: vi.fn(),
   link: () => ({}),
@@ -9,7 +12,6 @@ vi.mock('svelte-spa-router', () => ({
 }));
 
 import { api } from '@/lib/api.js';
-import { push } from 'svelte-spa-router';
 import { user } from '@/stores/auth.js';
 import CatalogInventoryPage from '@/routes/catalog/CatalogInventoryPage.svelte';
 
@@ -109,13 +111,14 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('shows an order button on every row that navigates to a new PO', async () => {
-    push.mockClear();
-    const { findAllByRole } = render(CatalogInventoryPage);
+  it('shows an order button on every row that opens the stock-order dialog', async () => {
+    api.get.mockResolvedValue({ results: ITEMS });  // load(), then the dialog's draft lookup
+    const { findAllByRole, getByLabelText, getByText } = render(CatalogInventoryPage);
     const orderBtns = await findAllByRole('button', { name: 'order' });
     expect(orderBtns.length).toBe(2);  // one per ITEMS row
-    await fireEvent.click(orderBtns[0]);  // FELT, inventory_item_id 1
-    expect(push).toHaveBeenCalledWith('/purchase-orders/new?inventory_item=1');
+    await fireEvent.click(orderBtns[0]);  // FELT: earmarked 2, on hand 5 -> shortfall 0
+    getByText(/Order — FELT/);
+    expect(getByLabelText(/Quantity/).value).toBe('0');
   });
 
   it('hides the order button for a config-only user (PO creation is financials)', async () => {

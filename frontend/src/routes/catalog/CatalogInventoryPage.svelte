@@ -1,8 +1,9 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { push } from 'svelte-spa-router';
   import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
   import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
+  import StockOrderDialog from '../../components/inventory/StockOrderDialog.svelte';
+  import { stockShortfall } from '../../lib/stockShortfall.js';
   import Modal from '../../components/Modal.svelte';
   import CatalogTabs from '../../components/CatalogTabs.svelte';
 
@@ -21,6 +22,9 @@
   function editItem(it) { editingItem = it; showForm = true; }
   function onSaved() { showForm = false; editingItem = null; load(); }
   function onCancel() { showForm = false; editingItem = null; }
+
+  // Order dialog: qty prompt (prefilled from shortfall) -> draft-append-or-create
+  let orderItem = $state(null);
 
   // Write-off (irreversible). Opens a small panel to enter how much to waste
   // (defaults to the full on-hand; the Confirm button is the explicit gesture).
@@ -186,6 +190,12 @@
   {/if}
 {/if}
 
+{#if orderItem}
+  <StockOrderDialog item={orderItem} prefillQty={stockShortfall(orderItem)}
+    onDone={() => { orderItem = null; load(); }}
+    onCancel={() => orderItem = null} />
+{/if}
+
 <fieldset style="margin-bottom: 10px">
   <legend>Filters</legend>
   <label>Search: <input type="search" bind:value={search} placeholder="code or description"></label>
@@ -237,7 +247,7 @@
                 <button type="button" onclick={() => startWriteOff(it)}>write off</button>
               {/if}
               {#if $canManageFinancials}
-                <button type="button" onclick={() => push(`/purchase-orders/new?inventory_item=${it.inventory_item_id}`)}>order</button>
+                <button type="button" onclick={() => orderItem = it}>order</button>
               {/if}
             </td>
           {/if}
