@@ -254,6 +254,27 @@ class InventoryService:
         item.refresh_from_db()
         return item
 
+    @staticmethod
+    def order_stock(item, quantity, po=None):
+        """Order an inventory item to stock: a plain PO line with no material
+        link and no job — legit to buy just to have the inventory. Receipt
+        lands in QOH via the normal PO receiving path. Mirrors
+        MaterialService.order's draft-append-or-create contract."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        from apps.purchasing.models import PurchaseOrder
+        from apps.purchasing.services import PurchaseOrderService
+        if quantity is None or quantity <= 0:
+            raise ValidationError({'quantity': ['Quantity must be greater than 0.']})
+        if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add lines to a draft purchase order.')
+        with transaction.atomic():
+            if po is None:
+                po = PurchaseOrderService.create_po()
+            li = PurchaseOrderService.add_line_item_from_pli(
+                po.pk, item.pk, quantity)
+        return po, li
+
     # --- QOH operations ---
 
     @staticmethod
