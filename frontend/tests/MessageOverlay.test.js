@@ -31,6 +31,18 @@ describe('MessageOverlay', () => {
     expect(container.querySelector('.error-overlay')).toBeNull();
   });
 
+  it('dismisses on a backdrop click but not on a click inside the box', async () => {
+    const { container } = render(MessageOverlay);
+    showError('Server error (502)');
+    await Promise.resolve();
+    // click inside the content box — stays up
+    await fireEvent.click(container.querySelector('.error-overlay-content'));
+    expect(container.querySelector('.error-overlay')).not.toBeNull();
+    // click the backdrop itself — dismissed
+    await fireEvent.click(container.querySelector('.error-overlay'));
+    expect(container.querySelector('.error-overlay')).toBeNull();
+  });
+
   it('renders a success link and dismisses when it is followed', async () => {
     const { container } = render(MessageOverlay);
     showSuccess('Added to', { href: '#/purchase-orders/9', label: 'PO-2026-0007' });
