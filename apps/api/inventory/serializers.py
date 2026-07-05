@@ -38,6 +38,9 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     propagate_to_pli = serializers.BooleanField(
         write_only=True, required=False,
     )
+    customer_supplied = serializers.BooleanField(
+        write_only=True, required=False, default=False,
+    )
     invoice = serializers.SerializerMethodField()
     claimed = serializers.SerializerMethodField()
 
@@ -51,7 +54,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
-            'propagate_to_pli',
+            'propagate_to_pli', 'customer_supplied',
             'invoice',
             'claimed',
         ]

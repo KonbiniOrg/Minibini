@@ -271,6 +271,9 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         ac = None
         if data.get('accounting_category'):
             ac = AccountingCategory.objects.get(pk=data['accounting_category'])
+        customer_supplied = data.get('customer_supplied')
+        if isinstance(customer_supplied, str):
+            customer_supplied = customer_supplied.lower() in ('true', '1', 'yes')
         m = MaterialService.create_on_job(
             job=job, task=None,
             description=data.get('description', ''),
@@ -280,6 +283,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             sell_price=_Decimal(str(data.get('sell_price', 0))),
             inventory_item=pli,
             accounting_category=ac,
+            customer_supplied=bool(customer_supplied),
         )
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 

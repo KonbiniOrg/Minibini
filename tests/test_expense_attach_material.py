@@ -94,14 +94,9 @@ class ExpenseAttachTests(TestCase):
         self.assertEqual(m.unit_cost, Decimal('11.00'))               # 44/4
 
     def test_attach_refuses_customer_supplied(self):
-        # Task 10 adds create_on_job(customer_supplied=True); until then, build
-        # the customer material by stamping COST_SOURCE_CUSTOMER directly. The
-        # refusal path under test is real now.
         m = MaterialService.create_on_job(
             job=self.job, description='theirs', quantity=Decimal('1'),
-            accounting_category=self.cat, units='ea')
-        m.cost_source = Material.COST_SOURCE_CUSTOMER
-        m.save(update_fields=['cost_source'])
+            accounting_category=self.cat, units='ea', customer_supplied=True)
         with self.assertRaises(ValidationError):
             self._attach(amount=Decimal('5.00'), material_id=m.pk)
 

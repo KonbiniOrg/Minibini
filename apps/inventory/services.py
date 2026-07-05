@@ -595,10 +595,16 @@ class MaterialService:
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
                       inventory_item=None, accounting_category=None, units='none',
-                      cost_source=None):
+                      cost_source=None, customer_supplied=False):
+        from django.core.exceptions import ValidationError
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
+        if customer_supplied and (
+                inventory_item is not None
+                or (unit_cost and unit_cost != Decimal('0.00'))):
+            raise ValidationError(
+                'A customer-supplied material carries no purchase pricing.')
         # Priced at authoring with no item pick → born established (mint the lot).
         # Only user-entered pricing establishes here; document-sourced costs
         # (PO/expense) record the cost but establish through their own flows
@@ -621,6 +627,12 @@ class MaterialService:
                 units=units,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
+            if customer_supplied:
+                # Born established at a deliberate, locked $0 — the customer
+                # owns the thing; we track arrival, never price it.
+                return MaterialService.establish(
+                    m, unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
+                    cost_source=Material.COST_SOURCE_CUSTOMER)
             if mint:
                 # Priced at authoring with no item pick → born established.
                 m = MaterialService.establish(
@@ -672,6 +684,15 @@ class MaterialService:
         # Every mutation path below (establish, PLI pricing, metadata) edits the
         # material, so the on-hold guard applies uniformly up front.
         _assert_job_not_on_hold(material.job, 'edit this material')
+        # Locked before either pricing route below (the provisional-establish
+        # branch and the PLI-backed pricing carve-out) can be reached: a
+        # customer-supplied material is the customer's property, carried at a
+        # deliberate, locked $0 — never priced.
+        if material.is_customer_supplied and (
+                'unit_cost' in fields or 'sell_price' in fields):
+            raise ValidationError(
+                'A customer-supplied material is not priced — it is the '
+                'customer’s property, carried at zero.')
         # One PATCH = one transaction: a raise after the establish route (e.g.
         # the descriptive-fields refusal below) must roll the mint/earmark back,
         # never leave a half-applied establish behind an error response.

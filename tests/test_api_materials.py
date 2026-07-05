@@ -47,6 +47,36 @@ class MaterialApiTest(APITestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertTrue(Material.objects.filter(job=self.job, task__isnull=True).exists())
 
+    def test_post_jobs_id_materials_customer_supplied(self):
+        """Task 10: customer_supplied=True on the create API — born established
+        at a locked $0, cost_source stamped, no purchase pricing accepted."""
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'customer panel', 'quantity': '2',
+            'accounting_category': self.cat.pk,
+            'customer_supplied': True,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        m = Material.objects.get(job=self.job, description='customer panel')
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        self.assertEqual(m.sell_price, Decimal('0.00'))
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_CUSTOMER)
+
+    def test_patch_pricing_on_customer_supplied_material_400(self):
+        """A customer-supplied material's pricing is locked — PATCHing
+        unit_cost/sell_price returns the standard 400 error-detail contract."""
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='theirs',
+            quantity=Decimal('1'), accounting_category=self.cat, units='ea',
+            customer_supplied=True,
+        )
+        resp = self.client.patch(
+            f'/api/materials/{m.pk}/', {'unit_cost': '5.00'}, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('detail', resp.data)
+
     def test_patch_pli_linked_material_rejects_field_edits(self):
         """PLI-linked Materials are immutable except for unit_cost/sell_price.
         PATCHing description (or any non-pricing field) returns 400. Quantity

@@ -68,13 +68,9 @@ class OrderFromMaterialTests(TestCase):
             MaterialService.order(m2)
 
     def test_order_refuses_customer_supplied_material(self):
-        # customer_supplied kwarg on create_on_job doesn't exist yet (Task 10);
-        # set cost_source directly on a constructed material for this test.
         cs = MaterialService.create_on_job(
             job=self.job, description='cust', quantity=Decimal('1'),
-            unit_cost=Decimal('0.00'), accounting_category=self.cat, units='ea')
-        cs.cost_source = Material.COST_SOURCE_CUSTOMER
-        cs.save(update_fields=['cost_source'])
+            accounting_category=self.cat, units='ea', customer_supplied=True)
         with self.assertRaises(ValidationError):
             MaterialService.order(cs)
 
