@@ -387,25 +387,6 @@ The atom-pull surfaces on estimates and invoices.
   _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
   directly from the review flow.
 
-- **Live blep timer can start at a high seconds value (minute-flooring artifact).** — _added 2026-06-18_
-  The active-blep timer in `CurrentBlepBand.svelte` counts seconds (`elapsedSeconds`/
-  `elapsedText`, ticks every 1s) as `now − start_time`, but `start_time` is the server's
-  **minute-floored** value (`Blep.save` → `floor_to_minute`, `apps/jobs/models.py:462`):
-  start a blep at 10:23:45 and it persists as 10:23:00, so the timer immediately reads ~45s
-  instead of climbing from 0/1. Correct for billing (minute granularity is the point), but a
-  jarring effect for the worker who just hit Start. Mitigation options to weigh:
-  (a) drive the *display* from the true click instant captured client-side (store the
-  unfloored wall-clock start in the `currentBlep` store / localStorage), independent of the
-  floored persisted value, falling back to `start_time` on reload/other device;
-  (b) show the live timer at **minute resolution** (e.g. "0 min" → "1 min", no seconds) so
-  the sub-minute artifact never shows and the display matches how time is actually
-  counted — the shift band (`ClockBand.svelte`) already effectively does this (ticks 30s,
-  shows minutes), so only the blep band exhibits the seconds jump;
-  (c) floor `now` to the same minute when computing elapsed so it ticks 0,1,2… whole minutes.
-  _Done when:_ the live blep timer no longer appears to start mid-minute (by hiding seconds,
-  or by timing the display off the real start instant), with the billed/floored value
-  unchanged.
-
 - **BUG (investigate): Shift & Blep start times display ~1 hour early, unmodified.** — _added 2026-06-25_
   Observed in browser review: a Shift's and a Blep's `start_time` came through about
   **one hour earlier** than the actual time, with no edit made to the record. A
