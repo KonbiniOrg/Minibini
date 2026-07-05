@@ -33,6 +33,16 @@ def material_qty_on_hand(obj):
     return '0'
 
 
+def material_po_line_item(obj):
+    """Returns the PurchaseOrderLineItem behind a Material if it has one, else
+    None. Shared by the inventory-app and tasks-app MaterialSerializers so the
+    po_id/po_number/po_status derivations can't drift.
+    """
+    if obj.po_line_item_id and obj.po_line_item:
+        return obj.po_line_item
+    return None
+
+
 def enforce_pli_linked_allowlist(instance, validated_data, allowed):
     """Raise serializers.ValidationError if validated_data has any field
     outside `allowed` while the instance is PLI-linked.

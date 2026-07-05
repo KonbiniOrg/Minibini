@@ -10,6 +10,10 @@ from apps.core.units import UnitsField
 class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
+    po_line_item_id = serializers.SerializerMethodField()
+    po_id = serializers.SerializerMethodField()
+    po_number = serializers.SerializerMethodField()
+    po_status = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
@@ -21,10 +25,29 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'accounting_category',
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
+            'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_hand',
             'invoice',
         ]
         read_only_fields = fields
+
+    def get_po_line_item_id(self, obj):
+        return obj.po_line_item_id
+
+    def get_po_id(self, obj):
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order_id if pol else None
+
+    def get_po_number(self, obj):
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order.po_number if pol else None
+
+    def get_po_status(self, obj):
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order.status if pol else None
 
     def get_qty_on_hand(self, obj):
         from apps.inventory.serializer_helpers import material_qty_on_hand

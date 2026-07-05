@@ -70,19 +70,19 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         return obj.po_line_item_id
 
     def get_po_id(self, obj):
-        if obj.po_line_item_id and obj.po_line_item:
-            return obj.po_line_item.purchase_order_id
-        return None
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order_id if pol else None
 
     def get_po_number(self, obj):
-        if obj.po_line_item_id and obj.po_line_item:
-            return obj.po_line_item.purchase_order.po_number
-        return None
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order.po_number if pol else None
 
     def get_po_status(self, obj):
-        if obj.po_line_item_id and obj.po_line_item:
-            return obj.po_line_item.purchase_order.status
-        return None
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order.status if pol else None
 
     def get_qty_on_order(self, obj):
         if not obj.po_line_item_id:
