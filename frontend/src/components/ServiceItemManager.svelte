@@ -5,6 +5,8 @@
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
 
+  let { canEdit = true } = $props();
+
   let templates = $state([]);
   let schemes = $state([]);
   let allSchemes = $state([]);
@@ -177,14 +179,18 @@
           </td>
           <td>{t.is_active ? 'Yes' : 'No'}</td>
           <td>
-            <button type="button" onclick={() => startEdit(t)}>Edit</button>
-            <button type="button" onclick={() => remove(t)}>Delete</button>
+            {#if canEdit}
+              <button type="button" onclick={() => startEdit(t)}>Edit</button>
+              <button type="button" onclick={() => remove(t)}>Delete</button>
+            {/if}
           </td>
         </tr>
       {/each}
     </tbody>
   </table>
-  <p><button type="button" onclick={startCreate}>Add Service Item</button></p>
+  {#if canEdit}
+    <p><button type="button" onclick={startCreate}>Add Service Item</button></p>
+  {/if}
 {/if}
 
 {#if editingId !== null}

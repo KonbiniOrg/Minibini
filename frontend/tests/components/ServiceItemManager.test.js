@@ -114,4 +114,20 @@ describe('ServiceItemManager', () => {
     const msg = await findByText('Nope, not like that.');
     expect(msg.closest('[role="alert"]')).not.toBeNull();
   });
+
+  it('hides Add/Edit/Delete when canEdit is false', async () => {
+    const { findByText, queryByRole } = render(ServiceItemManager, {
+      props: { canEdit: false },
+    });
+    await findByText('Welding');
+    // Table still renders (read-only), but no mutating controls.
+    expect(queryByRole('button', { name: 'Add Service Item' })).toBeNull();
+    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('still shows the edit controls by default', async () => {
+    const { findByRole } = render(ServiceItemManager);
+    expect(await findByRole('button', { name: 'Add Service Item' })).toBeTruthy();
+  });
 });
