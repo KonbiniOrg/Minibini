@@ -617,29 +617,15 @@ Cross-cutting UI/API conventions and shared components.
   modal/popover, or a header that can grow), or we've decided the overflow-popover is
   fine and noted why.
 
-- **Sweep `apps/api/` for `serializer.save()` bypasses — deep-swept 2026-07-04; A holes and B tails fixed, C tail recorded.** — _added 2026-05-27_
-  Three-layer sweep (explicit `serializer.save()`, direct model writes in
-  views, and DRF's *implicit* save on ViewSets lacking `perform_create`/
-  `perform_update`). The seven category-A bypasses with real teeth (shift
-  create/delete, estimate/invoice status PATCH, change-request tampering,
-  reimbursement drift, scheme-delete 500) were fixed 2026-07-04. The B
-  metadata tails were extracted the same day: `MaterialService.update_fields`
-  / `.remove` (both material PATCH endpoints + task-material DELETE, now
-  applying the restock-to-zero doctrine), `TaskLifecycleService.set_actual_qty`,
-  `ChangeOrderService.update_fields`, `EstimateService.update_fields`,
-  `TemplateMaterialAssociationService`, `ConfigurationService.set`, and
-  `TagService.attach`/`detach` — viewsets in those files no longer touch the
-  DB. Remaining, for when each surface is next touched:
-  **C — implicit CRUD on simple entities (no service exists at all):**
-  `TagViewSet` full implicit CRUD (global rename/delete, no confirm flow —
-  the SPA only reads it; hands-off for its original author);
-  `RateSchemeViewSet` create/update as direct saves with view-inlined
-  `_block_if_referenced` guards — fold into `ConfigurationService` alongside
-  the AccountingCategory methods; `AccountingCategoryViewSet` has no
-  `perform_destroy`, so deleting a PROTECT-referenced AC is a latent 500;
-  auth/users serializers as their own write surface (accepted —
+- **`TagViewSet` implicit CRUD — the last `serializer.save()` bypass, left for its original author.** — _added 2026-05-27; narrowed 2026-07-04_
+  Sole remainder of the three-layer bypass sweep (A holes, B metadata
+  tails, and C config CRUD were all extracted to services 2026-07-04;
+  auth/users serializers are an accepted exemption —
   `apps/api/users/services.py` guards the dangerous operations).
-  (`PaymentTermsViewSet` was a sweep false positive — it is a
-  `ReadOnlyModelViewSet`, no write surface.)
-  _Done when:_ the C entities either get thin services or a recorded
-  exemption.
+  `TagViewSet` (`contacts/views.py`) still has full implicit DRF CRUD:
+  a global rename/delete surface with no confirm flow, which the SPA
+  only reads. The tag *actions* on contacts/businesses already route
+  through `TagService.attach`/`detach` — the viewset itself is the gap.
+  Hands-off by request: the Tags feature belongs to its original author.
+  _Done when:_ the author routes TagViewSet writes through `TagService`
+  (or records an exemption).

@@ -272,6 +272,12 @@ That's how billing history is preserved.
 Permissions: read is `IsAuthenticated`; all write actions require
 `CanManageConfig`.
 
+Create/update/delete/supersede route through
+`ConfigurationService.{create,update,delete,supersede}_rate_scheme`
+(`apps/core/services.py`) — the referenced-freeze decision lives in the
+service (raised as a `ValidationError` with `code='referenced'`); the
+viewset only shapes the 409 payload below.
+
 The serializer exposes `superseded` (computed bool:
 `replaced_by_id is not None`) and `reference_counts` for the
 outdated-schemes UI. `unit_label` is validated against the configured

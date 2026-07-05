@@ -150,6 +150,16 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             self.get_object().pk, **serializer.validated_data
         )
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            ConfigurationService.delete_accounting_category(instance.pk)
+        except DjangoValidationError as e:
+            # PROTECT'd references — a friendly 409, not a ProtectedError 500.
+            return Response({'detail': e.messages[0]},
+                            status=status.HTTP_409_CONFLICT)
+        return Response({'message': self.destroy_response_message})
+
 
 def _validate_schedule_keys(data):
     """Validate schedule_* keys in the incoming settings payload.

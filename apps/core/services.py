@@ -1199,6 +1199,67 @@ class ConfigurationService:
         cat.save()
         return cat
 
+    @staticmethod
+    def delete_accounting_category(pk):
+        """Delete an AccountingCategory. Half the schema PROTECTs against it,
+        so a referenced category refuses with a coded error instead of
+        surfacing a ProtectedError 500."""
+        from django.db.models.deletion import ProtectedError
+        try:
+            cat = AccountingCategory.objects.get(pk=pk)
+        except AccountingCategory.DoesNotExist:
+            raise NotFoundError(f'AccountingCategory {pk} not found')
+        try:
+            cat.delete()
+        except ProtectedError:
+            raise ValidationError(
+                'Accounting category is in use (materials, services, or '
+                'line items reference it) and cannot be deleted.',
+                code='referenced')
+
+    # -- RateScheme (config-page CRUD; the referenced-freeze decision lives
+    #    here, the viewset only shapes the 409 payload) --------------------
+
+    @staticmethod
+    def create_rate_scheme(**fields):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme(**fields)
+        scheme.full_clean()
+        scheme.save()
+        return scheme
+
+    @staticmethod
+    def update_rate_scheme(scheme, **fields):
+        """Update an unreferenced scheme. Referenced schemes are frozen —
+        every edit path is refused; new pricing means a new version
+        (supersede)."""
+        if scheme.is_referenced():
+            raise ValidationError(
+                'Scheme is referenced; create a new version instead of '
+                'editing.', code='referenced')
+        for field, value in fields.items():
+            setattr(scheme, field, value)
+        scheme.full_clean()
+        scheme.save()
+        return scheme
+
+    @staticmethod
+    def delete_rate_scheme(scheme):
+        if scheme.is_referenced():
+            raise ValidationError(
+                'Scheme is referenced; create a new version instead of '
+                'deleting.', code='referenced')
+        scheme.delete()
+
+    @staticmethod
+    def supersede_rate_scheme(scheme, **overrides):
+        """Thin wrapper so the viewset never writes models directly; the
+        chain logic lives on RateScheme.supersede."""
+        if scheme.replaced_by_id is not None:
+            raise ValidationError('Scheme is already superseded.',
+                                  code='superseded')
+        return scheme.supersede(**overrides)
+
 
 class OutboundEmailService:
     """Sends emails via SMTP with optional attachments."""
