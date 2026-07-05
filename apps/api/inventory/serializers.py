@@ -1,6 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
-from apps.inventory.models import InventoryItem, Material
+from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.units import UnitsField
 from apps.api.mixins import InvoiceRefMixin
 
@@ -131,3 +131,51 @@ class MaterialAssignTaskSerializer(serializers.Serializer):
         queryset=__import__('apps.jobs.models', fromlist=['Task']).Task.objects.all(),
         allow_null=True,
     )
+
+
+class EarmarkSerializer(serializers.ModelSerializer):
+    """Read-only commitment report row: the earmark plus the item-level
+    figures the Catalog Earmarks tab needs (shortfall is computed
+    client-side from the three quantities)."""
+    item_code = serializers.CharField(source='inventory_item.code', read_only=True)
+    item_description = serializers.CharField(
+        source='inventory_item.description', read_only=True)
+    units = serializers.CharField(source='inventory_item.units', read_only=True)
+    job_number = serializers.CharField(source='job.job_number', read_only=True)
+    qty_on_hand = serializers.DecimalField(
+        source='inventory_item.qty_on_hand',
+        max_digits=10, decimal_places=2, read_only=True)
+    qty_on_order = serializers.DecimalField(
+        source='inventory_item.qty_on_order',
+        max_digits=10, decimal_places=2, read_only=True)
+    qty_earmarked_total = serializers.DecimalField(
+        source='inventory_item.qty_earmarked',
+        max_digits=10, decimal_places=2, read_only=True)
+    pos = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Earmark
+        fields = [
+            'earmark_id', 'inventory_item', 'item_code', 'item_description',
+            'units', 'job', 'job_number', 'quantity', 'created_date',
+            'qty_on_hand', 'qty_on_order', 'qty_earmarked_total', 'pos',
+        ]
+
+    def get_pos(self, obj):
+        """Distinct non-cancelled POs with an outstanding line for this item."""
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        lines = PurchaseOrderLineItem.objects.filter(
+            inventory_item=obj.inventory_item,
+        ).exclude(
+            purchase_order__status=PurchaseOrder.STATUS_CANCELLED,
+        ).select_related('purchase_order')
+        seen, out = set(), []
+        for li in lines:
+            if li.qty - li.qty_received - li.qty_cancelled <= 0:
+                continue
+            po = li.purchase_order
+            if po.pk in seen:
+                continue
+            seen.add(po.pk)
+            out.append({'po_id': po.pk, 'po_number': po.po_number})
+        return out

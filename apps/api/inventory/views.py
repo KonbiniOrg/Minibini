@@ -2,13 +2,13 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.inventory.models import InventoryItem, Material
+from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from .serializers import (
     InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer,
-    MaterialAssignTaskSerializer, StockOrderSerializer,
+    MaterialAssignTaskSerializer, StockOrderSerializer, EarmarkSerializer,
 )
 
 
@@ -215,3 +215,15 @@ class MaterialViewSet(viewsets.ModelViewSet):
         data = MaterialSerializer(m).data
         data['po_id'], data['po_number'] = po.pk, po.po_number
         return Response(data)
+
+
+class EarmarkViewSet(viewsets.ReadOnlyModelViewSet):
+    """Earmarks are system-managed (created at establish/order, shrunk by
+    restock, deleted by consume/release) — read-only over the API.
+    Unpaginated: the whole table is small and the SPA sorts client-side."""
+    queryset = (Earmark.objects
+                .select_related('inventory_item', 'job')
+                .order_by('inventory_item__code', 'job__job_number'))
+    serializer_class = EarmarkSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
