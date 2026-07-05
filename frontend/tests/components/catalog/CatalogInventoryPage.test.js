@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
-vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
+vi.mock('svelte-spa-router', () => ({
+  push: vi.fn(),
+  link: () => ({}),
+  location: { subscribe: (fn) => { fn('/catalog'); return () => {}; } },
+}));
 
 import { api } from '@/lib/api.js';
 import { push } from 'svelte-spa-router';
 import { user } from '@/stores/auth.js';
-import InventoryListPage from '@/routes/inventory/InventoryListPage.svelte';
+import CatalogInventoryPage from '@/routes/catalog/CatalogInventoryPage.svelte';
 
 const ITEMS = [
   {
@@ -30,9 +34,9 @@ beforeEach(() => {
   user.set({ username: 'u', permissions: [] });  // no manage by default
 });
 
-describe('InventoryListPage', () => {
+describe('CatalogInventoryPage', () => {
   it('renders items with on-hand / earmarked / available and status', async () => {
-    const { findByText, getByText } = render(InventoryListPage);
+    const { findByText, getByText } = render(CatalogInventoryPage);
     expect(await findByText('FELT')).toBeInTheDocument();
     expect(getByText('grey felt')).toBeInTheDocument();
     expect(getByText('leftover ply')).toBeInTheDocument();
@@ -42,7 +46,7 @@ describe('InventoryListPage', () => {
   });
 
   it('defaults to active-only', async () => {
-    render(InventoryListPage);
+    render(CatalogInventoryPage);
     await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
     const url = api.get.mock.calls[0][0];
     expect(url).toContain('is_active=true');
@@ -61,13 +65,13 @@ describe('InventoryListPage', () => {
       url.includes('page=2')
         ? Promise.resolve({ results: page2, next: null })
         : Promise.resolve({ results: page1, next: 'http://x/api/inventory/?page=2' }));
-    const { findByText } = render(InventoryListPage);
+    const { findByText } = render(CatalogInventoryPage);
     // The 101st item (only on page 2) must appear → both pages were fetched.
     expect(await findByText('LAST')).toBeInTheDocument();
   });
 
   it('filters client-side by search text', async () => {
-    const { findByText, getByPlaceholderText, queryByText } = render(InventoryListPage);
+    const { findByText, getByPlaceholderText, queryByText } = render(CatalogInventoryPage);
     await findByText('FELT');
     await fireEvent.input(getByPlaceholderText('code or description'), { target: { value: 'ply' } });
     expect(queryByText('FELT')).toBeNull();
@@ -80,26 +84,26 @@ describe('InventoryListPage', () => {
       qty_on_hand: '1.00', qty_earmarked: '3.00', qty_available: '-2.00',
       is_active: true, purchase_price: '0.00', selling_price: '0.00',
     }] });
-    const { findByText } = render(InventoryListPage);
+    const { findByText } = render(CatalogInventoryPage);
     const row = (await findByText('OVER')).closest('tr');
     expect(row.classList.contains('short')).toBe(true);
   });
 
   it('does not flag a row with non-negative available', async () => {
-    const { findByText } = render(InventoryListPage);  // ITEMS: FELT available 3.00
+    const { findByText } = render(CatalogInventoryPage);  // ITEMS: FELT available 3.00
     const row = (await findByText('FELT')).closest('tr');
     expect(row.classList.contains('short')).toBe(false);
   });
 
   it('hides manage actions without an atom', async () => {
-    const { findByText, queryByRole } = render(InventoryListPage);
+    const { findByText, queryByRole } = render(CatalogInventoryPage);
     await findByText('FELT');
     expect(queryByRole('button', { name: '+ New item' })).toBeNull();
     expect(queryByRole('button', { name: 'edit' })).toBeNull();
   });
 });
 
-describe('InventoryListPage — manage actions (financials/config)', () => {
+describe('CatalogInventoryPage — manage actions (financials/config)', () => {
   beforeEach(() => {
     user.set({ username: 'fin', permissions: ['can_manage_financials'] });
     vi.stubGlobal('confirm', vi.fn(() => true));
@@ -107,7 +111,7 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
 
   it('shows an order button on every row that navigates to a new PO', async () => {
     push.mockClear();
-    const { findAllByRole } = render(InventoryListPage);
+    const { findAllByRole } = render(CatalogInventoryPage);
     const orderBtns = await findAllByRole('button', { name: 'order' });
     expect(orderBtns.length).toBe(2);  // one per ITEMS row
     await fireEvent.click(orderBtns[0]);  // FELT, inventory_item_id 1
@@ -116,13 +120,13 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
 
   it('hides the order button for a config-only user (PO creation is financials)', async () => {
     user.set({ username: 'cfg', permissions: ['can_manage_config'] });
-    const { findAllByRole, queryByRole } = render(InventoryListPage);
+    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
     await findAllByRole('button', { name: 'edit' });  // config still manages items
     expect(queryByRole('button', { name: 'order' })).toBeNull();
   });
 
   it('writes off a partial quantity via the panel', async () => {
-    const { findAllByRole, getByText, getByLabelText } = render(InventoryListPage);
+    const { findAllByRole, getByText, getByLabelText } = render(CatalogInventoryPage);
     const writeOffBtns = await findAllByRole('button', { name: 'write off' });
     await fireEvent.click(writeOffBtns[0]);  // FELT (5 on hand)
     // Panel opens; qty defaults to the full balance — override to a partial.
@@ -137,7 +141,7 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
   });
 
   it('clicking write off opens a panel and does not post immediately', async () => {
-    const { findAllByRole, getByText } = render(InventoryListPage);
+    const { findAllByRole, getByText } = render(CatalogInventoryPage);
     const writeOffBtns = await findAllByRole('button', { name: 'write off' });
     await fireEvent.click(writeOffBtns[0]);
     getByText(/Write off — FELT/);  // panel shown
@@ -145,7 +149,7 @@ describe('InventoryListPage — manage actions (financials/config)', () => {
   });
 
   it('merges a discard lot into a keep item', async () => {
-    const { findByText, getByRole, getByText } = render(InventoryListPage);
+    const { findByText, getByRole, getByText } = render(CatalogInventoryPage);
     await findByText('FELT');
     await fireEvent.click(getByRole('button', { name: 'Merge items' }));
     const selects = document.querySelectorAll('select');

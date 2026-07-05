@@ -4,6 +4,7 @@
   import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
   import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
   import Modal from '../../components/Modal.svelte';
+  import CatalogTabs from '../../components/CatalogTabs.svelte';
 
   // Write access: either the money role or the admin role.
   let canManage = $derived($canManageFinancials || $canManageConfig);
@@ -123,7 +124,7 @@
   load();
 </script>
 
-<h2>Inventory</h2>
+<CatalogTabs />
 
 {#if canManage}
   <p>

@@ -41,9 +41,9 @@ describe('Sidebar', () => {
     expect(getByText('Expenses')).toBeInTheDocument();
   });
 
-  it('shows Inventory to any authenticated user (read access, no atom needed)', () => {
+  it('shows Catalog to any authenticated user (read access, no atom needed)', () => {
     user.set({ username: 'w', permissions: [] });
-    expect(render(Sidebar).getByText('Inventory')).toBeInTheDocument();
+    expect(render(Sidebar).getByText('Catalog')).toBeInTheDocument();
   });
 
   it('submits a search', async () => {
