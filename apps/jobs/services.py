@@ -1262,6 +1262,15 @@ class TaskLifecycleService:
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
             BlepService._close_open(task=task)
+            # Pending materials ride back to the job as loose rows (task=NULL)
+            # instead of staying "needed" on a dead task; the user releases
+            # them by hand if the stock is truly unwanted. Consumed/released
+            # rows stay attached — they are history of work actually done.
+            from apps.inventory.models import Material
+            from apps.inventory.services import MaterialService
+            for material in task.materials.filter(
+                    consumption_state=Material.CONSUMPTION_STATE_PENDING):
+                MaterialService.assign_task(material, None)
             Task.objects.filter(pk=task.pk).update(
                 status=Task.STATUS_CANCELLED, blocked_reason='',
             )

@@ -646,6 +646,54 @@ class CancelTaskTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.cancel_task(self.task.pk)
 
+    def test_cancel_detaches_pending_materials_to_job(self):
+        # A cancelled task must not keep "needed" materials captive: pending
+        # rows ride back to the job as loose materials (task=NULL), keeping
+        # their earmark; the user releases them by hand if truly unwanted.
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import Earmark, InventoryItem, Material
+        from apps.inventory.services import MaterialService
+        _approve_job(self.job)
+        cat = AccountingCategory.objects.first()
+        pli = InventoryItem.objects.create(
+            code='CANCEL-DETACH', accounting_category=cat,
+            qty_on_hand=Decimal('0'),
+        )
+        m = MaterialService.create_on_job(
+            job=self.job, task=self.task,
+            description='sheet', quantity=Decimal('2'), inventory_item=pli,
+        )
+        TaskLifecycleService.cancel_task(self.task.pk)
+        m.refresh_from_db()
+        self.assertIsNone(m.task_id)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        e = Earmark.objects.get(inventory_item=pli, job=self.job)
+        self.assertEqual(e.quantity, Decimal('2'))
+
+    def test_cancel_leaves_consumed_materials_attached(self):
+        # Consumed rows are history of work actually done on the task before
+        # cancellation — they stay attached.
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import InventoryItem, Material
+        from apps.inventory.services import MaterialService
+        _approve_job(self.job)
+        cat = AccountingCategory.objects.first()
+        pli = InventoryItem.objects.create(
+            code='CANCEL-KEEP', accounting_category=cat,
+            qty_on_hand=Decimal('5'),
+        )
+        m = MaterialService.create_on_job(
+            job=self.job, task=self.task,
+            description='rod', quantity=Decimal('1'), inventory_item=pli,
+        )
+        MaterialService.consume(m)
+        TaskLifecycleService.cancel_task(self.task.pk)
+        m.refresh_from_db()
+        self.assertEqual(m.task_id, self.task.pk)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
 
 class StartStopWorkTest(BaseTestCase):
     def setUp(self):
