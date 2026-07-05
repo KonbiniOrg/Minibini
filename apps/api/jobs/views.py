@@ -83,6 +83,14 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         project_manager = self.request.query_params.get('project_manager')
         if project_manager:
             qs = qs.filter(project_manager_id=project_manager)
+        # ?open=true — exclude dead jobs (completed / cancelled / rejected).
+        # Pickers that attach new work or spend (PO lines) pass it; work_complete
+        # stays included (still billable/adjustable until fully completed).
+        open_param = self.request.query_params.get('open')
+        if open_param is not None and open_param.lower() in ('true', '1', 'yes'):
+            qs = qs.exclude(status__in=[
+                Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED,
+            ])
         search = self.request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(

@@ -241,7 +241,7 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
-            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} /></td>
+            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} openOnly /></td>
             <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>
@@ -359,7 +359,7 @@
   {#if changeJobLine}
     <h3>Change Job for Line #{changeJobLine.line_number}</h3>
       <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
-      <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} />
+      <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} openOnly />
       <p>
         <button type="submit">Save</button>
         <button type="button" onclick={() => { changeJobLine = null; }}>Cancel</button>
