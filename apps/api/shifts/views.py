@@ -90,6 +90,24 @@ class ShiftViewSet(viewsets.ModelViewSet):
         shift = ShiftService.open_shift_for(request.user)
         return Response({'shift': ShiftSerializer(shift).data if shift else None})
 
+    def create(self, request, *args, **kwargs):
+        # Route through ShiftService.create — its permission rule (self, or
+        # can_manage_time for others) and blep-enclosure check must not be
+        # bypassable by a bare POST.
+        data = request.data.copy()
+        if not data.get('user'):
+            data['user'] = request.user.pk
+        ser = self.get_serializer(data=data)
+        ser.is_valid(raise_exception=True)
+        v = ser.validated_data
+        try:
+            shift = ShiftService.create(
+                v['user'], actor=request.user,
+                start_time=v.get('start_time'), end_time=v.get('end_time'))
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ShiftSerializer(shift).data, status=status.HTTP_201_CREATED)
+
     def update(self, request, *args, **kwargs):
         shift = self.get_object()
         partial = kwargs.get('partial', False)
@@ -108,12 +126,32 @@ class ShiftViewSet(viewsets.ModelViewSet):
         shift = self.get_object()
         if not (request.user.has_perm('core.can_manage_time')):
             return Response({'detail': 'Not permitted.'}, status=status.HTTP_403_FORBIDDEN)
-        shift.delete()
+        try:
+            ShiftService.delete(shift, actor=request.user)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'message': 'Shift deleted.'})
 
 
 class _ChangeRequestViewSet(viewsets.ModelViewSet):
     """Common behaviour for shift/blep change requests."""
+
+    def update(self, request, *args, **kwargs):
+        req = self.get_object()
+        # Ownership first (403); the service re-checks and owns the frozen /
+        # validation rules (400).
+        if req.requester_id != request.user.pk:
+            return Response({'detail': 'Only the requester may edit a request.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        ser = self.get_serializer(req, data=request.data,
+                                  partial=kwargs.get('partial', False))
+        ser.is_valid(raise_exception=True)
+        try:
+            TimeChangeRequestService.update_request(
+                req, actor=request.user, **ser.validated_data)
+        except DjangoValidationError as e:
+            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(req).data)
 
     def get_permissions(self):
         if self.action in ('approve', 'deny'):

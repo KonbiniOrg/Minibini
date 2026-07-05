@@ -23,6 +23,11 @@ class ReimbursementViewSet(QBORetrySyncMixin, ConfirmDeleteMixin, viewsets.Model
     def retry_service_call(self, obj, request):
         return ReimbursementService.retry_sync(batch=obj, actor=request.user)
 
+    # No PATCH/PUT: a batch's money fields are frozen once created (and
+    # pushed to QBO) — edits would silently drift from the QBO Purchase.
+    # Unwind (confirm-delete) + retry-sync are the only mutations.
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
     queryset = Reimbursement.objects.all().select_related(
         'purchased_by', 'created_by',
     ).prefetch_related('expenses')

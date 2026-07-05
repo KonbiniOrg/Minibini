@@ -36,6 +36,11 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        # Same guard as update/supersede: a referenced scheme PROTECTs at the
+        # DB, so an unguarded delete was a 500 instead of this 409.
+        blocked = self._block_if_referenced(instance, request)
+        if blocked:
+            return blocked
         instance.delete()
         return Response({'message': f'Service item "{instance.name}" deleted.'})
 

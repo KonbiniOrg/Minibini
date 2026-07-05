@@ -76,7 +76,26 @@ class EstimateViewSet(
         serializer.instance = estimate
 
     def perform_update(self, serializer):
-        serializer.save()
+        """Route status changes through the services — mark_open owns the
+        send-gate (hand-line AC checks) and update_status owns the atomic
+        acceptance cascade; a bare serializer.save() bypassed both."""
+        new_status = serializer.validated_data.get('status')
+        instance = serializer.instance
+        if new_status and new_status != instance.status:
+            try:
+                if new_status == Estimate.STATUS_OPEN:
+                    updated = EstimateService.mark_open(instance.pk)
+                else:
+                    updated = EstimateService.update_status(instance.pk, new_status)
+            except DjangoValidationError as e:
+                msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+                raise drf_serializers.ValidationError({'detail': msg})
+            except NotFoundError as e:
+                from rest_framework.exceptions import NotFound
+                raise NotFound(str(e))
+            serializer.instance = updated
+        else:
+            serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         estimate = self.get_object()

@@ -1435,8 +1435,57 @@ class ShiftService:
         from apps.core.models import Shift
         return Shift.objects.create(user=user, start_time=start_time, end_time=end_time)
 
+    @staticmethod
+    def delete(shift, actor):
+        """Delete a shift — refusing while any blep it encloses would be left
+        without a shift (the shift⊇blep invariant the request queue surfaces
+        as 'conflicts' must survive deletion too)."""
+        if not ShiftService._has_manage_time(actor):
+            raise ValidationError("Deleting a shift requires can_manage_time.")
+        from django.db.models import Q
+        from apps.jobs.models import Blep
+        enclosed = Blep.objects.filter(
+            user=shift.user, start_time__gte=shift.start_time,
+        )
+        if shift.end_time is not None:
+            enclosed = enclosed.filter(end_time__lte=shift.end_time)
+        orphaned = [
+            b for b in enclosed
+            if not shift.user.shifts.exclude(pk=shift.pk)
+                .filter(start_time__lte=b.start_time)
+                .filter(Q(end_time__isnull=True) | Q(end_time__gte=b.end_time))
+                .exists()
+        ]
+        if orphaned:
+            ids = ", ".join(str(b.pk) for b in orphaned)
+            raise ValidationError(
+                f"Deleting this shift would leave blep(s) {ids} outside any "
+                f"shift; move or delete them first."
+            )
+        shift.delete()
+
 
 class TimeChangeRequestService:
+    @staticmethod
+    def update_request(request, actor, **fields):
+        """The requester edits their own still-pending request. Reviewed
+        requests are frozen; nobody else may touch it (approve/deny are the
+        manager verbs, with their own endpoint + permission)."""
+        from apps.core.models import TimeChangeRequest
+        if request.requester_id != actor.pk:
+            raise ValidationError("Only the requester may edit a request.")
+        if request.status != TimeChangeRequest.STATUS_PENDING:
+            raise ValidationError("This request has been reviewed and is frozen.")
+        for f in ('requested_start', 'requested_end', 'reason', 'shift',
+                  'blep', 'task'):
+            if f in fields:
+                setattr(request, f, fields[f])
+        if not (request.reason or '').strip():
+            raise ValidationError("A reason is required.")
+        request.has_known_conflict = request.would_conflict()
+        request.save()
+        return request
+
     @staticmethod
     def submit(request):
         """Validate + save a new request. Conflicts are allowed (warn-and-flag)."""
