@@ -18,7 +18,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
             'purchase_price', 'selling_price',
             'qty_on_hand', 'qty_sold', 'qty_wasted',
             'qty_earmarked', 'qty_available', 'qty_on_order',
-            'is_active', 'is_catalog', 'accounting_category',
+            'is_active', 'accounting_category',
         ]
         read_only_fields = [
             'inventory_item_id', 'qty_on_hand', 'qty_sold', 'qty_wasted',
@@ -28,7 +28,6 @@ class InventoryItemSerializer(serializers.ModelSerializer):
 class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
-    inventory_item_is_catalog = serializers.SerializerMethodField()
     po_line_item_id = serializers.SerializerMethodField()
     po_id = serializers.SerializerMethodField()
     po_number = serializers.SerializerMethodField()
@@ -49,7 +48,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'description', 'quantity', 'unit_cost', 'sell_price',
             'inventory_item', 'accounting_category',
             'consumption_state', 'released_qty', 'cost_source',
-            'is_expense_bound', 'inventory_item_is_catalog',
+            'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'units', 'qty_on_order', 'qty_on_hand',
             'propagate_to_pli',
@@ -60,7 +59,6 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'job', 'task',
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
-            'inventory_item_is_catalog',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_order', 'qty_on_hand',
         ]
@@ -81,9 +79,6 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
                                  'expense or PO, not manual entry.'
                 })
         return attrs
-
-    def get_inventory_item_is_catalog(self, obj):
-        return bool(obj.inventory_item and obj.inventory_item.is_catalog)
 
     def get_po_line_item_id(self, obj):
         return obj.po_line_item_id

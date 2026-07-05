@@ -22,7 +22,7 @@ class POReverseReceiptWithMaterialTest(TestCase):
         cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
         self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=cat, is_catalog=True,
+            selling_price=Decimal('2.00'), accounting_category=cat,
             qty_on_hand=Decimal('0.00'),
         )
         self.po = PurchaseOrder.objects.create(business=self.business)

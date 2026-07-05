@@ -17,11 +17,11 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        # Only the LIST (and pickers, which list) is scoped by is_active /
-        # hide-on-spend. Detail, update, delete, and detail-actions must reach
-        # ANY item by pk — get_object() runs through get_queryset(), so scoping
-        # it here would 404 a finished/hidden lot or a deactivated item and make
-        # it impossible to retrieve or edit (e.g. to re-promote it to catalog).
+        # Only the LIST (and pickers, which list) is scoped by is_active.
+        # Detail, update, delete, and detail-actions must reach ANY item by
+        # pk — get_object() runs through get_queryset(), so scoping it here
+        # would 404 a deactivated item and make it impossible to retrieve or
+        # edit (e.g. to re-activate it).
         if self.action != 'list':
             return qs
         # Optional filter: ?is_active=true|false (omit to include all).
@@ -32,22 +32,6 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if is_active_param is not None:
             value = is_active_param.lower() in ('true', '1', 'yes')
             qs = qs.filter(is_active=value)
-        # Hide-on-spend: a finished transient lot (not catalog, QOH 0, no
-        # earmarks) is filtered from the active list and allocation pickers.
-        # Catalog management opts back in with ?include_finished=true to reach
-        # finished lots for merge/write-off.
-        include_finished = self.request.query_params.get(
-            'include_finished', '').lower() in ('true', '1', 'yes')
-        if not include_finished:
-            from decimal import Decimal
-            from django.db.models import Count
-            qs = qs.annotate(_em_count=Count('earmark')).exclude(
-                is_catalog=False, qty_on_hand=Decimal('0.00'), _em_count=0,
-            )
-        is_catalog_param = self.request.query_params.get('is_catalog')
-        if is_catalog_param is not None:
-            is_catalog_value = is_catalog_param.lower() in ('true', '1', 'yes')
-            qs = qs.filter(is_catalog=is_catalog_value)
         search = self.request.query_params.get('search', '').strip()
         if search:
             from django.db.models import Q
@@ -64,8 +48,8 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """Hard delete is mistake correction: never-referenced rows only.
 
-        Referenced items retire by deactivation (is_active) or live on as
-        hidden finished lots — inventory rows are shop history.
+        Referenced items retire by deactivation (is_active) — inventory rows
+        are shop history.
         """
         item = self.get_object()
         InventoryService.assert_item_deletable(item)
@@ -86,8 +70,8 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             item, qty=request.data.get('qty'),
             reason=request.data.get('reason', '') or 'Write-off',
         )
-        # The row always survives a write-off now (finished lots are kept as
-        # hidden history, never auto-collected).
+        # The row always survives a write-off now — inventory rows are kept as
+        # history, never auto-collected.
         item.refresh_from_db()
         return Response(self.get_serializer(item).data)
 

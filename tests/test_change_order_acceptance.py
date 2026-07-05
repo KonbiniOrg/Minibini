@@ -59,7 +59,7 @@ class ChangeOrderAcceptanceBase(TestCase):
             template_name='CNC cutting', rate_scheme=self.scheme,
         )
         self.pli = InventoryItem.objects.create(
-            code='PLY', accounting_category=self.mat_cat, is_catalog=True,
+            code='PLY', accounting_category=self.mat_cat,
             qty_on_hand=Decimal('50'), purchase_price=Decimal('80'),
             selling_price=Decimal('100'), units='ea',
         )

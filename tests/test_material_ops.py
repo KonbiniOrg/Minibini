@@ -17,7 +17,7 @@ class ConsumeTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-C-1', contact=self.contact,
                                       status=Job.STATUS_APPROVED)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=cat, is_catalog=True,
+            code='I', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -123,7 +123,7 @@ class RestockTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-R-1', contact=self.contact,
                                       status=Job.STATUS_APPROVED)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=cat, is_catalog=True,
+            code='I', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -221,7 +221,7 @@ class DrawMoreTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-D-1', contact=self.contact,
                                       status=Job.STATUS_APPROVED)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=cat, is_catalog=True,
+            code='I', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
 

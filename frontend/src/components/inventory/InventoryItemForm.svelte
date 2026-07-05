@@ -17,8 +17,6 @@
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let sellPrice = $state(item?.selling_price ?? '');
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-  let isCatalog = $state(item ? item.is_catalog : true);
-  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let isActive = $state(item ? item.is_active : true);
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let accountingCategory = $state(item?.accounting_category ?? '');
@@ -53,7 +51,6 @@
         description,
         units,
         purchase_price: purchasePrice === '' ? '0.00' : purchasePrice,
-        is_catalog: isCatalog,
         accounting_category: accountingCategory,
       };
       // Only send selling_price when the user set one. On create, leaving it
@@ -101,9 +98,6 @@
   <p><label><strong>Selling price</strong></label><br>
     <input type="number" step="0.01" min="0" bind:value={sellPrice}
       placeholder={editing ? '' : 'blank = apply markup'}></p>
-
-  <p><label><input type="checkbox" bind:checked={isCatalog}>
-    <strong>Catalog item</strong> (reorderable type; survives at zero stock)</label></p>
 
   {#if editing}
     <p><label><input type="checkbox" bind:checked={isActive}>

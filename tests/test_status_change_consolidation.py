@@ -23,7 +23,7 @@ class ReleaseLooseMaterialsHelperTest(TestCase):
         )
         self.cat = AccountingCategory.objects.create(name='B6 Cat', code='B6')
         self.pli = InventoryItem.objects.create(
-            code='I-B6', accounting_category=self.cat, is_catalog=True,
+            code='I-B6', accounting_category=self.cat,
             qty_on_hand=Decimal('20'),
         )
         self.job = Job.objects.create(
@@ -56,7 +56,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
         )
         self.cat = AccountingCategory.objects.create(name='B6 Inv Cat', code='B6I')
         self.pli = InventoryItem.objects.create(
-            code='I-B6I', accounting_category=self.cat, is_catalog=True,
+            code='I-B6I', accounting_category=self.cat,
             qty_on_hand=Decimal('20'),
         )
 

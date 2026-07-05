@@ -22,7 +22,7 @@ class UnconsumeTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-U-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=self.cat, is_catalog=True,
+            code='I', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 

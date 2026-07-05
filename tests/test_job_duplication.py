@@ -48,13 +48,13 @@ class DuplicateJobTestBase(BaseTestCase):
         self.plywood = InventoryItem.objects.create(
             code='DUP.PLY', description='Plywood', units='sheets',
             qty_on_hand=Decimal('20.00'), purchase_price=Decimal('45.00'),
-            selling_price=Decimal('90.00'), is_catalog=True,
+            selling_price=Decimal('90.00'),
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
             code='DUP.SCR', description='Screws', units='ea',
             qty_on_hand=Decimal('50.00'), purchase_price=Decimal('8.00'),
-            selling_price=Decimal('12.00'), is_catalog=True,
+            selling_price=Decimal('12.00'),
             accounting_category=self.category,
         )
 

@@ -149,8 +149,7 @@ class SpentTests(FixtureTestCase):
         from apps.jobs.financials import compute_job_financials
         from apps.inventory.models import InventoryItem
         pli = InventoryItem.objects.create(
-            code='SR-FIN', description='p', accounting_category=self.cat,
-            is_catalog=True)
+            code='SR-FIN', description='p', accounting_category=self.cat)
         Expense.objects.create(
             entered_by=self.user, amount=Decimal('100.00'),
             purchased_on=date.today(), accounting_category=self.cat,

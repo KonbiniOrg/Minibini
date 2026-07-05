@@ -23,7 +23,7 @@ class ConsumeMaterialTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_catalog=True, qty_on_hand=Decimal('20.00'),
+            qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
         self.scheme = RateScheme.objects.create(
             name='S-qohs1', algorithm=RateScheme.ENTERED_QTY,
@@ -167,7 +167,7 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_catalog=True, qty_on_hand=Decimal('20.00'),
+            qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
         self.scheme = RateScheme.objects.create(
             name='S-qohs2', algorithm=RateScheme.ENTERED_QTY,
@@ -238,7 +238,7 @@ class ManualAdjustmentTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_catalog=True, qty_on_hand=Decimal('50.00'),
+            qty_on_hand=Decimal('50.00'),
             qty_wasted=Decimal('0.00'), accounting_category=self.category)
 
     def test_positive_adjustment_increases_qoh(self):

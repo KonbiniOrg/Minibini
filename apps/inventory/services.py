@@ -57,10 +57,8 @@ class InventoryService:
             setattr(pli, field, value)
         pli.full_clean()
         pli.save()
-        # A demoted catalog item that is empty becomes a finished lot — kept as
-        # shop history, hidden by the hide-on-spend list filter. (The old
-        # collect_if_finished auto-delete was retired by the deletion doctrine:
-        # inventory rows are never auto-deleted.)
+        # Inventory rows are never auto-deleted — an empty item is kept as shop
+        # history and retired manually via is_active.
         return pli
 
     @staticmethod
@@ -71,8 +69,7 @@ class InventoryService:
         (can_be_deleted); Materials and Expense stock receipts are SET_NULL, so
         without this guard deleting an item would silently demote established
         materials to provisional and orphan stock-receipt records. A referenced
-        item retires by deactivation (is_active) or lives on as a hidden
-        finished lot instead.
+        item retires by deactivation (is_active) instead.
         """
         from django.core.exceptions import ValidationError
         from apps.expenses.models import Expense
@@ -127,7 +124,6 @@ class InventoryService:
 
     MERGE_OVERRIDE_FIELDS = (
         'code', 'description', 'units', 'purchase_price', 'selling_price',
-        'is_catalog',
     )
 
     @staticmethod

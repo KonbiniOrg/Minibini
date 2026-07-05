@@ -34,16 +34,14 @@ class InventoryServiceTest(TestCase):
         self.assertEqual(pli.selling_price, Decimal('0.00'))
         self.assertEqual(pli.qty_on_hand, Decimal('0.00'))
         self.assertTrue(pli.is_active)
-        self.assertTrue(pli.is_catalog)  # default is now True (catalog item)
 
     def test_create_item_inventoried(self):
         """Create an inventoried item with initial stock."""
         pli = InventoryService.create_item(
             code='INV-001', description='Lumber', units='bd ft',
-            is_catalog=True, qty_on_hand=Decimal('100.00'),
+            qty_on_hand=Decimal('100.00'),
             accounting_category=self.category,
         )
-        self.assertTrue(pli.is_catalog)
         self.assertEqual(pli.qty_on_hand, Decimal('100.00'))
 
     def test_update_item(self):

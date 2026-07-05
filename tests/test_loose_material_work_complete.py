@@ -30,7 +30,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             rate=1, unit_label='ea', accounting_category=cat,
         )
         self.pli = InventoryItem.objects.create(
-            code='I-WCG', accounting_category=cat, is_catalog=True,
+            code='I-WCG', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
         self.job = Job.objects.create(
@@ -87,7 +87,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """A pending task-less non-inventoried material also blocks work_complete."""
         cat = AccountingCategory.objects.first()
         non_inv_pli = InventoryItem.objects.create(
-            code='NI-WCG', accounting_category=cat, is_catalog=False,
+            code='NI-WCG', accounting_category=cat,
         )
         MaterialService.create_on_job(
             job=self.job, task=None, description='non-inv pending',

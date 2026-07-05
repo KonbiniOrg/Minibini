@@ -40,7 +40,7 @@ class MaterialReleaseBase(TestCase):
             job_number='JOB-2026-0001',
         )
         self.pli = InventoryItem.objects.create(
-            code='ACR', accounting_category=self.cat, is_catalog=True,
+            code='ACR', accounting_category=self.cat,
             qty_on_hand=Decimal('50'), units='ea',
         )
         self.estimate = Estimate.objects.create(

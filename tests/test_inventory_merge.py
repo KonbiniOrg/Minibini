@@ -20,11 +20,11 @@ class MergeServiceTest(TestCase):
         self.keep = InventoryItem.objects.create(
             code='KEEP', description='grey felt', units='sheet',
             qty_on_hand=Decimal('2.00'), qty_sold=Decimal('1.00'),
-            is_catalog=True, accounting_category=self.cat)
+            accounting_category=self.cat)
         self.discard = InventoryItem.objects.create(
             code='DISC', description='gray felt 1/4', units='sheet',
             qty_on_hand=Decimal('3.00'), qty_sold=Decimal('4.00'),
-            is_catalog=False, accounting_category=self.cat)
+            accounting_category=self.cat)
 
     def test_merge_folds_qoh_and_aggregates(self):
         InventoryService.merge(self.keep.pk, self.discard.pk)
@@ -67,11 +67,7 @@ class MergeServiceTest(TestCase):
             InventoryService.merge(self.keep.pk, self.discard.pk)
 
     def test_merge_discards_any_item(self):
-        """The catalog discard-guard is retired; explicit confirm lives in
-        the UI. Force is_catalog=True on discard (the old guard's trigger
-        condition) to prove merge no longer cares."""
-        self.discard.is_catalog = True
-        self.discard.save()
+        """Any discard can be merged away; explicit confirm lives in the UI."""
         InventoryService.merge(self.keep.pk, self.discard.pk)
         self.keep.refresh_from_db()
         self.assertEqual(self.keep.qty_on_hand, Decimal('5.00'))  # 2 + 3
@@ -134,10 +130,10 @@ class MergeEndpointTest(TestCase):
             code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.keep = InventoryItem.objects.create(
             code='K', units='ea', qty_on_hand=Decimal('1.00'),
-            is_catalog=True, accounting_category=self.cat)
+            accounting_category=self.cat)
         self.discard = InventoryItem.objects.create(
             code='D', units='ea', qty_on_hand=Decimal('1.00'),
-            is_catalog=False, accounting_category=self.cat)
+            accounting_category=self.cat)
         u = User.objects.create(username='merge_fin')
         u.user_permissions.add(Permission.objects.get(codename='can_manage_financials'))
         self.client.force_authenticate(User.objects.get(pk=u.pk))
@@ -165,37 +161,37 @@ class MergeNoneUnitTest(TestCase):
         self.cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
 
-    def _item(self, code, units, is_catalog, qoh='1.00'):
+    def _item(self, code, units, qoh='1.00'):
         return InventoryItem.objects.create(
             code=code, description=code, units=units,
-            qty_on_hand=Decimal(qoh), is_catalog=is_catalog,
+            qty_on_hand=Decimal(qoh),
             accounting_category=self.cat)
 
     def test_none_discard_merges_into_real_unit_keep(self):
-        keep = self._item('K-SHEET', 'sheet', True, '2.00')
-        discard = self._item('D-NONE', 'none', False, '3.00')
+        keep = self._item('K-SHEET', 'sheet', '2.00')
+        discard = self._item('D-NONE', 'none', '3.00')
         InventoryService.merge(keep.pk, discard.pk)
         keep.refresh_from_db()
         self.assertEqual(keep.qty_on_hand, Decimal('5.00'))
         self.assertEqual(keep.units, 'sheet')
 
     def test_none_keep_adopts_discard_real_unit(self):
-        keep = self._item('K-NONE', 'none', True, '2.00')
-        discard = self._item('D-SHEET', 'sheet', False, '3.00')
+        keep = self._item('K-NONE', 'none', '2.00')
+        discard = self._item('D-SHEET', 'sheet', '3.00')
         InventoryService.merge(keep.pk, discard.pk)
         keep.refresh_from_db()
         self.assertEqual(keep.units, 'sheet')
         self.assertEqual(keep.qty_on_hand, Decimal('5.00'))
 
     def test_real_unit_mismatch_still_blocks(self):
-        keep = self._item('K-LBS', 'lbs', True)
-        discard = self._item('D-SHEET2', 'sheet', False)
+        keep = self._item('K-LBS', 'lbs')
+        discard = self._item('D-SHEET2', 'sheet')
         with self.assertRaises(ValidationError):
             InventoryService.merge(keep.pk, discard.pk)
 
     def test_explicit_units_override_still_wins(self):
-        keep = self._item('K-NONE2', 'none', True, '2.00')
-        discard = self._item('D-SHEET3', 'sheet', False, '3.00')
+        keep = self._item('K-NONE2', 'none', '2.00')
+        discard = self._item('D-SHEET3', 'sheet', '3.00')
         InventoryService.merge(keep.pk, discard.pk,
                                overrides={'units': 'sheet'})
         keep.refresh_from_db()

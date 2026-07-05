@@ -1765,7 +1765,7 @@ class PurchasingBuilderTest(unittest.TestCase):
 
     def test_unmatched_materials_get_markup_priced_transient_lots(self):
         lots = [i for i in self._m('inventory.inventoryitem')
-                if not i['fields']['is_catalog']]
+                if i['fields']['code'].startswith('LOT-')]
         self.assertGreater(len(lots), 0)
         for lot in lots:
             p = Decimal(lot['fields']['purchase_price'])

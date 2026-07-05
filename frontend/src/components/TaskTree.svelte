@@ -278,7 +278,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.inventory_item_is_catalog}<span class="inv-badge" title="catalog item">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
@@ -346,7 +346,7 @@
               <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
             {/if}
             <td class="indent-2">
-              {#if mat.inventory_item_is_catalog}<span class="inv-badge" title="catalog item">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+              <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
             </td>
             {#if showAssignee}<td></td>{/if}
             <td></td>
@@ -384,7 +384,7 @@
             <td class="move-cell">{#if isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            {#if mat.inventory_item_is_catalog}<span class="inv-badge" title="catalog item">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
@@ -470,7 +470,6 @@
   /* Fees are billable but not a task/material — tint them so they read distinctly. */
   .fee-row { background: #f3e8ff; }
   .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }
-  .inv-badge { margin-left: 6px; font-size: 11px; }
   .badge-invoiced {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
     letter-spacing: 0.3px; color: #047857; text-decoration: none;

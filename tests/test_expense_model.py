@@ -221,9 +221,9 @@ class ExpenseStockReceiptModelTest(TestCase):
         self.contact = Contact.objects.create(first_name='T', last_name='C', email='s@t.com')
         self.job = Job.objects.create(job_number='JOB-SR-1', contact=self.contact)
         self.inv_pli = InventoryItem.objects.create(
-            code='INV', description='inv', accounting_category=self.cat, is_catalog=True)
+            code='INV', description='inv', accounting_category=self.cat)
         self.noninv_pli = InventoryItem.objects.create(
-            code='NONINV', description='n', accounting_category=self.cat, is_catalog=False)
+            code='NONINV', description='n', accounting_category=self.cat)
 
     def _build(self, **overrides):
         defaults = dict(
@@ -244,9 +244,8 @@ class ExpenseStockReceiptModelTest(TestCase):
         with self.assertRaises(ValidationError):
             exp.full_clean()
 
-    def test_stock_pli_need_not_be_catalog(self):
-        """The is_catalog stock-receipt guard is retired: any inventory item
-        can back a stock receipt now, catalog or not."""
+    def test_stock_pli_any_item(self):
+        """Any inventory item can back a stock receipt."""
         exp = self._build(stock_pli=self.noninv_pli, stock_qty=Decimal('3.00'))
         exp.full_clean()  # should not raise
 

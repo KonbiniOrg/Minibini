@@ -749,7 +749,7 @@ class StartStopWorkTest(BaseTestCase):
         )[0]
         non_inv = InventoryItem.objects.create(
             code='PLI-NI-TKO', description='Labor',
-            is_catalog=False, qty_on_hand=Decimal('0.00'),
+            qty_on_hand=Decimal('0.00'),
             qty_sold=Decimal('0.00'), accounting_category=cat,
         )
         mat = Material.objects.create(

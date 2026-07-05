@@ -27,7 +27,7 @@ class QtyOnOrderTest(TestCase):
             business_name='Vendor Co', default_contact=contact)
         self.item = InventoryItem.objects.create(
             code='QOO-I', accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal('1.00'),
+            qty_on_hand=Decimal('1.00'),
         )
 
     def _po(self, status=PurchaseOrder.STATUS_ISSUED, number='PO-1'):

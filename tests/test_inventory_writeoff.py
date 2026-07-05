@@ -1,8 +1,8 @@
 """B5 — write-off.
 
 Zeroes a lot's QOH and books the remainder to qty_wasted, recording the wastage
-history entry (so it's never lost). Afterward the lot is a finished lot (hidden)
-unless it still has earmarks.
+history entry (so it's never lost). The row always survives — inventory rows are
+shop history, retired manually via is_active.
 """
 from decimal import Decimal
 from django.test import TestCase
@@ -16,9 +16,8 @@ from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
 
 def _reference(item, po_number):
-    """Pin a PROTECT'd line item to `item` so it is hidden (not collected) on
-    write-off — lets these tests inspect the surviving row. The collect-when-
-    unreferenced path is covered in test_inventory_collect.py."""
+    """Pin a PROTECT'd line item to `item`. Rows always survive write-off now;
+    this keeps the surviving-row assertions grounded in a referenced item."""
     contact = Contact.objects.create(first_name='R', last_name='Ef')
     biz = Business.objects.create(business_name='V', default_contact=contact)
     po = PurchaseOrder.objects.create(
@@ -33,9 +32,9 @@ class WriteOffServiceTest(TestCase):
         self.cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.lot = InventoryItem.objects.create(
-            code='WO1', is_catalog=False, qty_on_hand=Decimal('4.00'),
+            code='WO1', qty_on_hand=Decimal('4.00'),
             accounting_category=self.cat)
-        _reference(self.lot, 'PO-WO-SVC')  # survives write-off (hidden) for inspection
+        _reference(self.lot, 'PO-WO-SVC')  # referenced; survives write-off for inspection
 
     def test_write_off_zeroes_qoh_and_books_waste(self):
         InventoryService.write_off(self.lot, reason='water damage')
@@ -51,14 +50,15 @@ class WriteOffServiceTest(TestCase):
         self.assertEqual(entry.changes['qty_change'], '-4.00')
         self.assertEqual(entry.text, 'water damage')
 
-    def test_write_off_makes_lot_finished(self):
+    def test_write_off_empties_and_row_survives(self):
         InventoryService.write_off(self.lot)
         self.lot.refresh_from_db()
-        self.assertTrue(self.lot.is_finished_lot)
+        self.assertEqual(self.lot.qty_on_hand, Decimal('0.00'))
+        self.assertTrue(InventoryItem.objects.filter(pk=self.lot.pk).exists())
 
     def test_write_off_empty_raises(self):
         empty = InventoryItem.objects.create(
-            code='WO2', is_catalog=False, qty_on_hand=Decimal('0.00'),
+            code='WO2', qty_on_hand=Decimal('0.00'),
             accounting_category=self.cat)
         from django.core.exceptions import ValidationError
         with self.assertRaises(ValidationError):
@@ -87,9 +87,9 @@ class WriteOffEndpointTest(TestCase):
         self.cat = AccountingCategory.objects.get_or_create(
             code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.lot = InventoryItem.objects.create(
-            code='WOE', is_catalog=False, qty_on_hand=Decimal('3.00'),
+            code='WOE', qty_on_hand=Decimal('3.00'),
             accounting_category=self.cat)
-        _reference(self.lot, 'PO-WO-EP')  # survives write-off (hidden) for inspection
+        _reference(self.lot, 'PO-WO-EP')  # referenced; survives write-off for inspection
 
     def _user(self, *atoms):
         u = User.objects.create(username='wo_' + '_'.join(atoms) or 'wo_plain')

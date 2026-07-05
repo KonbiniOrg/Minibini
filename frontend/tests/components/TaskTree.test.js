@@ -113,28 +113,6 @@ describe('TaskTree', () => {
     expect(getAllByRole('button', { name: 'consume' })).toHaveLength(1);
   });
 
-  it('shows the catalog badge for an inventory-item-backed material', () => {
-    const t = task({
-      materials: [{
-        description: 'Steel', quantity: '3', sell_price: '5', units: 'kg',
-        consumption_state: 'pending', inventory_item_is_catalog: true,
-      }],
-    });
-    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(container.querySelector('.inv-badge')).not.toBeNull();
-  });
-
-  it('omits the catalog badge for a freeform material', () => {
-    const t = task({
-      materials: [{
-        description: 'Glue', quantity: '1', sell_price: '2', units: 'ea',
-        consumption_state: 'pending', inventory_item_is_catalog: false,
-      }],
-    });
-    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(container.querySelector('.inv-badge')).toBeNull();
-  });
-
   it('fires the edit callback when canManage', async () => {
     const onEditTask = vi.fn();
     const { getByRole } = render(TaskTree, { props: { tasks: [task()], canManage: true, onEditTask } });

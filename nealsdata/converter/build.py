@@ -771,7 +771,6 @@ def build_inventory_items(c):
             'qty_sold': qty_sold,
             'qty_wasted': '0.00',
             'is_active': True,
-            'is_catalog': True,
             'accounting_category': c.ac_mat_pk,
         })
         c.pli_map[code] = pk
@@ -1061,7 +1060,7 @@ _MATERIAL_MARKUP_FACTOR = Decimal('1.20')
 
 
 def _mint_transient_lot(c, description, units, purchase_cost):
-    """Create a transient-lot InventoryItem (is_catalog=False) to back a Material
+    """Create a transient-lot InventoryItem (code ``LOT-*``) to back a Material
     that matched no catalog item, and return its pk. Selling price derives from
     the purchase cost via the configured material markup. QOH starts at 0 and is
     reconciled later by build_purchasing."""
@@ -1078,7 +1077,6 @@ def _mint_transient_lot(c, description, units, purchase_cost):
         'qty_sold': '0.00',
         'qty_wasted': '0.00',
         'is_active': True,
-        'is_catalog': False,
         'accounting_category': c.ac_mat_pk,
     })
     return pk

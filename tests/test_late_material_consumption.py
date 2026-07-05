@@ -42,7 +42,7 @@ class LateMaterialConsumptionBase(TestCase):
         )
         self.pli = InventoryItem.objects.create(
             code='LM-I', accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal('10'),
+            qty_on_hand=Decimal('10'),
         )
 
 

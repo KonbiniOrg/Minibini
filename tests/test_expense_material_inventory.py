@@ -40,7 +40,6 @@ class AdHocPurchaseTest(TestCase):
         self.pli = InventoryItem.objects.create(
             code='I',
             accounting_category=self.cat,
-            is_catalog=True,
             qty_on_hand=Decimal('10'),
         )
 
@@ -69,11 +68,11 @@ class AdHocPurchaseTest(TestCase):
 
     def test_receive_ad_hoc_purchase_lot_bumps_qoh(self):
         """Universal tracking: receive_ad_hoc_purchase bumps QOH for any
-        item-backed material (catalog or non-catalog lot). Only a None-item
-        material is a no-op (see test_receive_ad_hoc_purchase_no_pli_is_noop)."""
+        item-backed material. Only a None-item material is a no-op
+        (see test_receive_ad_hoc_purchase_no_pli_is_noop)."""
         cat = AccountingCategory.objects.create(code='CAT2', name='d')
         pli_lot = InventoryItem.objects.create(
-            code='NI', accounting_category=cat, is_catalog=False,
+            code='NI', accounting_category=cat,
             qty_on_hand=Decimal('5'),
         )
         m = MaterialService.create_on_job(
@@ -112,7 +111,7 @@ class ExpenseSubmitPathTest(TestCase):
         self.user = User.objects.create(username='exp_user')
         self.job = Job.objects.create(job_number='JOB-EX-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='I-EX', accounting_category=self.cat, is_catalog=True,
+            code='I-EX', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -155,9 +154,8 @@ class ExpenseSubmitPathTest(TestCase):
         self.assertFalse(Task.objects.filter(job=self.job, name='Materials').exists())
 
     def test_any_item_backed_purchase_is_stock_receipt(self):
-        """Spec §Drop is_catalog: pli present → stock receipt, uniformly.
-        No `is_catalog` kwarg is passed here on purpose — classification no
-        longer depends on the flag at all."""
+        """pli present → stock receipt, uniformly. Every inventory item is one
+        kind; classification depends only on whether a pli is attached."""
         pli = InventoryItem.objects.create(
             code='LOT-X', accounting_category=self.cat, units='ea',
             qty_on_hand=Decimal('0'))
@@ -196,7 +194,7 @@ class ExpenseRejectStockReceiptTest(TestCase):
         self.user = User.objects.create(username='rj_user')
         self.job = Job.objects.create(job_number='JOB-RJ-1', contact=contact)
         self.pli = InventoryItem.objects.create(
-            code='I-RJ', accounting_category=self.cat, is_catalog=True,
+            code='I-RJ', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -241,9 +239,9 @@ class ExpenseRejectStockReceiptTest(TestCase):
 class ExpenseRejectNonInventoriedTest(TestCase):
     """Gap 13: reject with a freeform (no PLI) expense material leaves QOH
     untouched — there's nothing to track. An item-backed purchase is a stock
-    receipt uniformly now (catalog or not) — see
+    receipt uniformly now — see
     test_reject_noninv_item_backed_purchase_is_stock_receipt below, which
-    reverses the QOH bump exactly like the catalog case."""
+    reverses the QOH bump for any item-backed purchase."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -262,7 +260,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-NI-1', contact=self.contact,
                                       status=Job.STATUS_APPROVED)
         self.pli_noninv = InventoryItem.objects.create(
-            code='NI-PLI', accounting_category=self.cat, is_catalog=False,
+            code='NI-PLI', accounting_category=self.cat,
             qty_on_hand=Decimal('5'),
         )
 
@@ -293,9 +291,8 @@ class ExpenseRejectNonInventoriedTest(TestCase):
         )
 
     def test_reject_noninv_item_backed_purchase_is_stock_receipt(self):
-        """Spec §Drop is_catalog: an item-backed purchase is a stock receipt
-        regardless of is_catalog — no material/earmark created, and reject
-        reverses the QOH bump exactly like the catalog case."""
+        """An item-backed purchase is a stock receipt — no material/earmark
+        created, and reject reverses the QOH bump."""
         exp = self._submit_noninv()
         self.assertIsNone(exp.material_id)
         self.assertEqual(exp.stock_pli_id, self.pli_noninv.pk)

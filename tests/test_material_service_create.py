@@ -16,10 +16,10 @@ class MaterialServiceCreateOnJobTest(TestCase):
         self.job = Job.objects.create(job_number='JOB-MS-1', contact=self.contact,
                                       status=Job.STATUS_APPROVED)
         self.pli_inv = InventoryItem.objects.create(
-            code='I', accounting_category=self.cat, is_catalog=True,
+            code='I', accounting_category=self.cat,
         )
         self.pli_noninv = InventoryItem.objects.create(
-            code='N', accounting_category=self.cat, is_catalog=False,
+            code='N', accounting_category=self.cat,
         )
         self.scheme = RateScheme.objects.create(
             name='S-msc', algorithm=RateScheme.ENTERED_QTY,

@@ -56,7 +56,7 @@ class BlepStartSweepBase(TestCase):
         )
         self.pli = InventoryItem.objects.create(
             code='BSS-I', accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal('0.00'),
+            qty_on_hand=Decimal('0.00'),
         )
 
     def _shortfall_material(self, qty='3.00'):

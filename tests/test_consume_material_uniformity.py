@@ -23,7 +23,7 @@ class ConsumeMaterialUniformityTest(TestCase):
         self.task = Task.objects.create(job=self.job, name='t', rate_scheme=self.scheme)
         self.pli = InventoryItem.objects.create(
             code='CU-I', accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal('20'),
+            qty_on_hand=Decimal('20'),
         )
 
     def test_consume_sets_state_consumed_on_task_attached(self):

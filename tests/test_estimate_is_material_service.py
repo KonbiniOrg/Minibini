@@ -43,7 +43,7 @@ class EstimateServiceIsMaterialTest(TestCase):
 
     def test_add_rejects_is_material_with_inventory_item(self):
         pli = InventoryItem.objects.create(
-            code='PLY', accounting_category=self.cat, is_catalog=True,
+            code='PLY', accounting_category=self.cat,
         )
         with self.assertRaises(ValidationError):
             EstimateService.add_line_item(
@@ -75,7 +75,7 @@ class EstimateServiceIsMaterialTest(TestCase):
 
     def test_update_rejects_is_material_on_inventory_line(self):
         pli = InventoryItem.objects.create(
-            code='PLY', accounting_category=self.cat, is_catalog=True,
+            code='PLY', accounting_category=self.cat,
         )
         li = EstimateService.add_line_item_from_pli(self.estimate.pk, pli.pk, Decimal('2'))
         with self.assertRaises(ValidationError):

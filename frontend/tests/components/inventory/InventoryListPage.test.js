@@ -13,12 +13,12 @@ const ITEMS = [
   {
     inventory_item_id: 1, code: 'FELT', description: 'grey felt', units: 'sheet',
     qty_on_hand: '5.00', qty_earmarked: '2.00', qty_available: '3.00',
-    is_catalog: true, is_active: true, purchase_price: '4.00', selling_price: '8.00',
+    is_active: true, purchase_price: '4.00', selling_price: '8.00',
   },
   {
     inventory_item_id: 2, code: 'LOT-1', description: 'leftover ply', units: 'sheet',
     qty_on_hand: '1.00', qty_earmarked: '0.00', qty_available: '1.00',
-    is_catalog: false, is_active: true, purchase_price: '40.00', selling_price: '0.00',
+    is_active: false, purchase_price: '40.00', selling_price: '0.00',
   },
 ];
 
@@ -31,17 +31,17 @@ beforeEach(() => {
 });
 
 describe('InventoryListPage', () => {
-  it('renders items with on-hand / earmarked / available and kind', async () => {
+  it('renders items with on-hand / earmarked / available and status', async () => {
     const { findByText, getByText } = render(InventoryListPage);
     expect(await findByText('FELT')).toBeInTheDocument();
     expect(getByText('grey felt')).toBeInTheDocument();
     expect(getByText('leftover ply')).toBeInTheDocument();
-    // catalog vs lot kind labels
-    expect(getByText('catalog')).toBeInTheDocument();
-    expect(getByText('lot')).toBeInTheDocument();
+    // active vs inactive status labels
+    expect(getByText('active')).toBeInTheDocument();
+    expect(getByText('inactive')).toBeInTheDocument();
   });
 
-  it('defaults to active-only and excludes finished lots', async () => {
+  it('defaults to active-only', async () => {
     render(InventoryListPage);
     await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
     const url = api.get.mock.calls[0][0];
@@ -53,7 +53,7 @@ describe('InventoryListPage', () => {
     const mk = (id, code) => ({
       inventory_item_id: id, code, description: '', units: 'ea',
       qty_on_hand: '0.00', qty_earmarked: '0.00', qty_available: '0.00',
-      is_catalog: true, is_active: true, purchase_price: '0.00', selling_price: '0.00',
+      is_active: true, purchase_price: '0.00', selling_price: '0.00',
     });
     const page1 = Array.from({ length: 100 }, (_, i) => mk(i + 1, `I${i + 1}`));
     const page2 = [mk(101, 'LAST')];
@@ -64,16 +64,6 @@ describe('InventoryListPage', () => {
     const { findByText } = render(InventoryListPage);
     // The 101st item (only on page 2) must appear → both pages were fetched.
     expect(await findByText('LAST')).toBeInTheDocument();
-  });
-
-  it('requests finished lots when the toggle is checked', async () => {
-    const { getByLabelText } = render(InventoryListPage);
-    await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
-    await fireEvent.click(getByLabelText('Show finished lots'));
-    await vi.waitFor(() => {
-      const urls = api.get.mock.calls.map((c) => c[0]);
-      expect(urls.some((u) => u.includes('include_finished=true'))).toBe(true);
-    });
   });
 
   it('filters client-side by search text', async () => {
@@ -88,7 +78,7 @@ describe('InventoryListPage', () => {
     api.get.mockResolvedValue({ results: [{
       inventory_item_id: 9, code: 'OVER', description: 'oversubscribed', units: 'ea',
       qty_on_hand: '1.00', qty_earmarked: '3.00', qty_available: '-2.00',
-      is_catalog: true, is_active: true, purchase_price: '0.00', selling_price: '0.00',
+      is_active: true, purchase_price: '0.00', selling_price: '0.00',
     }] });
     const { findByText } = render(InventoryListPage);
     const row = (await findByText('OVER')).closest('tr');

@@ -53,13 +53,13 @@
     }
   }
 
-  // Merge (irreversible). Discard must be a lot (non-catalog); the server also
-  // enforces unit-match and catalog-discard rules.
+  // Merge (irreversible). Any item can be the discard; the server enforces
+  // unit-match rules and an explicit confirm lives here in the UI.
   let showMerge = $state(false);
   let mergeKeep = $state('');
   let mergeDiscard = $state('');
   let mergeError = $state('');
-  let lotOptions = $derived(items.filter((it) => !it.is_catalog));
+  let lotOptions = $derived(items);
 
   async function doMerge() {
     mergeError = '';
@@ -78,7 +78,6 @@
 
   // Filters
   let search = $state('');
-  let includeFinished = $state(false);
   let activeOnly = $state(true);
 
   async function load() {
@@ -92,7 +91,6 @@
       const params = new URLSearchParams();
       params.set('page_size', '100');  // the server's max
       if (activeOnly) params.set('is_active', 'true');
-      if (includeFinished) params.set('include_finished', 'true');
       const all = [];
       let page = 1;
       while (page <= 200) {  // safety cap (20k items)
@@ -148,8 +146,8 @@
   {#if showMerge}
     <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
       <h3>Merge items</h3>
-      <p>Fold a lot's stock and references into a keep item, then delete the lot.
-        The discard must be a lot (demote a catalog item first); units must match.</p>
+      <p>Fold one item's stock and references into a keep item, then delete the
+        discard. Units must match.</p>
       {#if mergeError}<p style="color:#c00">{mergeError}</p>{/if}
       <p><label>Keep (survivor):
         <select bind:value={mergeKeep}>
@@ -160,7 +158,7 @@
         </select></label></p>
       <p><label>Discard (folded in &amp; deleted):
         <select bind:value={mergeDiscard}>
-          <option value="">-- select a lot --</option>
+          <option value="">-- select --</option>
           {#each lotOptions as it (it.inventory_item_id)}
             <option value={it.inventory_item_id}>{it.code} — {it.description || ''} ({it.units})</option>
           {/each}
@@ -191,7 +189,6 @@
   <legend>Filters</legend>
   <label>Search: <input type="search" bind:value={search} placeholder="code or description"></label>
   <label><input type="checkbox" bind:checked={activeOnly} onchange={load}> Active only</label>
-  <label><input type="checkbox" bind:checked={includeFinished} onchange={load}> Show finished lots</label>
 </fieldset>
 
 {#if loading}
@@ -211,7 +208,7 @@
         <th style="text-align: right">Earmarked</th>
         <th style="text-align: right">Available</th>
         <th style="text-align: right">On order</th>
-        <th>Kind</th>
+        <th>Status</th>
         <th style="text-align: right">Cost</th>
         <th style="text-align: right">Sell</th>
         {#if canManage}<th>Actions</th>{/if}
@@ -220,7 +217,6 @@
     <tbody>
       {#each shown as it (it.inventory_item_id)}
         <tr
-          class:finished={!it.is_catalog && Number(it.qty_on_hand) === 0 && Number(it.qty_earmarked) === 0}
           class:short={Number(it.qty_available) < 0}
         >
           <td>{it.code}</td>
@@ -230,7 +226,7 @@
           <td style="text-align: right">{it.qty_earmarked}</td>
           <td style="text-align: right">{it.qty_available}</td>
           <td style="text-align: right">{Number(it.qty_on_order) > 0 ? it.qty_on_order : '—'}</td>
-          <td>{it.is_catalog ? 'catalog' : 'lot'}{!it.is_active ? ' · inactive' : ''}</td>
+          <td>{it.is_active ? 'active' : 'inactive'}</td>
           <td style="text-align: right">${it.purchase_price}</td>
           <td style="text-align: right">${it.selling_price}</td>
           {#if canManage}
@@ -251,10 +247,6 @@
 {/if}
 
 <style>
-  .finished {
-    color: #888;
-    font-style: italic;
-  }
   /* Available < 0: earmarked exceeds on-hand — oversubscribed / shortfall. */
   .short td {
     background: #fff1f0;
