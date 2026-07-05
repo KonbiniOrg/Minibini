@@ -98,7 +98,7 @@ describe('TaskTree', () => {
                     consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' }],
     });
     const { getAllByRole } = render(TaskTree, {
-      props: { tasks: [stocked, awaited, freeform], canManage: true },
+      props: { tasks: [stocked, awaited, freeform], canManage: true, onRestockMaterial: vi.fn() },
     });
     expect(getAllByRole('button', { name: 'restock' })).toHaveLength(1);
     expect(getAllByRole('button', { name: 'release' })).toHaveLength(2);
@@ -110,7 +110,9 @@ describe('TaskTree', () => {
       materials: [{ material_id: 4, description: 'Ply', quantity: '2', sell_price: '5', units: 'sheet',
                     consumption_state: 'pending', inventory_item: 7, qty_on_hand: '4.00' }],
     });
-    const { getAllByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    const { getAllByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true, onConsumeMaterial: vi.fn() },
+    });
     expect(getAllByRole('button', { name: 'consume' })).toHaveLength(1);
   });
 
@@ -259,7 +261,9 @@ describe('TaskTree', () => {
         units: 'ea', consumption_state: 'released', released_qty: '7', invoice: null,
       }],
     });
-    const { queryByRole } = render(TaskTree, { props: { tasks: [t] } });
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [t], onRestockMaterial: vi.fn() },
+    });
     expect(queryByRole('button', { name: 'restock' })).toBeNull();
   });
 });
@@ -301,17 +305,40 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
       consumption_state: 'pending', inventory_item: 7, cost_source: 'entered', qty_on_hand: '0',
       po_line_item_id: null, po_number: null,
     };
+    const wired = {
+      onOrderMaterial: vi.fn(), onAttachExpense: vi.fn(), onMarkOnHand: vi.fn(),
+    };
     // worker (no atom): no Order button, but Attach expense + Mark on-hand remain
     user.set({ id: 1, permissions: [] });
-    const worker = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true } });
+    const worker = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true, ...wired } });
     expect(worker.queryByRole('button', { name: 'Order' })).toBeNull();
     expect(worker.getByRole('button', { name: 'Attach expense' })).toBeInTheDocument();
     expect(worker.getByRole('button', { name: 'Mark on-hand' })).toBeInTheDocument();
     worker.unmount();
     // financial atom present: Order shows
     user.set({ id: 1, permissions: ['can_manage_financials'] });
-    const fin = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true } });
+    const fin = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true, ...wired } });
     expect(fin.getByRole('button', { name: 'Order' })).toBeInTheDocument();
+  });
+
+  it('renders NO fulfillment or material-op buttons when callbacks are not wired (passive surface)', () => {
+    // TaskDetailPage's subtask tree passes readonly=false but wires only
+    // onEditMaterial — every other material action must stay hidden, never a
+    // dead button bound to a no-op default.
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    const t = matTask({
+      material_id: 8, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '0', po_line_item_id: null, po_number: null,
+    });
+    const { getByText, queryByRole } = render(TaskTree, {
+      props: { tasks: [t], readonly: false, canManage: true },
+    });
+    expect(getByText('Needed')).toBeInTheDocument(); // chip still shows (passive)
+    for (const name of ['Order', 'Attach expense', 'Mark on-hand', 'Mark received',
+                        'Set pricing', 'consume', 'restock', 'release', 'draw more', 'detach']) {
+      expect(queryByRole('button', { name })).toBeNull();
+    }
   });
 
   it('ordered material → chip carries the PO number and a link to the PO', () => {
@@ -356,7 +383,13 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
       consumption_state: 'released', released_qty: '7', inventory_item: 7, cost_source: 'entered',
       qty_on_hand: '0',
     }, { status: 'pending' });
-    const { container, queryByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    const { container, queryByRole } = render(TaskTree, {
+      props: {
+        tasks: [t], canManage: true,
+        onOrderMaterial: vi.fn(), onMarkOnHand: vi.fn(),
+        onAttachExpense: vi.fn(), onEditMaterial: vi.fn(),
+      },
+    });
     expect(container.querySelector('.material-row.released')).not.toBeNull();
     expect(queryByRole('button', { name: 'Order' })).toBeNull();
     expect(queryByRole('button', { name: 'Set pricing' })).toBeNull();
