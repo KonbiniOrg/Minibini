@@ -3,7 +3,6 @@ from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.api.mixins import JSONDestroyMixin, StatusTransitionMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobOrPM
@@ -13,13 +12,6 @@ from apps.deliverables.services import DeliverableService, ShipmentService
 from .serializers import (
     DeliverableSerializer, ShipmentSerializer, ShipmentItemSerializer,
 )
-
-
-def _validation_error_response(exc):
-    detail = exc.message_dict if hasattr(exc, 'message_dict') else (
-        exc.messages if hasattr(exc, 'messages') else [str(exc)]
-    )
-    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSet):
@@ -72,28 +64,20 @@ class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSe
             )
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
         return Response(
             self.get_serializer(deliverable).data, status=status.HTTP_201_CREATED,
         )
 
     def partial_update(self, request, *args, **kwargs):
         deliverable = self.get_object()
-        try:
-            deliverable = DeliverableService.update(
-                deliverable=deliverable, **(request.data or {}),
-            )
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
+        deliverable = DeliverableService.update(
+            deliverable=deliverable, **(request.data or {}),
+        )
         return Response(self.get_serializer(deliverable).data)
 
     def destroy(self, request, *args, **kwargs):
         deliverable = self.get_object()
-        try:
-            DeliverableService.delete(deliverable=deliverable)
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
+        DeliverableService.delete(deliverable=deliverable)
         return Response({'message': self.destroy_response_message})
 
     def reorder(self, request, *args, **kwargs):
@@ -104,10 +88,7 @@ class DeliverableViewSet(JobScopedPermissionMixin, JSONDestroyMixin, ModelViewSe
                 {'ordered_ids': ['This field is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            result = DeliverableService.reorder(job=job, ordered_ids=ordered_ids)
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
+        result = DeliverableService.reorder(job=job, ordered_ids=ordered_ids)
         return Response(self.get_serializer(result, many=True).data)
 
     def editability(self, request, *args, **kwargs):
@@ -156,26 +137,18 @@ class ShipmentViewSet(StatusTransitionMixin, JSONDestroyMixin, ModelViewSet):
             shipment = ShipmentService.create(job_id=self.kwargs['job_id'])
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
         return Response(
             self.get_serializer(shipment).data, status=status.HTTP_201_CREATED,
         )
 
     def partial_update(self, request, *args, **kwargs):
         shipment = self.get_object()
-        try:
-            shipment = ShipmentService.update(shipment=shipment, **(request.data or {}))
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
+        shipment = ShipmentService.update(shipment=shipment, **(request.data or {}))
         return Response(self.get_serializer(shipment).data)
 
     def destroy(self, request, *args, **kwargs):
         shipment = self.get_object()
-        try:
-            ShipmentService.delete(shipment=shipment)
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
+        ShipmentService.delete(shipment=shipment)
         return Response({'message': self.destroy_response_message})
 
     def items(self, request, *args, **kwargs):
@@ -196,8 +169,6 @@ class ShipmentViewSet(StatusTransitionMixin, JSONDestroyMixin, ModelViewSet):
             return Response(
                 {'detail': 'Deliverable not found.'}, status=status.HTTP_400_BAD_REQUEST,
             )
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
         return Response(
             ShipmentItemSerializer(item).data, status=status.HTTP_201_CREATED,
         )
@@ -211,17 +182,11 @@ class ShipmentViewSet(StatusTransitionMixin, JSONDestroyMixin, ModelViewSet):
         except ShipmentItem.DoesNotExist:
             raise NotFound()
         if request.method == 'DELETE':
-            try:
-                ShipmentService.remove_item(item=item)
-            except DjangoValidationError as exc:
-                return _validation_error_response(exc)
+            ShipmentService.remove_item(item=item)
             return Response({'message': 'Item deleted.'})
-        try:
-            item = ShipmentService.update_item(
-                item=item, qty=(request.data or {}).get('qty'),
-            )
-        except DjangoValidationError as exc:
-            return _validation_error_response(exc)
+        item = ShipmentService.update_item(
+            item=item, qty=(request.data or {}).get('qty'),
+        )
         return Response(ShipmentItemSerializer(item).data)
 
     def packing_list(self, request, *args, **kwargs):

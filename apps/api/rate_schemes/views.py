@@ -66,8 +66,7 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             if getattr(e, 'code', None) == 'referenced':
                 return self._referenced_conflict(instance, request)
-            return Response({'detail': e.messages[0]},
-                            status=status.HTTP_400_BAD_REQUEST)
+            raise  # plain validation errors render via the contract handler
         return Response(self.get_serializer(instance).data)
 
     def partial_update(self, request, *args, **kwargs):
@@ -81,8 +80,7 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             if getattr(e, 'code', None) == 'referenced':
                 return self._referenced_conflict(instance, request)
-            return Response({'detail': e.messages[0]},
-                            status=status.HTTP_400_BAD_REQUEST)
+            raise  # plain validation errors render via the contract handler
         return Response({'message': f'Service item "{instance.name}" deleted.'})
 
     @action(detail=True, methods=['post'], url_path='supersede',
@@ -101,8 +99,10 @@ class RateSchemeViewSet(viewsets.ModelViewSet):
             new = ConfigurationService.supersede_rate_scheme(
                 old, **serializer.validated_data)
         except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]},
-                            status=status.HTTP_409_CONFLICT)
+            if getattr(e, 'code', None) == 'superseded':
+                return Response({'detail': e.messages[0]},
+                                status=status.HTTP_409_CONFLICT)
+            raise  # plain validation errors render via the contract handler
         return Response(
             RateSchemeSerializer(new).data,
             status=status.HTTP_201_CREATED,

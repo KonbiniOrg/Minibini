@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { push, querystring } from 'svelte-spa-router';
   import BusinessPicker from '../../components/BusinessPicker.svelte';
 
@@ -179,7 +179,7 @@
         push(`/bills/${created.bill_id}`);
       }
     } catch (e) {
-      errors = e.data ? JSON.stringify(e.data) : e.message;
+      errors = errorMessage(e);
     } finally {
       saving = false;
     }

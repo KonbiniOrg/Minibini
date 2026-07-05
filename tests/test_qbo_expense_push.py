@@ -102,7 +102,7 @@ class PaymentAccountsEndpointTest(TestCase):
         self.client_http.force_login(self.admin)
         r = self.client_http.get('/api/qbo/payment-accounts/')
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json(), {'error': 'No active QBO connection'})
+        self.assertEqual(r.json(), {'detail': 'No active QBO connection'})
 
 
 class PushExpenseTest(TestCase):

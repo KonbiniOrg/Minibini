@@ -91,15 +91,9 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         serializer.is_valid(raise_exception=True)
         create_data = {k: v for k, v in serializer.validated_data.items()
                        if k != 'propagate_to_pli'}
-        try:
-            mat = MaterialService.create_on_job(
-                job=task.job, task=task, cost_source='manual', **create_data
-            )
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        mat = MaterialService.create_on_job(
+            job=task.job, task=task, cost_source='manual', **create_data
+        )
         return Response(
             MaterialSerializer(mat).data,
             status=status.HTTP_201_CREATED,
@@ -119,11 +113,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             raise NotFound()
 
         if request.method == 'DELETE':
-            from django.core.exceptions import ValidationError as DjangoValidationError
-            try:
-                MaterialService.remove(material)
-            except DjangoValidationError as e:
-                return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            MaterialService.remove(material)
             return Response({'message': 'Material deleted.'})
 
         # PATCH — only metadata fields allowed; quantity changes go through
@@ -139,14 +129,8 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         serializer.is_valid(raise_exception=True)
         fields = dict(serializer.validated_data)
         propagate = fields.pop('propagate_to_pli', False)
-        try:
-            material = MaterialService.update_fields(
-                material, propagate_to_pli=propagate, **fields)
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        material = MaterialService.update_fields(
+            material, propagate_to_pli=propagate, **fields)
         return Response(MaterialSerializer(material).data)
 
     # --- Subtask CRUD ---
@@ -195,8 +179,6 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             return Response({'needs_actual_qty': True, 'unit_label': e.unit_label})
         except TaskTimeRequired:
             return Response({'needs_time_logged': True})
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': Task.STATUS_COMPLETE})
 
     @action(detail=True, methods=['post'])
@@ -204,10 +186,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
         reason = request.data.get('reason', '').strip() if request.data else ''
-        try:
-            result = TaskLifecycleService.block_task(task.pk, reason=reason)
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        result = TaskLifecycleService.block_task(task.pk, reason=reason)
         if isinstance(result, dict) and 'conflict' in result:
             return Response(result)
         return Response({
@@ -219,20 +198,14 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
     def unblock(self, request, pk=None):
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
-        try:
-            TaskLifecycleService.unblock_task(task.pk)
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        TaskLifecycleService.unblock_task(task.pk)
         return Response({'status': Task.STATUS_IN_PROGRESS})
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
-        try:
-            TaskLifecycleService.cancel_task(task.pk)
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        TaskLifecycleService.cancel_task(task.pk)
         return Response({'status': Task.STATUS_CANCELLED})
 
     def _resolve_on_behalf_of(self, request):
@@ -263,8 +236,6 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         if isinstance(result, dict) and 'conflict' in result:
             return Response(result)
         return Response({'status': 'ok', 'blep_id': result['blep'].blep_id})
@@ -282,8 +253,6 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'status': 'ok'})
 
     @action(detail=True, methods=['post'], url_path='cancel-work')
@@ -292,10 +261,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         on this task. Own-blep only — no on_behalf_of."""
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
-        try:
-            TaskLifecycleService.cancel_work(task.pk, request.user)
-        except ValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        TaskLifecycleService.cancel_work(task.pk, request.user)
         return Response({'status': 'ok'})
 
     @action(detail=True, methods=['patch'], url_path='actual-qty',

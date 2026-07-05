@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
@@ -49,8 +48,6 @@ class BlepViewSet(viewsets.ModelViewSet):
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except DjangoValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(BlepSerializer(blep).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
@@ -88,8 +85,6 @@ class BlepViewSet(viewsets.ModelViewSet):
             BlepService.update(blep, request.user, **fields)
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except DjangoValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         blep.refresh_from_db()
         return Response(BlepSerializer(blep).data)
 

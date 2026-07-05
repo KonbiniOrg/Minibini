@@ -212,9 +212,29 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 
 501 stub list and viewset compliance details are in `docs/designs/architecture-and-conventions.md` §3.6 and §3.8.
 
+**Error responses — USE THIS STRUCTURE** (full contract:
+`docs/designs/architecture-and-conventions.md` §3.9):
+
+- Exactly two error shapes: `{'detail': '<sentence>'}` for operation errors,
+  `{'<field>': ['msg', ...]}` (with `non_field_errors` for cross-field) for
+  validation. `{'message': ...}` is success-only; the `'error'` key is
+  retired — never emit it.
+- Do NOT catch a service `ValidationError` just to re-render it as a 400 —
+  the central handler (`apps/api/exceptions.py`, registered in settings)
+  renders uncaught `ValidationError` (and `ProtectedError` → 409) in
+  contract shape. Catch only to change the status code or add payload, and
+  `raise` any variant the catch doesn't reshape.
+- In services, raise `ValidationError({'field': ['msg']})` when the problem
+  belongs to an input field, plain `ValidationError('sentence')` otherwise —
+  that choice is what the SPA renders.
+- Frontend: read errors ONLY via `errorMessage(err)` (`lib/api.js`) for a
+  display string or `fieldErrors(bag, field)` (`lib/formErrors.js`) for
+  inline per-field lists. Never `JSON.stringify(e.data)`, never display
+  bare `e.message`; branch on `err.status` for flow (e.g. 409).
+
 ## UI Conventions
 
-The UI is the Svelte SPA. It uses semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green borders) for user feedback, owned by `frontend/src/lib/api.js`. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns. (The Django HTML view layer and its template conventions were removed; only the PDF templates below remain.)
+The UI is the Svelte SPA. It uses semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green bordered boxes; CSS classes in `frontend/src/css/app.css`, markup per page) for user feedback. Error *text* always comes from `errorMessage()` / `fieldErrors()` — see the error-response contract above. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns. (The Django HTML view layer and its template conventions were removed; only the PDF templates below remain.)
 
 **Table markup:** Always wrap `<tr>` rows in `<tbody>` (or `<thead>`/`<tfoot>`). Svelte 5 strict mode rejects `<tr>` as a direct child of `<table>` and the build will fail.
 

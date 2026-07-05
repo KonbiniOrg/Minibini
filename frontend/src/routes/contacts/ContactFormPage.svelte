@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import ContactForm from '../../components/contacts/ContactForm.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { push } from 'svelte-spa-router';
@@ -39,7 +39,7 @@
         push(`/contacts/${created.contact_id}`);
       }
     } catch (e) {
-      errors = e.data ? JSON.stringify(e.data) : e.message;
+      errors = errorMessage(e);
     }
   }
 

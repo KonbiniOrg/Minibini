@@ -225,6 +225,9 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'apps.api.pagination.StandardPagination',
     'PAGE_SIZE': 25,
+    # Central error-contract renderer: uncaught Django ValidationError →
+    # contract-shaped 400, ProtectedError → 409. See apps/api/exceptions.py.
+    'EXCEPTION_HANDLER': 'apps.api.exceptions.api_exception_handler',
 }
 
 LOGGING = {

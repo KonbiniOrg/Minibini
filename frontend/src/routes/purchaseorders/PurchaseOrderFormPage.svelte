@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import PurchaseOrderForm from '../../components/purchaseorders/PurchaseOrderForm.svelte';
   import { push, querystring } from 'svelte-spa-router';
 
@@ -75,7 +75,7 @@
         push(`/purchase-orders/${created.po_id}${suffix}`);
       }
     } catch (e) {
-      errors = e.data ? JSON.stringify(e.data) : e.message;
+      errors = errorMessage(e);
     }
   }
 

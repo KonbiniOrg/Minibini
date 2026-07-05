@@ -54,11 +54,8 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         serializer = TemplateMaterialAssociationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         from apps.inventory.services import TemplateMaterialAssociationService
-        try:
-            a = TemplateMaterialAssociationService.create(
-                template, **serializer.validated_data)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
+        a = TemplateMaterialAssociationService.create(
+            template, **serializer.validated_data)
         return Response(
             TemplateMaterialAssociationSerializer(a).data,
             status=status.HTTP_201_CREATED,
@@ -84,11 +81,8 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
         serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        try:
-            a = TemplateMaterialAssociationService.update(
-                a, **serializer.validated_data)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
+        a = TemplateMaterialAssociationService.update(
+            a, **serializer.validated_data)
         return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
@@ -298,11 +292,11 @@ def units_view(request):
 
     units = request.data
     if not isinstance(units, list) or len(units) == 0:
-        return Response({'error': 'Units must be a non-empty list.'}, status=400)
+        return Response({'detail': 'Units must be a non-empty list.'}, status=400)
     if units[0] != 'none':
-        return Response({'error': '"none" must be the first entry.'}, status=400)
+        return Response({'detail': '"none" must be the first entry.'}, status=400)
     if len(units) != len(set(units)):
-        return Response({'error': 'Duplicate units are not allowed.'}, status=400)
+        return Response({'detail': 'Duplicate units are not allowed.'}, status=400)
 
     ConfigurationService.set('units_list', json.dumps(units))
     return Response(units)

@@ -69,7 +69,7 @@ class EstimateWizardAPITest(TestCase):
         self.client.post(url, payload, format='json')
         resp = self.client.post(url, payload, format='json')
         self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()['error'], 'atoms_already_claimed')
+        self.assertEqual(resp.json()['code'], 'atoms_already_claimed')
 
     def test_add_atoms_to_existing_line_item(self):
         li = EstimateWizardService.add_atoms_to_new_line_item(

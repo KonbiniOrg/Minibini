@@ -444,6 +444,74 @@ stubs — they are live in `apps/api/shifts/views.py` (work-shifts feature).
 `/api/expenses/` is fully implemented (`ExpenseViewSet` in
 `apps/api/expenses/views.py`); it is not a stub.
 
+### 3.9 Error response contract
+
+**Two error shapes, nothing else.** Every API error body is one of:
+
+| Shape | Meaning | Example |
+|---|---|---|
+| `{'detail': '<sentence>'}` | Operation error — a guard, state-machine refusal, permission problem, missing record | `{'detail': 'Scheme is referenced; create a new version instead of editing.'}` |
+| `{'<field>': ['msg', ...]}` | Field validation error (DRF serializer shape); cross-field problems use the `non_field_errors` key | `{'unit_label': ['"parsec" is not a configured unit.']}` |
+
+Status codes carry the semantics: 400 validation/guard, 403 permission,
+404 missing, 409 conflict (referenced/superseded/two-phase collisions).
+`{'message': ...}` is **success-only** (the DELETE-returns-200 convention,
+§3.6) and never appears in an error body. The `'error'` key is retired —
+never emit it.
+
+**The central handler owns rendering.** `apps/api/exceptions.py`
+(`api_exception_handler`, registered in `settings.REST_FRAMEWORK`) renders
+any *uncaught* exception into the contract:
+
+- Django `ValidationError` with plain message(s) → 400
+  `{'detail': 'msg1 msg2'}` (messages joined).
+- Django `ValidationError` raised with a dict → 400 field-keyed
+  pass-through, `'__all__'` renamed to `non_field_errors`.
+- `ProtectedError` → 409 `{'detail': 'This record is referenced…'}`.
+- Everything DRF already handles (serializer validation, `PermissionDenied`,
+  `NotFound`, …) keeps its native contract shape.
+
+**View rule: don't catch what you don't reshape.** A service
+`ValidationError` that should be a plain 400 needs *no* try/except — let it
+propagate to the handler. Catch it only to change the status code or add
+payload (e.g. the rate-scheme referenced 409 with `supersede_url` +
+`reference_counts`, or the wizard claim-conflict 409s carrying
+`code: 'atoms_already_claimed'` + `atom_ids`). When a client needs to
+branch on *which* conflict occurred, add a machine-readable `code` key
+beside the human `detail` — never make `detail` itself a token. In any
+kept catch, `raise` variants you don't handle rather than hand-rendering
+them:
+
+```python
+try:
+    ConfigurationService.update_rate_scheme(instance, **ser.validated_data)
+except DjangoValidationError as e:
+    if getattr(e, 'code', None) == 'referenced':
+        return self._referenced_conflict(instance, request)
+    raise  # plain validation errors render via the contract handler
+```
+
+Services should raise field-keyed `ValidationError({'field': ['msg']})`
+when the problem belongs to a specific input field, and a plain
+`ValidationError('sentence')` for operation errors — the handler preserves
+whichever shape you choose, so the choice made in the service is what the
+SPA renders.
+
+**Frontend readers.** `api.js` attaches `.status` and `.data` to every
+thrown error (`.data` is `null` when the body wasn't JSON — nginx error
+pages still carry `.status`). Components must use the two sanctioned
+readers, never hand-parse:
+
+- `errorMessage(err, fallback)` (`lib/api.js`) — one display string for a
+  toast/banner; digs through `detail` and field-keyed shapes.
+- `fieldErrors(errorBag, field)` (`lib/formErrors.js`) — per-field arrays
+  for inline `{#each}` rendering next to inputs; set the bag from
+  `err.data` when it's an object.
+
+Never `JSON.stringify(e.data)` at the user, and never rely on `e.message`
+alone for display (field-keyed errors reduce it to "Request failed").
+Branch on `err.status` (e.g. `=== 409`) for flow decisions.
+
 ---
 
 ## 4. Line item API pattern

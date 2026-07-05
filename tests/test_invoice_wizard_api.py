@@ -225,7 +225,7 @@ class LineItemsFromAtomsEndpointTest(TestCase):
         )
         self.assertEqual(response.status_code, 409)
         data = response.json()
-        self.assertEqual(data['error'], 'atoms_already_claimed')
+        self.assertEqual(data['code'], 'atoms_already_claimed')
         self.assertIn({'type': 'task', 'id': self.task.pk}, data['atom_ids'])
 
     def test_returns_400_on_non_draft_invoice(self):

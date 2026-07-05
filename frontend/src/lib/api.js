@@ -24,7 +24,12 @@ async function request(method, url, data = null) {
   const contentType = response.headers.get('content-type') || '';
 
   if (!contentType.includes('application/json')) {
-    throw new Error(`Server error (${response.status})`);
+    // A non-JSON body (nginx error page, crashed request) still gets a
+    // status so callers can branch on it; .data stays null.
+    const error = new Error(`Server error (${response.status})`);
+    error.status = response.status;
+    error.data = null;
+    throw error;
   }
 
   const json = await response.json();
@@ -67,7 +72,10 @@ async function postMultipart(url, formData) {
   });
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
-    throw new Error(`Server error (${response.status})`);
+    const error = new Error(`Server error (${response.status})`);
+    error.status = response.status;
+    error.data = null;
+    throw error;
   }
   const json = await response.json();
   if (!response.ok) {

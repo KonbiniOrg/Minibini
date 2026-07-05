@@ -157,10 +157,23 @@ Key rules:
 
 ### Error Handling
 
-- The API client (`src/lib/api.js`) checks `content-type` before parsing JSON to guard against HTML error pages from Django.
-- Action errors (delete failures, validation errors) display in an overlay on top of the current page, preserving the content underneath.
+The API error contract (two body shapes, status semantics, the central
+backend handler) is documented in
+`docs/designs/architecture-and-conventions.md` §3.9 — read that first.
+Frontend rules:
+
+- The API client (`src/lib/api.js`) attaches `.status` and `.data` to every
+  thrown error; `.data` is `null` when the body wasn't JSON (HTML error
+  pages still carry `.status`).
+- Read error text ONLY via the two sanctioned readers: `errorMessage(err)`
+  (`lib/api.js`) for a single display string, `fieldErrors(bag, field)`
+  (`lib/formErrors.js`) for inline per-field lists (set the bag from
+  `err.data` when it's an object). Never `JSON.stringify(e.data)`; never
+  display bare `e.message` (field-keyed errors reduce it to "Request
+  failed"). Branch on `err.status` for flow decisions (e.g. `=== 409`).
+- Action errors (delete failures, validation errors) display in an overlay
+  on top of the current page, preserving the content underneath.
 - Load errors (page/object not found) replace the page content.
-- Views catch `ProtectedError`, `ValidationError`, and `ServiceError` from services, returning user-friendly messages.
 
 ### CSS
 

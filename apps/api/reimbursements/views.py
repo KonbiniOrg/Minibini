@@ -5,7 +5,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth import get_user_model
 
 from apps.expenses.models import Expense, Reimbursement
@@ -48,21 +47,15 @@ class ReimbursementViewSet(QBORetrySyncMixin, ConfirmDeleteMixin, viewsets.Model
         input_ser = ReimbursementCreateSerializer(data=request.data)
         input_ser.is_valid(raise_exception=True)
         data = input_ser.validated_data
-        try:
-            batch = ReimbursementService.create_batch(
-                purchased_by=data['purchased_by'],
-                expense_ids=data['expense_ids'],
-                paid_on=data['paid_on'],
-                payment_account_id=data['payment_account_id'],
-                reference_number=data.get('reference_number', ''),
-                notes=data.get('notes', ''),
-                created_by=request.user,
-            )
-        except DjangoValidationError as e:
-            from rest_framework.exceptions import ValidationError as DRFValidationError
-            raise DRFValidationError(
-                e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages}
-            )
+        batch = ReimbursementService.create_batch(
+            purchased_by=data['purchased_by'],
+            expense_ids=data['expense_ids'],
+            paid_on=data['paid_on'],
+            payment_account_id=data['payment_account_id'],
+            reference_number=data.get('reference_number', ''),
+            notes=data.get('notes', ''),
+            created_by=request.user,
+        )
         return Response(
             ReimbursementSerializer(batch).data,
             status=status.HTTP_201_CREATED,
@@ -81,10 +74,7 @@ class ReimbursementViewSet(QBORetrySyncMixin, ConfirmDeleteMixin, viewsets.Model
         }
 
     def perform_confirmed_destroy(self, batch):
-        try:
-            ReimbursementService.delete(batch=batch, actor=self.request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
+        ReimbursementService.delete(batch=batch, actor=self.request.user)
         return Response({'message': 'Reimbursement batch deleted.'}, status=status.HTTP_200_OK)
 
     @action(

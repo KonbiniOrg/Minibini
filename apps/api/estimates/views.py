@@ -87,9 +87,6 @@ class EstimateViewSet(
                     updated = EstimateService.mark_open(instance.pk)
                 else:
                     updated = EstimateService.update_status(instance.pk, new_status)
-            except DjangoValidationError as e:
-                msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-                raise drf_serializers.ValidationError({'detail': msg})
             except NotFoundError as e:
                 from rest_framework.exceptions import NotFound
                 raise NotFound(str(e))
@@ -100,11 +97,7 @@ class EstimateViewSet(
 
     def destroy(self, request, *args, **kwargs):
         estimate = self.get_object()
-        try:
-            EstimateService.discard_draft(estimate)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        EstimateService.discard_draft(estimate)
         return Response({'message': 'Estimate discarded'})
 
     # Line-item GET (list) + POST (create) are provided by LineItemMixin.line_items;
@@ -119,7 +112,7 @@ class EstimateViewSet(
             new_estimate = EstimateService.revise_estimate(pk)
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        except (ServiceError, DjangoValidationError) as e:
+        except ServiceError as e:
             msg = e.messages[0] if hasattr(e, 'messages') else str(e)
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(new_estimate)
@@ -138,11 +131,7 @@ class EstimateViewSet(
         (the wizard's one-click "send all"). Claimed atoms are skipped, so it
         composes with existing lines."""
         estimate = self.get_object()
-        try:
-            created = EstimateWizardService.send_all_atoms(estimate)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        created = EstimateWizardService.send_all_atoms(estimate)
         return Response({'created': created}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='line-items-from-service')
@@ -159,9 +148,6 @@ class EstimateViewSet(
             )
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         serializer = EstimateLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -174,11 +160,10 @@ class EstimateViewSet(
             line_item = EstimateWizardService.add_atoms_to_new_line_item(estimate, atoms)
         except EstimateClaimConflict as e:
             return Response(
-                {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                {'detail': 'Some of these atoms are already claimed by another estimate.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=status.HTTP_409_CONFLICT,
             )
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = EstimateLineItemSerializer(line_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -192,18 +177,17 @@ class EstimateViewSet(
         try:
             line_item = EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
         except EstimateLineItem.DoesNotExist:
-            return Response({'error': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
 
         atoms = request.data.get('atoms', [])
         try:
             EstimateWizardService.add_atoms_to_line_item(line_item, atoms)
         except EstimateClaimConflict as e:
             return Response(
-                {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                {'detail': 'Some of these atoms are already claimed by another estimate.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=status.HTTP_409_CONFLICT,
             )
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         line_item.refresh_from_db()
         serializer = EstimateLineItemSerializer(line_item)
@@ -219,13 +203,10 @@ class EstimateViewSet(
         try:
             line_item = EstimateLineItem.objects.get(pk=line_item_pk, estimate=estimate)
         except EstimateLineItem.DoesNotExist:
-            return Response({'error': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'Line item not found'}, status=status.HTTP_404_NOT_FOUND)
 
         source_ids = request.data.get('source_ids', [])
-        try:
-            result = EstimateWizardService.remove_atoms_from_line_item(line_item, source_ids)
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        result = EstimateWizardService.remove_atoms_from_line_item(line_item, source_ids)
 
         if result['line_item_deleted']:
             return Response({'line_item_deleted': True, 'line_item': None})
@@ -246,15 +227,11 @@ class EstimateViewSet(
         Returns 400 when the estimate is not draft or the service is not PERCENTAGE.
         """
         estimate = self.get_object()
-        try:
-            line = EstimateService.add_adjustment_line(
-                estimate,
-                adjustment_service_id=request.data['adjustment_service'],
-                target_category_ids=request.data.get('target_category_ids') or [],
-            )
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        line = EstimateService.add_adjustment_line(
+            estimate,
+            adjustment_service_id=request.data['adjustment_service'],
+            target_category_ids=request.data.get('target_category_ids') or [],
+        )
         return Response(EstimateLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='send-defaults')
@@ -293,11 +270,8 @@ class EstimateViewSet(
                 to=to, subject=subject, body=body, cc=cc, bcc=bcc,
                 extra_attachments=extra_attachments,
             )
-        except DjangoValidationError as e:
-            return Response(
-                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        except DjangoValidationError:
+            raise  # plain validation errors render via the contract handler
         except Exception as e:
             # SMTP / unexpected failure — the outbound EmailRecord has been
             # persisted with last_send_error set, but the request is failing.

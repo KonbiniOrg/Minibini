@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { orderPrefillQty } from '../../lib/materials.js';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
@@ -210,7 +210,7 @@
       prefilledLine = null;
       await reload();
     } catch (e) {
-      error = e.data ? JSON.stringify(e.data) : e.message;
+      error = errorMessage(e);
     }
   }
 
@@ -223,7 +223,7 @@
       );
       await reload();
     } catch (e) {
-      error = e.data ? JSON.stringify(e.data) : e.message;
+      error = errorMessage(e);
     }
   }
 
