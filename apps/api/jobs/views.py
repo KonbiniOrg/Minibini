@@ -280,7 +280,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             sell_price=_Decimal(str(data.get('sell_price', 0))),
             inventory_item=pli,
             accounting_category=ac,
-            cost_source='manual',
         )
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 

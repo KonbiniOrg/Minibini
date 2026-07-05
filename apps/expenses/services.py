@@ -27,7 +27,7 @@ class ExpenseService:
         with transaction.atomic():
             if new_material:
                 from apps.jobs.models import Job
-                from apps.inventory.models import InventoryItem
+                from apps.inventory.models import InventoryItem, Material
                 from apps.inventory.services import MaterialService
                 nm_job = Job.objects.get(pk=new_material['job_id'])
                 if job is None:
@@ -49,7 +49,7 @@ class ExpenseService:
                         quantity=qty, unit_cost=price,
                         inventory_item=pli,
                         accounting_category=(None if pli else accounting_category),
-                        cost_source='document',
+                        cost_source=Material.COST_SOURCE_EXPENSE,
                     )
 
             if material and job is None:
