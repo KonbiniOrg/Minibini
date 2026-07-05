@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
 
   let schemes = $state([]);
   let categories = $state([]);
@@ -142,12 +142,16 @@
       supersedingId = null;
       await load();
     } catch (e) {
-      if (e.data && typeof e.data === 'object') {
+      if (e.data && typeof e.data === 'object' && !e.data.detail) {
+        // Field-keyed validation: show every field's messages.
         saveError = Object.entries(e.data)
           .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
           .join('; ');
       } else {
-        saveError = e.message || 'Could not save.';
+        // Operation error: `detail` is the whole story — sibling keys
+        // (supersede_url, reference_counts, code) are machine payload,
+        // not display text.
+        saveError = errorMessage(e, 'Could not save.');
       }
     } finally {
       saving = false;
