@@ -2701,8 +2701,10 @@ def build_history(c):
 
     # Per-job causal timeline. Clamped to the dataset's "now": the phase walk
     # is job.created_date + ordinal days, which for a recent job can step past
-    # today — recorded history must never be future-dated. Clamped events keep
-    # their causal order via a per-minute backoff below the clamp.
+    # today — recorded history must never be days in the future. The clamp is
+    # strictly monotonic: an event never lands before its predecessor (a
+    # clamped tail chains +1s past the boundary, at most seconds beyond the
+    # dataset-now instant — negligible next to real wall-clock now).
     now = _dataset_now(c)
     for job_pk, job_f in jobs.items():
         base_str = job_f['fields'].get('created_date') or _HISTORY_FALLBACK_DATE
@@ -2710,15 +2712,17 @@ def build_history(c):
         events = sorted(_job_timeline(job_pk, job_f['fields'], by_job.get(job_pk, {})),
                         key=lambda e: e[0])
         prev_ord, intra = None, 0
-        n_events = len(events)
-        for idx, (ordinal, otype, oid, etype, changes) in enumerate(events):
+        prev_dt = None
+        for ordinal, otype, oid, etype, changes in events:
             if ordinal != prev_ord:
                 prev_ord, intra = ordinal, 0
             if base_dt is not None:
                 ts_dt = base_dt + timedelta(days=ordinal, minutes=intra)
                 if ts_dt > now:
-                    # Order-preserving clamp: later events sit closer to now.
-                    ts_dt = now - timedelta(minutes=(n_events - idx))
+                    ts_dt = now
+                if prev_dt is not None and ts_dt <= prev_dt:
+                    ts_dt = prev_dt + timedelta(seconds=1)
+                prev_dt = ts_dt
                 ts = ts_dt.isoformat()
             else:
                 ts = base_str

@@ -115,9 +115,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'due_date', 'is_late',
             'job_has_other_invoices',
             # Transitions come only from the cancel action / send flow / QBO
-            # polling, and an invoice never moves between jobs — a bare PATCH
-            # must not flip either (create sets job via open_for_job).
-            'status', 'job',
+            # polling — a bare PATCH must not flip status. (`job` stays
+            # writable for CREATE, which routes through open_for_job; the
+            # viewset's perform_update strips it so it is create-only.)
+            'status',
         ]
 
     def get_due_date(self, obj):

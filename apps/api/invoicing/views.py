@@ -63,6 +63,13 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         },
     }
 
+    def perform_update(self, serializer):
+        # `job` is create-only (set via open_for_job); an invoice never moves
+        # between jobs — claims against another job's atoms would be
+        # incoherent. Silently create-only, like other immutable-on-edit fields.
+        serializer.validated_data.pop('job', None)
+        serializer.save()
+
     def _summary_mode(self):
         """The financials A/R list opts into lightweight summary mode with
         ?summary=true. Without it, the list endpoint keeps its original
