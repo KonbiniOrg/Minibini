@@ -334,7 +334,43 @@ The atom-pull surfaces on estimates and invoices.
 
 ## Purchasing & inventory
 
-(The procurement-machinery items moved into the freeform-materials plan, 2026-07-04.)
+(The procurement-machinery items moved into the freeform-materials plan
+2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
+
+- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20; returned 2026-07-05 from the freeform-materials plan (not built)_
+  When adding a PO line for a job that already has materials, there's no way to
+  deterministically attach the line to a *specific* existing pending material — the
+  resolver only auto-claims on an exact single match, else silently creates a
+  duplicate. (The `material_id` explicit path exists on the API and is used by the
+  one-shot "order this material" prefill, but the manual add-line form never offers
+  it.) Fix: once a Job is selected on the PO line form, surface that job's pending
+  unlinked materials and let the user pick "attach to this one" (explicit
+  `material_id`) or "create new". _Done when:_ deterministic attach with tests.
+
+- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14; returned 2026-07-05 from the freeform-materials plan (consciously punted)_
+  An expense is single-mode (cost OR stock receipt). One trip buying both an
+  inventoried shortfall and a special non-item finish silently drops one side.
+  Dropping `is_catalog` changed the classification rule (any item-backed purchase =
+  stock receipt) but did **not** fix the mixed case. _Done when:_ multi-item
+  expenses or a split prompt exist so a non-inventory cost can never be silently
+  swallowed.
+
+- **Expense didn't count as a cost in the job overview (no catalog item picked) — investigate.** — _added 2026-06-18; returned 2026-07-05, possibly obsolete_
+  Reported pre-rework: an expense missing from job cost with no catalog item
+  selected, so the stock-receipt classification shouldn't have fired — cause never
+  found. The expense-attach flow was rebuilt by the freeform-materials work
+  (attach == receipt, establishes provisional materials), so the original repro
+  context is gone. Re-test on the new flow; if it can't reproduce, delete this
+  entry. _Done when:_ reproduced and fixed with a test, or shown obsolete.
+
+- **Decide whether "drops" (offcuts/scraps) get an unbacked-material lane or lightweight lots.** — _added 2026-07-05 (parked during the freeform-materials design)_
+  The "no permanently-unbacked Material" rule (every Material establishes to a lot)
+  serves drops worst. RM deliberately parked this: exercise the
+  provisional→established/lot process first, then decide whether drops justify a
+  genuine unbacked category. Note: mark-on-hand + lot reuse may already cover most
+  drops in practice (a $0-ish minted lot marked on-hand). _Done when:_ RM has
+  decided drops get an unbacked lane, lightweight lots, or the status quo, and the
+  materials doc records it.
 
 - **Show a material's earmarks on the PO when ordering it.** — _added 2026-07-05_
   Certain items are needed by more than one job at once. When adding/receiving a PO
@@ -563,6 +599,14 @@ IMAP-SMTP machinery and tend to be worked together.
 ## Platform & conventions
 
 Cross-cutting UI/API conventions and shared components.
+
+- **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
+  The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
+  back-button land on the right tab; the tab strip is `<a use:link>`). Settings
+  (`SettingsPage.svelte`, six tabs) and the job history page
+  (`JobHistoryPage.svelte`) still use local `$state` tabs under a single URL.
+  _Done when:_ those pages' tabs are routes (or a deliberate exception is
+  recorded for them).
 
 - **Modal stacking on the schedule quick card — Escape closes both layers.** — _added 2026-07-04 (found during the Modal-shell sweep)_
   The one real modal-on-modal spot: `TaskQuickCard` (schedule bar click → popup
