@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import { triageError } from '../lib/errorTriage.js';
+  import { materialStatus } from '../lib/materialStatus.js';
   import { showError } from '../stores/messages.js';
   import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
@@ -61,11 +62,12 @@
     return '';
   });
 
-  // Set when opened on a genuinely provisional row (no item, no cost
-  // provenance yet) — the title/primary action reads "Set pricing" instead
-  // of "Edit Material"/"Save".
+  // Set when opened on a needs-pricing row — the title/primary action reads
+  // "Set pricing" instead of "Edit Material"/"Save". Reuses materialStatus()
+  // (the same source of truth that renders TaskTree's "Set pricing" button)
+  // so the button and the modal can never disagree about the condition.
   let isSetPricingEdit = $derived(
-    mode === 'edit' && !!material && !material.inventory_item && !material.cost_source
+    mode === 'edit' && !!material && materialStatus(material).key === 'needs-pricing'
   );
 
   // A material born customer-supplied is established at a locked $0/$0 —

@@ -85,6 +85,23 @@ describe('MaterialModal', () => {
     expect(getByRole('button', { name: 'Set pricing' })).toBeInTheDocument();
   });
 
+  it('shows "Set pricing" for an expense-sourced no-item material (matches the TaskTree button condition)', () => {
+    // materialStatus() keys any no-item row as needs-pricing regardless of
+    // cost_source — the modal must agree with the button that opened it.
+    const { getByRole } = render(MaterialModal, {
+      props: {
+        open: true, mode: 'edit',
+        material: {
+          material_id: 7, inventory_item: null, cost_source: 'expense',
+          unit_cost: 12, sell_price: 0, units: 'ea', quantity: 1,
+          description: 'Site-bought fasteners',
+        },
+      },
+    });
+    expect(getByRole('heading', { name: 'Set pricing' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Set pricing' })).toBeInTheDocument();
+  });
+
   it('disables pricing with a locked note when editing a customer-supplied material', () => {
     const { getByLabelText, getByText } = render(MaterialModal, {
       props: {
