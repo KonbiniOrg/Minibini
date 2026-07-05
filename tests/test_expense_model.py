@@ -244,10 +244,11 @@ class ExpenseStockReceiptModelTest(TestCase):
         with self.assertRaises(ValidationError):
             exp.full_clean()
 
-    def test_stock_pli_must_be_inventoried(self):
+    def test_stock_pli_need_not_be_catalog(self):
+        """The is_catalog stock-receipt guard is retired: any inventory item
+        can back a stock receipt now, catalog or not."""
         exp = self._build(stock_pli=self.noninv_pli, stock_qty=Decimal('3.00'))
-        with self.assertRaises(ValidationError):
-            exp.full_clean()
+        exp.full_clean()  # should not raise
 
     def test_cannot_mix_stock_and_material(self):
         from apps.inventory.models import Material

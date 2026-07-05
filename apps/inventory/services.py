@@ -142,8 +142,9 @@ class InventoryService:
         now-reference-free discard. `overrides` is a dict of final values for
         keep (the frontend resolves which side's value to keep).
 
-        Hard-blocks on a unit mismatch (the QOH addition would be nonsense) and
-        refuses to discard a catalog item (demote it first)."""
+        Hard-blocks on a unit mismatch (the QOH addition would be nonsense).
+        Accepts any discard item — the catalog discard-guard is retired; an
+        explicit confirm lives in the UI."""
         from django.core.exceptions import ValidationError
         from apps.estimates.models import EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
@@ -157,10 +158,6 @@ class InventoryService:
             raise ValidationError('Cannot merge an item into itself.')
         keep = InventoryItem.objects.get(pk=keep_id)
         discard = InventoryItem.objects.get(pk=discard_id)
-        if discard.is_catalog:
-            raise ValidationError(
-                'Cannot discard a catalog item; uncheck its catalog flag to '
-                'demote it to a lot first, then merge.')
         # 'none' means *unknown*, not a real unit — merging across it is fine
         # and the known unit wins. A real-unit mismatch (sheets vs lbs) still
         # blocks: the QOH addition would be nonsense.

@@ -66,11 +66,16 @@ class MergeServiceTest(TestCase):
         with self.assertRaises(ValidationError):
             InventoryService.merge(self.keep.pk, self.discard.pk)
 
-    def test_merge_catalog_discard_blocked(self):
+    def test_merge_discards_any_item(self):
+        """The catalog discard-guard is retired; explicit confirm lives in
+        the UI. Force is_catalog=True on discard (the old guard's trigger
+        condition) to prove merge no longer cares."""
         self.discard.is_catalog = True
         self.discard.save()
-        with self.assertRaises(ValidationError):
-            InventoryService.merge(self.keep.pk, self.discard.pk)
+        InventoryService.merge(self.keep.pk, self.discard.pk)
+        self.keep.refresh_from_db()
+        self.assertEqual(self.keep.qty_on_hand, Decimal('5.00'))  # 2 + 3
+        self.assertFalse(InventoryItem.objects.filter(pk=self.discard.pk).exists())
 
     def test_merge_applies_overrides_including_discard_code(self):
         # Retain the discard's description and code on keep (discard is deleted

@@ -154,6 +154,29 @@ class ExpenseSubmitPathTest(TestCase):
         )
         self.assertFalse(Task.objects.filter(job=self.job, name='Materials').exists())
 
+    def test_any_item_backed_purchase_is_stock_receipt(self):
+        """Spec §Drop is_catalog: pli present → stock receipt, uniformly.
+        No `is_catalog` kwarg is passed here on purpose — classification no
+        longer depends on the flag at all."""
+        pli = InventoryItem.objects.create(
+            code='LOT-X', accounting_category=self.cat, units='ea',
+            qty_on_hand=Decimal('0'))
+        exp = ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            amount=Decimal('40.00'), purchased_on='2026-04-14',
+            accounting_category=self.cat,
+            description='sheet',
+            new_material={
+                'job_id': self.job.pk, 'inventory_item_id': pli.pk,
+                'quantity': Decimal('2'),
+            },
+        )
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('2'))
+        self.assertEqual(exp.stock_pli_id, pli.pk)
+        self.assertIsNone(exp.material_id)
+
 
 class ExpenseRejectStockReceiptTest(TestCase):
     """Rejecting an inventoried (stock-receipt) expense reverses its QOH bump;
@@ -216,7 +239,11 @@ class ExpenseRejectStockReceiptTest(TestCase):
 
 
 class ExpenseRejectNonInventoriedTest(TestCase):
-    """Gap 13: reject with non-inventoried / freeform expense material leaves QOH unchanged."""
+    """Gap 13: reject with a freeform (no PLI) expense material leaves QOH
+    untouched — there's nothing to track. An item-backed purchase is a stock
+    receipt uniformly now (catalog or not) — see
+    test_reject_noninv_item_backed_purchase_is_stock_receipt below, which
+    reverses the QOH bump exactly like the catalog case."""
 
     def setUp(self):
         self.contact = Contact.objects.create(
@@ -265,25 +292,22 @@ class ExpenseRejectNonInventoriedTest(TestCase):
             },
         )
 
-    def test_reject_lot_material_releases_earmark_no_qoh_change(self):
+    def test_reject_noninv_item_backed_purchase_is_stock_receipt(self):
+        """Spec §Drop is_catalog: an item-backed purchase is a stock receipt
+        regardless of is_catalog — no material/earmark created, and reject
+        reverses the QOH bump exactly like the catalog case."""
         exp = self._submit_noninv()
-        mat_pk = exp.material.pk
-        # Universal tracking: a lot-backed cost material earmarks on submit.
-        # (submit does not bump QOH for the cost-material path — only stock
-        # receipts do — so QOH stays at its starting value throughout.)
-        self.assertTrue(Earmark.objects.filter(
+        self.assertIsNone(exp.material_id)
+        self.assertEqual(exp.stock_pli_id, self.pli_noninv.pk)
+        self.assertFalse(Earmark.objects.filter(
             inventory_item=self.pli_noninv, job=self.job).exists())
         self.pli_noninv.refresh_from_db()
-        qoh_before = self.pli_noninv.qty_on_hand
+        self.assertEqual(self.pli_noninv.qty_on_hand, Decimal('6'))  # 5 + 1
         ExpenseService.reject(expense=exp, actor=self.user)
-        self.assertFalse(Material.objects.filter(pk=mat_pk).exists(),
-                         'Material should be deleted on reject')
         self.pli_noninv.refresh_from_db()
-        self.assertEqual(self.pli_noninv.qty_on_hand, qoh_before,
-                         'QOH unchanged (cost material never bumped it)')
-        self.assertFalse(Earmark.objects.filter(
-            inventory_item=self.pli_noninv, job=self.job).exists(),
-            'Earmark released after reject')
+        self.assertEqual(self.pli_noninv.qty_on_hand, Decimal('5'))  # reversed
+        exp.refresh_from_db()
+        self.assertEqual(exp.status, Expense.STATUS_REJECTED)
 
     def test_reject_freeform_material_deletes_without_qoh_change(self):
         exp = self._submit_freeform()

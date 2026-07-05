@@ -36,7 +36,7 @@ class ExpenseService:
                 if new_material.get('inventory_item_id'):
                     pli = InventoryItem.objects.get(pk=new_material['inventory_item_id'])
                 qty = new_material.get('quantity') or Decimal('1')
-                if pli and pli.is_catalog:
+                if pli:
                     # Inventoried → stock receipt (no consumable material).
                     stock_pli, stock_qty = pli, qty
                 else:
@@ -181,7 +181,7 @@ class ExpenseService:
         pli = material.inventory_item
         move_earmark = (
             material.consumption_state == Material.CONSUMPTION_STATE_PENDING
-            and pli and pli.is_catalog
+            and pli is not None
             and material.quantity > Decimal('0.00')
         )
         old_job = material.job
