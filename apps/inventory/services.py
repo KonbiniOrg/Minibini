@@ -602,9 +602,13 @@ class MaterialService:
         from django.db import transaction
         if customer_supplied and (
                 inventory_item is not None
-                or (unit_cost and unit_cost != Decimal('0.00'))):
+                or (unit_cost and unit_cost != Decimal('0.00'))
+                or (sell_price and sell_price != Decimal('0.00'))):
+            # sell_price included: a pre-set sell would ride establish()'s
+            # locked-sell preservation and mint the lot at that price.
             raise ValidationError(
-                'A customer-supplied material carries no purchase pricing.')
+                'A customer-supplied material carries no pricing — it is the '
+                'customer’s property, carried at zero.')
         # Priced at authoring with no item pick → born established (mint the lot).
         # Only user-entered pricing establishes here; document-sourced costs
         # (PO/expense) record the cost but establish through their own flows

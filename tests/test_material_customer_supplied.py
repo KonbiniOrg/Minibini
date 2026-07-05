@@ -62,3 +62,17 @@ class CustomerSuppliedTests(TestCase):
                 job=self.job, description='x', quantity=Decimal('1'),
                 accounting_category=self.cat, units='ea',
                 unit_cost=Decimal('9.00'), customer_supplied=True)
+
+    def test_rejects_nonzero_sell_price(self):
+        # Without this guard, the pre-set sell would ride establish()'s
+        # locked-sell preservation and the lot would mint at 99.00.
+        with self.assertRaises(ValidationError):
+            MaterialService.create_on_job(
+                job=self.job, description='sneaky sell', quantity=Decimal('1'),
+                accounting_category=self.cat, units='ea',
+                sell_price=Decimal('99.00'), customer_supplied=True)
+        # Rejected cleanly: no Material row, no minted LOT left behind.
+        self.assertFalse(
+            Material.objects.filter(description='sneaky sell').exists())
+        self.assertFalse(
+            InventoryItem.objects.filter(code__startswith='LOT-').exists())

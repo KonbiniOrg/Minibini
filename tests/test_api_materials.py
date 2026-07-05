@@ -63,6 +63,21 @@ class MaterialApiTest(APITestCase):
         self.assertEqual(m.sell_price, Decimal('0.00'))
         self.assertEqual(m.cost_source, Material.COST_SOURCE_CUSTOMER)
 
+    def test_post_customer_supplied_with_sell_price_400(self):
+        """Reviewer gap: sell_price must be refused too — otherwise the pre-set
+        sell rides establish()'s locked-sell preservation and mints a 99.00 lot."""
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'sneaky sell', 'quantity': '1',
+            'accounting_category': self.cat.pk,
+            'customer_supplied': True,
+            'sell_price': '99.00',
+        }, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('detail', resp.data)
+        self.assertFalse(
+            Material.objects.filter(job=self.job, description='sneaky sell').exists())
+
     def test_patch_pricing_on_customer_supplied_material_400(self):
         """A customer-supplied material's pricing is locked — PATCHing
         unit_cost/sell_price returns the standard 400 error-detail contract."""
