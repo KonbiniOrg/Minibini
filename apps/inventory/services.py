@@ -790,6 +790,32 @@ class MaterialService:
         return MaterialService.consume(material)
 
     @staticmethod
+    def mark_on_hand(material, qty, *, user=None):
+        """Deliberate no-document receipt (Path 3), and the customer-delivery
+        receipt for customer-supplied materials (Path 4)."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        from django.db.models import F
+        if material.inventory_item_id is None:
+            raise ValidationError('Set pricing on this material first.')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Only a pending material can be received.')
+        if qty <= Decimal('0.00'):
+            raise ValidationError({'quantity': ['Quantity must be positive.']})
+        with transaction.atomic():
+            pli = material.inventory_item
+            pli.qty_on_hand = F('qty_on_hand') + qty
+            pli.save(update_fields=['qty_on_hand'])
+            pli.refresh_from_db()
+            action = ('Customer delivery' if material.is_customer_supplied
+                      else 'Marked on-hand')
+            InventoryService._record_qoh_history(
+                pli, qty, action=action,
+                reason=f'{action} on job {material.job.job_number}',
+                job=material.job, user=user)
+        return material
+
+    @staticmethod
     def consume(material):
         from django.db import transaction
         from django.core.exceptions import ValidationError

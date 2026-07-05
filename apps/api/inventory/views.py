@@ -149,6 +149,19 @@ class MaterialViewSet(viewsets.ModelViewSet):
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
 
+    @action(detail=True, methods=['post'], url_path='mark-on-hand')
+    def mark_on_hand(self, request, pk=None):
+        """Deliberate no-document receipt (Path 3) / customer-delivery
+        receipt (Path 4) — shop-floor arrival marking, no extra permission
+        beyond the viewset default."""
+        s = MaterialOpSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        m = self.get_object()
+        MaterialService.mark_on_hand(
+            m, s.validated_data['quantity'], user=request.user)
+        m.refresh_from_db()
+        return Response(MaterialSerializer(m).data)
+
     @action(detail=True, methods=['post'], url_path='assign-task')
     def assign_task(self, request, pk=None):
         s = MaterialAssignTaskSerializer(data=request.data)

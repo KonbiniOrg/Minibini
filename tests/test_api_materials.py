@@ -121,6 +121,29 @@ class MaterialApiTest(APITestCase):
         m.refresh_from_db()
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
+    def test_mark_on_hand_action_happy_path_and_refusal(self):
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='received item',
+            quantity=Decimal('5'), unit_cost=Decimal('4.00'),
+            accounting_category=self.cat, units='ea')
+        r = self.client.post(
+            f'/api/materials/{m.pk}/mark-on-hand/', {'quantity': '5'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('5.00'))
+
+        # Refusal shape: a provisional (unpriced) material's inventory_item_id
+        # is None, so mark_on_hand raises a plain-sentence ValidationError,
+        # which the central handler renders as {'detail': '...'}.
+        prov = MaterialService.create_on_job(
+            job=self.job, task=None, description='no pricing yet',
+            quantity=Decimal('1'), accounting_category=self.cat, units='ea')
+        r2 = self.client.post(
+            f'/api/materials/{prov.pk}/mark-on-hand/', {'quantity': '1'}, format='json')
+        self.assertEqual(r2.status_code, 400, r2.content)
+        self.assertIn('detail', r2.json())
+
     def test_delete_returns_405(self):
         """Gap 7: DELETE on /api/materials/{id}/ must return 405."""
         from apps.inventory.services import MaterialService
