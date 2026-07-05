@@ -130,6 +130,15 @@ class EstimateService:
         return estimate
 
     @staticmethod
+    def update_fields(estimate, **fields):
+        """Non-status field updates (status routes through mark_open /
+        update_status). Exists so the viewset owns no persistence."""
+        for k, v in fields.items():
+            setattr(estimate, k, v)
+        estimate.save()
+        return estimate
+
+    @staticmethod
     def _apply_material_ac_default(li):
         """A material line (is_material=True) with no AC defaults to the
         `default_material_accounting_category` Configuration value (a string

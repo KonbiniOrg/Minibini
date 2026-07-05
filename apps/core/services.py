@@ -1166,6 +1166,15 @@ class ConfigurationService:
     """Service for managing configuration: key-value settings and line item types."""
 
     @staticmethod
+    def set(key, value):
+        """Set a Configuration key/value from the settings API — the views
+        translate HTTP, this persists."""
+        from .models import Configuration
+        config, _ = Configuration.objects.update_or_create(
+            key=key, defaults={'value': value})
+        return config
+
+    @staticmethod
     def create_accounting_category(**kwargs):
         """Create a new AccountingCategory from field values."""
         cat = AccountingCategory(**kwargs)

@@ -144,43 +144,16 @@ class MaterialViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if instance.inventory_item_id is not None and (
-            'unit_cost' in serializer.validated_data
-            or 'sell_price' in serializer.validated_data
-        ):
-            # Pricing-only path on a PLI-linked instance: route through the service
-            # for the optional PLI propagation.  update_pricing raises ValidationError
-            # on on_hold — catch it here so the caller gets 400, not 500.
-            try:
-                MaterialService.update_pricing(
-                    instance,
-                    unit_cost=serializer.validated_data.get('unit_cost'),
-                    sell_price=serializer.validated_data.get('sell_price'),
-                    propagate_to_pli=propagate,
-                )
-            except DjangoValidationError as e:
-                detail = e.message_dict if hasattr(e, 'message_dict') else (
-                    e.message if hasattr(e, 'message') else str(e)
-                )
-                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-            instance.refresh_from_db()
-            return Response(MaterialSerializer(instance).data)
-        # Freeform path or non-pricing fields: assert not on_hold before saving,
-        # then fall through to the default serializer save.
-        from apps.jobs.services import _assert_job_not_on_hold
+        fields = dict(serializer.validated_data)
+        propagate = fields.pop('propagate_to_pli', False)
         try:
-            _assert_job_not_on_hold(instance.job, 'edit this material')
-            if 'sell_price' in serializer.validated_data and (
-                serializer.validated_data['sell_price'] != instance.sell_price
-            ):
-                MaterialService._assert_not_invoiced(instance)
+            instance = MaterialService.update_fields(
+                instance, propagate_to_pli=propagate, **fields)
         except DjangoValidationError as e:
             detail = e.message_dict if hasattr(e, 'message_dict') else (
                 e.message if hasattr(e, 'message') else str(e)
             )
             return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save()
         return Response(MaterialSerializer(instance).data)
 
     @action(detail=True, methods=['post'])

@@ -1115,6 +1115,19 @@ class TaskLifecycleService:
             MaterialService.consume(material)
 
     @staticmethod
+    def set_actual_qty(task, qty):
+        """Record a worker-entered actual quantity (open to any
+        authenticated worker; complete_task enforces it's present/positive
+        for ENTERED_QTY completion)."""
+        from decimal import Decimal, InvalidOperation
+        try:
+            task.actual_qty = Decimal(str(qty))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValidationError({'actual_qty': 'Invalid decimal.'})
+        task.save(update_fields=['actual_qty'])
+        return task
+
+    @staticmethod
     def complete_task(task_pk, actual_qty=None):
         """Transition task from pending/in_progress/blocked -> complete.
 

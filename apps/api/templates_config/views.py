@@ -53,12 +53,12 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
         serializer = TemplateMaterialAssociationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        a = TemplateMaterialAssociation(work_template=template, **serializer.validated_data)
+        from apps.inventory.services import TemplateMaterialAssociationService
         try:
-            a.full_clean()
+            a = TemplateMaterialAssociationService.create(
+                template, **serializer.validated_data)
         except DjangoValidationError as e:
             return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-        a.save()
         return Response(
             TemplateMaterialAssociationSerializer(a).data,
             status=status.HTTP_201_CREATED,
@@ -77,22 +77,18 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if request.method == 'GET':
             return Response(TemplateMaterialAssociationSerializer(a).data)
 
+        from apps.inventory.services import TemplateMaterialAssociationService
         if request.method == 'DELETE':
-            a.delete()
+            TemplateMaterialAssociationService.delete(a)
             return Response({'message': 'Template material association deleted.'})
 
         serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        # Apply changes to the instance, then full_clean() to fire model-level
-        # validation (cross-template template_task_association mismatch, etc.)
-        # before saving.
-        for field, value in serializer.validated_data.items():
-            setattr(a, field, value)
         try:
-            a.full_clean()
+            a = TemplateMaterialAssociationService.update(
+                a, **serializer.validated_data)
         except DjangoValidationError as e:
             return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-        a.save()
         return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
@@ -272,9 +268,7 @@ def settings_view(request):
                     status=400,
                 )
     for key, value in request.data.items():
-        Configuration.objects.update_or_create(
-            key=key, defaults={'value': str(value)}
-        )
+        ConfigurationService.set(key, str(value))
     configs = Configuration.objects.all()
     data = {c.key: c.value for c in configs}
     return Response(data)
@@ -300,8 +294,5 @@ def units_view(request):
     if len(units) != len(set(units)):
         return Response({'error': 'Duplicate units are not allowed.'}, status=400)
 
-    Configuration.objects.update_or_create(
-        key='units_list',
-        defaults={'value': json.dumps(units)},
-    )
+    ConfigurationService.set('units_list', json.dumps(units))
     return Response(units)

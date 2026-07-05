@@ -382,6 +382,16 @@ class ChangeOrderService:
         return li
 
     @staticmethod
+    def update_fields(co, **fields):
+        """Non-status field updates on a change order (status changes go
+        through update_status). No extra guards today — this exists so the
+        view owns no persistence and a future guard has one home."""
+        for k, v in fields.items():
+            setattr(co, k, v)
+        co.save()
+        return co
+
+    @staticmethod
     def add_line_item_from_service(co_pk, service_item_pk, qty):
         """Add a deferred service line to a draft change order.
 

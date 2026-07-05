@@ -170,9 +170,8 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         name = request.data.get('name', '').strip()
         if not name:
             return Response({'detail': 'Tag name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        tag, _ = Tag.objects.get_or_create(name=name)
-        contact.tags.add(tag)
-        return Response(TagSerializer(contact.tags.all(), many=True).data)
+        from apps.contacts.services import TagService
+        return Response(TagSerializer(TagService.attach(contact, name), many=True).data)
 
     @action(detail=True, methods=['post'], url_path='remove-tag')
     def remove_tag(self, request, pk=None):
@@ -180,8 +179,8 @@ class ContactViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         tag_id = request.data.get('tag_id')
         if not tag_id:
             return Response({'detail': 'tag_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        contact.tags.remove(tag_id)
-        return Response(TagSerializer(contact.tags.all(), many=True).data)
+        from apps.contacts.services import TagService
+        return Response(TagSerializer(TagService.detach(contact, tag_id), many=True).data)
 
 
 class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
@@ -335,9 +334,8 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         name = request.data.get('name', '').strip()
         if not name:
             return Response({'detail': 'Tag name is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        tag, _ = Tag.objects.get_or_create(name=name)
-        business.tags.add(tag)
-        return Response(TagSerializer(business.tags.all(), many=True).data)
+        from apps.contacts.services import TagService
+        return Response(TagSerializer(TagService.attach(business, name), many=True).data)
 
     @action(detail=True, methods=['post'], url_path='remove-tag')
     def remove_tag(self, request, pk=None):
@@ -345,8 +343,8 @@ class BusinessViewSet(ConfirmDeleteMixin, viewsets.ModelViewSet):
         tag_id = request.data.get('tag_id')
         if not tag_id:
             return Response({'detail': 'tag_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        business.tags.remove(tag_id)
-        return Response(TagSerializer(business.tags.all(), many=True).data)
+        from apps.contacts.services import TagService
+        return Response(TagSerializer(TagService.detach(business, tag_id), many=True).data)
 
 
 class TagViewSet(viewsets.ModelViewSet):

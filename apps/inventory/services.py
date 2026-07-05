@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import F, Sum
 from apps.inventory.models import Earmark, Material
-from apps.inventory.models import InventoryItem
+from apps.inventory.models import InventoryItem, TemplateMaterialAssociation
 
 
 class InventoryService:
@@ -571,6 +571,75 @@ class MaterialService:
         return m
 
     @staticmethod
+    def update_fields(material, *, propagate_to_pli=False, **fields):
+        """The single write entry point for a material PATCH.
+
+        - Quantity moves are refused — draw_more/restock own them (with their
+          earmark math); a bare quantity write would silently desync earmarks.
+        - Pricing on a PLI-linked material routes through update_pricing
+          (invoiced-freeze + optional PLI propagation); like the endpoints it
+          replaces, that path applies pricing only.
+        - Everything else — metadata, and freeform pricing — saves under the
+          on_hold guard, with the invoiced freeze on any sell_price change.
+        """
+        from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_on_hold
+        if {'quantity', 'released_qty'} & set(fields):
+            raise ValidationError(
+                'Quantity changes must use the draw-more or restock actions.')
+        if material.inventory_item_id is not None:
+            # PLI-backed rows take description/units/AC from the inventory
+            # item and are locked (see materials doc: unit math depends on
+            # the pairing); only the pricing carve-out is editable.
+            non_pricing = set(fields) - {'unit_cost', 'sell_price'}
+            if non_pricing:
+                raise ValidationError(
+                    'A catalog-backed material takes its descriptive fields '
+                    'from the inventory item, so they are immutable here; '
+                    'only unit cost / sell price are editable. Rejected: '
+                    + ', '.join(sorted(non_pricing)))
+        if material.inventory_item_id is not None and (
+                'unit_cost' in fields or 'sell_price' in fields):
+            MaterialService.update_pricing(
+                material,
+                unit_cost=fields.get('unit_cost'),
+                sell_price=fields.get('sell_price'),
+                propagate_to_pli=propagate_to_pli,
+            )
+            material.refresh_from_db()
+            return material
+        _assert_job_not_on_hold(material.job, 'edit this material')
+        if 'sell_price' in fields and fields['sell_price'] != material.sell_price:
+            MaterialService._assert_not_invoiced(material)
+        for k, v in fields.items():
+            setattr(material, k, v)
+        material.save()
+        return material
+
+    @staticmethod
+    def remove(material):
+        """Doctrine-correct removal for the delete affordance.
+
+        pending qty>0 → full restock (restock-to-zero rule applies:
+        referenced → released, unreferenced → deleted); pending qty==0 →
+        the same rule directly (release keeps claims resolving, delete is
+        scratch-paper). consumed/released rows are actuals/history and are
+        never hard-deleted — unconsume or leave them.
+        Returns the surviving material, or None when the row was deleted.
+        """
+        from django.core.exceptions import ValidationError
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError(
+                'A consumed or released material is job history and cannot be '
+                'deleted. Unconsume it first if the work never happened.')
+        if material.quantity > Decimal('0.00'):
+            return MaterialService.restock(material, material.quantity)
+        if MaterialService._is_referenced(material):
+            return MaterialService.release(material)
+        material.delete()
+        return None
+
+    @staticmethod
     def consume_if_task_started(material):
         """Consume a pending material whose task is already IN_PROGRESS.
 
@@ -872,3 +941,27 @@ class MaterialService:
             )
             MaterialService.link_to_po_line(mat, po_line)
             return mat
+
+
+class TemplateMaterialAssociationService:
+    """Owns TemplateMaterialAssociation writes (the WorkTemplate materials
+    tab) — views translate HTTP, this validates and persists."""
+
+    @staticmethod
+    def create(template, **fields):
+        assoc = TemplateMaterialAssociation(work_template=template, **fields)
+        assoc.full_clean()
+        assoc.save()
+        return assoc
+
+    @staticmethod
+    def update(assoc, **fields):
+        for k, v in fields.items():
+            setattr(assoc, k, v)
+        assoc.full_clean()
+        assoc.save()
+        return assoc
+
+    @staticmethod
+    def delete(assoc):
+        assoc.delete()

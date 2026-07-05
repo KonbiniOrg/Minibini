@@ -120,19 +120,10 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
 
         if request.method == 'DELETE':
             from django.core.exceptions import ValidationError as DjangoValidationError
-            if material.consumption_state == Material.CONSUMPTION_STATE_PENDING:
-                # Pending materials may have earmarks; restock fully to unwind them.
-                qty = material.quantity
-                if qty > 0:
-                    try:
-                        MaterialService.restock(material, qty)
-                    except DjangoValidationError as e:
-                        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-                else:
-                    material.delete()
-            else:
-                # NA-state material: no earmark/inventory accounting; safe to delete directly.
-                material.delete()
+            try:
+                MaterialService.remove(material)
+            except DjangoValidationError as e:
+                return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             return Response({'message': 'Material deleted.'})
 
         # PATCH — only metadata fields allowed; quantity changes go through
@@ -146,36 +137,16 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             )
         serializer = MaterialWriteSerializer(material, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if material.inventory_item_id is not None and (
-            'unit_cost' in serializer.validated_data
-            or 'sell_price' in serializer.validated_data
-        ):
-            try:
-                MaterialService.update_pricing(
-                    material,
-                    unit_cost=serializer.validated_data.get('unit_cost'),
-                    sell_price=serializer.validated_data.get('sell_price'),
-                    propagate_to_pli=propagate,
-                )
-            except ValidationError as e:
-                detail = e.message_dict if hasattr(e, 'message_dict') else (
-                    e.message if hasattr(e, 'message') else str(e)
-                )
-                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-            material.refresh_from_db()
-            return Response(MaterialSerializer(material).data)
-        # Non-pricing path: route through update_pricing with no pricing changes
-        # to ensure the on_hold guard fires even for metadata-only edits.
-        from apps.jobs.services import _assert_job_not_on_hold
+        fields = dict(serializer.validated_data)
+        propagate = fields.pop('propagate_to_pli', False)
         try:
-            _assert_job_not_on_hold(material.job, 'edit this material')
+            material = MaterialService.update_fields(
+                material, propagate_to_pli=propagate, **fields)
         except ValidationError as e:
             detail = e.message_dict if hasattr(e, 'message_dict') else (
                 e.message if hasattr(e, 'message') else str(e)
             )
             return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save()
         return Response(MaterialSerializer(material).data)
 
     # --- Subtask CRUD ---
@@ -335,12 +306,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         qty = request.data.get('actual_qty')
         if qty is None:
             return Response({'actual_qty': ['Required.']}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.jobs.services import TaskLifecycleService
         try:
-            from decimal import Decimal
-            task.actual_qty = Decimal(str(qty))
-        except Exception:
-            return Response({'actual_qty': ['Invalid decimal.']}, status=status.HTTP_400_BAD_REQUEST)
-        task.save(update_fields=['actual_qty'])
+            TaskLifecycleService.set_actual_qty(task, qty)
+        except ValidationError as e:
+            detail = e.message_dict if hasattr(e, 'message_dict') else {'actual_qty': ['Invalid decimal.']}
+            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
         return Response({'actual_qty': str(task.actual_qty)})
 
 

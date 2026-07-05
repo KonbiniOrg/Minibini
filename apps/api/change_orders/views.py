@@ -101,7 +101,8 @@ class ChangeOrderViewSet(
                 raise NotFound(str(e))
             serializer.instance = updated
         else:
-            serializer.save()
+            serializer.instance = ChangeOrderService.update_fields(
+                serializer.instance, **serializer.validated_data)
 
     def destroy(self, request, *args, **kwargs):
         co = self.get_object()

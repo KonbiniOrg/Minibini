@@ -617,33 +617,29 @@ Cross-cutting UI/API conventions and shared components.
   modal/popover, or a header that can grow), or we've decided the overflow-popover is
   fine and noted why.
 
-- **Sweep `apps/api/` for `serializer.save()` bypasses — deep-swept 2026-07-04; category-A holes fixed, B/C tails recorded.** — _added 2026-05-27_
+- **Sweep `apps/api/` for `serializer.save()` bypasses — deep-swept 2026-07-04; A holes and B tails fixed, C tail recorded.** — _added 2026-05-27_
   Three-layer sweep (explicit `serializer.save()`, direct model writes in
   views, and DRF's *implicit* save on ViewSets lacking `perform_create`/
   `perform_update`). The seven category-A bypasses with real teeth (shift
   create/delete, estimate/invoice status PATCH, change-request tampering,
-  reimbursement drift, scheme-delete 500) were fixed 2026-07-04. Remaining,
-  for when each surface is next touched:
-  **B — metadata tails (guards inlined in the view, not a live bypass):**
-  material metadata PATCH ×2 (`tasks/views.py` ~178, `inventory/views.py`
-  ~183 — pricing via `update_pricing`, on_hold/invoiced guards inlined,
-  `task` read-only); CO non-status PATCH tail (`change_orders/views.py`
-  ~104); `task.save(update_fields=['actual_qty'])` (`tasks/views.py` ~343);
-  task-material DELETE's qty-0/NA-state branches call `material.delete()`
-  without the doctrine's unreferenced-only check (`tasks/views.py` ~121-137
-  — double-check whether `_is_referenced` should gate there);
-  `TemplateMaterialAssociation` create/patch/delete as direct model ops
-  (full_clean'd inline) and `Configuration.update_or_create` in the settings
-  views (`templates_config/views.py`); `Tag.objects.get_or_create` inside
-  the add-tag actions (`contacts/views.py` — no TagService exists).
+  reimbursement drift, scheme-delete 500) were fixed 2026-07-04. The B
+  metadata tails were extracted the same day: `MaterialService.update_fields`
+  / `.remove` (both material PATCH endpoints + task-material DELETE, now
+  applying the restock-to-zero doctrine), `TaskLifecycleService.set_actual_qty`,
+  `ChangeOrderService.update_fields`, `EstimateService.update_fields`,
+  `TemplateMaterialAssociationService`, `ConfigurationService.set`, and
+  `TagService.attach`/`detach` — viewsets in those files no longer touch the
+  DB. Remaining, for when each surface is next touched:
   **C — implicit CRUD on simple entities (no service exists at all):**
   `TagViewSet` full implicit CRUD (global rename/delete, no confirm flow —
-  the SPA only reads it); `PaymentTermsViewSet` full implicit CRUD (DRF
-  default destroy also returns 204, violating the all-DELETEs-return-200
-  convention, and a PROTECT'd delete would 500); `RateSchemeViewSet` create
-  (benign — save() normalizes; the referenced-freeze is update-only by
-  design); auth/users serializers as their own write surface (accepted —
+  the SPA only reads it; hands-off for its original author);
+  `RateSchemeViewSet` create/update as direct saves with view-inlined
+  `_block_if_referenced` guards — fold into `ConfigurationService` alongside
+  the AccountingCategory methods; `AccountingCategoryViewSet` has no
+  `perform_destroy`, so deleting a PROTECT-referenced AC is a latent 500;
+  auth/users serializers as their own write surface (accepted —
   `apps/api/users/services.py` guards the dangerous operations).
-  _Done when:_ the B tails gain service methods as those surfaces are next
-  touched, and the C entities either get thin services or a recorded
+  (`PaymentTermsViewSet` was a sweep false positive — it is a
+  `ReadOnlyModelViewSet`, no write surface.)
+  _Done when:_ the C entities either get thin services or a recorded
   exemption.
