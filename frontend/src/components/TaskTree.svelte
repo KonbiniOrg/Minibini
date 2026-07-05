@@ -320,11 +320,11 @@
           {/if}
           <td class="indent">
             <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
-            {@render matStatusChip(mat)}
+            {#if !showStatus}{@render matStatusChip(mat)}{/if}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
-          {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
+          {#if showStatus}<td>{@render matStatusChip(mat)}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>{/if}
           <td class="text-right">{mat.quantity}</td>
           <td class="text-right">-</td>
           <td class="text-right">{mat.units === 'none' ? '-' : mat.units}</td>
@@ -390,11 +390,11 @@
             {/if}
             <td class="indent-2">
               <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
-              {@render matStatusChip(mat)}
+              {#if !showStatus}{@render matStatusChip(mat)}{/if}
             </td>
             {#if showAssignee}<td></td>{/if}
             <td></td>
-            {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
+            {#if showStatus}<td>{@render matStatusChip(mat)}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>{/if}
             <td class="text-right">{mat.quantity}</td>
             <td class="text-right">-</td>
             <td class="text-right">{mat.units === 'none' ? '-' : mat.units}</td>
@@ -430,11 +430,11 @@
           {/if}
           <td class="indent">
             <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
-            {@render matStatusChip(mat)}
+            {#if !showStatus}{@render matStatusChip(mat)}{/if}
           </td>
           {#if showAssignee}<td></td>{/if}
           <td></td>
-          {#if showStatus}<td>{#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}</td>{/if}
+          {#if showStatus}<td>{@render matStatusChip(mat)}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>{/if}
           <td class="text-right">{mat.quantity}</td>
           <td class="text-right">-</td>
           <td class="text-right">{mat.units === 'none' ? '-' : mat.units}</td>
