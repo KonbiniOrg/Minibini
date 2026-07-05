@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
@@ -70,3 +71,18 @@ class InventorySearchTest(BaseTestCase):
         resp = self.client.get('/api/inventory/?search=Hex')
         self.assertIn(self.match.inventory_item_id, self._ids(resp))
         self.assertNotIn(self.other.inventory_item_id, self._ids(resp))
+
+    def test_list_ranks_in_stock_then_newest(self):
+        """Spec §Drop is_catalog: ranking replaces hiding."""
+        cat = AccountingCategory.objects.get(pk=901)
+        InventoryItem.objects.create(
+            code='OLD0', accounting_category=cat, units='ea')
+        InventoryItem.objects.create(
+            code='NEW0', accounting_category=cat, units='ea')
+        InventoryItem.objects.create(
+            code='STK', accounting_category=cat, units='ea',
+            qty_on_hand=Decimal('5'))
+        resp = self.client.get('/api/inventory/?page_size=100')
+        codes = [r['code'] for r in resp.json()['results']]
+        self.assertLess(codes.index('STK'), codes.index('NEW0'))
+        self.assertLess(codes.index('NEW0'), codes.index('OLD0'))
