@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../../lib/api.js';
-  import { triageError } from '../../lib/errorTriage.js';
 
   let categories = $state([]);
   let qboAccounts = $state(null);
@@ -13,12 +12,6 @@
   let showInactive = $state(false);
   let editing = $state(null);
   let adding = $state(false);
-
-  let defaultMaterialCategoryId = $state('');
-  let materialCategoryError = $state('');
-  let savingMaterialCategory = $state(false);
-
-  let activeCategories = $derived(categories.filter(c => c.is_active));
 
   const emptyForm = { code: '', name: '', taxable: true, default_description: '', is_active: true };
   let form = $state({ ...emptyForm });
@@ -52,17 +45,8 @@
     }
   }
 
-  async function loadSettings() {
-    try {
-      const data = await api.get('/api/settings/');
-      defaultMaterialCategoryId = data.default_material_accounting_category || '';
-    } catch (_) {
-      // Global settings load is best-effort here; the picker just stays blank.
-    }
-  }
-
   async function loadData() {
-    await Promise.all([loadCategories(), loadQBOAccounts(), loadSettings()]);
+    await Promise.all([loadCategories(), loadQBOAccounts()]);
   }
 
   function startAdd() {
@@ -123,25 +107,6 @@
       error = e.message || 'Failed to save mapping';
     } finally {
       saving = null;
-    }
-  }
-
-  async function saveDefaultMaterialCategory() {
-    savingMaterialCategory = true;
-    materialCategoryError = '';
-    success = '';
-    try {
-      await api.patch('/api/settings/', {
-        default_material_accounting_category: defaultMaterialCategoryId,
-      });
-      success = 'Default material category saved.';
-      setTimeout(() => success = '', 3000);
-    } catch (e) {
-      const t = triageError(e);
-      materialCategoryError =
-        t.fields.default_material_accounting_category || t.message || t.overlay || 'Failed to save';
-    } finally {
-      savingMaterialCategory = false;
     }
   }
 
@@ -223,28 +188,6 @@
       </label>
       {#if error}<strong>Error:</strong> {error}{/if}
       {#if success}<em>{success}</em>{/if}
-    </p>
-  </fieldset>
-{/if}
-
-{#if !loadingCategories}
-  <fieldset>
-    <legend><strong>Materials</strong></legend>
-    <p>
-      <label for="default-material-category"><strong>Default material category</strong></label><br>
-      <select id="default-material-category" bind:value={defaultMaterialCategoryId}>
-        <option value="">-- None --</option>
-        {#each activeCategories as cat}
-          <option value={String(cat.id)}>{cat.name}</option>
-        {/each}
-      </select>
-      {#if materialCategoryError}<strong>Error:</strong> {materialCategoryError}{/if}
-    </p>
-    <p><small>Accounting category applied by default to materials on estimate acceptance.</small></p>
-    <p>
-      <button type="button" onclick={saveDefaultMaterialCategory} disabled={savingMaterialCategory}>
-        {savingMaterialCategory ? 'Saving...' : 'Save'}
-      </button>
     </p>
   </fieldset>
 {/if}
