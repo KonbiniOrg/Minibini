@@ -50,6 +50,10 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         # the admin role (config) — either atom grants full CRUD + write-off/merge.
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
+        if self.action == 'order':
+            # Stock ordering is a purchasing act: financials only (matches
+            # the material order action), NOT the config atom.
+            return [IsAuthenticated(), CanManageFinancials()]
         return [IsAuthenticated(), CanManageFinancialsOrConfig()]
 
     def destroy(self, request, *args, **kwargs):
@@ -102,8 +106,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
                             status=status.HTTP_404_NOT_FOUND)
         return Response(self.get_serializer(keep).data)
 
-    @action(detail=True, methods=['post'],
-            permission_classes=[IsAuthenticated, CanManageFinancials])
+    @action(detail=True, methods=['post'])
     def order(self, request, pk=None):
         """Order this item to stock — plain PO line, no material link.
         Optional body po_id appends to that draft (same contract as the

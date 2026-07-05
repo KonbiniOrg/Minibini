@@ -128,6 +128,20 @@ class InventoryStockOrderAPITest(BaseTestCase):
                            {'quantity': '1'}, format='json')
         self.assertEqual(resp.status_code, 403)
 
+    def test_order_rejects_config_only_atom(self):
+        # Stock ordering is a purchasing act (financials-only), not covered
+        # by can_manage_config even though config grants full CRUD on the
+        # catalog item itself (B7).
+        from django.contrib.auth.models import Permission
+        config_user = User.objects.create_user(username='configonly', password='x')
+        config_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'))
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=config_user.pk))
+        resp = client.post(f'/api/inventory/{self.item.pk}/order/',
+                           {'quantity': '1'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
     def test_order_rejects_missing_quantity(self):
         resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
                                 {}, format='json')

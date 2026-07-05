@@ -1478,9 +1478,10 @@ computed client-side from the three quantity fields.
 
 ### Settings — Pricing tab
 
-`UnitsManager` (`frontend/src/components/UnitsManager.svelte`) is the
-settings UI for editing the `units_list` Configuration value. The Settings
-tab formerly named "Catalog" is now **Pricing** (key `pricing`) —
+`UnitsManager` (`frontend/src/components/UnitsManager.svelte`) — the
+settings UI for editing the `units_list` Configuration value — renders
+under the **Setup** tab, not Pricing. The Settings tab formerly named
+"Catalog" is now **Pricing** (key `pricing`) —
 `ServiceItemManager` left it for `/catalog/service-items`; it now holds the
 material markup default (`MaterialMarkupSetting`), RateSchemeManager, and
 `DefaultMaterialCategorySetting` (below). The old "Work templates — not yet

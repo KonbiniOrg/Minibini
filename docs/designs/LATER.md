@@ -370,7 +370,7 @@ The atom-pull surfaces on estimates and invoices.
   resolution + the no-business rejection UX, and wired it into the PO/Bill vendor fields.
 
 - **Inventory merge is still awkward — rework the keep/discard selection + add a preview.** — _added 2026-06-18_
-  The merge UI in `InventoryListPage.svelte` (the `{#if showMerge}` panel, ~lines 147-167) is
+  The merge UI in `CatalogInventoryPage.svelte` (`frontend/src/routes/catalog/`, the `{#if showMerge}` panel, ~lines 147-167) is
   a top-of-page block with two raw `<select>` dropdowns — "keep" and "discard" (`mergeKeep`/
   `mergeDiscard`, discard limited to non-catalog `lotOptions`) — disconnected from the table
   the user is looking at. On a long catalog you re-hunt both items by name in unsearchable
