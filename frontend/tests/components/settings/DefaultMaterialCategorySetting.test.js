@@ -37,4 +37,17 @@ describe('DefaultMaterialCategorySetting', () => {
       '/api/settings/', { default_material_accounting_category: '1' }));
     await findByText('Default material category saved.');
   });
+
+  it('surfaces a validation error from the API', async () => {
+    api.patch.mockRejectedValue({
+      status: 400,
+      data: { default_material_accounting_category: 'unknown or inactive category' },
+    });
+    const { findByLabelText, getByRole, findByText, queryByText } = render(DefaultMaterialCategorySetting);
+    await findByLabelText(/Default material category/);
+    await fireEvent.click(getByRole('button', { name: /Save/ }));
+
+    expect(await findByText('unknown or inactive category')).toBeInTheDocument();
+    expect(queryByText('Default material category saved.')).toBeNull();
+  });
 });
