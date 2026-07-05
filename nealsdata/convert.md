@@ -451,7 +451,23 @@ thickness (`P.match_pli`). On a match the `inventory_item` FK is set and
 `unit_cost` is the PLI's `purchase_price`; on a miss the FK stays null and
 `unit_cost = sell_price × _COST_RATIO` (0.8333, the same factor PLIs use). The
 match is precision-first — prose with no thickness, or a material family absent
-from the price list, is an acceptable miss.
+from the price list, is an acceptable miss. As noted above, a miss then mints a
+transient lot in `derive_atoms`, so by the time the `inventory.material`
+fixture is emitted the FK is never actually null — every Material is
+item-backed.
+
+**`cost_source`**: every emitted Material carries `cost_source='entered'` —
+never null, since a Material with an `inventory_item` must have a non-null
+`cost_source` and (per the point above) every converter Material has one. The
+historical PLI/lot pricing is treated as a human-vouched-for figure at import
+time, the same status as a user entering a price today. `build_purchasing`
+later attaches some Materials to a synthesized PO/Bill (`po_line_item`) as a
+retroactive provenance trail over that *same* already-set `unit_cost` — it
+doesn't represent the PO introducing a new cost, so it does not upgrade
+`cost_source` to `'po'`. The converter models no expense-linked or
+customer-supplied flow, so `'expense'`/`'customer_supplied'` never appear, and
+no provisional (no-cost, no-lot) Materials are ever emitted, so `'estimated'`
+and a null `cost_source` never appear either.
 
 ### Deliverables
 

@@ -1763,6 +1763,14 @@ class PurchasingBuilderTest(unittest.TestCase):
         for m in self._m('inventory.material'):
             self.assertIsNotNone(m['fields']['inventory_item'])
 
+    def test_every_material_has_entered_cost_source(self):
+        # Invariant: a material with an inventory_item carries a non-null
+        # cost_source (and every converter material is item-backed — see
+        # test above). Imported pricing is human-vouched-for historical
+        # data, so it is 'entered', never null/'po'/'estimated'.
+        for m in self._m('inventory.material'):
+            self.assertEqual(m['fields']['cost_source'], 'entered')
+
     def test_unmatched_materials_get_markup_priced_transient_lots(self):
         lots = [i for i in self._m('inventory.inventoryitem')
                 if i['fields']['code'].startswith('LOT-')]

@@ -1460,6 +1460,18 @@ def derive_atoms(c):
                 'sell_price':          f"{li['price']:.2f}",
                 'accounting_category': c.ac_mat_pk,
                 'inventory_item':     pli_pk,
+                # Every converter Material is item-backed (matched PLI or a
+                # minted transient lot — never null), so it always needs a
+                # non-null cost_source. The historical import pricing (a
+                # catalog match or the derived _COST_RATIO estimate) is a
+                # human-vouched-for figure at import time, same as a user
+                # entering a price today — 'entered', not 'estimated'/'po'/
+                # 'expense'. build_purchasing later links some Materials to a
+                # synthesized PO/Bill for provenance, but that's a retroactive
+                # paper trail over the *same* already-set unit_cost, not a
+                # cost the PO introduced, so it does not upgrade cost_source
+                # to 'po'.
+                'cost_source':         'entered',
                 'consumption_state':   'pending',
                 'released_qty':       '0.00',
                 'po_line_item':        None,
