@@ -947,15 +947,23 @@ In one `transaction.atomic()` block:
      Record an `EstimateLineItemSource` with `source_type='material'`.
 
    - **Bare material line** (`is_material=True`) →
-     create a **provisional `Material`** via `MaterialService.create_on_job`
-     with `inventory_item=None`. This is a sell-price-only Material: no
-     lot, no `unit_cost`, not yet procurement-tracked. Record an
+     create a `Material` via `MaterialService.create_on_job`
+     (`inventory_item=None`, `sell_price = li.price`), then **establish it**
+     via `MaterialService.establish` with a **reverse-markup provisional cost**:
+     `unit_cost = sell ÷ (1 + default_material_markup_percent/100)`, minting a
+     QOH-0 `LOT-{pk}` lot and stamping `cost_source='estimated'`. The accepted
+     **sell price is locked**; the cost is a placeholder flagged "cost
+     unconfirmed" (⚠ in the UI) until a real document arrives. Record an
      `EstimateLineItemSource` with `source_type='material'`.
 
-     > **Authoring boundary.** A provisional Material is authoring-complete
-     > at this point. Reverse-markup cost estimation, transient-lot minting,
-     > the Order affordance, and consume-gating are **not** part of this
-     > batch — see `docs/plans/2026-06-30-freeform-material-procurement-inventory.md`.
+     > **Why established, not provisional.** Crystallizing established (with the
+     > reverse-markup cost) means the material rides the procurement rails from
+     > acceptance — it can be Ordered, consume-gates on arrival, and carries
+     > COGS/margin — while the ⚠ marks the cost as not-yet-real. When a **PO**
+     > line (or an attached expense) supplies the true cost, `cost_source` flips
+     > to `po`/`expense` and **sell stays put**, so margin trues up against real
+     > cost. (Freeform-materials branch; see
+     > `docs/plans/2026-06-30-freeform-material-procurement-inventory.md`.)
 
    - **Fee (default)** → create a `Fee`: `description`, `quantity = li.qty or
      1`, `unit_rate = li.price or 0`, `accounting_category`, `sort_order =

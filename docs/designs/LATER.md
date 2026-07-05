@@ -336,6 +336,16 @@ The atom-pull surfaces on estimates and invoices.
 
 (The procurement-machinery items moved into the freeform-materials plan, 2026-07-04.)
 
+- **Delete-after-reject of a `stock_pli` expense double-reverses QOH.** — _added 2026-07-05 (found during the freeform-materials Task 9 review; pre-existing)_
+  `ExpenseService.reject` already reverses a stock-receipt expense's QOH bump. But
+  the **delete** branch has no status guard: deleting an already-rejected
+  `stock_pli` expense reverses the QOH a **second time**, driving stock negative.
+  This is the same shape the freeform-materials attach fix guarded (the shared
+  `_unwind_attach` is skipped on delete when the expense was already unwound at
+  reject) — the stock-receipt delete path needs the same "already reversed?"
+  guard. _Done when:_ deleting a rejected stock-receipt expense doesn't
+  double-reverse QOH, with a regression test.
+
 - **PO/Bill vendor field: let users search by contact name but resolve to the business.** — _added 2026-06-21_
   The PO and Bill forms pick a vendor with `BusinessPicker` (searches businesses, returns a
   `business_id`). But a user often knows the *contact* name, not the business name. Idea:

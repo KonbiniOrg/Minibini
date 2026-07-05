@@ -290,14 +290,17 @@ Depends on: AccountingCategory.
   warns on null to catch corrupt fixtures.
 - **purchase_price**, **selling_price**: non-negative decimals
 - **qty_on_hand**, **qty_sold**, **qty_wasted**: non-negative decimals
-- **is_inventoried**: boolean. If false, all quantity fields should be 0.
-- **is_active**: boolean, default True (soft delete)
+  (`qty_on_hand` has a DB `CHECK >= 0`)
+- **is_active**: boolean, default True — the **only** retirement flag (a manual
+  human judgment). `is_catalog`/`is_inventoried` and the computed
+  `is_finished_lot` are **dropped**: one item kind, no catalog/lot fork, no
+  auto-hiding. Clutter is handled by ranking (in-stock then newest), not hiding.
 - **Deletion blocked** (`InventoryService.assert_item_deletable`) if referenced
   by any line item (PROTECT), Material, Earmark, or Expense stock receipt —
   the SET_NULL FKs would otherwise silently demote established materials.
   Never-referenced rows (mistake correction) delete; everything else retires
-  via `is_active` or lives on as a hidden finished lot. The old
-  `collect_if_finished` auto-delete on write-off/demote was retired 2026-07-03.
+  via `is_active` and simply sinks in the ranking at QOH 0. No auto-delete and
+  no auto-hiding (`collect_if_finished` and the hide-on-spend filter are gone).
 
 ---
 
@@ -917,6 +920,22 @@ Either a description or a `inventory_item` must be present.
   `MaterialService._is_referenced`) may hard-delete; referenced materials are
   released instead.
 - **po_line_item** (optional FK → PurchaseOrderLineItem, SET_NULL)
+- **cost_source**: `estimated` / `entered` / `po` / `expense` /
+  `customer_supplied`, or **NULL**. Provenance enum answering "is this cost
+  real?" and "who owns this?". **Invariant: `cost_source IS NULL` ⇔
+  `inventory_item IS NULL`** — a material is *provisional* (no lot) exactly when
+  it has no provenance, and *established* (lot-backed) exactly when it has one.
+  `establish` sets it when it mints/attaches the lot. `po` overrides
+  `estimated`/`entered` (sell price untouched). Set by service code only.
+- **Provisional refusals**: a provisional material (`inventory_item IS NULL`)
+  cannot be **consumed** (`consume` raises), **ordered**, or **marked on-hand** —
+  all require a lot first.
+- **Customer-supplied lock** (`cost_source == 'customer_supplied'`): born
+  established at a deliberate, **locked $0** (`unit_cost = sell_price = 0`).
+  `create_on_job` rejects a `customer_supplied` add that also carries an
+  `inventory_item` or any non-zero `unit_cost`/`sell_price`; `update_fields`
+  rejects any pricing edit (including sell) on a customer-supplied material. It
+  is never ordered or expense-attached; arrival is via **Mark received**.
 
 #### Implied state from other models
 
@@ -1027,7 +1046,13 @@ is genuinely terminal.
 
 #### Fields
 
-- **business** (required FK → Business, PROTECT)
+- **business** (FK → Business, PROTECT, **nullable**): the vendor. Nullable so
+  a draft can be created **vendor-less** (the Order-from-material flow spins up a
+  draft PO before the supplier is known). **Required at issue** — `clean()`
+  raises `{'business': ['A purchase order needs a vendor before it can be
+  issued.']}` on any non-`draft` status with no business (unconditional; also
+  blocks an update nulling the vendor on an issued PO). Vendor-less drafts are
+  deleted, not cancelled, so there is no cancelled exemption.
 - **contact** (optional FK → Contact, PROTECT): if set, contact must have a
   business. On creation, if both contact and business are provided, contact's
   business must match.

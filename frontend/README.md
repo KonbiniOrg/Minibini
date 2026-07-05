@@ -249,6 +249,18 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
 - Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
 
+### Material status vocabulary
+
+- `lib/materialStatus.js` derives **one display status per material row** from
+  serializer fields (no backend state): **Needs pricing / Needed / Ordered —
+  PO-NNNN / Awaiting customer / On Hand / Consumed / Released** (precedence in
+  that file), plus a `costUnconfirmed` ⚠ when `cost_source === 'estimated'`.
+- **Venue rule:** the job-overview pillar (`TaskTree`) shows these chips
+  passively — **no actions**. All per-material actions (Set pricing / Order /
+  Attach expense / Mark on-hand / Mark received / PO link) live on the task view
+  page (`JobTaskListPage`), each gated on its callback being wired.
+- Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
+
 ### Delete Flow
 
 - First DELETE request (no `?confirm=true`) returns impact information and `confirm_required: true`.

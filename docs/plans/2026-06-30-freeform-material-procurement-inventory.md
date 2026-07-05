@@ -1,6 +1,13 @@
 # Freeform materials ride the inventory rails (procure + track arrival)
 
-> **Status: design spec — settled 2026-07-04; ready for the implementation task plan.**
+> **Status: IMPLEMENTED on `feature/inventory_again` (2026-07-05).** Settled
+> 2026-07-04; built across 16 tasks + a verification/docs pass (Task 17). The
+> durable behavior now lives in `docs/designs/materials-inventory-and-purchasing.md`
+> (§2 one item kind / §3 provisional-vs-established + `cost_source` / §4
+> establish·mint_lot·order·mark_on_hand / §11 PO resolver + vendor-less drafts /
+> §16 status vocabulary), `estimates-and-prices.md` §9.1 (reverse-markup
+> crystallization), and `data-constraints.md` §1.6/§1.15/§1.17. This file is
+> retained as the design record.
 > The **proto-Material marker** slice (the `is_material` field + bare marked estimate line
 > crystallizing into a *provisional* Material at acceptance + the
 > `default_material_accounting_category` config) SHIPPED in the 2026-07-03 unification batch.

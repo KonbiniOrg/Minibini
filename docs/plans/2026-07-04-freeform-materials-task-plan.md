@@ -1,5 +1,11 @@
 # Freeform Materials on the Inventory Rails — Implementation Plan
 
+> **Status: IMPLEMENTED on `feature/inventory_again` (2026-07-05).** All 17 tasks
+> complete; backend (3927) + frontend (797) suites green, build clean. Durable
+> behavior reconciled into `docs/designs/` (materials-inventory-and-purchasing,
+> estimates-and-prices, data-constraints, jobs-tasks-and-worksheets). This file
+> is retained as the execution record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every acted-on Material is lot-backed (provisional → established via pricing), with four fulfillment paths (Order / Attach-Expense / Mark-on-hand / Customer-supplied), arrival-gated consumption, `is_catalog` dropped, and the settled UI state vocabulary.

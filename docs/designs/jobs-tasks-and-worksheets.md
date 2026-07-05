@@ -1074,6 +1074,18 @@ it carries two affordances:
 mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
+**Per-material status & actions (freeform-materials venue rule).** Each material
+row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-NNNN
+/ Awaiting customer / On Hand / Consumed / Released** (`materialStatus`,
+`frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
+`cost_source === 'estimated'`. **All per-material actions live here on the task
+view page only** — Set pricing (establishes a provisional material), the Order
+dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
+quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
+overview **Tasks & Materials pillar is passive** — it shows the same chips and
+consumed/released styling but no buttons or links. Full vocabulary and action
+table: `materials-inventory-and-purchasing.md` §16.
+
 The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
 of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
 a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
