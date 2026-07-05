@@ -121,6 +121,11 @@ class MaterialOpSerializer(serializers.Serializer):
     quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
 
 
+class StockOrderSerializer(serializers.Serializer):
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2)
+    po_id = serializers.IntegerField(required=False, allow_null=True)
+
+
 class MaterialAssignTaskSerializer(serializers.Serializer):
     task = serializers.PrimaryKeyRelatedField(
         queryset=__import__('apps.jobs.models', fromlist=['Task']).Task.objects.all(),

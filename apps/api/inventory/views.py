@@ -6,7 +6,10 @@ from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
-from .serializers import InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
+from .serializers import (
+    InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer,
+    MaterialAssignTaskSerializer, StockOrderSerializer,
+)
 
 
 class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
@@ -98,6 +101,26 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Item not found.'},
                             status=status.HTTP_404_NOT_FOUND)
         return Response(self.get_serializer(keep).data)
+
+    @action(detail=True, methods=['post'],
+            permission_classes=[IsAuthenticated, CanManageFinancials])
+    def order(self, request, pk=None):
+        """Order this item to stock — plain PO line, no material link.
+        Optional body po_id appends to that draft (same contract as the
+        material order action)."""
+        from django.shortcuts import get_object_or_404
+        from apps.purchasing.models import PurchaseOrder
+        s = StockOrderSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        item = self.get_object()
+        po = None
+        if s.validated_data.get('po_id'):
+            po = get_object_or_404(PurchaseOrder, pk=s.validated_data['po_id'])
+        po, _li = InventoryService.order_stock(
+            item, s.validated_data['quantity'], po=po)
+        data = self.get_serializer(item).data
+        data['po_id'], data['po_number'] = po.pk, po.po_number
+        return Response(data)
 
 
 class MaterialViewSet(viewsets.ModelViewSet):

@@ -86,3 +86,50 @@ class InventorySearchTest(BaseTestCase):
         codes = [r['code'] for r in resp.json()['results']]
         self.assertEqual(codes, sorted(codes))
         self.assertLess(codes.index('AAA-EMPTY'), codes.index('ZZZ-STOCKED'))
+
+
+class InventoryStockOrderAPITest(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import AppState, Configuration
+        Configuration.objects.update_or_create(
+            key='po_number_sequence',
+            defaults={'value': 'PO-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(
+            key='po_counter', defaults={'value': '0'})
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        cat = AccountingCategory.objects.get(pk=901)
+        self.item = InventoryItem.objects.create(
+            code='ORD-1', accounting_category=cat,
+            purchase_price=Decimal('10'))
+
+    def test_order_creates_po_and_returns_link_fields(self):
+        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                {'quantity': '4'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('po_id', resp.data)
+        self.assertTrue(resp.data['po_number'])
+
+    def test_order_appends_to_draft_when_po_id_given(self):
+        first = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                 {'quantity': '1'}, format='json')
+        po_id = first.data['po_id']
+        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                {'quantity': '2', 'po_id': po_id}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['po_id'], po_id)
+
+    def test_order_requires_financials(self):
+        plain = User.objects.create_user(username='noatom', password='x')
+        client = APIClient()
+        client.force_authenticate(user=plain)
+        resp = client.post(f'/api/inventory/{self.item.pk}/order/',
+                           {'quantity': '1'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_order_rejects_missing_quantity(self):
+        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                {}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('quantity', resp.data)
