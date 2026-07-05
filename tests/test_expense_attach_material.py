@@ -145,9 +145,11 @@ class ExpenseAttachTests(TestCase):
 
 
 class ExpenseAttachRejectTest(TestCase):
-    """Reject unwinds an attach: reverses the stock receipt and clears EXPENSE
-    provenance, but the pre-existing material itself survives (it predates the
-    expense)."""
+    """Reject/delete unwind an attach with one faithful inverse: reverse the
+    receipt, then either fully demote (attach-minted, otherwise-unreferenced
+    lot → material is truly provisional again, lot hard-deleted) or keep the
+    material established with ENTERED provenance. Never a lot + NULL
+    cost_source, never a surviving QOH bump."""
 
     def setUp(self):
         _seed_job_config()
@@ -166,29 +168,52 @@ class ExpenseAttachRejectTest(TestCase):
             payment_method=Expense.PAYMENT_METHOD_PERSONAL,
             material_id=material_id, attach_qty=attach_qty)
 
-    def test_reject_attached_reverses_receipt_and_keeps_provisional_material(self):
+    def test_reject_attach_to_provisional_makes_truly_provisional_again(self):
+        from apps.inventory.models import InventoryItem, Earmark
         m = MaterialService.create_on_job(
             job=self.job, description='mystery', quantity=Decimal('2'),
             accounting_category=self.cat, units='ea')  # provisional
         e = self._attach(amount=Decimal('30.00'), material_id=m.pk)
         m.refresh_from_db()
+        lot_pk = m.inventory_item_id
         self.assertEqual(m.inventory_item.qty_on_hand, Decimal('2'))
-        pli_pk = m.inventory_item_id
 
         ExpenseService.reject(expense=e, actor=self.admin)
 
         e.refresh_from_db()
         self.assertEqual(e.status, Expense.STATUS_REJECTED)
-        # Material survives — it predates the expense.
+        # Material survives (predates the expense) and is truly provisional again.
         m.refresh_from_db()
-        self.assertEqual(m.pk, m.pk)
-        self.assertTrue(Material.objects.filter(pk=m.pk).exists())
-        # Stock receipt reversed.
-        m.inventory_item.refresh_from_db()
-        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('0'))
-        # EXPENSE provenance cleared (no longer document-confirmed).
+        self.assertIsNone(m.inventory_item_id)
         self.assertIsNone(m.cost_source)
-        self.assertEqual(m.inventory_item_id, pli_pk)  # lot not un-minted
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        # The attach-minted lot is gone; no earmark left behind.
+        self.assertFalse(InventoryItem.objects.filter(pk=lot_pk).exists())
+        self.assertFalse(Earmark.objects.filter(inventory_item_id=lot_pk).exists())
+
+    def test_reject_attach_to_catalog_established_keeps_lot_entered_provenance(self):
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY-CAT', description='catalog ply', accounting_category=self.cat,
+            purchase_price=Decimal('9.00'), selling_price=Decimal('12.00'),
+            qty_on_hand=Decimal('5.00'))
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            inventory_item=pli, accounting_category=self.cat, units='ea')
+        e = self._attach(amount=Decimal('20.00'), material_id=m.pk)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+
+        ExpenseService.reject(expense=e, actor=self.admin)
+
+        # Catalog lot kept, receipt reversed, material still established.
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item_id, pli.pk)
+        # Prior provenance is unrecoverable; ENTERED is the honest fallback —
+        # never a lot-backed material with NULL cost_source.
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
 
     def test_reject_partial_attach_reverses_only_received_qty(self):
         m = MaterialService.create_on_job(
@@ -203,9 +228,121 @@ class ExpenseAttachRejectTest(TestCase):
 
         ExpenseService.reject(expense=e, actor=self.admin)
 
+        m.refresh_from_db()
+        # Lot has residual stock (8) → material stays established, ENTERED.
         m.inventory_item.refresh_from_db()
         self.assertEqual(m.inventory_item.qty_on_hand, Decimal('8'))  # only the 4 backed off
-        self.assertTrue(Material.objects.filter(pk=m.pk).exists())
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
+
+
+class ExpenseAttachDeleteTest(TestCase):
+    """DELETE of an attach expense (the only removal path for company-paid
+    attach expenses — reject requires PERSONAL) runs the same unwind as
+    reject: no orphaned QOH bump, no cost_source pointing at a dead expense."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "57", "display_name": "Amex", "account_type": "Credit Card"}]'
+            )},
+        )
+        self.user = User.objects.create_user(username='fin', password='x')
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='d@t.com')
+        self.job = Job.objects.create(job_number='JOB-AD1', contact=self.contact)
+
+    def _company_attach(self, *, amount, material_id, attach_qty=None):
+        # Company push fails (no QBO connection in tests) → sync_failed with no
+        # qbo_id; delete then proceeds locally without a void call.
+        return ExpenseService.submit(
+            entered_by=self.user, amount=amount,
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            material_id=material_id, attach_qty=attach_qty)
+
+    def test_delete_company_attach_to_provisional_unwinds_fully(self):
+        from apps.inventory.models import InventoryItem, Earmark
+        m = MaterialService.create_on_job(
+            job=self.job, description='mystery', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')  # provisional
+        e = self._company_attach(amount=Decimal('30.00'), material_id=m.pk)
+        m.refresh_from_db()
+        lot_pk = m.inventory_item_id
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('2'))
+
+        ExpenseService.delete(expense=e, actor=self.user)
+
+        self.assertFalse(Expense.objects.filter(pk=e.pk).exists())
+        m.refresh_from_db()
+        self.assertIsNone(m.inventory_item_id)
+        self.assertIsNone(m.cost_source)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        self.assertFalse(InventoryItem.objects.filter(pk=lot_pk).exists())
+        self.assertFalse(Earmark.objects.filter(inventory_item_id=lot_pk).exists())
+
+    def test_delete_company_attach_to_catalog_established_reverses_qoh(self):
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY-CAT2', description='catalog ply', accounting_category=self.cat,
+            purchase_price=Decimal('9.00'), selling_price=Decimal('12.00'),
+            qty_on_hand=Decimal('5.00'))
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            inventory_item=pli, accounting_category=self.cat, units='ea')
+        e = self._company_attach(amount=Decimal('20.00'), material_id=m.pk)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+
+        ExpenseService.delete(expense=e, actor=self.user)
+
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item_id, pli.pk)
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
+
+    def test_delete_attach_with_consumed_material_refused(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')
+        e = self._company_attach(amount=Decimal('20.00'), material_id=m.pk)
+        m.refresh_from_db()
+        MaterialService.consume(m)
+        with self.assertRaises(ValidationError):
+            ExpenseService.delete(expense=e, actor=self.user)
+        self.assertTrue(Expense.objects.filter(pk=e.pk).exists())
+
+    def test_delete_after_reject_does_not_double_reverse(self):
+        # Personal attach: reject unwinds, then delete of the now-rejected row
+        # must not unwind again (the receipt is already gone).
+        from apps.inventory.models import InventoryItem
+        worker = User.objects.create_user(username='w2', password='x')
+        pli = InventoryItem.objects.create(
+            code='PLY-CAT3', description='catalog ply', accounting_category=self.cat,
+            purchase_price=Decimal('9.00'), selling_price=Decimal('12.00'),
+            qty_on_hand=Decimal('5.00'))
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            inventory_item=pli, accounting_category=self.cat, units='ea')
+        e = ExpenseService.submit(
+            entered_by=worker, purchased_by=worker, amount=Decimal('20.00'),
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, material_id=m.pk)
+        ExpenseService.reject(expense=e, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))
+
+        e.refresh_from_db()
+        ExpenseService.delete(expense=e, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))  # not reversed twice
 
 
 class ExpenseAttachApiTest(TestCase):

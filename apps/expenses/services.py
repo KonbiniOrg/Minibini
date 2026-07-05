@@ -240,12 +240,89 @@ class ExpenseService:
             QBOSyncService.run_update(expense, lambda: QBOExpenseSyncService.update_expense(expense))
 
     @staticmethod
+    def _is_attach(expense):
+        """Attach mode's discriminator: material set + stock_qty recorded, no
+        stock_pli (stock-receipt mode). new_material consumables have no
+        stock_qty; stock receipts have no material."""
+        return bool(expense.material_id and expense.stock_qty
+                    and not expense.stock_pli_id)
+
+    @staticmethod
+    def _unwind_attach(expense, *, reason):
+        """Faithful inverse of an attach receipt — shared by reject and delete.
+
+        1. Reverse the receipt: back stock_qty off the material's lot (with an
+           inventory-history entry).
+        2. Restore invariant-consistent state — never leave a lot-backed
+           material with NULL cost_source, never let the QOH bump outlive its
+           expense:
+           - If the attach minted the lot (code LOT-{material_pk}) and, after
+             the reversal, it is empty and referenced by nothing but this
+             material (no document line items, no other materials, no foreign
+             earmarks, no expense stock links — adapted from
+             InventoryService.assert_item_deletable), the whole establishment
+             was this expense's doing: demote the material back to provisional
+             (inventory_item None, unit_cost 0, cost_source None, earmark
+             backed out) and hard-delete the lot. This is mistake-correction
+             deletion of a never-really-referenced row — the deletion doctrine
+             bans auto-deleting rows with history, not unwinding a mistake.
+           - Otherwise (shared/catalog lot, residual stock, or outside
+             references) the material stays established and provenance falls
+             back to ENTERED: the pre-attach source isn't stored, and ENTERED
+             ("a human vouched for this cost") is the honest approximation.
+             Limitation: unit_cost keeps the expense-derived value — the
+             pre-attach cost is likewise unrecoverable.
+        """
+        from apps.inventory.models import Earmark, Material
+        from apps.inventory.services import InventoryService
+        material = expense.material
+        lot = material.inventory_item
+        if lot is None:
+            return  # nothing received (defensive; attach always leaves a lot)
+        InventoryService.receive_stock(lot, -expense.stock_qty, reason=reason)
+        lot.refresh_from_db()
+        minted_and_unreferenced = (
+            lot.code == f'LOT-{material.pk}'
+            and lot.qty_on_hand == Decimal('0.00')
+            and not lot.has_document_line_refs
+            and not Material.objects.filter(inventory_item=lot)
+                                    .exclude(pk=material.pk).exists()
+            and not Earmark.objects.filter(inventory_item=lot)
+                                   .exclude(job=material.job).exists()
+            and not Expense.objects.filter(stock_pli=lot).exists()
+        )
+        if minted_and_unreferenced:
+            InventoryService._mutate_earmark(lot, material.job, -material.quantity)
+            material.inventory_item = None
+            material.unit_cost = Decimal('0.00')
+            material.cost_source = None
+            material.save(update_fields=['inventory_item', 'unit_cost', 'cost_source'])
+            lot.delete()
+        else:
+            material.cost_source = Material.COST_SOURCE_ENTERED
+            material.save(update_fields=['cost_source'])
+
+    @staticmethod
     def delete(*, expense, actor):
+        from apps.inventory.models import Material
         ExpenseService._assert_not_invoiced(expense)
         if expense.reimbursement_id:
             raise ValidationError(
                 'Cannot delete a reimbursed expense; unwind the reimbursement first.'
             )
+        # A rejected attach expense was already unwound at reject — deleting the
+        # row must not reverse the receipt a second time.
+        unwind_attach = (ExpenseService._is_attach(expense)
+                         and expense.status != Expense.STATUS_REJECTED)
+        if unwind_attach:
+            expense.material.refresh_from_db()  # guard on current state, not a cache
+            if (expense.material.consumption_state
+                    == Material.CONSUMPTION_STATE_CONSUMED):
+                raise ValidationError(
+                    'Cannot delete this expense: its attached material has been '
+                    'consumed — the received stock was already drawn down. '
+                    'Adjust inventory manually.'
+                )
         # QBO void runs OUTSIDE the transaction so that on failure mark_failed→expense.save()
         # commits (row retained as sync_failed) while the stock reversal + delete are never reached.
         if expense.qbo_id:
@@ -263,6 +340,10 @@ class ExpenseService:
                 InventoryService.receive_stock(
                     expense.stock_pli, -expense.stock_qty,
                     reason=f'Stock receipt void (expense {expense.pk})')
+            if unwind_attach:
+                ExpenseService._unwind_attach(
+                    expense,
+                    reason=f'Attach receipt void (expense {expense.pk})')
             expense.delete()
 
     @staticmethod
@@ -280,11 +361,10 @@ class ExpenseService:
             raise ValidationError(
                 'Cannot reject expense with consumed materials; adjust inventory manually.'
             )
-        # Attach mode records the received qty in stock_qty (with material set and
-        # no stock_pli). Its material predates the expense, so reject must NOT
-        # delete it — the faithful inverse is to back off the stock receipt and
-        # clear the EXPENSE provenance the attach stamped, leaving the material.
-        is_attach = bool(mat and expense.stock_qty and not expense.stock_pli_id)
+        # Attach mode: the material predates the expense, so reject must NOT
+        # delete it — _unwind_attach reverses the receipt and restores an
+        # invariant-consistent material instead.
+        is_attach = ExpenseService._is_attach(expense)
         # Rule 1: for a new_material expense, reject DELETES the created material,
         # so it must not be claimed by a document. Attach leaves the material in
         # place, so a claim there is no obstacle — only guard the delete path.
@@ -297,15 +377,9 @@ class ExpenseService:
                 )
         with transaction.atomic():
             if is_attach:
-                if mat.inventory_item_id is not None:
-                    InventoryService.receive_stock(
-                        mat.inventory_item, -expense.stock_qty,
-                        reason=f'Attach receipt void on reject (expense {expense.pk})')
-                # Clear provenance: the cost is no longer document-confirmed. We
-                # can't restore a prior non-null source (not stored), so drop to
-                # None — the honest "unconfirmed" state.
-                mat.cost_source = None
-                mat.save(update_fields=['cost_source'])
+                ExpenseService._unwind_attach(
+                    expense,
+                    reason=f'Attach receipt void on reject (expense {expense.pk})')
             elif mat:
                 # Release the earmark and delete the material. The cost-material
                 # path earmarks but never bumps QOH (it's a job cost, not a stock

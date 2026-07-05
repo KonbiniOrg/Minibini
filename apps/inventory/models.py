@@ -83,22 +83,28 @@ class InventoryItem(models.Model):
         return f"{self.code} - {self.description[:50]}"
 
     @property
+    def has_document_line_refs(self):
+        """True if any document line item (estimate/invoice/PO/bill) references
+        this item. Split out of can_be_deleted so unwind paths can test document
+        references separately from earmarks."""
+        from apps.estimates.models import EstimateLineItem
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
+
+        return (
+            EstimateLineItem.objects.filter(inventory_item=self).exists() or
+            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
+            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
+            BillLineItem.objects.filter(inventory_item=self).exists()
+        )
+
+    @property
     def can_be_deleted(self):
         """
         Check if this price list item can be safely deleted.
         Returns False if any line items reference it.
         """
-        from apps.estimates.models import EstimateLineItem
-        from apps.invoicing.models import InvoiceLineItem
-        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
-
-        return not (
-            EstimateLineItem.objects.filter(inventory_item=self).exists() or
-            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
-            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
-            BillLineItem.objects.filter(inventory_item=self).exists() or
-            self.earmark_set.exists()
-        )
+        return not (self.has_document_line_refs or self.earmark_set.exists())
 
 
 class MaterialBase(models.Model):
