@@ -1340,7 +1340,7 @@ regardless of how it was going to be sourced.
 | **Ordered — PO-NNNN** | established, PO-linked, short | PO number links to the PO (receive there); *Attach expense* for the bought-remainder |
 | **Awaiting customer** | `customer_supplied`, stock short | **Mark received** (qty prompt, default remainder) |
 | **On Hand** | established, lot QOH covers `quantity` | none — the quiet good state |
-| **Consumed** | `consumption_state == 'consumed'` | none (the visual consumed flag) |
+| **Used** | `consumption_state == 'consumed'` | none (the visual consumed flag; displayed as "Used") |
 | **Released** | `consumption_state == 'released'` | none — tombstone: greyed/struck, qty 0 |
 
 **Cost-unconfirmed ⚠** (`costUnconfirmed` = `cost_source === 'estimated'`): a

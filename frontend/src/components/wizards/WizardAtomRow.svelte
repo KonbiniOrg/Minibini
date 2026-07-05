@@ -14,7 +14,7 @@
 
 {#if atom.state === 'not_billable'}
   <span class="atom-not-billable">
-    {atom.description} — {atom.not_billable_reason === 'task_incomplete' ? 'task not complete' : 'not consumed'}
+    {atom.description} — {atom.not_billable_reason === 'task_incomplete' ? 'task not complete' : 'not used'}
   </span>
 {:else if atom.state === 'available'}
   <label>

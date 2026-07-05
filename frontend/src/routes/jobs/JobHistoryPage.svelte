@@ -379,7 +379,7 @@
         {#if summary.materialCount > 0}
           <section class="sum-sec">
             <h3>Materials</h3>
-            <p class="muted">{summary.materialCount} material{summary.materialCount === 1 ? '' : 's'}{#if summary.materialsConsumed > 0}, {summary.materialsConsumed} consumed{/if}</p>
+            <p class="muted">{summary.materialCount} material{summary.materialCount === 1 ? '' : 's'}{#if summary.materialsConsumed > 0}, {summary.materialsConsumed} used{/if}</p>
           </section>
         {/if}
 

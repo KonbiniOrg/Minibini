@@ -9,7 +9,7 @@ const short = (m) => Number(m.qty_on_hand) < Number(m.quantity);
 
 export function materialStatus(m) {
   if (m.consumption_state === 'released') return { key: 'released', label: 'Released' };
-  if (m.consumption_state === 'consumed') return { key: 'consumed', label: 'Consumed' };
+  if (m.consumption_state === 'consumed') return { key: 'consumed', label: 'Used' };
   if (!m.inventory_item) return { key: 'needs-pricing', label: 'Needs pricing' };
   if (!short(m)) return { key: 'on-hand', label: 'On Hand' };
   if (m.cost_source === 'customer_supplied')
