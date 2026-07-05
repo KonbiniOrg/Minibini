@@ -157,3 +157,21 @@ class MaterialViewSet(viewsets.ModelViewSet):
         MaterialService.assign_task(m, s.validated_data['task'])
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
+
+    @action(detail=True, methods=['post'],
+            permission_classes=[IsAuthenticated, CanManageFinancials])
+    def order(self, request, pk=None):
+        """Start (or append to) a draft PO with a line linked to this material
+        (spec Path 1). Optional body {"po_id": <int>} appends to that draft."""
+        from django.shortcuts import get_object_or_404
+        from apps.purchasing.models import PurchaseOrder
+        m = self.get_object()
+        po = None
+        po_id = request.data.get('po_id')
+        if po_id:
+            po = get_object_or_404(PurchaseOrder, pk=po_id)
+        po, _li = MaterialService.order(m, po=po)
+        m.refresh_from_db()
+        data = MaterialSerializer(m).data
+        data['po_id'], data['po_number'] = po.pk, po.po_number
+        return Response(data)

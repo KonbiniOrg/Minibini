@@ -988,6 +988,33 @@ class MaterialService:
                 material.delete()
 
     @staticmethod
+    def order(material, po=None):
+        """Path 1: start (or append to) a draft PO with a line linked to this
+        material. Vendor-less create is fine — vendor is required at issue."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        from apps.purchasing.models import PurchaseOrder
+        from apps.purchasing.services import PurchaseOrderService
+        if material.inventory_item_id is None:
+            raise ValidationError('Set pricing on this material before ordering.')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Only a pending material can be ordered.')
+        if material.is_customer_supplied:
+            raise ValidationError(
+                'A customer-supplied material is not ordered — the customer sends it.')
+        if material.po_line_item_id is not None:
+            raise ValidationError('Material is already on a purchase order.')
+        if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add lines to a draft purchase order.')
+        with transaction.atomic():
+            if po is None:
+                po = PurchaseOrderService.create_po()
+            li = PurchaseOrderService.add_line_item_from_pli(
+                po.pk, material.inventory_item_id, material.quantity,
+                job=material.job_id, material_id=material.pk)
+        return po, li
+
+    @staticmethod
     def _apply_po_line_cost(material, po_line, price):
         """Supply/override a PO-linked material's cost from the PO line price.
 

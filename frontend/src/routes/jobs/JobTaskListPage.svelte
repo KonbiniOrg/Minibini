@@ -319,6 +319,19 @@
     }
   }
 
+  // API helper only — the Order button + draft-PO choice dialog land with
+  // Task 12's status-chip actions. Starts (or appends to, when poId is
+  // given) a draft purchase order linked to this material.
+  async function handleOrderMaterial(material, poId) {
+    try {
+      await api.post(`/api/materials/${material.material_id}/order/`,
+        poId ? { po_id: poId } : {});
+      await reload();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not order material.'));
+    }
+  }
+
   function handleMaterialSaved() {
     materialModalOpen = false;
     materialModalMaterial = null;
