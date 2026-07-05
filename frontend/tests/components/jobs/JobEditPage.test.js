@@ -54,6 +54,19 @@ describe('JobEditPage project manager', () => {
     expect(getByLabelText(/Project Manager/i)).toBeInTheDocument();
   });
 
+  it('renders field validation errors under inputs and non_field_errors in the footer', async () => {
+    api.patch.mockRejectedValue({
+      status: 400,
+      data: { name: ['Ensure this field has no more than 50 characters.'], non_field_errors: ['Bad combination.'] },
+    });
+    const { getByLabelText, findByText } = render(JobEditPage, { props: { params: { id: '7' } } });
+    const nameInput = await waitFor(() => getByLabelText(/Name/i));
+    await fireEvent.submit(nameInput.closest('form'));
+    expect(await findByText('Ensure this field has no more than 50 characters.')).toBeInTheDocument();
+    const footer = await findByText('Bad combination.');
+    expect(footer.closest('[role="alert"]')).not.toBeNull();
+  });
+
   it('sends null project_manager when blank is chosen', async () => {
     api.get.mockImplementationOnce(() => Promise.resolve({ ...JOB, project_manager: 1 }));
     const { getByLabelText } = render(JobEditPage, { props: { params: { id: '7' } } });

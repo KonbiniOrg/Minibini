@@ -1,19 +1,25 @@
 <script>
   import { api } from '../../lib/api.js';
   import BusinessPicker from '../BusinessPicker.svelte';
+  import FieldError from '../FieldError.svelte';
+  import FormMessage from '../FormMessage.svelte';
 
   const {
     po = null,
     businesses = [],
     onSubmit,
     onCancel,
-    errors = null,
+    errors = {},      // field→messages bag (triageError(e).fields), keys match the API payload
+    formError = '',   // form-footer message (operation errors / non_field_errors)
     contextJob = null,
   } = $props();
 
   let form = $state({
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     business: po?.business ?? null,
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     contact: po?.contact || '',
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     requested_date: po?.requested_date || '',
   });
 
@@ -88,10 +94,6 @@
 </script>
 
 <form onsubmit={handleSubmit}>
-  {#if errors}
-    <p><strong>Error:</strong> {errors}</p>
-  {/if}
-
   {#if contextJob}
     <p><strong>For job: <a href="#/jobs/{contextJob.job_id}">{contextJob.job_number}</a></strong></p>
   {/if}
@@ -102,6 +104,7 @@
     <BusinessPicker bind:value={form.business}
       selectedItem={null}
       onSelect={(b) => { pickedBusiness = b; }} />
+    <FieldError {errors} field="business" />
   </p>
 
   <p>
@@ -117,15 +120,18 @@
         {/each}
       {/if}
     </select>
+    <FieldError {errors} field="contact" />
   </p>
 
   <p>
     <label for="requested_date"><strong>Requested Date</strong></label><br>
     <input type="date" id="requested_date" bind:value={form.requested_date}>
+    <FieldError {errors} field="requested_date" />
   </p>
 
   <p>
     <button type="submit">{po ? 'Save' : 'Create'}</button>
     <button type="button" onclick={onCancel}>Cancel</button>
   </p>
+  <FormMessage error={formError} />
 </form>

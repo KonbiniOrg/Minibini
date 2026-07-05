@@ -157,7 +157,6 @@ def create_po_from_email(request, pk):
     line items are added on the PO detail page after creation. Mirrors
     create_job_from_email.
     """
-    from django.core.exceptions import ValidationError as DjangoValidationError
     from apps.purchasing.services import PurchaseOrderService
     from apps.contacts.models import Business
     try:
@@ -185,13 +184,7 @@ def create_po_from_email(request, pk):
             {'vendor_business_id': [f'Business {vendor_id} not found.']},
             status=status.HTTP_404_NOT_FOUND,
         )
-    try:
-        po = PurchaseOrderService.create_po(business=business)
-    except DjangoValidationError as e:
-        return Response(
-            e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    po = PurchaseOrderService.create_po(business=business)
     EmailService.associate_with(pk, 'purchase_order', po.pk)
     return Response(
         {'po_id': po.pk, 'po_number': po.po_number},
@@ -203,7 +196,6 @@ def create_po_from_email(request, pk):
 @permission_classes([IsAuthenticated, CanManageJobs])
 def create_job_from_email(request, pk):
     """Create a job from an email — delegates to JobService."""
-    from django.core.exceptions import ValidationError as DjangoValidationError
     from apps.jobs.services import JobService
     try:
         EmailRecord.objects.select_related('temp_data').get(pk=pk)
@@ -219,15 +211,9 @@ def create_job_from_email(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    try:
-        job = JobService.create_job(
-            name=name, description=description, contact_id=contact_id,
-        )
-    except DjangoValidationError as e:
-        return Response(
-            e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    job = JobService.create_job(
+        name=name, description=description, contact_id=contact_id,
+    )
     EmailService.associate_with_job(pk, job.pk)
     return Response({
         'job_id': job.pk,

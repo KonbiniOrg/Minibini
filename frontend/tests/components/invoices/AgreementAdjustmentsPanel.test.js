@@ -67,8 +67,6 @@ describe('AgreementAdjustmentsPanel', () => {
     await screen.findByText(/Rush Fee 15%/);
     const buttons = screen.getAllByRole('button', { name: /add/i });
     // Rush Fee is already_added — its button should be disabled
-    const rushButton = buttons.find(b => b.closest('[data-testid]')?.dataset.testid === 'adj-20' || b.disabled);
-    // At least one button is disabled
     expect(buttons.some(b => b.disabled)).toBe(true);
   });
 
@@ -98,6 +96,18 @@ describe('AgreementAdjustmentsPanel', () => {
       `/api/invoices/${INVOICE_ID}/adjustment-lines/`,
       { adjustment_service: 10, target_category_ids: [3, 4] },
     );
+  });
+
+  it('notifies the parent after Add so the wizard reloads its line items', async () => {
+    api.get.mockResolvedValue({ adjustments: ADJUSTMENTS });
+    api.post.mockResolvedValue({});
+    const onLineItemAdded = vi.fn();
+    render(AgreementAdjustmentsPanel, { props: { invoiceId: INVOICE_ID, onLineItemAdded } });
+    await screen.findByText(/Rush Fee 15%/);
+    const enabled = screen.getAllByRole('button', { name: /add/i }).find(b => !b.disabled);
+    await fireEvent.click(enabled);
+    await Promise.resolve();
+    expect(onLineItemAdded).toHaveBeenCalled();
   });
 
   it('after Add, re-fetches so the entry flips to added (button becomes disabled)', async () => {

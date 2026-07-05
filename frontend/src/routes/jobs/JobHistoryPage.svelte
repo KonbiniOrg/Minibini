@@ -1,6 +1,10 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import { link } from 'svelte-spa-router';
+  import FieldError from '../../components/FieldError.svelte';
+  import FormMessage from '../../components/FormMessage.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
 
   let { params = {} } = $props();
@@ -13,6 +17,8 @@
   let loadError = $state(null);
   let noteText = $state('');
   let saving = $state(false);
+  let noteError = $state('');
+  let noteFields = $state({});
 
   // The history feed is paginated; this is a deep-dive page, so pull every
   // page (page_size=100, then follow the count) rather than just the first.
@@ -221,12 +227,16 @@
     const text = noteText.trim();
     if (!text) return;
     saving = true;
+    noteError = '';
+    noteFields = {};
     try {
       await api.post(`/api/jobs/${jobId}/notes/`, { text });
       noteText = '';
       await load();
     } catch (e) {
-      alert(e.message || 'Failed to add note');
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay);
+      else { noteError = t.message; noteFields = t.fields; }
     } finally {
       saving = false;
     }
@@ -257,6 +267,8 @@
         <textarea bind:value={noteText} rows="2" placeholder="Add a note…"></textarea>
         <button onclick={addNote} disabled={saving || !noteText.trim()}>Add Note</button>
       </div>
+      <FieldError errors={noteFields} field="text" />
+      <FormMessage error={noteError} />
 
       {#if groups.length > 0}
         <ul class="timeline">

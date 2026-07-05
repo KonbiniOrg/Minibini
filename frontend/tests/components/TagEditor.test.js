@@ -22,6 +22,17 @@ describe('TagEditor', () => {
     expect(getByText('urgent')).toBeInTheDocument();
   });
 
+  it('readonly renders chips without remove/add controls', () => {
+    const { getByText, queryByPlaceholderText, queryByRole } = render(TagEditor, {
+      props: { readonly: true, initialTags: [{ tag_id: 1, name: 'urgent' }] },
+    });
+    expect(getByText('urgent')).toBeInTheDocument();
+    expect(queryByPlaceholderText('Add tag…')).toBeNull();
+    expect(queryByRole('button')).toBeNull();
+    // No tag-list fetch in readonly mode either.
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
   it('shows "No tags" when there are none', () => {
     const { getByText } = render(TagEditor, {
       props: { endpoint: ENDPOINT, initialTags: [] },

@@ -354,16 +354,24 @@ PlanTasks keep the `est_qty` they were built with.
 - **Placement** satisfies two invariants at once: each blep falls inside its
   **job's active window** `[start_date or created_date → completed_date (finished)
   or _dataset_now (unfinished)]`, clamped to ≤ `_dataset_now` (no future bleps)
-  and to ≥ the horizon; and **no user's bleps overlap**. A blep sits in an
-  08:00–16:00 UTC workday (weekends allowed),
-  packed back-to-back. Users are taken round-robin from `c.rotation_user_pks`;
-  if every existing user is booked across a job's window, a new worker is
-  **minted** (`_mint_user`) as the pressure valve.
-- **Shifts**: one `core.shift` per (user, calendar day) with bleps, tightly
-  enclosing that day's bleps (`start` = first blep start, `end` = last blep
-  end) — satisfying the shift↔blep enclosure invariant. `loaddata` bypasses
-  `Blep.save()`/`Shift.save()`, so all timestamps are emitted pre-floored to
-  the minute.
+  and to ≥ the horizon (when that clamp would collapse the window — a job
+  completed right at the boundary — it backs off to the job's final local
+  workday instead); and **no user's bleps overlap**. The synthetic workday is
+  defined in the shop's **local timezone** (`_WORKDAY_TZ`, mirrors
+  `settings.TIME_ZONE`) and converted to UTC per calendar day: shifts open at
+  **09:00 local**, bleps pack from **09:15** (a clock-in lead-in), close at
+  **17:00** (weekends allowed). **One worker per job**: a job's tasks go to the
+  same user (rotation advances per job, not per blep), packed back-to-back
+  with a deterministic 5–30-minute gap between bleps — which is what makes
+  worker-days carry several bleps. If that worker (then everyone) is booked
+  across a job's window, a new worker is **minted** (`_mint_user`) as the
+  pressure valve.
+- **Shifts**: one `core.shift` per (user, local calendar day) with bleps — a
+  realistic workday span, not a band coterminal with the bleps: `start` =
+  09:00 local, `end` = 17:00 local clamped to `_dataset_now` and never before
+  the last blep end, so the shift↔blep enclosure invariant holds with slack.
+  `loaddata` bypasses `Blep.save()`/`Shift.save()`, so all timestamps are
+  emitted pre-floored to the minute.
 - **entered_qty actuals**: a complete task on an `entered_qty` scheme gets an
   `actual_qty = est_qty × {thirds}` (fallback base `1` when `est_qty` is null)
   so it doesn't invoice at zero. This is set for **every** complete task — even

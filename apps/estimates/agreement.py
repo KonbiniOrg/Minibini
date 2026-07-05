@@ -94,7 +94,11 @@ def compose_agreement(job):
 
     # Build an ordered dict keyed by EstimateLineItem pk preserving line_number order.
     # Values are mutable line dicts (or None when removed).
-    est_line_items = list(estimate.estimatelineitem_set.order_by('line_number'))
+    est_line_items = list(
+        estimate.estimatelineitem_set
+        .select_related('adjustment_service')
+        .prefetch_related('adjustment_target_categories')
+        .order_by('line_number'))
 
     # Prefetch the fee-source mapping in a single query to avoid N+1.
     # Each hand-line that was crystallized into a Fee has exactly one

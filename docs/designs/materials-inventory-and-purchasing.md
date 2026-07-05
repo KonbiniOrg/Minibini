@@ -140,7 +140,14 @@ later hidden.
   never auto-deleted; the hide-on-spend filter is the whole retirement.)
 - **Merge** (`InventoryService.merge`, `POST …/merge/`): the manual dedup tool —
   folds a discard item into a keep item (QOH + aggregates), repoints every
-  reference, deletes the discard. Hard-blocks unit mismatch and catalog-as-discard.
+  reference, deletes the discard. Hard-blocks a *real*-unit mismatch and
+  catalog-as-discard; a `'none'` unit on either side is treated as *unknown*
+  and the known unit wins (a `'none'` keep adopts the discard's unit unless an
+  explicit `units` override is given).
+- **On order** (`InventoryItem.qty_on_order`, read-only on the serializer +
+  the inventory list column): Σ max(qty − received − cancelled, 0) over the
+  item's PO lines on non-cancelled POs — the per-material outstanding calc
+  aggregated per item.
 
 ### Cascade rules
 
@@ -292,6 +299,45 @@ linked PLI's `purchase_price` / `selling_price` in the same
 transaction. The propagate action is open to any authenticated user
 (deliberate carve-out from `can_manage_financials`). See
 `MaterialService.update_pricing`.
+
+**Consumption fires at every blep start, not just the first (2026-07-04).**
+A blep means work is happening *now*, so recording one — live (`start_work`)
+or hand-added (`create_historical`) — sweeps the task's pending materials
+(`TaskLifecycleService._consume_pending_materials`; the `pending →
+in_progress` promotion is just the first such sweep). The rule set:
+
+1. A material added to (`MaterialService.create_on_job`) or reassigned onto
+   (`assign_task`) a task that is already `in_progress` consumes **immediately
+   when in stock** (`consume_if_task_started`) — so an after-the-fact "we used
+   more" add never depends on a future blep existing.
+2. Added while **out of stock** it stays `pending` (the procure-via-PO flow
+   needs the row as its anchor), and then:
+   a. the **next blep is refused** — `consume()`'s insufficient-stock error
+      (the same coaching message the first-blep path always raised) is the
+      guard: no work can be recorded while a required material is physically
+      missing; or
+   b. the **stock arrives** and the next blep's sweep consumes it — no
+      PO-receive hook needed.
+
+**Completion is guarded the same way:** `complete_task` refuses while the
+task has pending materials ("if a material was used, consume it by hand;
+otherwise release it") — a complete task can never blep again, so nothing
+would ever consume a leftover. Task-attached pending rows carry a **consume**
+button for the by-hand path; the return action is labelled **"restock"** only
+when stock is on hand and **"release"** otherwise (for a *pending* material
+the action never touches QOH either way — it removes the earmark/quantity,
+and at full quantity applies the restock-to-zero rule: referenced →
+`released`, unreferenced → deleted).
+
+Only inventory-item-backed materials can be short; freeform materials consume
+unconditionally. "Waiting on materials" is **derived, never stored**: the task
+tree badges an `in_progress` task with a pending understocked material
+(`TaskTree.taskAwaitingMaterials`); the human-owned `blocked` status is not
+auto-set — nothing has to remember to un-set it. Blep-cancel undo nuance: only
+the *promoting* blep's cancellation un-consumes; a later blep's arrival
+consumption sticks (the material genuinely is allocated — manual unconsume
+exists). Tests: `tests/test_blep_start_material_sweep.py` +
+`tests/test_late_material_consumption.py`.
 
 **Invoice freeze on `sell_price` and `unconsume`.** Once a Material is on a
 non-cancelled invoice (i.e. `InvoiceClaimService.is_invoiced('material', pk)`

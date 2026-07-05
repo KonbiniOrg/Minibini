@@ -107,6 +107,19 @@
     }
   }
 
+  async function unwindBatch(batch) {
+    // Irreversible server-side unwind (voids the QBO purchase, flips the
+    // expenses back to submitted, deletes the batch) — confirm first.
+    if (!confirm('Unwind this reimbursement batch? Its expenses return to '
+                 + 'the outstanding list and the QBO purchase is voided.')) return;
+    try {
+      await api.delete(`/api/reimbursements/${batch.id}/?confirm=true`);
+      await loadAll();
+    } catch (err) {
+      error = errorMessage(err, 'Could not unwind the batch.');
+    }
+  }
+
   async function rejectExpense(exp) {
     if (!confirm('Reject this expense?')) return;
     try {
@@ -250,6 +263,7 @@
               {#if b.qbo_sync_status === 'sync_failed'}
                 <button type="button" onclick={() => retryBatch(b)}>retry push</button>
               {/if}
+              <button type="button" onclick={() => unwindBatch(b)}>unwind</button>
             </td>
           </tr>
         {/each}

@@ -303,7 +303,6 @@ class Task(TaskBase):
         db_table = 'tasks'
 
     def clean(self):
-        from django.core.exceptions import ValidationError
         if self.pk:
             old_status = Task.objects.get(pk=self.pk).status
             if old_status != self.status:
@@ -453,15 +452,28 @@ class RateScheme(models.Model):
     class Meta:
         db_table = 'rate_schemes'
 
+    def _normalize_modifiers(self):
+        """Drop fully-blank modifier rows (no key/label, no percent) — the
+        editor's untouched "add modifier" row is a no-op, not data."""
+        self.modifiers = [
+            m for m in (self.modifiers or [])
+            if (m.get('key') or '').strip() or (m.get('label') or '').strip()
+            or m.get('percent')
+        ]
+
     def clean(self):
         super().clean()
+        self._normalize_modifiers()
+        if any(not (m.get('key') or '').strip() for m in self.modifiers):
+            raise ValidationError({
+                'modifiers': 'Each modifier needs a name (key); a percent '
+                             'without one can never be activated.',
+            })
         if self.accounting_category_id is None:
-            from django.core.exceptions import ValidationError
             raise ValidationError({
                 'accounting_category': 'Required: every RateScheme must have an AccountingCategory.',
             })
         if self.algorithm != self.PERCENTAGE and self.rate is not None and self.rate < 0:
-            from django.core.exceptions import ValidationError
             raise ValidationError({'rate': 'Only percentage services may have a negative rate.'})
         if self.pk and self.is_referenced():
             old = RateScheme.objects.get(pk=self.pk)
@@ -470,13 +482,14 @@ class RateScheme(models.Model):
                 if getattr(self, f) != getattr(old, f)
             ]
             if changed:
-                from django.core.exceptions import ValidationError
-                raise ValidationError({
+                    raise ValidationError({
                     f: 'Scheme is referenced; create a new version instead of editing.'
                     for f in changed
                 })
 
     def save(self, *args, **kwargs):
+        # Normalize on create too — full_clean below only covers updates.
+        self._normalize_modifiers()
         # Belt-and-braces: ensure clean() runs even on bare .save() calls.
         if self.pk:
             self.full_clean()

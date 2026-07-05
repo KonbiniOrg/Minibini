@@ -4,6 +4,8 @@ import { render, fireEvent, findByText, findAllByText } from '@testing-library/s
 const { qsRef } = vi.hoisted(() => ({ qsRef: { value: '' } }));
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
 vi.mock('svelte-spa-router', () => ({
   push: vi.fn(),
@@ -14,7 +16,9 @@ vi.mock('@/stores/permissions.js', () => ({
   canManageFinancials: { subscribe: (fn) => { fn(true); return () => {}; } },
 }));
 
+import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import PurchaseOrderDetailPage from '@/routes/purchaseorders/PurchaseOrderDetailPage.svelte';
 
 const PO = {
@@ -45,6 +49,7 @@ beforeEach(() => {
   });
   api.delete.mockResolvedValue({ message: 'PO deleted.' });
   vi.stubGlobal('confirm', () => true);
+  clearMessage();
 });
 
 describe('PurchaseOrderDetailPage delete with sever', () => {
@@ -114,5 +119,45 @@ describe('PurchaseOrderDetailPage one-shot material prefill', () => {
     await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
     // The fix: the one-shot prefill was cleared, so no stale material_id.
     expect(api.post.mock.calls[1][1]).not.toHaveProperty('material_id');
+  });
+});
+
+describe('PurchaseOrderDetailPage global overlay messages', () => {
+  it('raises the global error overlay when delete fails (no local overlay markup)', async () => {
+    api.delete.mockRejectedValue(Object.assign(new Error('Conflict'), {
+      status: 409,
+      data: { detail: 'This purchase order is referenced.' },
+    }));
+
+    const { container } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    const deletes = await findAllByText(container, 'Delete');
+    const poDelete = deletes.find(el => !el.closest('table'));
+    await fireEvent.click(poDelete);
+    const confirmBtn = await findByText(container, 'Confirm');
+    await fireEvent.click(confirmBtn);
+
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({
+        kind: 'error',
+        text: 'This purchase order is referenced.',
+      });
+    });
+    // The page no longer carries its own overlay markup.
+    expect(container.querySelector('.error-overlay')).toBeNull();
+  });
+
+  it('raises the global success overlay after a status action', async () => {
+    vi.stubGlobal('prompt', () => '');
+    api.post.mockResolvedValue({});
+
+    const { container } = render(PurchaseOrderDetailPage, { props: { params: { id: '7' } } });
+    await fireEvent.click(await findByText(container, 'Mark as Issued'));
+
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({
+        kind: 'success',
+        text: 'Purchase order issued.',
+      });
+    });
   });
 });

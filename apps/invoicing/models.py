@@ -104,8 +104,12 @@ class Invoice(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
-        # Check if status changed to paid and all invoices for the job are now paid
-        if old_status and old_status != self.status and self.status == Invoice.STATUS_PAID:
+        # Re-check job completion whenever this invoice transitions into a
+        # resolved status (paid or cancelled). A cancelled invoice counts as
+        # resolved in JobService.maybe_complete_if_resolved, so cancelling the
+        # last unresolved invoice on an all-shipped job should complete it.
+        if (old_status and old_status != self.status
+                and self.status in (Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)):
             self._maybe_complete_job()
 
     def _maybe_complete_job(self):

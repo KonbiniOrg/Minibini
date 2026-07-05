@@ -297,7 +297,25 @@ class BlepService:
             blep = BlepService._create(
                 task, target_user, start_time=start_time, end_time=end_time,
             )
+            was_pending = task.status == Task.STATUS_PENDING
             TaskLifecycleService._promote_pending_task(task)
+            promoted = was_pending and task.status == Task.STATUS_IN_PROGRESS
+            if not promoted:
+                # The caller's instance may be stale (promotion is a
+                # conditional DB update) — read the true status before deciding
+                # whether the blep-start sweep applies.
+                task.refresh_from_db(fields=['status'])
+            if not promoted and task.status == Task.STATUS_IN_PROGRESS:
+                # A hand-added blep on a started task is still work happening:
+                # consume arrived stock, refuse while a material is missing.
+                # (The promotion above already swept a pending task's list.)
+                TaskLifecycleService._consume_pending_materials(task)
+            # Mirror start_work: the first worker whose blep promotes the
+            # task becomes its assignee. A blep on an already-started task
+            # is "helping" and doesn't claim it.
+            if promoted and not task.assignee_id:
+                Task.objects.filter(pk=task.pk).update(assignee=target_user)
+                task.assignee = target_user
             JobService.mark_work_started(task.job)
         return blep
 
@@ -579,7 +597,9 @@ class JobService:
 
         Behaviour:
           - Refreshes the job from the DB (callers may hold a stale instance).
-          - No-ops if the job is already completed or cancelled.
+          - No-ops unless the job's WORK is finished: ``work_complete``, or
+            ``approved``/``in_progress`` with at least one task and every task
+            terminal (the loose-material-stranded case — see below).
           - No-ops if any invoice is still unresolved (not paid/cancelled).
           - No-ops if any deliverable is not yet fully picked up.
           - Releases loose (task-less, pending) materials, records a system
@@ -590,8 +610,27 @@ class JobService:
         from apps.invoicing.models import Invoice
 
         job.refresh_from_db()
-        if job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED):
+
+        # Auto-complete requires the WORK to be finished — not merely the
+        # money resolved. That means ``work_complete``, or an ``approved``/
+        # ``in_progress`` job whose tasks exist and are ALL terminal: the one
+        # legitimate way such a job is stranded short of ``work_complete`` is
+        # a loose pending material blocking the transition, and this
+        # unattended path releases exactly those below. Everything else is a
+        # no-op: an ``in_progress`` job with open tasks (a follow-up to send
+        # plans/photos, a post-job meeting), a deposit invoice paid before
+        # any work starts (task-less job), and ``draft``/``submitted``/
+        # ``on_hold`` jobs, which have no finished work at all. (This also
+        # avoids forcing a transition the state machine forbids, e.g.
+        # on_hold -> completed.)
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS,
+                              Job.STATUS_WORK_COMPLETE):
             return
+        if job.status != Job.STATUS_WORK_COMPLETE:
+            terminal = (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
+            tasks = Task.objects.filter(job=job)
+            if not tasks.exists() or tasks.exclude(status__in=terminal).exists():
+                return
 
         # All invoices must be resolved (paid or cancelled).
         unresolved = Invoice.objects.filter(job=job).exclude(
@@ -630,7 +669,9 @@ class JobService:
                 },
             )
 
-        # Walk through intermediate statuses when coming from early states.
+        # Walk any intermediate statuses (the work-finished guard above means
+        # only the loose-material-stranded approved/in_progress cases arrive
+        # here short of work_complete; their materials were just released).
         if job.status == Job.STATUS_APPROVED:
             job = JobService.update_job(job.pk, status=Job.STATUS_IN_PROGRESS)
         if job.status == Job.STATUS_IN_PROGRESS:
@@ -656,6 +697,15 @@ class JobService:
         forbids a direct jump from DRAFT/SUBMITTED to IN_PROGRESS."""
         if job.status == Job.STATUS_APPROVED:
             JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+
+    @staticmethod
+    def mark_work_reopened(job):
+        """Pull a WORK_COMPLETE Job back to IN_PROGRESS when a new incomplete
+        Task lands on it — work_complete means every task is terminal, and a
+        fresh open task contradicts that. No-op for any other status."""
+        if job.status == Job.STATUS_WORK_COMPLETE:
+            JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
+            job.refresh_from_db()
 
     @staticmethod
     def populate_from_template(job, template):
@@ -801,6 +851,7 @@ class TaskService:
                 active_modifiers=copy_active_modifiers(template.default_active_modifiers),
                 est_qty=est_qty if est_qty is not None else Decimal('1'),
             )
+            JobService.mark_work_reopened(job)
         return task
 
     @staticmethod
@@ -836,6 +887,8 @@ class TaskService:
                 actual_qty=actual_qty,
                 **task_fields,
             )
+            if task.status not in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+                JobService.mark_work_reopened(job)
         return task
 
     @staticmethod
@@ -1046,6 +1099,35 @@ class TaskLifecycleService:
                 MaterialService.consume(material)
 
     @staticmethod
+    def _consume_pending_materials(task):
+        """Blep-start sweep: a blep means work is happening NOW, so every
+        pending material on the task must consume. consume() raising on
+        insufficient stock IS the guard — no blep can be recorded while a
+        required material is physically missing (same coaching error as the
+        first-blep promotion path). This is also what catches the
+        arrival-later case: a late-added material left pending because its
+        stock hadn't arrived (consume-on-add skips understocked adds) is
+        consumed by the next blep once the stock is in."""
+        from apps.inventory.models import Material
+        from apps.inventory.services import MaterialService
+        for material in task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_PENDING):
+            MaterialService.consume(material)
+
+    @staticmethod
+    def set_actual_qty(task, qty):
+        """Record a worker-entered actual quantity (open to any
+        authenticated worker; complete_task enforces it's present/positive
+        for ENTERED_QTY completion)."""
+        from decimal import Decimal, InvalidOperation
+        try:
+            task.actual_qty = Decimal(str(qty))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValidationError({'actual_qty': 'Invalid decimal.'})
+        task.save(update_fields=['actual_qty'])
+        return task
+
+    @staticmethod
     def complete_task(task_pk, actual_qty=None):
         """Transition task from pending/in_progress/blocked -> complete.
 
@@ -1072,6 +1154,20 @@ class TaskLifecycleService:
             if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
                     and task.rate_scheme.get_actual_qty(task) <= 0):
                 raise TaskTimeRequired()
+            # A complete task can never blep again, so nothing would ever
+            # consume a leftover pending material — it would sit unbillable
+            # forever. Completion stops until the human decides.
+            from apps.inventory.models import Material
+            pending = task.materials.filter(
+                consumption_state=Material.CONSUMPTION_STATE_PENDING)
+            if pending.exists():
+                names = ', '.join(
+                    m.description or f'material {m.pk}' for m in pending[:3])
+                raise ValidationError(
+                    f'Cannot complete: this task has unconsumed materials '
+                    f'({names}). If a material was used, consume it by hand; '
+                    f'otherwise release it (restock its full quantity).'
+                )
             update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
             if actual_qty is not None:
                 update_fields['actual_qty'] = actual_qty
@@ -1281,6 +1377,9 @@ class TaskLifecycleService:
                 for b in list(other_bleps):
                     BlepService._resolve_open_blep(b, now)
                 return TaskLifecycleService.start_work(task_pk, target)
+            # A blep on an in-progress task must consume any materials that
+            # arrived (or refuse while one is still missing) — see the sweep.
+            TaskLifecycleService._consume_pending_materials(task)
             # Close target's open Blep on ANY task
             BlepService._close_open(user=target, now=now)
             blep = BlepService._create(task, target, start_time=now)
@@ -1376,7 +1475,8 @@ class BoardService:
         # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
         #           + on_hold (reverted-to-planning / paused)
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved', 'on_hold']
+            status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
         ).select_related('contact', 'project_manager').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
@@ -1425,7 +1525,8 @@ class BoardService:
 
         # Closed: terminal states within retention
         closed_jobs = Job.objects.filter(
-            status__in=['completed', 'rejected', 'cancelled'],
+            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
+                        Job.STATUS_CANCELLED],
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date')
         closed = [BoardService._serialize_closed_job(job) for job in closed_jobs]
@@ -1453,7 +1554,8 @@ class BoardService:
         """Return pipeline jobs (draft + submitted + approved + on_hold) with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
-            status__in=['draft', 'submitted', 'approved', 'on_hold']
+            status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
+                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
         ).select_related('contact', 'project_manager').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -1580,9 +1682,11 @@ class BoardService:
         outstanding invoice; .distinct() ensures each job appears only once.
         """
         from apps.jobs.models import Job
+        from apps.invoicing.models import Invoice
         unpaid_jobs = Job.objects.filter(
             Q(status=Job.STATUS_WORK_COMPLETE) |
-            Q(invoice__status__in=['draft', 'open', 'partly-paid', 'defaulted'])
+            Q(invoice__status__in=[Invoice.STATUS_DRAFT, Invoice.STATUS_OPEN,
+                                   Invoice.STATUS_PARTLY_PAID, Invoice.STATUS_DEFAULTED])
         ).distinct().select_related('contact', 'project_manager').order_by('due_date')
 
         unpaid_list = [
@@ -1605,7 +1709,8 @@ class BoardService:
         cutoff = timezone.now() - timedelta(days=retention_days)
 
         closed_jobs = Job.objects.filter(
-            status__in=['completed', 'rejected', 'cancelled'],
+            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
+                        Job.STATUS_CANCELLED],
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date')
         return {'jobs': [BoardService._serialize_closed_job(job) for job in closed_jobs]}
@@ -1648,25 +1753,19 @@ class BoardService:
         # frontend drops it (Phase 7).
         data['worksheets'] = []
 
-        from apps.estimates.models import ChangeOrder
         estimates = []
-        for est in job.estimate_set.order_by('-pk'):
+        from apps.estimates.models import Estimate as _Estimate
+        for est in _Estimate.with_amended_flag(job.estimate_set.order_by('-pk')):
             total = EstimateLineItem.objects.filter(estimate=est).aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))
             )['total'] or Decimal('0.00')
-            # Derived "amended" flag: accepted estimate with ≥1 accepted CO.
-            # The stored status stays accepted; the UI renders "amended".
-            is_amended = (
-                est.status == Estimate.STATUS_ACCEPTED
-                and ChangeOrder.objects.filter(
-                    estimate=est, status=ChangeOrder.STATUS_ACCEPTED,
-                ).exists()
-            )
             estimates.append({
                 'estimate_id': est.estimate_id,
                 'estimate_number': est.estimate_number,
                 'status': est.status,
-                'is_amended': is_amended,
+                # Derived "amended" flag — see Estimate.is_amended() (the single
+                # source of truth shared with the EstimateSerializer).
+                'is_amended': est.is_amended(),
                 'created_date': est.created_date.isoformat() if est.created_date else None,
                 'total': total,
             })
@@ -1696,9 +1795,11 @@ class BoardService:
     @staticmethod
     def _serialize_unpaid_job(job):
         """Serialize an unpaid job with invoice details and profitability."""
+        from apps.invoicing.models import Invoice
         data = BoardService._serialize_job(job)
         invoices = []
-        for inv in job.invoice_set.exclude(status__in=['cancelled', 'superseded']).order_by('created_date'):
+        for inv in job.invoice_set.exclude(
+                status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]).order_by('created_date'):
             total = inv.invoicelineitem_set.aggregate(
                 total=models.Sum(models.F('qty') * models.F('price'))
             )['total'] or Decimal('0.00')

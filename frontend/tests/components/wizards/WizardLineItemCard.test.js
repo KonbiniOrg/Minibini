@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 
 import { api } from '@/lib/api.js';
 import WizardLineItemCard from '@/components/wizards/WizardLineItemCard.svelte';
@@ -68,6 +72,32 @@ describe('WizardLineItemCard', () => {
     await waitFor(() => expect(registerFlush).toHaveBeenCalled());
     await fireEvent.input(getByPlaceholderText('Name this line item…'), { target: { value: 'Edited' } });
     await expect(flush()).rejects.toThrow('boom');
+  });
+
+  it('shows an operation error under the buttons when a manual save fails', async () => {
+    const err = Object.assign(new Error('Request failed'), {
+      status: 400, data: { detail: 'Invoice is not editable.' },
+    });
+    api.patch.mockRejectedValueOnce(err);
+    const { getByPlaceholderText, getByRole, findByRole } = render(WizardLineItemCard, {
+      props: { lineItem: lineItem(), apiBase: '/api/estimates/3' },
+    });
+    await fireEvent.input(getByPlaceholderText('Name this line item…'), { target: { value: 'Line2' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByRole('alert')).toHaveTextContent('Invoice is not editable.');
+  });
+
+  it('shows a field error under the inputs when a manual save fails validation', async () => {
+    const err = Object.assign(new Error('Request failed'), {
+      status: 400, data: { qty: ['A valid number is required.'] },
+    });
+    api.patch.mockRejectedValueOnce(err);
+    const { getByPlaceholderText, getByRole, findByText } = render(WizardLineItemCard, {
+      props: { lineItem: lineItem(), apiBase: '/api/estimates/3' },
+    });
+    await fireEvent.input(getByPlaceholderText('Name this line item…'), { target: { value: 'Line2' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('A valid number is required.')).toBeInTheDocument();
   });
 
   it('flags a bundled price that is out of sync with its atoms', () => {

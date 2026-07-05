@@ -4,7 +4,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.db.models import Prefetch
 from apps.jobs.models import Job, Task, Fee
@@ -53,11 +52,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         deleted by a document action (deletion doctrine, Rule 1 at job scale).
         """
         job = self.get_object()
-        try:
-            JobService.assert_job_deletable(job)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        JobService.assert_job_deletable(job)
         return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
@@ -117,11 +112,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         serializer.instance = job
 
     def update(self, request, *args, **kwargs):
-        try:
-            return super().update(request, *args, **kwargs)
-        except ValidationError as e:
-            msg = '; '.join(e.messages) if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        return super().update(request, *args, **kwargs)
 
     def perform_update(self, serializer):
         job = JobService.update_job(self.get_object().pk, **serializer.validated_data)
@@ -132,10 +123,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         """Get or create the draft invoice for this job and return its id."""
         from apps.invoicing.services import InvoiceWizardService
         job = self.get_object()
-        try:
-            invoice = InvoiceWizardService.open_for_job(job)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
+        invoice = InvoiceWizardService.open_for_job(job)
         return Response({'invoice_id': invoice.pk})
 
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
@@ -164,7 +152,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             entry_type='note',
             object_type='job',
             object_id=obj.pk,
-            user=request.user,
             text=text,
         )
         serializer = HistoryEntrySerializer(entry)
@@ -180,11 +167,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             if job.status == Job.STATUS_APPROVED:
                 job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS)
             job = JobService.update_status(job.pk, Job.STATUS_WORK_COMPLETE)
-        except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(self.get_serializer(job).data)
@@ -214,14 +196,8 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 {'contact_id': ['Contact not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            new_job = JobService.duplicate_job(
-                source_job, contact=contact, path=path)
-        except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        new_job = JobService.duplicate_job(
+            source_job, contact=contact, path=path)
         return Response({'job_id': new_job.pk}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='populate-from-template')
@@ -244,11 +220,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             JobService.populate_from_template(job, template)
         except SchemeSupersededError as e:
             return Response({'detail': str(e)}, status=status.HTTP_409_CONFLICT)
-        except ValidationError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         job.refresh_from_db()
         return Response(self.get_serializer(job).data)
 
@@ -277,7 +248,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             )
         try:
             TaskService.reorder_tasks(task_id, direction)
-        except (ValidationError, NotFoundError) as e:
+        except NotFoundError as e:
             return Response(
                 {'detail': e.message if hasattr(e, 'message') else str(e)},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -300,24 +271,17 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         ac = None
         if data.get('accounting_category'):
             ac = AccountingCategory.objects.get(pk=data['accounting_category'])
-        try:
-            m = MaterialService.create_on_job(
-                job=job, task=None,
-                description=data.get('description', ''),
-                quantity=_Decimal(str(data.get('quantity', 0))),
-                units=data.get('units', 'none'),
-                unit_cost=_Decimal(str(data.get('unit_cost', 0))),
-                sell_price=_Decimal(str(data.get('sell_price', 0))),
-                inventory_item=pli,
-                accounting_category=ac,
-                cost_source='manual',
-            )
-        except ValidationError as e:
-            # Surface field-level errors as {field: [messages]} so the SPA
-            # can format each line; fall back to a flat detail otherwise.
-            if hasattr(e, 'message_dict'):
-                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
-            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        m = MaterialService.create_on_job(
+            job=job, task=None,
+            description=data.get('description', ''),
+            quantity=_Decimal(str(data.get('quantity', 0))),
+            units=data.get('units', 'none'),
+            unit_cost=_Decimal(str(data.get('unit_cost', 0))),
+            sell_price=_Decimal(str(data.get('sell_price', 0))),
+            inventory_item=pli,
+            accounting_category=ac,
+            cost_source='manual',
+        )
         return Response(MaterialSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='fees', url_name='fees')
@@ -363,10 +327,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                 {'detail': 'quantity and unit_rate must be valid numbers.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except ValidationError as e:
-            if hasattr(e, 'message_dict'):
-                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
-            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(FeeSerializer(fee).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['patch', 'delete'],
@@ -384,11 +344,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                             status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'DELETE':
-            try:
-                FeeService.delete(fee.pk)
-            except ValidationError as e:
-                return Response({'detail': '; '.join(e.messages)},
-                                status=status.HTTP_400_BAD_REQUEST)
+            FeeService.delete(fee.pk)
             return Response({'message': 'Fee deleted.'}, status=status.HTTP_200_OK)
 
         # PATCH — only the editable scalar fields plus AC/task relinks.
@@ -429,12 +385,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
                         {'task': ['Task not found on this job.']},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-        try:
-            fee = FeeService.update(fee.pk, **fields)
-        except ValidationError as e:
-            if hasattr(e, 'message_dict'):
-                return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
-            return Response({'detail': '; '.join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        fee = FeeService.update(fee.pk, **fields)
         return Response(FeeSerializer(fee).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='agreement', url_name='agreement')

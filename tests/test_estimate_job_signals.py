@@ -88,6 +88,19 @@ class LastInvoicePaidJobCompletedTest(TestCase):
             job_number='JOB-TEST-0001', contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        # The completion gate requires finished work (>=1 task, all terminal) —
+        # a task-less job is the deposit-paid-early shape and must not close.
+        from apps.core.models import AccountingCategory
+        from apps.jobs.models import RateScheme, Task
+        cat = AccountingCategory.objects.create(name='Sig Labor', code='SIGL')
+        scheme = RateScheme.objects.create(
+            name='Sig hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=cat,
+        )
+        Task.objects.create(
+            job=self.job, name='Done', rate_scheme=scheme,
+            status=Task.STATUS_COMPLETE,
+        )
 
     def test_job_completed_when_single_invoice_paid(self):
         inv = Invoice.objects.create(job=self.job, invoice_number='INV-TEST-0001', status=Invoice.STATUS_OPEN)

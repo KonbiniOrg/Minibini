@@ -330,3 +330,120 @@ so all affordances apply uniformly.)
   PO-receipt and stock-receipt paths already bump `inventory_item.qty_on_hand`.
 - It makes procurement **the default path and skipping it deliberate**, matching how the
   shop actually works: know it's ordered, know it's arrived, then work.
+
+## Absorbed LATER items (2026-07-04)
+
+Moved from `docs/designs/LATER.md`: these all touch the procurement machinery this plan reworks (earmarks, the PO↔material resolver, order-from-material affordances, the expense fulfillment path). Work them as part of this plan — or consciously punt them back to LATER when the task plan is cut.
+
+- **Earmarking is done per-material and then overwritten — do we need both layers?** — _added 2026-06-05_
+  `MaterialService.create_on_job` calls `_mutate_earmark` (incremental; its docstring
+  calls it "the sole writer of Earmark rows"), but the bulk job-population paths then
+  call `InventoryService.create_earmarks_for_job`, which aggregates all the job's
+  inventoried Materials by PLI and **overwrites** each Earmark to the absolute total.
+  In a copy/population path the per-material increments already produce the correct
+  total, so the final aggregate sweep looks redundant. Work out the intended division
+  of labor (steady-state incremental edits vs one-shot bulk-population sweep), whether
+  any path materializes Materials *without* `create_on_job` (which is what would make
+  the sweep load-bearing), and whether one layer can be dropped without breaking
+  idempotency. _Done when:_ we've documented why both exist (in
+  `materials-inventory-and-purchasing.md`) or removed the redundant layer.
+  _History (for context):_ earmarking was originally an `auto_earmark_inventory`
+  signal on `estimate_accepted`, which only fired on the acceptance path (template and
+  worksheet-copy paths got zero earmarks). Commit `9848a4c` (2026-04-05) deleted that
+  signal and made earmarking a step inside *each* materialization path, establishing the
+  invariant "every path that materializes work earmarks." Two weeks later `AtomCarryOverService`
+  (`fdc3650`/`09031e3`, 2026-04-20) re-attached materialization to `estimate_accepted`
+  but **without** the earmark step — silently breaking that invariant. A stale test
+  (`test_accepting_estimate_does_not_create_earmarks`, also from `9848a4c`) kept passing
+  because it guarded "the signal is gone," not "materialization earmarks," so it masked
+  the regression. Fixed 2026-06-05 by routing carry-over through the shared
+  `materialize_worksheet_onto_job` core, which earmarks; the test was inverted to
+  `test_accepting_estimate_creates_earmarks`. So both earmark layers now run on that path:
+  `create_on_job`'s incremental writes **plus** the final aggregate sweep — which is the
+  redundancy this item is about.
+
+- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20_
+  When adding a PO line for a job that already has materials, there's no way to
+  deterministically attach the line to a *specific* existing pending material.
+  Today the backend resolver (`MaterialService.resolve_or_create_for_line`,
+  three steps: explicit `material_id` → claim → create) only auto-links
+  ("claim") when job + inventory_item match *exactly one* pending, unlinked
+  material on that (job, item); otherwise it **creates a new material** —
+  silently producing a duplicate for freeform materials, item mismatches, or
+  multiple candidates. The "order this material" flow sets `material_id` for the
+  *first* line only (one-shot prefill, cleared after add — see commit f3440447).
+  Fix: on the PO line form (`LineItemForm` via `PurchaseOrderDetailPage`), once a
+  Job is selected, surface that job's pending **unlinked** materials and let the
+  user pick "attach to this one" (sends `material_id`, routing through the
+  resolver's explicit path) or "create new". Removes the guessing and makes
+  second-line-to-second-material deterministic.
+  _Done when:_ a user can add a PO line for a job and explicitly choose which
+  existing pending material it links to (or opt to create a new one), with tests.
+
+- **Reassigning a PO line's job/material is tricky — rethink the whole flow.** — _added 2026-06-21_
+  Changing which job a PO line (and its linked material) belongs to currently has
+  awkward, split entry points. On a **draft** PO the inline **Edit** changes the job
+  (routed through `onChangeLineJob`); on an **issued/received** PO there's no Edit, so a
+  standalone **Change Job** modal is the only path, gated by `canChangeJob` (allowed when
+  the linked material's `consumption_state === 'pending'`). The draft-only duplicate
+  "Change Job" button was removed 2026-06-21 (Edit covers it), but the underlying model is
+  still murky: the rules differ by PO status × material consumption_state, and reassigning
+  an already-received line's material to a different job has cost/earmark implications that
+  aren't obviously surfaced. Want to think more about the right mental model and UX for
+  "this material actually belongs to a different job" before committing to a design.
+  _Done when:_ we've settled how (and when) a line's job/material allocation can change
+  across the PO lifecycle, with one coherent UX, and documented it in
+  `materials-inventory-and-purchasing.md`.
+
+- **Lost per-material "order" link when the Materials pillar was folded into Tasks & Materials.** — _added 2026-06-28_
+  The old standalone Materials pillar on the job overview rendered, per material that
+  needed more stock, an **"order"** link (`#/purchase-orders/new?job={job_id}&material={material_id}`)
+  plus an **"On Order"** column (showing `qty_on_order` and a link to the existing PO).
+  Phase 5 (commit `0f989580`, "combine Tasks & Materials into one pillar via the Task
+  View") replaced that pillar with `TaskTree`, and the per-material **order** affordance
+  + On Order column did **not** carry over — `TaskTree` shows the sell-side columns and
+  grand total (mirroring the invoice projection) but has no "needs more → start a PO"
+  control. Surfaced 2026-06-28 while working an invoice flow that got blocked by missing
+  inventory. _To decide:_ whether the order-from-material shortcut should be restored
+  inside the combined pillar (or live elsewhere — Plan/worksheet materials, or a
+  materials/PO view), and whether the On Order / shortfall indicator comes back with it.
+  _Done when:_ a user can get from "this job's material is short" to starting/ viewing
+  its PO without leaving the job overview, or we've consciously decided that lives
+  somewhere else and documented where.
+
+- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14_
+  An expense is single-mode (cost OR stock receipt) and records one purchased item.
+  Real corner case: on one trip a worker buys 3 sheets of an **inventoried** PLI (the
+  shortfall) **and** a special **non-PLI finish** the job needs. If they record the
+  inventoried item, the expense becomes a stock receipt — its `amount` is treated as
+  inventory (cost-at-consumption, excluded from `_spent`), so the finish's cost is
+  effectively **dropped** (absorbed into the amount as if it were tax/fee). If they
+  record the finish instead, the plywood never hits QOH and the task stays blocked.
+  Today the workaround is to record **two separate expenses** (one stock receipt, one
+  cost), but nothing surfaces that, so the cost can silently vanish. Not super likely,
+  but real. See `docs/plans/2026-06-14-expenses-cost-model-redesign.md` (single-mode
+  decision) and the deferred many-materials/line-item direction.
+  _Done when:_ either an expense supports multiple purchased items with per-item mode
+  handling (inventoried rows → receipts, cost rows → job cost), or the form detects a
+  mixed receipt and prompts the user to split it — so a non-inventory cost can never be
+  silently swallowed by a stock receipt.
+
+- **Expense didn't count as a cost in the job overview — and NO catalog item was picked. Investigate.** — _added 2026-06-18_
+  Observed: an expense didn't show up as an expense/cost in the job overview. The obvious
+  suspect is the single-mode classification — `ExpenseService.create`
+  (`apps/expenses/services.py:38-42`) silently treats a purchase as a **stock receipt**
+  (sets `stock_pli`/`stock_qty`, no consumable `Material`, `amount` excluded from `_spent`
+  / not job-costed) whenever the selected item resolves to an *inventoried* (catalog)
+  `InventoryItem`. BUT the user reports **no catalog item was selected at all**, so that
+  path shouldn't have fired — which means the real cause is unknown and needs digging.
+  Lines to chase: how did the expense get classified / what `stock_pli` vs `material` vs
+  neither did it end up with; whether a non-catalog expense can still land as a stock
+  receipt (e.g. `new_material` resolving to an inventoried item unexpectedly, or a default);
+  whether `material`/`job` even got linked; and what the overview's "spent" actually sums
+  (does it require a linked `Material`/`job`, so a cost expense with no material or a
+  detached `job` FK silently drops out?). Capture the actual row (`stock_pli_id`,
+  `material_id`, `job_id`, `amount`) when reproducing. Related: "Mixed-receipt expense
+  loses the non-inventory cost" (above) and
+  `docs/plans/2026-06-14-expenses-cost-model-redesign.md`.
+  _Done when:_ the cause of a non-catalog expense missing from the job-cost overview is
+  root-caused and fixed (or shown to be expected), with a test.

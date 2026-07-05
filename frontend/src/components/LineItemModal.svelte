@@ -1,8 +1,12 @@
 <script>
   import { api } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
   import UnitsSelect from './UnitsSelect.svelte';
   import InventoryItemPicker from './InventoryItemPicker.svelte';
-  import { modalKeys } from '../lib/modalKeys.js';
+  import Modal from './Modal.svelte';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let {
     open = false,
@@ -26,7 +30,8 @@
   let accountingCategory = $state('');
   let isMaterial = $state(false);
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   $effect(() => {
     if (open) {
@@ -47,7 +52,8 @@
         accountingCategory = '';
         isMaterial = false;
       }
-      error = '';
+      formError = '';
+      fieldErrs = {};
     }
   });
 
@@ -72,11 +78,12 @@
 
   async function save() {
     busy = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     try {
       if (mode === 'create' && entryMode === 'pli') {
         if (!selectedPLI) {
-          error = 'Select an inventory item.';
+          fieldErrs = { inventory_item: ['Select an inventory item.'] };
           busy = false;
           return;
         }
@@ -88,7 +95,7 @@
         const isMaterialLine = showMaterialMarker && isMaterial;
         // Accounting category is required for fees; materials default server-side.
         if (!accountingCategory && !isMaterialLine) {
-          error = 'Accounting Category is required.';
+          fieldErrs = { accounting_category: ['Accounting Category is required.'] };
           busy = false;
           return;
         }
@@ -110,12 +117,12 @@
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || 'Could not save line item.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -123,9 +130,8 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
-    <div class="modal">
+<Modal {open} onCancel={onClose}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{mode === 'edit' ? 'Edit Line Item' : 'Add Line Item'}</h3>
 
       {#if mode === 'create'}
@@ -144,32 +150,38 @@
             onSelect={handlePLISelect}
             params={{ is_active: true }}
           />
+          <FieldError errors={fieldErrs} field="inventory_item" />
         </p>
         <p>
           <label><strong>Quantity *</strong><br>
             <input type="number" step="0.01" min="0" bind:value={qty}>
           </label>
+          <FieldError errors={fieldErrs} field="qty" />
         </p>
       {:else}
         <p>
           <label><strong>Description *</strong><br>
             <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
           </label>
+          <FieldError errors={fieldErrs} field="description" />
         </p>
         <p>
           <label><strong>Quantity</strong><br>
             <input type="number" step="0.01" bind:value={qty}>
           </label>
+          <FieldError errors={fieldErrs} field="qty" />
         </p>
         <p>
           <label><strong>Units</strong><br>
             <UnitsSelect bind:value={units} />
           </label>
+          <FieldError errors={fieldErrs} field="units" />
         </p>
         <p>
           <label><strong>Price</strong><br>
             <input type="number" step="0.01" bind:value={price}>
           </label>
+          <FieldError errors={fieldErrs} field="price" />
         </p>
         <p>
           <label><strong>Accounting Category *</strong><br>
@@ -180,6 +192,7 @@
               {/each}
             </select>
           </label>
+          <FieldError errors={fieldErrs} field="accounting_category" />
         </p>
         {#if showMaterialMarker}
           <p>
@@ -187,25 +200,19 @@
               <input type="checkbox" bind:checked={isMaterial} onchange={onMaterialToggle}>
               Is this a material?
             </label>
+            <FieldError errors={fieldErrs} field="is_material" />
           </p>
         {/if}
       {/if}
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
-      {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+      <FormMessage error={formError} />
+</form>
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
 </style>

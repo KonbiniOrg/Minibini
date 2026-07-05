@@ -50,13 +50,13 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 |---|---|
 | `draft` | Editable. Wizard works against this state. Default on create. |
 | `open` | Sent to customer; awaiting payment. Set by the send-to-customer flow (`InvoiceEmailService.send_invoice` flips `draft → open` on send success, stamping `sent_date`). Payment polling treats `open` (and `partly-paid`) as its input states and promotes `open → paid` / `partly-paid` automatically. |
-| `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). |
+| `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). Set via `InvoiceService.cancel` (API: `InvoiceViewSet.cancel`), which loads the invoice and calls `.save()` so the completion gate fires — a cancelled invoice counts as resolved, so cancelling the last unresolved invoice on a `work_complete`, all-shipped job auto-completes it. |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Set by `QBOPaymentPollingService.poll_all` when QBO reports a partial payment (some balance paid, some outstanding). |
-| `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()`, which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate walks the job through `approved → in_progress → work_complete → completed` (each step via `JobService.update_job`) only if **both** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials` restocks them and a `HistoryEntry` logs it — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
+| `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()` (also fired on entry to `cancelled`), which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate completes the job (via `JobService.update_job`) only if the job's **work is finished** (`work_complete`, or `approved`/`in_progress` with ≥1 task, all terminal — the loose-material-stranded case) **and** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. A job whose work is open (including a deposit-invoiced task-less job) is left untouched. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials`; claimed ones become `released` history, unclaimed delete — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
 | `defaulted` | Defined in choices, no current transition. |
 
-`InvoiceViewSet.status_actions` registers only `cancel` (writes `STATUS_CANCELLED` directly via a queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
+`InvoiceViewSet.status_actions` registers only `cancel`, which delegates to `InvoiceService.cancel` (loads the invoice and calls `.save()` so the completion gate runs — not a bypassing queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
 
 `Invoice.clean()` blocks transitioning out of `draft` if there are zero `InvoiceLineItem` rows.
 
@@ -255,6 +255,7 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 | Method | Responsibility |
 |---|---|
 | `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done; the wizard pool draws from non-cancelled Tasks, whose actuals stay billable. |
+| `send_all_atoms(invoice)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines — unlike `seed_all_atoms` (the fresh-document "Apply everything"), which requires an empty invoice. `POST /api/invoices/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Invoice" button. |
 | `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — non-cancelled tasks for the job, plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. Atom keys are normalized to match the estimate wizard so the frontend `WizardAtomRow` component is shared. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
@@ -272,7 +273,7 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 | Case | Description | Units | Qty | Price | Accounting category |
 |---|---|---|---|---|---|
-| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity` or `1` for tasks) | Atom-derived (`Material.sell_price` or `task.compute_amount()`) | Atom's effective category |
+| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity`; an ENTERED_QTY task's actual qty; `1` for ELAPSED_TIME tasks) | Atom-derived (`Material.sell_price`; an ENTERED_QTY task's `effective_rate()`; the blep roll-up total for ELAPSED_TIME) | Atom's effective category |
 | Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform-or-null |
 | Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
 
@@ -472,11 +473,12 @@ customer-sync flow, and connection lifecycle, see
 
 `JobService.maybe_complete_if_resolved(job)` (in `apps/jobs/services.py`) is the single auto-completion gate. It runs from two triggers:
 
-- `Invoice._maybe_complete_job` (on entry to `paid` / `cancelled`) — delegates to it.
+- `Invoice._maybe_complete_job` (on entry to `paid` / `cancelled`) — delegates to it. `Invoice.save()` fires it whenever the status transitions **into** `paid` or `cancelled`; the API cancel action (`InvoiceViewSet.cancel`) routes through `InvoiceService.cancel`, which loads the invoice and calls `.save()` so the gate runs (it does **not** use a bypassing `QuerySet.update()`).
 - `ShipmentService.mark_picked_up` — calls it at the end of every shipment pickup.
 
-Whichever lands last — the final payment or the final shipment — completes the job, provided **both** of these hold:
+Whichever lands last — the final payment or the final shipment — completes the job, provided **all** of these hold:
 
+- **The job's work is finished.** `work_complete`, or `approved`/`in_progress` with at least one task and every task terminal — the loose-material-stranded case, where a pending task-less material blocked the `work_complete` transition; this unattended path releases those materials (claimed → `released` history, unclaimed → deleted) and walks the job up. Anything else is a no-op: an `in_progress` job with open tasks (a follow-up to send plans/photos, a post-job meeting), a deposit invoice paid before any work starts (task-less job), and `draft`/`submitted`/`on_hold` jobs have no finished work at all. (This also avoids forcing a transition the state machine forbids, e.g. `on_hold → completed`.)
 - **All invoices resolved.** Every `Invoice` for the job is `paid` or `cancelled`.
 - **All deliverables shipped.** `DeliverableService.all_deliverables_shipped(job)` returns True only when every `Deliverable` on the job has `qty_picked_up == qty_ordered`. Prepared-but-not-picked-up does not count; a job with zero deliverables is vacuously shipped.
 

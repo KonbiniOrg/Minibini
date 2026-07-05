@@ -2,7 +2,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
@@ -69,11 +68,7 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         hidden finished lots — inventory rows are shop history.
         """
         item = self.get_object()
-        try:
-            InventoryService.assert_item_deletable(item)
-        except DjangoValidationError as e:
-            msg = e.message if hasattr(e, 'message') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        InventoryService.assert_item_deletable(item)
         return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
@@ -87,14 +82,10 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def write_off(self, request, pk=None):
         """Write off the item's remaining on-hand stock as wasted."""
         item = self.get_object()
-        try:
-            InventoryService.write_off(
-                item, qty=request.data.get('qty'), user=request.user,
-                reason=request.data.get('reason', '') or 'Write-off',
-            )
-        except DjangoValidationError as e:
-            msg = e.message if hasattr(e, 'message') else str(e)
-            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
+        InventoryService.write_off(
+            item, qty=request.data.get('qty'),
+            reason=request.data.get('reason', '') or 'Write-off',
+        )
         # The row always survives a write-off now (finished lots are kept as
         # hidden history, never auto-collected).
         item.refresh_from_db()
@@ -108,20 +99,16 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         keep_id = request.data.get('keep_id')
         discard_id = request.data.get('discard_id')
         if not keep_id or not discard_id:
-            return Response({'error': 'keep_id and discard_id are required.'},
+            return Response({'detail': 'keep_id and discard_id are required.'},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             keep = InventoryService.merge(
-                keep_id, discard_id, user=request.user,
+                keep_id, discard_id,
                 overrides=request.data.get('overrides') or {},
             )
         except InventoryItem.DoesNotExist:
-            return Response({'error': 'Item not found.'},
+            return Response({'detail': 'Item not found.'},
                             status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            msg = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e))
-            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(keep).data)
 
 
@@ -133,63 +120,27 @@ class MaterialViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         # Creation goes through /api/jobs/{id}/materials/; deny top-level create.
-        return Response({'error': 'Create via /api/jobs/{id}/materials/'},
+        return Response({'detail': 'Create via /api/jobs/{id}/materials/'},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def destroy(self, request, *args, **kwargs):
-        return Response({'error': 'Delete via Restock (manual-add) or expense rejection.'},
+        return Response({'detail': 'Delete via Restock (manual-add) or expense rejection.'},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if instance.inventory_item_id is not None and (
-            'unit_cost' in serializer.validated_data
-            or 'sell_price' in serializer.validated_data
-        ):
-            # Pricing-only path on a PLI-linked instance: route through the service
-            # for the optional PLI propagation.  update_pricing raises ValidationError
-            # on on_hold — catch it here so the caller gets 400, not 500.
-            try:
-                MaterialService.update_pricing(
-                    instance,
-                    unit_cost=serializer.validated_data.get('unit_cost'),
-                    sell_price=serializer.validated_data.get('sell_price'),
-                    propagate_to_pli=propagate,
-                )
-            except DjangoValidationError as e:
-                detail = e.message_dict if hasattr(e, 'message_dict') else (
-                    e.message if hasattr(e, 'message') else str(e)
-                )
-                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-            instance.refresh_from_db()
-            return Response(MaterialSerializer(instance).data)
-        # Freeform path or non-pricing fields: assert not on_hold before saving,
-        # then fall through to the default serializer save.
-        from apps.jobs.services import _assert_job_not_on_hold
-        try:
-            _assert_job_not_on_hold(instance.job, 'edit this material')
-            if 'sell_price' in serializer.validated_data and (
-                serializer.validated_data['sell_price'] != instance.sell_price
-            ):
-                MaterialService._assert_not_invoiced(instance)
-        except DjangoValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save()
+        fields = dict(serializer.validated_data)
+        propagate = fields.pop('propagate_to_pli', False)
+        instance = MaterialService.update_fields(
+            instance, propagate_to_pli=propagate, **fields)
         return Response(MaterialSerializer(instance).data)
 
     @action(detail=True, methods=['post'])
     def consume(self, request, pk=None):
         m = self.get_object()
-        try:
-            MaterialService.consume(m)
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.consume(m)
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
 
@@ -198,10 +149,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         s = MaterialOpSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         m = self.get_object()
-        try:
-            MaterialService.restock(m, s.validated_data['quantity'])
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.restock(m, s.validated_data['quantity'])
         try:
             m.refresh_from_db()
             return Response(MaterialSerializer(m).data)
@@ -213,10 +161,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         s = MaterialOpSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         m = self.get_object()
-        try:
-            MaterialService.draw_more(m, s.validated_data['quantity'])
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.draw_more(m, s.validated_data['quantity'])
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
 
@@ -225,9 +170,6 @@ class MaterialViewSet(viewsets.ModelViewSet):
         s = MaterialAssignTaskSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         m = self.get_object()
-        try:
-            MaterialService.assign_task(m, s.validated_data['task'])
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.assign_task(m, s.validated_data['task'])
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)

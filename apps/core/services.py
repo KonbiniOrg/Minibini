@@ -2,7 +2,7 @@
 Service classes for core application functionality.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from django.db import transaction
 from django.core.exceptions import ValidationError
@@ -25,6 +25,17 @@ def _attachments_metadata(msg):
         }
         for att in (msg.attachments or [])
     ]
+
+
+def _aware(dt):
+    """Coerce a possibly-naive datetime to tz-aware (assumes UTC).
+
+    IMAP message dates are usually aware (parsed from the Date header's
+    offset) but come back naive when the header is missing/malformed, and the
+    persisted fetch cursor can round-trip naive — comparing the two raises."""
+    if dt is not None and timezone.is_naive(dt):
+        return timezone.make_aware(dt, dt_timezone.utc)
+    return dt
 
 
 def _header_value(msg, name):
@@ -283,7 +294,7 @@ class EmailService:
                             from_email=msg.from_ or 'unknown@example.com',
                             to_email=', '.join(msg.to) if msg.to else '',
                             cc_email=', '.join(msg.cc) if msg.cc else '',
-                            date_sent=msg.date,
+                            date_sent=_aware(msg.date),
                             has_attachments=bool(msg.attachments),
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
@@ -446,7 +457,8 @@ class EmailService:
             # Get or create the latest_email_date fetch cursor (machine state)
             try:
                 latest_date_state = AppState.objects.get(key='latest_email_date')
-                date_threshold = datetime.fromisoformat(latest_date_state.value)
+                date_threshold = _aware(
+                    datetime.fromisoformat(latest_date_state.value))
             except AppState.DoesNotExist:
                 # Create default cursor
                 date_threshold = timezone.now() - timedelta(days=days_back)
@@ -481,9 +493,11 @@ class EmailService:
                         # Get Message-ID from headers
                         message_id = msg.headers.get('message-id', [f'<{msg.uid}@unknown>'])[0]
 
-                        # Track most recent email date
-                        if msg.date and msg.date > most_recent_email_date:
-                            most_recent_email_date = msg.date
+                        # Track most recent email date (msg.date is naive when
+                        # the Date header is missing/malformed)
+                        msg_date = _aware(msg.date)
+                        if msg_date and msg_date > most_recent_email_date:
+                            most_recent_email_date = msg_date
 
                         # Check if we already have this email
                         if EmailRecord.objects.filter(message_id=message_id).exists():
@@ -504,7 +518,7 @@ class EmailService:
                             from_email=msg.from_ or 'unknown@example.com',
                             to_email=', '.join(msg.to) if msg.to else '',
                             cc_email=', '.join(msg.cc) if msg.cc else '',
-                            date_sent=msg.date,
+                            date_sent=_aware(msg.date),
                             has_attachments=bool(msg.attachments),
                             text_body=getattr(msg, 'text', '') or '',
                             html_body=getattr(msg, 'html', '') or '',
@@ -1152,6 +1166,15 @@ class ConfigurationService:
     """Service for managing configuration: key-value settings and line item types."""
 
     @staticmethod
+    def set(key, value):
+        """Set a Configuration key/value from the settings API — the views
+        translate HTTP, this persists."""
+        from .models import Configuration
+        config, _ = Configuration.objects.update_or_create(
+            key=key, defaults={'value': value})
+        return config
+
+    @staticmethod
     def create_accounting_category(**kwargs):
         """Create a new AccountingCategory from field values."""
         cat = AccountingCategory(**kwargs)
@@ -1175,6 +1198,67 @@ class ConfigurationService:
         cat.full_clean()
         cat.save()
         return cat
+
+    @staticmethod
+    def delete_accounting_category(pk):
+        """Delete an AccountingCategory. Half the schema PROTECTs against it,
+        so a referenced category refuses with a coded error instead of
+        surfacing a ProtectedError 500."""
+        from django.db.models.deletion import ProtectedError
+        try:
+            cat = AccountingCategory.objects.get(pk=pk)
+        except AccountingCategory.DoesNotExist:
+            raise NotFoundError(f'AccountingCategory {pk} not found')
+        try:
+            cat.delete()
+        except ProtectedError:
+            raise ValidationError(
+                'Accounting category is in use (materials, services, or '
+                'line items reference it) and cannot be deleted.',
+                code='referenced')
+
+    # -- RateScheme (config-page CRUD; the referenced-freeze decision lives
+    #    here, the viewset only shapes the 409 payload) --------------------
+
+    @staticmethod
+    def create_rate_scheme(**fields):
+        from apps.jobs.models import RateScheme
+        scheme = RateScheme(**fields)
+        scheme.full_clean()
+        scheme.save()
+        return scheme
+
+    @staticmethod
+    def update_rate_scheme(scheme, **fields):
+        """Update an unreferenced scheme. Referenced schemes are frozen —
+        every edit path is refused; new pricing means a new version
+        (supersede)."""
+        if scheme.is_referenced():
+            raise ValidationError(
+                'Scheme is referenced; create a new version instead of '
+                'editing.', code='referenced')
+        for field, value in fields.items():
+            setattr(scheme, field, value)
+        scheme.full_clean()
+        scheme.save()
+        return scheme
+
+    @staticmethod
+    def delete_rate_scheme(scheme):
+        if scheme.is_referenced():
+            raise ValidationError(
+                'Scheme is referenced; create a new version instead of '
+                'deleting.', code='referenced')
+        scheme.delete()
+
+    @staticmethod
+    def supersede_rate_scheme(scheme, **overrides):
+        """Thin wrapper so the viewset never writes models directly; the
+        chain logic lives on RateScheme.supersede."""
+        if scheme.replaced_by_id is not None:
+            raise ValidationError('Scheme is already superseded.',
+                                  code='superseded')
+        return scheme.supersede(**overrides)
 
 
 class OutboundEmailService:
@@ -1421,8 +1505,57 @@ class ShiftService:
         from apps.core.models import Shift
         return Shift.objects.create(user=user, start_time=start_time, end_time=end_time)
 
+    @staticmethod
+    def delete(shift, actor):
+        """Delete a shift — refusing while any blep it encloses would be left
+        without a shift (the shift⊇blep invariant the request queue surfaces
+        as 'conflicts' must survive deletion too)."""
+        if not ShiftService._has_manage_time(actor):
+            raise ValidationError("Deleting a shift requires can_manage_time.")
+        from django.db.models import Q
+        from apps.jobs.models import Blep
+        enclosed = Blep.objects.filter(
+            user=shift.user, start_time__gte=shift.start_time,
+        )
+        if shift.end_time is not None:
+            enclosed = enclosed.filter(end_time__lte=shift.end_time)
+        orphaned = [
+            b for b in enclosed
+            if not shift.user.shifts.exclude(pk=shift.pk)
+                .filter(start_time__lte=b.start_time)
+                .filter(Q(end_time__isnull=True) | Q(end_time__gte=b.end_time))
+                .exists()
+        ]
+        if orphaned:
+            ids = ", ".join(str(b.pk) for b in orphaned)
+            raise ValidationError(
+                f"Deleting this shift would leave blep(s) {ids} outside any "
+                f"shift; move or delete them first."
+            )
+        shift.delete()
+
 
 class TimeChangeRequestService:
+    @staticmethod
+    def update_request(request, actor, **fields):
+        """The requester edits their own still-pending request. Reviewed
+        requests are frozen; nobody else may touch it (approve/deny are the
+        manager verbs, with their own endpoint + permission)."""
+        from apps.core.models import TimeChangeRequest
+        if request.requester_id != actor.pk:
+            raise ValidationError("Only the requester may edit a request.")
+        if request.status != TimeChangeRequest.STATUS_PENDING:
+            raise ValidationError("This request has been reviewed and is frozen.")
+        for f in ('requested_start', 'requested_end', 'reason', 'shift',
+                  'blep', 'task'):
+            if f in fields:
+                setattr(request, f, fields[f])
+        if not (request.reason or '').strip():
+            raise ValidationError("A reason is required.")
+        request.has_known_conflict = request.would_conflict()
+        request.save()
+        return request
+
     @staticmethod
     def submit(request):
         """Validate + save a new request. Conflicts are allowed (warn-and-flag)."""

@@ -193,3 +193,66 @@ class DirectTaskCreateAPITest(TestCase):
         self.assertEqual(response.data, [])
 
 
+
+
+class WorkCompleteReopenTest(TestCase):
+    """Adding an incomplete Task to a WORK_COMPLETE job pulls the job back to
+    IN_PROGRESS — work_complete means every task is terminal, and a fresh open
+    task contradicts that. Other statuses are untouched. (The terminal
+    `completed` case stays a deferred decision — see LATER.)"""
+
+    def setUp(self):
+        self.contact = Contact.objects.create(first_name='Reopen', last_name='Test')
+        self.scheme = _make_scheme('wcr1')
+
+    def _job(self, status, suffix):
+        return Job.objects.create(
+            job_number=f'WCR-{suffix}',
+            name='Reopen Job',
+            contact=self.contact,
+            status=status,
+        )
+
+    def test_create_direct_reopens_work_complete_job(self):
+        job = self._job(Job.STATUS_WORK_COMPLETE, '001')
+        TaskService.create_direct(
+            job=job, name='Punch list', rate_scheme_id=self.scheme.pk,
+        )
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_create_from_template_reopens_work_complete_job(self):
+        from apps.estimates.models import ServiceItem
+        job = self._job(Job.STATUS_WORK_COMPLETE, '002')
+        template = ServiceItem.objects.create(
+            template_name='Touch-up', rate_scheme=self.scheme,
+        )
+        TaskService.create_from_template(template, job, est_qty=Decimal('1'))
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_generate_task_reopens_work_complete_job(self):
+        from apps.estimates.models import ServiceItem
+        job = self._job(Job.STATUS_WORK_COMPLETE, '003')
+        template = ServiceItem.objects.create(
+            template_name='Extra pass', rate_scheme=self.scheme,
+        )
+        template.generate_task(job, est_qty=Decimal('1'))
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_approved_job_not_touched(self):
+        job = self._job(Job.STATUS_APPROVED, '004')
+        TaskService.create_direct(
+            job=job, name='Normal add', rate_scheme_id=self.scheme.pk,
+        )
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_APPROVED)
+
+    def test_draft_job_not_touched(self):
+        job = self._job(Job.STATUS_DRAFT, '005')
+        TaskService.create_direct(
+            job=job, name='Draft add', rate_scheme_id=self.scheme.pk,
+        )
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_DRAFT)

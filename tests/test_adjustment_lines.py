@@ -128,6 +128,22 @@ class ComputeAdjustmentAmountTest(TestCase):
         result = compute_adjustment_amount(adj, siblings)
         self.assertEqual(result, Decimal('-14.00'))
 
+    def test_compute_adjustment_null_ac_sibling_excluded_by_target_set(self):
+        """A sibling with NO accounting category is outside any non-empty
+        target set (None is never in target_ids) — 15% of labor-only (100)."""
+        from apps.core.adjustments import compute_adjustment_amount
+        from apps.estimates.models import EstimateLineItem
+
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=5, description='no AC',
+            qty=Decimal('1'), price=Decimal('60.00'),
+        )
+        adj = self._make_adj_line(self.rush_svc, 3)
+        adj.adjustment_target_categories.set([self.labor.pk])
+        siblings = EstimateLineItem.objects.filter(estimate=self.est).exclude(pk=adj.pk)
+        result = compute_adjustment_amount(adj, siblings)
+        self.assertEqual(result, Decimal('15.00'))
+
     def test_compute_adjustment_skips_other_adjustments(self):
         """Another adjustment sibling must NOT be included in the subtotal base."""
         from apps.core.adjustments import compute_adjustment_amount

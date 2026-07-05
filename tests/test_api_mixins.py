@@ -103,6 +103,11 @@ class StatusTransitionMixinTest(BaseTestCase):
             format='json',
         )
         force_authenticate(request, user=self.user)
+        # APIRequestFactory skips middleware, so provide the HistoryContext the
+        # history middleware would set — record_history attributes from it.
+        from apps.core.history import HistoryContext, set_history_context
+        set_history_context(HistoryContext(user=self.user))
+        self.addCleanup(set_history_context, None)
         response = view(request, pk=job.pk)
         self.assertEqual(response.status_code, 200)
 

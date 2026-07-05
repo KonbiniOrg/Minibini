@@ -4,7 +4,7 @@ from django.db.models import (
     F, Sum, Value, DecimalField, DateTimeField, ExpressionWrapper,
 )
 from django.db.models.functions import Coalesce
-from rest_framework import serializers as drf_serializers, status, viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -58,10 +58,17 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
     status_actions = {
         'cancel': {
-            'service': lambda pk, reason=None: Invoice.objects.filter(pk=pk).update(status=Invoice.STATUS_CANCELLED),
+            'service': InvoiceService.cancel,
             'requires_reason': True,
         },
     }
+
+    def perform_update(self, serializer):
+        # `job` is create-only (set via open_for_job); an invoice never moves
+        # between jobs — claims against another job's atoms would be
+        # incoherent. Silently create-only, like other immutable-on-edit fields.
+        serializer.validated_data.pop('job', None)
+        serializer.save()
 
     def _summary_mode(self):
         """The financials A/R list opts into lightweight summary mode with
@@ -134,21 +141,22 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
     def perform_create(self, serializer):
         job = serializer.validated_data.get('job')
-        try:
-            invoice = InvoiceWizardService.open_for_job(job)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            raise drf_serializers.ValidationError({'detail': msg})
-        serializer.instance = invoice
+        serializer.instance = InvoiceWizardService.open_for_job(job)
 
     def destroy(self, request, *args, **kwargs):
         invoice = self.get_object()
-        try:
-            InvoiceService.discard_draft(invoice)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        InvoiceService.discard_draft(invoice)
         return Response({'message': 'Invoice discarded'})
+
+    @action(detail=True, methods=['post'], url_path='send-all-atoms')
+    def send_all_atoms(self, request, pk=None):
+        """Project every available atom onto the invoice, one line per atom
+        (the wizard's one-click "send all"). Unlike apply-everything
+        (seed_all_atoms), this composes with existing lines."""
+        from apps.invoicing.services import InvoiceWizardService
+        invoice = self.get_object()
+        created = InvoiceWizardService.send_all_atoms(invoice)
+        return Response({'created': created}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='source-pool')
     def source_pool(self, request, pk=None):
@@ -162,7 +170,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     @action(detail=True, methods=['post'], url_path='line-items-from-atoms')
     def line_items_from_atoms(self, request, pk=None):
         """Create a new line item from a list of atoms."""
-        from django.core.exceptions import ValidationError
         from apps.invoicing.services import InvoiceWizardService, ClaimConflict
         invoice = self.get_object()
         atoms = request.data.get('atoms', [])
@@ -170,11 +177,10 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
             line_item = InvoiceWizardService.add_atoms_to_new_line_item(invoice, atoms)
         except ClaimConflict as e:
             return Response(
-                {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                {'detail': 'Some of these atoms are already claimed by another invoice.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=409,
             )
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
         serializer = InvoiceLineItemSerializer(line_item)
         return Response(serializer.data, status=201)
 
@@ -184,7 +190,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     )
     def add_atoms(self, request, pk=None, line_item_pk=None):
         """Append atoms to an existing line item."""
-        from django.core.exceptions import ValidationError
         from apps.invoicing.models import InvoiceLineItem
         from apps.invoicing.services import InvoiceWizardService, ClaimConflict
 
@@ -192,18 +197,17 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         try:
             line_item = InvoiceLineItem.objects.get(pk=line_item_pk, invoice=invoice)
         except InvoiceLineItem.DoesNotExist:
-            return Response({'error': 'Line item not found'}, status=404)
+            return Response({'detail': 'Line item not found'}, status=404)
 
         atoms = request.data.get('atoms', [])
         try:
             InvoiceWizardService.add_atoms_to_line_item(line_item, atoms)
         except ClaimConflict as e:
             return Response(
-                {'error': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
+                {'detail': 'Some of these atoms are already claimed by another invoice.',
+                 'code': 'atoms_already_claimed', 'atom_ids': e.atom_ids},
                 status=409,
             )
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
 
         line_item.refresh_from_db()
         serializer = InvoiceLineItemSerializer(line_item)
@@ -215,7 +219,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
     )
     def remove_atoms(self, request, pk=None, line_item_pk=None):
         """Remove atoms from an existing line item."""
-        from django.core.exceptions import ValidationError
         from apps.invoicing.models import InvoiceLineItem
         from apps.invoicing.services import InvoiceWizardService
 
@@ -223,15 +226,12 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         try:
             line_item = InvoiceLineItem.objects.get(pk=line_item_pk, invoice=invoice)
         except InvoiceLineItem.DoesNotExist:
-            return Response({'error': 'Line item not found'}, status=404)
+            return Response({'detail': 'Line item not found'}, status=404)
 
         source_ids = request.data.get('source_ids', [])
-        try:
-            result = InvoiceWizardService.remove_atoms_from_line_item(
-                line_item, source_ids,
-            )
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=400)
+        result = InvoiceWizardService.remove_atoms_from_line_item(
+            line_item, source_ids,
+        )
 
         if result['line_item_deleted']:
             return Response({'line_item_deleted': True, 'line_item': None})
@@ -250,14 +250,9 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         Already-claimed and not-billable atoms are skipped automatically.
         Returns 200 with ``{'created': N}`` on success, 400 on ValidationError.
         """
-        from django.core.exceptions import ValidationError as DjangoValidationError
         from apps.invoicing.services import InvoiceWizardService
         invoice = self.get_object()
-        try:
-            created = InvoiceWizardService.seed_all_atoms(invoice)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        created = InvoiceWizardService.seed_all_atoms(invoice)
         return Response({'created': created}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='copy-from-estimate')
@@ -271,14 +266,9 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
 
         Returns 200 with ``{'created': N}`` on success, 400 on ValidationError.
         """
-        from django.core.exceptions import ValidationError as DjangoValidationError
         from apps.invoicing.services import InvoiceService
         invoice = self.get_object()
-        try:
-            created = InvoiceService.copy_from_estimate(invoice)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        created = InvoiceService.copy_from_estimate(invoice)
         return Response({'created': created}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='adjustment-lines')
@@ -290,18 +280,13 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         Returns 201 with the serialized line item.
         Returns 400 when the invoice is not draft or the service is not PERCENTAGE.
         """
-        from django.core.exceptions import ValidationError as DjangoValidationError
         from apps.invoicing.services import InvoiceService
         invoice = self.get_object()
-        try:
-            line = InvoiceService.add_adjustment_line(
-                invoice,
-                adjustment_service_id=request.data['adjustment_service'],
-                target_category_ids=request.data.get('target_category_ids') or [],
-            )
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
+        line = InvoiceService.add_adjustment_line(
+            invoice,
+            adjustment_service_id=request.data['adjustment_service'],
+            target_category_ids=request.data.get('target_category_ids') or [],
+        )
         return Response(InvoiceLineItemSerializer(line).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='agreement-adjustments')
@@ -348,7 +333,6 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
         if needed, attaches both QBO and Job Statement PDFs, transitions
         draft -> open on success. Multipart 'attachments' files append
         to the auto-attached PDFs."""
-        from django.core.exceptions import ValidationError as DjangoValidationError
         from apps.invoicing.services import InvoiceEmailService
 
         invoice = self.get_object()
@@ -374,13 +358,10 @@ class InvoiceViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelViewSet
                 invoice,
                 to=to, subject=subject, body=body, cc=cc, bcc=bcc,
                 extra_attachments=extra_attachments,
-                user=request.user,
             )
-        except DjangoValidationError as e:
-            return Response(
-                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        except DjangoValidationError:
+            # plain validation errors render via the contract handler
+            raise
         except Exception as e:
             return Response(
                 {'detail': str(e)},

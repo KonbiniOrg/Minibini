@@ -53,12 +53,9 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
         serializer = TemplateMaterialAssociationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        a = TemplateMaterialAssociation(work_template=template, **serializer.validated_data)
-        try:
-            a.full_clean()
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-        a.save()
+        from apps.inventory.services import TemplateMaterialAssociationService
+        a = TemplateMaterialAssociationService.create(
+            template, **serializer.validated_data)
         return Response(
             TemplateMaterialAssociationSerializer(a).data,
             status=status.HTTP_201_CREATED,
@@ -77,22 +74,15 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if request.method == 'GET':
             return Response(TemplateMaterialAssociationSerializer(a).data)
 
+        from apps.inventory.services import TemplateMaterialAssociationService
         if request.method == 'DELETE':
-            a.delete()
+            TemplateMaterialAssociationService.delete(a)
             return Response({'message': 'Template material association deleted.'})
 
         serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        # Apply changes to the instance, then full_clean() to fire model-level
-        # validation (cross-template template_task_association mismatch, etc.)
-        # before saving.
-        for field, value in serializer.validated_data.items():
-            setattr(a, field, value)
-        try:
-            a.full_clean()
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-        a.save()
+        a = TemplateMaterialAssociationService.update(
+            a, **serializer.validated_data)
         return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
@@ -153,6 +143,16 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         ConfigurationService.update_accounting_category(
             self.get_object().pk, **serializer.validated_data
         )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            ConfigurationService.delete_accounting_category(instance.pk)
+        except DjangoValidationError as e:
+            # PROTECT'd references — a friendly 409, not a ProtectedError 500.
+            return Response({'detail': e.messages[0]},
+                            status=status.HTTP_409_CONFLICT)
+        return Response({'message': self.destroy_response_message})
 
 
 def _validate_schedule_keys(data):
@@ -272,9 +272,7 @@ def settings_view(request):
                     status=400,
                 )
     for key, value in request.data.items():
-        Configuration.objects.update_or_create(
-            key=key, defaults={'value': str(value)}
-        )
+        ConfigurationService.set(key, str(value))
     configs = Configuration.objects.all()
     data = {c.key: c.value for c in configs}
     return Response(data)
@@ -294,14 +292,11 @@ def units_view(request):
 
     units = request.data
     if not isinstance(units, list) or len(units) == 0:
-        return Response({'error': 'Units must be a non-empty list.'}, status=400)
+        return Response({'detail': 'Units must be a non-empty list.'}, status=400)
     if units[0] != 'none':
-        return Response({'error': '"none" must be the first entry.'}, status=400)
+        return Response({'detail': '"none" must be the first entry.'}, status=400)
     if len(units) != len(set(units)):
-        return Response({'error': 'Duplicate units are not allowed.'}, status=400)
+        return Response({'detail': 'Duplicate units are not allowed.'}, status=400)
 
-    Configuration.objects.update_or_create(
-        key='units_list',
-        defaults={'value': json.dumps(units)},
-    )
+    ConfigurationService.set('units_list', json.dumps(units))
     return Response(units)

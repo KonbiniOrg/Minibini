@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
@@ -86,7 +87,6 @@
     return cb.task && cb.task.id === task.task_id ? cb : null;
   });
 
-  const userPermissions = $derived($userStore?.permissions || []);
 
   async function loadTask() {
     loading = true;
@@ -227,7 +227,7 @@
       await api.delete(`/api/tasks/${params.taskId}/materials/${material.material_id}/`);
       await loadMaterials();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      showError(errorMessage(e, 'Could not delete material.'));
     }
   }
 
@@ -269,7 +269,7 @@
       await api.delete(`/api/tasks/${parentTask.task_id}/materials/${material.material_id}/`);
       await loadSubtasks();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      showError(errorMessage(e, 'Could not delete material.'));
     }
   }
 
@@ -320,7 +320,6 @@
   <TaskActions
     {task}
     user={$userStore}
-    {userPermissions}
     canManage={task?.can_manage}
     {activeBlepOnThisTask}
     onChanged={refresh}
@@ -484,7 +483,6 @@
   <BlepList
     {bleps}
     currentUser={$userStore}
-    {userPermissions}
     onEdit={openEdit}
     onDelete={(b) => { editingBlep = b; modalMode = 'edit'; }}
     onAdd={openCreate}
@@ -496,7 +494,6 @@
     blep={editingBlep}
     taskId={task?.task_id}
     currentUser={$userStore}
-    {userPermissions}
     onSaved={handleSaved}
     onClose={closeModal}
   />

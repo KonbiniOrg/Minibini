@@ -21,6 +21,16 @@ from apps.inventory.models import InventoryItem
 logger = logging.getLogger(__name__)
 
 
+def _decimal_or_invalid(value, field):
+    """Coerce an API-supplied number to Decimal via str() (a raw JSON float
+    would expand to its binary value and trip decimal_places validation)."""
+    from decimal import InvalidOperation
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError({field: 'Invalid decimal value.'})
+
+
 class EstimateService:
     """Service class for Estimate creation and management."""
 
@@ -46,13 +56,25 @@ class EstimateService:
         """Create a new draft Estimate for a job by PK.
 
         The estimate number IS the job number; the revision lives in the
-        separate ``version`` field.
+        separate ``version`` field. Enforces the one-live-estimate-tree-per-job
+        invariant: a second concurrent estimate would let acceptance
+        crystallize duplicate speculative atoms — new versions come from
+        ``revise_estimate`` (which supersedes the parent), never a second
+        tree. (``revise_estimate`` creates its revision directly, so the
+        transient two-live-rows moment inside that operation is exempt.)
         """
         from apps.jobs.models import Job
         try:
             job = Job.objects.get(pk=job_pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_pk} not found')
+
+        if Estimate.objects.filter(job=job).exclude(
+            status=Estimate.STATUS_SUPERSEDED
+        ).exists():
+            raise ValidationError(
+                'This job already has an estimate. Revise the existing one instead.'
+            )
 
         estimate = Estimate.objects.create(
             job=job,
@@ -105,6 +127,15 @@ class EstimateService:
                 },
                 text=actor.get('reason') or '',
             )
+        return estimate
+
+    @staticmethod
+    def update_fields(estimate, **fields):
+        """Non-status field updates (status routes through mark_open /
+        update_status). Exists so the viewset owns no persistence."""
+        for k, v in fields.items():
+            setattr(estimate, k, v)
+        estimate.save()
         return estimate
 
     @staticmethod
@@ -387,7 +418,9 @@ class EstimateService:
             estimate=estimate,
             service_item=service_item,
             description=service_item.template_name,
-            qty=qty,
+            # str() first: a raw JSON float would expand to its binary value
+            # and trip the 2-decimal-places validator.
+            qty=_decimal_or_invalid(qty, 'qty'),
             units=scheme.unit_label or 'none',
             price=scheme.effective_rate(service_item.default_active_modifiers),
             accounting_category=service_item.effective_accounting_category,
@@ -626,7 +659,7 @@ class EstimateEmailService:
 
     @staticmethod
     def send_estimate(estimate, *, to, subject, body, cc=None, bcc=None,
-                      extra_attachments=None, user=None):
+                      extra_attachments=None):
         """Send an Estimate. Generates the PDF, persists an outbound
         EmailRecord via send_tracked, transitions draft → open on success.
 
@@ -637,7 +670,6 @@ class EstimateEmailService:
             cc / bcc: list or None
             extra_attachments: list of (filename, bytes, mime) tuples beyond
                 the auto-attached document PDF
-            user: User performing the send (for HistoryEntry; optional)
 
         Returns:
             The outbound EmailRecord.
@@ -789,7 +821,7 @@ class ChangeOrderEmailService:
 
     @staticmethod
     def send_change_order(co, *, to, subject, body, cc=None, bcc=None,
-                          extra_attachments=None, user=None):
+                          extra_attachments=None):
         """Send a ChangeOrder to the customer (portal link + generated CO PDF).
         Persists an outbound EmailRecord via send_tracked and transitions
         draft -> open on success.
@@ -1152,6 +1184,24 @@ class EstimateWizardService(BaseWizardService):
             raise ValidationError(
                 f'Cannot modify line items on estimate in status "{container.status}".'
             )
+
+    @staticmethod
+    def send_all_atoms(estimate):
+        """Project every currently-available atom onto the estimate, one line
+        per atom (the wizard's one-click "send all"). Skips claimed atoms, so
+        it composes with lines already present — unlike the invoice's
+        fresh-document seed_all_atoms. Returns the number of lines created."""
+        from django.db import transaction
+        EstimateWizardService._validate_draft(estimate)
+        pool = EstimateWizardService.get_source_pool(estimate)
+        available = [
+            {'type': a['type'], 'id': a['id']}
+            for a in pool['atoms'] if a['state'] == 'available'
+        ]
+        with transaction.atomic():
+            for ref in available:
+                EstimateWizardService.add_atoms_to_new_line_item(estimate, [ref])
+        return len(available)
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):

@@ -65,6 +65,18 @@ class InvoiceCompletionConsolidationTest(TestCase):
             job_number=f'J-B6I-{Job.objects.count()}', contact=self.contact,
             status=Job.STATUS_APPROVED,
         )
+        # Finished work is a completion-gate precondition (>=1 task, all
+        # terminal); these tests' subject is the earmark/material release.
+        from apps.jobs.models import RateScheme, Task
+        scheme = RateScheme.objects.create(
+            name=f'B6I hourly {Job.objects.count()}',
+            algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('100'),
+            unit_label='hour', accounting_category=self.cat,
+        )
+        Task.objects.create(
+            job=job, name='Done', rate_scheme=scheme,
+            status=Task.STATUS_COMPLETE,
+        )
         if status != Job.STATUS_APPROVED:
             for s in (Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE):
                 job.status = s

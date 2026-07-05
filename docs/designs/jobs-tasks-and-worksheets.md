@@ -128,6 +128,14 @@ marked complete prematurely or cancelled by accident. They are exposed on
 the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
 `/api/jobs/{id}/`, which already requires that atom).
 
+`work_complete → in_progress` also fires **automatically** when a new
+incomplete Task lands on a `work_complete` job (`JobService.mark_work_reopened`,
+the mirror of `mark_work_started`) — `work_complete` means every task is
+terminal, and a fresh open task contradicts that. Wired into all three task
+creation paths (`TaskService.create_direct` / `create_from_template`,
+`ServiceItem.generate_task`). The terminal-`completed` case is still an open
+decision (see LATER).
+
 #### `on_hold` semantics
 
 `on_hold` is a general pause primitive — change orders are one consumer
@@ -239,10 +247,20 @@ Entry to `work_complete`, `cancelled`, or `rejected` triggers
 those transitions.
 
 **To `completed`:** `JobService.maybe_complete_if_resolved(job)` is the
-single completion gate, called from both the invoice-paid path
-(`Invoice._maybe_complete_job` delegates to it) and
-`ShipmentService.mark_picked_up` — whichever lands last completes the
-job. It requires **both** all invoices resolved (`paid` or `cancelled`)
+single completion gate, called from both the invoice-resolved path
+(`Invoice._maybe_complete_job` delegates to it on entry to `paid` **or**
+`cancelled`) and `ShipmentService.mark_picked_up` — whichever lands last
+completes the job. It first requires the job's **work to be
+finished**: `work_complete`, or `approved`/`in_progress` with at least
+one task and every task terminal — the one legitimate way a finished job
+is stranded short of `work_complete` is a loose pending material blocking
+the transition, and this unattended path releases exactly those (claimed
+materials become `released` history; unclaimed ones delete). Anything
+else is a no-op: an `in_progress` job with open tasks, a deposit invoice
+paid before any work starts (task-less job), and
+`draft`/`submitted`/`on_hold` jobs have no finished work (this also never
+forces an invalid transition like `on_hold → completed`). It then
+requires **both** all invoices resolved (`paid` or `cancelled`)
 **and** all deliverables shipped
 (`DeliverableService.all_deliverables_shipped(job)` returns True only
 when every Deliverable's `qty_picked_up == qty_ordered`; prepared-but-

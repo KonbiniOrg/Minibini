@@ -51,4 +51,18 @@ describe('ContactForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('renders the field-error bag under inputs and formError in the footer', () => {
+    const { getByText } = render(ContactForm, {
+      props: {
+        onSubmit: vi.fn(), onCancel: vi.fn(),
+        errors: { email: ['Enter a valid email address.'], business_id: ['Invalid pk.'] },
+        formError: 'At least one phone number is required.',
+      },
+    });
+    expect(getByText('Enter a valid email address.')).toBeInTheDocument();
+    expect(getByText('Invalid pk.')).toBeInTheDocument();
+    const footer = getByText('At least one phone number is required.');
+    expect(footer.closest('[role="alert"]')).not.toBeNull();
+  });
 });

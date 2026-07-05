@@ -90,10 +90,7 @@ class QBORetrySyncMixin:
     @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
     def retry_sync(self, request, pk=None):
         obj = self.get_object()
-        try:
-            result = self.retry_service_call(obj, request)
-        except ValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
+        result = self.retry_service_call(obj, request)
         if result is None:
             return Response({'message': self.retry_deleted_message})
         obj.refresh_from_db()
@@ -151,12 +148,6 @@ class StatusTransitionMixin:
                         {'detail': str(e)},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                except ValidationError as e:
-                    detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
-                    return Response(
-                        {'detail': detail},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
 
                 instance = self.get_object()
 
@@ -177,7 +168,6 @@ class StatusTransitionMixin:
                             entry_type='audit',
                             object_type=obj_type,
                             object_id=instance.pk,
-                            user=request.user if hasattr(request, 'user') and request.user.is_authenticated else None,
                             text=reason,
                         )
 
@@ -287,9 +277,18 @@ class LineItemMixin:
 
     def _get_line_items_qs(self, parent):
         model = self.line_item_serializer_class.Meta.model
-        return model.objects.filter(
+        qs = model.objects.filter(
             **{self.line_item_parent_field: parent}
         ).order_by('line_number')
+        # Estimate/invoice lines serialize adjustment_service details and
+        # target categories per row — fetch them up front (no-ops for the
+        # line-item models without adjustment fields).
+        field_names = {f.name for f in model._meta.get_fields()}
+        if 'adjustment_service' in field_names:
+            qs = qs.select_related('adjustment_service')
+        if 'adjustment_target_categories' in field_names:
+            qs = qs.prefetch_related('adjustment_target_categories')
+        return qs
 
     def _get_line_item_or_404(self, parent, item_id):
         model = self.line_item_serializer_class.Meta.model
@@ -339,14 +338,9 @@ class JobTaskMixin:
             )
         except RateScheme.DoesNotExist:
             return Response(
-                {'detail': {'rate_scheme': 'RateScheme not found.'}},
+                {'rate_scheme': ['RateScheme not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.task_serializer_class(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -362,13 +356,7 @@ class JobTaskMixin:
 
         if request.method == 'DELETE':
             from apps.jobs.services import TaskService as _TaskService
-            try:
-                _TaskService.delete_task(task.pk)
-            except ValidationError as e:
-                return Response(
-                    {'detail': e.message if hasattr(e, 'message') else str(e)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            _TaskService.delete_task(task.pk)
             return Response({'message': 'Task deleted.'})
 
         # Validate request data via the serializer, then delegate the actual
@@ -376,13 +364,7 @@ class JobTaskMixin:
         serializer = self.task_serializer_class(task, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         from apps.jobs.services import TaskService
-        try:
-            task = TaskService.update_task(task.pk, **serializer.validated_data)
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        task = TaskService.update_task(task.pk, **serializer.validated_data)
         serializer = self.task_serializer_class(task)
         return Response(serializer.data)
 

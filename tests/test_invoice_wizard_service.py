@@ -411,6 +411,25 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.assertEqual(line_item.units, 'hours')
         self.assertEqual(line_item.qty, Decimal('1'))
 
+    def test_single_entered_qty_task_keeps_qty_and_rate(self):
+        # An ENTERED_QTY scheme has a real per-unit qty × rate — the line
+        # item carries them (qty=2.2, price=22.00) instead of collapsing to
+        # qty 1 / price = total (48.40).
+        entered_scheme = RateScheme.objects.create(
+            name='Per-sheet', algorithm=RateScheme.ENTERED_QTY,
+            rate=Decimal('22.00'), unit_label='sheets',
+            accounting_category=self.cat_labor,
+        )
+        entered_task = Task.objects.create(
+            job=self.job, name='Cutting', rate_scheme=entered_scheme,
+            actual_qty=Decimal('2.2'), status=Task.STATUS_COMPLETE,
+        )
+        atoms = [{'type': 'task', 'id': entered_task.pk}]
+        line_item = InvoiceWizardService.add_atoms_to_new_line_item(self.invoice, atoms)
+        self.assertEqual(line_item.qty, Decimal('2.2'))
+        self.assertEqual(line_item.price, Decimal('22.00'))
+        self.assertEqual(line_item.units, 'sheets')
+
     def test_multi_atom_line_qty_1_units_none(self):
         atoms = [
             {'type': 'task', 'id': self.task.pk},

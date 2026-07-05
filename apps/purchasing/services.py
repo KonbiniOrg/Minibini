@@ -428,7 +428,7 @@ class PurchaseOrderReceivingService:
         return PurchaseOrderReceivingService.receive_items(po, items, user)
 
     @staticmethod
-    def cancel_line_item(po, line_item_id, user, note='', sever_decision=None):
+    def cancel_line_item(po, line_item_id, note='', sever_decision=None):
         """Cancel remaining quantity on a line item.
 
         If the line has a pending linked Material, `sever_decision`
@@ -462,7 +462,6 @@ class PurchaseOrderReceivingService:
                 entry_type='action',
                 object_type='purchaseorder',
                 object_id=po.pk,
-                user=user,
                 changes={'_action': f'Line #{li.line_number} cancelled ({qty_to_cancel} remaining): {li.description}'},
                 text=note,
             )
@@ -655,7 +654,7 @@ class PurchaseOrderEmailService:
 
     @staticmethod
     def send_po(po, to, subject, body, cc=None, bcc=None,
-                extra_attachments=None, user=None):
+                extra_attachments=None):
         """
         Send a PO as a PDF attachment via email through the tracked
         outbound flow (an outbound EmailRecord is persisted, linked to
@@ -712,7 +711,6 @@ class PurchaseOrderEmailService:
             entry_type='action',
             object_type='purchaseorder',
             object_id=po.pk,
-            user=user,
             changes={'_action': f'PO emailed to {", ".join(to)}'},
         )
 

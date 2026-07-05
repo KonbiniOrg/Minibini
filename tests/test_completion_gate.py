@@ -20,11 +20,12 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.contacts.models import Contact
-from apps.core.models import Configuration
+from apps.core.models import AccountingCategory, Configuration
 from apps.deliverables.models import Deliverable, Shipment
 from apps.deliverables.services import ShipmentService
 from apps.estimates.models import Estimate
 from apps.invoicing.models import Invoice
+from apps.invoicing.services import InvoiceService
 from apps.jobs.models import Job
 from apps.jobs.services import JobService
 
@@ -93,6 +94,16 @@ def _pay_invoice(job):
     inv.status = Invoice.STATUS_PAID
     inv.save()
     return inv
+
+
+def _open_invoice(job):
+    """Create an open (unresolved) invoice — does not fire the completion gate."""
+    idx = Invoice.objects.count()
+    return Invoice.objects.create(
+        job=job,
+        invoice_number=f'INV-CG-{idx}',
+        status=Invoice.STATUS_OPEN,
+    )
 
 
 def _make_shipment_picked_up(job, deliverable, qty):
@@ -234,6 +245,174 @@ class CancelledJobNotAutoCompleted(CompletionGateSetUp):
             Job.STATUS_CANCELLED,
             'A cancelled job must not be auto-completed by invoice payment.',
         )
+
+
+class InvoiceCancelCompletesJob(CompletionGateSetUp):
+    """Cancelling the last unresolved invoice should fire the completion gate.
+
+    A cancelled invoice counts as resolved (JobService.maybe_complete_if_resolved),
+    so cancelling the only open invoice on an all-shipped job must complete it.
+    This exercises the cancel path routing through Invoice.save() rather than a
+    bypassing QuerySet.update().
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.job = _make_job(self.contact)
+        self.invoice = _open_invoice(self.job)
+        # No deliverables -> all_deliverables_shipped is trivially True.
+
+    def test_cancelling_last_invoice_completes_job(self):
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
+        InvoiceService.cancel(self.invoice.pk, reason='Customer withdrew')
+        self.job.refresh_from_db()
+        self.assertEqual(
+            self.job.status,
+            Job.STATUS_COMPLETED,
+            'Cancelling the last unresolved invoice should complete an all-shipped job.',
+        )
+
+    def test_cancel_does_not_complete_when_another_invoice_open(self):
+        other = _open_invoice(self.job)
+        InvoiceService.cancel(self.invoice.pk, reason='Replaced')
+        self.job.refresh_from_db()
+        self.assertEqual(
+            self.job.status,
+            Job.STATUS_WORK_COMPLETE,
+            'Job must stay work_complete while another invoice is still open.',
+        )
+        # Resolving the remaining invoice then completes the job.
+        other.status = Invoice.STATUS_PAID
+        other.save()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+
+
+class InProgressJobNotAutoCompleted(CompletionGateSetUp):
+    """A job whose work isn't finished must not auto-complete on invoice resolution.
+
+    Only ``work_complete`` means the work is done. An ``in_progress`` job may
+    still have open tasks (a follow-up to send plans, a post-job meeting), so
+    paying its invoice — even with every deliverable shipped — must leave it
+    in_progress. Same reasoning covers a deposit invoice paid before any work.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.job = _make_job(self.contact, status=Job.STATUS_IN_PROGRESS)
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_in_progress_job_stays_open_when_invoice_paid(self):
+        # No deliverables -> all_deliverables_shipped is trivially True, so only
+        # the work-stage guard stands between this and an (incorrect) completion.
+        _pay_invoice(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(
+            self.job.status,
+            Job.STATUS_IN_PROGRESS,
+            'An in_progress job must not auto-complete on a paid invoice.',
+        )
+
+    def test_deposit_invoice_paid_before_work_does_not_complete(self):
+        """A deposit paid up front (job in_progress) must not close the job."""
+        deposit = _open_invoice(self.job)
+        deposit.status = Invoice.STATUS_PAID
+        deposit.save()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_completes_only_once_work_complete(self):
+        """Once the job legitimately reaches work_complete, resolving the
+        invoice completes it (confirms the guard isn't over-blocking)."""
+        inv = _open_invoice(self.job)
+        # Work finishes -> job reaches work_complete (no auto-complete fires here).
+        self.job.status = Job.STATUS_WORK_COMPLETE
+        self.job.save()
+        inv.status = Invoice.STATUS_PAID
+        inv.save()
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+
+
+class WorkFinishedButStrandedInProgress(CompletionGateSetUp):
+    """The loose-material-stranded case (the acrylic flow): a job whose tasks
+    are ALL terminal but that never reached work_complete because a loose
+    pending material blocked the transition. The unattended completion path
+    must release the material and complete the job — that release is the whole
+    reason release_loose_materials exists. Distinct from an in_progress job
+    with OPEN tasks, which must stay open (WorkStageGuard above)."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.jobs.models import RateScheme, Task
+        self.job = _make_job(self.contact, status=Job.STATUS_IN_PROGRESS)
+        cat = AccountingCategory.objects.create(
+            name=f'GateCat{AccountingCategory.objects.count()}', is_active=True,
+            code=f'GC{AccountingCategory.objects.count()}')
+        scheme = RateScheme.objects.create(
+            name='Gate hourly', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('100'), unit_label='hour', accounting_category=cat)
+        self.task = Task.objects.create(
+            job=self.job, name='Done work', rate_scheme=scheme,
+            status=Task.STATUS_COMPLETE)
+        # The loose pending material that stranded the job in in_progress.
+        from apps.inventory.services import MaterialService
+        self.material = MaterialService.create_on_job(
+            job=self.job, description='loose acrylic', quantity=Decimal('1'),
+            sell_price=Decimal('50.00'), accounting_category=cat, units='ea')
+
+    def test_stranded_job_completes_and_deletes_unclaimed_loose_material(self):
+        _pay_invoice(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+        # Unclaimed loose material is scratch paper — the restock-to-zero rule
+        # deletes it on release (deletion doctrine).
+        from apps.inventory.models import Material
+        self.assertFalse(Material.objects.filter(pk=self.material.pk).exists())
+
+    def test_stranded_job_completes_and_releases_claimed_loose_material(self):
+        # The acrylic flow proper: the loose material backs an accepted
+        # estimate line, so release keeps it as job history.
+        from apps.estimates.models import (
+            Estimate, EstimateLineItem, EstimateLineItemSource,
+        )
+        from apps.inventory.models import Material
+        est = _accepted_estimate(self.job)
+        line = EstimateLineItem.objects.create(
+            estimate=est, description='loose acrylic', qty=Decimal('1'),
+            price=Decimal('50.00'))
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=line,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=self.material.pk)
+        _pay_invoice(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_COMPLETED)
+        self.material.refresh_from_db()
+        self.assertEqual(
+            self.material.consumption_state,
+            Material.CONSUMPTION_STATE_RELEASED)
+        self.assertEqual(line.sources.get().resolve().pk, self.material.pk)
+
+    def test_open_task_still_blocks_even_with_material_resolved(self):
+        from apps.jobs.models import RateScheme, Task
+        Task.objects.create(
+            job=self.job, name='Still open',
+            rate_scheme=self.task.rate_scheme, status=Task.STATUS_PENDING)
+        _pay_invoice(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+
+    def test_taskless_job_does_not_auto_complete_from_in_progress(self):
+        """No recorded work at all -> 'work finished' can't be claimed."""
+        from apps.jobs.models import Task
+        Task.objects.filter(job=self.job).delete()
+        from apps.inventory.models import Material
+        Material.objects.filter(job=self.job).delete()
+        _pay_invoice(self.job)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
 
 
 class NoDeliverableJobCompletesOnPayment(CompletionGateSetUp):

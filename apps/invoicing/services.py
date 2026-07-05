@@ -107,6 +107,27 @@ class InvoiceService:
         return LineItemService.reorder_line_item(line_item, direction)
 
     @staticmethod
+    def cancel(invoice_pk, reason=None):
+        """Cancel an invoice, routing through Invoice.save() so the job
+        completion gate fires.
+
+        A cancelled invoice counts as resolved
+        (JobService.maybe_complete_if_resolved), so cancelling the last
+        unresolved invoice on an all-shipped job must be able to complete
+        the job. Going through save() (rather than a QuerySet.update()) is
+        what invokes that gate. The audit ``reason`` is recorded by the
+        StatusTransitionMixin, so it is accepted here but not persisted on
+        the invoice itself.
+        """
+        try:
+            invoice = Invoice.objects.get(pk=invoice_pk)
+        except Invoice.DoesNotExist:
+            raise NotFoundError(f'Invoice {invoice_pk} not found')
+        invoice.status = Invoice.STATUS_CANCELLED
+        invoice.save()
+        return invoice
+
+    @staticmethod
     def discard_draft(invoice):
         """Hard-delete a draft invoice; cascades to line items and sources."""
         InvoiceService._validate_draft(invoice)
@@ -343,7 +364,7 @@ class InvoiceEmailService:
 
     @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
-                     extra_attachments=None, user=None):
+                     extra_attachments=None):
         """Send an Invoice. Pushes to QBO if needed, attaches both QBO PDF
         and statement PDF, calls send_tracked, transitions status on success.
 
@@ -776,6 +797,26 @@ class InvoiceWizardService(BaseWizardService):
 
         return len(available)
 
+    @classmethod
+    def send_all_atoms(cls, invoice):
+        """Project every currently-available atom onto the invoice, one line
+        per atom (the wizard's one-click "send all"). Unlike seed_all_atoms
+        (the fresh-document "Apply everything"), this composes with existing
+        lines — the pool's claim state already excludes anything billed.
+        Returns the number of lines created."""
+        from django.db import transaction
+        cls._validate_draft(invoice)
+        pool = cls.get_source_pool(invoice)
+        available = [
+            {'type': a['type'], 'id': a['id']}
+            for group in pool['tasks'] for a in group['atoms']
+            if a['state'] == 'available'
+        ]
+        with transaction.atomic():
+            for ref in available:
+                cls.add_atoms_to_new_line_item(invoice, [ref])
+        return len(available)
+
     # ── BaseWizardService hooks ────────────────────────────────────────
     @classmethod
     def _line_item_model(cls):
@@ -911,8 +952,13 @@ class InvoiceWizardService(BaseWizardService):
 
     @classmethod
     def _task_qty_and_price(cls, task, total_price):
-        # Tasks roll up bleps via the rate scheme — no single qty/price is
-        # meaningful across all algorithms, so a single-task line uses qty=1.
+        from apps.jobs.models import RateScheme
+        # An ENTERED_QTY task has a real per-unit qty × rate, so the line
+        # carries them and the total derives. ELAPSED_TIME rolls up bleps —
+        # no single qty/price is meaningful, so that line uses qty=1.
+        scheme = task.rate_scheme
+        if scheme and scheme.algorithm == RateScheme.ENTERED_QTY:
+            return scheme.get_actual_qty(task), task.effective_rate()
         return Decimal('1'), total_price
 
     @classmethod

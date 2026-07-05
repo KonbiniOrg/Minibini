@@ -1,7 +1,7 @@
 <script>
   import { api } from '../../lib/api.js';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
 
   let {
     conflict = null,
@@ -31,10 +31,8 @@
   }
 </script>
 
-{#if conflict}
-  <!-- Esc-only: Join vs Take over is an ambiguous, irreversible choice — don't bind Enter. -->
-  <div class="overlay" use:modalKeys={{ onCancel }}>
-    <div class="modal">
+<!-- Esc-only: Join vs Take over is an ambiguous, irreversible choice — don't bind Enter. -->
+<Modal open={conflict} onCancel={onCancel} maxWidth="660px">
       <h3>Someone is already working on this task</h3>
       <p>
         <strong>{conflict.worker?.name}</strong> is currently working on this
@@ -51,19 +49,10 @@
         <button type="button" onclick={onCancel} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</Modal>
+
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal-nested);
-  }
-  .modal {
-    background: white; padding: 16px; max-width: 440px;
-    border: 1px solid #ccc;
-  }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
 </style>

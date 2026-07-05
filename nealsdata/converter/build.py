@@ -10,6 +10,7 @@ import re
 import secrets
 from collections import defaultdict
 from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 from nealsdata.converter import parsing as P
@@ -22,9 +23,25 @@ _COST_RATIO = Decimal('0.8333')
 # Usernames excluded from the blep-rotation pool.
 _NON_ROTATION_USERNAMES = {'system'}
 
-# Synthetic workday for blep/shift placement (UTC). Bleps are packed inside it.
-_WORKDAY_START = time(8, 0)
-_WORKDAY_END = time(16, 0)
+# Synthetic workday, defined in the shop's LOCAL timezone (mirrors
+# settings.TIME_ZONE) and converted to UTC per calendar day so DST is
+# respected — a shift emitted at 08:00 UTC used to render as 1 AM local.
+# Shifts open at _WORKDAY_START; bleps are packed from _BLEP_DAY_START so
+# every shift has a clock-in lead-in before the first blep.
+_WORKDAY_TZ = ZoneInfo('America/Los_Angeles')
+_WORKDAY_START = time(9, 0)
+_BLEP_DAY_START = time(9, 15)
+_WORKDAY_END = time(17, 0)
+
+
+def _workday_dt(day, t):
+    """A local-workday instant (local `day` + local time `t`) as aware UTC."""
+    return datetime.combine(day, t, tzinfo=_WORKDAY_TZ).astimezone(timezone.utc)
+
+
+def _local_date(dt_utc):
+    """The shop-local calendar date of an aware datetime."""
+    return dt_utc.astimezone(_WORKDAY_TZ).date()
 
 # Fallback year when no date can be parsed from the source data.
 _FALLBACK_YEAR = 2025
@@ -715,6 +732,7 @@ def build_inventory_items(c):
     c.pli_map = {}
     c.pli_index = []                 # [{'code', 'description'}] for fuzzy matching
     c.pli_purchase_by_code = {}      # code -> purchase_price string
+    c.pli_units_by_code = {}         # code -> units (description-inferred)
 
     for row in rows:
         # The sheet uses header names; try both the spec names and common
@@ -759,6 +777,7 @@ def build_inventory_items(c):
         c.pli_map[code] = pk
         c.pli_index.append({'code': code, 'description': description})
         c.pli_purchase_by_code[code] = purchase_price
+        c.pli_units_by_code[code] = _unit_from_description(description)
 
 
 # Maps FreeAgent estimate Status values to Minibini estimate status constants.
@@ -1017,20 +1036,23 @@ _LABOR_VERB_PREFIXES = ('prepare', 'apply', 'glue', 'engrave')
 
 
 def _material_cost_and_pli(c, description, sell_price):
-    """Resolve (unit_cost_str, inventory_item_pk) for a material line.
+    """Resolve (unit_cost_str, inventory_item_pk, units) for a material line.
 
     Fuzzy-match the description to a PriceListItem (keyword + thickness). On a
-    match, link the FK and take the PLI's purchase_price as unit_cost. On a miss,
-    leave the FK null and derive unit_cost from the sell price via _COST_RATIO.
+    match, link the FK, take the PLI's purchase_price as unit_cost, and carry
+    the PLI's units (fixtures bypass Material.save(), so _populate_from_pli
+    never runs — the converter must copy the units itself). On a miss, leave
+    the FK null, derive unit_cost from the sell price via _COST_RATIO, and
+    return units=None for the caller to infer.
     """
     code = P.match_pli(description, getattr(c, 'pli_index', []))
     if code:
         pli_pk = c.pli_map.get(code)
         purchase = c.pli_purchase_by_code.get(code)
         if pli_pk is not None and purchase is not None:
-            return purchase, pli_pk
+            return purchase, pli_pk, c.pli_units_by_code.get(code)
     unit_cost = (sell_price * _COST_RATIO).quantize(Decimal('0.01'))
-    return f'{unit_cost:.2f}', None
+    return f'{unit_cost:.2f}', None, None
 
 
 # Mirrors the converter's default_material_markup_percent config (20%): a minted
@@ -1154,7 +1176,15 @@ def _emit_fee(c, base_ref, job_pk, li, sort_order, task_pk=None):
 
     quantity comes from the line qty (>0) or defaults to 1; unit_rate is the
     line price; the fee carries the services AccountingCategory.
+
+    A non-positive price emits nothing (returns None): validate_data requires
+    Fee.unit_rate > 0, and a $0 fixed charge carries no billing information —
+    the estimate line itself is kept, just unclaimed.
     """
+    if not li['price'] or li['price'] <= 0:
+        print(f"  fee skipped (non-positive price {li['price']}): "
+              f"{(li['description'] or '')[:60]!r}")
+        return None
     qty = li['qty'] if (li['qty'] and li['qty'] > 0) else Decimal('1')
     fee_pk = c.next_pk('jobs.fee')
     c.add_fixture('jobs.fee', fee_pk, {
@@ -1406,18 +1436,28 @@ def derive_atoms(c):
         # --- 2. Materials: raw stock only (after tasks so cut_task is set) --
         for li in raw_lines:
             mat_pk = c.next_pk('inventory.material')
-            unit_cost, pli_pk = _material_cost_and_pli(c, li['description'] or '', li['price'])
+            unit_cost, pli_pk, pli_units = _material_cost_and_pli(
+                c, li['description'] or '', li['price'])
+            # FreeAgent line items carry no unit signal for material lines
+            # (resolve_li_units_and_qty only ever yields hours/none), so
+            # resolve real units here: the matched catalog item's, else the
+            # same description inference catalog items get. The minted lot
+            # gets the SAME units so material↔item unit checks (consume,
+            # merge) hold.
+            units = li['units'] if li['units'] not in (None, '', 'none') else None
+            if units is None:
+                units = pli_units or _unit_from_description(li['description'] or '')
             if pli_pk is None:
                 # No catalog match — mint a transient lot so every Material is
                 # item-backed (uniform earmark/QOH/consumption handling).
                 pli_pk = _mint_transient_lot(
-                    c, li['description'] or '', li['units'] or 'none', unit_cost)
+                    c, li['description'] or '', units, unit_cost)
             c.add_fixture('inventory.material', mat_pk, {
                 'job':                 job_pk,
                 'task':                c.cut_task.get(base_ref),
                 'description':         (li['description'] or '')[:255],
                 'quantity':            f"{li['qty']:.2f}",
-                'units':               li['units'] or 'none',
+                'units':               units,
                 'unit_cost':           unit_cost,
                 'sell_price':          f"{li['price']:.2f}",
                 'accounting_category': c.ac_mat_pk,
@@ -1956,11 +1996,11 @@ def _earliest_slot(intervals, lower, eff_upper, length):
     the 08:00–16:00 workday intersected with [lower, eff_upper]. Returns the
     earliest gap (vs the user's existing ``intervals``) that fits, or None.
     """
-    day = lower.date()
-    last = eff_upper.date()
+    day = _local_date(lower)
+    last = _local_date(eff_upper)
     while day <= last:
-        ws = max(datetime.combine(day, _WORKDAY_START, tzinfo=timezone.utc), lower)
-        we = min(datetime.combine(day, _WORKDAY_END, tzinfo=timezone.utc), eff_upper)
+        ws = max(_workday_dt(day, _BLEP_DAY_START), lower)
+        we = min(_workday_dt(day, _WORKDAY_END), eff_upper)
         if we - ws >= length:
             day_ivs = sorted((iv for iv in intervals if iv[1] > ws and iv[0] < we),
                              key=lambda iv: iv[0])
@@ -1976,15 +2016,24 @@ def _earliest_slot(intervals, lower, eff_upper, length):
     return None
 
 
-def _place_blep(c, rotation, rot_idx, schedules, lower, eff_upper, length):
+def _place_blep(c, rotation, rot_idx, schedules, lower, eff_upper, length,
+                preferred=None):
     """Pick a user and slot for one blep, satisfying job-window + no-overlap.
 
-    Tries rotation users starting at the pointer; the first with a free slot in
-    the window takes it. If none is free, mints a new user (who, with an empty
-    schedule, always fits on the window's first workday). Records the interval on
-    the chosen user's schedule and advances the pointer. Returns (user_pk, start,
-    end).
+    When ``preferred`` is given (the worker already on this blep's job), try
+    them first — that is what packs a job's tasks back-to-back into one
+    worker's day instead of spreading one blep per worker. Otherwise tries
+    rotation users starting at the pointer; the first with a free slot in the
+    window takes it. If none is free, mints a new user (who, with an empty
+    schedule, always fits on the window's first workday). Records the interval
+    on the chosen user's schedule; the rotation pointer only advances for
+    non-preferred placements. Returns (user_pk, start, end).
     """
+    if preferred is not None:
+        slot = _earliest_slot(schedules[preferred], lower, eff_upper, length)
+        if slot is not None:
+            schedules[preferred].append(slot)
+            return preferred, slot[0], slot[1]
     n = len(rotation)
     for k in range(n):
         user_pk = rotation[(rot_idx[0] + k) % n]
@@ -2001,8 +2050,7 @@ def _place_blep(c, rotation, rot_idx, schedules, lower, eff_upper, length):
     if slot is None:
         # Defensive: an empty schedule on the window's first workday always fits,
         # but guard anyway so a degenerate window can't crash the build.
-        start = max(datetime.combine(lower.date(), _WORKDAY_START,
-                                     tzinfo=timezone.utc), lower)
+        start = max(_workday_dt(_local_date(lower), _BLEP_DAY_START), lower)
         slot = (start, start + length)
     schedules[user_pk].append(slot)
     rot_idx[0] = 0
@@ -2032,7 +2080,9 @@ def build_bleps_and_shifts(c):
     if not rotation:                       # no seed users (degenerate) → mint one
         rotation.append(_mint_user(c))
     rot_idx = [0]
-    schedules = defaultdict(list)          # user_pk -> [(start, end), ...]
+    schedules = defaultdict(list)          # user_pk -> [(start, end+gap), ...] for placement
+    placed = defaultdict(list)             # user_pk -> real blep intervals, for shifts
+    job_worker = {}                        # job_pk -> the worker owning its tasks
 
     def _window(tf):
         """A complete task's blep window [lower, eff_upper], clamped to `now`.
@@ -2051,7 +2101,12 @@ def build_bleps_and_shifts(c):
         lower = min(lower, now)
         # Window must allow at least one workday; expand a collapsed window to the
         # lower day's workday end, then clamp to now.
-        day_end = datetime.combine(lower.date(), _WORKDAY_END, tzinfo=timezone.utc)
+        day_end = _workday_dt(_local_date(lower), _WORKDAY_END)
+        if day_end <= lower:
+            # Midnight-UTC job dates land at ~5 PM local the *previous* day —
+            # that local workday is already over; expand to the next one.
+            day_end = _workday_dt(_local_date(lower) + timedelta(days=1),
+                                  _WORKDAY_END)
         return lower, min(now, max(upper, day_end))
 
     # Three-week horizon: keep the dataset's time-tracking recent, anchored to the
@@ -2080,7 +2135,16 @@ def build_bleps_and_shifts(c):
         # survivor that *started* before the horizon is clamped into the window.
         if eff_upper < horizon:
             continue
-        lower = max(lower, horizon)
+        clamped = max(lower, horizon)
+        if clamped >= eff_upper:
+            # The horizon clamp collapsed the window (a finished job whose
+            # completion sits right at the boundary) — back off to the start
+            # of the job's final local workday so its bleps land there,
+            # instead of the defensive path minting a worker per task at a
+            # single collapsed instant. Never before the job's own start.
+            clamped = max(lower, min(
+                clamped, _workday_dt(_local_date(eff_upper), _BLEP_DAY_START)))
+        lower = clamped
 
         # Blep length: est_worker_time × thirds factor, floored to whole minutes
         # (≥ 1 minute).
@@ -2089,8 +2153,22 @@ def build_bleps_and_shifts(c):
         minutes = max(1, int(raw.total_seconds() // 60))
         length = timedelta(minutes=minutes)
 
+        # One worker per JOB (not per blep): a job's tasks pack into the same
+        # worker's day back-to-back-with-gaps, which is what makes worker-days
+        # carry several bleps instead of one. Falls back to rotation/minting
+        # when that worker can't fit this task's window.
         user_pk, start, end = _place_blep(
-            c, rotation, rot_idx, schedules, lower, eff_upper, length)
+            c, rotation, rot_idx, schedules, lower, eff_upper, length,
+            preferred=job_worker.get(fields['job']))
+        job_worker.setdefault(fields['job'], user_pk)
+        placed[user_pk].append((start, end))
+
+        # Breathing room: pad the *scheduling* interval so the next blep on
+        # this worker starts after a short deterministic break — real
+        # worker-days have gaps, not wall-to-wall bleps. The Blep row and the
+        # shift math use the real interval.
+        gap = timedelta(minutes=5 + (counter * 7) % 26)
+        schedules[user_pk][-1] = (start, end + gap)
 
         # The worker who logged time on the task is its assignee.
         fields['assignee'] = user_pk
@@ -2103,18 +2181,28 @@ def build_bleps_and_shifts(c):
             'end_time':   end.strftime('%Y-%m-%dT%H:%M:00+00:00'),
         })
 
-    # One Shift per (user, calendar day), tightly enclosing that day's bleps.
-    for user_pk, intervals in schedules.items():
+    # One Shift per (user, calendar day): a realistic full workday, not a
+    # band coterminal with the bleps. Start at the workday open (or earlier if
+    # a blep somehow starts before it), end at the workday close clamped to
+    # the dataset's now — always >= the last blep end so the shift↔blep
+    # enclosure invariant holds with slack at both ends.
+    for user_pk, intervals in placed.items():
         by_day = defaultdict(list)
         for s, e in intervals:
-            by_day[s.date()].append((s, e))
+            by_day[_local_date(s)].append((s, e))
         for day in sorted(by_day):
             ivs = by_day[day]
+            first = min(s for s, _ in ivs)
+            last = max(e for _, e in ivs)
+            day_open = _workday_dt(day, _WORKDAY_START)
+            day_close = _workday_dt(day, _WORKDAY_END)
+            shift_start = min(day_open, first)
+            shift_end = max(last, min(day_close, now))
             shift_pk = c.next_pk('core.shift')
             c.add_fixture('core.shift', shift_pk, {
                 'user':       user_pk,
-                'start_time': min(s for s, _ in ivs).strftime('%Y-%m-%dT%H:%M:00+00:00'),
-                'end_time':   max(e for _, e in ivs).strftime('%Y-%m-%dT%H:%M:00+00:00'),
+                'start_time': shift_start.strftime('%Y-%m-%dT%H:%M:00+00:00'),
+                'end_time':   shift_end.strftime('%Y-%m-%dT%H:%M:00+00:00'),
             })
 
 
@@ -2344,6 +2432,10 @@ def _job_timeline(job_pk, job_fields, related):
 # for task-less materials, imply the work happened (consumed).
 _TERMINAL_JOB_STATUSES = {'work_complete', 'completed', 'cancelled', 'rejected'}
 _WORKED_JOB_STATUSES = {'in_progress', 'work_complete', 'completed'}
+# Job statuses that DO hold reservations: earmarks exist only from approval
+# (create_on_job skips draft/submitted; the acceptance sweep creates them)
+# until release at completion/cancellation. Pre-approval jobs carry none.
+_EARMARKED_JOB_STATUSES = {'approved', 'in_progress', 'on_hold'}
 
 
 def build_purchasing(c):
@@ -2420,7 +2512,7 @@ def build_purchasing(c):
     for job_pk, mats in materials_by_job.items():
         base = base_by_jobpk.get(job_pk)
         received_job = base in bill_for_base
-        active = job_status.get(job_pk) not in _TERMINAL_JOB_STATUSES
+        active = job_status.get(job_pk) in _EARMARKED_JOB_STATUSES
         for mf in mats:
             item_pk = mf['inventory_item']
             qty = Decimal(mf['quantity'])
@@ -2607,18 +2699,31 @@ def build_history(c):
         emit(_HISTORY_TRACKED_MODELS[f['model']], f['pk'], _HISTORY_FALLBACK_DATE,
              'audit', {'_created': True})
 
-    # Per-job causal timeline.
+    # Per-job causal timeline. Clamped to the dataset's "now": the phase walk
+    # is job.created_date + ordinal days, which for a recent job can step past
+    # today — recorded history must never be days in the future. The clamp is
+    # strictly monotonic: an event never lands before its predecessor (a
+    # clamped tail chains +1s past the boundary, at most seconds beyond the
+    # dataset-now instant — negligible next to real wall-clock now).
+    now = _dataset_now(c)
     for job_pk, job_f in jobs.items():
         base_str = job_f['fields'].get('created_date') or _HISTORY_FALLBACK_DATE
         base_dt = _parse_dt(base_str)
         events = sorted(_job_timeline(job_pk, job_f['fields'], by_job.get(job_pk, {})),
                         key=lambda e: e[0])
         prev_ord, intra = None, 0
+        prev_dt = None
         for ordinal, otype, oid, etype, changes in events:
             if ordinal != prev_ord:
                 prev_ord, intra = ordinal, 0
             if base_dt is not None:
-                ts = (base_dt + timedelta(days=ordinal, minutes=intra)).isoformat()
+                ts_dt = base_dt + timedelta(days=ordinal, minutes=intra)
+                if ts_dt > now:
+                    ts_dt = now
+                if prev_dt is not None and ts_dt <= prev_dt:
+                    ts_dt = prev_dt + timedelta(seconds=1)
+                prev_dt = ts_dt
+                ts = ts_dt.isoformat()
             else:
                 ts = base_str
             emit(otype, oid, ts, etype, changes)

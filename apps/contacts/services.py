@@ -275,3 +275,20 @@ class ContactService:
                 Contact.objects.filter(
                     contact_id__in=contacts_being_deleted,
                 ).delete()
+
+
+class TagService:
+    """Owns tag attach/detach for taggable records (Contact, Business).
+    get_or_create keeps the global tag list deduplicated by name."""
+
+    @staticmethod
+    def attach(obj, name):
+        from apps.contacts.models import Tag
+        tag, _ = Tag.objects.get_or_create(name=name)
+        obj.tags.add(tag)
+        return obj.tags.all()
+
+    @staticmethod
+    def detach(obj, tag_id):
+        obj.tags.remove(tag_id)
+        return obj.tags.all()

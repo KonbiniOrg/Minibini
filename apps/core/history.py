@@ -60,12 +60,19 @@ def record_history(object_type, entry_type='audit', object_id=None,
     """Create a history row in the table that owns ``object_type``.
 
     The single write entry point for all history (decorator + services + notes).
+    ``user`` defaults to the active request's authenticated user
+    (``current_request_user``) so request-driven services need not thread an
+    actor through their signatures just for attribution. Pass ``user=``
+    explicitly only for a deliberate non-request author (system user, portal
+    customer flows, backfill) — outside a request the default resolves to None.
     ``timestamp`` is normally auto-set; pass it only to backdate (it's applied
     via update() since the column is auto_now_add).
     """
     model = history_model_for(object_type)
     if model is None:
         raise ValueError(f'No history table is configured for object_type {object_type!r}')
+    if user is None:
+        user = current_request_user()
     obj = model.objects.create(
         entry_type=entry_type, object_type=object_type, object_id=object_id,
         user=user, changes=changes, text=text,

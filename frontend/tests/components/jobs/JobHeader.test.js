@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { patch: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 
+import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import JobHeader from '@/components/jobs/JobHeader.svelte';
 
 const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress', can_manage: true };
@@ -13,6 +19,7 @@ beforeEach(() => {
   api.patch.mockReset();
   api.patch.mockResolvedValue({});
   user.set({ permissions: ['can_manage_jobs'] });
+  clearMessage();
 });
 
 describe('JobHeader', () => {
@@ -42,6 +49,32 @@ describe('JobHeader', () => {
     expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it('raises the global error overlay when a direct status change fails', async () => {
+    api.patch.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      status: 400,
+      data: { detail: 'Invalid transition.' },
+    }));
+    const { getByRole } = render(JobHeader, { props: { job } });
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'work_complete' } });
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)).toEqual({ kind: 'error', text: 'Invalid transition.' });
+    });
+  });
+
+  it('shows a hold failure in the hold form message, not the overlay', async () => {
+    api.patch.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      status: 400,
+      data: { detail: 'Hold not allowed right now.' },
+    }));
+    const { getByRole, getByLabelText, findByRole } = render(JobHeader, { props: { job } });
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'on_hold' } });
+    await fireEvent.input(getByLabelText(/Reason for hold/), { target: { value: 'broken jig' } });
+    await fireEvent.click(getByRole('button', { name: 'Confirm Hold' }));
+    const msg = await findByRole('alert');
+    expect(msg.textContent).toContain('Hold not allowed right now.');
+    expect(get(overlayMessage)).toBeNull();
   });
 
   it('shows a read-only badge when the job is not manageable', () => {

@@ -1,8 +1,12 @@
 <script>
   import { api } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
   import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
-  import { modalKeys } from '../lib/modalKeys.js';
+  import Modal from './Modal.svelte';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let {
     open = false,
@@ -27,7 +31,8 @@
   let pliLocked = $state(false);
   let accountingCategory = $state('');
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
   let pliUnitCost = $state(null);    // PLI's current price, for prompt comparison
   let pliSellPrice = $state(null);
   let showPropagatePrompt = $state(false);
@@ -95,18 +100,20 @@
           accountingCategory = defaultMaterialCategoryId ?? '';
         }
       }
-      error = '';
+      formError = '';
+      fieldErrs = {};
       showPropagatePrompt = false;
     }
   });
 
-  // Clear stale error when the user touches any form field. Don't read
-  // `error` inside this effect — that would track it as a dependency and
-  // re-fire the effect (clearing the message) the instant the catch block
-  // sets it.
+  // Clear stale errors when the user touches any form field. Don't read
+  // `formError`/`fieldErrs` inside this effect — that would track them as
+  // dependencies and re-fire the effect (clearing the message) the instant
+  // the catch block sets them.
   $effect(() => {
     description; quantity; units; unitCost; sellPrice; pliId; accountingCategory;
-    error = '';
+    formError = '';
+    fieldErrs = {};
   });
 
   function handlePliSelect(pli) {
@@ -154,7 +161,8 @@
 
   async function actuallySave(propagate) {
     busy = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     showPropagatePrompt = false;
 
     const fullPayload = {
@@ -191,12 +199,12 @@
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || e.data?.detail || 'Could not save material.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -204,30 +212,30 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{
-    onSave: () => { if (!busy && !showPropagatePrompt) save(); },
-    onCancel: () => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); },
-  }}>
-    <div class="modal">
+<Modal {open}
+  onCancel={() => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); }}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy && !showPropagatePrompt) save(); }}>
       <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
 
       <p>
         <label><strong>Inventory Item</strong><br>
           <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
         </label>
+        <FieldError errors={fieldErrs} field="inventory_item" />
       </p>
 
       <p>
         <label><strong>Description</strong><br>
           <input type="text" bind:value={description} disabled={pliLocked} style="width:100%;box-sizing:border-box;">
         </label>
+        <FieldError errors={fieldErrs} field="description" />
       </p>
 
       <p>
         <label><strong>Quantity</strong><br>
           <input type="number" step="0.01" bind:value={quantity} disabled={mode === 'edit'}>
         </label>
+        <FieldError errors={fieldErrs} field="quantity" />
         {#if mode === 'edit'}
           <small style="color:#666;">To change quantity, use Restock or Draw more on the row.</small>
         {/if}
@@ -240,12 +248,14 @@
         <label><strong>Units</strong><br>
           <UnitsSelect bind:value={units} disabled={pliLocked} />
         </label>
+        <FieldError errors={fieldErrs} field="units" />
       </p>
 
       <p>
         <label><strong>Unit Cost</strong><br>
           <input type="number" step="0.01" bind:value={unitCost} disabled={!pliLocked}>
         </label>
+        <FieldError errors={fieldErrs} field="unit_cost" />
         {#if !pliLocked}
           <br><small><em>A freeform material's cost comes from a linked expense or PO, not manual entry.</em></small>
         {/if}
@@ -255,6 +265,7 @@
         <label><strong>Sell Price</strong><br>
           <input type="number" step="0.01" bind:value={sellPrice}>
         </label>
+        <FieldError errors={fieldErrs} field="sell_price" />
       </p>
 
       <p>
@@ -266,13 +277,14 @@
             {/each}
           </select>
         </label>
+        <FieldError errors={fieldErrs} field="accounting_category" />
       </p>
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>Save</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
-      {#if error}<p class="error">{error}</p>{/if}
+      <FormMessage error={formError} />
 
       {#if showPropagatePrompt}
         <div class="propagate-prompt">
@@ -284,18 +296,11 @@
           </div>
         </div>
       {/if}
-    </div>
-  </div>
-{/if}
+</form>
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
   .earmark-warning { margin: 6px 0 0; padding: 6px 8px; background: #fffbe6; border: 1px solid #ffe58f; font-size: 0.9em; }
   .propagate-prompt { margin-top: 12px; padding: 12px; background: #f0f9ff; border: 1px solid #91d5ff; }
 </style>

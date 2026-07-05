@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  errorMessage: (e, fallback) => (e && e.message) || fallback || 'Request failed.',
+}));
 
 import { api } from '@/lib/api.js';
 import MaterialModal from '@/components/MaterialModal.svelte';
@@ -95,6 +98,54 @@ describe('MaterialModal', () => {
     await fireEvent.mouseDown(await findByText(/grey felt/));
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '4' } });
     expect(await findByText(/Only 3.00 of 5.00/)).toBeInTheDocument();
+  });
+
+  it('renders API field errors under the matching inputs', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { quantity: ['A valid number is required.'], sell_price: ['A valid number is required too.'] },
+    });
+    const { getByLabelText, getByRole, findByText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByText('A valid number is required.')).toHaveClass('field-error');
+    expect(await findByText('A valid number is required too.')).toHaveClass('field-error');
+  });
+
+  it('renders an operation error in the form footer after the buttons', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Job is not editable.',
+      data: { detail: 'Job is not editable.' },
+    });
+    const { getByLabelText, getByRole, findByRole } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByRole('alert')).toHaveTextContent('Job is not editable.');
+  });
+
+  it('clears a stale field error when the user edits a field', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { quantity: ['A valid number is required.'] },
+    });
+    const { getByLabelText, getByRole, findByText, queryByText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('A valid number is required.')).toBeInTheDocument();
+
+    await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '3' } });
+    expect(queryByText('A valid number is required.')).toBeNull();
   });
 
   it('seeds description from presetDescription on create', async () => {

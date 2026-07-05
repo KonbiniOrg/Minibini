@@ -32,8 +32,6 @@
   let onBehalfBusy = $state(false);
   let onBehalfError = $state('');
 
-  // userPermissions is still relayed to <TaskActions> below (which takes it as a prop).
-  const userPermissions = $derived($userStore?.permissions || []);
   const canManageJobs = $derived($canManageJobsStore);
   const canManageTime = $derived($canManageTimeStore);
 
@@ -169,7 +167,6 @@
         <TaskActions
           {task}
           user={$userStore}
-          {userPermissions}
           canManage={task?.can_manage}
           {activeBlepOnThisTask}
           onChanged={handleActionChanged}

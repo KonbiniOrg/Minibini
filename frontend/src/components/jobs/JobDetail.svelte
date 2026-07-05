@@ -7,7 +7,8 @@
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
 
   const {
     job,
@@ -292,7 +293,7 @@
       const est = await api.post('/api/estimates/', { job: job.job_id });
       window.location.hash = `/estimates/${est.estimate_id}`;
     } catch (e) {
-      alert(e.message || 'Failed to start estimate.');
+      showError(errorMessage(e, 'Failed to start estimate.'));
     } finally {
       startingEstimate = false;
     }
@@ -304,7 +305,7 @@
       const co = await api.post('/api/change-orders/', { job: job.job_id });
       window.location.hash = `/change-orders/${co.change_order_id}`;
     } catch (e) {
-      alert(e.message || 'Failed to create change order.');
+      showError(errorMessage(e, 'Failed to create change order.'));
     } finally {
       creatingCo = false;
     }
@@ -413,7 +414,7 @@
       const inv = await api.post('/api/invoices/', { job: job.job_id });
       window.location.hash = `/invoices/${inv.invoice_id}`;
     } catch (e) {
-      alert(e.data?.detail || e.message || 'Failed to create invoice.');
+      showError(errorMessage(e, 'Failed to create invoice.'));
     } finally {
       creatingInvoice = false;
     }

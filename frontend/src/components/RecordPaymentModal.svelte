@@ -1,5 +1,6 @@
 <script>
   import { api, errorMessage } from '../lib/api.js';
+  import Modal from './Modal.svelte';
   import { getPaymentAccounts } from '../lib/paymentAccounts.js';
   import PaymentAccountSelect from './qbo/PaymentAccountSelect.svelte';
   let { open = false, billId, defaultAmount = '', onSaved = () => {}, onClose = () => {} } = $props();
@@ -9,6 +10,7 @@
   let reference = $state('');
   let paymentDate = $state(new Date().toISOString().slice(0, 10));
   let error = $state('');
+  let busy = $state(false);
 
   // A payment account is necessary info — if none are configured we can't record
   // a payment, so the modal explains that instead of showing the form.
@@ -30,6 +32,7 @@
     error = '';
     if (!amount || Number(amount) <= 0) { error = 'Amount must be greater than zero.'; return; }
     if (!paymentAccountId) { error = 'Choose a payment account.'; return; }
+    busy = true;
     try {
       const payment = await api.post(`/api/bills/${billId}/payments/`, {
         amount, payment_account_id: paymentAccountId, reference,
@@ -38,20 +41,21 @@
       onSaved(payment);
     } catch (e) {
       error = errorMessage(e, 'Could not record payment.');
+    } finally {
+      busy = false;
     }
   }
 </script>
 
-{#if open}
-<div class="modal-backdrop">
-  <div class="modal">
+<Modal {open} onCancel={onClose} maxWidth="600px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
     <h3>Record Payment</h3>
     {#if error}<p class="error">{error}</p>{/if}
     {#if accountsLoaded && accounts.length === 0}
       <p>No payment accounts are configured. Set them up in
         <strong>Settings → QuickBooks</strong> before recording payments.</p>
       <div class="actions">
-        <button onclick={onClose}>Close</button>
+        <button type="button" onclick={onClose}>Close</button>
       </div>
     {:else}
       <label>Amount<input bind:value={amount} type="text" inputmode="decimal" /></label>
@@ -61,21 +65,16 @@
       <label>Reference<input bind:value={reference} /></label>
       <label>Date<input bind:value={paymentDate} type="date" /></label>
       <div class="actions">
-        <button onclick={save}>Save</button>
-        <button onclick={onClose}>Cancel</button>
+        <button type="submit" disabled={busy}>Save</button>
+        <button type="button" onclick={onClose}>Cancel</button>
       </div>
     {/if}
-  </div>
-</div>
-{/if}
+</form>
+</Modal>
+
 
 <style>
   .error { color: #b00; }
-  .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal, 100);
-  }
-  .modal { background: white; padding: 16px; max-width: 400px; width: 90%; border: 1px solid #ccc; }
   .modal label { display: block; margin-bottom: 10px; }
   .actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

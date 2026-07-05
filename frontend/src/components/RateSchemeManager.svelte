@@ -1,5 +1,9 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let schemes = $state([]);
   let categories = $state([]);
@@ -11,7 +15,11 @@
   let showSuperseded = $state(false);
   let form = $state(emptyForm());
   let saving = $state(false);
-  let saveError = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
+  // Set when a save bounced off the referenced-scheme 409 — the footer
+  // message then offers "Create new version" (the conflict's next step).
+  let conflictSchemeId = $state(null);
 
   const ALGORITHM_LABELS = {
     elapsed_time: 'Based on time worked',
@@ -54,11 +62,17 @@
     return ((c.task_count || 0) + (c.service_item_count || 0)) > 0;
   }
 
+  function clearFormMessages() {
+    formError = '';
+    fieldErrs = {};
+    conflictSchemeId = null;
+  }
+
   function startCreate() {
     form = emptyForm();
     editingId = 'new';
     supersedingId = null;
-    saveError = '';
+    clearFormMessages();
   }
 
   function startEdit(scheme) {
@@ -73,7 +87,7 @@
     };
     editingId = scheme.rate_scheme_id;
     supersedingId = null;
-    saveError = '';
+    clearFormMessages();
   }
 
   function startSupersede(scheme) {
@@ -88,13 +102,13 @@
     };
     supersedingId = scheme.rate_scheme_id;
     editingId = null;
-    saveError = '';
+    clearFormMessages();
   }
 
   function cancelEdit() {
     editingId = null;
     supersedingId = null;
-    saveError = '';
+    clearFormMessages();
   }
 
   function addModifier() {
@@ -111,7 +125,7 @@
 
   async function save() {
     saving = true;
-    saveError = '';
+    clearFormMessages();
     try {
       const payload = {
         name: form.name,
@@ -119,11 +133,15 @@
         algorithm: form.algorithm,
         rate: form.rate,
         unit_label: form.unit_label,
-        modifiers: form.modifiers.map(m => ({
-          key: m.key || slugify(m.label),
-          label: m.label,
-          percent: Number(m.percent),
-        })),
+        modifiers: form.modifiers
+          // An untouched "add modifier" row (no name, no percent) is a
+          // no-op — drop it rather than persist a blank modifier.
+          .filter(m => (m.label || m.key || '').trim() || Number(m.percent))
+          .map(m => ({
+            key: m.key || slugify(m.label),
+            label: m.label,
+            percent: Number(m.percent),
+          })),
         accounting_category: form.accounting_category,
       };
 
@@ -138,16 +156,24 @@
       supersedingId = null;
       await load();
     } catch (e) {
-      if (e.data && typeof e.data === 'object') {
-        saveError = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        saveError = e.message || 'Could not save.';
+        formError = t.message;
+        fieldErrs = t.fields;
+        if (e.data?.code === 'referenced' && editingId && editingId !== 'new') {
+          conflictSchemeId = editingId;
+        }
       }
     } finally {
       saving = false;
     }
+  }
+
+  function supersedeFromConflict() {
+    const scheme = schemes.find((s) => s.rate_scheme_id === conflictSchemeId);
+    if (scheme) startSupersede(scheme);
   }
 
   async function remove(scheme) {
@@ -156,7 +182,8 @@
       await api.delete(`/api/rate-schemes/${scheme.rate_scheme_id}/`);
       await load();
     } catch (e) {
-      error = e.message || 'Could not delete.';
+      // Non-form action: the global overlay is the venue.
+      showError(errorMessage(e, 'Could not delete.'));
     }
   }
 
@@ -232,6 +259,7 @@
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.name} style="width:100%;box-sizing:border-box;">
     </label>
+    <FieldError errors={fieldErrs} field="name" />
     {#if supersedingId}
       <small>
         You can keep this name. The retired version will be renamed
@@ -241,23 +269,27 @@
     </p>
     <p><label><strong>Description</strong><br>
       <textarea bind:value={form.description} style="width:100%;box-sizing:border-box;"></textarea>
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="description" /></p>
     <p><label><strong>Algorithm *</strong><br>
       <select bind:value={form.algorithm}>
         <option value="elapsed_time">Based on time worked</option>
         <option value="entered_qty">Worker enters quantity</option>
         <option value="percentage">Percentage of other lines</option>
       </select>
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="algorithm" /></p>
     <p>
     {#if isPercentage}
       <label><strong>Rate (%) *</strong><br>
         <input type="number" step="0.01" bind:value={form.rate}>
       </label>
+      <FieldError errors={fieldErrs} field="rate" />
     {:else}
       <label><strong>Rate *</strong><br>
         <input type="number" step="0.01" bind:value={form.rate}>
       </label>
+      <FieldError errors={fieldErrs} field="rate" />
       <label><strong>Unit label *</strong><br>
         <select bind:value={form.unit_label} required>
           <option value="">-- select --</option>
@@ -266,6 +298,7 @@
           {/each}
         </select>
       </label>
+      <FieldError errors={fieldErrs} field="unit_label" />
     {/if}
     </p>
     <p><label><strong>Accounting Category *</strong><br>
@@ -275,7 +308,8 @@
           <option value={cat.id}>{cat.code} — {cat.name}</option>
         {/each}
       </select>
-    </label></p>
+    </label>
+    <FieldError errors={fieldErrs} field="accounting_category" /></p>
 
     {#if !isPercentage}
       <fieldset>
@@ -288,6 +322,7 @@
           </p>
         {/each}
         <p><button type="button" onclick={addModifier}>Add modifier</button></p>
+        <FieldError errors={fieldErrs} field="modifiers" />
       </fieldset>
     {/if}
 
@@ -303,6 +338,10 @@
       </button>
       <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
     </p>
-    {#if saveError}<p><em style="color:#a8071a">{saveError}</em></p>{/if}
+    <FormMessage error={formError}>
+      {#if conflictSchemeId}
+        <button type="button" onclick={supersedeFromConflict}>Create new version</button>
+      {/if}
+    </FormMessage>
   </fieldset>
 {/if}

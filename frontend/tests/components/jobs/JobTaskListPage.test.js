@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
 
+import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import JobTaskListPage from '@/routes/jobs/JobTaskListPage.svelte';
 
 const CATEGORIES = [
@@ -38,6 +44,7 @@ function mockApi(jobOverrides = {}, categoriesOverride = []) {
 beforeEach(() => {
   // Worker (no atom): proves gating is driven by job.can_manage, not the atom.
   user.set({ id: 99, permissions: [] });
+  clearMessage();
 });
 
 describe('JobTaskListPage per-job can_manage', () => {
@@ -141,6 +148,22 @@ describe('JobTaskListPage — Add Work picker → FeeModal path', () => {
     // Two real options plus "-- None --" placeholder
     expect(select.options.length).toBe(3);
     expect(select.options[1].text).toContain('RUSH');
+  });
+});
+
+describe('JobTaskListPage — action failures go to the global overlay', () => {
+  it('raises the overlay when Mark Work Complete fails', async () => {
+    mockApi({ can_manage: true });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post.mockRejectedValueOnce(Object.assign(new Error('Request failed'), {
+      status: 400, data: { detail: 'Tasks are still open.' },
+    }));
+    const { findByRole } = render(JobTaskListPage, { props: { params: { id: 3 } } });
+    await fireEvent.click(await findByRole('button', { name: /mark work complete/i }));
+    await waitFor(() => expect(get(overlayMessage)).toEqual({
+      kind: 'error', text: 'Tasks are still open.',
+    }));
+    confirmSpy.mockRestore();
   });
 });
 

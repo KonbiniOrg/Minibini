@@ -4,6 +4,7 @@
   // search (no initial list — results appear after typing). Emits a single
   // onChoose callback; carries zero surface-specific logic.
   import SearchPicker from './SearchPicker.svelte';
+  import Modal from './Modal.svelte';
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
 
@@ -62,15 +63,13 @@
   }
 </script>
 
-{#if open}
-  <div class="plp-overlay" role="dialog" aria-modal="true">
-    <div class="plp-modal">
-      <div class="plp-header">
-        <strong>Add line</strong>
-        <button type="button" onclick={onclose}>Close</button>
-      </div>
+<Modal {open} onCancel={onclose} label="Add line">
+  <div class="plp-header">
+    <strong>Add line</strong>
+    <button type="button" onclick={onclose}>Close</button>
+  </div>
 
-      <div class="plp-body">
+  <div class="plp-body">
         <SearchPicker
           bind:query={pickerQuery}
           {search} {resolveLabel} {rowLabel}
@@ -88,43 +87,34 @@
         </SearchPicker>
       </div>
 
-      <div class="plp-freeform">
-        {#if taskSurface}
-          <button type="button" onclick={emitFreeformTask}>Add Task</button>
-          <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
-          <button type="button" onclick={emitFreeformFee}>Add Fee</button>
-        {:else}
-          <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
-          <button type="button" onclick={emitFreeform}>Add Line</button>
-        {/if}
-      </div>
-    </div>
+  <div class="plp-freeform">
+    {#if taskSurface}
+      <button type="button" onclick={emitFreeformTask}>Add Task</button>
+      <button type="button" onclick={emitFreeformMaterial}>Add Material</button>
+      <button type="button" onclick={emitFreeformFee}>Add Fee</button>
+    {:else}
+      <label><input type="checkbox" bind:checked={isMaterial}> Is this a material?</label>
+      <button type="button" onclick={emitFreeform}>Add Line</button>
+    {/if}
   </div>
-{/if}
+</Modal>
 
 <style>
-  /* Match the app-wide modal geometry (centered, ~500px) so the picker and the
-     follow-up form modal open in the same place — no jump on selection. The
-     results list is an absolutely-positioned dropdown (.plp-body is relative),
-     so centering doesn't shift the modal as results load. */
-  .plp-overlay {
-    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
-    display: flex; align-items: center; justify-content: center;
-    z-index: var(--z-modal);
-  }
-  .plp-modal {
-    background: white; border: 1px solid #ccc; width: 500px; max-width: 95vw;
-    display: flex; flex-direction: column;
-  }
+  /* Lives on the shared <Modal> shell (position/size/drag come from there);
+     the header/footer dividers bleed to the box edges past the shell's 16px
+     padding. The results list is an absolutely-positioned dropdown (.plp-body
+     is relative), so it never shifts the modal as results load. */
   .plp-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px; border-bottom: 1px solid #eee;
+    margin: 0 -16px; padding: 0 16px 10px; border-bottom: 1px solid #eee;
   }
-  .plp-body { padding: 12px 14px; position: relative; }
+  /* padding-bottom leaves room for a one-row dropdown ("No matches…") so the
+     freeform footer below stays visible while it's showing. */
+  .plp-body { padding: 12px 0 56px; position: relative; }
   /* Widen the search box to ~2x a default text input. Scoped under .plp-body so
      other SearchPicker instances elsewhere are unaffected. */
   .plp-body :global(input[type="text"]) { width: 40ch; max-width: 100%; }
-  .plp-freeform { padding: 10px 14px; border-top: 1px solid #eee; }
+  .plp-freeform { margin: 0 -16px -16px; padding: 10px 16px 16px; border-top: 1px solid #eee; }
 
   /* Row layout inside SearchPicker's dropdown button (which is display:block,
      so the row needs its own flex container for the columns to align) */

@@ -3,6 +3,7 @@
   import { push } from 'svelte-spa-router';
   import { canManageFinancials, canManageConfig } from '../../stores/permissions.js';
   import InventoryItemForm from '../../components/inventory/InventoryItemForm.svelte';
+  import Modal from '../../components/Modal.svelte';
 
   // Write access: either the money role or the admin role.
   let canManage = $derived($canManageFinancials || $canManageConfig);
@@ -135,15 +136,15 @@
       </button>
     {/if}
   </p>
-  {#if showForm}
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
-      <h3>{editingItem ? 'Edit item' : 'New item'}</h3>
-      <!-- key on the edited item so the form re-seeds when switching rows -->
-      {#key editingItem}
-        <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
-      {/key}
-    </div>
-  {/if}
+  <!-- Modal so editing a row far down a long catalog doesn't jump the user
+       to a top-of-page form and lose their scroll position. -->
+  <Modal open={showForm} onCancel={onCancel} maxWidth="780px">
+    <h3>{editingItem ? 'Edit item' : 'New item'}</h3>
+    <!-- key on the edited item so the form re-seeds when switching rows -->
+    {#key editingItem}
+      <InventoryItemForm item={editingItem} {onSaved} {onCancel} />
+    {/key}
+  </Modal>
   {#if showMerge}
     <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px">
       <h3>Merge items</h3>
@@ -209,6 +210,7 @@
         <th style="text-align: right">On hand</th>
         <th style="text-align: right">Earmarked</th>
         <th style="text-align: right">Available</th>
+        <th style="text-align: right">On order</th>
         <th>Kind</th>
         <th style="text-align: right">Cost</th>
         <th style="text-align: right">Sell</th>
@@ -227,6 +229,7 @@
           <td style="text-align: right">{it.qty_on_hand}</td>
           <td style="text-align: right">{it.qty_earmarked}</td>
           <td style="text-align: right">{it.qty_available}</td>
+          <td style="text-align: right">{Number(it.qty_on_order) > 0 ? it.qty_on_order : '—'}</td>
           <td>{it.is_catalog ? 'catalog' : 'lot'}{!it.is_active ? ' · inactive' : ''}</td>
           <td style="text-align: right">${it.purchase_price}</td>
           <td style="text-align: right">${it.selling_price}</td>

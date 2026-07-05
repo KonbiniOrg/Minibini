@@ -38,6 +38,81 @@ describe('TaskTree', () => {
     expect(onEditFee).toHaveBeenCalledWith(expect.objectContaining({ fee_id: 3 }));
   });
 
+  it('shows material units in the units column, not appended to qty', () => {
+    const t = task({
+      materials: [{ material_id: 9, description: 'Steel', quantity: '3', sell_price: '5',
+                    units: 'kg', consumption_state: 'pending' }],
+    });
+    const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('kg')).toBeInTheDocument();       // its own cell
+    expect(queryByText('3 kg')).toBeNull();            // no longer glued to qty
+  });
+
+  it('badges an in-progress task waiting on understocked material', () => {
+    const t = task({
+      status: 'in_progress',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '1.00' }],
+    });
+    const { getByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('waiting on materials')).toBeInTheDocument();
+  });
+
+  it('no badge when the pending material is in stock, freeform, or the task is not started', () => {
+    const inStock = task({
+      task_id: 11, name: 'A', status: 'in_progress',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '9.00' }],
+    });
+    const freeform = task({
+      task_id: 12, name: 'B', status: 'in_progress',
+      materials: [{ description: 'Finish', quantity: '1', sell_price: '5', units: 'ea',
+                    consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' }],
+    });
+    const notStarted = task({
+      task_id: 13, name: 'C', status: 'pending',
+      materials: [{ description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '0.00' }],
+    });
+    const { queryByText } = render(TaskTree, {
+      props: { tasks: [inStock, freeform, notStarted], canManage: true },
+    });
+    expect(queryByText('waiting on materials')).toBeNull();
+  });
+
+  it('labels the return action "restock" only when stock is on hand', () => {
+    const stocked = task({
+      task_id: 21, name: 'S', status: 'in_progress',
+      materials: [{ material_id: 1, description: 'Ply', quantity: '2', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '4.00' }],
+    });
+    const awaited = task({
+      task_id: 22, name: 'W', status: 'in_progress',
+      materials: [{ material_id: 2, description: 'Special', quantity: '2', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 8, qty_on_hand: '0.00' }],
+    });
+    const freeform = task({
+      task_id: 23, name: 'F', status: 'in_progress',
+      materials: [{ material_id: 3, description: 'Finish', quantity: '1', sell_price: '5', units: 'ea',
+                    consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' }],
+    });
+    const { getAllByRole } = render(TaskTree, {
+      props: { tasks: [stocked, awaited, freeform], canManage: true },
+    });
+    expect(getAllByRole('button', { name: 'restock' })).toHaveLength(1);
+    expect(getAllByRole('button', { name: 'release' })).toHaveLength(2);
+  });
+
+  it('offers a consume button on task-attached pending materials', () => {
+    const t = task({
+      status: 'in_progress',
+      materials: [{ material_id: 4, description: 'Ply', quantity: '2', sell_price: '5', units: 'sheet',
+                    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '4.00' }],
+    });
+    const { getAllByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getAllByRole('button', { name: 'consume' })).toHaveLength(1);
+  });
+
   it('shows the catalog badge for an inventory-item-backed material', () => {
     const t = task({
       materials: [{

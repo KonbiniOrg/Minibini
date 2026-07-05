@@ -47,4 +47,19 @@ describe('DocumentSendForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
+
+  it('renders submitError as a form message after the button row', () => {
+    const { getByRole } = render(DocumentSendForm, {
+      props: { sendDefaults: { to: 'a@b.com' }, onSubmit: vi.fn(), submitError: 'SMTP relay rejected the message.' },
+    });
+    const msg = getByRole('alert');
+    expect(msg.textContent).toContain('SMTP relay rejected the message.');
+  });
+
+  it('renders no form message when submitError is absent', () => {
+    const { queryByRole } = render(DocumentSendForm, {
+      props: { sendDefaults: { to: 'a@b.com' }, onSubmit: vi.fn() },
+    });
+    expect(queryByRole('alert')).toBeNull();
+  });
 });

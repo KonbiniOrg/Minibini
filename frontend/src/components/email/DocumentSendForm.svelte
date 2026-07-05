@@ -9,6 +9,8 @@
   // (Reply <-> Reply All) updates the CC field without remounting the form
   // or losing what the user has typed elsewhere.
 
+  import FormMessage from '../FormMessage.svelte';
+
   let {
     sendDefaults,         // { to, cc, bcc, subject, body, attachments_preview: [{filename, content_type, size}, ...] }
     to = $bindable(sendDefaults?.to || ''),
@@ -25,6 +27,7 @@
 
   // Which auto-attached PDFs to include (default all checked).
   let includeAutoAttachments = $state(
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     (sendDefaults?.attachments_preview || []).map(() => true),
   );
 
@@ -67,10 +70,6 @@
 </script>
 
 <form onsubmit={handleSubmit}>
-  {#if submitError}
-    <p class="send-error"><strong>Error:</strong> {submitError}</p>
-  {/if}
-
   <p>
     <label for="to"><strong>To *</strong></label><br>
     <input type="text" id="to" class="form-input" bind:value={to} placeholder="Comma-separated emails" required>
@@ -122,10 +121,10 @@
       {submitting ? 'Sending…' : submitLabel}
     </button>
   </p>
+  <FormMessage error={submitError || ''} />
 </form>
 
 <style>
-  .send-error { color: #b91c1c; }
   .form-input {
     width: 100%;
     max-width: 720px;

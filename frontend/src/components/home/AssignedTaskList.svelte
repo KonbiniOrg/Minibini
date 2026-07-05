@@ -7,6 +7,7 @@
   let { tasks = [] } = $props();
 
   // Local copy so we can reorder optimistically.
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let items = $state([...tasks]);
   let busy = $state(false);
   let errorMessage = $state('');

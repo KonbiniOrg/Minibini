@@ -68,6 +68,35 @@ describe('RateSchemeManager', () => {
     confirmSpy.mockRestore();
   });
 
+  it('drops an untouched blank modifier row from the save payload', async () => {
+    const { findByRole, getByLabelText, getByRole } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'With blank mod' } });
+    // Add a modifier row and leave it empty (label '', percent '').
+    await fireEvent.click(getByRole('button', { name: /add modifier/i }));
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/rate-schemes/',
+      expect.objectContaining({ modifiers: [] }),
+    );
+  });
+
+  it('keeps a filled-in modifier row in the save payload', async () => {
+    const { findByRole, getByLabelText, getByRole, getByPlaceholderText } = render(RateSchemeManager);
+    await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));
+    await fireEvent.input(getByLabelText(/Name/), { target: { value: 'With real mod' } });
+    await fireEvent.click(getByRole('button', { name: /add modifier/i }));
+    await fireEvent.input(getByPlaceholderText('Label'), { target: { value: 'Rush' } });
+    await fireEvent.input(getByPlaceholderText('%'), { target: { value: '50' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/rate-schemes/',
+      expect.objectContaining({
+        modifiers: [{ key: 'rush', label: 'Rush', percent: 50 }],
+      }),
+    );
+  });
+
   it('percentage algorithm: shows rate field (negative allowed), AC selector, and hides modifier editor', async () => {
     const { findByRole, getByLabelText, queryByText } = render(RateSchemeManager);
     await fireEvent.click(await findByRole('button', { name: 'Add Rate Scheme' }));

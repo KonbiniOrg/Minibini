@@ -13,7 +13,6 @@
   let expenses = $state(null);
   let loading = $state(true);
   let loadError = $state(null);
-  let error = $state(null);
 
   async function loadJob() {
     loading = true;
@@ -47,19 +46,10 @@
   });
 </script>
 
-{#if error}
-  <div class="error-overlay">
-    <div class="error-overlay-content">
-      <button class="error-overlay-close" onclick={() => { error = null; }}>&times;</button>
-      <p><strong>Error:</strong> {error}</p>
-    </div>
-  </div>
-{/if}
-
 {#if loading}
   <p>Loading...</p>
 {:else if loadError}
-  <p>Error: {loadError}</p>
+  <p><em>Error: {loadError}</em></p>
 {:else if job}
   <JobDetail
     {job}

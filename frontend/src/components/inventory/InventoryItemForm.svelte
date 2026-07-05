@@ -6,13 +6,21 @@
 
   const editing = $derived(!!item);
 
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let code = $state(item?.code ?? '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let description = $state(item?.description ?? '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let units = $state(item?.units ?? 'none');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let purchasePrice = $state(item?.purchase_price ?? '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let sellPrice = $state(item?.selling_price ?? '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let isCatalog = $state(item ? item.is_catalog : true);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let isActive = $state(item ? item.is_active : true);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let accountingCategory = $state(item?.accounting_category ?? '');
 
   let categories = $state([]);

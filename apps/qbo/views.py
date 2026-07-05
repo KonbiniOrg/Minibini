@@ -49,11 +49,11 @@ def qbo_callback(request):
     state = request.GET.get('state')
 
     if not auth_code or not realm_id:
-        return JsonResponse({'error': 'Missing code or realmId'}, status=400)
+        return JsonResponse({'detail': 'Missing code or realmId'}, status=400)
 
     # Validate CSRF state token to prevent OAuth CSRF attacks
     if state != request.session.get('qbo_csrf_token'):
-        return JsonResponse({'error': 'Invalid state token'}, status=400)
+        return JsonResponse({'detail': 'Invalid state token'}, status=400)
 
     del request.session['qbo_csrf_token']
 
@@ -124,7 +124,7 @@ def qbo_accounts(request):
             'expense_accounts': expense,
         })
     except ValueError as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'detail': str(e)}, status=400)
 
 
 @api_view(['GET'])
@@ -135,7 +135,7 @@ def qbo_payment_accounts(request):
         accounts = QBOExpenseSyncService.get_payment_accounts()
         return Response({'payment_accounts': accounts})
     except ValueError as e:
-        return Response({'error': str(e)}, status=400)
+        return Response({'detail': str(e)}, status=400)
 
 
 @api_view(['GET'])

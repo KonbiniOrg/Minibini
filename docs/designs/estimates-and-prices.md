@@ -272,6 +272,12 @@ That's how billing history is preserved.
 Permissions: read is `IsAuthenticated`; all write actions require
 `CanManageConfig`.
 
+Create/update/delete/supersede route through
+`ConfigurationService.{create,update,delete,supersede}_rate_scheme`
+(`apps/core/services.py`) — the referenced-freeze decision lives in the
+service (raised as a `ValidationError` with `code='referenced'`); the
+viewset only shapes the 409 payload below.
+
 The serializer exposes `superseded` (computed bool:
 `replaced_by_id is not None`) and `reference_counts` for the
 outdated-schemes UI. `unit_label` is validated against the configured
@@ -587,7 +593,11 @@ estimate-origin lines. CO-origin lines always have falsey adjustment fields
 
 ### 5.4 Document numbering
 
-One estimate tree per job, so the estimate's identity *is* the job's: the
+One estimate tree per job — enforced at the service layer:
+`EstimateService.create_for_job` refuses a second non-superseded estimate
+(2026-07-04; previously only the API viewset checked). New *versions* come
+only from `revise_estimate`, which creates the revision directly and then
+supersedes the parent. The estimate's identity *is* the job's: the
 `estimate_number` **is just the job number** (e.g. `JOB-2026-0001`), the same
 across every revision. The revision lives in the separate `version` field — it
 is **not** baked into the number. It is set by `EstimateService.create_for_job`
@@ -837,6 +847,7 @@ in the wizard.)
 |---|---|
 | `get_source_pool(estimate)` | Walks the estimate's **Job's** Tasks and Materials, returns a flat pool of atoms. Each atom carries `type` (`'task'`/`'material'`), `id`, `description`, the `qty`/`rate`/`units`/`amount` breakdown, `category_id`, and claim state: `available`, `claimed_by_current` (this estimate), `claimed_by_other` (a different estimate on the same job). Task amounts use `compute_estimate_amount` (`est_qty`). |
 | `add_atoms_to_new_line_item(estimate, atoms)` | Creates a new `EstimateLineItem` with a source row per atom. Single-atom case copies atom's description/units/qty/price; multi-atom case summarizes a uniform same-scheme task bundle, else falls back to blanks (see §6.3). |
+| `send_all_atoms(estimate)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines. `POST /api/estimates/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Estimate" button. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows to an existing line item. If the line item was **in sync** before (`price == round(sum(sources)/qty, 2)`), it is re-derived: a uniform same-scheme task bundle is re-summarized (units/qty/price), otherwise qty is kept and the per-unit price recomputed. An overridden line item is left untouched. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Deletes source rows. Same re-derive-if-in-sync rule as `add_atoms_to_line_item`. Deletes the line item if no sources remain. |
 
@@ -1473,9 +1484,12 @@ line-items sections.
 change order amends keeps its stored `status = accepted` — it is still
 the base of the agreement-of-record — but the UI relabels it **amended**
 so the human sees that the agreement has moved. This is derived, never
-stored: `EstimateSerializer.is_amended` (and the board pipeline payload's
-per-estimate `is_amended`) returns true when the estimate is `accepted`
-and at least one **accepted** CO references it. The frontend renders
+stored: the rule lives once on the model as `Estimate.is_amended()` —
+true when the estimate is `accepted` and at least one **accepted** CO
+references it (a non-accepted estimate short-circuits to `False`). Both
+read paths call it: `EstimateSerializer.get_is_amended` and the board
+pipeline payload's per-estimate `is_amended` (`BoardService.
+_serialize_pipeline_job`). The frontend renders
 `is_amended ? 'amended' : status` (`JobDetail`, `EstimateDetailPage`, the
 board `PipelineColumn`); there is no client-side re-derivation. Only
 accepted COs flip it — a draft/open CO does not, matching

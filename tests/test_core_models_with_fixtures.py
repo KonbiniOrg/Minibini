@@ -15,8 +15,15 @@ class UserModelFixtureTest(FixtureTestCase):
         self.assertEqual(admin_user.first_name, "Admin")
         self.assertEqual(admin_user.last_name, "User")
         self.assertEqual(admin_user.email, "admin@minibini.com")
-        self.assertTrue(admin_user.is_superuser)
+        # The fixture admin carries the four atoms explicitly (atoms-only
+        # authorization; no superuser).
+        self.assertFalse(admin_user.is_superuser)
         self.assertTrue(admin_user.is_staff)
+        for atom in ('can_manage_jobs', 'can_manage_financials',
+                     'can_manage_time', 'can_manage_config'):
+            self.assertTrue(
+                admin_user.user_permissions.filter(codename=atom).exists(),
+                f'fixture admin should carry {atom}')
         
         manager_user = User.objects.get(username="manager1")
         self.assertEqual(manager_user.first_name, "John")

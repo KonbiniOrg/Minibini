@@ -10,8 +10,8 @@ class TaskSerializerUnitsValidationTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.client = APIClient()
-        # Use the admin superuser from fixtures
-        self.user = User.objects.filter(is_superuser=True).first()
+        # Fixture admin carries the four atoms explicitly (no superuser).
+        self.user = User.objects.get(username='admin')
         self.client.force_authenticate(user=self.user)
 
     # NOTE: Task serializer no longer carries a `units` field — billing identity

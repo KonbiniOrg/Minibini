@@ -1,6 +1,10 @@
 <script>
   import { push } from 'svelte-spa-router';
   import { api } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
+  import FieldError from '../../components/FieldError.svelte';
+  import FormMessage from '../../components/FormMessage.svelte';
 
   const { params = {} } = $props();
 
@@ -8,6 +12,8 @@
   let loading = $state(true);
   let error = $state('');
   let saving = $state(false);
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   let name = $state('');
   let description = $state('');
@@ -55,7 +61,8 @@
   async function handleSubmit(e) {
     e.preventDefault();
     saving = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     const payload = {
       name,
       description,
@@ -67,12 +74,12 @@
       await api.patch(`/api/jobs/${params.id}/`, payload);
       push(`/jobs/${params.id}`);
     } catch (err) {
-      if (err.data && typeof err.data === 'object' && !err.data.detail) {
-        error = Object.entries(err.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(err);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = err.message || 'Could not save job.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       saving = false;
@@ -102,21 +109,25 @@
     <p>
       <label for="name"><strong>Name</strong></label><br>
       <input id="name" type="text" maxlength="50" bind:value={name}>
+      <FieldError errors={fieldErrs} field="name" />
     </p>
 
     <p>
       <label for="description"><strong>Description</strong></label><br>
       <textarea id="description" rows="6" cols="60" bind:value={description}></textarea>
+      <FieldError errors={fieldErrs} field="description" />
     </p>
 
     <p>
       <label for="due_date"><strong>Due Date</strong></label><br>
       <input id="due_date" type="datetime-local" bind:value={dueDate}>
+      <FieldError errors={fieldErrs} field="due_date" />
     </p>
 
     <p>
       <label for="customer_po"><strong>Customer PO Number</strong></label><br>
       <input id="customer_po" type="text" maxlength="50" bind:value={customerPoNumber}>
+      <FieldError errors={fieldErrs} field="customer_po_number" />
     </p>
 
     <p>
@@ -127,6 +138,7 @@
           <option value={String(u.id)}>{u.name}</option>
         {/each}
       </select>
+      <FieldError errors={fieldErrs} field="project_manager" />
     </p>
 
     <p>
@@ -134,7 +146,7 @@
       <button type="button" onclick={handleCancel} disabled={saving}>Cancel</button>
     </p>
 
-    {#if error}<p class="error">{error}</p>{/if}
+    <FormMessage error={formError} />
   </form>
 {/if}
 

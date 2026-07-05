@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import ActualQtyModal from './ActualQtyModal.svelte';
   import BlepEditModal from './BlepEditModal.svelte';
@@ -7,7 +8,6 @@
   let {
     task,
     user,
-    userPermissions = [],
     canManage = false,
     activeBlepOnThisTask = null,
     onChanged = () => {},
@@ -15,7 +15,6 @@
   } = $props();
 
   let busy = $state(false);
-  let error = $state('');
   let qtyModal = $state(null);   // {unitLabel} while the entered-qty prompt is open
   let blepModal = $state(false); // true while the historical-time prompt is open
 
@@ -60,7 +59,6 @@
 
   async function call(url, body = {}) {
     busy = true;
-    error = '';
     try {
       const resp = await api.post(url, body);
       if (resp && resp.conflict) {
@@ -70,7 +68,8 @@
         onChanged();
       }
     } catch (e) {
-      error = e.message || 'Action failed.';
+      // Plain action buttons (no form): the global overlay is the venue.
+      showError(errorMessage(e, 'Action failed.'));
     } finally {
       busy = false;
     }
@@ -82,7 +81,6 @@
   // (elapsed-time task with no logged time).
   async function completeTask(actualQty = null) {
     busy = true;
-    error = '';
     try {
       const body = actualQty != null ? { actual_qty: actualQty } : {};
       const resp = await api.post(`/api/tasks/${task.task_id}/complete/`, body);
@@ -97,7 +95,7 @@
       await notifyBlepChanged();
       onChanged();
     } catch (e) {
-      error = e.message || 'Action failed.';
+      showError(errorMessage(e, 'Action failed.'));
     } finally {
       busy = false;
     }
@@ -140,7 +138,6 @@
   {#if show.unblock}<button type="button" onclick={unblock} disabled={busy}>Unblock</button>{/if}
   {#if show.cancel && canManage}<button type="button" onclick={cancel} disabled={busy}>Cancel</button>{/if}
 </div>
-{#if error}<p class="error">{error}</p>{/if}
 
 {#if qtyModal}
   <ActualQtyModal
@@ -156,7 +153,6 @@
     mode="create"
     taskId={task.task_id}
     currentUser={user}
-    userPermissions={userPermissions}
     onSaved={onTimeLogged}
     onClose={() => { blepModal = false; }}
   />
@@ -165,5 +161,4 @@
 <style>
   .actions { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
   .cancel-work { color: #a8071a; }
-  .error { color: #a8071a; }
 </style>

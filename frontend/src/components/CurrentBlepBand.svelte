@@ -15,18 +15,54 @@
   });
   onDestroy(() => { if (tick) clearInterval(tick); });
 
-  function elapsedSeconds(startIso) {
-    if (!startIso) return 0;
-    return Math.max(0, Math.floor((now - new Date(startIso).getTime()) / 1000));
-  }
+  // The timer contract: count SECONDS from zero at the moment the user
+  // clicked Start — never from the server's minute-floored start_time,
+  // which would make a fresh timer read ~47s. Once the displayed count
+  // reaches 5:00, switch to minutes-only realigned to the floored
+  // start_time (the short fifth minute is invisible). The click-zero
+  // lives in sessionStorage so a same-tab reload keeps counting; a blep
+  // first seen already >75s old has no knowable zero and skips the
+  // seconds phase entirely.
+  const SECONDS_PHASE_MS = 5 * 60 * 1000;
+  const FRESHLY_STARTED_MS = 75 * 1000;
+
+  let clickZero = $state(null);
+
+  $effect(() => {
+    const cb = $currentBlep;
+    if (!cb?.id) {
+      clickZero = null;
+      return;
+    }
+    const key = `blep_zero_${cb.id}`;
+    const stored = Number(sessionStorage.getItem(key));
+    if (stored) {
+      clickZero = stored;
+      return;
+    }
+    if (Date.now() - new Date(cb.start_time).getTime() < FRESHLY_STARTED_MS) {
+      // Just started here — this instant is the timer's zero. Old bleps'
+      // keys are garbage; sweep them while we're writing.
+      for (const k of Object.keys(sessionStorage)) {
+        if (k.startsWith('blep_zero_')) sessionStorage.removeItem(k);
+      }
+      clickZero = Date.now();
+      sessionStorage.setItem(key, String(clickZero));
+    } else {
+      clickZero = null;
+    }
+  });
 
   function elapsedText(startIso) {
-    const seconds = elapsedSeconds(startIso);
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    return `${m}m ${s}s`;
+    if (clickZero && now - clickZero < SECONDS_PHASE_MS) {
+      const seconds = Math.max(0, Math.floor((now - clickZero) / 1000));
+      return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    }
+    const minutes = Math.max(0, Math.floor((now - new Date(startIso).getTime()) / 60000));
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
   }
 
   // Below the configured minimum, the only way to end the session is to cancel

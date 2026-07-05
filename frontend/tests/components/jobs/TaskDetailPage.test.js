@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import TaskDetailPage from '@/routes/jobs/TaskDetailPage.svelte';
 
 // The fetched task carries can_manage = "atom-holder OR this job's PM". The page

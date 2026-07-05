@@ -1,6 +1,5 @@
 from collections import defaultdict
 from datetime import datetime, time
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone as dj_tz
 from django.utils.dateparse import parse_datetime
@@ -38,10 +37,7 @@ def clock_in(request):
     target, err = _resolve_target(request)
     if err:
         return err
-    try:
-        shift = ShiftService.clock_in(target)
-    except DjangoValidationError as e:
-        return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+    shift = ShiftService.clock_in(target)
     return Response(ShiftSerializer(shift).data, status=status.HTTP_201_CREATED)
 
 
@@ -51,10 +47,7 @@ def clock_out(request):
     target, err = _resolve_target(request)
     if err:
         return err
-    try:
-        shift = ShiftService.clock_out(target)
-    except DjangoValidationError as e:
-        return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+    shift = ShiftService.clock_out(target)
     return Response(ShiftSerializer(shift).data)
 
 
@@ -90,30 +83,56 @@ class ShiftViewSet(viewsets.ModelViewSet):
         shift = ShiftService.open_shift_for(request.user)
         return Response({'shift': ShiftSerializer(shift).data if shift else None})
 
+    def create(self, request, *args, **kwargs):
+        # Route through ShiftService.create — its permission rule (self, or
+        # can_manage_time for others) and blep-enclosure check must not be
+        # bypassable by a bare POST.
+        data = request.data.copy()
+        if not data.get('user'):
+            data['user'] = request.user.pk
+        ser = self.get_serializer(data=data)
+        ser.is_valid(raise_exception=True)
+        v = ser.validated_data
+        shift = ShiftService.create(
+            v['user'], actor=request.user,
+            start_time=v.get('start_time'), end_time=v.get('end_time'))
+        return Response(ShiftSerializer(shift).data, status=status.HTTP_201_CREATED)
+
     def update(self, request, *args, **kwargs):
         shift = self.get_object()
         partial = kwargs.get('partial', False)
         ser = self.get_serializer(shift, data=request.data, partial=partial)
         ser.is_valid(raise_exception=True)
         v = ser.validated_data
-        try:
-            ShiftService.update(shift, actor=request.user,
-                                start_time=v.get('start_time', shift.start_time),
-                                end_time=v.get('end_time', shift.end_time))
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        ShiftService.update(shift, actor=request.user,
+                            start_time=v.get('start_time', shift.start_time),
+                            end_time=v.get('end_time', shift.end_time))
         return Response(ShiftSerializer(shift).data)
 
     def destroy(self, request, *args, **kwargs):
         shift = self.get_object()
         if not (request.user.has_perm('core.can_manage_time')):
             return Response({'detail': 'Not permitted.'}, status=status.HTTP_403_FORBIDDEN)
-        shift.delete()
+        ShiftService.delete(shift, actor=request.user)
         return Response({'message': 'Shift deleted.'})
 
 
 class _ChangeRequestViewSet(viewsets.ModelViewSet):
     """Common behaviour for shift/blep change requests."""
+
+    def update(self, request, *args, **kwargs):
+        req = self.get_object()
+        # Ownership first (403); the service re-checks and owns the frozen /
+        # validation rules (400).
+        if req.requester_id != request.user.pk:
+            return Response({'detail': 'Only the requester may edit a request.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        ser = self.get_serializer(req, data=request.data,
+                                  partial=kwargs.get('partial', False))
+        ser.is_valid(raise_exception=True)
+        TimeChangeRequestService.update_request(
+            req, actor=request.user, **ser.validated_data)
+        return Response(self.get_serializer(req).data)
 
     def get_permissions(self):
         if self.action in ('approve', 'deny'):
@@ -142,27 +161,18 @@ class _ChangeRequestViewSet(viewsets.ModelViewSet):
                 {'detail': 'You can only request changes to your own time records.'},
                 status=status.HTTP_403_FORBIDDEN)
         instance = self.queryset_model(requester=request.user, **ser.validated_data)
-        try:
-            TimeChangeRequestService.submit(instance)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        TimeChangeRequestService.submit(instance)
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
-        try:
-            TimeChangeRequestService.approve(self.get_object(), reviewer=request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        TimeChangeRequestService.approve(self.get_object(), reviewer=request.user)
         return Response(self.get_serializer(self.get_object()).data)
 
     @action(detail=True, methods=['post'])
     def deny(self, request, pk=None):
         note = (request.data or {}).get('note', '')
-        try:
-            TimeChangeRequestService.deny(self.get_object(), reviewer=request.user, note=note)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        TimeChangeRequestService.deny(self.get_object(), reviewer=request.user, note=note)
         return Response(self.get_serializer(self.get_object()).data)
 
 
