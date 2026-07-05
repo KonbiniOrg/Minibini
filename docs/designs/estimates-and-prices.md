@@ -109,8 +109,10 @@ or `ServiceItem`. Calling `RateScheme.effective_rate()` or
 `get_actual_qty()` on a percentage service raises `ValueError`; the estimate
 and invoice serializers reject it; `TaskService.create_direct` rejects it;
 and `GET /api/rate-schemes/?task_applicable=true` excludes it. The
-`Services` manager in the settings UI still displays percentage types so they
-can be managed; the task-creation pickers never show them.
+`ServiceItemManager` (Catalog area, `/catalog/service-items` — moved out of
+Settings; `materials-inventory-and-purchasing.md` §17) still displays
+percentage types so they can be managed; the task-creation pickers never
+show them.
 
 `rate` holds the **percent value**: `10` means 10%, `-5` means a 5% discount.
 Negative rates are allowed only for `percentage` services (all other
@@ -730,7 +732,7 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 
 No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_superseded_scheme=True` so a line whose scheme was superseded after authoring can still crystallize.
 
-**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker in Settings (`AccountingCategories.svelte`); `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
+**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
 **API endpoint:**
 

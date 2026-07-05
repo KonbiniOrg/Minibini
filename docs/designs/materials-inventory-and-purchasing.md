@@ -133,7 +133,7 @@ There is no catalog-vs-lot distinction. Every item is a single kind:
 `InventoryService.create_item` derives `selling_price` from
 `purchase_price × (1 + default_material_markup_percent/100)` **once at
 creation**, only when no explicit non-zero sell is given. Config default `'0'`
-→ sell == cost; editable in the SPA at **Settings → Catalog** (the
+→ sell == cost; editable in the SPA at **Settings → Pricing** (the
 `MaterialMarkupSetting` component, `PATCH /api/settings/`). `update_item` never
 re-applies it — the stored value is authoritative. Materials copy cost+sell from
 the item at creation (only-if-unset), so they stay self-contained.
@@ -1028,6 +1028,28 @@ procurement, surfaced as the **Order** action on the task view page (§16):
   (`CanManageFinancials`), body optionally `{po_id}`; also feeds the SPA's
   "add to draft PO-NNNN vs start new" choice.
 
+### Order to stock — no material, no job (`InventoryService.order_stock`)
+
+`InventoryService.order_stock(item, quantity, po=None)` is the item-side
+counterpart to `MaterialService.order` above: ordering an `InventoryItem`
+**to stock**, with no job needing it and no `Material` created. A plain PO
+line — `add_line_item_from_pli(po.pk, item.pk, quantity)` with no `job`, no
+`material_id` — receipt bumps QOH via the normal PO-receiving path.
+
+- Same **append-or-create** contract as the material Order flow: given a
+  draft `po`, appends; given `po=None`, creates a new draft PO
+  (`PurchaseOrderService.create_po()`) and adds the line. Refuses a
+  non-draft `po`. Wrapped in `transaction.atomic()`.
+- Endpoint: `POST /api/inventory/{id}/order/` (`CanManageFinancials`), body
+  `{"quantity": "5", "po_id": <optional draft>}`; response echoes the item
+  plus `po_id`/`po_number`.
+- Surfaced by the shared `StockOrderDialog.svelte` component on both the
+  Catalog **Inventory** tab (per-row Order button, `canManageFinancials`
+  only — replaced the old navigate-to-`/purchase-orders/new?inventory_item=N`
+  link) and the Catalog **Earmarks** tab (§17). The quantity prompt
+  pre-fills with the item-level shortfall — `max(0, qty_earmarked_total −
+  qty_on_hand − qty_on_order)` — editable before submit.
+
 ### Materials are created at line-add time
 
 PO line creation with job attribution creates (or claims) a Material
@@ -1378,11 +1400,29 @@ receipts allowed).
 
 ---
 
-## 17. UI: Inventory and settings
+## 17. UI: the Catalog area
 
-Inventory-item CRUD + browse UI is the SPA `#/inventory` page
-(`routes/inventory/InventoryListPage.svelte`), plus the markup config under
-Settings → Catalog. Item pickers across the SPA use
+The sidebar's "Catalog" link (`href="/catalog"`, was "Inventory") is a
+three-tab area, each tab a real route (not local-state tabs) sharing
+`components/CatalogTabs.svelte`:
+
+| Route | Page | Content |
+|---|---|---|
+| `/catalog` | `routes/catalog/CatalogInventoryPage.svelte` | Inventory list (default tab) |
+| `/catalog/service-items` | `routes/catalog/CatalogServiceItemsPage.svelte` | `ServiceItemManager` (moved out of Settings) |
+| `/catalog/earmarks` | `routes/catalog/CatalogEarmarksPage.svelte` | Read-only commitment report (new) |
+
+`/inventory` was deleted with no redirect (pre-production, no bookmarks to
+preserve). The whole area is visible to every authenticated user, same as
+the old Inventory link.
+
+### Inventory tab
+
+Inventory-item CRUD + browse UI, unchanged from the old `#/inventory` page
+except the per-row **Order** button now opens the shared
+`StockOrderDialog.svelte` (§10) instead of navigating to
+`/purchase-orders/new?inventory_item=N`; still rendered only for
+`canManageFinancials`. Item pickers across the SPA use
 `frontend/src/components/InventoryItemPicker.svelte`, built on `SearchPicker`.
 
 **Nothing hidden** (`is_catalog` drop). The list and pickers show every active
@@ -1398,11 +1438,60 @@ pickers are `?search`-narrowed anyway). The list's former **catalog|lot** column
 filters (e.g. `is_active=true`); offers a "None (freeform)" escape via the
 `header` snippet.
 
+### Service Items tab
+
+`ServiceItemManager.svelte` — same component, now mounted at
+`/catalog/service-items` instead of a Settings tab. Gained a read-only mode:
+the table renders for any authenticated user; Add/Edit/Delete buttons render
+only when the user has **any** of `can_manage_jobs`, `can_manage_financials`,
+`can_manage_config` (backend: `CanManageJobsOrFinancialsOrConfig`, §users-and-permissions.md).
+
+### Earmarks tab (new)
+
+`CatalogEarmarksPage.svelte` — read-only commitment report, one row per
+`Earmark` (item + job), fetched whole via `GET /api/earmarks/`
+(`EarmarkViewSet`, `ReadOnlyModelViewSet`, `IsAuthenticated`, **unpaginated**
+— earmarks stay small, sorting is client-side). Columns: item code,
+description, units, job number (link → `#/jobs/{id}`), qty earmarked (this
+row), item-level QOH, item-level on-order, item-level **shortfall**,
+outstanding-PO links, Order button.
+
+- **PO links**: every distinct non-cancelled PO with an outstanding line for
+  the item (`qty − qty_received − qty_cancelled > 0`), rendered as
+  `po_number` linking to `#/purchase-orders/{id}`. There can be several.
+- **Shortfall** (`frontend/src/lib/stockShortfall.js`): `max(0,
+  qty_earmarked_total − qty_on_hand − qty_on_order)`, computed at **item**
+  level and repeated on each of that item's rows (like QOH/on-order). Two
+  jobs each earmarking 5 of an item with QOH 5 would each show 0 per-row —
+  the item-level number reads "to cover every commitment you need N more,"
+  the number you'd actually purchase. Self-correcting: ordering from one row
+  raises on-order, so the sibling row's shortfall drops after reload.
+- **Order button**: `canManageFinancials` only; opens the same
+  `StockOrderDialog.svelte` as the Inventory tab, quantity pre-filled with
+  the item-level shortfall (§10).
+
+`EarmarkSerializer` shape per row: `earmark_id`, `inventory_item`,
+`item_code`, `item_description`, `units`, `job`, `job_number`, `quantity`,
+`created_date`, plus item-level `qty_on_hand`, `qty_on_order`,
+`qty_earmarked_total`, and `pos: [{po_id, po_number}, ...]`. Shortfall is
+computed client-side from the three quantity fields.
+
+### Settings — Pricing tab
+
 `UnitsManager` (`frontend/src/components/UnitsManager.svelte`) is the
-settings UI for editing the `units_list` Configuration value. The
-`default_material_accounting_category` picker (gated `can_manage_config`) lives
-in the Accounting Categories settings block (`AccountingCategories.svelte`); see
-`estimates-and-prices.md` §6.4 and `data-constraints.md` §1.1.
+settings UI for editing the `units_list` Configuration value. The Settings
+tab formerly named "Catalog" is now **Pricing** (key `pricing`) —
+`ServiceItemManager` left it for `/catalog/service-items`; it now holds the
+material markup default (`MaterialMarkupSetting`), RateSchemeManager, and
+`DefaultMaterialCategorySetting` (below). The old "Work templates — not yet
+implemented" stub was deleted.
+
+The `default_material_accounting_category` picker
+(`DefaultMaterialCategorySetting.svelte`, gated `can_manage_config`) was
+extracted out of `AccountingCategories.svelte` into its own component and is
+now rendered in **both** the Accounting tab and the Pricing tab — one
+implementation, two placements. See `estimates-and-prices.md` §6.4 and
+`data-constraints.md` §1.1.
 
 ---
 

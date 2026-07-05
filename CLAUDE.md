@@ -167,7 +167,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 - `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
 - `/api/estimates/`, `/api/est-worksheets/`, `/api/plan-tasks/`, `/api/rate-schemes/`, `/api/tasks/`, `/api/bleps/`
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
-- `/api/price-list-items/`, `/api/materials/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
+- `/api/inventory/`, `/api/materials/`, `/api/earmarks/` (read-only), `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/expenses/`, `/api/reimbursements/`
 - `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
@@ -176,7 +176,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
+Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, catalog (inventory / service items / earmarks tabs), expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
 
 ## Frontend (Svelte SPA)
 

@@ -1,6 +1,6 @@
 # Catalog Area UI — Spec
 
-**Status:** settled 2026-07-05 (design discussion). Branch: `feature/inventory_again`.
+**Status:** implemented 2026-07-05. Branch: `feature/inventory_again`.
 
 ## Summary
 

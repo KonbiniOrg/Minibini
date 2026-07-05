@@ -1361,6 +1361,7 @@ Activity
 Contacts
 Email
 Purchasing         → /purchase-orders
+Catalog            → /catalog
 ─── Financials ─── (label only if user has can_manage_financials)
 Invoices           (can_manage_financials) → /invoices
 Bills              (can_manage_financials) → /bills
@@ -1374,6 +1375,16 @@ LITE | FULL        (view-mode toggle)
 <username>         → /profile
 Logout
 ```
+
+**Route-based tab areas.** Some sidebar destinations are themselves a strip
+of tabs — e.g. Catalog (`/catalog`, `/catalog/service-items`,
+`/catalog/earmarks`; `docs/designs/materials-inventory-and-purchasing.md`
+§17). The convention there is **real routes, not local `$state` tabs**: each
+tab is its own `App.svelte` route, the strip is `<a use:link>` (links
+navigate; buttons act, per the UI Decisions in `CLAUDE.md`), and refresh /
+back-button / bookmarks land on the right tab. Settings and JobHistory still
+use local-state tabs (`$state('pricing')` + `{:else if}`) — converting those
+to routes is noted as future work, not yet done.
 
 ---
 
