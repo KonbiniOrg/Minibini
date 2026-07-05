@@ -81,7 +81,14 @@ class MaterialBaseCopyFieldsTest(TestCase):
             'sell_price': Decimal('3.00'),
             'inventory_item': pli,
             'accounting_category': ac,
+            'cost_source': None,
         })
+
+    def test_copy_fields_carries_cost_source_provenance(self):
+        ac = AccountingCategory.objects.create(code='CF-MAT3', name='cf-mat3')
+        m = Material(description='PO stock', units='ea', accounting_category=ac,
+                     cost_source=Material.COST_SOURCE_PO)
+        self.assertEqual(m.copy_fields()['cost_source'], Material.COST_SOURCE_PO)
 
     def test_copy_fields_works_on_material_subclass_too(self):
         ac = AccountingCategory.objects.create(code='CF-MAT2', name='cf-mat2')

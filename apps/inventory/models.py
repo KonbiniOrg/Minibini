@@ -134,6 +134,10 @@ class MaterialBase(models.Model):
             sell_price=self.sell_price,
             inventory_item=self.inventory_item,
             accounting_category=self.accounting_category,
+            # Carry provenance so a duplicated lot-less document-cost material
+            # keeps its cost_source instead of auto-minting an 'entered' lot in
+            # create_on_job (whose mint gate is cost_source in {None, entered}).
+            cost_source=self.cost_source,
         )
 
     @property

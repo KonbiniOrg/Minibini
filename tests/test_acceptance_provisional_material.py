@@ -10,14 +10,16 @@ from apps.jobs.models import Fee, Job
 
 
 class AcceptanceProvisionalMaterialTest(TestCase):
-    """A bare line marked is_material=True crystallizes into a provisional
-    Material (no inventory_item, sell price only, cost unset) — not a Fee.
-    An unmarked bare line still becomes a Fee (unchanged)."""
+    """A bare line marked is_material=True crystallizes into an ESTABLISHED
+    Material: a QOH-0 lot minted at a reverse-markup provisional cost, with the
+    accepted sell price locked and cost_source='estimated'. An unmarked bare
+    line still becomes a Fee (unchanged)."""
 
     def setUp(self):
         Configuration.objects.create(key='estimate_number_sequence', value='EST-{year}-{counter:04d}')
         Configuration.objects.create(key='estimate_counter', value='0')
         Configuration.objects.create(key='job_number_sequence', value='JOB-{year}-{counter:04d}')
+        Configuration.objects.create(key='default_material_markup_percent', value='25')
         AppState.objects.create(key='job_counter', value='0')
 
         self.cat = AccountingCategory.objects.create(name='Mat', is_active=True, code='MAT')
@@ -39,7 +41,8 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         defaults.update(kw)
         return EstimateLineItem.objects.create(**defaults)
 
-    def test_marked_bare_line_becomes_provisional_material(self):
+    def test_marked_line_establishes_with_reverse_markup(self):
+        """Spec §provisional cost: sell $400, 25% markup → cost $320, estimated."""
         line = self._add_line(
             line_number=1, description='M77 ABS', qty=Decimal('2'),
             price=Decimal('400.00'), is_material=True,
@@ -48,10 +51,12 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         result = EstimateAcceptanceService.on_accept(self.estimate)
 
         mat = Material.objects.get(job=self.job, description='M77 ABS')
-        self.assertIsNone(mat.inventory_item)                 # provisional — no lot
+        self.assertIsNotNone(mat.inventory_item_id)            # established — minted lot
         self.assertEqual(mat.quantity, Decimal('2'))
         self.assertEqual(mat.sell_price, Decimal('400.00'))    # quoted sell, locked
-        self.assertEqual(mat.unit_cost, Decimal('0.00'))       # cost unset (out of scope: reverse-markup)
+        self.assertEqual(mat.unit_cost, Decimal('320.00'))     # 400 / 1.25 reverse-markup
+        self.assertEqual(mat.cost_source, Material.COST_SOURCE_ESTIMATED)
+        self.assertEqual(mat.inventory_item.qty_on_hand, Decimal('0.00'))
         self.assertEqual(mat.accounting_category, self.cat)
         self.assertEqual(result['materials_created'], 1)
 
@@ -62,6 +67,21 @@ class AcceptanceProvisionalMaterialTest(TestCase):
         src = EstimateLineItemSource.objects.get(estimate_line_item=line)
         self.assertEqual(src.source_type, EstimateLineItemSource.SOURCE_MATERIAL)
         self.assertEqual(src.source_pk, mat.pk)
+
+    def test_zero_price_marked_line_mints_at_zero_estimated(self):
+        """A $0 marked line still establishes: lot at cost 0, sell 0, estimated."""
+        self._add_line(
+            line_number=1, description='Freebie stock', qty=Decimal('1'),
+            price=Decimal('0.00'), is_material=True,
+        )
+
+        EstimateAcceptanceService.on_accept(self.estimate)
+
+        mat = Material.objects.get(job=self.job, description='Freebie stock')
+        self.assertIsNotNone(mat.inventory_item_id)
+        self.assertEqual(mat.unit_cost, Decimal('0.00'))
+        self.assertEqual(mat.sell_price, Decimal('0.00'))
+        self.assertEqual(mat.cost_source, Material.COST_SOURCE_ESTIMATED)
 
     def test_unmarked_bare_line_still_becomes_a_fee(self):
         self._add_line(

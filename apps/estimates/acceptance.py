@@ -35,6 +35,7 @@ class EstimateAcceptanceService:
         Returns: {'fees_created': int, 'materials_created': int, 'tasks_created': int}
         """
         from apps.jobs.models import Fee
+        from apps.inventory.models import Material
         from apps.inventory.services import InventoryService, MaterialService
 
         job = estimate.job
@@ -88,11 +89,13 @@ class EstimateAcceptanceService:
                 materials_created += 1
                 continue
 
-            # Bare line marked as a material → provisional Material atom.
-            # (No inventory_item, so no lot: it carries only a sell price; cost
-            # stays unset. Reverse-markup provisional cost, transient-lot minting,
-            # establishment, and the Order affordance are OUT of scope here — see
-            # docs/plans/2026-06-30-freeform-material-procurement-inventory.md.)
+            # Bare line marked as a material → Material atom, ESTABLISHED with a
+            # reverse-markup provisional cost. The accepted price is the locked
+            # sell; we back out an implied cost = sell / (1 + markup%) and mint a
+            # QOH-0 lot at that cost (cost_source='estimated'). The cost is a
+            # placeholder — the real cost arrives when a PO line supplies it
+            # (cost_source flips to 'po') — but the material is established from
+            # the start so work can consume against the (to-be-received) lot.
             # (pinned discriminator): the service_item branch sits above inventory_item;
             # this is_material branch stays here, between inventory_item and Fee.
             if li.is_material:
@@ -105,6 +108,15 @@ class EstimateAcceptanceService:
                     inventory_item=None,
                     accounting_category=li.accounting_category,
                     units=li.units or 'none',
+                )
+                sell = li.price or Decimal('0')
+                markup = InventoryService._default_markup_percent()
+                unit_cost = (
+                    sell / (Decimal('1') + markup / Decimal('100'))
+                ).quantize(Decimal('0.01'))
+                material = MaterialService.establish(
+                    material, unit_cost=unit_cost,
+                    cost_source=Material.COST_SOURCE_ESTIMATED,
                 )
                 EstimateLineItemSource.objects.create(
                     estimate_line_item=li,

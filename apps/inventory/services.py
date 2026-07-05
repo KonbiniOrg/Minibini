@@ -632,6 +632,14 @@ class MaterialService:
                 if inventory_item is not None:
                     m.cost_source = cost_source or Material.COST_SOURCE_ENTERED
                     m.save(update_fields=['cost_source'])
+                elif cost_source is not None:
+                    # Freeform (lot-less) material carrying a known provenance
+                    # (document cost, customer-supplied, or a duplicated one) —
+                    # record it. A genuinely provisional add (cost_source None)
+                    # stays NULL. No ENTERED default here: a lot-less material is
+                    # never "entered" (that path mints above).
+                    m.cost_source = cost_source
+                    m.save(update_fields=['cost_source'])
                 # Attached to a task that already started? The promote-time
                 # consumption sweep already ran — consume now (stock permitting).
                 MaterialService.consume_if_task_started(m)
@@ -980,6 +988,36 @@ class MaterialService:
                 material.delete()
 
     @staticmethod
+    def _apply_po_line_cost(material, po_line, price):
+        """Supply/override a PO-linked material's cost from the PO line price.
+
+        - Provisional (lot-less) material → ESTABLISH it: mint a QOH-0 lot at
+          `price`, stamp cost_source='po', and (when the PO line itself has no
+          inventory_item) repoint the line at the minted lot so
+          PurchaseOrderReceivingService.receive_items' `li.inventory_item.qty_on_hand
+          += qty` bump lands on that lot. establish is the SOLE earmark writer
+          here (it earmarks committed jobs; the provisional row had no lot, so
+          no earmark existed — no double).
+        - Established material → override unit_cost via update_pricing and stamp
+          cost_source='po'. Sell price is NEVER touched, and no earmark is added.
+
+        No-op when the line carries no usable price.
+        """
+        if price is None:
+            return material
+        if material.inventory_item_id is None:
+            MaterialService.establish(
+                material, unit_cost=price, cost_source=Material.COST_SOURCE_PO)
+            if po_line.inventory_item_id is None:
+                po_line.inventory_item = material.inventory_item
+                po_line.save(update_fields=['inventory_item'])
+        elif price != material.unit_cost:
+            MaterialService.update_pricing(material, unit_cost=price)
+            material.cost_source = Material.COST_SOURCE_PO
+            material.save(update_fields=['cost_source'])
+        return material
+
+    @staticmethod
     def resolve_or_create_for_line(po_line, *, job=None, inventory_item=None,
                                     qty, unit_cost, description,
                                     accounting_category=None, material_id=None):
@@ -1009,6 +1047,9 @@ class MaterialService:
                 if job is not None and mat.job_id != job.pk:
                     raise ValidationError('Material is not on the requested job')
                 MaterialService.link_to_po_line(mat, po_line)
+                # The PO write supplies/overrides the material's cost (a
+                # hand-built PO line may name a provisional material).
+                MaterialService._apply_po_line_cost(mat, po_line, unit_cost)
                 return mat
 
             # Step 2 and 3 require a job
@@ -1026,11 +1067,20 @@ class MaterialService:
                 matches = list(candidates[:2])
                 if len(matches) == 1:
                     MaterialService.link_to_po_line(matches[0], po_line)
+                    # Claimed match is inventoried (filtered on inventory_item),
+                    # so it is established — override its cost from the PO line.
+                    MaterialService._apply_po_line_cost(
+                        matches[0], po_line, unit_cost)
                     return matches[0]
 
-            # Step 3: create new. A PO line's cost is document-sourced, so this
-            # does NOT auto-mint a lot — the material stays freeform/provisional
-            # and establishes through the PO flow (Task 7 refines provenance).
+            # Step 3: create new. A PO line's cost is document-sourced, so
+            # create_on_job records the cost with cost_source='po' but does NOT
+            # auto-mint. We then establish through _apply_po_line_cost: a
+            # catalog line's material is already lot-backed (no-op); a freeform
+            # (pli-less) line's material is minted a LOT-{pk} lot at the line
+            # price, and the PO line is repointed at it so receiving can bump
+            # QOH — without this a freeform-PO material could never arrive and
+            # consume() would refuse it forever.
             mat = MaterialService.create_on_job(
                 job=job,
                 inventory_item=inventory_item,
@@ -1041,6 +1091,7 @@ class MaterialService:
                 cost_source=Material.COST_SOURCE_PO,
             )
             MaterialService.link_to_po_line(mat, po_line)
+            MaterialService._apply_po_line_cost(mat, po_line, unit_cost)
             return mat
 
 

@@ -103,12 +103,83 @@ class MaterialResolveOrCreateTest(TestCase):
         self.assertEqual(result.inventory_item_id, self.pli.pk)
         self.assertEqual(result.unit_cost, Decimal('1.00'))
 
-    def test_create_new_pli_less(self):
-        result = MaterialService.resolve_or_create_for_line(
-            self.line, **self._args(inventory_item=None),
+    def test_create_new_pli_less_establishes_and_repoints_line(self):
+        """A freeform (pli-less) PO line creates a material and ESTABLISHES it:
+        mint a lot at the line price, stamp cost_source='po', and repoint the
+        PO line at the minted lot so receiving can bump QOH."""
+        freeform_line = PurchaseOrderLineItem.objects.create(
+            purchase_order=self.po, description='freeform', qty=Decimal('5.00'),
+            price=Decimal('7.50'), accounting_category=self.cat,
         )
-        self.assertIsNone(result.inventory_item_id)
+        result = MaterialService.resolve_or_create_for_line(
+            freeform_line, **self._args(inventory_item=None, unit_cost=Decimal('7.50')),
+        )
         self.assertEqual(result.quantity, Decimal('5.00'))
+        self.assertIsNotNone(result.inventory_item_id)          # minted lot
+        self.assertTrue(result.inventory_item.code.startswith('LOT-'))
+        self.assertEqual(result.unit_cost, Decimal('7.50'))
+        self.assertEqual(result.cost_source, Material.COST_SOURCE_PO)
+        self.assertEqual(result.inventory_item.qty_on_hand, Decimal('0.00'))
+        # PO line was repointed at the minted lot.
+        freeform_line.refresh_from_db()
+        self.assertEqual(freeform_line.inventory_item_id, result.inventory_item_id)
+
+    def test_po_link_overrides_estimated_cost(self):
+        """Spec: the PO write overrides the placeholder; sell stays locked."""
+        material = self._estimated_material(sell=Decimal('400.00'))  # cost_source='estimated'
+        li = self._add_po_line(price=Decimal('345.00'))
+        result = MaterialService.resolve_or_create_for_line(
+            li, material_id=material.pk, job=self.job, inventory_item=None,
+            qty=li.qty, unit_cost=li.price, description=li.description,
+            accounting_category=self.cat,
+        )
+        self.assertEqual(result.pk, material.pk)
+        material.refresh_from_db()
+        self.assertEqual(material.unit_cost, Decimal('345.00'))
+        self.assertEqual(material.cost_source, Material.COST_SOURCE_PO)
+        self.assertEqual(material.sell_price, Decimal('400.00'))
+
+    def test_explicit_link_to_provisional_establishes_and_repoints(self):
+        """Explicit link to a lot-less provisional material establishes it at the
+        PO line price (cost_source='po') and repoints a pli-less line."""
+        provisional = Material.objects.create(
+            job=self.job, inventory_item=None, quantity=Decimal('3.00'),
+            sell_price=Decimal('0.00'), accounting_category=self.cat,
+            units='ea',
+        )
+        self.assertIsNone(provisional.cost_source)
+        li = self._add_po_line(price=Decimal('12.00'))
+        result = MaterialService.resolve_or_create_for_line(
+            li, material_id=provisional.pk, job=self.job, inventory_item=None,
+            qty=li.qty, unit_cost=li.price, description=li.description,
+            accounting_category=self.cat,
+        )
+        result.refresh_from_db()
+        self.assertIsNotNone(result.inventory_item_id)
+        self.assertEqual(result.unit_cost, Decimal('12.00'))
+        self.assertEqual(result.cost_source, Material.COST_SOURCE_PO)
+        li.refresh_from_db()
+        self.assertEqual(li.inventory_item_id, result.inventory_item_id)
+
+    def _estimated_material(self, *, sell):
+        """A provisional material established with a reverse-markup estimated
+        cost — mirrors the acceptance crystallization output (has a lot)."""
+        Configuration.objects.get_or_create(
+            key='default_material_markup_percent', defaults={'value': '25'})
+        m = Material.objects.create(
+            job=self.job, inventory_item=None, quantity=Decimal('1.00'),
+            sell_price=sell, accounting_category=self.cat, units='ea',
+        )
+        return MaterialService.establish(
+            m, unit_cost=(sell / Decimal('1.25')).quantize(Decimal('0.01')),
+            cost_source=Material.COST_SOURCE_ESTIMATED,
+        )
+
+    def _add_po_line(self, *, price):
+        return PurchaseOrderLineItem.objects.create(
+            purchase_order=self.po, description='ovr', qty=Decimal('1.00'),
+            price=price, accounting_category=self.cat,
+        )
 
     def test_explicit_link_with_job_instance_works(self):
         """Defensive: confirm passing a Job instance (not just pk) works."""
