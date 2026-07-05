@@ -345,7 +345,7 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     const t = matTask({
       material_id: 4, description: 'Bar', quantity: '4', sell_price: '5', units: 'ea',
       consumption_state: 'pending', inventory_item: 7, cost_source: 'po', qty_on_hand: '0',
-      po_line_item_id: 9, po_id: 42, po_number: 'PO-2026-0042',
+      po_line_item_id: 9, po_id: 42, po_number: 'PO-2026-0042', qty_on_order: '4',
     });
     const { getByRole, queryByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     const pill = getByRole('link', { name: 'Ordered — PO-2026-0042' });

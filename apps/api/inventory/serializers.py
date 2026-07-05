@@ -85,11 +85,8 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         return pol.purchase_order.status if pol else None
 
     def get_qty_on_order(self, obj):
-        if not obj.po_line_item_id:
-            return '0'
-        pol = obj.po_line_item
-        outstanding = pol.qty - pol.qty_received - pol.qty_cancelled
-        return str(max(outstanding, Decimal('0')))
+        from apps.inventory.serializer_helpers import material_qty_on_order
+        return material_qty_on_order(obj)
 
     def get_qty_on_hand(self, obj):
         from apps.inventory.serializer_helpers import material_qty_on_hand

@@ -14,7 +14,11 @@ export function materialStatus(m) {
   if (!short(m)) return { key: 'on-hand', label: 'On Hand' };
   if (m.cost_source === 'customer_supplied')
     return { key: 'awaiting-customer', label: 'Awaiting customer' };
-  if (m.po_line_item_id)
+  // Ordered only while the linked PO line still has an outstanding balance —
+  // a fully received (or cancelled-remainder) PO is history, not this row's
+  // incoming supply, so a short row degrades to Needed instead of pointing
+  // at a concluded PO.
+  if (m.po_line_item_id && Number(m.qty_on_order) > 0)
     return { key: 'ordered', label: `Ordered — ${m.po_number || 'PO'}` };
   return { key: 'needed', label: 'Needed' };
 }

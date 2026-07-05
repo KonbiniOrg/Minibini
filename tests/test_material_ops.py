@@ -262,3 +262,24 @@ class DrawMoreTest(TestCase):
         )
         with self.assertRaises(ValidationError):
             MaterialService.draw_more(m, Decimal('1'))
+
+    def test_draw_more_forbidden_on_po_linked(self):
+        """Same rule as expense-bound: the quantity is pinned by a procurement
+        document. Received-then-draw-more would re-show a concluded PO as the
+        row's supply; the recourse is a second material row, ordered on its
+        own (spec: one row ↔ one procurement story)."""
+        from apps.core.models import AppState, Configuration
+        Configuration.objects.create(
+            key='po_number_sequence', value='PO-{year}-{counter:04d}')
+        AppState.objects.create(key='po_counter', value='0')
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('1'), inventory_item=self.pli,
+        )
+        MaterialService.order(m)
+        m.refresh_from_db()
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.draw_more(m, Decimal('2'))
+        self.assertIn('purchase order', str(ctx.exception))
+        m.refresh_from_db()
+        self.assertEqual(m.quantity, Decimal('1'))

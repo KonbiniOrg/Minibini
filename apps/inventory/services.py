@@ -977,6 +977,15 @@ class MaterialService:
             raise ValidationError('draw_more qty must be > 0')
         if material.is_expense_bound:
             raise ValidationError('draw_more not allowed on expense-bound materials')
+        if material.po_line_item_id is not None:
+            # Same rule as expense-bound: the quantity is pinned by a
+            # procurement document. Drawing more would pretend the PO line
+            # covers units it never bought (and re-show a concluded PO as
+            # this row's supply). One row ↔ one procurement story.
+            raise ValidationError(
+                'This material’s quantity is covered by its purchase order. '
+                'Add a second material for the additional quantity and order '
+                'that one.')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('draw_more requires pending state')
         with transaction.atomic():

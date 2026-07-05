@@ -24,10 +24,21 @@ describe('materialStatus', () => {
     expect(materialStatus({ ...base, cost_source: 'customer_supplied', qty_on_hand: '5.00' }).key)
       .toBe('on-hand');
   });
-  it('linked PO → ordered with number in label', () => {
-    const s = materialStatus({ ...base, po_line_item_id: 3, po_number: 'PO-2026-0042' });
+  it('linked PO with outstanding balance → ordered with number in label', () => {
+    const s = materialStatus({
+      ...base, po_line_item_id: 3, po_number: 'PO-2026-0042', qty_on_order: '4.00',
+    });
     expect(s.key).toBe('ordered');
     expect(s.label).toContain('PO-2026-0042');
+  });
+  it('linked but concluded PO (nothing outstanding) → needed, not ordered', () => {
+    // draw-more-after-receipt shape: short again, but the PO already
+    // delivered everything it was going to — it is history, not supply.
+    const s = materialStatus({
+      ...base, po_line_item_id: 3, po_number: 'PO-2026-0042', qty_on_order: '0',
+      qty_on_hand: '1.00', quantity: '3.00',
+    });
+    expect(s.key).toBe('needed');
   });
   it('established + short + unlinked → needed', () => {
     expect(materialStatus(base).key).toBe('needed');

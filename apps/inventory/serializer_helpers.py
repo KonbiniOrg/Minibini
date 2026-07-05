@@ -33,6 +33,20 @@ def material_qty_on_hand(obj):
     return '0'
 
 
+def material_qty_on_order(obj):
+    """Outstanding (un-received, un-cancelled) qty on the Material's linked PO
+    line, as a string. Shared by both MaterialSerializers; materialStatus.js
+    requires a live outstanding balance before it shows the Ordered pill —
+    a fully received PO is history, not this row's incoming supply.
+    """
+    from decimal import Decimal
+    pol = material_po_line_item(obj)
+    if pol is None:
+        return '0'
+    outstanding = pol.qty - pol.qty_received - pol.qty_cancelled
+    return str(max(outstanding, Decimal('0')))
+
+
 def material_po_line_item(obj):
     """Returns the PurchaseOrderLineItem behind a Material if it has one, else
     None. Shared by the inventory-app and tasks-app MaterialSerializers so the
