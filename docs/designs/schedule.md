@@ -204,6 +204,7 @@ working-day scroll offset (clamped ±60). Response envelope:
   "days":    [ { "date": "…", "is_working": true, "label": "Mon · May 19" } ],
   "jobs":    [ { "job_id": 110, "name": "…", "accent_color": "#dc2626",
                  "pre_approval": false, "on_hold": false, "hold_reason": "",
+                 "task_total": 4, "task_completed": 1,
                  "project_manager_name": "…", … } ],
   "workers": [ { "user": { "id": 5, "name": "…", "initials": "RP" },
                  "envelope_by_day": [ [["08:00","12:00"],["12:30","17:00"]], … ],

@@ -530,6 +530,23 @@ class ScheduleWorkDrivenScopeTest(BaseTestCase):
                    if b['task_id'] == task.pk)
         self.assertFalse(bar['pre_approval'])
 
+    def test_chip_payload_carries_task_counts(self):
+        """The chip hover popup renders the board JobCard progress bar, so
+        the schedule's jobs payload must carry task_total/task_completed
+        exactly like the board's get_approved_data."""
+        worker = self._worker('wd_counts')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        self._task(job, worker, status=Task.STATUS_COMPLETE)
+        self._task(job, worker, status=Task.STATUS_PENDING)
+        # Cancelled tasks don't count (matches the board's aggregate).
+        self._task(job, worker, status=Task.STATUS_CANCELLED)
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        chip = next(j for j in result['jobs'] if j['job_id'] == job.pk)
+        self.assertEqual(chip['task_total'], 2)
+        self.assertEqual(chip['task_completed'], 1)
+
     def test_held_job_history_renders_but_never_forecasts(self):
         """A held in_progress job: past bleps stay visible as actuals; the
         planned remainder emits no forecast while held."""

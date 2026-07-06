@@ -249,6 +249,21 @@ class ScheduleService:
         # same JobChipStrip, which sorts nothing, so the order must match too.
         from apps.jobs.services import BoardService
         jobs = BoardService.in_progress_column_jobs()
+        # Task counts per job — the chip hover popup renders the board's
+        # JobCard progress bar, so the payload must match get_approved_data's
+        # (cancelled tasks excluded).
+        from django.db.models import Count
+        strip_job_ids = [j.pk for j in jobs]
+        stats_by_job = {
+            s['job_id']: s
+            for s in Task.objects.filter(job_id__in=strip_job_ids)
+            .exclude(status=Task.STATUS_CANCELLED)
+            .values('job_id')
+            .annotate(
+                total=Count('task_id'),
+                completed=Count('task_id', filter=Q(status=Task.STATUS_COMPLETE)),
+            )
+        }
         jobs_payload = []
         for j in jobs:
             contact_name = ''
@@ -265,6 +280,8 @@ class ScheduleService:
                 'pre_approval': j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
                 'on_hold': j.on_hold,
                 'hold_reason': j.hold_reason,
+                'task_total': stats_by_job.get(j.pk, {}).get('total', 0),
+                'task_completed': stats_by_job.get(j.pk, {}).get('completed', 0),
                 'accent_color': j.accent_color,
                 'contact_id': j.contact_id,
                 'contact_name': contact_name,
