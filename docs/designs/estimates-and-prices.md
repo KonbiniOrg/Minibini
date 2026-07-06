@@ -1251,7 +1251,7 @@ are not COs — they're "cancel and start a new job" territory
 | `created_date`, `sent_date`, `closed_date` | DateTimes | Auto-set on entry to `open` / terminal states; immutable once set |
 | `expiration_date` | DateTime | Frozen at the moment of send; see §14.7 |
 
-A CO can only be created while `job.status == on_hold` —
+A CO can only be created while the job is held (`job.on_hold` flag) —
 `ChangeOrderService.create` enforces this (see §14.5). The CO's
 `estimate` FK pins it to the accepted Estimate that was in force when
 the CO was opened; this is what `compose_agreement` walks.
@@ -1339,32 +1339,39 @@ add/replace lines of **accepted** COs — authoring never creates one.
 
 ### 14.5 Job on_hold gate
 
-COs are authored only while the parent Job is `on_hold` — a
-work-paused state (see `jobs-tasks-and-worksheets.md`). The flow:
+COs are authored only while the parent Job is **held** — the `on_hold`
+flag, an orthogonal pause that leaves the job's true status untouched
+(see `jobs-tasks-and-worksheets.md`). The flow:
 
-1. User pauses the Job (`active → on_hold`). The pause requires a
-   `hold_reason`; no open Bleps may exist.
-2. While on_hold, the user can `ChangeOrderService.create(job_id=…)`.
-   `create` raises if `job.status != on_hold`.
+1. User pauses the Job (`JobService.hold_job` — the flag goes up; the
+   status stays `approved`/`in_progress` underneath). The pause
+   requires a `hold_reason`; no open Bleps may exist.
+2. While held, the user can `ChangeOrderService.create(job_id=…)`.
+   `create` raises unless `job.on_hold` is set.
 3. The user edits the CO (line items), sends it (`draft → open`),
    and waits for customer response.
 4. **Accept:** `ChangeOrderService.update_status(pk, accepted)`
-   advances the Job `on_hold → approved`, writes a system-attributed
-   HistoryEntry, and **crystallizes the CO's deltas onto the Job's
-   atoms** (`ChangeOrderAcceptanceService.on_accept` — §14.11), all in
-   one transaction. The CO's deltas are now part of the agreement and
-   the amended work is real on the Job.
-5. **Reject / Expire:** the Job stays `on_hold`. The CO snapshots its
-   proposal (so the rejected/expired version is preserved verbatim
-   even if the Estimate or its line items later change).
-6. Taking the Job off-hold to `approved` requires that no `draft` or
-   `open` CO exists — `JobService.update_job` enforces this. Resolve
-   open COs (accept / reject / discard) first.
+   **clears the hold** — the job resumes its true underlying status
+   directly (a job held from `in_progress` goes straight back to
+   `in_progress`; the old `on_hold → approved` detour and its second
+   release step are gone) — writes a system-attributed HistoryEntry,
+   and **crystallizes the CO's deltas onto the Job's atoms**
+   (`ChangeOrderAcceptanceService.on_accept` — §14.11), all in one
+   transaction. The CO's deltas are now part of the agreement and the
+   amended work is real on the Job.
+5. **Reject / Expire / Request changes:** the Job stays held. The CO
+   snapshots its proposal (so the rejected/expired version is
+   preserved verbatim even if the Estimate or its line items later
+   change).
+6. **Release guard** (was the "exit guard"): `JobService.release_job`
+   refuses to drop the flag while any `draft` or `open` CO exists —
+   the job stays parked on hold until open COs are resolved
+   (accept / reject / discard).
 
-The on_hold gate is the entire point of the state — it's the room
+The on_hold gate is the entire point of the flag — it's the room
 where CO work happens, isolated from the live work side of the Job.
-The Schedule excludes `on_hold` jobs from forecasts since their
-agreement is in flux (`apps/schedule/services.py`).
+The Schedule never forecasts a held job since its agreement is in
+flux (its history bars still render — `apps/schedule/services.py`).
 
 ### 14.6 `compose_agreement` — the agreement-of-record
 
@@ -1434,9 +1441,9 @@ is the sibling of `mark_estimates_expired` (§5.2a). Each run:
 3. Counts `open` COs with a **NULL** `expiration_date` separately and
    skips them — they never auto-expire.
 
-Like estimates, the parent Job stays `on_hold` after expiry (the
-expiry doesn't release the Job; the user has to take it off-hold once
-all open COs are resolved).
+Like estimates, the parent Job stays held after expiry (the expiry
+doesn't release the hold; the user releases the job once all open COs
+are resolved).
 
 ### 14.8 API endpoints
 
@@ -1546,17 +1553,17 @@ login.
     `proposed_total` / `diff_total`, `actions`, `actionable`,
     `closed_message`, and `current_token` when superseded). A `draft`
     CO or unknown token 404s.
-  - `POST …/accept/` → `update_status(ACCEPTED)` (job `on_hold →
-    approved`).
+  - `POST …/accept/` → `update_status(ACCEPTED)` (clears the job's
+    hold; the job resumes its true status directly).
   - `POST …/reject/` (body `{reason}`) → `update_status(REJECTED)` (job
-    stays `on_hold`).
+    stays held).
   - `POST …/request-changes/` (body `{reason}`) →
     `ChangeOrderService.request_changes`: supersede the open CO and
-    `seed_new` a fresh draft, job stays `on_hold`.
+    `seed_new` a fresh draft, job stays held.
 - **Actionability.** A CO is actionable only when `status == open` and
-  its job is `on_hold` (the CO analog of an estimate being `open` with
-  its job `submitted`). A click that races a shop action is a silent
-  no-op. Each decision runs under `select_for_update`.
+  its job is held (`co.job.on_hold` — the CO analog of an estimate
+  being `open` with its job `submitted`). A click that races a shop
+  action is a silent no-op. Each decision runs under `select_for_update`.
 - **History + notification.** The portal records a *customer*-attributed
   `HistoryEntry` for every decision (the service's `update_status` writes
   only a system entry for accept and none for reject), and fires
@@ -1587,9 +1594,11 @@ login.
 `ChangeOrderAcceptanceService.on_accept(co)`
 (`apps/estimates/co_acceptance.py`) is the CO parallel of §9's
 `EstimateAcceptanceService`. `ChangeOrderService._handle_accepted`
-invokes it after the Job flips `on_hold → approved`, inside
-`update_status`'s transaction — atom writes are blocked while on_hold,
-and a failed crystallization rolls the whole acceptance back.
+invokes it after the Job's hold is cleared (the job resumes its
+underlying status directly — a job held from `in_progress` resumes
+work with no second release step), inside `update_status`'s
+transaction — atom writes are blocked while the job is held, and a
+failed crystallization rolls the whole acceptance back.
 
 Lines are processed **adds → replaces → removes** (each group in
 `line_number` order) so a CO that swaps out the job's only task never
