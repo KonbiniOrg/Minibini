@@ -3,6 +3,9 @@ from django.test import SimpleTestCase
 from django.utils import timezone as dj_tz
 
 from apps.schedule.calendar_arithmetic import (
+    DAY_KEYS,
+    WeekEnvelope,
+    validate_week_envelope,
     DayShape,
     _combine_local,
     add_work_time,
@@ -17,6 +20,111 @@ from apps.schedule.calendar_arithmetic import (
 
 def L(y, m, d, hh, mm):
     return _combine_local(date(y, m, d), time(hh, mm))
+
+
+
+CANONICAL = {
+    'mon': [['08:00', '12:00'], ['12:30', '17:00']],
+    'tue': [['08:00', '17:00']],
+    'wed': [['08:00', '17:00']],
+    'thu': [['08:00', '17:00']],
+    'fri': [['08:00', '17:00']],
+    'sat': [],
+    'sun': [],
+}
+
+
+def _week(**overrides):
+    data = {k: [['08:00', '17:00']] for k in DAY_KEYS[:5]}
+    data['sat'] = []
+    data['sun'] = []
+    data.update(overrides)
+    return data
+
+
+class WeekEnvelopeTest(SimpleTestCase):
+
+    def test_default_is_mon_fri_8_to_5(self):
+        env = WeekEnvelope.default()
+        for weekday in range(5):
+            self.assertEqual(env.days[weekday], ((time(8, 0), time(17, 0)),))
+        self.assertEqual(env.days[5], ())
+        self.assertEqual(env.days[6], ())
+
+    def test_from_json_round_trips_to_json(self):
+        env = WeekEnvelope.from_json(CANONICAL)
+        self.assertEqual(env.to_json(), CANONICAL)
+
+    def test_intervals_on_uses_weekday(self):
+        env = WeekEnvelope.from_json(CANONICAL)
+        # 2026-05-18 is a Monday
+        self.assertEqual(
+            env.intervals_on(date(2026, 5, 18)),
+            ((time(8, 0), time(12, 0)), (time(12, 30), time(17, 0))),
+        )
+
+    def test_is_working_day(self):
+        env = WeekEnvelope.from_json(CANONICAL)
+        self.assertTrue(env.is_working_day(date(2026, 5, 18)))   # Mon
+        self.assertFalse(env.is_working_day(date(2026, 5, 23)))  # Sat
+
+    def test_from_json_rejects_invalid(self):
+        with self.assertRaises(ValueError):
+            WeekEnvelope.from_json({'mon': []})
+
+
+class ValidateWeekEnvelopeTest(SimpleTestCase):
+
+    def test_canonical_is_valid(self):
+        self.assertEqual(validate_week_envelope(CANONICAL), [])
+
+    def test_missing_key(self):
+        data = dict(CANONICAL)
+        del data['sun']
+        self.assertTrue(validate_week_envelope(data))
+
+    def test_extra_key(self):
+        data = dict(CANONICAL)
+        data['monday'] = []
+        self.assertTrue(validate_week_envelope(data))
+
+    def test_not_a_dict(self):
+        self.assertTrue(validate_week_envelope(['08:00', '17:00']))
+
+    def test_unpadded_hour_rejected(self):
+        self.assertTrue(validate_week_envelope(_week(mon=[['8:00', '17:00']])))
+
+    def test_out_of_range_hour_rejected(self):
+        self.assertTrue(validate_week_envelope(_week(mon=[['25:00', '26:00']])))
+
+    def test_zero_length_interval_rejected(self):
+        self.assertTrue(validate_week_envelope(_week(mon=[['08:00', '08:00']])))
+
+    def test_end_before_start_rejected(self):
+        self.assertTrue(validate_week_envelope(_week(mon=[['17:00', '08:00']])))
+
+    def test_overlapping_intervals_rejected(self):
+        self.assertTrue(validate_week_envelope(
+            _week(mon=[['08:00', '12:00'], ['11:00', '17:00']])))
+
+    def test_touching_intervals_rejected(self):
+        self.assertTrue(validate_week_envelope(
+            _week(mon=[['08:00', '12:00'], ['12:00', '17:00']])))
+
+    def test_unsorted_intervals_rejected(self):
+        self.assertTrue(validate_week_envelope(
+            _week(mon=[['13:00', '17:00'], ['08:00', '12:00']])))
+
+    def test_non_list_day_rejected(self):
+        self.assertTrue(validate_week_envelope(_week(mon='08:00-17:00')))
+
+    def test_non_pair_interval_rejected(self):
+        self.assertTrue(validate_week_envelope(_week(mon=[['08:00']])))
+
+    def test_all_days_off_is_valid(self):
+        data = {k: [] for k in DAY_KEYS}
+        self.assertEqual(validate_week_envelope(data), [])
+
 
 
 class DayShapeTest(SimpleTestCase):
