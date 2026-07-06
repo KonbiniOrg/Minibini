@@ -235,7 +235,7 @@
   {:else if s.key === 'needed'}
     {#if onOrderMaterial && $canManageFinancials && mat.po_line_item_id == null}<button type="button" onclick={() => onOrderMaterial(mat)}>Order</button>{/if}
     {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
-    {#if onMarkOnHand}<button type="button" class="quiet-link" onclick={() => onMarkOnHand(mat)}>Mark on-hand</button>{/if}
+    {#if onMarkOnHand}<button type="button" onclick={() => onMarkOnHand(mat)}>Mark on-hand</button>{/if}
   {:else if s.key === 'awaiting-customer'}
     {#if onMarkOnHand}<button type="button" onclick={() => onMarkOnHand(mat)}>Mark received</button>{/if}
   {/if}
@@ -565,12 +565,6 @@
   /* Cost-unconfirmed warning beside the unit-cost cell (estimate placeholder). */
   .cost-warn { margin-left: 3px; color: #d97706; cursor: help; }
 
-  /* Quiet secondary affordance ("Mark on-hand") — a button styled as a link. */
-  .quiet-link {
-    background: none; border: none; padding: 2px 4px; margin: 0 2px 2px 0;
-    color: #6b7280; cursor: pointer; font-size: 11px; text-decoration: underline;
-  }
-  .quiet-link:hover { color: #374151; }
   .po-link { font-size: 11px; color: #1d4ed8; text-decoration: underline; }
   .po-link:hover { color: #1e40af; }
   .expense-row { background: #f0fdf4; }
