@@ -107,8 +107,12 @@ def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
 
 
 def _assert_job_allows_blep(job, allowed_statuses, action):
-    """Reject Blep creation when the Task's Job is in a status where work
-    should not be recorded against it."""
+    """Reject Blep creation when the Task's Job is held or in a status where
+    work should not be recorded against it. The hold check is explicit — the
+    allow-lists describe pipeline position, and a held job keeps its true
+    status underneath, so omission can't cover it."""
+    if job.on_hold:
+        raise ValidationError(f"Cannot {action}: the job is on hold.")
     if job.status not in allowed_statuses:
         labels = ', '.join(f"'{s}'" for s in allowed_statuses)
         raise ValidationError(
@@ -118,12 +122,12 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
 
 
 def _assert_job_not_on_hold(job, action):
-    """Reject task/material mutations while the job is paused on_hold.
+    """Reject task/material mutations while the job is paused (on_hold flag).
 
     Resolve the open change order (accept/reject/discard) or take the job
     off hold before making changes.
     """
-    if job.status == Job.STATUS_ON_HOLD:
+    if job.on_hold:
         raise ValidationError(
             f"Cannot {action} while the job is on hold. Resolve the open "
             f"change order (or take the job off hold) first."
@@ -477,21 +481,22 @@ class JobService:
             setattr(job, field, value)
         status_changed = job.status != old_status
 
-        if status_changed and job.status in (Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED):
+        # A held job is parked: no status changes except cancellation, which
+        # (like release) requires any live change order to be resolved first
+        # and drops the flag as part of the transition.
+        if status_changed and job.on_hold:
+            if job.status != Job.STATUS_CANCELLED:
+                raise ValidationError(
+                    'Job is on hold — release it before changing its status.'
+                )
+            JobService._assert_no_live_change_order(job)
+            job.on_hold = False
+
+        if status_changed and job.status == Job.STATUS_CANCELLED:
             if Blep.objects.filter(task__job=job, end_time__isnull=True).exists():
                 raise ValidationError(
-                    'Cannot pause or cancel the job while a worker has an open time entry — '
+                    'Cannot cancel the job while a worker has an open time entry — '
                     'have them stop first.'
-                )
-
-        if status_changed and old_status == Job.STATUS_ON_HOLD:
-            from apps.estimates.models import ChangeOrder
-            if ChangeOrder.objects.filter(
-                job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN]
-            ).exists():
-                raise ValidationError(
-                    'Resolve the open change order (accept, reject, or discard it) '
-                    'before taking the job off hold.'
                 )
 
         if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
@@ -550,6 +555,60 @@ class JobService:
     def update_status(pk, new_status):
         """Thin wrapper over update_job for a status-only change."""
         return JobService.update_job(pk, status=new_status)
+
+    @staticmethod
+    def _assert_no_live_change_order(job):
+        """A job with a draft or open change order stays parked on hold —
+        the CO must be resolved (accepted, rejected, or discarded) first."""
+        from apps.estimates.models import ChangeOrder
+        if ChangeOrder.objects.filter(
+            job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN]
+        ).exists():
+            raise ValidationError(
+                'Resolve the open change order (accept, reject, or discard it) '
+                'before taking the job off hold.'
+            )
+
+    @staticmethod
+    def hold_job(pk, reason):
+        """Pause the job: set the on_hold flag. The job keeps its true status
+        underneath — holding never moves it through the state machine."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        if job.on_hold:
+            raise ValidationError('Job is already on hold.')
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            raise ValidationError(
+                'Only an approved or in-progress job can be put on hold.'
+            )
+        if not (reason or '').strip():
+            raise ValidationError({'reason': ['A hold reason is required.']})
+        if Blep.objects.filter(task__job=job, end_time__isnull=True).exists():
+            raise ValidationError(
+                'Cannot pause the job while a worker has an open time entry — '
+                'have them stop first.'
+            )
+        job.on_hold = True
+        job.hold_reason = reason.strip()
+        job.save()
+        return job
+
+    @staticmethod
+    def release_job(pk):
+        """Release the hold. Blocked while a draft/open change order exists;
+        Job.save() clears hold_reason when the flag drops."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        if not job.on_hold:
+            raise ValidationError('Job is not on hold.')
+        JobService._assert_no_live_change_order(job)
+        job.on_hold = False
+        job.save()
+        return job
 
     @staticmethod
     def assert_job_deletable(job):
@@ -1481,11 +1540,12 @@ class BoardService:
 
         cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
-        #           + on_hold (reverted-to-planning / paused)
+        # Pipeline: draft + submitted + approved (estimate accepted, awaiting
+        # prep). A held job keeps its true status, so held-from-approved jobs
+        # land here automatically with the 'on-hold' sub-status.
         pipeline_jobs = Job.objects.filter(
             status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
-                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
+                        Job.STATUS_APPROVED]
         ).select_related('contact', 'project_manager').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
@@ -1560,11 +1620,12 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted + approved + on_hold) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved, held or not)
+        with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
             status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
-                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
+                        Job.STATUS_APPROVED]
         ).select_related('contact', 'project_manager').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -1878,8 +1939,10 @@ class BoardService:
 
     @staticmethod
     def compute_sub_status(job):
-        """Derive the sub-status of a job based on related object states."""
-        if job.status == Job.STATUS_ON_HOLD:
+        """Derive the sub-status of a job based on related object states.
+        The hold flag wins over everything — a held job reads 'on-hold'
+        whatever its underlying status."""
+        if job.on_hold:
             return 'on-hold'
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)

@@ -861,17 +861,16 @@ class OnHoldBoardTest(FixtureTestCase):
             **kwargs,
         )
 
-    def test_on_hold_job_appears_in_pipeline_with_sub_status(self):
-        """on_hold job appears in Pipeline lane with sub_status 'on-hold',
-        and is absent from the In Progress lane."""
-        from apps.jobs.services import BoardService
+    def test_held_approved_job_stays_in_pipeline_with_sub_status(self):
+        """A job held from approved keeps its Pipeline placement, with
+        sub_status 'on-hold' — the hold never promotes it."""
+        from apps.jobs.services import BoardService, JobService
 
-        # Reach on_hold via a valid transition: approved -> on_hold
         job = self._make_job(status=Job.STATUS_APPROVED)
-        Job.objects.filter(pk=job.pk).update(status=Job.STATUS_ON_HOLD)
+        JobService.hold_job(job.pk, 'customer rethink')
         job.refresh_from_db()
 
-        # --- sub_status ---
+        # --- sub_status keys off the flag, not the status ---
         self.assertEqual(BoardService.compute_sub_status(job), 'on-hold')
 
         # --- full board: pipeline contains the job ---
@@ -887,12 +886,34 @@ class OnHoldBoardTest(FixtureTestCase):
         in_progress_ids = [j['job_id'] for j in board['approved']['jobs']]
         self.assertNotIn(job.job_id, in_progress_ids)
 
-        # --- per-lane endpoint: get_pipeline_data includes on_hold ---
+        # --- per-lane endpoint: get_pipeline_data includes the held job ---
         pipeline_data = BoardService.get_pipeline_data()
         pipeline_lane_ids = [j['job_id'] for j in pipeline_data['jobs']]
         self.assertIn(job.job_id, pipeline_lane_ids)
 
-        # --- per-lane endpoint: get_approved_data excludes on_hold ---
+        # --- per-lane endpoint: get_approved_data excludes it ---
         approved_data = BoardService.get_approved_data()
         approved_lane_ids = [j['job_id'] for j in approved_data['jobs']]
         self.assertNotIn(job.job_id, approved_lane_ids)
+
+    def test_held_in_progress_job_keeps_in_progress_placement(self):
+        """A job held from in_progress stays in the In Progress lane with
+        sub_status 'on-hold' — it keeps its surface (spec Decision 2)."""
+        from apps.jobs.services import BoardService, JobService
+
+        job = self._make_job(status=Job.STATUS_DRAFT)
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            job.status = s
+            job.save()
+        JobService.hold_job(job.pk, 'change order pending')
+        job.refresh_from_db()
+
+        self.assertEqual(BoardService.compute_sub_status(job), 'on-hold')
+
+        board = BoardService.get_board_data()
+        in_progress = {j['job_id']: j for j in board['approved']['jobs']}
+        self.assertIn(job.job_id, in_progress)
+        self.assertEqual(in_progress[job.job_id]['sub_status'], 'on-hold')
+
+        pipeline_ids = [j['job_id'] for j in board['pipeline']]
+        self.assertNotIn(job.job_id, pipeline_ids)

@@ -1,8 +1,9 @@
 """Bug 2: creating a Blep on a Task is rejected when the Job's status
 disallows it. Pre-approval work is now permitted: live start_work allows
 DRAFT/SUBMITTED/APPROVED/IN_PROGRESS; backfilled create_historical additionally
-allows WORK_COMPLETE and CANCELLED. Both still reject ON_HOLD; start_work also
-rejects WORK_COMPLETE/CANCELLED, and create_historical rejects COMPLETED/REJECTED."""
+allows WORK_COMPLETE and CANCELLED. Both explicitly reject a HELD job
+(on_hold flag) regardless of status; start_work also rejects
+WORK_COMPLETE/CANCELLED, and create_historical rejects COMPLETED/REJECTED."""
 
 from datetime import timedelta
 
@@ -76,12 +77,15 @@ class StartWorkJobStatusGuardTest(BaseTestCase):
         result = TaskLifecycleService.start_work(task.pk, self.user)
         self.assertIn('blep', result)
 
-    def test_start_work_rejected_on_on_hold_job(self):
+    def test_start_work_rejected_on_held_job(self):
+        from apps.jobs.services import JobService
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
-                      Job.STATUS_ON_HOLD)
+                      Job.STATUS_IN_PROGRESS)
         task = self._task(job)
-        with self.assertRaises(ValidationError):
+        JobService.hold_job(job.pk, 'paused')
+        with self.assertRaises(ValidationError) as cm:
             TaskLifecycleService.start_work(task.pk, self.user)
+        self.assertIn('on hold', str(cm.exception))
 
     def test_start_work_rejected_on_cancelled_job(self):
         job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
@@ -174,13 +178,15 @@ class CreateHistoricalJobStatusGuardTest(BaseTestCase):
             BlepService.create_historical(self.user, task, start, end)
         )
 
-    def test_rejected_on_on_hold_job(self):
-        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
-                      Job.STATUS_ON_HOLD)
+    def test_rejected_on_held_job(self):
+        from apps.jobs.services import JobService
+        job = _job_at(self.contact, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED)
         task = self._task(job)
+        JobService.hold_job(job.pk, 'paused')
         start, end = self._times()
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValidationError) as cm:
             BlepService.create_historical(self.user, task, start, end)
+        self.assertIn('on hold', str(cm.exception))
 
 
 class ActualQtyCancelledJobTest(BaseTestCase):

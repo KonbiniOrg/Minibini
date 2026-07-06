@@ -148,6 +148,7 @@ class ScheduleService:
             assignee__isnull=False,
             status__in=relevant_statuses,
             job__status=Job.STATUS_IN_PROGRESS,
+            job__on_hold=False,
         ).values_list('assignee_id', flat=True))
         # Plus workers with completed tasks blepped today (local).
         completed_today_worker_ids = set(Task.objects.filter(
@@ -155,7 +156,7 @@ class ScheduleService:
             status=Task.STATUS_COMPLETE,
             blep__end_time__gte=today_start_local,
             blep__end_time__lt=today_end_local,
-        ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('assignee_id', flat=True))
+        ).exclude(job__on_hold=True).values_list('assignee_id', flat=True))
         worker_ids |= completed_today_worker_ids
         # Plus anyone with a blep open now or ending in the window, even if
         # they aren't the task's assignee — concurrent / joined / taken-over
@@ -388,13 +389,14 @@ class ScheduleService:
             assignee=worker,
             status__in=relevant_statuses,
             job__status=Job.STATUS_IN_PROGRESS,
+            job__on_hold=False,
         ).values_list('pk', flat=True))
         history_ids = set(Task.objects.filter(
             assignee=worker,
             status=Task.STATUS_COMPLETE,
             blep__end_time__gte=window_start,
             blep__end_time__lt=window_end,
-        ).exclude(job__status=Job.STATUS_ON_HOLD).values_list('pk', flat=True))
+        ).exclude(job__on_hold=True).values_list('pk', flat=True))
         blepped_ids = set(Blep.objects.filter(user=worker).filter(
             Q(end_time__isnull=True) |
             Q(end_time__gte=window_start, end_time__lt=window_end)
@@ -403,7 +405,7 @@ class ScheduleService:
 
         tasks_qs = Task.objects.filter(
             pk__in=task_ids,
-        ).exclude(job__status=Job.STATUS_ON_HOLD).select_related('job').order_by('worker_queue', 'pk')
+        ).exclude(job__on_hold=True).select_related('job').order_by('worker_queue', 'pk')
 
         # Pure worker_queue order — exactly the job board's order. Actual
         # pieces are wall-clock-anchored and forecasts always start at/after
