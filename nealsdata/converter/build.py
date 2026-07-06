@@ -668,6 +668,7 @@ def build_jobs(c):
             'customer_po_number': '',
             'description':        description,
             'accent_color':       accent_color,
+            'on_hold':            False,
             'hold_reason':        '',
             'project_manager':    None,   # set by assign_project_managers (non-draft)
         })
@@ -2445,7 +2446,9 @@ _WORKED_JOB_STATUSES = {'in_progress', 'work_complete', 'completed'}
 # Job statuses that DO hold reservations: earmarks exist only from approval
 # (create_on_job skips draft/submitted; the acceptance sweep creates them)
 # until release at completion/cancellation. Pre-approval jobs carry none.
-_EARMARKED_JOB_STATUSES = {'approved', 'in_progress', 'on_hold'}
+# (on_hold is a flag, not a status — a held job keeps earmarks via its real
+# approved/in_progress status.)
+_EARMARKED_JOB_STATUSES = {'approved', 'in_progress'}
 
 
 def build_purchasing(c):

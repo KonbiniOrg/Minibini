@@ -1557,8 +1557,8 @@ class ProjectManagerAssignmentTest(unittest.TestCase):
             'job_number': f'J{pk}', 'name': 'j', 'contact': 1, 'status': status,
             'created_date': '2026-01-01T00:00:00+00:00', 'start_date': None,
             'due_date': None, 'completed_date': None, 'customer_po_number': '',
-            'description': '', 'accent_color': '#f97066', 'hold_reason': '',
-            'project_manager': None,
+            'description': '', 'accent_color': '#f97066', 'on_hold': False,
+            'hold_reason': '', 'project_manager': None,
         })
 
     def test_non_draft_jobs_get_pm_draft_does_not(self):
