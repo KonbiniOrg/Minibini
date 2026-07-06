@@ -19,9 +19,12 @@ from apps.jobs.models import Job
 
 
 def _advance_job_to_on_hold(job):
-    job.status = Job.STATUS_SUBMITTED; job.save()
-    job.status = Job.STATUS_APPROVED; job.save()
-    job.status = Job.STATUS_ON_HOLD; job.save()
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -65,7 +68,7 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
     def test_job_stays_on_hold(self):
         ChangeOrderService.request_changes(self.co.pk, self._actor())
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
 
     def test_carries_line_items_to_new_draft(self):
         new_co = ChangeOrderService.request_changes(self.co.pk, self._actor())
@@ -92,11 +95,11 @@ class ChangeOrderRequestChangesTests(FixtureTestCase):
         self.assertGreaterEqual(len(snaps), 1)
 
     def test_new_draft_blocks_off_hold(self):
-        """The seeded draft keeps the on_hold exit guard armed."""
+        """The seeded draft keeps the release guard armed."""
         from apps.jobs.services import JobService
         ChangeOrderService.request_changes(self.co.pk, self._actor())
         with self.assertRaises(ValidationError):
-            JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+            JobService.release_job(self.job.pk)
 
     def test_request_changes_history_uses_changeorder_object_type(self):
         ChangeOrderService.request_changes(self.co.pk, self._actor())

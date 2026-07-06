@@ -129,11 +129,12 @@ class DirectMaterialCreateServiceTest(TestCase):
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_on_hold_job_is_rejected(self):
-        """create_on_job raises ValidationError on an on_hold job."""
+        """create_on_job raises ValidationError on a held job."""
         job = Job.objects.create(
             job_number='DM-SVC-HOLD',
             contact=self.contact,
-            status=Job.STATUS_ON_HOLD,
+            status=Job.STATUS_APPROVED,
+            on_hold=True, hold_reason='paused',
         )
         with self.assertRaises(ValidationError):
             MaterialService.create_on_job(

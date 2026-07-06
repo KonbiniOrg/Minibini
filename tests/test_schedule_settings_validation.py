@@ -1,3 +1,5 @@
+import json
+
 from rest_framework.test import APIClient
 from django.contrib.auth.models import Permission
 from tests.base import BaseTestCase
@@ -11,6 +13,14 @@ def _admin():
     return User.objects.get(pk=user.pk)
 
 
+def _envelope(**overrides):
+    data = {k: [['08:00', '17:00']] for k in ('mon', 'tue', 'wed', 'thu', 'fri')}
+    data['sat'] = []
+    data['sun'] = []
+    data.update(overrides)
+    return data
+
+
 class ScheduleSettingsValidationTest(BaseTestCase):
 
     def setUp(self):
@@ -18,40 +28,78 @@ class ScheduleSettingsValidationTest(BaseTestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=_admin())
 
-    def test_workday_start_must_parse(self):
+    def test_envelope_must_be_valid_json(self):
         response = self.client.patch('/api/settings/', {
-            'schedule_workday_start': 'not-a-time',
+            'schedule_week_envelope': 'not-json{',
         }, format='json')
         self.assertEqual(response.status_code, 400)
-        self.assertIn('schedule_workday_start', response.json())
+        self.assertIn('schedule_week_envelope', response.json())
 
-    def test_workday_end_must_be_after_start(self):
-        for k, v in {
-            'schedule_workday_start': '08:00',
-            'schedule_workday_end': '17:00',
-            'schedule_task_buffer_minutes': '10',
-            'schedule_horizon_days': '3',
-        }.items():
-            Configuration.objects.update_or_create(key=k, defaults={'value': v})
-
+    def test_envelope_rejects_overlapping_intervals(self):
         response = self.client.patch('/api/settings/', {
-            'schedule_workday_end': '07:00',  # before the 08:00 start
+            'schedule_week_envelope': _envelope(
+                mon=[['08:00', '12:00'], ['11:00', '17:00']]),
         }, format='json')
         self.assertEqual(response.status_code, 400)
-        self.assertIn('schedule_workday_end', response.json())
+        self.assertIn('schedule_week_envelope', response.json())
+
+    def test_envelope_rejects_end_before_start(self):
+        response = self.client.patch('/api/settings/', {
+            'schedule_week_envelope': _envelope(mon=[['17:00', '08:00']]),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('schedule_week_envelope', response.json())
+
+    def test_valid_envelope_dict_accepted_and_stored_as_json(self):
+        envelope = _envelope(mon=[['08:00', '12:00'], ['12:30', '17:00']], sat=[['09:00', '13:00']])
+        response = self.client.patch('/api/settings/', {
+            'schedule_week_envelope': envelope,
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        stored = Configuration.objects.get(key='schedule_week_envelope').value
+        self.assertEqual(json.loads(stored), envelope)
+
+    def test_valid_envelope_json_string_accepted(self):
+        envelope = _envelope()
+        response = self.client.patch('/api/settings/', {
+            'schedule_week_envelope': json.dumps(envelope),
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        stored = Configuration.objects.get(key='schedule_week_envelope').value
+        self.assertEqual(json.loads(stored), envelope)
+
+    def test_buffer_must_be_non_negative_integer(self):
+        response = self.client.patch('/api/settings/', {
+            'schedule_task_buffer_minutes': '-1',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('schedule_task_buffer_minutes', response.json())
+
+    def test_horizon_days_must_be_positive_integer(self):
+        response = self.client.patch('/api/settings/', {
+            'schedule_horizon_days': '0',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('schedule_horizon_days', response.json())
 
     def test_valid_schedule_settings_accepted(self):
         response = self.client.patch('/api/settings/', {
-            'schedule_workday_start': '07:00',
-            'schedule_workday_end': '16:00',
             'schedule_task_buffer_minutes': '15',
             'schedule_horizon_days': '5',
         }, format='json')
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(
-            Configuration.objects.get(key='schedule_workday_start').value,
-            '07:00',
+            Configuration.objects.get(key='schedule_task_buffer_minutes').value,
+            '15',
         )
+
+    def test_workday_keys_are_gone_from_schedule_validation(self):
+        """The retired schedule_workday_start/_end keys are now just unknown
+        passthrough keys — no schedule validation fires on them."""
+        response = self.client.patch('/api/settings/', {
+            'schedule_workday_start': 'not-a-time',
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
 
     def test_non_schedule_keys_still_work(self):
         # Sanity: the validator doesn't reject unrelated keys.

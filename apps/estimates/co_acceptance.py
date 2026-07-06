@@ -1,9 +1,9 @@
 """CO acceptance crystallizes add/remove/replace deltas onto Job atoms.
 
 Triggered when a ChangeOrder transitions to ACCEPTED
-(ChangeOrderService._handle_accepted), after the Job has been advanced
-on_hold → approved and inside the same transaction — atom mutations are blocked
-while a job is on_hold, so crystallization runs against the approved job.
+(ChangeOrderService._handle_accepted), after the Job's hold has been cleared
+and inside the same transaction — atom mutations are blocked while a job is
+held, so crystallization runs against the released job.
 
 Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
 
@@ -57,8 +57,8 @@ class ChangeOrderAcceptanceService:
         from apps.inventory.services import InventoryService
         from apps.jobs.models import Job
 
-        # The caller (_handle_accepted) just advanced the job on_hold →
-        # approved; fetch fresh so the on-hold guards see committed state.
+        # The caller (_handle_accepted) just cleared the job's hold; fetch
+        # fresh so the on-hold guards see committed state.
         job = Job.objects.get(pk=co.job_id)
 
         counts = {

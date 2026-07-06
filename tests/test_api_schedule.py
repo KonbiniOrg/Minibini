@@ -26,7 +26,7 @@ class ScheduleAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         for key in ('now', 'horizon_start', 'horizon_end', 'horizon_days',
-                    'day_shape', 'days', 'jobs', 'workers'):
+                    'axis', 'days', 'jobs', 'workers'):
             self.assertIn(key, data)
 
     def test_days_param_respected(self):
@@ -71,16 +71,18 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
         return job
 
     def test_on_hold_job_task_worker_absent_from_schedule(self):
-        """A worker whose only open task is on an on_hold job must not
-        appear in the schedule's workers list."""
+        """A worker whose only open task is on a held job must not
+        appear in the schedule's workers list (no forecast while held)."""
+        from apps.jobs.services import JobService
         contact = Job.objects.first().contact
         worker = self._make_worker()
         job = self._make_job(
             contact,
             Job.STATUS_SUBMITTED,
             Job.STATUS_APPROVED,
-            Job.STATUS_ON_HOLD,
         )
+        JobService.hold_job(job.pk, 'paused')
+        job.refresh_from_db()
         Task.objects.create(
             name='Hold task',
             job=job,
@@ -439,3 +441,154 @@ class ScheduleJobsPMNameTest(BaseTestCase):
         match = [j for j in resp.data['jobs'] if j['job_id'] == self.job.pk]
         self.assertEqual(len(match), 1)
         self.assertIsNone(match[0]['project_manager_name'])
+
+
+class ScheduleWorkDrivenScopeTest(BaseTestCase):
+    """Phase 1 (work-driven surfaces): assigned, still-planned pre-approval
+    work forecasts and is flagged; held jobs keep their history bars but
+    never forecast."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Job.objects.first().contact
+
+    def _job(self, *statuses):
+        job = Job.objects.create(
+            job_number=f'JOB-SCHED-WD-{timezone.now().timestamp()}',
+            name='WorkDriven Job',
+            contact=self.contact,
+            status=Job.STATUS_DRAFT,
+        )
+        for s in statuses:
+            job.status = s
+            job.save()
+        return job
+
+    def _worker(self, username):
+        return User.objects.create_user(
+            username=username, password='pass',
+            first_name=username, last_name='W',
+        )
+
+    def _task(self, job, worker, status=Task.STATUS_PENDING, **extra):
+        return Task.objects.create(
+            name='WD task', job=job, assignee=worker, status=status,
+            rate_scheme_id=1, est_worker_time=timedelta(hours=1), **extra,
+        )
+
+    def _lane(self, result, worker):
+        return next(
+            (w for w in result['workers'] if w['user']['id'] == worker.pk), None
+        )
+
+    def test_assigned_pending_task_on_draft_job_forecasts_flagged(self):
+        worker = self._worker('wd_draft')
+        job = self._job()  # stays draft
+        task = self._task(job, worker)
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        lane = self._lane(result, worker)
+        self.assertIsNotNone(lane)
+        bars = [b for b in lane['bars'] if b['task_id'] == task.pk]
+        self.assertEqual(len(bars), 1)
+        self.assertEqual(bars[0]['kind'], 'forecast')
+        self.assertTrue(bars[0]['pre_approval'])
+        # The job also reaches the chip strip, flagged.
+        chip = next(j for j in result['jobs'] if j['job_id'] == job.pk)
+        self.assertTrue(chip['pre_approval'])
+
+    def test_submitted_job_assigned_task_forecasts(self):
+        worker = self._worker('wd_submitted')
+        job = self._job(Job.STATUS_SUBMITTED)
+        task = self._task(job, worker)
+        result = ScheduleService.get_schedule(now=timezone.now())
+        lane = self._lane(result, worker)
+        self.assertIsNotNone(lane)
+        self.assertEqual(
+            [b['kind'] for b in lane['bars'] if b['task_id'] == task.pk],
+            ['forecast'],
+        )
+
+    def test_unassigned_pre_approval_task_emits_nothing(self):
+        worker = self._worker('wd_unassigned')
+        job = self._job()
+        Task.objects.create(
+            name='Unassigned quote task', job=job, status=Task.STATUS_PENDING,
+            rate_scheme_id=1,
+        )
+        result = ScheduleService.get_schedule(now=timezone.now())
+        self.assertIsNone(self._lane(result, worker))
+        self.assertNotIn(job.pk, [j['job_id'] for j in result['jobs']])
+
+    def test_in_progress_bar_not_flagged_pre_approval(self):
+        worker = self._worker('wd_plain')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        task = self._task(job, worker)
+        result = ScheduleService.get_schedule(now=timezone.now())
+        bar = next(b for b in self._lane(result, worker)['bars']
+                   if b['task_id'] == task.pk)
+        self.assertFalse(bar['pre_approval'])
+
+    def test_chip_payload_carries_task_counts(self):
+        """The chip hover popup renders the board JobCard progress bar, so
+        the schedule's jobs payload must carry task_total/task_completed
+        exactly like the board's get_approved_data."""
+        worker = self._worker('wd_counts')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        self._task(job, worker, status=Task.STATUS_COMPLETE)
+        self._task(job, worker, status=Task.STATUS_PENDING)
+        # Cancelled tasks don't count (matches the board's aggregate).
+        self._task(job, worker, status=Task.STATUS_CANCELLED)
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        chip = next(j for j in result['jobs'] if j['job_id'] == job.pk)
+        self.assertEqual(chip['task_total'], 2)
+        self.assertEqual(chip['task_completed'], 1)
+
+    def test_chip_payload_is_the_board_payload(self):
+        """One serializer feeds both surfaces: the schedule's jobs payload
+        must be byte-identical to the board's In Progress jobs payload —
+        including sub_status (the blocked hatch never worked on the
+        schedule strip because its hand-rolled dict lacked the key)."""
+        from apps.jobs.services import BoardService
+        worker = self._worker('wd_paysym')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        self._task(job, worker, status=Task.STATUS_BLOCKED,
+                   blocked_reason='waiting on paint')
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        board = BoardService.get_approved_data()
+
+        chip = next(j for j in result['jobs'] if j['job_id'] == job.pk)
+        card = next(j for j in board['jobs'] if j['job_id'] == job.pk)
+        self.assertEqual(chip, card)
+        self.assertEqual(chip['sub_status'], 'blocked')
+
+    def test_held_job_history_renders_but_never_forecasts(self):
+        """A held in_progress job: past bleps stay visible as actuals; the
+        planned remainder emits no forecast while held."""
+        from apps.jobs.services import JobService
+        worker = self._worker('wd_held')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        task = self._task(job, worker, status=Task.STATUS_IN_PROGRESS)
+        now = timezone.now()
+        Blep.objects.create(
+            user=worker, task=task,
+            start_time=now - timedelta(hours=2),
+            end_time=now - timedelta(hours=1),
+        )
+        JobService.hold_job(job.pk, 'change order pending')
+
+        result = ScheduleService.get_schedule(now=now)
+        lane = self._lane(result, worker)
+        self.assertIsNotNone(lane)
+        kinds = [b['kind'] for b in lane['bars'] if b['task_id'] == task.pk]
+        self.assertEqual(kinds, ['actual'])
+        # The held in_progress job keeps its chip, flagged.
+        chip = next(j for j in result['jobs'] if j['job_id'] == job.pk)
+        self.assertTrue(chip['on_hold'])
+        self.assertEqual(chip['hold_reason'], 'change order pending')

@@ -157,43 +157,29 @@ def _validate_schedule_keys(data):
     """Validate schedule_* keys in the incoming settings payload.
 
     Returns an error dict (suitable for a 400 response) or None if valid.
-    Reads any keys present in `data` plus falls back to the current stored
-    values to evaluate cross-key constraints (workday end after start).
+    `schedule_week_envelope` may arrive as a dict or a JSON string; the
+    per-day interval rules (HH:MM, ordered, non-overlapping) live in
+    apps.schedule.calendar_arithmetic.validate_week_envelope.
     """
-    schedule_keys = (
-        'schedule_workday_start', 'schedule_workday_end',
-        'schedule_task_buffer_minutes', 'schedule_horizon_days',
-    )
-    incoming = {k: v for k, v in data.items() if k in schedule_keys}
-    if not incoming:
-        return None
+    errors = {}
 
-    # Pull current values for any keys not being set in this request.
-    current = {}
-    for key in schedule_keys:
-        if key in incoming:
-            current[key] = incoming[key]
-        else:
+    if 'schedule_week_envelope' in data:
+        from apps.schedule.calendar_arithmetic import validate_week_envelope
+        raw = data['schedule_week_envelope']
+        parsed = raw
+        if isinstance(raw, str):
             try:
-                current[key] = Configuration.objects.get(key=key).value
-            except Configuration.DoesNotExist:
-                current[key] = None
-
-    def parse_hhmm(s, label):
-        if s is None:
-            return None
-        try:
-            hh, mm = str(s).split(':')
-            hh, mm = int(hh), int(mm)
-            if not (0 <= hh <= 23 and 0 <= mm <= 59):
-                raise ValueError
-            return hh * 60 + mm
-        except (ValueError, AttributeError):
-            return {'__error__': f"{label} must be HH:MM"}
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                parsed = None
+        if parsed is None:
+            errors['schedule_week_envelope'] = 'must be valid envelope JSON'
+        else:
+            messages = validate_week_envelope(parsed)
+            if messages:
+                errors['schedule_week_envelope'] = ' '.join(messages)
 
     def parse_int(s, label, min_v=0):
-        if s is None:
-            return None
         try:
             n = int(s)
             if n < min_v:
@@ -202,25 +188,16 @@ def _validate_schedule_keys(data):
         except (TypeError, ValueError):
             return {'__error__': f"{label} must be an integer"}
 
-    errors = {}
-
-    wstart = parse_hhmm(current['schedule_workday_start'], 'schedule_workday_start')
-    if isinstance(wstart, dict): errors['schedule_workday_start'] = wstart['__error__']
-    wend = parse_hhmm(current['schedule_workday_end'], 'schedule_workday_end')
-    if isinstance(wend, dict): errors['schedule_workday_end'] = wend['__error__']
-    buf = parse_int(current['schedule_task_buffer_minutes'],
-                    'schedule_task_buffer_minutes', min_v=0)
-    if isinstance(buf, dict): errors['schedule_task_buffer_minutes'] = buf['__error__']
-    horiz = parse_int(current['schedule_horizon_days'],
-                      'schedule_horizon_days', min_v=1)
-    if isinstance(horiz, dict): errors['schedule_horizon_days'] = horiz['__error__']
-
-    if errors:
-        return errors
-
-    # Cross-key checks (only when all relevant values parse).
-    if wstart is not None and wend is not None and wstart >= wend:
-        errors['schedule_workday_end'] = 'must be after schedule_workday_start'
+    if 'schedule_task_buffer_minutes' in data:
+        buf = parse_int(data['schedule_task_buffer_minutes'],
+                        'schedule_task_buffer_minutes', min_v=0)
+        if isinstance(buf, dict):
+            errors['schedule_task_buffer_minutes'] = buf['__error__']
+    if 'schedule_horizon_days' in data:
+        horiz = parse_int(data['schedule_horizon_days'],
+                          'schedule_horizon_days', min_v=1)
+        if isinstance(horiz, dict):
+            errors['schedule_horizon_days'] = horiz['__error__']
 
     return errors or None
 
@@ -284,7 +261,12 @@ def settings_view(request):
                     {'default_material_accounting_category': 'unknown or inactive category'},
                     status=400)
     for key, value in request.data.items():
-        ConfigurationService.set(key, str(value))
+        # The envelope is stored as canonical JSON; a dict payload must be
+        # serialized (str(dict) would write unparseable Python repr).
+        if key == 'schedule_week_envelope' and not isinstance(value, str):
+            ConfigurationService.set(key, json.dumps(value))
+        else:
+            ConfigurationService.set(key, str(value))
     configs = Configuration.objects.all()
     data = {c.key: c.value for c in configs}
     return Response(data)

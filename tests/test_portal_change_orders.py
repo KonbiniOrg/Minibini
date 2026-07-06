@@ -21,9 +21,12 @@ from apps.jobs.services import JobService
 
 
 def _advance_job_to_on_hold(job):
-    job.status = Job.STATUS_SUBMITTED; job.save()
-    job.status = Job.STATUS_APPROVED; job.save()
-    job.status = Job.STATUS_ON_HOLD; job.save()
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -128,7 +131,7 @@ class PortalChangeOrderTest(TestCase):
         self.co.refresh_from_db()
         self.job.refresh_from_db()
         self.assertEqual(self.co.status, ChangeOrder.STATUS_REJECTED)
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
         entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=self.co.pk,
             entry_type='action', user__isnull=True,
@@ -146,7 +149,7 @@ class PortalChangeOrderTest(TestCase):
         self.co.refresh_from_db()
         self.job.refresh_from_db()
         self.assertEqual(self.co.status, ChangeOrder.STATUS_SUPERSEDED)
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
         self.assertTrue(
             ChangeOrder.objects.filter(
                 job=self.job, status=ChangeOrder.STATUS_DRAFT,

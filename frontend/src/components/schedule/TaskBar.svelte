@@ -81,6 +81,7 @@
   <div class="task-bar {zigClass} kind-{bar.kind}"
        class:dimmed
        class:blocked={bar.status === 'blocked'}
+       class:pre-approval={bar.pre_approval && bar.kind === 'forecast'}
        class:running={bar.is_running}
        draggable={isDraggable}
        ondragstart={handleDragStart}
@@ -121,6 +122,14 @@
   /* A red ring so a blocked bar reads as blocked at a glance (mirrors the
      job board's red treatment). */
   .task-bar.blocked { box-shadow: inset 0 0 0 2px #ef4444; }
+  /* Pre-approval (quote-stage) work: dashed outline + slightly washed fill —
+     unmistakably "not a released job's work". Forecasts only: logged past
+     work is immutable fact and renders plain whatever the job's status. */
+  .task-bar.pre-approval {
+    outline: 2px dashed rgba(255,255,255,0.9);
+    outline-offset: -3px;
+    opacity: 0.85;
+  }
   .label {
     position: absolute; left: 4px; top: 2px;
     font-size: 10px; color: #fff;

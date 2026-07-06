@@ -439,7 +439,7 @@
       <TaskTree
         tasks={subtasks}
         readonly={taskIsTerminal}
-        jobOnHold={job?.status === 'on_hold'}
+        jobOnHold={job?.on_hold ?? false}
         canManage={task?.can_manage}
         showStatus={true}
         showAssignee={true}

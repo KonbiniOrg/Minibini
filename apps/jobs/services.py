@@ -107,8 +107,12 @@ def _existing_overlaps(user, start_time, end_time, exclude_blep_id=None):
 
 
 def _assert_job_allows_blep(job, allowed_statuses, action):
-    """Reject Blep creation when the Task's Job is in a status where work
-    should not be recorded against it."""
+    """Reject Blep creation when the Task's Job is held or in a status where
+    work should not be recorded against it. The hold check is explicit — the
+    allow-lists describe pipeline position, and a held job keeps its true
+    status underneath, so omission can't cover it."""
+    if job.on_hold:
+        raise ValidationError(f"Cannot {action}: the job is on hold.")
     if job.status not in allowed_statuses:
         labels = ', '.join(f"'{s}'" for s in allowed_statuses)
         raise ValidationError(
@@ -118,12 +122,12 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
 
 
 def _assert_job_not_on_hold(job, action):
-    """Reject task/material mutations while the job is paused on_hold.
+    """Reject task/material mutations while the job is paused (on_hold flag).
 
     Resolve the open change order (accept/reject/discard) or take the job
     off hold before making changes.
     """
-    if job.status == Job.STATUS_ON_HOLD:
+    if job.on_hold:
         raise ValidationError(
             f"Cannot {action} while the job is on hold. Resolve the open "
             f"change order (or take the job off hold) first."
@@ -477,21 +481,22 @@ class JobService:
             setattr(job, field, value)
         status_changed = job.status != old_status
 
-        if status_changed and job.status in (Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED):
+        # A held job is parked: no status changes except cancellation, which
+        # (like release) requires any live change order to be resolved first
+        # and drops the flag as part of the transition.
+        if status_changed and job.on_hold:
+            if job.status != Job.STATUS_CANCELLED:
+                raise ValidationError(
+                    'Job is on hold — release it before changing its status.'
+                )
+            JobService._assert_no_live_change_order(job)
+            job.on_hold = False
+
+        if status_changed and job.status == Job.STATUS_CANCELLED:
             if Blep.objects.filter(task__job=job, end_time__isnull=True).exists():
                 raise ValidationError(
-                    'Cannot pause or cancel the job while a worker has an open time entry — '
+                    'Cannot cancel the job while a worker has an open time entry — '
                     'have them stop first.'
-                )
-
-        if status_changed and old_status == Job.STATUS_ON_HOLD:
-            from apps.estimates.models import ChangeOrder
-            if ChangeOrder.objects.filter(
-                job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN]
-            ).exists():
-                raise ValidationError(
-                    'Resolve the open change order (accept, reject, or discard it) '
-                    'before taking the job off hold.'
                 )
 
         if status_changed and job.status == Job.STATUS_WORK_COMPLETE:
@@ -550,6 +555,60 @@ class JobService:
     def update_status(pk, new_status):
         """Thin wrapper over update_job for a status-only change."""
         return JobService.update_job(pk, status=new_status)
+
+    @staticmethod
+    def _assert_no_live_change_order(job):
+        """A job with a draft or open change order stays parked on hold —
+        the CO must be resolved (accepted, rejected, or discarded) first."""
+        from apps.estimates.models import ChangeOrder
+        if ChangeOrder.objects.filter(
+            job=job, status__in=[ChangeOrder.STATUS_DRAFT, ChangeOrder.STATUS_OPEN]
+        ).exists():
+            raise ValidationError(
+                'Resolve the open change order (accept, reject, or discard it) '
+                'before taking the job off hold.'
+            )
+
+    @staticmethod
+    def hold_job(pk, reason):
+        """Pause the job: set the on_hold flag. The job keeps its true status
+        underneath — holding never moves it through the state machine."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        if job.on_hold:
+            raise ValidationError('Job is already on hold.')
+        if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            raise ValidationError(
+                'Only an approved or in-progress job can be put on hold.'
+            )
+        if not (reason or '').strip():
+            raise ValidationError({'reason': ['A hold reason is required.']})
+        if Blep.objects.filter(task__job=job, end_time__isnull=True).exists():
+            raise ValidationError(
+                'Cannot pause the job while a worker has an open time entry — '
+                'have them stop first.'
+            )
+        job.on_hold = True
+        job.hold_reason = reason.strip()
+        job.save()
+        return job
+
+    @staticmethod
+    def release_job(pk):
+        """Release the hold. Blocked while a draft/open change order exists;
+        Job.save() clears hold_reason when the flag drops."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        if not job.on_hold:
+            raise ValidationError('Job is not on hold.')
+        JobService._assert_no_live_change_order(job)
+        job.on_hold = False
+        job.save()
+        return job
 
     @staticmethod
     def assert_job_deletable(job):
@@ -1481,11 +1540,12 @@ class BoardService:
 
         cutoff = timezone.now() - timedelta(days=retention_days)
 
-        # Pipeline: draft + submitted + approved (estimate accepted, awaiting prep)
-        #           + on_hold (reverted-to-planning / paused)
+        # Pipeline: draft + submitted + approved (estimate accepted, awaiting
+        # prep). A held job keeps its true status, so held-from-approved jobs
+        # land here automatically with the 'on-hold' sub-status.
         pipeline_jobs = Job.objects.filter(
             status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
-                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
+                        Job.STATUS_APPROVED]
         ).select_related('contact', 'project_manager').order_by('due_date')
         pipeline = [BoardService._serialize_job(job) for job in pipeline_jobs]
 
@@ -1560,11 +1620,12 @@ class BoardService:
 
     @staticmethod
     def get_pipeline_data():
-        """Return pipeline jobs (draft + submitted + approved + on_hold) with worksheet/estimate info."""
+        """Return pipeline jobs (draft + submitted + approved, held or not)
+        with worksheet/estimate info."""
         from apps.jobs.models import Job
         pipeline_jobs = Job.objects.filter(
             status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED,
-                        Job.STATUS_APPROVED, Job.STATUS_ON_HOLD]
+                        Job.STATUS_APPROVED]
         ).select_related('contact', 'project_manager').order_by('due_date')
         return {
             'jobs': [BoardService._serialize_pipeline_job(job) for job in pipeline_jobs],
@@ -1572,9 +1633,17 @@ class BoardService:
 
     @staticmethod
     def in_progress_column_jobs():
-        """Job instances in the board's In Progress column, in display order:
-        `in_progress` jobs ordered by `due_date`, minus any whose sub-status
-        routes them to the Unpaid column.
+        """Job instances in the board's In Progress column, in display order.
+
+        The set is work-driven: every `in_progress` job (held or not), plus
+        unheld pre-approval (`draft`/`submitted`) jobs that have at least one
+        task that is assigned AND still planned (pending/in_progress) —
+        deliberate work-ahead someone chose to assign. The pre-approval trigger
+        is self-limiting: the job drops back off both surfaces the moment its
+        assigned tasks complete (its history bars remain in the schedule
+        lanes). `approved` stays excluded — release-to-floor is the gate.
+        Ordered by `due_date`, minus any whose sub-status routes them to the
+        Unpaid column.
 
         This is the single definition of "the In Progress column job set",
         shared by the board column (`get_approved_data`) and the schedule chip
@@ -1584,15 +1653,56 @@ class BoardService:
         guard rather than a live filter. `select_related` covers the related
         fields both callers serialize.
         """
-        from apps.jobs.models import Job
+        from django.db.models import Q
+        from apps.jobs.models import Job, Task
         jobs = Job.objects.filter(
-            status=Job.STATUS_IN_PROGRESS,
-        ).select_related('contact', 'project_manager').order_by('due_date')
+            Q(status=Job.STATUS_IN_PROGRESS)
+            | Q(status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED],
+                on_hold=False,
+                tasks__assignee__isnull=False,
+                tasks__status__in=[Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS])
+        ).distinct().select_related('contact', 'project_manager').order_by('due_date')
         return [
             job for job in jobs
             if BoardService.compute_sub_status(job)
             not in BoardService.UNPAID_SUB_STATUSES
         ]
+
+    @staticmethod
+    def strip_jobs_payload():
+        """The chip/card payload for the shared In Progress surface — the
+        single serialization of `in_progress_column_jobs()`, consumed
+        verbatim by BOTH the board column (`get_approved_data`) and the
+        schedule chip strip (`ScheduleService.get_schedule`). One dict shape
+        so the two surfaces can't drift: `_serialize_job` fields (incl.
+        sub_status and the pre_approval/on_hold flags), an accent-color
+        fallback, and the task_total/task_completed counts the hover
+        popup's progress bar reads (cancelled tasks excluded)."""
+        from django.db.models import Count, Q as DjQ
+        from apps.jobs.models import Task
+
+        jobs = BoardService.in_progress_column_jobs()
+        stats_by_job = {
+            s['job_id']: s
+            for s in Task.objects.filter(job_id__in=[j.pk for j in jobs])
+            .exclude(status=Task.STATUS_CANCELLED)
+            .values('job_id')
+            .annotate(
+                total=Count('task_id'),
+                completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
+            )
+        }
+        payload = []
+        for i, job in enumerate(jobs):
+            job_data = BoardService._serialize_job(job)
+            job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
+                i % len(BoardService.ACCENT_COLORS)
+            ]
+            s = stats_by_job.get(job.pk, {'total': 0, 'completed': 0})
+            job_data['task_total'] = s['total']
+            job_data['task_completed'] = s['completed']
+            payload.append(job_data)
+        return payload
 
     @staticmethod
     def get_approved_data():
@@ -1606,35 +1716,9 @@ class BoardService:
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        approved_jobs = BoardService.in_progress_column_jobs()
-
-        approved_list = []
-        for i, job in enumerate(approved_jobs):
-            job_data = BoardService._serialize_job(job)
-            job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
-                i % len(BoardService.ACCENT_COLORS)
-            ]
-            approved_list.append(job_data)
-
+        approved_list = BoardService.strip_jobs_payload()
         color_map = {j['job_id']: j['accent_color'] for j in approved_list}
-
         approved_job_ids = [j['job_id'] for j in approved_list]
-
-        # Task counts per job (for progress bar in popup)
-        from django.db.models import Count, Q as DjQ
-        stats = Task.objects.filter(
-            job_id__in=approved_job_ids
-        ).exclude(status=Task.STATUS_CANCELLED).values(
-            'job_id'
-        ).annotate(
-            total=Count('task_id'),
-            completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
-        )
-        stats_by_job = {s['job_id']: s for s in stats}
-        for j in approved_list:
-            s = stats_by_job.get(j['job_id'], {'total': 0, 'completed': 0})
-            j['task_total'] = s['total']
-            j['task_completed'] = s['completed']
 
         tasks = Task.objects.filter(
             job_id__in=approved_job_ids,
@@ -1731,6 +1815,11 @@ class BoardService:
             'job_number': job.job_number,
             'name': job.name,
             'status': job.status,
+            # A quote-stage job appearing on a work surface is exceptional —
+            # the flag drives its distinct card/chip treatment.
+            'pre_approval': job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
+            'on_hold': job.on_hold,
+            'hold_reason': job.hold_reason,
             'sub_status': BoardService.compute_sub_status(job),
             'contact_id': job.contact_id,
             'contact_name': str(job.contact) if job.contact else None,
@@ -1878,8 +1967,10 @@ class BoardService:
 
     @staticmethod
     def compute_sub_status(job):
-        """Derive the sub-status of a job based on related object states."""
-        if job.status == Job.STATUS_ON_HOLD:
+        """Derive the sub-status of a job based on related object states.
+        The hold flag wins over everything — a held job reads 'on-hold'
+        whatever its underlying status."""
+        if job.on_hold:
             return 'on-hold'
         if job.status in ('draft', 'submitted'):
             return BoardService._pipeline_sub_status(job)

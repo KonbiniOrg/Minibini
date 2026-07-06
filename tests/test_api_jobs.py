@@ -587,8 +587,8 @@ class JobPatchValidationErrorTest(TestCase):
         job.save()
         return job
 
-    def test_patch_with_open_blep_returns_400(self):
-        """PATCH to on_hold while a worker has an open blep must return 400, not 500."""
+    def test_hold_with_open_blep_returns_400(self):
+        """POST hold while a worker has an open blep must return 400, not 500."""
         from apps.jobs.models import Blep
         from django.utils import timezone
 
@@ -597,23 +597,53 @@ class JobPatchValidationErrorTest(TestCase):
         # Create an open blep (no end_time)
         Blep.objects.create(task=task, user=self.user, start_time=timezone.now())
 
-        response = self.client.patch(f'/api/jobs/{job.pk}/', {'status': 'on_hold'}, format='json')
+        response = self.client.post(
+            f'/api/jobs/{job.pk}/hold/', {'reason': 'pausing'}, format='json')
 
         self.assertEqual(response.status_code, 400)
-        # api.js reads json.detail || json.error — message must be in one of those keys
         body = response.data
-        message = body.get('detail') or body.get('error') or ''
+        message = body.get('detail') or ''
         self.assertIn('open time entry', message)
 
-    def test_patch_without_open_blep_returns_200(self):
-        """PATCH to on_hold with no open bleps must succeed (happy path not broken)."""
+    def test_hold_without_reason_returns_400(self):
+        job = self._in_progress_job()
+        response = self.client.post(f'/api/jobs/{job.pk}/hold/', {}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_hold_and_release_round_trip(self):
+        """POST hold sets the flag (status untouched); POST release clears it."""
         job = self._in_progress_job()
 
-        response = self.client.patch(f'/api/jobs/{job.pk}/', {'status': 'on_hold'}, format='json')
-
+        response = self.client.post(
+            f'/api/jobs/{job.pk}/hold/', {'reason': 'customer rethink'}, format='json')
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['on_hold'])
+        self.assertEqual(response.data['hold_reason'], 'customer rethink')
         job.refresh_from_db()
-        self.assertEqual(job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(job.on_hold)
+        self.assertEqual(job.status, Job.STATUS_IN_PROGRESS)
+
+        response = self.client.post(f'/api/jobs/{job.pk}/release/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['on_hold'])
+        job.refresh_from_db()
+        self.assertFalse(job.on_hold)
+        self.assertEqual(job.hold_reason, '')
+
+    def test_patch_status_on_hold_returns_400(self):
+        """'on_hold' is no longer a status — a PATCH must 400."""
+        job = self._in_progress_job()
+        response = self.client.patch(
+            f'/api/jobs/{job.pk}/', {'status': 'on_hold'}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_patch_status_blocked_while_held(self):
+        """A held job's status is parked (cancel excepted)."""
+        job = self._in_progress_job()
+        self.client.post(f'/api/jobs/{job.pk}/hold/', {'reason': 'wait'}, format='json')
+        response = self.client.patch(
+            f'/api/jobs/{job.pk}/', {'status': 'work_complete'}, format='json')
+        self.assertEqual(response.status_code, 400)
 
 
 class JobAddFromTemplateTest(TestCase):

@@ -22,13 +22,13 @@
 
   // The transitions the status pill offers — a subset of the Job model's
   // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's
-  // →completed/→cancelled).
+  // →completed/→cancelled). on_hold is a flag, not a status — the hold/release
+  // buttons drive it, so it never appears here.
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
-    approved: ['on_hold', 'cancelled'],
-    in_progress: ['on_hold', 'work_complete', 'cancelled'],
-    on_hold: ['in_progress', 'cancelled'],
+    approved: ['cancelled'],
+    in_progress: ['work_complete', 'cancelled'],
     work_complete: ['in_progress'],
     rejected: [],
     completed: [],
@@ -36,7 +36,6 @@
   };
 
   const STATUS_LABELS = {
-    on_hold: 'On Hold',
     in_progress: 'In Progress',
     work_complete: 'Work Complete',
     draft: 'Draft',
@@ -51,28 +50,25 @@
     return STATUS_LABELS[s] || s;
   }
 
-  let validNextStatuses = $derived(VALID_TRANSITIONS[job.status] || []);
+  // While held the backend parks the status (cancel excepted).
+  let validNextStatuses = $derived(
+    job.on_hold ? ['cancelled'] : (VALID_TRANSITIONS[job.status] || [])
+  );
+
+  // A hold can be placed from approved or in_progress only.
+  let canHold = $derived(
+    !job.on_hold && (job.status === 'approved' || job.status === 'in_progress')
+  );
 
   // Inline hold-reason field state
   let showHoldReason = $state(false);
   let holdReasonInput = $state('');
   let holdReasonBusy = $state(false);
-  let pendingHoldStatus = $state('');
   let holdError = $state('');
 
   async function handleStatusChange(e) {
     const newStatus = e.target.value;
     if (newStatus === job.status) return;
-    if (newStatus === 'on_hold') {
-      // Reset & show inline hold-reason field rather than committing immediately
-      holdReasonInput = '';
-      holdError = '';
-      pendingHoldStatus = newStatus;
-      showHoldReason = true;
-      // Reset the select back to current status — the real change happens on confirm
-      e.target.value = job.status;
-      return;
-    }
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: newStatus });
       if (onStatusChange) onStatusChange();
@@ -80,6 +76,12 @@
       e.target.value = job.status;
       showError(errorMessage(err, 'Status change failed.'));
     }
+  }
+
+  function openHoldForm() {
+    holdReasonInput = '';
+    holdError = '';
+    showHoldReason = true;
   }
 
   async function confirmHold() {
@@ -90,7 +92,7 @@
     holdReasonBusy = true;
     holdError = '';
     try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: 'on_hold', hold_reason: holdReasonInput.trim() });
+      await api.post(`/api/jobs/${job.job_id}/hold/`, { reason: holdReasonInput.trim() });
       showHoldReason = false;
       holdReasonInput = '';
       if (onStatusChange) onStatusChange();
@@ -104,14 +106,28 @@
   function cancelHold() {
     showHoldReason = false;
     holdReasonInput = '';
-    pendingHoldStatus = '';
     holdError = '';
+  }
+
+  let releasingHold = $state(false);
+
+  async function releaseHold() {
+    // No confirm: exactly undoable by holding again.
+    releasingHold = true;
+    try {
+      await api.post(`/api/jobs/${job.job_id}/release/`, {});
+      if (onStatusChange) onStatusChange();
+    } catch (e) {
+      showError(errorMessage(e, 'Failed to release the hold.'));
+    } finally {
+      releasingHold = false;
+    }
   }
 
   let releasingToFloor = $state(false);
 
   async function releaseToFloor() {
-    // No confirm: reversible via the on-hold transition.
+    // No confirm: reversible via a hold.
     releasingToFloor = true;
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
@@ -153,19 +169,30 @@
       {:else}
         <span class="status-badge status-{job.status}">{statusLabel(job.status)}</span>
       {/if}
+      {#if job.on_hold}
+        <span class="status-badge on-hold-badge">On Hold</span>
+      {/if}
       <span class="dates">
         {#if job.start_date}Started {new Date(job.start_date).toLocaleDateString()}{/if}
         {#if job.due_date}{job.start_date ? ' · ' : ''}Due {new Date(job.due_date).toLocaleDateString()}{/if}
         {#if job.completed_date}{(job.start_date || job.due_date) ? ' · ' : ''}Completed {new Date(job.completed_date).toLocaleDateString()}{/if}
         {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
       </span>
-      {#if job.status === 'approved' && canManageJobs}
+      {#if job.status === 'approved' && !job.on_hold && canManageJobs}
         <button class="release-btn" onclick={releaseToFloor} disabled={releasingToFloor}>
           {releasingToFloor ? 'Releasing…' : 'Release to floor'}
         </button>
       {/if}
+      {#if canHold && canManageJobs}
+        <button class="release-btn" onclick={openHoldForm}>Put on hold</button>
+      {/if}
+      {#if job.on_hold && canManageJobs}
+        <button class="release-btn" onclick={releaseHold} disabled={releasingHold}>
+          {releasingHold ? 'Releasing…' : 'Release hold'}
+        </button>
+      {/if}
     </div>
-    {#if job.status === 'on_hold' && job.hold_reason}
+    {#if job.on_hold && job.hold_reason}
       <div class="hold-reason-display">
         <span class="hold-reason-label">Hold reason:</span>
         <span class="hold-reason-text">{job.hold_reason}</span>
@@ -244,7 +271,12 @@
   .status-submitted { background: #dbeafe; color: #1e40af; }
   .status-approved { background: #dcfce7; color: #166534; }
   .status-in_progress { background: #fef3c7; color: #92400e; }
-  .status-on_hold { background: #fde68a; color: #92400e; }
+  .on-hold-badge {
+    background: repeating-linear-gradient(
+      -45deg, #fde68a, #fde68a 6px, #fcd34d 6px, #fcd34d 12px
+    );
+    color: #92400e;
+  }
   .status-work_complete { background: #e0e7ff; color: #3730a3; }
   .status-completed { background: #dbeafe; color: #1e40af; }
   .status-rejected { background: #fee2e2; color: #991b1b; }

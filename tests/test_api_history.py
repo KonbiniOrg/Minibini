@@ -196,9 +196,10 @@ class JobHistoryCollationTest(BaseTestCase):
             job=job, description='Widget', qty_ordered=Decimal('1'),
             units='ea', sort_order=1,
         )
+        from apps.jobs.services import JobService
         job.status = Job.STATUS_SUBMITTED; job.save()
         job.status = Job.STATUS_APPROVED; job.save()
-        job.status = Job.STATUS_ON_HOLD; job.save()
+        JobService.hold_job(job.pk, 'CO editing')
         job.refresh_from_db()
 
         co = ChangeOrderService.create(job_id=job.pk)

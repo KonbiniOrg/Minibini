@@ -162,6 +162,13 @@ def build_configuration(c):
         # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
         # see parsing.resolve_li_units_and_qty.)
         ('units_list',               json.dumps(['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
+        # The shop's weekly schedule envelope, matching the generator's
+        # synthetic workday (_WORKDAY_START/_WORKDAY_END: Mon–Fri 09–17).
+        ('schedule_week_envelope', json.dumps({
+            'mon': [['09:00', '17:00']], 'tue': [['09:00', '17:00']],
+            'wed': [['09:00', '17:00']], 'thu': [['09:00', '17:00']],
+            'fri': [['09:00', '17:00']], 'sat': [], 'sun': [],
+        })),
     ]
     for key, value in config:
         c.add_fixture('core.configuration', key, {'value': value})
@@ -668,6 +675,7 @@ def build_jobs(c):
             'customer_po_number': '',
             'description':        description,
             'accent_color':       accent_color,
+            'on_hold':            False,
             'hold_reason':        '',
             'project_manager':    None,   # set by assign_project_managers (non-draft)
         })
@@ -1476,6 +1484,12 @@ def derive_atoms(c):
                 'released_qty':       '0.00',
                 'po_line_item':        None,
             })
+            # The Material IS this line's crystallized atom — record the
+            # claim exactly as _emit_fee does for fee lines. Without it,
+            # accepting a still-open estimate in-app re-crystallizes the
+            # bare line as a Fee, duplicating the material.
+            _emit_estimate_line_item_source(
+                c, li['line_item_pk'], 'material', mat_pk)
 
         # --- 3. Deliverables: finished-good lines (or a Fake Deliverable) --
         _build_deliverables(c, job_pk, deliverable_lines)
@@ -2445,7 +2459,9 @@ _WORKED_JOB_STATUSES = {'in_progress', 'work_complete', 'completed'}
 # Job statuses that DO hold reservations: earmarks exist only from approval
 # (create_on_job skips draft/submitted; the acceptance sweep creates them)
 # until release at completion/cancellation. Pre-approval jobs carry none.
-_EARMARKED_JOB_STATUSES = {'approved', 'in_progress', 'on_hold'}
+# (on_hold is a flag, not a status — a held job keeps earmarks via its real
+# approved/in_progress status.)
+_EARMARKED_JOB_STATUSES = {'approved', 'in_progress'}
 
 
 def build_purchasing(c):

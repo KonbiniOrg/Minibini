@@ -8,6 +8,7 @@ from .serializers import (
     UserSerializer,
     MeUpdateSerializer,
     PasswordChangeSerializer,
+    ScheduleEnvelopeSerializer,
 )
 
 
@@ -52,6 +53,18 @@ def me_view(request):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+    return Response(UserSerializer(request.user).data)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def me_schedule_envelope_view(request):
+    """Self-service schedule envelope. Body: {"schedule_envelope": {...}}
+    or {"schedule_envelope": null} to reset to the shop default."""
+    serializer = ScheduleEnvelopeSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    request.user.schedule_envelope = serializer.validated_data['schedule_envelope']
+    request.user.save()
     return Response(UserSerializer(request.user).data)
 
 

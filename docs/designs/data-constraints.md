@@ -66,8 +66,15 @@ both estimates and change orders; if unset, notifications are silently skipped),
 there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
 removed).
 
-Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
-(`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
+Schedule view: `schedule_week_envelope` (JSON; the shop's default work week —
+`{"mon": [["08:00","17:00"]], …, "sat": [], "sun": []}`: exactly the seven keys
+`mon`…`sun`, each an ordered list of `["HH:MM","HH:MM"]` intervals — zero-padded
+`HH:MM`, start < end, strictly increasing across the day, non-overlapping,
+non-touching; gaps are breaks, an empty list is a day off; validated by
+`apps.schedule.calendar_arithmetic.validate_week_envelope`),
+`schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
+(`schedule_workday_start` / `schedule_workday_end` were retired — the weekly
+envelope replaces them.)
 
 Activity page: `activity_recent_days` (`5`) — integer ≥ 1; the backward
 "recent" look-back window (in days) governing the whole Activity dashboard
@@ -109,6 +116,14 @@ set later).
 
 - Standard Django user fields apply (username unique, etc.)
 - **contact** (optional OneToOne → Contact): set after Contacts exist
+- **schedule_envelope** (nullable JSONField, default null; migration
+  `core.0025`): the user's personal weekly work envelope in the canonical
+  week-envelope shape (see `schedule_week_envelope` in §1.1). Null = use the
+  shop default. Validated by
+  `apps.schedule.calendar_arithmetic.validate_week_envelope` on both write
+  endpoints (`PUT /api/auth/me/schedule-envelope/`,
+  `PUT /api/users/{id}/schedule-envelope/`); exposed read-only on the auth
+  `UserSerializer` and admin `UserDetailSerializer`.
 - **Permissions**: 4 custom atoms defined on the model:
   `can_manage_jobs`, `can_manage_financials`, `can_manage_time`,
   `can_manage_config`. There is no `can_approve_expenses` atom — it was
@@ -374,16 +389,14 @@ Depends on: Contact.
 ```
 draft → submitted → approved → in_progress → work_complete → completed
                   ↘ rejected   ↘ cancelled    ↘ cancelled    ↘ cancelled
-                                 ↘ on_hold     ↘ on_hold
 draft → rejected
 ```
 
 Valid transitions:
 - `draft` → `submitted`, `rejected`
 - `submitted` → `approved`, `rejected`
-- `approved` → `in_progress`, `on_hold`, `cancelled`
-- `in_progress` → `work_complete`, `on_hold`, `cancelled`
-- `on_hold` → `approved`, `in_progress`, `cancelled`
+- `approved` → `in_progress`, `cancelled`
+- `in_progress` → `work_complete`, `cancelled`
 - `work_complete` → `completed`, `cancelled`, `in_progress`
 - `cancelled` → `in_progress`
 - `rejected`, `completed` → (terminal)
@@ -398,10 +411,15 @@ released. `completed` = fully closed; gated on **both** all invoices
 resolved **and** all deliverables shipped (see "Implied state" below and
 §2.5).
 
-`on_hold` is a general pause primitive (CO negotiation, awaiting
-deposit, backordered material). Reachable only from the active work
-band. The CO-accept path auto-advances `on_hold → approved`; non-CO
-holds resume manually.
+`on_hold` is a **flag** (BooleanField, default False), not a status — a
+held job keeps its true underlying status. It is the general pause
+primitive (CO negotiation, awaiting deposit, backordered material),
+settable only while the job is `approved` or `in_progress`, via
+`JobService.hold_job(pk, reason)` (reason required; rejected while any
+open Blep exists). `JobService.release_job(pk)` drops the flag (blocked
+while a live CO exists — see "Implied state" below); the CO-accept path
+clears the hold itself and the job resumes its true status directly.
+Non-CO holds resume manually.
 
 #### Fields
 
@@ -410,7 +428,8 @@ holds resume manually.
 - **contact** (required FK → Contact, PROTECT)
 - **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
-- **hold_reason**: TextField, blank-allowed. Free-form pause reason ("CO-2026-0007 in negotiation", "awaiting deposit"). Cleared automatically by `Job.save()` on exit to `approved` / `in_progress`.
+- **on_hold**: BooleanField, default False. Orthogonal pause flag — see above. Set/cleared only via `JobService.hold_job` / `release_job` (also cleared by CO acceptance and by cancellation); the API exposes it read-only (`POST /api/jobs/{id}/hold/` / `.../release/` are the write paths) and a status PATCH of `'on_hold'` is a 400.
+- **hold_reason**: TextField, blank-allowed. Free-form pause reason ("CO-2026-0007 in negotiation", "awaiting deposit"). Cleared automatically by `Job.save()` whenever the `on_hold` flag drops.
 - **name** / **description** / **customer_po_number**: optional text
 
 #### Date rules
@@ -431,7 +450,7 @@ holds resume manually.
   `cancelled`, or `rejected`. Immutable once set — *except* it is cleared
   back to null when a Job is reactivated to `in_progress` from
   `work_complete`/`cancelled`. Must be null for
-  `draft`/`submitted`/`approved`/`in_progress`/`on_hold`/`work_complete`.
+  `draft`/`submitted`/`approved`/`in_progress`/`work_complete`.
 
 #### Implied state from other models
 
@@ -446,9 +465,10 @@ holds resume manually.
 - Job `completed` → all Deliverables on the Job have `qty_picked_up == qty_ordered` (the all-shipped gate; §2.5).
 - All Invoices for a Job `paid`/`cancelled` AND all deliverables shipped → Job must be `completed` (`JobService.maybe_complete_if_resolved`).
 - Job `cancelled` → all Invoices for the Job must be `cancelled` *or* outstanding under the stop-and-bill flow (see `invoicing-and-expenses.md` — `CANCELLED` is in `BILLABLE_JOB_STATUSES`; the Unpaid lane keeps a cancelled-with-open-invoice job visible until its invoices clear).
-- Job `on_hold` → no exit to an active status while any `ChangeOrder` on the job is `draft` or `open`. The CO-accept handler auto-advances `on_hold → approved`; a discarded draft CO also clears the guard.
+- Job held (`on_hold` flag) → no release while any `ChangeOrder` on the job is `draft` or `open` — the release guard, enforced by `JobService.release_job` and by the cancel path. The CO-accept handler clears the hold itself (the job's true status is preserved); a discarded draft CO also clears the guard.
+- Job held → no status change at all (`JobService.update_job` rejects) **except** cancellation, which runs the release guard and drops the flag as part of the transition.
 
-Transitions **into** `on_hold` or `cancelled` are rejected by `JobService.update_job` if any `Blep` on the job's tasks is open (`end_time__isnull=True`).
+`JobService.hold_job` and transitions into `cancelled` are rejected if any `Blep` on the job's tasks is open (`end_time__isnull=True`).
 
 **Job deletion (Rule 1 at job scale)**: `JobService.assert_job_deletable` (run
 by the `DELETE /api/jobs/{id}/` endpoint) refuses when the job has any bleps,
@@ -456,10 +476,10 @@ any invoice, or any non-draft estimate/change order — the cascade would destro
 recorded work wholesale; those jobs are `cancelled` instead. An unworked draft
 quote still hard-deletes.
 
-While `on_hold`, the following are blocked (purely by status filter — no Task is touched):
-- New bleps (`BlepService` job-status guard).
+While held (`on_hold` flag), the following are blocked (purely by flag filter — no Task is touched):
+- New bleps (explicit `if job.on_hold` check in `_assert_job_allows_blep`, ahead of the status allow-list).
 - Task and material mutations (`_assert_job_not_on_hold` in `JobService`).
-- Schedule rendering (`ScheduleService` excludes on-hold jobs).
+- Schedule forecasting (`ScheduleService` never forecasts a held job; its history bars still render).
 - Shipment creation (`ShipmentService._assert_job_not_on_hold`).
 
 See `docs/designs/jobs-tasks-and-worksheets.md` for the loose-pending-material
@@ -611,12 +631,15 @@ Depends on: Task, User.
     since transitioned to `blocked`, `complete`, or `cancelled` (e.g.
     a worker forgot to clock in for work they did earlier today).
   - **Job-status precondition (both paths)**: the task's Job must be in
-    a status where work belongs. `start_work` requires `approved` or
-    `in_progress`; `create_historical` also permits `work_complete` and
-    `cancelled` (the latter so forgotten time can be logged for billing
-    under the stop-and-bill flow — see `invoicing-and-expenses.md`).
-    Any other Job status (`draft`, `submitted`, `rejected`, `completed`,
-    `on_hold`) is rejected with `ValidationError`.
+    a status where work belongs. Pre-approval work is permitted:
+    `start_work` allows `draft`, `submitted`, `approved`, and
+    `in_progress`; `create_historical` additionally permits
+    `work_complete` and `cancelled` (the latter so forgotten time can be
+    logged for billing under the stop-and-bill flow — see
+    `invoicing-and-expenses.md`). Any other Job status (`rejected`,
+    `completed`) is rejected with `ValidationError`, and a **held** job
+    (`on_hold` flag) is rejected on both paths by an explicit check in
+    `_assert_job_allows_blep`, ahead of the status allow-list.
 - Steady-state invariant: a Blep's task is in `in_progress`, `blocked`,
   `complete`, or `cancelled` — never `pending`, because `start_work`
   promotes before creating and `create_historical` is only sensibly
@@ -795,11 +818,12 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 #### Invariants
 
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
-- **Create requires `on_hold`**: `ChangeOrderService.create` raises `ValidationError` unless `Job.status == on_hold` and the job has an `accepted` Estimate.
+- **Create requires the hold flag**: `ChangeOrderService.create` raises `ValidationError` unless `job.on_hold` is set and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
 - **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Fee / provisional Material at acceptance and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
-- **Job exit guard**: a Job cannot leave `on_hold` while any of its COs is `draft` or `open`.
-- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the job flips to `approved`. See `estimates-and-prices.md` §14.11.
+- **Release guard**: a held Job cannot be released (`JobService.release_job`) or cancelled while any of its COs is `draft` or `open`.
+- **Acceptance clears the hold**: on transition to `accepted`, the handler drops the job's `on_hold` flag — the job resumes its true underlying status directly (held from `in_progress` goes straight back to `in_progress`).
+- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the hold is cleared (atom writes are blocked while held). See `estimates-and-prices.md` §14.11.
 
 #### ChangeOrderLineItem
 
@@ -1574,7 +1598,7 @@ See `docs/designs/estimates-and-prices.md` §9 and
 1. **All invoices resolved** — every `Invoice` for the Job is `paid` or `cancelled`.
 2. **All deliverables shipped** — `DeliverableService.all_deliverables_shipped(job)` returns True, i.e. every `Deliverable`'s `qty_picked_up == qty_ordered`. Prepared-but-not-picked-up does not count. A job with zero deliverables is vacuously shipped.
 
-A third precondition guards both: the Job's **work must be finished** — `work_complete`, or `approved`/`in_progress` with at least one Task and every Task terminal (the loose-material-stranded case). When all hold, the handler releases any loose pending Materials (claimed → `released` history, unclaimed → deleted; a `HistoryEntry` records the release) and walks the state machine up to `completed` (each step via `JobService.update_job`). Jobs with open Tasks, task-less jobs (a deposit invoice paid before work starts), and `draft`/`submitted`/`on_hold` jobs are a no-op. Job's `completed_date` is set to `now()`. A `HistoryEntry` of `entry_type='action'` attributed to `system` records the auto-complete.
+A third precondition guards both: the Job's **work must be finished** — `work_complete`, or `approved`/`in_progress` with at least one Task and every Task terminal (the loose-material-stranded case). When all hold, the handler releases any loose pending Materials (claimed → `released` history, unclaimed → deleted; a `HistoryEntry` records the release) and walks the state machine up to `completed` (each step via `JobService.update_job`). Jobs with open Tasks, task-less jobs (a deposit invoice paid before work starts), and `draft`/`submitted` jobs are a no-op; a held job never auto-completes either — status changes are blocked while the `on_hold` flag is set. Job's `completed_date` is set to `now()`. A `HistoryEntry` of `entry_type='action'` attributed to `system` records the auto-complete.
 
 Manual `JobService.update_job(status=completed)` enforces the all-shipped precondition independently and raises `ValidationError('All deliverables must be shipped before completing the job.')` otherwise.
 

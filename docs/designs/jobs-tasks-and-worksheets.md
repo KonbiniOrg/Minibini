@@ -84,7 +84,6 @@ Job; only its generated children land there. Job has no parent.
 | `submitted` | Estimate has been sent (auto-fired by `estimate_status_changed_for_job`) |
 | `approved` | Estimate accepted; not yet released to the floor |
 | `in_progress` | Released to the floor; tasks may be in flight |
-| `on_hold` | General pause during active work (CO negotiation, awaiting deposit, backordered material, customer gone quiet). Reachable only from `approved` / `in_progress`. |
 | `work_complete` | All tasks terminal; invoicing/payment may still be open |
 | `completed` | Fully closed (terminal). Gated on all deliverables shipped — see §3.3. |
 | `rejected` | Terminal |
@@ -95,9 +94,8 @@ Valid transitions (`Job.clean()` at `apps/jobs/models.py`):
 ```
 draft         → submitted, rejected
 submitted     → approved, rejected, draft
-approved      → in_progress, on_hold, cancelled
-in_progress   → work_complete, on_hold, cancelled
-on_hold       → approved, in_progress, cancelled
+approved      → in_progress, cancelled
+in_progress   → work_complete, cancelled
 work_complete → completed, cancelled, in_progress
 cancelled     → in_progress
 rejected, completed → (terminal)
@@ -136,37 +134,62 @@ creation paths (`TaskService.create_direct` / `create_from_template`,
 `ServiceItem.generate_task`). The terminal-`completed` case is still an open
 decision (see LATER).
 
-#### `on_hold` semantics
+#### The `on_hold` flag (pause)
 
-`on_hold` is a general pause primitive — change orders are one consumer
-of it, but not the only one. The Job carries a `hold_reason` text field
-(free-form: "CO-2026-0007 in negotiation", "awaiting deposit") that the
-board pill and job header surface; `Job.save()` clears it on exit to an
-active status.
+`on_hold` is a **flag** (`BooleanField`, default `False`), not a status —
+a held job keeps its true pipeline position underneath, and holding
+never moves it through the state machine. It is the general pause
+primitive — change orders are one consumer of it, but not the only one
+(awaiting deposit, backordered material, customer gone quiet). The Job
+carries a `hold_reason` text field (free-form: "CO-2026-0007 in
+negotiation", "awaiting deposit") that the board banner and job header
+surface; `Job.save()` clears it whenever the flag drops.
 
-`on_hold` freezes and hides work **as a status query-filter** rather
-than by mutating Tasks — no task is touched, so resume is instant and
-lossless:
+Hold and release go through dedicated service methods, not the status
+machine:
 
-- **New bleps** are rejected (`BlepService`'s job-status guard permits
-  work only on `approved` / `in_progress` / `work_complete`).
-- **Task and material mutations** are blocked by `_assert_job_not_on_hold`
-  in `JobService` (create/edit/delete tasks, change assignment,
-  complete/block/unblock/cancel, edit materials).
-- **The schedule** excludes on-hold jobs (`apps/schedule/services.py`
-  filters both worker selection and the per-worker lane queries — see
-  `docs/designs/schedule.md`).
+- **`JobService.hold_job(pk, reason)`** — allowed only while the job is
+  `approved` or `in_progress`; requires a non-blank reason; **rejected
+  while any open Blep exists** on the job's tasks (parallel to the
+  cancel guard — a manager finds the worker and has them stop first).
+  Sets the flag and stores the reason.
+- **`JobService.release_job(pk)`** — drops the flag. **Release guard**:
+  blocked while any ChangeOrder on the job is live (`draft`/`open`) —
+  resolve the CO (accept, reject, or discard) first. CO **acceptance
+  clears the hold itself** and the job resumes its true status directly
+  (a job held from `in_progress` goes straight back to `in_progress` —
+  there is no detour through `approved`).
+- **API**: `POST /api/jobs/{id}/hold/` (body `{reason}`, required) and
+  `POST /api/jobs/{id}/release/`, via the status-actions mixin.
+  `JobSerializer` exposes `on_hold` and `hold_reason` read-only;
+  PATCHing `status: 'on_hold'` now 400s — it is not a status.
+
+While the flag is set, the job is frozen **as a flag query-filter**
+rather than by mutating Tasks — no task is touched, so resume is
+instant and lossless:
+
+- **New bleps** are rejected — `_assert_job_allows_blep` checks
+  `job.on_hold` explicitly, ahead of its status allow-list (the
+  allow-lists describe pipeline position, and a held job keeps its true
+  status underneath, so omission can't cover it).
+- **Task, material, and fee mutations** are blocked by
+  `_assert_job_not_on_hold` in `JobService` (create/edit/delete tasks,
+  change assignment, complete/block/unblock/cancel, edit materials).
+- **Status changes are blocked** (`JobService.update_job` raises) —
+  **except cancellation**, which runs the same live-CO guard as release
+  and drops the flag as part of the transition.
+- **The schedule** renders a held job's history (actual bars) but never
+  its forecasts (see `docs/designs/schedule.md`).
 - **Shipment creation** is rejected (`ShipmentService._assert_job_not_on_hold`).
-- **The board** slots on-hold jobs into the Pipeline lane with an
-  `on-hold` sub-status, so they stay findable but show no worker task
-  columns.
-- **Transition into `on_hold` is rejected while any open Blep exists**
-  on the job's tasks (parallel to the cancel guard) — a manager finds
-  the worker and has them stop first.
-- **Exit guard**: a Job leaves `on_hold` only when no ChangeOrder on it
-  is live (`draft`/`open`). The CO-accept auto-advance (`on_hold → approved`)
-  is what normally clears the hold; a discarded draft CO also clears
-  the guard.
+- **The board** keeps a held job in its true column — held from
+  `approved` stays in Pipeline; held from `in_progress` keeps its In
+  Progress column placement. `compute_sub_status` returns `on-hold`
+  from the flag (the first branch — it wins over everything, whatever
+  the underlying status). Cards show an ON HOLD banner with
+  `hold_reason` on hover; chips get grey diagonal bars.
+- **Change orders**: CO creation requires `job.on_hold`, and the portal
+  actionability gate reads `co.job.on_hold`. Reject / expire /
+  request-changes leave the job held. See `estimates-and-prices.md` §14.
 
 ### 3.1a Project manager
 
@@ -257,9 +280,9 @@ is stranded short of `work_complete` is a loose pending material blocking
 the transition, and this unattended path releases exactly those (claimed
 materials become `released` history; unclaimed ones delete). Anything
 else is a no-op: an `in_progress` job with open tasks, a deposit invoice
-paid before any work starts (task-less job), and
-`draft`/`submitted`/`on_hold` jobs have no finished work (this also never
-forces an invalid transition like `on_hold → completed`). It then
+paid before any work starts (task-less job), and `draft`/`submitted`
+jobs have no finished work; a held job never auto-completes either —
+status changes are blocked while the `on_hold` flag is set. It then
 requires **both** all invoices resolved (`paid` or `cancelled`)
 **and** all deliverables shipped
 (`DeliverableService.all_deliverables_shipped(job)` returns True only
@@ -270,10 +293,10 @@ all-shipped precondition and raises `ValidationError` otherwise.
 `cancelled` is exempt because the state machine forbids
 `cancelled → completed`.
 
-**Open-Blep entry guard.** Transitions into `on_hold` or `cancelled`
-are rejected by `JobService.update_job` if any Blep on the job's tasks
-is open (`end_time__isnull=True`) — same "coordinate offline" rationale
-as the `block_task` conflict.
+**Open-Blep guard.** `JobService.hold_job` and transitions into
+`cancelled` are rejected if any Blep on the job's tasks is open
+(`end_time__isnull=True`) — same "coordinate offline" rationale as the
+`block_task` conflict.
 
 ### 3.4 Job creation paths
 
@@ -333,7 +356,8 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
 - **Fresh values**: a new `job_number` (via `NumberGenerationService`),
   a new `created_date`, a fresh `accent_color` (least-used from the fixed
   palette, via `_pick_least_used_accent_color`).
-- **Not copied**: `customer_po_number`, `due_date`, `hold_reason`.
+- **Not copied**: `customer_po_number`, `due_date`, the `on_hold` flag,
+  `hold_reason`.
 - **Deliverables**: each source Deliverable's `description`,
   `qty_ordered`, `units`, and `sort_order` are carried over via
   `DeliverableService.create`.
@@ -706,7 +730,9 @@ Validation rules enforced inside `BlepService`:
    `in_progress`; backfilled `create_historical` additionally allows
    `work_complete` (log time after work was marked done) and `cancelled`
    (backfill forgotten time for billing). `start_work` rejects
-   `work_complete`/`cancelled`; both reject `on_hold`; `create_historical`
+   `work_complete`/`cancelled`; both reject a **held** job — an explicit
+   `if job.on_hold` check in `_assert_job_allows_blep`, ahead of the
+   status allow-list; `create_historical`
    also rejects `completed`/`rejected`. Rejections raise `ValidationError`.
    Starting a `draft`/`submitted` job leaves the **job** status unchanged
    (`mark_work_started` is a no-op below `approved`) while the **task**
@@ -887,10 +913,10 @@ comes from `BoardService` (`apps/jobs/services.py`).
 
 ### 8.1 Columns
 
-| Column | Status filter | Endpoint | Purpose |
+| Column | Membership | Endpoint | Purpose |
 |---|---|---|---|
-| Pipeline | `draft`, `submitted`, `approved` | `GET /api/jobs/board/pipeline/` | Jobs being scoped/estimated/awaiting customer |
-| In Progress (URL slug `approved`) | `in_progress` | `GET /api/jobs/board/approved/` | Active work with worker columns + unassigned pool |
+| Pipeline | `draft`, `submitted`, `approved` (a held-from-`approved` job stays here) | `GET /api/jobs/board/pipeline/` | Jobs being scoped/estimated/awaiting customer |
+| In Progress (URL slug `approved`) | work-driven — see below | `GET /api/jobs/board/approved/` | Active work with worker columns + unassigned pool |
 | Unpaid | `work_complete` | `GET /api/jobs/board/unpaid/` | Work done; invoicing/payment outstanding |
 | Closed | `completed`, `rejected`, `cancelled` (within retention) | `GET /api/jobs/board/closed/` | Terminal jobs |
 | Combined | all | `GET /api/jobs/board/` | Single-fetch full board |
@@ -899,11 +925,35 @@ The legacy `approved`/`in_progress` slug mismatch is acknowledged — the
 endpoint name was kept for URL stability after the column was renamed
 when `STATUS_IN_PROGRESS` was added.
 
+**The In Progress column set is work-driven**, not a plain status
+filter. `BoardService.in_progress_column_jobs()` is the single
+definition: every `in_progress` job — held or not; a held `in_progress`
+job **keeps** its column placement — **plus** unheld pre-approval
+(`draft`/`submitted`) jobs with at least one task that is assigned AND
+still planned (pending/in_progress) — deliberate work-ahead someone
+chose to assign. The pre-approval trigger is self-limiting: the job
+drops back off both surfaces the moment its assigned tasks complete.
+`approved` stays excluded — release-to-floor is the gate. Pre-approval
+jobs appear in **both** board areas: their Pipeline card is unchanged,
+and their In Progress work card gets a dashed "quote" treatment.
+
+`BoardService.strip_jobs_payload()` is the single **serialization** of
+that set — `_serialize_job` fields (incl. `sub_status` and the
+`pre_approval`/`on_hold`/`hold_reason` flags), an accent-color fallback,
+and `task_total`/`task_completed` for the hover popup's progress bar
+(cancelled tasks excluded). Both the board column (`get_approved_data`)
+and the schedule chip strip (`ScheduleService.get_schedule`) consume it
+verbatim, so the two surfaces can't drift on membership, order, or
+shape. A held job's card shows an ON HOLD banner (`hold_reason` on
+hover) and its chip gets grey diagonal bars.
+
 ### 8.2 Sub-status derivation
 
 Sub-statuses are computed (`BoardService.compute_sub_status`), not
 stored. Examples (full list in `apps/jobs/services.py`):
 
+- `on-hold` — the `on_hold` flag is set (the **first branch** — it wins
+  over everything, whatever the underlying status)
 - `needs-scoping` — no estimate yet
 - `estimating` — a draft estimate exists
 - `awaiting-response` — estimate is open
@@ -1089,8 +1139,8 @@ table: `materials-inventory-and-purchasing.md` §16.
 The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
 of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
 a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
-the job is `on_hold`, **+ New change order** live on the overview's Estimate
-pillar. (These replaced the deleted Worksheet detail page; the old
+the job is held (`on_hold` flag), **+ New change order** live on the
+overview's Estimate pillar. (These replaced the deleted Worksheet detail page; the old
 Plan/Client-View toggle is gone.)
 
 ## 10. UI: Task Detail page
@@ -1244,7 +1294,7 @@ an already-delivered item is genuinely needed, the escape hatch is to
 finalize the job (`cancelled` + invoice for work done — see
 `invoicing-and-expenses.md`) and start a new one.
 
-Editability keys on **CO state**, not on `on_hold` alone — a non-CO
+Editability keys on **CO state**, not on the hold flag alone — a non-CO
 pause (deposit, backorder) leaves the agreed scope frozen.
 
 Rationale: while the customer is reviewing a `sent` estimate or CO, the
@@ -1283,7 +1333,7 @@ This is the single cross-app modification this feature made; see also
 - A Shipment can only be created server-side once the Job has an accepted
   estimate. Enforced in `ShipmentService.create`; raises before any
   database write.
-- **Shipments are frozen while the Job is `on_hold`.**
+- **Shipments are frozen while the Job is held (`on_hold` flag).**
   `ShipmentService._assert_job_not_on_hold` rejects creation — otherwise
   someone could ship against a proposed-but-unagreed deliverable scope
   during CO negotiation, and the resulting row would anchor mid-flight.
@@ -1483,11 +1533,15 @@ covers this).
 
 **ChangeOrder uses no signals.** `ChangeOrderService.update_status`
 handles acceptance/rejection side-effects directly: on `→ accepted` it
-advances the Job `on_hold → approved` via `JobService.update_job` and
-writes a `HistoryEntry`; on `→ rejected`/`→ expired` it calls
-`DeliverableService.snapshot_document(change_order=co)` (Trigger 2). No
-Task or Material is mutated by either path — the human applies the
-agreed changes by hand while the job sits in `approved`.
+clears the job's `on_hold` flag — the job resumes its true underlying
+status directly (held from `in_progress` goes straight back to
+`in_progress`; no second release step) — writes a system-attributed
+`HistoryEntry`, then crystallizes the CO's deltas onto the Job's atoms
+(`ChangeOrderAcceptanceService.on_accept`, run after the un-hold because
+atom writes are blocked while held; all in one transaction — see
+`estimates-and-prices.md` §14.11). On `→ rejected`/`→ expired` it calls
+`DeliverableService.snapshot_document(change_order=co)` (Trigger 2) and
+the job stays held.
 
 ## 14. Unfinished work
 

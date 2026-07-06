@@ -506,6 +506,35 @@ class AtomDerivationTest(unittest.TestCase):
             if m['fields']['task'] is not None:
                 self.assertIn(m['fields']['task'], cut_task_pks)
 
+    def test_every_derived_material_is_claimed_by_its_source_line(self):
+        # A Material derived from a material-classified estimate line is that
+        # line's crystallized atom — the converter must record the claim
+        # (EstimateLineItemSource, source_type='material'), exactly as it does
+        # for fees. Without it, accepting a still-open estimate in-app
+        # re-crystallizes the line as a bare Fee → duplicate atoms (job 08008).
+        build.derive_atoms(self.c)
+        materials = self._models('inventory.material')
+        self.assertGreater(len(materials), 0)
+        claims = {}
+        for s in self._models('estimates.estimatelineitemsource'):
+            if s['fields']['source_type'] != 'material':
+                continue
+            claims.setdefault(s['fields']['source_pk'], []).append(s)
+        line_by_pk = {li['line_item_pk']: li
+                      for lis in self.c.line_items.values() for li in lis}
+        for m in materials:
+            claimed_by = claims.get(m['pk'], [])
+            self.assertEqual(
+                len(claimed_by), 1,
+                f"material {m['pk']} ({m['fields']['description'][:40]!r}) "
+                f"must be claimed by exactly one estimate line, "
+                f"got {len(claimed_by)}",
+            )
+            # The claiming line is a real material-classified line.
+            li = line_by_pk.get(claimed_by[0]['fields']['estimate_line_item'])
+            self.assertIsNotNone(li)
+            self.assertEqual(li['classification'], 'material')
+
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
@@ -1557,8 +1586,8 @@ class ProjectManagerAssignmentTest(unittest.TestCase):
             'job_number': f'J{pk}', 'name': 'j', 'contact': 1, 'status': status,
             'created_date': '2026-01-01T00:00:00+00:00', 'start_date': None,
             'due_date': None, 'completed_date': None, 'customer_po_number': '',
-            'description': '', 'accent_color': '#f97066', 'hold_reason': '',
-            'project_manager': None,
+            'description': '', 'accent_color': '#f97066', 'on_hold': False,
+            'hold_reason': '', 'project_manager': None,
         })
 
     def test_non_draft_jobs_get_pm_draft_does_not(self):

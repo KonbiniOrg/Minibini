@@ -13,20 +13,45 @@ beforeEach(() => {
   api.patch.mockResolvedValue({});
 });
 
+const WEEK = {
+  mon: [['09:30', '15:00']], tue: [['08:00', '17:00']],
+  wed: [['08:00', '17:00']], thu: [['08:00', '17:00']],
+  fri: [['08:00', '17:00']], sat: [], sun: [],
+};
+
 describe('ScheduleSettings', () => {
-  it('pre-fills loaded values', async () => {
-    api.get.mockResolvedValue({ schedule_workday_start: '09:30' });
+  it('pre-fills the envelope from the stored JSON string', async () => {
+    api.get.mockResolvedValue({ schedule_week_envelope: JSON.stringify(WEEK) });
     const { findByDisplayValue } = render(ScheduleSettings);
     expect(await findByDisplayValue('09:30')).toBeInTheDocument();
   });
 
-  it('saves the settings and shows a confirmation', async () => {
+  it('saves the envelope object and shows a confirmation', async () => {
     const { getByRole, findByText } = render(ScheduleSettings);
     await fireEvent.click(getByRole('button', { name: 'Save' }));
     expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
-      schedule_workday_start: '08:00',
+      schedule_week_envelope: expect.objectContaining({
+        mon: [['08:00', '17:00']],
+        sat: [],
+      }),
     }));
     expect(await findByText('Schedule settings saved.')).toBeInTheDocument();
+  });
+
+  it('falls back to the default week on unparseable stored JSON', async () => {
+    api.get.mockResolvedValue({ schedule_week_envelope: 'not-json{' });
+    const { getByRole } = render(ScheduleSettings);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
+      schedule_week_envelope: expect.objectContaining({ mon: [['08:00', '17:00']] }),
+    }));
+  });
+
+  it('surfaces an envelope error from the server', async () => {
+    api.patch.mockRejectedValue({ data: { schedule_week_envelope: 'mon: intervals must not overlap' } });
+    const { getByRole, findByText } = render(ScheduleSettings);
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText(/must not overlap/)).toBeInTheDocument();
   });
 
   it('surfaces field errors from the server', async () => {

@@ -2,11 +2,44 @@
   import TaskBar from './TaskBar.svelte';
   import { reorderTasksInLane, draggingTaskId } from '../../stores/schedule.js';
 
-  let { worker, dayShape, panelLayout, laneLabelWidth = 90, focusedJobIds = [], onSelectTask = () => {} } = $props();
+  let { worker, panelLayout, days = [], laneLabelWidth = 90, focusedJobIds = [], onSelectTask = () => {} } = $props();
 
   // Every bar renders in the single primary band, in queue order. Blocked
   // tasks are ordinary (styled) forecast bars now — there's no parked strip.
   let primaryBars = $derived(worker.bars);
+
+  // Per-lane off-envelope shading: this worker's envelope_by_day (parallel
+  // to days[]/panels[]) inverted against each working panel — the margins
+  // before/after their hours and the gaps (breaks) between intervals. An
+  // empty day shades the whole panel (their day off, even if others work).
+  let laneOffBands = $derived.by(() => {
+    const envByDay = worker.envelope_by_day;
+    const panels = panelLayout?.panels;
+    if (!envByDay || !panels) return [];
+    const bands = [];
+    for (let i = 0; i < panels.length && i < envByDay.length; i++) {
+      const p = panels[i];
+      if (!p.is_working) continue;  // non-working columns already hatch
+      const intervals = envByDay[i] ?? [];
+      if (intervals.length === 0) {
+        bands.push({ key: `${p.date}-off`, left: p.x, width: p.width });
+        continue;
+      }
+      let cursorX = p.x;
+      for (const [start, end] of intervals) {
+        const startX = panelLayout.timeToX(`${p.date}T${start}:00`);
+        if (startX > cursorX + 0.5) {
+          bands.push({ key: `${p.date}-${start}`, left: cursorX, width: startX - cursorX });
+        }
+        cursorX = panelLayout.timeToX(`${p.date}T${end}:00`);
+      }
+      const panelRight = p.x + p.width;
+      if (panelRight > cursorX + 0.5) {
+        bands.push({ key: `${p.date}-tail`, left: cursorX, width: panelRight - cursorX });
+      }
+    }
+    return bands;
+  });
 
   // Drop indicator: tracks the x-coordinate of the cursor within this
   // lane's .track while a drag is in progress. Cleared when the cursor
@@ -152,6 +185,9 @@
        ondragover={handleDragOver}
        ondragleave={handleDragLeave}
        ondrop={handleDrop}>
+    {#each laneOffBands as band (band.key)}
+      <div class="lane-offhours" style="left: {band.left}px; width: {band.width}px;"></div>
+    {/each}
     <div class="primary">
       {#each primaryBars as bar (`${bar.task_id}-${bar.kind}-${bar.segments[0]?.start}`)}
         <TaskBar {bar} {timeToX}
@@ -187,6 +223,11 @@
   .name { font-weight: 600; }
   .track { position: relative; flex: 1; }
   .primary { position: relative; height: 44px; margin-top: 8px; }
+  .lane-offhours {
+    position: absolute; top: 0; bottom: 0;
+    background: #f1f2f4;
+    pointer-events: none;
+  }
   .drop-indicator {
     position: absolute;
     top: 4px;

@@ -18,6 +18,17 @@ class User(AbstractUser):
         help_text='Associated contact record for this user'
     )
 
+    schedule_envelope = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Per-worker weekly working pattern for the schedule (canonical '
+            '{"mon": [["08:00", "17:00"]], …} shape). NULL means the worker '
+            'uses the shop default (the schedule_week_envelope Configuration '
+            'key). Validated by apps.schedule.calendar_arithmetic.'
+        ),
+    )
+
     class Meta:
         db_table = 'auth_user'
         verbose_name = 'User'

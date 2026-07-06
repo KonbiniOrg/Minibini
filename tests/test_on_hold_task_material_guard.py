@@ -44,11 +44,12 @@ def _make_job(contact, status_path):
 
 
 def _on_hold_job(contact):
-    return _make_job(contact, [
+    from apps.jobs.services import JobService
+    job = _make_job(contact, [
         Job.STATUS_SUBMITTED,
         Job.STATUS_APPROVED,
-        Job.STATUS_ON_HOLD,
     ])
+    return JobService.hold_job(job.pk, 'guard test hold')
 
 
 def _in_progress_job(contact):
@@ -395,11 +396,10 @@ class MaterialUpdatePricingOnHoldTest(OnHoldGuardBase):
     def test_update_pricing_blocked_on_on_hold_job(self):
         # Create the material while job is still in a mutable state,
         # then place the job on_hold, then try to update pricing.
+        from apps.jobs.services import JobService
         job = _in_progress_job(self.contact)
         mat = _material(job, ac=self.ac)
-        # Move job to on_hold
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        JobService.hold_job(job.pk, 'guard test hold')
         job.refresh_from_db()
         mat.refresh_from_db()
         with self.assertRaises(ValidationError) as ctx:
@@ -419,10 +419,10 @@ class MaterialRestockOnHoldTest(OnHoldGuardBase):
     deliberately stay open on held jobs."""
 
     def test_restock_blocked_on_on_hold_job(self):
+        from apps.jobs.services import JobService
         job = _in_progress_job(self.contact)
         mat = _material(job, ac=self.ac)
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        JobService.hold_job(job.pk, 'guard test hold')
         mat.refresh_from_db()
         with self.assertRaises(ValidationError) as ctx:
             MaterialService.restock(mat, Decimal('1.00'))

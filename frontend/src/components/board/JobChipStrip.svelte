@@ -88,7 +88,10 @@
       class="job-chip"
       class:focused={focusedJobIds.includes(job.job_id)}
       class:blocked={job.sub_status === 'blocked'}
+      class:pre-approval={job.pre_approval}
+      class:on-hold={job.on_hold}
       class:dimmed={focusedJobIds.length > 0 && !focusedJobIds.includes(job.job_id)}
+      title={job.on_hold ? `On hold: ${job.hold_reason || ''}` : undefined}
       onclick={() => handleChipClick(job.job_id)}
       onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleChipClick(job.job_id); } }}
       onmouseenter={(e) => scheduleShow(job.job_id, e.currentTarget)}
@@ -100,6 +103,9 @@
       <div class="chip-body">
         <div class="chip-top">
           <span class="chip-number">{job.job_number}</span>
+          {#if job.pre_approval}
+            <span class="chip-quote-badge" title="Pre-approval work — the job is still a quote">quote</span>
+          {/if}
           {#if job.project_manager_name}
             <span class="chip-pm" title={job.project_manager_name}>{pmInitials(job.project_manager_name)}</span>
           {/if}
@@ -146,6 +152,27 @@
       rgba(220, 38, 38, 0.08) 4px,
       rgba(220, 38, 38, 0.08) 8px
     );
+  }
+  /* On hold: grey diagonal bars (the paused treatment). */
+  .job-chip.on-hold .chip-body {
+    background: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      rgba(107, 114, 128, 0.14) 4px,
+      rgba(107, 114, 128, 0.14) 8px
+    );
+  }
+  /* Pre-approval: dashed edge — this chip is quote-stage work-ahead. */
+  .job-chip.pre-approval {
+    outline: 2px dashed #94a3b8;
+    outline-offset: -2px;
+  }
+  .chip-quote-badge {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.4px; color: #475569;
+    border: 1px dashed #94a3b8; border-radius: 4px;
+    padding: 0 4px; flex-shrink: 0;
   }
   .job-chip.dimmed { opacity: 0.35; }
   .job-chip.focused { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
