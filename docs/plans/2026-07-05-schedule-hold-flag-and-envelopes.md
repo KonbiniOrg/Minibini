@@ -169,11 +169,22 @@ Mon–Fri `is_working_day` disappears — a working day is a day with intervals.
   (deterministic for everyone). A day column renders full-width if the shop
   *or any displayed worker* works it (a Saturday worker gets a real Saturday
   column); thin non-working strip otherwise.
-- **The page time axis** spans the union of displayed workers' envelope hours
-  across the visible days, further widened by the existing off-hours blep rule
-  (floor/ceil to the hour, midnight guards unchanged). Each lane shades its
-  *own* off-envelope regions — margins and gaps — so a 7–3 worker and a 9–5
-  worker read correctly side by side.
+- **The page time axis & overnight compression** — three rules:
+  1. Days are columns of axis-hours only; overnight is always compressed to a
+     boundary (there is never an hours-between-days band).
+  2. The axis = union of displayed workers' envelope hours across the visible
+     days, widened (floor/ceil to the hour) for off-hours logged work *ending
+     on its own start date* within the window — temporary and self-healing
+     (scrolling past the late session snaps the axis back).
+  3. Work the axis still doesn't cover (midnight-crossers, the far side of an
+     all-nighter) **clips at the axis edge with a `continues_*` zigzag** —
+     same mechanism as overnight/gap splits — with the true duration in the
+     quick card via `elapsed_minutes`. This replaces today's degenerate
+     one-minute-sliver fallback for midnight-crossing sessions. No widening
+     cap for now; add one only if rule 2 proves too generous in practice.
+
+  Each lane shades its *own* off-envelope regions — margins and gaps — so a
+  7–3 worker and a 9–5 worker read correctly side by side.
 - `_elapsed_worktime` (remaining-estimate math) uses the worker's envelope,
   matching today's config-shape behavior.
 
