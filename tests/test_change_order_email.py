@@ -20,9 +20,12 @@ from apps.jobs.services import JobService
 
 
 def _advance_job_to_on_hold(job):
-    job.status = Job.STATUS_SUBMITTED; job.save()
-    job.status = Job.STATUS_APPROVED; job.save()
-    job.status = Job.STATUS_ON_HOLD; job.save()
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -141,7 +144,7 @@ class ChangeOrderSendTests(FixtureTestCase):
         ChangeOrderEmailService.send_change_order(
             self.co, to='pat@acme.com', subject='s', body='b')
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
 
     def test_send_requires_recipient(self):
         from django.core.exceptions import ValidationError

@@ -75,7 +75,8 @@ class ChangeOrderAcceptanceBase(TestCase):
 
     def _make_co(self):
         self.job.refresh_from_db()
-        self.job.status = Job.STATUS_ON_HOLD
+        self.job.on_hold = True
+        self.job.hold_reason = 'CO editing'
         self.job.save()
         return ChangeOrderService.create(job_id=self.job.pk)
 

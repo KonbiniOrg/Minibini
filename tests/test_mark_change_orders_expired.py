@@ -15,13 +15,12 @@ from tests.base import FixtureTestCase
 
 
 def _advance_job_to_on_hold(job):
-    """Advance a draft job through submitted -> approved -> on_hold."""
-    job.status = Job.STATUS_SUBMITTED
-    job.save()
-    job.status = Job.STATUS_APPROVED
-    job.save()
-    job.status = Job.STATUS_ON_HOLD
-    job.save()
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 

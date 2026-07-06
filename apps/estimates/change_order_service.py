@@ -2,12 +2,13 @@
 Service class for ChangeOrder lifecycle operations.
 
 Rules:
-- A CO can only be created while the job is on_hold.
-- Accepting a CO auto-advances the job on_hold -> approved, then crystallizes
-  the CO's line deltas onto the Job's atoms
+- A CO can only be created while the job is held (on_hold flag).
+- Accepting a CO clears the hold — the job resumes its true underlying
+  status (approved stays approved; in_progress resumes directly) — then
+  crystallizes the CO's line deltas onto the Job's atoms
   (ChangeOrderAcceptanceService.on_accept — the CO parallel of
   EstimateAcceptanceService).
-- Rejecting/expiring a CO snapshots the proposal and leaves the job on_hold.
+- Rejecting/expiring a CO snapshots the proposal and leaves the job held.
 """
 
 from django.core.exceptions import ValidationError
@@ -28,7 +29,7 @@ class ChangeOrderService:
         """Create a draft ChangeOrder for the given job.
 
         Guards:
-        - job.status must be on_hold.
+        - job must be held (on_hold flag).
         - job must have an accepted estimate.
 
         Trigger 1: snapshot the prior agreement onto the latest accepted CO
@@ -40,7 +41,7 @@ class ChangeOrderService:
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {job_id} not found')
 
-        if job.status != Job.STATUS_ON_HOLD:
+        if not job.on_hold:
             raise ValidationError(
                 'A change order can only be created while the job is on hold.'
             )
@@ -144,11 +145,12 @@ class ChangeOrderService:
     def update_status(pk, new_status):
         """Update a ChangeOrder's status with lifecycle side-effects.
 
-        - Accepted: advance job on_hold -> approved; write system HistoryEntry;
-          crystallize the CO's deltas onto the Job's atoms (add → new
-          Task/Material/Fee; remove/replace → retire the target's atom, with
-          the replacement crystallized from the CO line).
-        - Rejected / Expired: snapshot the proposal (Trigger 2); leave job on_hold.
+        - Accepted: clear the job's hold (status preserved); write system
+          HistoryEntry; crystallize the CO's deltas onto the Job's atoms
+          (add → new Task/Material/Fee; remove/replace → retire the target's
+          atom, with the replacement crystallized from the CO line).
+        - Rejected / Expired: snapshot the proposal (Trigger 2); leave the
+          job held.
         """
         try:
             co = ChangeOrder.objects.select_for_update().get(pk=pk)
@@ -171,16 +173,16 @@ class ChangeOrderService:
 
     @staticmethod
     def _handle_accepted(co):
-        """Advance the job on_hold -> approved, write a system-attributed
+        """Clear the job's hold (its true status is preserved — a job held
+        from in_progress resumes work directly), write a system-attributed
         HistoryEntry, then crystallize the CO's deltas onto the Job's atoms.
 
-        Crystallization runs after the status flip because atom mutations are
-        blocked while the job is on_hold; update_status's transaction wraps
+        Crystallization runs after the un-hold because atom mutations are
+        blocked while the job is held; update_status's transaction wraps
         both, so a failed crystallization rolls the acceptance back whole.
         """
         from apps.core.models import User
         from apps.estimates.co_acceptance import ChangeOrderAcceptanceService
-        from apps.jobs.services import JobService
 
         job = co.job
         job.refresh_from_db()
@@ -190,19 +192,16 @@ class ChangeOrderService:
             defaults={'first_name': 'System', 'is_active': False},
         )
 
-        if job.status == Job.STATUS_ON_HOLD:
-            old_status = job.status
-            JobService.update_job(job.pk, status=Job.STATUS_APPROVED)
+        if job.on_hold:
+            job.on_hold = False
+            job.save()  # save() clears hold_reason when the flag drops
             record_history(
                 entry_type='action',
                 object_type='changeorder',
                 object_id=co.pk,
                 user=system_user,
                 changes={
-                    'status': {
-                        'old': old_status,
-                        'new': Job.STATUS_APPROVED,
-                    },
+                    'on_hold': {'old': True, 'new': False},
                     '_action': 'Change order accepted',
                 },
             )
@@ -222,8 +221,8 @@ class ChangeOrderService:
 
         Records the customer's comment, snapshots the proposal they saw,
         supersedes the open CO, and seeds a fresh draft CO carrying the same
-        deltas for the shop to revise. The job stays on_hold (the CO editing
-        room); the on_hold exit guard keeps it parked until the new draft is
+        deltas for the shop to revise. The job stays held (the CO editing
+        room); the release guard keeps it parked until the new draft is
         resolved — the structural parallel to the estimate flow bouncing the
         job back to draft. ``actor`` is the portal actor dict
         ``{'contact_id', 'email', 'reason'}``. Returns the new draft CO.

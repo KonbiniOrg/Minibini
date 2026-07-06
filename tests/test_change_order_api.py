@@ -33,10 +33,12 @@ def _add_can_manage_jobs(user):
 
 
 def _advance_job_to_on_hold(job):
-    """Draft → submitted → approved → on_hold."""
-    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_ON_HOLD):
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
         job.status = s
         job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -453,8 +455,10 @@ class DeliverablesBaselineAPITest(FixtureTestCase):
         DeliverableService.snapshot_document(change_order=prior_co)
 
         # Now create a new CO — Trigger 1 should snapshot the prior_co (not the estimate).
-        # First put job back on_hold for the service guard.
-        self.job.status = Job.STATUS_ON_HOLD
+        # First put the job back on hold for the service guard.
+        self.job.refresh_from_db()
+        self.job.on_hold = True
+        self.job.hold_reason = 'CO editing'
         self.job.save()
 
         self.client.force_authenticate(user=self.manager)
