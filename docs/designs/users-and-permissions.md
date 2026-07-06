@@ -55,7 +55,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses. Status transitions on each. Cancel/reorder tasks and mark all a job's work complete. Email-to-job actions: link, unlink, create-job-from-email. (Adding/editing/deleting and completing individual tasks is open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** via `CanManageJobOrPM` — see "Project-manager object access". |
 | `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
 | `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
-| `can_manage_config` | Settings endpoint, work templates and service items (the saved-work catalog — though *creating* a service item is also allowed for `can_manage_jobs` via `CanManageJobsOrConfig`, for inline "save to catalog" while plan-building), accounting categories, user admin viewset, QBO connection management. |
+| `can_manage_config` | Settings endpoint, work templates, accounting categories, user admin viewset, QBO connection management. Service-item (the saved-work catalog) writes are shared three ways — see the endpoint table. |
 
 DRF permission classes in `apps/api/permissions.py`:
 
@@ -129,12 +129,13 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/blep-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | a create-type (null `blep`) request requires `task`; same `conflicts` list + own-record rule as shifts |
 | `/api/rate-schemes/` | `IsAuthenticated` | `can_manage_config` | `supersede` action also `can_manage_config` |
 | `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
-| `/api/service-items/` | `IsAuthenticated` | create: `can_manage_jobs` **or** `can_manage_config`; update/delete: `can_manage_config` | Inline "save to catalog" while plan-building is not config-gated (`CanManageJobsOrConfig`) |
+| `/api/service-items/` | `IsAuthenticated` | `can_manage_jobs` **or** `can_manage_financials` **or** `can_manage_config` (`CanManageJobsOrFinancialsOrConfig`) | Widened 2026-07 (was create: jobs-or-config, update/delete: config-only) so the Catalog area's Service Items tab lets any of the three atoms manage the shared catalog; list/retrieve stay `IsAuthenticated` (visible to every user in the Catalog UI) |
 | `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-defaults` (GET) IsAuth; `send` (POST) `can_manage_financials`. The legacy `send-to-qbo` was removed when the new send flow shipped. |
 | `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
 | `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
-| `/api/price-list-items/` | `IsAuthenticated` | `can_manage_financials` | |
+| `/api/inventory/` (`InventoryItemViewSet`) | `IsAuthenticated` | `can_manage_financials` **or** `can_manage_config` | `order` action (`POST /api/inventory/{id}/order/` — order to stock, no material/job) is `can_manage_financials` only |
+| `/api/earmarks/` (`EarmarkViewSet`) | `IsAuthenticated` | (read-only) | New — `ReadOnlyModelViewSet`, unpaginated, backs the Catalog Earmarks tab |
 | `/api/materials/` | `IsAuthenticated` | `IsAuthenticated` | service enforces consumption-state and immutability rules |
 | `/api/expenses/` | `IsAuthenticated` | `can_manage_financials` for update / destroy / reject / retry-sync | list / retrieve auto-scoped to `purchased_by=user` unless `can_manage_financials`; create open to authenticated |
 | `/api/reimbursements/` | `can_manage_financials` | `can_manage_financials` | |

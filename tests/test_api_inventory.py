@@ -1,3 +1,4 @@
+from decimal import Decimal
 from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User
@@ -50,10 +51,10 @@ class InventorySearchTest(BaseTestCase):
         self.client.force_authenticate(user=User.objects.get(username='admin'))
         cat = AccountingCategory.objects.get(pk=901)
         self.match = InventoryItem.objects.create(
-            code='BOLT-14', description='Hex bolt 1/4"', is_catalog=True,
+            code='BOLT-14', description='Hex bolt 1/4"',
             accounting_category=cat)
         self.other = InventoryItem.objects.create(
-            code='SHEET-3', description='Aluminum sheet', is_catalog=True,
+            code='SHEET-3', description='Aluminum sheet',
             accounting_category=cat)
 
     def _ids(self, resp):
@@ -71,37 +72,78 @@ class InventorySearchTest(BaseTestCase):
         self.assertIn(self.match.inventory_item_id, self._ids(resp))
         self.assertNotIn(self.other.inventory_item_id, self._ids(resp))
 
+    def test_list_orders_alphabetically_by_code(self):
+        """The main inventory list is browsed, not searched — alphabetical
+        by code, regardless of stock level or age. (In-stock-first ranking
+        was tried 2026-07-05 and reverted by RM.)"""
+        cat = AccountingCategory.objects.get(pk=901)
+        InventoryItem.objects.create(
+            code='ZZZ-STOCKED', accounting_category=cat, units='ea',
+            qty_on_hand=Decimal('5'))
+        InventoryItem.objects.create(
+            code='AAA-EMPTY', accounting_category=cat, units='ea')
+        resp = self.client.get('/api/inventory/?page_size=100')
+        codes = [r['code'] for r in resp.json()['results']]
+        self.assertEqual(codes, sorted(codes))
+        self.assertLess(codes.index('AAA-EMPTY'), codes.index('ZZZ-STOCKED'))
 
-class InventoryIsCatalogFilterTest(BaseTestCase):
-    """GET /api/inventory/?is_catalog=true|false filters by is_catalog flag."""
 
+class InventoryStockOrderAPITest(BaseTestCase):
     def setUp(self):
         super().setUp()
+        from apps.core.models import AppState, Configuration
+        Configuration.objects.update_or_create(
+            key='po_number_sequence',
+            defaults={'value': 'PO-{year}-{counter:04d}'})
+        AppState.objects.update_or_create(
+            key='po_counter', defaults={'value': '0'})
         self.client = APIClient()
         self.client.force_authenticate(user=User.objects.get(username='admin'))
         cat = AccountingCategory.objects.get(pk=901)
-        self.catalog_item = InventoryItem.objects.create(
-            code='CAT-001', description='Catalog widget', is_catalog=True,
-            accounting_category=cat)
-        self.lot_item = InventoryItem.objects.create(
-            code='LOT-001', description='Transient lot', is_catalog=False,
-            qty_on_hand='5.00',
-            accounting_category=cat)
+        self.item = InventoryItem.objects.create(
+            code='ORD-1', accounting_category=cat,
+            purchase_price=Decimal('10'))
 
-    def _ids(self, resp):
-        rows = resp.data['results'] if 'results' in resp.data else resp.data
-        return [r['inventory_item_id'] for r in rows]
-
-    def test_is_catalog_true_returns_only_catalog(self):
-        resp = self.client.get('/api/inventory/?is_catalog=true&include_finished=true')
+    def test_order_creates_po_and_returns_link_fields(self):
+        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                {'quantity': '4'}, format='json')
         self.assertEqual(resp.status_code, 200)
-        ids = self._ids(resp)
-        self.assertIn(self.catalog_item.inventory_item_id, ids)
-        self.assertNotIn(self.lot_item.inventory_item_id, ids)
+        self.assertIn('po_id', resp.data)
+        self.assertTrue(resp.data['po_number'])
 
-    def test_is_catalog_false_returns_only_non_catalog(self):
-        resp = self.client.get('/api/inventory/?is_catalog=false&include_finished=true')
+    def test_order_appends_to_draft_when_po_id_given(self):
+        first = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                 {'quantity': '1'}, format='json')
+        po_id = first.data['po_id']
+        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                {'quantity': '2', 'po_id': po_id}, format='json')
         self.assertEqual(resp.status_code, 200)
-        ids = self._ids(resp)
-        self.assertNotIn(self.catalog_item.inventory_item_id, ids)
-        self.assertIn(self.lot_item.inventory_item_id, ids)
+        self.assertEqual(resp.data['po_id'], po_id)
+
+    def test_order_requires_financials(self):
+        plain = User.objects.create_user(username='noatom', password='x')
+        client = APIClient()
+        client.force_authenticate(user=plain)
+        resp = client.post(f'/api/inventory/{self.item.pk}/order/',
+                           {'quantity': '1'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_order_rejects_config_only_atom(self):
+        # Stock ordering is a purchasing act (financials-only), not covered
+        # by can_manage_config even though config grants full CRUD on the
+        # catalog item itself (B7).
+        from django.contrib.auth.models import Permission
+        config_user = User.objects.create_user(username='configonly', password='x')
+        config_user.user_permissions.add(
+            Permission.objects.get(codename='can_manage_config'))
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=config_user.pk))
+        resp = client.post(f'/api/inventory/{self.item.pk}/order/',
+                           {'quantity': '1'}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+    def test_order_rejects_missing_quantity(self):
+        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
+                                {}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('quantity', resp.data)

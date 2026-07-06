@@ -21,7 +21,7 @@ class MaterialApiTest(APITestCase):
         contact.business = biz; contact.save()
         self.job = Job.objects.create(job_number='JOB-API-1', contact=contact)
         self.pli = InventoryItem.objects.create(
-            code='I-API', accounting_category=self.cat, is_catalog=True,
+            code='I-API', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -46,6 +46,51 @@ class MaterialApiTest(APITestCase):
         }, format='json')
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertTrue(Material.objects.filter(job=self.job, task__isnull=True).exists())
+
+    def test_post_jobs_id_materials_customer_supplied(self):
+        """Task 10: customer_supplied=True on the create API — born established
+        at a locked $0, cost_source stamped, no purchase pricing accepted."""
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'customer panel', 'quantity': '2',
+            'accounting_category': self.cat.pk,
+            'customer_supplied': True,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201, resp.content)
+        m = Material.objects.get(job=self.job, description='customer panel')
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        self.assertEqual(m.sell_price, Decimal('0.00'))
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_CUSTOMER)
+
+    def test_post_customer_supplied_with_sell_price_400(self):
+        """Reviewer gap: sell_price must be refused too — otherwise the pre-set
+        sell rides establish()'s locked-sell preservation and mints a 99.00 lot."""
+        url = f'/api/jobs/{self.job.pk}/materials/'
+        resp = self.client.post(url, {
+            'description': 'sneaky sell', 'quantity': '1',
+            'accounting_category': self.cat.pk,
+            'customer_supplied': True,
+            'sell_price': '99.00',
+        }, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('detail', resp.data)
+        self.assertFalse(
+            Material.objects.filter(job=self.job, description='sneaky sell').exists())
+
+    def test_patch_pricing_on_customer_supplied_material_400(self):
+        """A customer-supplied material's pricing is locked — PATCHing
+        unit_cost/sell_price returns the standard 400 error-detail contract."""
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='theirs',
+            quantity=Decimal('1'), accounting_category=self.cat, units='ea',
+            customer_supplied=True,
+        )
+        resp = self.client.patch(
+            f'/api/materials/{m.pk}/', {'unit_cost': '5.00'}, format='json')
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('detail', resp.data)
 
     def test_patch_pli_linked_material_rejects_field_edits(self):
         """PLI-linked Materials are immutable except for unit_cost/sell_price.
@@ -76,6 +121,29 @@ class MaterialApiTest(APITestCase):
         m.refresh_from_db()
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
+    def test_mark_on_hand_action_happy_path_and_refusal(self):
+        from apps.inventory.services import MaterialService
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='received item',
+            quantity=Decimal('5'), unit_cost=Decimal('4.00'),
+            accounting_category=self.cat, units='ea')
+        r = self.client.post(
+            f'/api/materials/{m.pk}/mark-on-hand/', {'quantity': '5'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('5.00'))
+
+        # Refusal shape: a provisional (unpriced) material's inventory_item_id
+        # is None, so mark_on_hand raises a plain-sentence ValidationError,
+        # which the central handler renders as {'detail': '...'}.
+        prov = MaterialService.create_on_job(
+            job=self.job, task=None, description='no pricing yet',
+            quantity=Decimal('1'), accounting_category=self.cat, units='ea')
+        r2 = self.client.post(
+            f'/api/materials/{prov.pk}/mark-on-hand/', {'quantity': '1'}, format='json')
+        self.assertEqual(r2.status_code, 400, r2.content)
+        self.assertIn('detail', r2.json())
+
     def test_delete_returns_405(self):
         """Gap 7: DELETE on /api/materials/{id}/ must return 405."""
         from apps.inventory.services import MaterialService
@@ -102,66 +170,6 @@ class MaterialApiTest(APITestCase):
         )
         r = self.client.post(f'/api/materials/{m.pk}/draw-more/', {'quantity': '1'}, format='json')
         self.assertEqual(r.status_code, 400)
-
-
-class MaterialInventoriedFlagSerializerTest(APITestCase):
-    """Task 7: `inventory_item_is_catalog` should appear on serialized materials."""
-
-    def setUp(self):
-        self.cat = AccountingCategory.objects.create(name='c', code='MIVF1')
-        self.user = User.objects.create_user('mivf_u', password='p')
-        self.client.force_login(self.user)
-        contact = Contact.objects.create(first_name='C', last_name='T')
-        biz = Business.objects.create(business_name='B', default_contact=contact)
-        contact.business = biz
-        contact.save()
-        self.job = Job.objects.create(job_number='JOB-MIVF-1', contact=contact)
-        self.pli_inv = InventoryItem.objects.create(
-            code='I-INV', accounting_category=self.cat, is_catalog=True,
-            qty_on_hand=Decimal('10'),
-        )
-        self.pli_free = InventoryItem.objects.create(
-            code='I-FREE', accounting_category=self.cat, is_catalog=False,
-        )
-
-    def _make_material(self, pli):
-        from apps.inventory.services import MaterialService
-        return MaterialService.create_on_job(
-            job=self.job, task=None, description='x',
-            quantity=Decimal('1'), inventory_item=pli,
-            accounting_category=self.cat if pli is None else None,
-        )
-
-    def test_flag_true_for_inventoried_pli(self):
-        m = self._make_material(self.pli_inv)
-        resp = self.client.get(f'/api/materials/{m.pk}/')
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertIn('inventory_item_is_catalog', resp.data)
-        self.assertTrue(resp.data['inventory_item_is_catalog'])
-
-    def test_flag_false_for_non_inventoried_pli(self):
-        m = self._make_material(self.pli_free)
-        resp = self.client.get(f'/api/materials/{m.pk}/')
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertFalse(resp.data['inventory_item_is_catalog'])
-
-    def test_flag_false_for_freeform_material(self):
-        m = self._make_material(None)
-        resp = self.client.get(f'/api/materials/{m.pk}/')
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertFalse(resp.data['inventory_item_is_catalog'])
-
-    def test_flag_on_job_nested_materials(self):
-        """The Job serializer's `materials` field should include the flag too."""
-        m_inv = self._make_material(self.pli_inv)
-        m_free = self._make_material(self.pli_free)
-        m_none = self._make_material(None)
-        resp = self.client.get(f'/api/jobs/{self.job.pk}/')
-        self.assertEqual(resp.status_code, 200, resp.content)
-        mats_by_id = {m['material_id']: m for m in resp.data['materials']}
-        self.assertTrue(mats_by_id[m_inv.pk]['inventory_item_is_catalog'])
-        self.assertFalse(mats_by_id[m_free.pk]['inventory_item_is_catalog'])
-        self.assertFalse(mats_by_id[m_none.pk]['inventory_item_is_catalog'])
 
 
 class MaterialAssignTaskApiTest(APITestCase):
@@ -221,8 +229,16 @@ class MaterialAssignTaskApiTest(APITestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_reject_consumed_material(self):
-        m = self._make(task=None)
         from apps.inventory.services import MaterialService
+        # Established + stocked so it can be consumed (consume() refuses
+        # provisional): a nonzero unit_cost mints a lot, then bump its QOH.
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('1'), unit_cost=Decimal('5'),
+            accounting_category=self.cat,
+        )
+        m.inventory_item.qty_on_hand = m.quantity
+        m.inventory_item.save()
         MaterialService.consume(m)
         r = self.client.post(f'/api/materials/{m.pk}/assign-task/', {'task': self.task_a.pk}, format='json')
         self.assertEqual(r.status_code, 400)
@@ -244,7 +260,7 @@ class MaterialApiPermissionTest(APITestCase):
         contact.save()
         self.job = Job.objects.create(job_number='JOB-PERM-1', contact=contact)
         self.pli = InventoryItem.objects.create(
-            code='I-PERM', accounting_category=self.cat, is_catalog=False,
+            code='I-PERM', accounting_category=self.cat,
         )
 
     def test_worker_with_no_atoms_can_create_material(self):
@@ -294,7 +310,7 @@ class MaterialInvoicedFreezeTest(APITestCase):
         contact.save()
         self.job = Job.objects.create(job_number='JOB-FRZ-1', contact=contact)
         self.pli = InventoryItem.objects.create(
-            code='I-FRZ', accounting_category=self.cat, is_catalog=True,
+            code='I-FRZ', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -308,15 +324,17 @@ class MaterialInvoicedFreezeTest(APITestCase):
         MaterialService.consume(m)
         return m
 
-    def _make_consumed_freeform_material(self):
-        """Freeform (no inventory_item) consumed material."""
+    def _make_freeform_material(self):
+        """Provisional (no inventory_item) material. Stays pending — consume()
+        now refuses provisional materials, and the sell-price freeze applies to
+        any invoiced material regardless of consumption state, so this still
+        exercises the freeform PATCH branch."""
         from apps.inventory.services import MaterialService
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='freeform mat',
             quantity=Decimal('1'), inventory_item=None,
             accounting_category=self.cat,
         )
-        MaterialService.consume(m)
         return m
 
     def _invoice_material(self, material):
@@ -350,7 +368,7 @@ class MaterialInvoicedFreezeTest(APITestCase):
             MaterialService.unconsume(mat)
 
     def test_patch_sell_price_blocked_on_invoiced_freeform_material(self):
-        mat = self._make_consumed_freeform_material()
+        mat = self._make_freeform_material()
         self._invoice_material(mat)
         resp = self.client.patch(
             f'/api/materials/{mat.pk}/', {'sell_price': '77.00'},

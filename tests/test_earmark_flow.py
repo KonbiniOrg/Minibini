@@ -38,7 +38,6 @@ class EarmarkPreviewTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
@@ -48,7 +47,6 @@ class EarmarkPreviewTest(TestCase):
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -152,7 +150,7 @@ class EarmarkPreviewTest(TestCase):
         """Universal tracking: the earmark preview includes every item-backed
         material (catalog or non-catalog lot), not just inventoried ones."""
         non_inv = InventoryItem.objects.create(
-            code='NONINV', description='Not tracked', is_catalog=False,
+            code='NONINV', description='Not tracked',
             accounting_category=self.category,
         )
         Material.objects.create(
@@ -190,7 +188,6 @@ class UpsertEarmarksTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
@@ -200,7 +197,6 @@ class UpsertEarmarksTest(TestCase):
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -254,7 +250,7 @@ class CreateEarmarksForJobIsNoopTest(TestCase):
         contact.business = biz; contact.save()
         cat = AccountingCategory.objects.create(name='c', code='NOP1')
         pli = InventoryItem.objects.create(
-            code='I-NOP', accounting_category=cat, is_catalog=True,
+            code='I-NOP', accounting_category=cat,
         )
         dst = Job.objects.create(job_number='JOB-NOP-DST', contact=contact,
                                  status=Job.STATUS_APPROVED)

@@ -500,7 +500,7 @@ sanctioned path to transition a Task. All methods wrap in
 | `complete_task(task_pk)` | — | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check |
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
-| `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); fires job-completion check |
+| `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check |
 | `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
 | `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
 | `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_minutes` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. (Internally delegates to `BlepService._cancel_blep`, which the close primitive also uses.) |
@@ -1073,6 +1073,18 @@ it carries two affordances:
 `GET /api/settings/` (`default_material_accounting_category` key) at page
 mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
+
+**Per-material status & actions (freeform-materials venue rule).** Each material
+row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-NNNN
+/ Awaiting customer / On Hand / Consumed / Released** (`materialStatus`,
+`frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
+`cost_source === 'estimated'`. **All per-material actions live here on the task
+view page only** — Set pricing (establishes a provisional material), the Order
+dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
+quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
+overview **Tasks & Materials pillar is passive** — it shows the same chips and
+consumed/released styling but no buttons or links. Full vocabulary and action
+table: `materials-inventory-and-purchasing.md` §16.
 
 The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
 of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates

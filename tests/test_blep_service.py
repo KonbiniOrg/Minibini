@@ -191,11 +191,18 @@ class CreateHistoricalTest(BaseTestCase):
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
     def test_create_historical_consumes_materials_on_pending_task(self):
-        from apps.inventory.models import Material
+        from decimal import Decimal
+        from apps.inventory.models import InventoryItem, Material
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.first()
+        # Established + stocked: consume() now refuses provisional materials, so
+        # the sweep can only consume a material with a received lot.
+        pli = InventoryItem.objects.create(
+            code='BLEP-H1', accounting_category=cat, qty_on_hand=Decimal('5'),
+        )
         mat = Material.objects.create(
             job=self.job, task=self.task, description='Test Material',
+            inventory_item=pli, quantity=Decimal('2'),
             accounting_category=cat,
         )
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
@@ -208,12 +215,19 @@ class CreateHistoricalTest(BaseTestCase):
         # A blep means work is happening — a hand-added blep on a started task
         # consumes the task's pending materials (the blep-start sweep), the
         # same as a live start.
-        from apps.inventory.models import Material
+        from decimal import Decimal
+        from apps.inventory.models import InventoryItem, Material
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.first()
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        # Established + stocked: the blep-start sweep can only consume a material
+        # with a received lot (consume() refuses provisional materials).
+        pli = InventoryItem.objects.create(
+            code='BLEP-H2', accounting_category=cat, qty_on_hand=Decimal('5'),
+        )
         mat = Material.objects.create(
             job=self.job, task=self.task, description='M',
+            inventory_item=pli, quantity=Decimal('2'),
             accounting_category=cat,
         )
         start, end = self._times(2, 1)

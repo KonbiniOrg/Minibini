@@ -12,7 +12,7 @@ const SVC_ITEM = {
 };
 const INV_ITEM = {
   inventory_item_id: 22, code: 'BOLT-14', description: 'Hex bolt',
-  selling_price: '0.50', units: 'ea', is_catalog: true, is_active: true,
+  selling_price: '0.50', units: 'ea', is_active: true,
 };
 
 function mockApiForQuery() {
@@ -41,7 +41,7 @@ describe('PriceListPicker (onChoose emitter)', () => {
     expect(await findByText('CNC Routing')).toBeInTheDocument();
     expect(await findByText('BOLT-14')).toBeInTheDocument();
     const invCall = api.get.mock.calls.find((c) => c[0].includes('/api/inventory/'));
-    expect(invCall[0]).toContain('is_catalog=true');
+    expect(invCall[0]).toContain('is_active=true');
     expect(invCall[0]).toContain('search=cnc');
   });
 

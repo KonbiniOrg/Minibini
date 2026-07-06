@@ -4,12 +4,12 @@
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
-  import ServiceItemManager from '../components/ServiceItemManager.svelte';
   import ScheduleSettings from '../components/settings/ScheduleSettings.svelte';
   import EmailTemplates from '../components/settings/EmailTemplates.svelte';
   import BusinessSettings from '../components/settings/BusinessSettings.svelte';
   import GeneralSettings from '../components/settings/GeneralSettings.svelte';
   import MaterialMarkupSetting from '../components/settings/MaterialMarkupSetting.svelte';
+  import DefaultMaterialCategorySetting from '../components/settings/DefaultMaterialCategorySetting.svelte';
   import { fetchFromQBO, savePaymentAccounts, getPaymentAccounts } from '../lib/paymentAccounts.js';
 
   let tab = $state('accounting');
@@ -60,7 +60,7 @@
 <nav class="settings-tabs">
   <button class:active={tab === 'accounting'} onclick={() => tab = 'accounting'}>Accounting</button>
   <button class:active={tab === 'setup'} onclick={() => tab = 'setup'}>Setup</button>
-  <button class:active={tab === 'catalog'} onclick={() => tab = 'catalog'}>Catalog</button>
+  <button class:active={tab === 'pricing'} onclick={() => tab = 'pricing'}>Pricing</button>
   <button class:active={tab === 'schedule'} onclick={() => tab = 'schedule'}>Schedule</button>
   <button class:active={tab === 'email'} onclick={() => tab = 'email'}>Email</button>
   <button class:active={tab === 'business'} onclick={() => tab = 'business'}>Business</button>
@@ -72,6 +72,8 @@
   <QBOSyncFailures />
 
   <AccountingCategories />
+
+  <DefaultMaterialCategorySetting />
 
   <h3>Payment accounts</h3>
 <p>
@@ -115,15 +117,12 @@
 
   <UnitsManager />
 
-{:else if tab === 'catalog'}
+{:else if tab === 'pricing'}
   <MaterialMarkupSetting />
 
-  <ServiceItemManager />
+  <DefaultMaterialCategorySetting />
 
   <RateSchemeManager />
-
-  <h3>Work templates</h3>
-  <p><em>Not yet implemented in Svelte.</em></p>
 
 {:else if tab === 'schedule'}
   <ScheduleSettings />

@@ -334,7 +334,63 @@ The atom-pull surfaces on estimates and invoices.
 
 ## Purchasing & inventory
 
-(The procurement-machinery items moved into the freeform-materials plan, 2026-07-04.)
+(The procurement-machinery items moved into the freeform-materials plan
+2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
+
+- **PO line form needs an explicit "attach to existing material" picker.** — _added 2026-06-20; returned 2026-07-05 from the freeform-materials plan (not built)_
+  When adding a PO line for a job that already has materials, there's no way to
+  deterministically attach the line to a *specific* existing pending material — the
+  resolver only auto-claims on an exact single match, else silently creates a
+  duplicate. (The `material_id` explicit path exists on the API and is used by the
+  one-shot "order this material" prefill, but the manual add-line form never offers
+  it.) Fix: once a Job is selected on the PO line form, surface that job's pending
+  unlinked materials and let the user pick "attach to this one" (explicit
+  `material_id`) or "create new". _Done when:_ deterministic attach with tests.
+
+- **Mixed-receipt expense loses the non-inventory cost.** — _added 2026-06-14; returned 2026-07-05 from the freeform-materials plan (consciously punted)_
+  An expense is single-mode (cost OR stock receipt). One trip buying both an
+  inventoried shortfall and a special non-item finish silently drops one side.
+  Dropping `is_catalog` changed the classification rule (any item-backed purchase =
+  stock receipt) but did **not** fix the mixed case. _Done when:_ multi-item
+  expenses or a split prompt exist so a non-inventory cost can never be silently
+  swallowed.
+
+- **Expense didn't count as a cost in the job overview (no catalog item picked) — investigate.** — _added 2026-06-18; returned 2026-07-05, possibly obsolete_
+  Reported pre-rework: an expense missing from job cost with no catalog item
+  selected, so the stock-receipt classification shouldn't have fired — cause never
+  found. The expense-attach flow was rebuilt by the freeform-materials work
+  (attach == receipt, establishes provisional materials), so the original repro
+  context is gone. Re-test on the new flow; if it can't reproduce, delete this
+  entry. _Done when:_ reproduced and fixed with a test, or shown obsolete.
+
+- **Decide whether "drops" (offcuts/scraps) get an unbacked-material lane or lightweight lots.** — _added 2026-07-05 (parked during the freeform-materials design)_
+  The "no permanently-unbacked Material" rule (every Material establishes to a lot)
+  serves drops worst. RM deliberately parked this: exercise the
+  provisional→established/lot process first, then decide whether drops justify a
+  genuine unbacked category. Note: mark-on-hand + lot reuse may already cover most
+  drops in practice (a $0-ish minted lot marked on-hand). _Done when:_ RM has
+  decided drops get an unbacked lane, lightweight lots, or the status quo, and the
+  materials doc records it.
+
+- **Show a material's earmarks on the PO when ordering it.** — _added 2026-07-05_
+  Certain items are needed by more than one job at once. When adding/receiving a PO
+  line for such an item, the buyer can't see the total demand — the per-job earmarks
+  against the line's inventory item — so they can't easily decide to order for
+  several jobs in one purchase. Surface the item's earmark list (job + quantity)
+  on the PO line (and/or in the order-from-material flow) so multi-job demand is
+  visible at order time. _Done when:_ ordering an item with earmarks from multiple
+  jobs shows those earmarks on the PO surface, and the buyer can size the line
+  accordingly.
+
+- **Delete-after-reject of a `stock_pli` expense double-reverses QOH.** — _added 2026-07-05 (found during the freeform-materials Task 9 review; pre-existing)_
+  `ExpenseService.reject` already reverses a stock-receipt expense's QOH bump. But
+  the **delete** branch has no status guard: deleting an already-rejected
+  `stock_pli` expense reverses the QOH a **second time**, driving stock negative.
+  This is the same shape the freeform-materials attach fix guarded (the shared
+  `_unwind_attach` is skipped on delete when the expense was already unwound at
+  reject) — the stock-receipt delete path needs the same "already reversed?"
+  guard. _Done when:_ deleting a rejected stock-receipt expense doesn't
+  double-reverse QOH, with a regression test.
 
 - **PO/Bill vendor field: let users search by contact name but resolve to the business.** — _added 2026-06-21_
   The PO and Bill forms pick a vendor with `BusinessPicker` (searches businesses, returns a
@@ -350,7 +406,7 @@ The atom-pull surfaces on estimates and invoices.
   resolution + the no-business rejection UX, and wired it into the PO/Bill vendor fields.
 
 - **Inventory merge is still awkward — rework the keep/discard selection + add a preview.** — _added 2026-06-18_
-  The merge UI in `InventoryListPage.svelte` (the `{#if showMerge}` panel, ~lines 147-167) is
+  The merge UI in `CatalogInventoryPage.svelte` (`frontend/src/routes/catalog/`, the `{#if showMerge}` panel, ~lines 147-167) is
   a top-of-page block with two raw `<select>` dropdowns — "keep" and "discard" (`mergeKeep`/
   `mergeDiscard`, discard limited to non-catalog `lotOptions`) — disconnected from the table
   the user is looking at. On a long catalog you re-hunt both items by name in unsearchable
@@ -543,6 +599,14 @@ IMAP-SMTP machinery and tend to be worked together.
 ## Platform & conventions
 
 Cross-cutting UI/API conventions and shared components.
+
+- **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
+  The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
+  back-button land on the right tab; the tab strip is `<a use:link>`). Settings
+  (`SettingsPage.svelte`, six tabs) and the job history page
+  (`JobHistoryPage.svelte`) still use local `$state` tabs under a single URL.
+  _Done when:_ those pages' tabs are routes (or a deliberate exception is
+  recorded for them).
 
 - **Modal stacking on the schedule quick card — Escape closes both layers.** — _added 2026-07-04 (found during the Modal-shell sweep)_
   The one real modal-on-modal spot: `TaskQuickCard` (schedule bar click → popup

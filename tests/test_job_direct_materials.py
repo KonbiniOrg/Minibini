@@ -65,7 +65,6 @@ def _make_pli(code, cat, *, purchase_price='10.00', selling_price='15.00'):
         code=code,
         description=f'Widget {code}',
         accounting_category=cat,
-        is_catalog=True,
         purchase_price=Decimal(purchase_price),
         selling_price=Decimal(selling_price),
         units='ea',

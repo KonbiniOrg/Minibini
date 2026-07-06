@@ -35,7 +35,7 @@ class CompleteTaskMaterialGuardTest(TestCase):
         )
         self.pli = InventoryItem.objects.create(
             code='CTG-I', accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal('10.00'),
+            qty_on_hand=Decimal('10.00'),
         )
 
     def _task(self, status=Task.STATUS_PENDING):

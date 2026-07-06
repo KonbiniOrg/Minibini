@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import { triageError } from '../lib/errorTriage.js';
+  import { materialStatus } from '../lib/materialStatus.js';
   import { showError } from '../stores/messages.js';
   import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
@@ -36,6 +37,7 @@
   let pliUnitCost = $state(null);    // PLI's current price, for prompt comparison
   let pliSellPrice = $state(null);
   let showPropagatePrompt = $state(false);
+  let customerSupplied = $state(false);  // create-mode checkbox only
   // Allocation-time stock visibility for a selected catalog/lot item.
   let pliOnHand = $state(null);
   let pliEarmarked = $state(null);
@@ -60,8 +62,29 @@
     return '';
   });
 
+  // Set when opened on a needs-pricing row — the title/primary action reads
+  // "Set pricing" instead of "Edit Material"/"Save". Reuses materialStatus()
+  // (the same source of truth that renders TaskTree's "Set pricing" button)
+  // so the button and the modal can never disagree about the condition.
+  let isSetPricingEdit = $derived(
+    mode === 'edit' && !!material && materialStatus(material).key === 'needs-pricing'
+  );
+
+  // A material born customer-supplied is established at a locked $0/$0 —
+  // its pricing can never be edited (the backend 400s a pricing PATCH on it).
+  let isCustomerSuppliedMaterial = $derived(
+    mode === 'edit' && !!material && material.cost_source === 'customer_supplied'
+  );
+
+  // Pricing is locked either because the create-mode checkbox is on, or
+  // because we're editing a material that was already born customer-supplied.
+  let pricingLocked = $derived(
+    (mode === 'create' && customerSupplied) || isCustomerSuppliedMaterial
+  );
+
   $effect(() => {
     if (open) {
+      customerSupplied = false;
       if (mode === 'edit' && material) {
         description = material.description || '';
         quantity = material.quantity ?? '';
@@ -112,9 +135,24 @@
   // the catch block sets them.
   $effect(() => {
     description; quantity; units; unitCost; sellPrice; pliId; accountingCategory;
+    customerSupplied;
     formError = '';
     fieldErrs = {};
   });
+
+  function handleCustomerSuppliedToggle(checked) {
+    customerSupplied = checked;
+    if (checked) {
+      // Customer-supplied carries no price and no catalog pick — clear both.
+      unitCost = '';
+      sellPrice = '';
+      pliId = null;
+      pliLocked = false;
+      pliOnHand = null;
+      pliEarmarked = null;
+      pliAvailable = null;
+    }
+  }
 
   function handlePliSelect(pli) {
     if (pli) {
@@ -175,10 +213,28 @@
       accounting_category: accountingCategory || null,
     };
 
+    // Create-mode customer-supplied: no pricing fields, no item pick — just
+    // the flag. The backend rejects customer_supplied paired with any
+    // nonzero (or any) pricing, so those keys must not be sent at all.
+    const createPayload = (mode !== 'edit' && customerSupplied)
+      ? {
+          description: fullPayload.description,
+          quantity: fullPayload.quantity,
+          units: fullPayload.units,
+          inventory_item: null,
+          accounting_category: fullPayload.accounting_category,
+          customer_supplied: true,
+        }
+      : fullPayload;
+
     try {
       if (mode === 'edit' && material) {
-        // PATCH: send only fields appropriate to the row's PLI state.
-        const patch = pliLocked
+        // PATCH: send only fields appropriate to the row's state. A
+        // customer-supplied material's pricing is locked — the backend 400s
+        // any unit_cost/sell_price PATCH on it, so send neither.
+        const patch = isCustomerSuppliedMaterial
+          ? {}
+          : pliLocked
           ? {
               unit_cost: fullPayload.unit_cost,
               sell_price: fullPayload.sell_price,
@@ -193,9 +249,9 @@
             };
         await api.patch(`/api/materials/${material.material_id}/`, patch);
       } else if (taskId) {
-        await api.post(`/api/tasks/${taskId}/materials/`, fullPayload);
+        await api.post(`/api/tasks/${taskId}/materials/`, createPayload);
       } else {
-        await api.post(`/api/jobs/${jobId}/materials/`, fullPayload);
+        await api.post(`/api/jobs/${jobId}/materials/`, createPayload);
       }
       onSaved();
     } catch (e) {
@@ -215,11 +271,21 @@
 <Modal {open}
   onCancel={() => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); }}>
 <form onsubmit={(e) => { e.preventDefault(); if (!busy && !showPropagatePrompt) save(); }}>
-      <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
+      <h3>{isSetPricingEdit ? 'Set pricing' : (mode === 'edit' ? 'Edit Material' : 'Add Material')}</h3>
+
+      {#if mode === 'create'}
+        <p>
+          <label>
+            <input type="checkbox" checked={customerSupplied}
+              onchange={(e) => handleCustomerSuppliedToggle(e.target.checked)}>
+            Customer-supplied (no charge — customer sends it)
+          </label>
+        </p>
+      {/if}
 
       <p>
         <label><strong>Inventory Item</strong><br>
-          <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
+          <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={customerSupplied} params={{ is_active: true }} />
         </label>
         <FieldError errors={fieldErrs} field="inventory_item" />
       </p>
@@ -253,17 +319,19 @@
 
       <p>
         <label><strong>Unit Cost</strong><br>
-          <input type="number" step="0.01" bind:value={unitCost} disabled={!pliLocked}>
+          <input type="number" step="0.01" bind:value={unitCost} disabled={pricingLocked}>
         </label>
         <FieldError errors={fieldErrs} field="unit_cost" />
-        {#if !pliLocked}
-          <br><small><em>A freeform material's cost comes from a linked expense or PO, not manual entry.</em></small>
+        {#if isCustomerSuppliedMaterial}
+          <br><small><em>Customer-supplied — carried at $0.</em></small>
+        {:else if !(mode === 'create' && customerSupplied) && !pliLocked}
+          <br><small><em>Entering a cost sets this material up for ordering.</em></small>
         {/if}
       </p>
 
       <p>
         <label><strong>Sell Price</strong><br>
-          <input type="number" step="0.01" bind:value={sellPrice}>
+          <input type="number" step="0.01" bind:value={sellPrice} disabled={pricingLocked}>
         </label>
         <FieldError errors={fieldErrs} field="sell_price" />
       </p>
@@ -281,7 +349,7 @@
       </p>
 
       <div class="buttons">
-        <button type="submit" disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>{isSetPricingEdit ? 'Set pricing' : 'Save'}</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       <FormMessage error={formError} />

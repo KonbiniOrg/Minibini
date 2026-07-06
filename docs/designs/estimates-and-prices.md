@@ -109,8 +109,10 @@ or `ServiceItem`. Calling `RateScheme.effective_rate()` or
 `get_actual_qty()` on a percentage service raises `ValueError`; the estimate
 and invoice serializers reject it; `TaskService.create_direct` rejects it;
 and `GET /api/rate-schemes/?task_applicable=true` excludes it. The
-`Services` manager in the settings UI still displays percentage types so they
-can be managed; the task-creation pickers never show them.
+`ServiceItemManager` (Catalog area, `/catalog/service-items` — moved out of
+Settings; `materials-inventory-and-purchasing.md` §17) still displays
+percentage types so they can be managed; the task-creation pickers never
+show them.
 
 `rate` holds the **percent value**: `10` means 10%, `-5` means a 5% discount.
 Negative rates are allowed only for `percentage` services (all other
@@ -631,8 +633,8 @@ accounting_category, taxable_override, tax_rate_override; see
   non-adjustment lines.
 - `is_material` — BooleanField, default `False`. Marks a bare
   (no `inventory_item`, non-adjustment) freeform line as a
-  **provisional material**: at acceptance it crystallizes into a
-  `Material` with no lot backing (sell price only, `inventory_item=None`)
+  **material**: at acceptance it crystallizes into a `Material`
+  (established with a reverse-markup placeholder cost — §9.1)
   instead of a `Fee`. Invalid on a line that already has an
   `inventory_item` (already a catalog material) or that has an
   `adjustment_service` (document-only adjustments can't be materials) —
@@ -701,7 +703,7 @@ the consistency backstop, not the guard.
 
 | Source rows on a line item | What it represents |
 |---|---|
-| 0 | A **hand-line** — manually authored, no atom backs it. Crystallizes at acceptance via the four-way discriminator (§9.1): `service_item` → Task, `inventory_item` → Material, `is_material` bare → provisional Material, else → Fee. |
+| 0 | A **hand-line** — manually authored, no atom backs it. Crystallizes at acceptance via the four-way discriminator (§9.1): `service_item` → Task, `inventory_item` → Material, `is_material` bare → established Material (reverse-markup cost), else → Fee. |
 | 1 | Single-atom conversion (bulk send-all or a wizard pick of one atom) |
 | N | Wizard-grouped from multiple atoms |
 
@@ -730,7 +732,7 @@ falls back to blank description, `units = 'none'`, `qty = 1`,
 
 No `Task` is created at authoring time. The Task is created at acceptance by `on_accept` (§9.1, discriminator step 1), with `description=li.description` (the edited line description) and `allow_superseded_scheme=True` so a line whose scheme was superseded after authoring can still crystallize.
 
-**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC.
+**`_apply_material_ac_default`.** `is_material=True` bare lines with no explicit AC default to the `Configuration['default_material_accounting_category']` key (stored as a string `AccountingCategory` PK). `_apply_material_ac_default` resolves the key and raises `ValidationError` if the key is absent or the PK is stale. Fee (non-`is_material`) hand-lines still require an explicit AC. The key is editable via a "Default material category" picker (`DefaultMaterialCategorySetting.svelte`, extracted out of `AccountingCategories.svelte`), rendered in both Settings' Accounting and Pricing tabs; `PATCH /api/settings/` validates it as blank-or-active-category-id (`data-constraints.md` §1.1).
 
 **API endpoint:**
 
@@ -921,7 +923,7 @@ price of a hand-authored line becomes a real, billable job atom. Each
 sourceless hand-line (no `EstimateLineItemSource`, not a percentage
 adjustment) goes through a **four-way discriminator** in order:
 `service_item` → Task, `inventory_item` → Material, `is_material` bare →
-provisional Material, else → Fee.
+established Material (reverse-markup cost), else → Fee.
 
 ### 9.1 What `on_accept` does
 
@@ -947,15 +949,23 @@ In one `transaction.atomic()` block:
      Record an `EstimateLineItemSource` with `source_type='material'`.
 
    - **Bare material line** (`is_material=True`) →
-     create a **provisional `Material`** via `MaterialService.create_on_job`
-     with `inventory_item=None`. This is a sell-price-only Material: no
-     lot, no `unit_cost`, not yet procurement-tracked. Record an
+     create a `Material` via `MaterialService.create_on_job`
+     (`inventory_item=None`, `sell_price = li.price`), then **establish it**
+     via `MaterialService.establish` with a **reverse-markup provisional cost**:
+     `unit_cost = sell ÷ (1 + default_material_markup_percent/100)`, minting a
+     QOH-0 `LOT-{pk}` lot and stamping `cost_source='estimated'`. The accepted
+     **sell price is locked**; the cost is a placeholder flagged "cost
+     unconfirmed" (⚠ in the UI) until a real document arrives. Record an
      `EstimateLineItemSource` with `source_type='material'`.
 
-     > **Authoring boundary.** A provisional Material is authoring-complete
-     > at this point. Reverse-markup cost estimation, transient-lot minting,
-     > the Order affordance, and consume-gating are **not** part of this
-     > batch — see `docs/plans/2026-06-30-freeform-material-procurement-inventory.md`.
+     > **Why established, not provisional.** Crystallizing established (with the
+     > reverse-markup cost) means the material rides the procurement rails from
+     > acceptance — it can be Ordered, consume-gates on arrival, and carries
+     > COGS/margin — while the ⚠ marks the cost as not-yet-real. When a **PO**
+     > line (or an attached expense) supplies the true cost, `cost_source` flips
+     > to `po`/`expense` and **sell stays put**, so margin trues up against real
+     > cost. CO acceptance establishes identically (shared
+     > `MaterialService.establish_reverse_markup`; parity 2026-07-05).
 
    - **Fee (default)** → create a `Fee`: `description`, `quantity = li.qty or
      1`, `unit_rate = li.price or 0`, `accounting_category`, `sort_order =
@@ -1284,7 +1294,7 @@ terminal.
 | `target_line_item` | FK → EstimateLineItem (PROTECT). Required for `remove` / `replace`; must be null for `add`. Enforced in `clean()`. |
 | `inventory_item` | Optional catalog pointer, parallel to `EstimateLineItem` provenance. At acceptance the line crystallizes into a `Material` on this item. |
 | `service_item` | Nullable FK → `ServiceItem` (PROTECT). Deferred service descriptor, identical to `EstimateLineItem.service_item` (§6.1): the line snapshots the service's price at authoring and crystallizes to a `Task` at CO acceptance. |
-| `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into a **provisional Material** instead of a Fee, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
+| `is_material` | Marks a bare (no descriptor) line as a material: crystallizes into an **established Material** (reverse-markup placeholder cost, `cost_source='estimated'`) instead of a Fee, same as `EstimateLineItem.is_material`. Authoring applies the `default_material_accounting_category` config default and rejects the marker on lines that already carry an `inventory_item`/`service_item`. |
 
 `clean()` also rejects `service_item` / `is_material` on a `remove` line
 (its own fields are display-only; it never crystallizes anything).
@@ -1312,7 +1322,7 @@ was first sold.
 any bare `add` line (no `service_item`, no `inventory_item`) lacks an
 `accounting_category` — the CO parallel of
 `assert_all_hand_lines_have_ac` (§5.1/§15). Such a line crystallizes
-into a Fee or provisional Material at acceptance, and the category must
+into a Fee or Material at acceptance, and the category must
 be pinned *before* the customer can say yes, so acceptance can never
 fail on it. Living in the model's `clean()`, the guard holds on every
 send path (mark-open action, status PATCH, `send_change_order`).
@@ -1590,7 +1600,10 @@ transiently empties the live work set and trips the auto-advance to
   acceptance (§9.1): `service_item` → Task
   (`generate_task(allow_superseded_scheme=True)`; name from the
   ServiceItem, description from the line), `inventory_item` → Material
-  (line price = sell price), `is_material` bare → provisional Material,
+  (line price = sell price), `is_material` bare → established Material
+  via `MaterialService.establish_reverse_markup` (parity with §9.1 —
+  cost backed out of the locked sell, `cost_source='estimated'`; a bare
+  replace whose mirrored atom was provisional is likewise established),
   else → Fee (defensive ValidationError if no AC — normally unreachable
   past the send guard). Write a `ChangeOrderLineItemSource` row.
 - **remove** — resolve the target estimate line to its **current** atom

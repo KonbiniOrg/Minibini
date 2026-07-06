@@ -150,7 +150,7 @@
 
     <p>
       <label><strong>Job (optional)</strong></label><br>
-      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
+      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} openOnly />
     </p>
 
     <p>

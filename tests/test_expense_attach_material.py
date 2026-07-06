@@ -1,0 +1,377 @@
+"""Path 2: attaching an expense to an existing material prices AND receives.
+
+Attach == receipt: supplying the cost also backs the material with stock and
+stamps EXPENSE provenance, establishing a provisional target in the process.
+See docs spec §Path 2. Entry point is ExpenseService.submit (not .create).
+"""
+from decimal import Decimal
+from datetime import date
+
+from django.test import TestCase, Client
+from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
+
+from apps.core.models import AccountingCategory, Configuration
+from apps.expenses.models import Expense
+from apps.expenses.services import ExpenseService
+from apps.inventory.models import Material
+from apps.inventory.services import MaterialService
+
+User = get_user_model()
+
+
+def _seed_job_config():
+    Configuration.objects.update_or_create(
+        key='job_number_sequence', defaults={'value': 'JOB-{year}-{counter:04d}'},
+    )
+    Configuration.objects.update_or_create(
+        key='job_counter', defaults={'value': '0'},
+    )
+    Configuration.objects.update_or_create(
+        key='default_material_markup_percent', defaults={'value': '25'},
+    )
+
+
+class ExpenseAttachTests(TestCase):
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.user = User.objects.create_user(username='worker', password='testpass')
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Shop Supplies', qbo_expense_account_id='500',
+        )
+        self.contact = Contact.objects.create(
+            first_name='T', last_name='C', email='c@test.com',
+        )
+        self.job = Job.objects.create(job_number='JOB-A1', contact=self.contact)
+
+    def _attach(self, *, amount, material_id, attach_qty=None, description='x'):
+        return ExpenseService.submit(
+            entered_by=self.user, purchased_by=self.user, amount=amount,
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            description=description, material_id=material_id, attach_qty=attach_qty,
+        )
+
+    def test_attach_to_established_receives_and_reprices(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('4'),
+            unit_cost=Decimal('50.00'), accounting_category=self.cat, units='ea')
+        self.assertIsNotNone(m.inventory_item_id)  # born established (priced)
+        e = self._attach(amount=Decimal('240.00'), material_id=m.pk,
+                         description='bought at yard')
+        m.refresh_from_db()
+        self.assertEqual(e.material_id, m.pk)
+        self.assertEqual(m.unit_cost, Decimal('60.00'))          # 240/4
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_EXPENSE)
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('4'))  # attach == receipt
+
+    def test_attach_to_provisional_establishes(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='mystery', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')
+        self.assertIsNone(m.inventory_item_id)  # provisional
+        self._attach(amount=Decimal('30.00'), material_id=m.pk,
+                     description='corner store')
+        m.refresh_from_db()
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.unit_cost, Decimal('15.00'))          # 30/2
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_EXPENSE)
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('2'))
+
+    def test_attach_partial_qty_tops_up(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('12'),
+            unit_cost=Decimal('10.00'), accounting_category=self.cat, units='ea')
+        # Pretend a partial PO receipt already landed 8 units.
+        m.inventory_item.qty_on_hand = Decimal('8')
+        m.inventory_item.save()
+        self._attach(amount=Decimal('44.00'), material_id=m.pk,
+                     attach_qty=Decimal('4'), description='last 4 locally')
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('12'))  # 8 + 4
+        self.assertEqual(m.unit_cost, Decimal('11.00'))               # 44/4
+
+    def test_attach_refuses_customer_supplied(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='theirs', quantity=Decimal('1'),
+            accounting_category=self.cat, units='ea', customer_supplied=True)
+        with self.assertRaises(ValidationError):
+            self._attach(amount=Decimal('5.00'), material_id=m.pk)
+
+    def test_attach_refuses_nonpending(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='done', quantity=Decimal('1'),
+            unit_cost=Decimal('3.00'), accounting_category=self.cat, units='ea')
+        m.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        m.save(update_fields=['consumption_state'])
+        with self.assertRaises(ValidationError):
+            self._attach(amount=Decimal('5.00'), material_id=m.pk)
+
+    def test_attach_mutually_exclusive_with_new_material(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('1'),
+            unit_cost=Decimal('3.00'), accounting_category=self.cat, units='ea')
+        with self.assertRaises(ValidationError):
+            ExpenseService.submit(
+                entered_by=self.user, purchased_by=self.user,
+                amount=Decimal('5.00'), purchased_on=date(2026, 4, 1),
+                accounting_category=self.cat,
+                payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+                material_id=m.pk,
+                new_material={'job_id': self.job.pk, 'description': 'z',
+                              'quantity': 1, 'price': Decimal('5.00')})
+
+    def test_attach_zero_qty_rejected(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('4'),
+            unit_cost=Decimal('50.00'), accounting_category=self.cat, units='ea')
+        with self.assertRaises(ValidationError):
+            self._attach(amount=Decimal('5.00'), material_id=m.pk,
+                         attach_qty=Decimal('0'))
+
+    def test_attach_sets_expense_job_from_material(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            unit_cost=Decimal('5.00'), accounting_category=self.cat, units='ea')
+        e = self._attach(amount=Decimal('20.00'), material_id=m.pk)
+        self.assertEqual(e.job_id, self.job.pk)
+
+
+class ExpenseAttachRejectTest(TestCase):
+    """Reject/delete unwind an attach with one faithful inverse: reverse the
+    receipt, then either fully demote (attach-minted, otherwise-unreferenced
+    lot → material is truly provisional again, lot hard-deleted) or keep the
+    material established with ENTERED provenance. Never a lot + NULL
+    cost_source, never a surviving QOH bump."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.worker = User.objects.create_user(username='w', password='x')
+        self.admin = User.objects.create_user(username='a', password='x')
+        self.cat = AccountingCategory.objects.create(code='SUP', name='Supplies')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='r@t.com')
+        self.job = Job.objects.create(job_number='JOB-AR1', contact=self.contact)
+
+    def _attach(self, *, amount, material_id, attach_qty=None):
+        return ExpenseService.submit(
+            entered_by=self.worker, purchased_by=self.worker, amount=amount,
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL,
+            material_id=material_id, attach_qty=attach_qty)
+
+    def test_reject_attach_to_provisional_makes_truly_provisional_again(self):
+        from apps.inventory.models import InventoryItem, Earmark
+        m = MaterialService.create_on_job(
+            job=self.job, description='mystery', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')  # provisional
+        e = self._attach(amount=Decimal('30.00'), material_id=m.pk)
+        m.refresh_from_db()
+        lot_pk = m.inventory_item_id
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('2'))
+
+        ExpenseService.reject(expense=e, actor=self.admin)
+
+        e.refresh_from_db()
+        self.assertEqual(e.status, Expense.STATUS_REJECTED)
+        # Material survives (predates the expense) and is truly provisional again.
+        m.refresh_from_db()
+        self.assertIsNone(m.inventory_item_id)
+        self.assertIsNone(m.cost_source)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        # The attach-minted lot is gone; no earmark left behind.
+        self.assertFalse(InventoryItem.objects.filter(pk=lot_pk).exists())
+        self.assertFalse(Earmark.objects.filter(inventory_item_id=lot_pk).exists())
+
+    def test_reject_attach_to_catalog_established_keeps_lot_entered_provenance(self):
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY-CAT', description='catalog ply', accounting_category=self.cat,
+            purchase_price=Decimal('9.00'), selling_price=Decimal('12.00'),
+            qty_on_hand=Decimal('5.00'))
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            inventory_item=pli, accounting_category=self.cat, units='ea')
+        e = self._attach(amount=Decimal('20.00'), material_id=m.pk)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+
+        ExpenseService.reject(expense=e, actor=self.admin)
+
+        # Catalog lot kept, receipt reversed, material still established.
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item_id, pli.pk)
+        # Prior provenance is unrecoverable; ENTERED is the honest fallback —
+        # never a lot-backed material with NULL cost_source.
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
+
+    def test_reject_partial_attach_reverses_only_received_qty(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('12'),
+            unit_cost=Decimal('10.00'), accounting_category=self.cat, units='ea')
+        m.inventory_item.qty_on_hand = Decimal('8')
+        m.inventory_item.save()
+        e = self._attach(amount=Decimal('44.00'), material_id=m.pk,
+                         attach_qty=Decimal('4'))
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('12'))
+
+        ExpenseService.reject(expense=e, actor=self.admin)
+
+        m.refresh_from_db()
+        # Lot has residual stock (8) → material stays established, ENTERED.
+        m.inventory_item.refresh_from_db()
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('8'))  # only the 4 backed off
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
+
+
+class ExpenseAttachDeleteTest(TestCase):
+    """DELETE of an attach expense (the only removal path for company-paid
+    attach expenses — reject requires PERSONAL) runs the same unwind as
+    reject: no orphaned QOH bump, no cost_source pointing at a dead expense."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        Configuration.objects.update_or_create(
+            key='qbo_payment_accounts',
+            defaults={'value': (
+                '[{"qbo_account_id": "57", "display_name": "Amex", "account_type": "Credit Card"}]'
+            )},
+        )
+        self.user = User.objects.create_user(username='fin', password='x')
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500')
+        self.contact = Contact.objects.create(first_name='T', last_name='C', email='d@t.com')
+        self.job = Job.objects.create(job_number='JOB-AD1', contact=self.contact)
+
+    def _company_attach(self, *, amount, material_id, attach_qty=None):
+        # Company push fails (no QBO connection in tests) → sync_failed with no
+        # qbo_id; delete then proceeds locally without a void call.
+        return ExpenseService.submit(
+            entered_by=self.user, amount=amount,
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_COMPANY,
+            payment_account_id='57',
+            material_id=material_id, attach_qty=attach_qty)
+
+    def test_delete_company_attach_to_provisional_unwinds_fully(self):
+        from apps.inventory.models import InventoryItem, Earmark
+        m = MaterialService.create_on_job(
+            job=self.job, description='mystery', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')  # provisional
+        e = self._company_attach(amount=Decimal('30.00'), material_id=m.pk)
+        m.refresh_from_db()
+        lot_pk = m.inventory_item_id
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('2'))
+
+        ExpenseService.delete(expense=e, actor=self.user)
+
+        self.assertFalse(Expense.objects.filter(pk=e.pk).exists())
+        m.refresh_from_db()
+        self.assertIsNone(m.inventory_item_id)
+        self.assertIsNone(m.cost_source)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        self.assertFalse(InventoryItem.objects.filter(pk=lot_pk).exists())
+        self.assertFalse(Earmark.objects.filter(inventory_item_id=lot_pk).exists())
+
+    def test_delete_company_attach_to_catalog_established_reverses_qoh(self):
+        from apps.inventory.models import InventoryItem
+        pli = InventoryItem.objects.create(
+            code='PLY-CAT2', description='catalog ply', accounting_category=self.cat,
+            purchase_price=Decimal('9.00'), selling_price=Decimal('12.00'),
+            qty_on_hand=Decimal('5.00'))
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            inventory_item=pli, accounting_category=self.cat, units='ea')
+        e = self._company_attach(amount=Decimal('20.00'), material_id=m.pk)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('7.00'))
+
+        ExpenseService.delete(expense=e, actor=self.user)
+
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))
+        m.refresh_from_db()
+        self.assertEqual(m.inventory_item_id, pli.pk)
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_ENTERED)
+
+    def test_delete_attach_with_consumed_material_refused(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')
+        e = self._company_attach(amount=Decimal('20.00'), material_id=m.pk)
+        m.refresh_from_db()
+        MaterialService.consume(m)
+        with self.assertRaises(ValidationError):
+            ExpenseService.delete(expense=e, actor=self.user)
+        self.assertTrue(Expense.objects.filter(pk=e.pk).exists())
+
+    def test_delete_after_reject_does_not_double_reverse(self):
+        # Personal attach: reject unwinds, then delete of the now-rejected row
+        # must not unwind again (the receipt is already gone).
+        from apps.inventory.models import InventoryItem
+        worker = User.objects.create_user(username='w2', password='x')
+        pli = InventoryItem.objects.create(
+            code='PLY-CAT3', description='catalog ply', accounting_category=self.cat,
+            purchase_price=Decimal('9.00'), selling_price=Decimal('12.00'),
+            qty_on_hand=Decimal('5.00'))
+        m = MaterialService.create_on_job(
+            job=self.job, description='ply', quantity=Decimal('2'),
+            inventory_item=pli, accounting_category=self.cat, units='ea')
+        e = ExpenseService.submit(
+            entered_by=worker, purchased_by=worker, amount=Decimal('20.00'),
+            purchased_on=date(2026, 4, 1), accounting_category=self.cat,
+            payment_method=Expense.PAYMENT_METHOD_PERSONAL, material_id=m.pk)
+        ExpenseService.reject(expense=e, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))
+
+        e.refresh_from_db()
+        ExpenseService.delete(expense=e, actor=self.user)
+        pli.refresh_from_db()
+        self.assertEqual(pli.qty_on_hand, Decimal('5.00'))  # not reversed twice
+
+
+class ExpenseAttachApiTest(TestCase):
+    """material_id + attach_qty write-only fields thread through the viewset."""
+
+    def setUp(self):
+        _seed_job_config()
+        from apps.contacts.models import Contact
+        from apps.jobs.models import Job
+        self.client_http = Client()
+        self.cat = AccountingCategory.objects.create(
+            code='SUP', name='Supplies', qbo_expense_account_id='500')
+        self.user = User.objects.create_user(username='u', password='testpass')
+        self.client_http.force_login(self.user)
+        self.contact = Contact.objects.create(
+            first_name='A', last_name='B', email='a@b.com')
+        self.job = Job.objects.create(job_number='JOB-API-AT1', contact=self.contact)
+
+    def test_post_attach_establishes_and_receives(self):
+        m = MaterialService.create_on_job(
+            job=self.job, description='mystery', quantity=Decimal('2'),
+            accounting_category=self.cat, units='ea')
+        payload = {
+            'amount': '30.00',
+            'purchased_on': '2026-04-05',
+            'accounting_category': self.cat.pk,
+            'payment_method': 'personal',
+            'purchased_by': self.user.pk,
+            'material_id': m.pk,
+        }
+        r = self.client_http.post(
+            '/api/expenses/', payload, content_type='application/json')
+        self.assertEqual(r.status_code, 201, r.content)
+        m.refresh_from_db()
+        self.assertEqual(m.unit_cost, Decimal('15.00'))
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_EXPENSE)
+        self.assertEqual(m.inventory_item.qty_on_hand, Decimal('2'))

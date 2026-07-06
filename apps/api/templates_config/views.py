@@ -9,7 +9,7 @@ from apps.estimates.models import WorkTemplate, ServiceItem
 from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
-from apps.api.permissions import CanManageConfig, CanManageJobsOrConfig
+from apps.api.permissions import CanManageConfig, CanManageJobsOrFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
 from .serializers import (
@@ -106,10 +106,8 @@ class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
-        if self.action == 'create':
-            # Inline "save to catalog" while plan-building — not config-gated.
-            return [IsAuthenticated(), CanManageJobsOrConfig()]
-        return [IsAuthenticated(), CanManageConfig()]
+        # Catalog management is shared: jobs | financials | config.
+        return [IsAuthenticated(), CanManageJobsOrFinancialsOrConfig()]
 
     def perform_create(self, serializer):
         template = WorkTemplateService.create_service_item(**serializer.validated_data)
@@ -271,6 +269,20 @@ def settings_view(request):
                     {'average_labor_cost': 'must be a non-negative number'},
                     status=400,
                 )
+    if 'default_material_accounting_category' in request.data:
+        raw = request.data['default_material_accounting_category']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'default_material_accounting_category': 'must be a category id'},
+                    status=400)
+            if not AccountingCategory.objects.filter(pk=pk, is_active=True).exists():
+                return Response(
+                    {'default_material_accounting_category': 'unknown or inactive category'},
+                    status=400)
     for key, value in request.data.items():
         ConfigurationService.set(key, str(value))
     configs = Configuration.objects.all()

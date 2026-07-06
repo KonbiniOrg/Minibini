@@ -39,7 +39,7 @@ class AcceptanceCrystallizesFeesTest(TestCase):
         )
         # An inventoried material on the job so earmarking has something to do.
         self.pli = InventoryItem.objects.create(
-            code='STEEL', accounting_category=self.cat, is_catalog=True,
+            code='STEEL', accounting_category=self.cat,
             qty_on_hand=Decimal('50'),
         )
         self.material = Material.objects.create(
@@ -98,7 +98,7 @@ class AcceptanceCrystallizesFeesTest(TestCase):
         # A hand-line with an inventory_item (added via "From Inventory") is a
         # material, so acceptance crystallizes it into a Material atom — not a Fee.
         pli2 = InventoryItem.objects.create(
-            code='PLY', accounting_category=self.cat, is_catalog=True,
+            code='PLY', accounting_category=self.cat,
             qty_on_hand=Decimal('20'), purchase_price=Decimal('80'),
             selling_price=Decimal('100'),
         )

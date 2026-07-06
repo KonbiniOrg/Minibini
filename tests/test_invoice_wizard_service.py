@@ -967,7 +967,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         from apps.expenses.models import Expense
         cat = AccountingCategory.objects.create(name='c', code='IWL1')
         pli = InventoryItem.objects.create(
-            code='I-IWL', accounting_category=cat, is_catalog=True,
+            code='I-IWL', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
         job = Job.objects.create(contact=self.contact, job_number='JOB-IW-1')
@@ -1008,7 +1008,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         from apps.inventory.services import MaterialService
         cat = AccountingCategory.objects.create(name='c', code='IWL2')
         pli = InventoryItem.objects.create(
-            code='I-IWL2', accounting_category=cat, is_catalog=True,
+            code='I-IWL2', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
         job = Job.objects.create(contact=self.contact, job_number='JOB-IW-2')
@@ -1052,7 +1052,7 @@ class TaskAttachedPartialRestockTest(TestCase):
         task = Task.objects.create(job=job, name='work', rate_scheme=scheme)
         pli = InventoryItem.objects.create(
             code='I-TAPR', accounting_category=self.cat,
-            is_catalog=True, selling_price=Decimal('3.00'),
+            selling_price=Decimal('3.00'),
             qty_on_hand=Decimal('20'),
         )
         # qty=5, sell=2 per unit; restock 2 → quantity=3, amount=3*2=6

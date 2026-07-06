@@ -771,7 +771,6 @@ def build_inventory_items(c):
             'qty_sold': qty_sold,
             'qty_wasted': '0.00',
             'is_active': True,
-            'is_catalog': True,
             'accounting_category': c.ac_mat_pk,
         })
         c.pli_map[code] = pk
@@ -1061,7 +1060,7 @@ _MATERIAL_MARKUP_FACTOR = Decimal('1.20')
 
 
 def _mint_transient_lot(c, description, units, purchase_cost):
-    """Create a transient-lot InventoryItem (is_catalog=False) to back a Material
+    """Create a transient-lot InventoryItem (code ``LOT-*``) to back a Material
     that matched no catalog item, and return its pk. Selling price derives from
     the purchase cost via the configured material markup. QOH starts at 0 and is
     reconciled later by build_purchasing."""
@@ -1078,7 +1077,6 @@ def _mint_transient_lot(c, description, units, purchase_cost):
         'qty_sold': '0.00',
         'qty_wasted': '0.00',
         'is_active': True,
-        'is_catalog': False,
         'accounting_category': c.ac_mat_pk,
     })
     return pk
@@ -1462,6 +1460,18 @@ def derive_atoms(c):
                 'sell_price':          f"{li['price']:.2f}",
                 'accounting_category': c.ac_mat_pk,
                 'inventory_item':     pli_pk,
+                # Every converter Material is item-backed (matched PLI or a
+                # minted transient lot — never null), so it always needs a
+                # non-null cost_source. The historical import pricing (a
+                # catalog match or the derived _COST_RATIO estimate) is a
+                # human-vouched-for figure at import time, same as a user
+                # entering a price today — 'entered', not 'estimated'/'po'/
+                # 'expense'. build_purchasing later links some Materials to a
+                # synthesized PO/Bill for provenance, but that's a retroactive
+                # paper trail over the *same* already-set unit_cost, not a
+                # cost the PO introduced, so it does not upgrade cost_source
+                # to 'po'.
+                'cost_source':         'entered',
                 'consumption_state':   'pending',
                 'released_qty':       '0.00',
                 'po_line_item':        None,

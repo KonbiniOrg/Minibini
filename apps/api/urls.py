@@ -8,7 +8,7 @@ from apps.api.contacts.views import ContactViewSet, BusinessViewSet, PaymentTerm
 from apps.api.estimates.views import EstimateViewSet
 from apps.api.invoicing.views import InvoiceViewSet
 from apps.api.purchasing.views import PurchaseOrderViewSet, BillViewSet
-from apps.api.inventory.views import InventoryItemViewSet, MaterialViewSet
+from apps.api.inventory.views import InventoryItemViewSet, MaterialViewSet, EarmarkViewSet
 from apps.api.tasks.views import TaskViewSet
 from apps.api.bleps.views import BlepViewSet
 from apps.api.search.views import search_view
@@ -45,6 +45,7 @@ def api_root(request):
         'purchase-orders': '/api/purchase-orders/',
         'bills': '/api/bills/',
         'inventory': '/api/inventory/',
+        'earmarks': '/api/earmarks/',
         'search': '/api/search/',
         'schedule': '/api/schedule/',
         'activity': '/api/activity/',
@@ -70,6 +71,7 @@ router.register(r'invoices', InvoiceViewSet, basename='invoice')
 router.register(r'purchase-orders', PurchaseOrderViewSet, basename='purchase-order')
 router.register(r'bills', BillViewSet, basename='bill')
 router.register(r'inventory', InventoryItemViewSet, basename='inventory-item')
+router.register(r'earmarks', EarmarkViewSet, basename='earmark')
 router.register(r'materials', MaterialViewSet, basename='material')
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'bleps', BlepViewSet, basename='blep')

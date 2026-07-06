@@ -43,7 +43,7 @@ class PreApprovalWorkMaterialTest(BaseTestCase):
     def _pli(self, code, qoh):
         return InventoryItem.objects.create(
             code=code, accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal(qoh),
+            qty_on_hand=Decimal(qoh),
         )
 
     def test_start_preapproval_consumes_instock_pli_draws_qoh_no_earmark(self):

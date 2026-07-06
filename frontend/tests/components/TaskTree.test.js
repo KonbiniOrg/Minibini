@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import TaskTree from '@/components/TaskTree.svelte';
+import { user } from '@/stores/auth.js';
 
 function task(overrides) {
   return {
@@ -97,7 +98,7 @@ describe('TaskTree', () => {
                     consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' }],
     });
     const { getAllByRole } = render(TaskTree, {
-      props: { tasks: [stocked, awaited, freeform], canManage: true },
+      props: { tasks: [stocked, awaited, freeform], canManage: true, onRestockMaterial: vi.fn() },
     });
     expect(getAllByRole('button', { name: 'restock' })).toHaveLength(1);
     expect(getAllByRole('button', { name: 'release' })).toHaveLength(2);
@@ -109,30 +110,10 @@ describe('TaskTree', () => {
       materials: [{ material_id: 4, description: 'Ply', quantity: '2', sell_price: '5', units: 'sheet',
                     consumption_state: 'pending', inventory_item: 7, qty_on_hand: '4.00' }],
     });
-    const { getAllByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(getAllByRole('button', { name: 'consume' })).toHaveLength(1);
-  });
-
-  it('shows the catalog badge for an inventory-item-backed material', () => {
-    const t = task({
-      materials: [{
-        description: 'Steel', quantity: '3', sell_price: '5', units: 'kg',
-        consumption_state: 'pending', inventory_item_is_catalog: true,
-      }],
+    const { getAllByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true, onConsumeMaterial: vi.fn() },
     });
-    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(container.querySelector('.inv-badge')).not.toBeNull();
-  });
-
-  it('omits the catalog badge for a freeform material', () => {
-    const t = task({
-      materials: [{
-        description: 'Glue', quantity: '1', sell_price: '2', units: 'ea',
-        consumption_state: 'pending', inventory_item_is_catalog: false,
-      }],
-    });
-    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(container.querySelector('.inv-badge')).toBeNull();
+    expect(getAllByRole('button', { name: 'mark used' })).toHaveLength(1);
   });
 
   it('fires the edit callback when canManage', async () => {
@@ -280,7 +261,198 @@ describe('TaskTree', () => {
         units: 'ea', consumption_state: 'released', released_qty: '7', invoice: null,
       }],
     });
-    const { queryByRole } = render(TaskTree, { props: { tasks: [t] } });
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [t], onRestockMaterial: vi.fn() },
+    });
     expect(queryByRole('button', { name: 'restock' })).toBeNull();
+  });
+});
+
+describe('TaskTree — material status vocabulary + fulfillment actions', () => {
+  afterEach(() => user.set(null));
+
+  function matTask(mat, over = {}) {
+    return task({ status: 'in_progress', materials: [mat], ...over });
+  }
+
+  it('renders a status chip on each material row (passive display)', () => {
+    const t = matTask({
+      material_id: 1, description: 'Steel', quantity: '4', sell_price: '5', units: 'kg',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '0', po_line_item_id: null, po_number: null,
+    });
+    const { getByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('Needed')).toBeInTheDocument();
+  });
+
+  it('provisional material → "Needs pricing" chip + Set pricing button (no financial atom needed)', async () => {
+    const onEditMaterial = vi.fn();
+    const t = matTask({
+      material_id: 2, description: 'Widget', quantity: '1', sell_price: '0', units: 'ea',
+      consumption_state: 'pending', inventory_item: null, cost_source: null, qty_on_hand: '0',
+    });
+    const { getByText, getByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true, onEditMaterial },
+    });
+    expect(getByText('Needs pricing')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Set pricing' }));
+    expect(onEditMaterial).toHaveBeenCalledWith(expect.objectContaining({ material_id: 2 }), expect.anything());
+  });
+
+  it('needed material gates the Order button behind can_manage_financials', () => {
+    const mat = {
+      material_id: 3, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'entered', qty_on_hand: '0',
+      po_line_item_id: null, po_number: null,
+    };
+    const wired = {
+      onOrderMaterial: vi.fn(), onAttachExpense: vi.fn(), onMarkOnHand: vi.fn(),
+    };
+    // worker (no atom): no Order button, but Attach expense + Mark on-hand remain
+    user.set({ id: 1, permissions: [] });
+    const worker = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true, ...wired } });
+    expect(worker.queryByRole('button', { name: 'Order' })).toBeNull();
+    expect(worker.getByRole('button', { name: 'Attach expense' })).toBeInTheDocument();
+    expect(worker.getByRole('button', { name: 'Mark on-hand' })).toBeInTheDocument();
+    worker.unmount();
+    // financial atom present: Order shows
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    const fin = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true, ...wired } });
+    expect(fin.getByRole('button', { name: 'Order' })).toBeInTheDocument();
+  });
+
+  it('renders NO fulfillment or material-op buttons when callbacks are not wired (passive surface)', () => {
+    // TaskDetailPage's subtask tree passes readonly=false but wires only
+    // onEditMaterial — every other material action must stay hidden, never a
+    // dead button bound to a no-op default.
+    user.set({ id: 1, permissions: ['can_manage_financials'] });
+    const t = matTask({
+      material_id: 8, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '0', po_line_item_id: null, po_number: null,
+    });
+    const { getByText, queryByRole } = render(TaskTree, {
+      props: { tasks: [t], readonly: false, canManage: true },
+    });
+    expect(getByText('Needed')).toBeInTheDocument(); // chip still shows (passive)
+    for (const name of ['Order', 'Attach expense', 'Mark on-hand', 'Mark received',
+                        'Set pricing', 'mark used', 'restock', 'release', 'draw more', 'detach']) {
+      expect(queryByRole('button', { name })).toBeNull();
+    }
+  });
+
+  it('ordered material → the status pill itself is the PO link', () => {
+    const t = matTask({
+      material_id: 4, description: 'Bar', quantity: '4', sell_price: '5', units: 'ea',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'po', qty_on_hand: '0',
+      po_line_item_id: 9, po_id: 42, po_number: 'PO-2026-0042', qty_on_order: '4',
+    });
+    const { getByRole, queryByRole } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    const pill = getByRole('link', { name: 'Ordered — PO-2026-0042' });
+    expect(pill.getAttribute('href')).toBe('#/purchase-orders/42');
+    expect(pill.classList.contains('mat-status')).toBe(true);
+    // no separate PO link in the actions column any more
+    expect(queryByRole('link', { name: 'PO-2026-0042' })).toBeNull();
+  });
+
+  it('consume renders only when stock covers (On Hand), never on short rows', () => {
+    const shortMat = { material_id: 4, description: 'Bar', quantity: '4', sell_price: '5',
+      units: 'ea', consumption_state: 'pending', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '1' };
+    const short = render(TaskTree, {
+      props: { tasks: [matTask(shortMat)], canManage: true, onConsumeMaterial: vi.fn() },
+    });
+    expect(short.queryByRole('button', { name: 'mark used' })).toBeNull();
+    const covered = render(TaskTree, {
+      props: { tasks: [matTask({ ...shortMat, qty_on_hand: '4' })],
+               canManage: true, onConsumeMaterial: vi.fn() },
+    });
+    expect(covered.queryByRole('button', { name: 'mark used' })).not.toBeNull();
+  });
+
+  it('on-hold job hides the plan-edit actions but keeps procurement', () => {
+    // Job-level material: no task row, so the only possible "edit" button
+    // is the material's own.
+    const mat = { material_id: 4, description: '?', quantity: '2', sell_price: '0',
+      units: 'ea', consumption_state: 'pending', inventory_item: null, cost_source: null,
+      qty_on_hand: '0' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], jobMaterials: [mat], canManage: true, jobOnHold: true,
+               onEditMaterial: vi.fn(), onRestockMaterial: vi.fn(),
+               onAttachExpense: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'Set pricing' })).toBeNull();
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    expect(queryByRole('button', { name: /restock|release/ })).toBeNull();
+    // procurement reality stays available
+    expect(queryByRole('button', { name: 'Attach expense' })).not.toBeNull();
+  });
+
+  it('needs-pricing rows offer Attach expense (attach establishes)', () => {
+    const t = matTask({ material_id: 4, description: '?', quantity: '2', sell_price: '0',
+      units: 'ea', consumption_state: 'pending', inventory_item: null, cost_source: null,
+      qty_on_hand: '0' });
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true,
+               onEditMaterial: vi.fn(), onAttachExpense: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'Set pricing' })).not.toBeNull();
+    expect(queryByRole('button', { name: 'Attach expense' })).not.toBeNull();
+  });
+
+  it('customer-supplied short → "Awaiting customer" chip + Mark received button', async () => {
+    const onMarkOnHand = vi.fn();
+    const t = matTask({
+      material_id: 5, description: 'Panel', quantity: '4', sell_price: '5', units: 'ea',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'customer_supplied',
+      qty_on_hand: '0', po_line_item_id: null, po_number: null,
+    });
+    const { getByText, getByRole } = render(TaskTree, {
+      props: { tasks: [t], canManage: true, onMarkOnHand },
+    });
+    expect(getByText('Awaiting customer')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Mark received' }));
+    expect(onMarkOnHand).toHaveBeenCalledWith(expect.objectContaining({ material_id: 5 }));
+  });
+
+  it('customer-supplied material offers no edit button (nothing is editable)', () => {
+    // Job-level material so the only possible "edit" button is the material's.
+    const mat = { material_id: 5, description: 'Panel', quantity: '4', sell_price: '0',
+      units: 'ea', consumption_state: 'pending', inventory_item: 7,
+      cost_source: 'customer_supplied', qty_on_hand: '0' };
+    const { queryByRole } = render(TaskTree, {
+      props: { tasks: [], jobMaterials: [mat], canManage: true,
+               onEditMaterial: vi.fn(), onMarkOnHand: vi.fn() },
+    });
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    // receiving still works — it's procurement, not editing
+    expect(queryByRole('button', { name: 'Mark received' })).not.toBeNull();
+  });
+
+  it('flags an estimate-placeholder cost with a ⚠ warning', () => {
+    const t = matTask({
+      material_id: 6, description: 'Trim', quantity: '4', sell_price: '5', units: 'ea',
+      consumption_state: 'pending', inventory_item: 7, cost_source: 'estimated', qty_on_hand: '0',
+    });
+    const { getByTitle } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByTitle(/cost unconfirmed/i)).toBeInTheDocument();
+  });
+
+  it('released material row is struck through and shows no fulfillment actions', () => {
+    const t = matTask({
+      material_id: 7, description: 'Acrylic', quantity: '0', sell_price: '5', units: 'ea',
+      consumption_state: 'released', released_qty: '7', inventory_item: 7, cost_source: 'entered',
+      qty_on_hand: '0',
+    }, { status: 'pending' });
+    const { container, queryByRole } = render(TaskTree, {
+      props: {
+        tasks: [t], canManage: true,
+        onOrderMaterial: vi.fn(), onMarkOnHand: vi.fn(),
+        onAttachExpense: vi.fn(), onEditMaterial: vi.fn(),
+      },
+    });
+    expect(container.querySelector('.material-row.released')).not.toBeNull();
+    expect(queryByRole('button', { name: 'Order' })).toBeNull();
+    expect(queryByRole('button', { name: 'Set pricing' })).toBeNull();
   });
 });

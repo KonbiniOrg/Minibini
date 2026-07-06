@@ -124,6 +124,33 @@ class MaterialCRUDTest(TestCase):
         self.assertEqual(response.data['unit_cost'], '10.00')
         self.assertEqual(response.data['sell_price'], '20.00')
 
+    def test_create_material_customer_supplied_via_task_endpoint(self):
+        """Task 13: the task-nested materials POST must thread
+        customer_supplied through to MaterialService.create_on_job just like
+        the job-level endpoint — born established at a locked $0."""
+        response = self.client.post(
+            f'/api/tasks/{self.task.pk}/materials/',
+            {
+                'description': 'Customer-owned trim', 'quantity': '1.00',
+                'accounting_category': self.category.pk,
+                'customer_supplied': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        m = Material.objects.get(task=self.task, description='Customer-owned trim')
+        self.assertIsNotNone(m.inventory_item_id)
+        self.assertEqual(m.unit_cost, Decimal('0.00'))
+        self.assertEqual(m.sell_price, Decimal('0.00'))
+        self.assertEqual(m.cost_source, Material.COST_SOURCE_CUSTOMER)
+        # Pricing is locked afterward: a PATCH attempting to price it 400s.
+        patch_resp = self.client.patch(
+            f'/api/tasks/{self.task.pk}/materials/{m.pk}/',
+            {'unit_cost': '5.00'},
+            format='json',
+        )
+        self.assertEqual(patch_resp.status_code, 400, patch_resp.content)
+
     def test_update_material_description(self):
         """PATCH with description-only update succeeds."""
         response = self.client.patch(
@@ -540,3 +567,89 @@ class TaskListInvoiceFieldTest(TestCase):
         resp = self.client.get(f'/api/tasks/{self.task.pk}/')
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(resp.data['invoice'])
+
+
+class TaskMaterialPoFieldsTest(TestCase):
+    """/api/tasks/{id}/materials/ must carry the same po_* fields as the
+    job-level (inventory-app) materials endpoint — materialStatus.js reads
+    po_line_item_id/po_number to compute the 'ordered' state, and TaskTree
+    renders the PO link from po_id/po_number. Regression coverage for a bug
+    where the tasks-app MaterialSerializer omitted these fields entirely."""
+
+    def setUp(self):
+        from apps.core.models import Configuration, AppState
+
+        Configuration.objects.get_or_create(
+            key='po_number_sequence', defaults={'value': 'PO-{year}-{counter:04d}'},
+        )
+        Configuration.objects.get_or_create(
+            key='default_material_markup_percent', defaults={'value': '25'},
+        )
+        AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
+
+        self.client = APIClient()
+        self.user = User.objects.create_user(username='pofielduser', password='pw')
+        self.client.force_authenticate(user=self.user)
+        self.contact = Contact.objects.create(first_name='P', last_name='O')
+        self.job = Job.objects.create(
+            job_number='POF-001', name='PO Fields Job', contact=self.contact,
+            status=Job.STATUS_APPROVED,
+        )
+        self.scheme = _make_scheme('pof')
+        self.category = AccountingCategory.objects.create(name='POF', code='POF')
+        self.task = Task.objects.create(
+            job=self.job, name='Install', rate_scheme=self.scheme,
+        )
+
+    def test_materials_endpoint_carries_po_fields_when_ordered(self):
+        from apps.inventory.services import MaterialService
+
+        material = MaterialService.create_on_job(
+            job=self.job, task=self.task, description='steel',
+            quantity=Decimal('3'), unit_cost=Decimal('80.00'),
+            accounting_category=self.category, units='ea',
+        )
+        po, li = MaterialService.order(material)
+
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
+        self.assertEqual(resp.status_code, 200)
+        row = resp.data[0]
+        self.assertEqual(row['po_line_item_id'], li.pk)
+        self.assertEqual(row['po_id'], po.pk)
+        self.assertEqual(row['po_number'], po.po_number)
+        self.assertEqual(row['po_status'], po.status)
+
+    def test_materials_endpoint_po_fields_null_when_not_ordered(self):
+        from apps.inventory.services import MaterialService
+
+        MaterialService.create_on_job(
+            job=self.job, task=self.task, description='steel',
+            quantity=Decimal('3'), unit_cost=Decimal('80.00'),
+            accounting_category=self.category, units='ea',
+        )
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
+        self.assertEqual(resp.status_code, 200)
+        row = resp.data[0]
+        self.assertIsNone(row['po_line_item_id'])
+        self.assertIsNone(row['po_id'])
+        self.assertIsNone(row['po_number'])
+        self.assertIsNone(row['po_status'])
+
+    def test_materials_endpoint_field_set_matches_status_vocabulary(self):
+        """materialStatus.js reads these keys off a task-material row; make sure
+        the tasks-app serializer never drops one of them again."""
+        from apps.inventory.services import MaterialService
+
+        MaterialService.create_on_job(
+            job=self.job, task=self.task, description='steel',
+            quantity=Decimal('3'), unit_cost=Decimal('80.00'),
+            accounting_category=self.category, units='ea',
+        )
+        resp = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
+        self.assertEqual(resp.status_code, 200)
+        row = resp.data[0]
+        for key in [
+            'inventory_item', 'cost_source', 'quantity', 'qty_on_hand',
+            'consumption_state', 'po_line_item_id', 'po_number',
+        ]:
+            self.assertIn(key, row)

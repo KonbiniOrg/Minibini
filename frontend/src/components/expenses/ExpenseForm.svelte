@@ -18,6 +18,10 @@
     // Optional { job_id, job_number } to pre-anchor a new expense (e.g. opened
     // from a Task detail page). Ignored when editing an existing expense.
     initialJob = null,
+    // Attach mode: an existing PENDING material this expense records the cost
+    // of (supplies its cost + receives into its lot). When set, the job is
+    // fixed to the material's job and the new-material picker is hidden.
+    initialMaterial = null,
   } = $props();
 
   let isEdit = $derived(!!expense);
@@ -44,7 +48,7 @@
   // Job is the cost anchor. jobId is the numeric id; jobRow is the full job
   // object fed as selectedItem to JobPicker for edit-mode / initialJob prefill.
   // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-  let jobId = $state(expense?.job ?? initialJob?.job_id ?? null);
+  let jobId = $state(expense?.job ?? initialJob?.job_id ?? initialMaterial?.job ?? null);
   let jobRow = $state(
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     expense?.job
@@ -119,9 +123,13 @@
         job: jobId,
       };
 
-      // If the user queued a purchased item, include it. The backend creates a
-      // consumable material, or — for an inventoried PLI — a stock receipt.
-      if (newMaterial) {
+      // Attach mode: link the cost to an existing pending material (mutually
+      // exclusive with new_material). Otherwise, if the user queued a purchased
+      // item, include it — the backend creates a consumable material, or a
+      // stock receipt for an inventoried PLI.
+      if (initialMaterial) {
+        payload.material_id = initialMaterial.material_id;
+      } else if (newMaterial) {
         payload.new_material = { ...newMaterial, job_id: jobId };
       }
 
@@ -222,13 +230,19 @@
   </p>
   {#each fieldErr('job') as msg}<p><em>{msg}</em></p>{/each}
 
-  <MaterialPicker
-    jobId={jobId}
-    bind:newMaterial={newMaterial}
-    defaultDescription={description}
-    defaultAmount={amount}
-  />
+  {#if initialMaterial}
+    <p class="attach-note">Recording a cost against material:
+      <strong>{initialMaterial.description || '(material)'}</strong></p>
+  {:else}
+    <MaterialPicker
+      jobId={jobId}
+      bind:newMaterial={newMaterial}
+      defaultDescription={description}
+      defaultAmount={amount}
+    />
+  {/if}
   {#each fieldErr('material') as msg}<p class="error"><em>{msg}</em></p>{/each}
+  {#each fieldErr('material_id') as msg}<p class="error"><em>{msg}</em></p>{/each}
 
   {#each fieldErr('non_field_errors') as msg}<p class="error"><em>{msg}</em></p>{/each}
   {#each fieldErr('detail') as msg}<p class="error"><em>{msg}</em></p>{/each}

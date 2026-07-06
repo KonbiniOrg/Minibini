@@ -48,13 +48,13 @@ class DuplicateJobTestBase(BaseTestCase):
         self.plywood = InventoryItem.objects.create(
             code='DUP.PLY', description='Plywood', units='sheets',
             qty_on_hand=Decimal('20.00'), purchase_price=Decimal('45.00'),
-            selling_price=Decimal('90.00'), is_catalog=True,
+            selling_price=Decimal('90.00'),
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
             code='DUP.SCR', description='Screws', units='ea',
             qty_on_hand=Decimal('50.00'), purchase_price=Decimal('8.00'),
-            selling_price=Decimal('12.00'), is_catalog=True,
+            selling_price=Decimal('12.00'),
             accounting_category=self.category,
         )
 
@@ -171,6 +171,39 @@ class DuplicateApprovedTest(DuplicateJobTestBase):
         self.assertTrue(all(
             a.changes.get('_action') == f'Duplicated from {self.source.job_number}'
             for a in actions))
+
+    def test_duplication_preserves_material_provenance(self):
+        """copy_fields carries cost_source, so a duplicated material keeps its
+        provenance instead of auto-minting an 'entered' lot. A provisional
+        (lot-less, cost_source=None) copy stays provisional; an established
+        catalog-backed copy keeps its cost_source and shares the lot."""
+        from apps.inventory.services import MaterialService
+        # A provisional, lot-less material on the source job.
+        provisional = Material.objects.create(
+            job=self.source, task=None, inventory_item=None,
+            quantity=Decimal('4.00'), sell_price=Decimal('50.00'),
+            accounting_category=self.category, units='ea',
+            description='provisional stock',
+        )
+        # An established material (already has a lot + cost_source).
+        established = MaterialService.create_on_job(
+            job=self.source, quantity=Decimal('2.00'),
+            unit_cost=Decimal('9.00'), accounting_category=self.category,
+            units='ea', description='entered stock',
+        )
+        self.assertIsNone(provisional.cost_source)
+        self.assertEqual(established.cost_source, Material.COST_SOURCE_ENTERED)
+
+        new_job = JobService.duplicate_job(
+            self.source, contact=self.contact, path='approved')
+
+        prov_copy = Material.objects.get(job=new_job, description='provisional stock')
+        self.assertIsNone(prov_copy.inventory_item_id)          # still lot-less
+        self.assertIsNone(prov_copy.cost_source)                # still provisional
+
+        est_copy = Material.objects.get(job=new_job, description='entered stock')
+        self.assertEqual(est_copy.cost_source, Material.COST_SOURCE_ENTERED)
+        self.assertEqual(est_copy.inventory_item_id, established.inventory_item_id)
 
     def test_no_estimate_on_new_job(self):
         new_job = JobService.duplicate_job(

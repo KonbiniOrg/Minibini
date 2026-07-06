@@ -22,7 +22,7 @@ class UnconsumeTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-U-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=self.cat, is_catalog=True,
+            code='I', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -84,14 +84,17 @@ class UnconsumeTest(TestCase):
             MaterialService.unconsume(m)
 
     def test_unconsume_no_item_just_flips_state(self):
-        """A material with no inventory item flips state with no QOH effects
-        (the only no-op path under universal tracking)."""
+        """A consumed material with no inventory item flips back to pending with
+        no QOH effects (unconsume's defensive no-item branch). consume() now
+        refuses provisional materials, so this consumed-no-item state can only
+        come from legacy data — construct it directly to exercise the branch."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('2'), inventory_item=None,
             accounting_category=self.cat,
         )
-        MaterialService.consume(m)
+        m.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        m.save(update_fields=['consumption_state'])
         MaterialService.unconsume(m)
         m.refresh_from_db()
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)

@@ -100,7 +100,7 @@ describe('invoices/WizardSourcePool', () => {
         },
       },
     });
-    expect(getByText(/not consumed/i)).toBeTruthy();
+    expect(getByText(/not used/i)).toBeTruthy();
     const checkbox = container.querySelector('input[type="checkbox"]');
     expect(checkbox === null || checkbox.disabled).toBe(true);
   });

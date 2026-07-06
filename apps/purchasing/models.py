@@ -23,8 +23,12 @@ class PurchaseOrder(models.Model):
     ]
 
     po_id = models.AutoField(primary_key=True)
-    # Business is required; Contact is optional but if provided, must have a Business
-    business = models.ForeignKey('contacts.Business', on_delete=models.PROTECT)
+    # Business is optional while draft (a PO can be created before a vendor is
+    # chosen, e.g. Order-from-material); PurchaseOrderService.update_status
+    # requires it before the PO can be issued. Contact is optional but if
+    # provided, must have a Business.
+    business = models.ForeignKey(
+        'contacts.Business', on_delete=models.PROTECT, null=True, blank=True)
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT, null=True, blank=True)
     po_number = models.CharField(max_length=50, unique=True)
     status = models.CharField(max_length=20, choices=PO_STATUS_CHOICES, default=STATUS_DRAFT)
@@ -39,6 +43,16 @@ class PurchaseOrder(models.Model):
     def clean(self):
         """Validate PurchaseOrder state transitions and protect immutable date fields."""
         super().clean()
+
+        # Invariant: a PO that is not draft has a vendor. Unconditional (NOT
+        # inside the `if self.pk:` transition block) so it also catches a
+        # brand-new instance saved directly with a non-draft status, and an
+        # update that nulls the business on an issued PO. No cancelled
+        # exemption: cancelled is only reachable from issued, which already
+        # implies a vendor — vendor-less drafts are deleted, not cancelled.
+        if self.status != PurchaseOrder.STATUS_DRAFT and self.business_id is None:
+            raise ValidationError(
+                {'business': ['A purchase order needs a vendor before it can be issued.']})
 
         # Validate that if contact is provided, it must have a business
         if self.contact and not self.contact.business:

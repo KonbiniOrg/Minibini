@@ -19,7 +19,9 @@
   import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
-  import InventoryListPage from './routes/inventory/InventoryListPage.svelte';
+  import CatalogInventoryPage from './routes/catalog/CatalogInventoryPage.svelte';
+  import CatalogServiceItemsPage from './routes/catalog/CatalogServiceItemsPage.svelte';
+  import CatalogEarmarksPage from './routes/catalog/CatalogEarmarksPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
@@ -99,7 +101,9 @@
     '/bills/:id/edit': BillFormPage,
     '/bills/:id': BillDetailPage,
     '/settings': SettingsPage,
-    '/inventory': InventoryListPage,
+    '/catalog': CatalogInventoryPage,
+    '/catalog/service-items': CatalogServiceItemsPage,
+    '/catalog/earmarks': CatalogEarmarksPage,
     '/users': UserListPage,
     '/users/new': UserCreatePage,
     '/users/:id': UserDetailPage,

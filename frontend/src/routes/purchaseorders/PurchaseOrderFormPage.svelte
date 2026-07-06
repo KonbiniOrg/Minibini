@@ -14,13 +14,10 @@
   let formError = $state('');
   let fieldErrs = $state({});
 
-  // Context from query params (?job=…&material=… , or ?inventory_item=… from the
-  // inventory "order" button). The inventory id is just forwarded through to the
-  // detail page's prefill — no fetch needed here.
+  // Context from query params (?job=…&material=…).
   const initialParams = new URLSearchParams($querystring);
   const contextJobId = initialParams.get('job');
   const contextMaterialId = initialParams.get('material');
-  const contextInventoryItemId = initialParams.get('inventory_item');
   let contextJob = $state(null);
   let contextMaterial = $state(null);
 
@@ -72,9 +69,6 @@
         }
         if (contextJob?.job_id) {
           qs.push(`default_job=${contextJob.job_id}`);
-        }
-        if (contextInventoryItemId) {
-          qs.push(`prefill_inventory_item=${contextInventoryItemId}`);
         }
         const suffix = qs.length ? `?${qs.join('&')}` : '';
         push(`/purchase-orders/${created.po_id}${suffix}`);

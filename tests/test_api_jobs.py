@@ -65,6 +65,53 @@ class JobAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('results', response.data)
 
+    def test_open_filter_excludes_dead_jobs(self):
+        """?open=true drops completed/cancelled/rejected (PO-line job picker);
+        work_complete stays — still billable/adjustable until fully completed."""
+        from apps.contacts.models import Contact
+        contact = Contact.objects.first()
+        # Walk each job through VALID transitions to its target status.
+        PATHS = {
+            Job.STATUS_REJECTED: [Job.STATUS_REJECTED],
+            Job.STATUS_APPROVED: [Job.STATUS_SUBMITTED, Job.STATUS_APPROVED],
+            Job.STATUS_CANCELLED: [
+                Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_CANCELLED],
+            Job.STATUS_WORK_COMPLETE: [
+                Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE],
+            Job.STATUS_COMPLETED: [
+                Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE,
+                Job.STATUS_COMPLETED],
+        }
+        dead_ids, kept_ids = [], []
+        for status_value, bucket in (
+            (Job.STATUS_COMPLETED, dead_ids),
+            (Job.STATUS_CANCELLED, dead_ids),
+            (Job.STATUS_REJECTED, dead_ids),
+            (Job.STATUS_WORK_COMPLETE, kept_ids),
+            (Job.STATUS_APPROVED, kept_ids),
+        ):
+            job = Job.objects.create(
+                contact=contact, name=f'openfilter-{status_value}',
+                job_number=f'JOB-OPEN-{status_value[:4].upper()}',
+            )
+            for step in PATHS[status_value]:
+                job.status = step
+                job.save()
+            bucket.append(job.pk)
+        resp = self.client.get('/api/jobs/?open=true&page_size=100')
+        ids = [r['job_id'] for r in resp.data['results']]
+        for pk in dead_ids:
+            self.assertNotIn(pk, ids)
+        for pk in kept_ids:
+            self.assertIn(pk, ids)
+        # Without the param, everything is listed.
+        resp = self.client.get('/api/jobs/?page_size=100')
+        ids = [r['job_id'] for r in resp.data['results']]
+        for pk in dead_ids + kept_ids:
+            self.assertIn(pk, ids)
+
     def test_create_job(self):
         from apps.contacts.models import Contact
         contact = Contact.objects.first()

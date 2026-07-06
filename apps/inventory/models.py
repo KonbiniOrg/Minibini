@@ -31,11 +31,6 @@ class InventoryItem(models.Model):
     qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
-    # Catalog flag: a catalog item is a reorderable *type* (survives at QOH 0,
-    # allocation uncapped); without it, the row is a transient *lot* (hidden when
-    # finished — QOH 0 + no earmarks). Default True: items created via the
-    # price-list/inventory UI are catalog; transient lots are minted is_catalog=False.
-    is_catalog = models.BooleanField(default=True)
 
     # AccountingCategory for categorization and taxability
     accounting_category = models.ForeignKey(
@@ -75,18 +70,6 @@ class InventoryItem(models.Model):
                 total += outstanding
         return total
 
-    @property
-    def is_finished_lot(self):
-        """A transient lot whose life is over: not a catalog type, nothing on
-        hand, and nothing waiting for it. Hidden from the active inventory list
-        and allocation pickers (catalog items always survive at QOH 0). Not
-        deleted — line items reference items via PROTECT — just filtered out."""
-        return (
-            not self.is_catalog
-            and self.qty_on_hand == Decimal('0.00')
-            and not self.earmark_set.exists()
-        )
-
     class Meta:
         db_table = 'inventory_item'
         constraints = [
@@ -100,22 +83,28 @@ class InventoryItem(models.Model):
         return f"{self.code} - {self.description[:50]}"
 
     @property
+    def has_document_line_refs(self):
+        """True if any document line item (estimate/invoice/PO/bill) references
+        this item. Split out of can_be_deleted so unwind paths can test document
+        references separately from earmarks."""
+        from apps.estimates.models import EstimateLineItem
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
+
+        return (
+            EstimateLineItem.objects.filter(inventory_item=self).exists() or
+            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
+            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
+            BillLineItem.objects.filter(inventory_item=self).exists()
+        )
+
+    @property
     def can_be_deleted(self):
         """
         Check if this price list item can be safely deleted.
         Returns False if any line items reference it.
         """
-        from apps.estimates.models import EstimateLineItem
-        from apps.invoicing.models import InvoiceLineItem
-        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
-
-        return not (
-            EstimateLineItem.objects.filter(inventory_item=self).exists() or
-            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
-            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
-            BillLineItem.objects.filter(inventory_item=self).exists() or
-            self.earmark_set.exists()
-        )
+        return not (self.has_document_line_refs or self.earmark_set.exists())
 
 
 class MaterialBase(models.Model):
@@ -151,6 +140,10 @@ class MaterialBase(models.Model):
             sell_price=self.sell_price,
             inventory_item=self.inventory_item,
             accounting_category=self.accounting_category,
+            # Carry provenance so a duplicated lot-less document-cost material
+            # keeps its cost_source instead of auto-minting an 'entered' lot in
+            # create_on_job (whose mint gate is cost_source in {None, entered}).
+            cost_source=self.cost_source,
         )
 
     @property
@@ -257,6 +250,22 @@ class Material(MaterialBase):
         (CONSUMPTION_STATE_RELEASED, 'Released'),
     ]
 
+    # Provenance: where this material's cost/backing came from. NULL =
+    # provisional (no lot, no meaningful pricing yet). One field answers both
+    # "is this cost real?" and "who owns this thing?" (spec §cost_source).
+    COST_SOURCE_ESTIMATED = 'estimated'          # reverse-markup placeholder — cost unconfirmed
+    COST_SOURCE_ENTERED = 'entered'              # user-entered / catalog-attached pricing
+    COST_SOURCE_PO = 'po'                        # real document cost from a PO line
+    COST_SOURCE_EXPENSE = 'expense'              # real document cost from an attached expense
+    COST_SOURCE_CUSTOMER = 'customer_supplied'   # $0, deliberate and locked
+    COST_SOURCE_CHOICES = [
+        (COST_SOURCE_ESTIMATED, 'Estimated'),
+        (COST_SOURCE_ENTERED, 'Entered'),
+        (COST_SOURCE_PO, 'PO'),
+        (COST_SOURCE_EXPENSE, 'Expense'),
+        (COST_SOURCE_CUSTOMER, 'Customer supplied'),
+    ]
+
     material_id = models.AutoField(primary_key=True)
     task = models.ForeignKey(
         'jobs.Task', on_delete=models.SET_NULL, related_name='materials',
@@ -282,6 +291,10 @@ class Material(MaterialBase):
         null=True, blank=True,
         related_name='+',
     )
+    cost_source = models.CharField(
+        max_length=20, choices=COST_SOURCE_CHOICES, null=True, blank=True,
+        help_text='Cost provenance; NULL means provisional (unpriced).',
+    )
 
     class Meta:
         db_table = 'materials'
@@ -289,6 +302,10 @@ class Material(MaterialBase):
     @property
     def is_expense_bound(self):
         return self.expenses.exists()
+
+    @property
+    def is_customer_supplied(self):
+        return self.cost_source == self.COST_SOURCE_CUSTOMER
 
     def clean(self):
         super().clean()

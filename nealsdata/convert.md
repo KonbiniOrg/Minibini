@@ -114,9 +114,11 @@ to a database. Tests load it into the auto-created test DB via
    app needs at runtime (numbering patterns + counters, `units_list`,
    retention windows, `default_material_markup_percent` = `20`).
 5. **`build_inventory_items`**: copies the FreeAgent Price List Items
-   sheet (catalog items, `is_catalog=True`). Materials that match no catalog
-   item later mint a **transient lot** (`is_catalog=False`) in `derive_atoms`
-   via `_mint_transient_lot`, so every Material ends up item-backed.
+   sheet. Every inventory item is just an item — there is no catalog/lot
+   distinction; retirement is manual via `is_active`. Materials that match no
+   existing item later mint a **transient lot** (code `LOT-*`) in
+   `derive_atoms` via `_mint_transient_lot`, so every Material ends up
+   item-backed.
 6. **`build_contacts_and_businesses`**: emits the **customers** referenced by
    spine cards, reconciled against the canonical FreeAgent Contacts sheet. Each
    card's customer org (priority Projects `Client Organisation` → Bills
@@ -422,10 +424,11 @@ model and synthesizes Purchase Orders + Bills. See
   `po_counter` AppState is advanced past them. Coverage is partial by design —
   most Materials have no surviving purchase record, which is expected.
 
-Unmatched Materials (no catalog PLI) get a **transient lot** InventoryItem
-(`is_catalog=False`) at creation (`_mint_transient_lot`), priced from cost via
+Unmatched Materials (no existing PLI) get a **transient lot** InventoryItem
+(code `LOT-*`) at creation (`_mint_transient_lot`), priced from cost via
 `default_material_markup_percent`, so the earmark/QOH/consumption rules above
-apply uniformly to every Material.
+apply uniformly to every Material. There is no catalog/lot flag — every item is
+one kind; retirement is manual via `is_active`.
 
 ### Materials
 
@@ -448,7 +451,23 @@ thickness (`P.match_pli`). On a match the `inventory_item` FK is set and
 `unit_cost` is the PLI's `purchase_price`; on a miss the FK stays null and
 `unit_cost = sell_price × _COST_RATIO` (0.8333, the same factor PLIs use). The
 match is precision-first — prose with no thickness, or a material family absent
-from the price list, is an acceptable miss.
+from the price list, is an acceptable miss. As noted above, a miss then mints a
+transient lot in `derive_atoms`, so by the time the `inventory.material`
+fixture is emitted the FK is never actually null — every Material is
+item-backed.
+
+**`cost_source`**: every emitted Material carries `cost_source='entered'` —
+never null, since a Material with an `inventory_item` must have a non-null
+`cost_source` and (per the point above) every converter Material has one. The
+historical PLI/lot pricing is treated as a human-vouched-for figure at import
+time, the same status as a user entering a price today. `build_purchasing`
+later attaches some Materials to a synthesized PO/Bill (`po_line_item`) as a
+retroactive provenance trail over that *same* already-set `unit_cost` — it
+doesn't represent the PO introducing a new cost, so it does not upgrade
+`cost_source` to `'po'`. The converter models no expense-linked or
+customer-supplied flow, so `'expense'`/`'customer_supplied'` never appear, and
+no provisional (no-cost, no-lot) Materials are ever emitted, so `'estimated'`
+and a null `cost_source` never appear either.
 
 ### Deliverables
 

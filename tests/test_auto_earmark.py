@@ -83,7 +83,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
             code='PLY.99', description='Plywood',
             units='sheets', qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'), selling_price=Decimal('90.00'),
-            is_catalog=True, accounting_category=self.category,
+            accounting_category=self.category,
         )
         self.estimate = Estimate.objects.create(
             job=self.job, estimate_number='EST-AEM-005', version=1,
@@ -130,7 +130,7 @@ class PreApprovalNoEarmarkTest(TestCase):
             code='GATE.PLY', description='Gate Plywood',
             units='sheets', qty_on_hand=Decimal('30.00'),
             purchase_price=Decimal('50.00'), selling_price=Decimal('100.00'),
-            is_catalog=True, accounting_category=self.category,
+            accounting_category=self.category,
         )
 
     def _draft_job(self, suffix):

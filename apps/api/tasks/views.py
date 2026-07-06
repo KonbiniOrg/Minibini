@@ -92,7 +92,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         create_data = {k: v for k, v in serializer.validated_data.items()
                        if k != 'propagate_to_pli'}
         mat = MaterialService.create_on_job(
-            job=task.job, task=task, cost_source='manual', **create_data
+            job=task.job, task=task, **create_data
         )
         return Response(
             MaterialSerializer(mat).data,

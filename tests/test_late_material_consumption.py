@@ -42,7 +42,7 @@ class LateMaterialConsumptionBase(TestCase):
         )
         self.pli = InventoryItem.objects.create(
             code='LM-I', accounting_category=self.cat,
-            is_catalog=True, qty_on_hand=Decimal('10'),
+            qty_on_hand=Decimal('10'),
         )
 
 
@@ -58,14 +58,19 @@ class CreateOnStartedTaskTest(LateMaterialConsumptionBase):
         self.pli.refresh_from_db()
         self.assertEqual(self.pli.qty_on_hand, Decimal('7'))
 
-    def test_freeform_material_added_to_in_progress_task_is_consumed(self):
+    def test_provisional_material_added_to_in_progress_task_stays_pending(self):
+        # A provisional (no lot, sell-only) material added late stays pending:
+        # consume() refuses provisional materials, and the late-add sweep mirrors
+        # the understock rule — in-flight pricing is a legitimate pending state
+        # that must not block the add. It consumes once priced + received.
         m = MaterialService.create_on_job(
             job=self.job, task=self.task, description='special finish',
             quantity=Decimal('1'), sell_price=Decimal('30.00'),
             accounting_category=self.cat,
         )
         m.refresh_from_db()
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+        self.assertIsNone(m.inventory_item_id)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_understocked_material_stays_pending_for_procurement(self):
         # Not enough on hand: the add succeeds and the material stays pending

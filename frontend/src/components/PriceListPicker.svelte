@@ -25,7 +25,7 @@
     const enc = encodeURIComponent(q);
     const [svc, inv] = await Promise.all([
       api.get(`/api/service-items/?search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
-      api.get(`/api/inventory/?is_active=true&is_catalog=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
+      api.get(`/api/inventory/?is_active=true&search=${enc}&page_size=${PICKER_PAGE_SIZE}`),
     ]);
     const svcRows = svc.results || svc;
     const invRows = inv.results || inv;

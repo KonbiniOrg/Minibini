@@ -57,10 +57,8 @@ class InventoryService:
             setattr(pli, field, value)
         pli.full_clean()
         pli.save()
-        # A demoted catalog item that is empty becomes a finished lot — kept as
-        # shop history, hidden by the hide-on-spend list filter. (The old
-        # collect_if_finished auto-delete was retired by the deletion doctrine:
-        # inventory rows are never auto-deleted.)
+        # Inventory rows are never auto-deleted — an empty item is kept as shop
+        # history and retired manually via is_active.
         return pli
 
     @staticmethod
@@ -71,8 +69,7 @@ class InventoryService:
         (can_be_deleted); Materials and Expense stock receipts are SET_NULL, so
         without this guard deleting an item would silently demote established
         materials to provisional and orphan stock-receipt records. A referenced
-        item retires by deactivation (is_active) or lives on as a hidden
-        finished lot instead.
+        item retires by deactivation (is_active) instead.
         """
         from django.core.exceptions import ValidationError
         from apps.expenses.models import Expense
@@ -127,7 +124,6 @@ class InventoryService:
 
     MERGE_OVERRIDE_FIELDS = (
         'code', 'description', 'units', 'purchase_price', 'selling_price',
-        'is_catalog',
     )
 
     @staticmethod
@@ -142,8 +138,9 @@ class InventoryService:
         now-reference-free discard. `overrides` is a dict of final values for
         keep (the frontend resolves which side's value to keep).
 
-        Hard-blocks on a unit mismatch (the QOH addition would be nonsense) and
-        refuses to discard a catalog item (demote it first)."""
+        Hard-blocks on a unit mismatch (the QOH addition would be nonsense).
+        Accepts any discard item — the catalog discard-guard is retired; an
+        explicit confirm lives in the UI."""
         from django.core.exceptions import ValidationError
         from apps.estimates.models import EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
@@ -157,10 +154,6 @@ class InventoryService:
             raise ValidationError('Cannot merge an item into itself.')
         keep = InventoryItem.objects.get(pk=keep_id)
         discard = InventoryItem.objects.get(pk=discard_id)
-        if discard.is_catalog:
-            raise ValidationError(
-                'Cannot discard a catalog item; uncheck its catalog flag to '
-                'demote it to a lot first, then merge.')
         # 'none' means *unknown*, not a real unit — merging across it is fine
         # and the known unit wins. A real-unit mismatch (sheets vs lbs) still
         # blocks: the QOH addition would be nonsense.
@@ -261,6 +254,27 @@ class InventoryService:
         item.refresh_from_db()
         return item
 
+    @staticmethod
+    def order_stock(item, quantity, po=None):
+        """Order an inventory item to stock: a plain PO line with no material
+        link and no job — legit to buy just to have the inventory. Receipt
+        lands in QOH via the normal PO receiving path. Mirrors
+        MaterialService.order's draft-append-or-create contract."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        from apps.purchasing.models import PurchaseOrder
+        from apps.purchasing.services import PurchaseOrderService
+        if quantity is None or quantity <= 0:
+            raise ValidationError({'quantity': ['Quantity must be greater than 0.']})
+        if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add lines to a draft purchase order.')
+        with transaction.atomic():
+            if po is None:
+                po = PurchaseOrderService.create_po()
+            li = PurchaseOrderService.add_line_item_from_pli(
+                po.pk, item.pk, quantity)
+        return po, li
+
     # --- QOH operations ---
 
     @staticmethod
@@ -299,18 +313,21 @@ class InventoryService:
         )
 
     @staticmethod
-    def receive_ad_hoc_purchase(material):
+    def receive_ad_hoc_purchase(material, qty=None):
         """Increase QOH for an ad-hoc (job-level, no PO) purchase material.
-        QOH-only — earmark was already created by MaterialService.create_on_job."""
+        QOH-only — earmark was already created by MaterialService.create_on_job.
+        `qty` defaults to the material's full quantity; an attach receipt may
+        top up only part of it (e.g. the remainder after a partial PO receipt)."""
         from django.db.models import F
         pli = material.inventory_item
         if not pli:
             return
-        pli.qty_on_hand = F('qty_on_hand') + material.quantity
+        qty = qty if qty is not None else material.quantity
+        pli.qty_on_hand = F('qty_on_hand') + qty
         pli.save(update_fields=['qty_on_hand'])
         pli.refresh_from_db()
         InventoryService._record_qoh_history(
-            pli, material.quantity, action='Ad-hoc receive',
+            pli, qty, action='Ad-hoc receive',
             reason=f'Ad-hoc receive on job {material.job.job_number}',
             job=material.job,
         )
@@ -484,15 +501,102 @@ class MaterialService:
             )
 
     @staticmethod
-    def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False,
-                       cost_source='manual'):
+    def _earmark_if_committed(material):
+        """Reserve stock only for committed (approved+) jobs — pre-approval
+        jobs earmark in bulk at acceptance (create_earmarks_for_job)."""
+        from apps.jobs.models import Job as _Job
+        _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
+        if material.job.status not in _PRE_APPROVAL:
+            InventoryService._mutate_earmark(
+                material.inventory_item, material.job, material.quantity)
+
+    @staticmethod
+    def mint_lot(material, *, unit_cost, sell_price=None):
+        """Create the InventoryItem lot backing a one-off established material.
+        QOH 0; sell defaults from the markup config when not supplied."""
+        if not sell_price or sell_price == Decimal('0.00'):
+            markup = InventoryService._default_markup_percent()
+            sell_price = (unit_cost * (Decimal('1') + markup / Decimal('100'))
+                          ).quantize(Decimal('0.01'))
+        return InventoryService.create_item(
+            code=f'LOT-{material.pk}',
+            description=material.description,
+            units=material.units,
+            purchase_price=unit_cost,
+            selling_price=sell_price,
+            qty_on_hand=Decimal('0.00'),
+            accounting_category=material.accounting_category,
+        )
+
+    @staticmethod
+    def establish(material, *, inventory_item=None, unit_cost=None,
+                  sell_price=None, cost_source=None):
+        """provisional → established: supplying the price mints/attaches the lot.
+        A sell_price already on the material (estimate-locked) is never re-derived."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        cost_source = cost_source or Material.COST_SOURCE_ENTERED
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('establish requires pending state')
+        if material.inventory_item_id is not None:
+            raise ValidationError('Material is already established.')
+        if inventory_item is None and unit_cost is None:
+            raise ValidationError(
+                {'unit_cost': ['Establishing without an inventory item requires a cost.']})
+        with transaction.atomic():
+            locked_sell = material.sell_price
+            if inventory_item is None:
+                lot = MaterialService.mint_lot(
+                    material, unit_cost=unit_cost, sell_price=locked_sell or sell_price)
+                material.inventory_item = lot
+                material.unit_cost = unit_cost
+                if not locked_sell:
+                    material.sell_price = lot.selling_price
+            else:
+                material.inventory_item = inventory_item
+                if unit_cost is not None:
+                    material.unit_cost = unit_cost
+                elif not material.unit_cost:
+                    material.unit_cost = inventory_item.purchase_price
+                if not locked_sell:
+                    material.sell_price = (
+                        sell_price if sell_price else inventory_item.selling_price)
+            material.cost_source = cost_source
+            material.save()
+            MaterialService._earmark_if_committed(material)
+            MaterialService.consume_if_task_started(material)
+        return material
+
+    @staticmethod
+    def establish_reverse_markup(material):
+        """Establish a document-crystallized bare material at acceptance.
+
+        The accepted price is the locked sell; back out an implied placeholder
+        cost = sell / (1 + default markup %) and mint a QOH-0 lot at that cost
+        (cost_source='estimated'). The real cost arrives when a PO line
+        supplies it (cost_source flips to 'po'), but the material is
+        established from the start so work can consume against the
+        (to-be-received) lot. Shared by estimate and CO acceptance so both
+        documents crystallize bare material lines identically.
+        """
+        sell = material.sell_price or Decimal('0')
+        markup = InventoryService._default_markup_percent()
+        unit_cost = (
+            sell / (Decimal('1') + markup / Decimal('100'))
+        ).quantize(Decimal('0.01'))
+        return MaterialService.establish(
+            material, unit_cost=unit_cost,
+            cost_source=Material.COST_SOURCE_ESTIMATED,
+        )
+
+    @staticmethod
+    def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False):
         """Update unit_cost and/or sell_price on a Material. If propagate_to_pli is
         True and the Material is PLI-linked, also update the PLI's purchase_price /
         selling_price to match — but only for fields that actually changed.
 
-        `cost_source` records where a unit_cost change originates: 'manual' (a user
-        typing a cost) or 'document' (an Expense/PO supplying it). Freeform (no-PLI)
-        materials only accept a document-sourced cost — see Task A5 enforcement.
+        Provenance (cost_source) is not set here — callers stamp it on the Material
+        (establishment mints/attaches the lot; document flows own their own source).
 
         No permission check: open to any authenticated user (deliberate carve-out
         from can_manage_financials per design).
@@ -534,40 +638,73 @@ class MaterialService:
     def create_on_job(*, job, task=None, description='', quantity=Decimal('0.00'),
                       unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
                       inventory_item=None, accounting_category=None, units='none',
-                      cost_source='document'):
+                      cost_source=None, customer_supplied=False):
+        from django.core.exceptions import ValidationError
         from apps.jobs.services import _assert_job_not_on_hold
         _assert_job_not_on_hold(job, 'add a material to this job')
-        # Freeform (no-PLI) actual materials get their cost from a document
-        # (Expense/PO), never typed manually.
-        if (cost_source == 'manual' and inventory_item is None
-                and unit_cost and unit_cost != Decimal('0.00')):
-            from django.core.exceptions import ValidationError
-            raise ValidationError({
-                'unit_cost': 'A freeform material’s cost comes from a linked '
-                             'expense or PO, not manual entry.'
-            })
         from django.db import transaction
+        if customer_supplied and (
+                inventory_item is not None
+                or (unit_cost and unit_cost != Decimal('0.00'))
+                or (sell_price and sell_price != Decimal('0.00'))):
+            # sell_price included: a pre-set sell would ride establish()'s
+            # locked-sell preservation and mint the lot at that price.
+            raise ValidationError(
+                'A customer-supplied material carries no pricing — it is the '
+                'customer’s property, carried at zero.')
+        # Priced at authoring with no item pick → born established (mint the lot).
+        # Only user-entered pricing establishes here; document-sourced costs
+        # (PO/expense) record the cost but establish through their own flows
+        # (Tasks 7-9), so they must NOT auto-mint.
+        mint = (
+            inventory_item is None
+            and unit_cost and unit_cost != Decimal('0.00')
+            and cost_source in (None, Material.COST_SOURCE_ENTERED)
+        )
         with transaction.atomic():
             m = Material(
                 job=job, task=task,
                 description=description, quantity=quantity,
-                unit_cost=unit_cost, sell_price=sell_price,
+                # In the mint branch establish() sets unit_cost; construct at 0
+                # so _populate_from_pli / establish don't fight over it.
+                unit_cost=(Decimal('0.00') if mint else unit_cost),
+                sell_price=sell_price,
                 inventory_item=inventory_item,
                 accounting_category=accounting_category,
                 units=units,
             )
             m.save()  # full_clean() runs here; enforces task/job invariant
-            # Only earmark immediately for committed (approved or later) jobs.
-            # Pre-approval jobs (draft / submitted) do NOT reserve stock; their
-            # materials are earmarked in bulk when the estimate is accepted via
-            # EstimateAcceptanceService → InventoryService.create_earmarks_for_job.
-            from apps.jobs.models import Job as _Job
-            _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
-            if job.status not in _PRE_APPROVAL:
-                InventoryService._mutate_earmark(inventory_item, job, quantity)
-            # Attached to a task that already started? The promote-time
-            # consumption sweep already ran — consume now (stock permitting).
-            MaterialService.consume_if_task_started(m)
+            if customer_supplied:
+                # Born established at a deliberate, locked $0 — the customer
+                # owns the thing; we track arrival, never price it.
+                return MaterialService.establish(
+                    m, unit_cost=Decimal('0.00'), sell_price=Decimal('0.00'),
+                    cost_source=Material.COST_SOURCE_CUSTOMER)
+            if mint:
+                # Priced at authoring with no item pick → born established.
+                m = MaterialService.establish(
+                    m, unit_cost=unit_cost, cost_source=cost_source)
+            else:
+                # Only earmark immediately for committed (approved or later)
+                # jobs. Pre-approval jobs (draft / submitted) do NOT reserve
+                # stock; their materials are earmarked in bulk when the estimate
+                # is accepted via EstimateAcceptanceService →
+                # InventoryService.create_earmarks_for_job.
+                MaterialService._earmark_if_committed(m)
+                if inventory_item is not None:
+                    m.cost_source = cost_source or Material.COST_SOURCE_ENTERED
+                    m.save(update_fields=['cost_source'])
+                elif cost_source is not None:
+                    # Freeform (lot-less) material carrying a known provenance
+                    # (document cost, customer-supplied, or a duplicated one) —
+                    # record it. A genuinely provisional add (cost_source None)
+                    # stays NULL. No ENTERED default here: a lot-less material is
+                    # never "entered" (that path mints above).
+                    m.cost_source = cost_source
+                    m.save(update_fields=['cost_source'])
+                # Attached to a task that already started? The promote-time
+                # consumption sweep already ran — consume now (stock permitting).
+                MaterialService.consume_if_task_started(m)
         return m
 
     @staticmethod
@@ -579,41 +716,72 @@ class MaterialService:
         - Pricing on a PLI-linked material routes through update_pricing
           (invoiced-freeze + optional PLI propagation); like the endpoints it
           replaces, that path applies pricing only.
-        - Everything else — metadata, and freeform pricing — saves under the
-          on_hold guard, with the invoiced freeze on any sell_price change.
+        - A pricing write on a provisional (no-lot) material ESTABLISHES it —
+          attaching the given item or minting a lot. A sell-only edit leaves it
+          provisional.
+        - Everything else — metadata — saves under the on_hold guard, with the
+          invoiced freeze on any sell_price change.
         """
         from django.core.exceptions import ValidationError
+        from django.db import transaction
         from apps.jobs.services import _assert_job_not_on_hold
         if {'quantity', 'released_qty'} & set(fields):
             raise ValidationError(
                 'Quantity changes must use the draw-more or restock actions.')
-        if material.inventory_item_id is not None:
-            # PLI-backed rows take description/units/AC from the inventory
-            # item and are locked (see materials doc: unit math depends on
-            # the pairing); only the pricing carve-out is editable.
-            non_pricing = set(fields) - {'unit_cost', 'sell_price'}
-            if non_pricing:
-                raise ValidationError(
-                    'A catalog-backed material takes its descriptive fields '
-                    'from the inventory item, so they are immutable here; '
-                    'only unit cost / sell price are editable. Rejected: '
-                    + ', '.join(sorted(non_pricing)))
-        if material.inventory_item_id is not None and (
-                'unit_cost' in fields or 'sell_price' in fields):
-            MaterialService.update_pricing(
-                material,
-                unit_cost=fields.get('unit_cost'),
-                sell_price=fields.get('sell_price'),
-                propagate_to_pli=propagate_to_pli,
-            )
-            material.refresh_from_db()
-            return material
+        # Every mutation path below (establish, PLI pricing, metadata) edits the
+        # material, so the on-hold guard applies uniformly up front.
         _assert_job_not_on_hold(material.job, 'edit this material')
-        if 'sell_price' in fields and fields['sell_price'] != material.sell_price:
-            MaterialService._assert_not_invoiced(material)
-        for k, v in fields.items():
-            setattr(material, k, v)
-        material.save()
+        # Locked before either pricing route below (the provisional-establish
+        # branch and the PLI-backed pricing carve-out) can be reached: a
+        # customer-supplied material is the customer's property, carried at a
+        # deliberate, locked $0 — never priced.
+        if material.is_customer_supplied and (
+                'unit_cost' in fields or 'sell_price' in fields):
+            raise ValidationError(
+                'A customer-supplied material is not priced — it is the '
+                'customer’s property, carried at zero.')
+        # One PATCH = one transaction: a raise after the establish route (e.g.
+        # the descriptive-fields refusal below) must roll the mint/earmark back,
+        # never leave a half-applied establish behind an error response.
+        with transaction.atomic():
+            if material.inventory_item_id is None:
+                inv = fields.pop('inventory_item', None)
+                uc = fields.pop('unit_cost', None)
+                sp = fields.pop('sell_price', None)
+                if inv is not None or (uc and uc != Decimal('0.00')):
+                    MaterialService.establish(
+                        material, inventory_item=inv, unit_cost=uc, sell_price=sp)
+                    material.refresh_from_db()
+                    if not fields:
+                        return material
+                elif sp is not None:
+                    fields['sell_price'] = sp  # sell-only edit stays provisional
+            if material.inventory_item_id is not None:
+                # PLI-backed rows take description/units/AC from the inventory
+                # item and are locked (see materials doc: unit math depends on
+                # the pairing); only the pricing carve-out is editable.
+                non_pricing = set(fields) - {'unit_cost', 'sell_price'}
+                if non_pricing:
+                    raise ValidationError(
+                        'A catalog-backed material takes its descriptive fields '
+                        'from the inventory item, so they are immutable here; '
+                        'only unit cost / sell price are editable. Rejected: '
+                        + ', '.join(sorted(non_pricing)))
+            if material.inventory_item_id is not None and (
+                    'unit_cost' in fields or 'sell_price' in fields):
+                MaterialService.update_pricing(
+                    material,
+                    unit_cost=fields.get('unit_cost'),
+                    sell_price=fields.get('sell_price'),
+                    propagate_to_pli=propagate_to_pli,
+                )
+                material.refresh_from_db()
+                return material
+            if 'sell_price' in fields and fields['sell_price'] != material.sell_price:
+                MaterialService._assert_not_invoiced(material)
+            for k, v in fields.items():
+                setattr(material, k, v)
+            material.save()
         return material
 
     @staticmethod
@@ -656,11 +824,39 @@ class MaterialService:
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             return material
         pli = material.inventory_item
-        if pli is not None and material.quantity > Decimal('0.00'):
+        if pli is None:
+            return material  # provisional: stays pending, never silently consumed
+        if material.quantity > Decimal('0.00'):
             pli.refresh_from_db()
             if pli.qty_on_hand < material.quantity:
                 return material
         return MaterialService.consume(material)
+
+    @staticmethod
+    def mark_on_hand(material, qty, *, user=None):
+        """Deliberate no-document receipt (Path 3), and the customer-delivery
+        receipt for customer-supplied materials (Path 4)."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        from django.db.models import F
+        if material.inventory_item_id is None:
+            raise ValidationError('Set pricing on this material first.')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Only a pending material can be received.')
+        if qty <= Decimal('0.00'):
+            raise ValidationError({'quantity': ['Quantity must be positive.']})
+        with transaction.atomic():
+            pli = material.inventory_item
+            pli.qty_on_hand = F('qty_on_hand') + qty
+            pli.save(update_fields=['qty_on_hand'])
+            pli.refresh_from_db()
+            action = ('Customer delivery' if material.is_customer_supplied
+                      else 'Marked on-hand')
+            InventoryService._record_qoh_history(
+                pli, qty, action=action,
+                reason=f'{action} on job {material.job.job_number}',
+                job=material.job, user=user)
+        return material
 
     @staticmethod
     def consume(material):
@@ -669,6 +865,11 @@ class MaterialService:
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 f'consume requires pending state; got {material.consumption_state}'
+            )
+        if material.inventory_item_id is None:
+            raise ValidationError(
+                'This material is provisional — set its pricing and receive it '
+                'before work can consume it.'
             )
         qty = material.quantity
         with transaction.atomic():
@@ -680,7 +881,9 @@ class MaterialService:
                         f'Cannot consume {qty} {pli.units} of {pli.code}: '
                         f'only {pli.qty_on_hand} on hand. To start now, reduce '
                         f'this material to {pli.qty_on_hand} and add a second '
-                        f'task/material for the remainder while it is procured.'
+                        f'task/material for the remainder while it is procured. '
+                        f'If it is on order or coming from the customer, wait '
+                        f'for arrival.'
                     )
                 from django.db.models import F
                 pli.qty_on_hand = F('qty_on_hand') - qty
@@ -779,9 +982,16 @@ class MaterialService:
         restock-to-zero rule applies: a referenced material becomes `released`
         (job history — claims, expense/PO links, and the released_qty record
         survive); an unreferenced one is deleted (scratch paper).
+
+        Blocked while the job is on hold: restock is replanning (shrinking
+        the job's material plan), not procurement — on-hold freezes the plan.
+        Named system retirements (PO sever, CO descope, completion release)
+        route through release() or run on jobs that can't be on hold.
         """
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_on_hold
+        _assert_job_not_on_hold(material.job, 'restock this material')
         if qty <= Decimal('0.00') or qty > material.quantity:
             raise ValidationError('restock qty must be > 0 and <= quantity')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
@@ -810,6 +1020,15 @@ class MaterialService:
             raise ValidationError('draw_more qty must be > 0')
         if material.is_expense_bound:
             raise ValidationError('draw_more not allowed on expense-bound materials')
+        if material.po_line_item_id is not None:
+            # Same rule as expense-bound: the quantity is pinned by a
+            # procurement document. Drawing more would pretend the PO line
+            # covers units it never bought (and re-show a concluded PO as
+            # this row's supply). One row ↔ one procurement story.
+            raise ValidationError(
+                'This material’s quantity is covered by its purchase order. '
+                'Add a second material for the additional quantity and order '
+                'that one.')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('draw_more requires pending state')
         with transaction.atomic():
@@ -882,6 +1101,63 @@ class MaterialService:
                 material.delete()
 
     @staticmethod
+    def order(material, po=None):
+        """Path 1: start (or append to) a draft PO with a line linked to this
+        material. Vendor-less create is fine — vendor is required at issue."""
+        from django.core.exceptions import ValidationError
+        from django.db import transaction
+        from apps.purchasing.models import PurchaseOrder
+        from apps.purchasing.services import PurchaseOrderService
+        if material.inventory_item_id is None:
+            raise ValidationError('Set pricing on this material before ordering.')
+        if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
+            raise ValidationError('Only a pending material can be ordered.')
+        if material.is_customer_supplied:
+            raise ValidationError(
+                'A customer-supplied material is not ordered — the customer sends it.')
+        if material.po_line_item_id is not None:
+            raise ValidationError('Material is already on a purchase order.')
+        if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
+            raise ValidationError('Can only add lines to a draft purchase order.')
+        with transaction.atomic():
+            if po is None:
+                po = PurchaseOrderService.create_po()
+            li = PurchaseOrderService.add_line_item_from_pli(
+                po.pk, material.inventory_item_id, material.quantity,
+                job=material.job_id, material_id=material.pk)
+        return po, li
+
+    @staticmethod
+    def _apply_po_line_cost(material, po_line, price):
+        """Supply/override a PO-linked material's cost from the PO line price.
+
+        - Provisional (lot-less) material → ESTABLISH it: mint a QOH-0 lot at
+          `price`, stamp cost_source='po', and (when the PO line itself has no
+          inventory_item) repoint the line at the minted lot so
+          PurchaseOrderReceivingService.receive_items' `li.inventory_item.qty_on_hand
+          += qty` bump lands on that lot. establish is the SOLE earmark writer
+          here (it earmarks committed jobs; the provisional row had no lot, so
+          no earmark existed — no double).
+        - Established material → override unit_cost via update_pricing and stamp
+          cost_source='po'. Sell price is NEVER touched, and no earmark is added.
+
+        No-op when the line carries no usable price.
+        """
+        if price is None:
+            return material
+        if material.inventory_item_id is None:
+            MaterialService.establish(
+                material, unit_cost=price, cost_source=Material.COST_SOURCE_PO)
+            if po_line.inventory_item_id is None:
+                po_line.inventory_item = material.inventory_item
+                po_line.save(update_fields=['inventory_item'])
+        elif price != material.unit_cost:
+            MaterialService.update_pricing(material, unit_cost=price)
+            material.cost_source = Material.COST_SOURCE_PO
+            material.save(update_fields=['cost_source'])
+        return material
+
+    @staticmethod
     def resolve_or_create_for_line(po_line, *, job=None, inventory_item=None,
                                     qty, unit_cost, description,
                                     accounting_category=None, material_id=None):
@@ -911,6 +1187,9 @@ class MaterialService:
                 if job is not None and mat.job_id != job.pk:
                     raise ValidationError('Material is not on the requested job')
                 MaterialService.link_to_po_line(mat, po_line)
+                # The PO write supplies/overrides the material's cost (a
+                # hand-built PO line may name a provisional material).
+                MaterialService._apply_po_line_cost(mat, po_line, unit_cost)
                 return mat
 
             # Step 2 and 3 require a job
@@ -928,9 +1207,20 @@ class MaterialService:
                 matches = list(candidates[:2])
                 if len(matches) == 1:
                     MaterialService.link_to_po_line(matches[0], po_line)
+                    # Claimed match is inventoried (filtered on inventory_item),
+                    # so it is established — override its cost from the PO line.
+                    MaterialService._apply_po_line_cost(
+                        matches[0], po_line, unit_cost)
                     return matches[0]
 
-            # Step 3: create new
+            # Step 3: create new. A PO line's cost is document-sourced, so
+            # create_on_job records the cost with cost_source='po' but does NOT
+            # auto-mint. We then establish through _apply_po_line_cost: a
+            # catalog line's material is already lot-backed (no-op); a freeform
+            # (pli-less) line's material is minted a LOT-{pk} lot at the line
+            # price, and the PO line is repointed at it so receiving can bump
+            # QOH — without this a freeform-PO material could never arrive and
+            # consume() would refuse it forever.
             mat = MaterialService.create_on_job(
                 job=job,
                 inventory_item=inventory_item,
@@ -938,8 +1228,10 @@ class MaterialService:
                 quantity=qty,
                 unit_cost=unit_cost,
                 accounting_category=accounting_category,
+                cost_source=Material.COST_SOURCE_PO,
             )
             MaterialService.link_to_po_line(mat, po_line)
+            MaterialService._apply_po_line_cost(mat, po_line, unit_cost)
             return mat
 
 
