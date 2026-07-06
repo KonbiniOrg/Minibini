@@ -50,11 +50,12 @@ def _make_job(contact, statuses):
 
 
 def _on_hold_job(contact):
-    return _make_job(contact, [
+    from apps.jobs.services import JobService
+    job = _make_job(contact, [
         Job.STATUS_SUBMITTED,
         Job.STATUS_APPROVED,
-        Job.STATUS_ON_HOLD,
     ])
+    return JobService.hold_job(job.pk, 'guard test hold')
 
 
 def _pending_task(job, scheme):
@@ -341,8 +342,8 @@ class TaskMaterialPatchOnHoldTest(OnHoldAPIGuardBase):
         ])
         task = _pending_task(job, self.scheme)
         mat = _material(job, task=task, ac=self.ac)
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        from apps.jobs.services import JobService
+        JobService.hold_job(job.pk, 'guard test hold')
         job.refresh_from_db()
         mat.refresh_from_db()
         return job, task, mat
@@ -384,8 +385,8 @@ class FlatMaterialPatchOnHoldTest(OnHoldAPIGuardBase):
                 purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
                 accounting_category=self.ac)
         mat = _material(job, ac=self.ac, pli=pli)
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        from apps.jobs.services import JobService
+        JobService.hold_job(job.pk, 'guard test hold')
         job.refresh_from_db()
         mat.refresh_from_db()
         return job, mat

@@ -65,6 +65,7 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         model = Job
         fields = [
             'job_id', 'job_number', 'name', 'status',
+            'on_hold', 'hold_reason',
             'contact', 'contact_name', 'project_manager', 'project_manager_name',
             'can_manage',
             'customer_po_number', 'description',
@@ -72,7 +73,10 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'tasks', 'materials', 'fees', 'latest_change_request',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
         ]
-        read_only_fields = ['job_id', 'job_number', 'created_date', 'completed_date']
+        # on_hold/hold_reason are read-only — writes go through the hold/
+        # release actions so the service guards always run.
+        read_only_fields = ['job_id', 'job_number', 'created_date', 'completed_date',
+                            'on_hold', 'hold_reason']
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"

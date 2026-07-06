@@ -112,6 +112,15 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             'service': lambda pk, reason=None: JobService.update_job(pk, status=Job.STATUS_DRAFT),
             'requires_reason': True,
         },
+        # on_hold is a flag, not a status — hold/release toggle it. The
+        # reason lands on hold_reason (and, via the mixin, an audit note).
+        'hold': {
+            'service': lambda pk, reason=None: JobService.hold_job(pk, reason),
+            'requires_reason': True,
+        },
+        'release': {
+            'service': lambda pk, reason=None: JobService.release_job(pk),
+        },
     }
 
     def perform_create(self, serializer):
