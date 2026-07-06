@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
-  api: { patch: vi.fn() },
+  api: { patch: vi.fn(), post: vi.fn() },
   errorMessage: (e, fallback) =>
     e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
@@ -18,6 +18,8 @@ const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progre
 beforeEach(() => {
   api.patch.mockReset();
   api.patch.mockResolvedValue({});
+  api.post.mockReset();
+  api.post.mockResolvedValue({});
   user.set({ permissions: ['can_manage_jobs'] });
   clearMessage();
 });
@@ -32,12 +34,34 @@ describe('JobHeader', () => {
 
   it('requires a reason when putting a job on hold', async () => {
     const { getByRole, getByLabelText } = render(JobHeader, { props: { job } });
-    await fireEvent.change(getByRole('combobox'), { target: { value: 'on_hold' } });
-    // no immediate patch — the reason form appears
-    expect(api.patch).not.toHaveBeenCalled();
+    await fireEvent.click(getByRole('button', { name: 'Put on hold' }));
+    // no immediate call — the reason form appears
+    expect(api.post).not.toHaveBeenCalled();
     await fireEvent.input(getByLabelText(/Reason for hold/), { target: { value: 'broken jig' } });
     await fireEvent.click(getByRole('button', { name: 'Confirm Hold' }));
-    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'on_hold', hold_reason: 'broken jig' });
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/hold/', { reason: 'broken jig' });
+  });
+
+  it('no longer offers On Hold in the status select', () => {
+    const { getByRole } = render(JobHeader, { props: { job } });
+    const options = [...getByRole('combobox').options].map((o) => o.value);
+    expect(options).not.toContain('on_hold');
+  });
+
+  it('shows the hold badge + reason and releases via the release action', async () => {
+    const onStatusChange = vi.fn();
+    const heldJob = { ...job, on_hold: true, hold_reason: 'waiting on CO' };
+    const { getByRole, getByText } = render(JobHeader, { props: { job: heldJob, onStatusChange } });
+    expect(getByText('On Hold')).toBeInTheDocument();
+    expect(getByText('waiting on CO')).toBeInTheDocument();
+    await fireEvent.click(getByRole('button', { name: 'Release hold' }));
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/release/', {});
+  });
+
+  it('hides the Put on hold button for pre-approval and held jobs', () => {
+    const draftJob = { ...job, status: 'draft' };
+    const { queryByRole, rerender } = render(JobHeader, { props: { job: draftJob } });
+    expect(queryByRole('button', { name: 'Put on hold' })).toBeNull();
   });
 
   it('releases an approved job to the floor without prompting (reversible via on-hold)', async () => {
@@ -64,12 +88,12 @@ describe('JobHeader', () => {
   });
 
   it('shows a hold failure in the hold form message, not the overlay', async () => {
-    api.patch.mockRejectedValue(Object.assign(new Error('Request failed'), {
+    api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400,
       data: { detail: 'Hold not allowed right now.' },
     }));
     const { getByRole, getByLabelText, findByRole } = render(JobHeader, { props: { job } });
-    await fireEvent.change(getByRole('combobox'), { target: { value: 'on_hold' } });
+    await fireEvent.click(getByRole('button', { name: 'Put on hold' }));
     await fireEvent.input(getByLabelText(/Reason for hold/), { target: { value: 'broken jig' } });
     await fireEvent.click(getByRole('button', { name: 'Confirm Hold' }));
     const msg = await findByRole('alert');

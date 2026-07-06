@@ -6,6 +6,7 @@
     'estimating': '#2563eb',
     'awaiting-response': '#b45309',
     'awaiting-prep': '#ca8a04',
+    'on-hold': '#9ca3af',
     'completed': '#7c3aed',
   };
 
@@ -93,6 +94,9 @@
     {#if showProgress && job.sub_status === 'blocked'}
       <div class="blocked-banner">BLOCKED</div>
     {/if}
+    {#if job.sub_status === 'on-hold' || job.on_hold}
+      <div class="hold-banner" title={job.hold_reason || 'On hold'}>ON HOLD</div>
+    {/if}
     {#if showProgress}
       {@const total = job.task_total ?? 0}
       {@const completed = job.task_completed ?? 0}
@@ -168,6 +172,15 @@
 
   .blocked-banner {
     background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 700;
+    text-align: center; padding: 3px 0; letter-spacing: 0.5px;
+    border-top: 1px solid #f0f0f0;
+  }
+
+  .hold-banner {
+    background: repeating-linear-gradient(
+      -45deg, #f3f4f6, #f3f4f6 6px, #e5e7eb 6px, #e5e7eb 12px
+    );
+    color: #4b5563; font-size: 11px; font-weight: 700;
     text-align: center; padding: 3px 0; letter-spacing: 0.5px;
     border-top: 1px solid #f0f0f0;
   }

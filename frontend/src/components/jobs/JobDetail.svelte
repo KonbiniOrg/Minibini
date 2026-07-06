@@ -526,7 +526,7 @@
           {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">Open →</a>
           {/if}
-          {#if canManageJobs && job.status === 'on_hold' && !hasLiveChangeOrder}
+          {#if canManageJobs && job.on_hold && !hasLiveChangeOrder}
             <button type="button" onclick={createChangeOrder} disabled={creatingCo}>
               {creatingCo ? 'Creating…' : '+ New change order'}
             </button>
