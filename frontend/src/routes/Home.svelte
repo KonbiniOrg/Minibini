@@ -10,6 +10,7 @@
   import RecentTimeList from '../components/home/RecentTimeList.svelte';
   import MyShiftsList from '../components/home/MyShiftsList.svelte';
   import MyChangeRequestsList from '../components/home/MyChangeRequestsList.svelte';
+  import MyEnvelopeEditor from '../components/home/MyEnvelopeEditor.svelte';
   import ClockBand from '../components/home/ClockBand.svelte';
 
   let loading = $state(true);
@@ -67,6 +68,7 @@
   <RecentTimeList />
   <MyChangeRequestsList />
   <RecentLoginsList />
+  <MyEnvelopeEditor />
 {:else if tab === 'expenses'}
   <ExpensesList />
 {/if}

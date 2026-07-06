@@ -168,7 +168,7 @@ class HorizonCountsWorkingDaysTest(BaseTestCase):
 
 class OffHoursInProgressTest(BaseTestCase):
     """In-progress work outside configured hours widens the display axis
-    (day_shape), but forecasts still respect the configured workday."""
+    (axis), but forecasts still respect the worker's envelope."""
 
     def test_early_blep_extends_workday_start_but_not_forecasts(self):
         user, active = _seed_user_with_pending_task(
@@ -189,7 +189,7 @@ class OffHoursInProgressTest(BaseTestCase):
 
         data = ScheduleService.get_schedule(now=now)
         # Display axis widened to 07:00.
-        self.assertEqual(data['day_shape']['workday_start'], '07:00')
+        self.assertEqual(data['axis']['start'], '07:00')
 
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bars = {(b['task_id'], b['kind']): b for b in worker['bars']}
@@ -240,7 +240,7 @@ class ScheduleServiceEmptyTest(BaseTestCase):
         Task.objects.update(assignee=None)
         data = ScheduleService.get_schedule(now=dj_tz.now())
         self.assertEqual(data['workers'], [])
-        self.assertIn('day_shape', data)
+        self.assertIn('axis', data)
         self.assertIn('days', data)
         self.assertIn('jobs', data)
 
@@ -1020,7 +1020,7 @@ class CompletedLateWorkTest(BaseTestCase):
         now = local_dt(d, 17, 30)
 
         data = ScheduleService.get_schedule(now=now)
-        self.assertEqual(data['day_shape']['workday_end'], '18:00')
+        self.assertEqual(data['axis']['end'], '18:00')
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
         self.assertEqual(len(bar['segments']), 1, bar['segments'])
@@ -1044,7 +1044,7 @@ class CompletedLateWorkTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now, offset=2)
         # Window is two working days ahead; the running off-hours blep is today
         # and renders nowhere in it, so the axis must not widen.
-        self.assertEqual(data['day_shape']['workday_end'], '17:00')
+        self.assertEqual(data['axis']['end'], '17:00')
 
     def test_near_midnight_blep_counts_full_elapsed_and_widens_to_end_of_day(self):
         # The reported case: worked 22:43 -> 23:58 (75 min, same day, no
@@ -1064,7 +1064,7 @@ class CompletedLateWorkTest(BaseTestCase):
 
         data = ScheduleService.get_schedule(now=now)
         # Axis runs as late as the work goes (end of day; a time can't hold 24:00).
-        self.assertEqual(data['day_shape']['workday_end'], '23:59')
+        self.assertEqual(data['axis']['end'], '23:59')
         worker = next(w for w in data['workers'] if w['user']['id'] == user.pk)
         bar = next(b for b in worker['bars'] if b['task_id'] == task.pk)
         # The full 75 minutes is reported, matching Blep.elapsed / the task page.
@@ -1217,9 +1217,8 @@ class PerWorkerEnvelopeTest(BaseTestCase):
         data = ScheduleService.get_schedule(now=now)
         self.assertEqual(
             set(data['axis'].keys()), {'start', 'end', 'task_buffer_minutes'})
-        # Legacy alias still mirrors the axis until the SPA switches over.
-        self.assertEqual(data['day_shape']['workday_start'], data['axis']['start'])
-        self.assertEqual(data['day_shape']['workday_end'], data['axis']['end'])
+        # The legacy day_shape alias is gone — axis is the only shape key.
+        self.assertNotIn('day_shape', data)
 
 
 class MidnightCrosserClipsTest(BaseTestCase):

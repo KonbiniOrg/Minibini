@@ -26,7 +26,7 @@ class ScheduleAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         for key in ('now', 'horizon_start', 'horizon_end', 'horizon_days',
-                    'day_shape', 'days', 'jobs', 'workers'):
+                    'axis', 'days', 'jobs', 'workers'):
             self.assertIn(key, data)
 
     def test_days_param_respected(self):

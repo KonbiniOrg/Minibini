@@ -310,15 +310,6 @@ class ScheduleService:
             # envelope hours over the visible days, widened for off-hours
             # logged work. Off-envelope shading is per-lane (envelope_by_day).
             'axis': axis_payload,
-            # LEGACY alias mirroring `axis` — the SPA still reads day_shape;
-            # removed when the frontend switches to `axis` (Task 19).
-            'day_shape': {
-                'workday_start': axis_payload['start'],
-                'workday_end': axis_payload['end'],
-                'task_buffer_minutes': buffer_minutes,
-                'config_workday_start': axis_payload['start'],
-                'config_workday_end': axis_payload['end'],
-            },
             'days': days,
             'jobs': jobs_payload,
             'workers': worker_lanes,
