@@ -53,3 +53,17 @@ describe('JobCard on-hold treatment', () => {
     expect(queryByText('ON HOLD')).toBeNull();
   });
 });
+
+describe('JobCard pre-approval treatment', () => {
+  it('marks a pre-approval card with the dashed treatment class', () => {
+    const { container } = render(JobCard, {
+      props: { job: { ...baseJob, pre_approval: true }, showProgress: true },
+    });
+    expect(container.querySelector('.job-card')).toHaveClass('pre-approval');
+  });
+
+  it('leaves normal cards untreated', () => {
+    const { container } = render(JobCard, { props: { job: baseJob } });
+    expect(container.querySelector('.job-card')).not.toHaveClass('pre-approval');
+  });
+});

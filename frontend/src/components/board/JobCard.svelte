@@ -55,7 +55,7 @@
   };
 </script>
 
-<div class="job-card">
+<div class="job-card" class:pre-approval={job.pre_approval}>
   <div class="card-border" style="background: {borderColor()};">
     <span class="border-num">{job.job_number}</span>
   </div>
@@ -119,6 +119,10 @@
 </div>
 
 <style>
+  .job-card.pre-approval {
+    outline: 2px dashed #94a3b8;
+    outline-offset: -2px;
+  }
   .job-card {
     background: #fff; border-radius: 10px; overflow: hidden; cursor: pointer;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);

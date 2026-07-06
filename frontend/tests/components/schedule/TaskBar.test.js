@@ -38,6 +38,20 @@ describe('TaskBar', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ task_id: 5 }));
   });
 
+  it('marks a pre-approval bar with the pre-approval class', () => {
+    const { container } = render(TaskBar, {
+      props: { bar: bar({ pre_approval: true }), timeToX, panelStart, panelEnd },
+    });
+    expect(container.querySelector('.task-bar')).toHaveClass('pre-approval');
+  });
+
+  it('does not mark a normal bar pre-approval', () => {
+    const { container } = render(TaskBar, {
+      props: { bar: bar({ pre_approval: false }), timeToX, panelStart, panelEnd },
+    });
+    expect(container.querySelector('.task-bar')).not.toHaveClass('pre-approval');
+  });
+
   it('writes the drag payload and notifies on dragstart', async () => {
     const onDragStart = vi.fn();
     const setData = vi.fn();
