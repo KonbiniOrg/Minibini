@@ -220,6 +220,9 @@ class ScheduleService:
                 # Job has both `name` (short) and `description` (long). The
                 # board's JobCard uses `name`; reuse it here.
                 'name': getattr(j, 'name', '') or getattr(j, 'description', '') or '',
+                'pre_approval': j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
+                'on_hold': j.on_hold,
+                'hold_reason': j.hold_reason,
                 'accent_color': j.accent_color,
                 'contact_id': j.contact_id,
                 'contact_name': contact_name,

@@ -1633,9 +1633,17 @@ class BoardService:
 
     @staticmethod
     def in_progress_column_jobs():
-        """Job instances in the board's In Progress column, in display order:
-        `in_progress` jobs ordered by `due_date`, minus any whose sub-status
-        routes them to the Unpaid column.
+        """Job instances in the board's In Progress column, in display order.
+
+        The set is work-driven: every `in_progress` job (held or not), plus
+        unheld pre-approval (`draft`/`submitted`) jobs that have at least one
+        task that is assigned AND still planned (pending/in_progress) —
+        deliberate work-ahead someone chose to assign. The pre-approval trigger
+        is self-limiting: the job drops back off both surfaces the moment its
+        assigned tasks complete (its history bars remain in the schedule
+        lanes). `approved` stays excluded — release-to-floor is the gate.
+        Ordered by `due_date`, minus any whose sub-status routes them to the
+        Unpaid column.
 
         This is the single definition of "the In Progress column job set",
         shared by the board column (`get_approved_data`) and the schedule chip
@@ -1645,10 +1653,15 @@ class BoardService:
         guard rather than a live filter. `select_related` covers the related
         fields both callers serialize.
         """
-        from apps.jobs.models import Job
+        from django.db.models import Q
+        from apps.jobs.models import Job, Task
         jobs = Job.objects.filter(
-            status=Job.STATUS_IN_PROGRESS,
-        ).select_related('contact', 'project_manager').order_by('due_date')
+            Q(status=Job.STATUS_IN_PROGRESS)
+            | Q(status__in=[Job.STATUS_DRAFT, Job.STATUS_SUBMITTED],
+                on_hold=False,
+                tasks__assignee__isnull=False,
+                tasks__status__in=[Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS])
+        ).distinct().select_related('contact', 'project_manager').order_by('due_date')
         return [
             job for job in jobs
             if BoardService.compute_sub_status(job)
@@ -1792,6 +1805,11 @@ class BoardService:
             'job_number': job.job_number,
             'name': job.name,
             'status': job.status,
+            # A quote-stage job appearing on a work surface is exceptional —
+            # the flag drives its distinct card/chip treatment.
+            'pre_approval': job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
+            'on_hold': job.on_hold,
+            'hold_reason': job.hold_reason,
             'sub_status': BoardService.compute_sub_status(job),
             'contact_id': job.contact_id,
             'contact_name': str(job.contact) if job.contact else None,

@@ -917,3 +917,119 @@ class OnHoldBoardTest(FixtureTestCase):
 
         pipeline_ids = [j['job_id'] for j in board['pipeline']]
         self.assertNotIn(job.job_id, pipeline_ids)
+
+
+class WorkDrivenInProgressSetTest(FixtureTestCase):
+    """The shared In Progress set (board column + schedule chip strip) is
+    work-driven: in_progress jobs (held or not) plus unheld pre-approval
+    (draft/submitted) jobs with at least one assigned, still-planned task."""
+
+    def setUp(self):
+        super().setUp()
+        Configuration.objects.get_or_create(
+            key='board_closed_retention_days', defaults={'value': '14'})
+        self.contact = Contact.objects.first()
+        self.worker = User.objects.get(username='admin')
+
+    def _make_job(self, status=Job.STATUS_DRAFT, due=None, **kwargs):
+        return Job.objects.create(
+            job_number=f'JOB-TEST-WDS-{Job.objects.count() + 1:04d}',
+            name='WDS Job', status=status, contact=self.contact,
+            due_date=due, **kwargs,
+        )
+
+    def _assigned_task(self, job, status=Task.STATUS_PENDING):
+        return Task.objects.create(
+            name='Site visit', job=job, rate_scheme_id=1,
+            assignee=self.worker, status=status,
+            est_worker_time=timedelta(hours=1),
+        )
+
+    def _set_ids(self):
+        from apps.jobs.services import BoardService
+        return [j.job_id for j in BoardService.in_progress_column_jobs()]
+
+    def test_draft_job_with_assigned_planned_task_included_and_flagged(self):
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        self._assigned_task(job)
+        self.assertIn(job.job_id, self._set_ids())
+        data = BoardService._serialize_job(job)
+        self.assertTrue(data['pre_approval'])
+        self.assertFalse(data['on_hold'])
+
+    def test_submitted_job_with_assigned_task_included(self):
+        job = self._make_job(status=Job.STATUS_DRAFT)
+        job.status = Job.STATUS_SUBMITTED
+        job.save()
+        self._assigned_task(job)
+        self.assertIn(job.job_id, self._set_ids())
+
+    def test_pre_approval_job_drops_out_when_task_completes(self):
+        job = self._make_job()
+        task = self._assigned_task(job)
+        self.assertIn(job.job_id, self._set_ids())
+        task.status = Task.STATUS_IN_PROGRESS
+        task.save()
+        self.assertIn(job.job_id, self._set_ids())
+        task.status = Task.STATUS_COMPLETE
+        task.save()
+        self.assertNotIn(job.job_id, self._set_ids())
+
+    def test_unassigned_pre_approval_task_does_not_enter(self):
+        job = self._make_job()
+        Task.objects.create(
+            name='Unassigned', job=job, rate_scheme_id=1,
+            status=Task.STATUS_PENDING,
+        )
+        self.assertNotIn(job.job_id, self._set_ids())
+
+    def test_approved_job_with_assigned_task_excluded(self):
+        """approved keeps its release-to-floor gate — never in the set."""
+        job = self._make_job()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            job.status = s
+            job.save()
+        self._assigned_task(job)
+        self.assertNotIn(job.job_id, self._set_ids())
+
+    def test_held_pre_approval_job_excluded(self):
+        # A hold can't be placed on a draft via the service, but the filter
+        # guards on the flag regardless.
+        job = self._make_job(on_hold=True, hold_reason='parked')
+        self._assigned_task(job)
+        self.assertNotIn(job.job_id, self._set_ids())
+
+    def test_held_in_progress_job_included_with_flags(self):
+        from apps.jobs.services import BoardService, JobService
+        job = self._make_job()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+            job.status = s
+            job.save()
+        JobService.hold_job(job.pk, 'change order pending')
+        job.refresh_from_db()
+        self.assertIn(job.job_id, self._set_ids())
+        data = BoardService._serialize_job(job)
+        self.assertFalse(data['pre_approval'])
+        self.assertTrue(data['on_hold'])
+        self.assertEqual(data['hold_reason'], 'change order pending')
+
+    def test_pre_approval_job_still_in_pipeline_payload(self):
+        """Both surfaces: the quote card stays in Pipeline while the work
+        card shows in the In Progress set."""
+        from apps.jobs.services import BoardService
+        job = self._make_job()
+        self._assigned_task(job)
+        pipeline_ids = [j['job_id'] for j in BoardService.get_pipeline_data()['jobs']]
+        self.assertIn(job.job_id, pipeline_ids)
+
+    def test_due_date_ordering_preserved(self):
+        from django.utils import timezone as tz
+        early = self._make_job(due=tz.now() + timedelta(days=1))
+        late = self._make_job(due=tz.now() + timedelta(days=9))
+        self._assigned_task(early)
+        self._assigned_task(late)
+        for j in (early, late):
+            pass
+        ids = self._set_ids()
+        self.assertLess(ids.index(early.job_id), ids.index(late.job_id))
