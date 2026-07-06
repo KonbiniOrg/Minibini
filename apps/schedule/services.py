@@ -1,7 +1,8 @@
 """ScheduleService — produces the per-worker time-axis layout for the
 schedule view. No DB writes; only reads Tasks, Bleps, Jobs, Users, and
 Configuration."""
-from dataclasses import replace
+import json
+import logging
 from datetime import datetime, time, timedelta
 from typing import Optional
 
@@ -11,9 +12,11 @@ from django.utils import timezone
 
 from apps.core.models import Configuration
 from apps.schedule.calendar_arithmetic import (
-    DayShape, add_work_time, is_working_day, next_workable_moment,
-    segments_for, shift_working_days, work_minutes_between, workday_start_on,
+    WeekEnvelope, add_work_time, day_segments_clamped, next_workable_moment,
+    segments_for, shift_working_days, work_minutes_between,
 )
+
+logger = logging.getLogger(__name__)
 
 # An unfinished task always forecasts at least this much, so overrun-but-open
 # work (logged >= estimate) and tiny/zero-estimate tasks still show a slot in
@@ -24,8 +27,7 @@ MIN_FORECAST = timedelta(minutes=10)
 # Configuration keys + defaults. Defaults are written into Configuration on
 # first read (mirrors the email_retention_days pattern in apps/core/services.py).
 CONFIG_DEFAULTS = {
-    'schedule_workday_start': '08:00',
-    'schedule_workday_end': '17:00',
+    'schedule_week_envelope': json.dumps(WeekEnvelope.default().to_json()),
     'schedule_task_buffer_minutes': '10',
     'schedule_horizon_days': '3',
 }
@@ -40,23 +42,39 @@ def _read_config(key: str) -> str:
         return default
 
 
-def _parse_hhmm(s: str) -> time:
-    hh, mm = s.split(':')
-    return time(int(hh), int(mm))
+def load_shop_envelope() -> WeekEnvelope:
+    """Read the shop's weekly envelope from Configuration (the configurable
+    work week). Falls back to the built-in default on unparseable data —
+    the schedule page must never 500 over a bad config row."""
+    raw = _read_config('schedule_week_envelope')
+    try:
+        return WeekEnvelope.from_json(json.loads(raw))
+    except (ValueError, TypeError) as exc:
+        logger.warning('Bad schedule_week_envelope config (%s); using default', exc)
+        return WeekEnvelope.default()
 
 
-def load_day_shape() -> DayShape:
-    """Read the schedule's day shape from Configuration. The workday is
-    continuous (no lunch break — that returns with per-worker lunch)."""
-    workday_start = _parse_hhmm(_read_config('schedule_workday_start'))
-    workday_end = _parse_hhmm(_read_config('schedule_workday_end'))
-    buffer_min = int(_read_config('schedule_task_buffer_minutes'))
+def load_buffer_minutes() -> int:
+    try:
+        return int(_read_config('schedule_task_buffer_minutes'))
+    except (TypeError, ValueError):
+        return 10
 
-    return DayShape(
-        workday_start=workday_start,
-        workday_end=workday_end,
-        task_buffer_minutes=buffer_min,
-    )
+
+def resolve_envelope(user, shop_env: WeekEnvelope) -> WeekEnvelope:
+    """A worker uses their own envelope if set, else the shop's. Malformed
+    stored JSON falls back to the shop default (and logs) — never 500s."""
+    raw = getattr(user, 'schedule_envelope', None)
+    if raw is None:
+        return shop_env
+    try:
+        return WeekEnvelope.from_json(raw)
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            'Bad schedule_envelope on user %s (%s); using shop default',
+            user.pk, exc,
+        )
+        return shop_env
 
 
 def load_horizon_days(override: Optional[int] = None) -> int:
@@ -83,40 +101,46 @@ class ScheduleService:
         from apps.jobs.models import Task, Job, Blep
 
         User = get_user_model()
-        shape = load_day_shape()
+        shop_env = load_shop_envelope()
+        buffer_minutes = load_buffer_minutes()
         days_n = load_horizon_days(horizon_days)
 
         # Horizon window: `offset` working days from today gives the window's
         # first day; from there we walk forward including `days_n` WORKING
-        # days. Non-working days (weekends now; holidays later) are still
-        # included for visual continuity — they render as thin strips — but
-        # don't count toward the horizon. A span cap keeps a large N over a
-        # long non-working stretch from running away.
+        # days. Working-day counting and offset stepping use the SHOP
+        # envelope's calendar (deterministic for everyone); a day the shop
+        # skips still renders full-width if any displayed worker works it
+        # (is_working is finalized after the worker set below). Non-working
+        # days are included for visual continuity — they render as thin
+        # strips — but don't count toward the horizon. A span cap keeps a
+        # large N over a long non-working stretch from running away.
         #   offset == 0  → window starts today (default)
         #   offset < 0   → scroll into the past
         #   offset > 0   → scroll into the future
         tz = timezone.get_current_timezone()
         local_now = now.astimezone(tz)
         local_today = local_now.date()
-        start_date = shift_working_days(local_today, offset)
+        start_date = shift_working_days(local_today, offset, shop_env)
         horizon_start = timezone.make_aware(
             datetime.combine(start_date, time(0, 0)), tz,
         )
 
         MAX_SPAN_DAYS = 31
         days = []
+        day_dates = []
         d = start_date
         working_seen = 0
         span = 0
         # Always advance at least one day past the last counted working day so
         # the horizon_end bound sits cleanly after the visible range.
         while working_seen < days_n and span < MAX_SPAN_DAYS:
-            working = is_working_day(d)
+            working = shop_env.is_working_day(d)
             days.append({
                 'date': d.isoformat(),
-                'is_working': working,
+                'is_working': working,  # widened below by worker envelopes
                 'label': d.strftime('%a · %b %d'),
             })
+            day_dates.append(d)
             if working:
                 working_seen += 1
             d += timedelta(days=1)
@@ -198,9 +222,20 @@ class ScheduleService:
             user_id__in=worker_ids,
             start_time__lt=horizon_end,
         ).filter(in_window).select_related('task'))
-        display_shape = ScheduleService._extend_shape_for_window(
-            shape, window_bleps, local_now,
+
+        # Resolve every displayed worker's envelope once; the page axis is
+        # the union of their working hours over the visible days, widened by
+        # the off-hours blep rule. A day the shop skips renders full-width
+        # when any displayed worker works it.
+        worker_envs = {w.pk: resolve_envelope(w, shop_env) for w in workers}
+        axis_start, axis_end = ScheduleService._compute_axis(
+            shop_env, worker_envs.values(), day_dates, window_bleps, local_now,
         )
+        for i, day_date in enumerate(day_dates):
+            if not days[i]['is_working']:
+                days[i]['is_working'] = any(
+                    env.is_working_day(day_date) for env in worker_envs.values()
+                )
 
         # Jobs for the JobChipStrip at top = the job board's In Progress column.
         # Reuse the board's own definition of that set so the two can never
@@ -242,31 +277,47 @@ class ScheduleService:
 
         worker_lanes = []
         for worker in workers:
+            env = worker_envs[worker.pk]
             bars = ScheduleService._build_lane(
-                worker, local_now, shape, display_shape,
+                worker, local_now, env, buffer_minutes,
+                axis_start, axis_end,
                 today_start_local, today_end_local,
             )
             worker_lanes.append({
                 'user': ScheduleService._serialize_user(worker),
+                # The lane's resolved working intervals per visible day —
+                # drives the per-lane off-envelope shading. Parallel to days[].
+                'envelope_by_day': [
+                    [[s.strftime('%H:%M'), e.strftime('%H:%M')]
+                     for s, e in env.intervals_on(day_date)]
+                    for day_date in day_dates
+                ],
                 'bars': bars,
             })
 
+        axis_payload = {
+            'start': axis_start.strftime('%H:%M'),
+            'end': axis_end.strftime('%H:%M'),
+            'task_buffer_minutes': buffer_minutes,
+        }
         return {
             'now': local_now.isoformat(),
             'horizon_start': horizon_start.isoformat(),
             'horizon_end': horizon_end.isoformat(),
             'horizon_days': days_n,
             'offset': offset,
-            # day_shape carries the DISPLAY shape (possibly widened for
-            # off-hours in-progress work). The frontend axis maps from this.
-            # config_workday_* are the configured hours so the frontend can
-            # shade the off-hours margins between configured and display.
+            # `axis` is the page display axis: union of displayed workers'
+            # envelope hours over the visible days, widened for off-hours
+            # logged work. Off-envelope shading is per-lane (envelope_by_day).
+            'axis': axis_payload,
+            # LEGACY alias mirroring `axis` — the SPA still reads day_shape;
+            # removed when the frontend switches to `axis` (Task 19).
             'day_shape': {
-                'workday_start': display_shape.workday_start.strftime('%H:%M'),
-                'workday_end': display_shape.workday_end.strftime('%H:%M'),
-                'task_buffer_minutes': display_shape.task_buffer_minutes,
-                'config_workday_start': shape.workday_start.strftime('%H:%M'),
-                'config_workday_end': shape.workday_end.strftime('%H:%M'),
+                'workday_start': axis_payload['start'],
+                'workday_end': axis_payload['end'],
+                'task_buffer_minutes': buffer_minutes,
+                'config_workday_start': axis_payload['start'],
+                'config_workday_end': axis_payload['end'],
             },
             'days': days,
             'jobs': jobs_payload,
@@ -289,16 +340,20 @@ class ScheduleService:
         }
 
     @staticmethod
-    def _extend_shape_for_window(shape, bleps, local_now):
-        """Return `shape` widened so its workday covers any work — running OR
-        already logged — that fell outside configured hours within the visible
-        window. Without this, off-hours portions of bars get clamped to the
-        configured edges and vanish. A running blep also reserves room for its
-        estimate projection. Earliest start floors to the hour; latest end
-        ceils to the hour. Work that crosses midnight only extends the early
-        edge (its far end is left alone, so one all-nighter can't blow the axis
-        open). Returns `shape` unchanged when all work fell inside configured
-        hours."""
+    def _compute_axis(shop_env, worker_envs, day_dates, bleps, local_now):
+        """The page display axis (rule 2 of the overnight-compression rules):
+        the union of the displayed workers' envelope hours across the visible
+        days, widened (floor/ceil to the hour) for any work — running OR
+        already logged — that fell outside those hours in the window. A
+        running blep also reserves room for its estimate projection. Work
+        that crosses midnight never drags the axis (its off-axis remainder
+        clips with a zigzag instead — rule 3, day_segments_clamped). Returns
+        an (axis_start, axis_end) time pair.
+
+        Baseline fallbacks: with no workers (or all-off envelopes on the
+        visible days) the shop's weekly hours anchor the axis; a fully-off
+        shop falls back to 08:00–17:00 so the page always has an axis.
+        """
         def floor_hour(t):
             return time(t.hour, 0)
 
@@ -311,8 +366,25 @@ class ScheduleService:
                 return time(23, 59)
             return time(t.hour + 1, 0)
 
-        earliest = shape.workday_start
-        latest = shape.workday_end
+        # Envelope union over the visible days.
+        starts, ends = [], []
+        envs = list(worker_envs) or [shop_env]
+        for env in envs:
+            for d in day_dates:
+                for int_start, int_end in env.intervals_on(d):
+                    starts.append(int_start)
+                    ends.append(int_end)
+        if not starts:
+            # Nothing works these days — anchor on the shop's weekly hours.
+            for intervals in shop_env.days:
+                for int_start, int_end in intervals:
+                    starts.append(int_start)
+                    ends.append(int_end)
+        base_start = min(starts) if starts else time(8, 0)
+        base_end = max(ends) if ends else time(17, 0)
+
+        earliest = base_start
+        latest = base_end
         for b in bleps:
             start = b.start_time.astimezone(local_now.tzinfo)
             running = b.end_time is None
@@ -334,14 +406,12 @@ class ScheduleService:
                     latest = proj_end.time()
 
         # Only round (and thus widen) when work actually fell outside the
-        # configured hours. Rounding the unchanged config bounds would invent
-        # a spurious off-hours margin (e.g. 08:30 floored to 08:00 with no
+        # envelope-union hours. Rounding the unchanged bounds would invent a
+        # spurious off-hours margin (e.g. 08:30 floored to 08:00 with no
         # early work), shading every day's start grey for no reason.
-        new_start = floor_hour(earliest) if earliest < shape.workday_start else shape.workday_start
-        new_end = ceil_hour(latest) if latest > shape.workday_end else shape.workday_end
-        if new_start == shape.workday_start and new_end == shape.workday_end:
-            return shape
-        return replace(shape, workday_start=new_start, workday_end=new_end)
+        axis_start = floor_hour(earliest) if earliest < base_start else base_start
+        axis_end = ceil_hour(latest) if latest > base_end else base_end
+        return axis_start, axis_end
 
     @staticmethod
     def _group_bleps(bleps):
@@ -364,16 +434,15 @@ class ScheduleService:
         return groups
 
     @staticmethod
-    def _build_lane(worker, local_now, shape, display_shape,
-                    window_start, window_end):
+    def _build_lane(worker, local_now, env, buffer_minutes,
+                    axis_start, axis_end, window_start, window_end):
         """Walk the worker's queue and emit bars in order.
 
-        `shape` is the configured workday — it drives the cursor and forecast
-        cascade so pending work never lands off-hours. `display_shape` is the
-        (possibly widened) visible axis — active and historical bars are
-        positioned with it so in-progress off-hours work renders. They are
-        the same object unless an in-progress task runs outside configured
-        hours.
+        `env` is THIS worker's resolved weekly envelope — it drives the
+        cursor and forecast cascade so pending work never lands outside
+        their working intervals. `axis_start`/`axis_end` are the page
+        display axis (times); actual bars clamp to it with clip flags
+        (day_segments_clamped) and are never split by envelope gaps.
 
         `window_start` / `window_end` bound the visible horizon; completed
         tasks are included when a blep ended inside that window. See
@@ -436,12 +505,11 @@ class ScheduleService:
 
         # The cascade always anchors to "now" (today), independent of the
         # scroll window — pending work is planned from the present forward.
-        local_today = local_now.date()
-        now_floor = next_workable_moment(
-            max(local_now, workday_start_on(local_today, shape)),
-            shape,
-        )
-        cursor = now_floor
+        # A worker whose envelope has no working time at all never forecasts
+        # (their actuals still render); next_workable_moment raises for that
+        # envelope, so guard it once here.
+        can_forecast = any(env.days)
+        cursor = next_workable_moment(local_now, env) if can_forecast else None
         bars = []
 
         # Past = dark `actual` pieces (one per contiguous blep session); future
@@ -465,7 +533,7 @@ class ScheduleService:
             # session holding an open blep ends at now and is flagged running.
             for group in ScheduleService._group_bleps(bleps):
                 bars.append(ScheduleService._emit_actual(
-                    task, group, local_now, display_shape, total_elapsed,
+                    task, group, local_now, axis_start, axis_end, total_elapsed,
                 ))
 
             # Future: the assignee's own remaining estimate, floored so an
@@ -474,11 +542,11 @@ class ScheduleService:
             # held job's task (reached here via the blep-history paths) shows
             # its actuals but never a forecast, and a completed task emits
             # actuals only.
-            if is_assignee and task.pk in planned_ids:
-                worked = ScheduleService._elapsed_worktime(bleps, local_now, shape)
+            if is_assignee and task.pk in planned_ids and can_forecast:
+                worked = ScheduleService._elapsed_worktime(bleps, local_now, env)
                 remaining = (task.est_worker_time or timedelta(0)) - worked
                 forecast_bars, cursor = ScheduleService._emit_forecast(
-                    task, cursor, shape,
+                    task, cursor, env, buffer_minutes,
                     duration=max(remaining, MIN_FORECAST),
                     elapsed_minutes=total_elapsed,
                 )
@@ -487,49 +555,55 @@ class ScheduleService:
         return bars
 
     @staticmethod
-    def _elapsed_worktime(bleps, local_now, shape):
-        """Total work-time the worker has logged across `bleps`."""
+    def _elapsed_worktime(bleps, local_now, env):
+        """Total work-time the worker has logged across `bleps` (counted
+        against their own envelope)."""
         total = timedelta(0)
         for b in bleps:
             bs = b.start_time.astimezone(local_now.tzinfo)
             be = (b.end_time or local_now).astimezone(local_now.tzinfo)
-            total += timedelta(minutes=work_minutes_between(bs, be, shape))
+            total += timedelta(minutes=work_minutes_between(bs, be, env))
         return total
 
     @staticmethod
-    def _emit_forecast(task, cursor, shape, duration=None, elapsed_minutes=0):
+    def _emit_forecast(task, cursor, env, buffer_minutes,
+                       duration=None, elapsed_minutes=0):
         """Light forecast bar from `cursor`, plus the advanced cursor (end +
         buffer). `duration` overrides the task's full estimate (the remaining
         time on a partly-worked task). Returns (bars, new_cursor); with no
         positive duration there's no bar, but the cursor still steps past the
-        buffer."""
+        buffer. Forecast segments split at envelope gaps as well as
+        overnights — same zigzag mechanism."""
         est = duration if duration is not None else task.est_worker_time
-        start = next_workable_moment(cursor, shape)
-        buf = timedelta(minutes=shape.task_buffer_minutes)
+        start = next_workable_moment(cursor, env)
+        buf = timedelta(minutes=buffer_minutes)
         if not est or est <= timedelta(0):
-            return [], next_workable_moment(start + buf, shape)
-        end = add_work_time(start, est, shape)
-        segments = segments_for(start, end, shape)
+            return [], next_workable_moment(start + buf, env)
+        end = add_work_time(start, est, env)
+        segments = [
+            {'start': s, 'end': e, 'clipped_left': False, 'clipped_right': False}
+            for s, e in segments_for(start, end, env)
+        ]
         bar = ScheduleService._build_bar(
             task=task, kind='forecast', segments=segments,
             elapsed_minutes=elapsed_minutes, is_running=False,
         )
-        return [bar], next_workable_moment(end + buf, shape)
+        return [bar], next_workable_moment(end + buf, env)
 
     @staticmethod
-    def _emit_actual(task, group, local_now, pshape, elapsed_minutes):
+    def _emit_actual(task, group, local_now, axis_start, axis_end,
+                     elapsed_minutes):
         """A dark `actual` bar for one contiguous work session (immutable past
         work). The session holding an open blep ends at now and is flagged
-        running. `pshape` is the display axis (widened for off-hours work). A
-        zero-width session — a blep viewed the instant it started — still
-        renders a one-minute sliver so it's visible."""
+        running. Actuals split only at midnight and clamp to the display axis
+        with clip flags — never split or clipped by envelope gaps; a fully
+        off-axis or zero-width session still renders a one-minute sliver
+        (day_segments_clamped's visibility rule)."""
         start = group[0].start_time.astimezone(local_now.tzinfo)
         is_running = group[-1].end_time is None
         end_dt = local_now if is_running else group[-1].end_time
         end = end_dt.astimezone(local_now.tzinfo)
-        segments = segments_for(start, end, pshape)
-        if not segments:
-            segments = [(start, start + timedelta(minutes=1))]
+        segments = day_segments_clamped(start, end, axis_start, axis_end)
         return ScheduleService._build_bar(
             task=task, kind='actual', segments=segments,
             elapsed_minutes=elapsed_minutes, is_running=is_running,
@@ -538,22 +612,27 @@ class ScheduleService:
     @staticmethod
     def _build_bar(*, task, kind, segments, elapsed_minutes, is_running):
         """Assemble the bar dict. Each bar is a single solid colour by kind
-        (`forecast` light, `actual` dark); segments carry only their interval
-        and the zigzag continuation flags."""
+        (`forecast` light, `actual` dark); segments carry their interval and
+        the zigzag continuation flags. `segments` is a list of dicts with
+        start/end datetimes and clipped_left/right booleans; a segment
+        continues when it was clipped at the axis edge OR has a sibling on
+        that side (multi-piece splits)."""
         est_minutes = int(
             (task.est_worker_time or timedelta(0)).total_seconds() // 60
         )
         seg_dicts = []
-        for seg_start, seg_end in segments:
+        for seg in segments:
             seg_dicts.append({
-                'start': seg_start.isoformat(),
-                'end': seg_end.isoformat(),
-                'continues_left': False,
-                'continues_right': False,
+                'start': seg['start'].isoformat(),
+                'end': seg['end'].isoformat(),
+                'continues_left': seg.get('clipped_left', False),
+                'continues_right': seg.get('clipped_right', False),
             })
         for i, seg in enumerate(seg_dicts):
-            seg['continues_left'] = i > 0
-            seg['continues_right'] = i < len(seg_dicts) - 1
+            seg['continues_left'] = seg['continues_left'] or i > 0
+            seg['continues_right'] = (
+                seg['continues_right'] or i < len(seg_dicts) - 1
+            )
 
         from apps.jobs.models import Job
         return {

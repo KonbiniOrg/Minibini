@@ -1,7 +1,7 @@
 """Pure-function calendar arithmetic for the schedule view.
 
-No Django model imports. Inputs are dates / times / datetimes and a DayShape;
-outputs are datetimes or lists of (datetime, datetime) tuples. All math is
+No Django model imports. Inputs are dates / times / datetimes and a
+WeekEnvelope; outputs are datetimes or lists of segments. All math is
 local to the timezone of the input datetimes — callers are responsible for
 ensuring timezone consistency.
 """
@@ -125,143 +125,187 @@ class WeekEnvelope:
         return bool(self.days[d.weekday()])
 
 
-@dataclass(frozen=True)
-class DayShape:
-    workday_start: time
-    workday_end: time
-    task_buffer_minutes: int
-
-    @classmethod
-    def default(cls):
-        return cls(
-            workday_start=time(8, 0),
-            workday_end=time(17, 0),
-            task_buffer_minutes=10,
-        )
-
-
 def _combine_local(d: date, t: time) -> datetime:
     """Combine a date and a time in the current Django timezone."""
     naive = datetime.combine(d, t)
     return _tz.make_aware(naive, _tz.get_current_timezone())
 
 
-def is_working_day(d: date) -> bool:
-    """True if `d` is a working day. v1: Mon–Fri only (hardcoded weekend)."""
-    return d.weekday() < 5
+def is_working_day(d: date, env: WeekEnvelope) -> bool:
+    """True if the envelope has any working interval on `d`."""
+    return env.is_working_day(d)
 
 
-def shift_working_days(d: date, n: int) -> date:
-    """Return the date `n` working days from `d`. n > 0 moves forward, n < 0
-    moves backward, n == 0 returns `d` unchanged. Non-working days are
-    stepped over without being counted."""
-    if n == 0:
+def shift_working_days(d: date, n: int, env: WeekEnvelope) -> date:
+    """Return the date `n` working days from `d` under `env`. n > 0 moves
+    forward, n < 0 moves backward, n == 0 returns `d` unchanged. Non-working
+    days are stepped over without being counted. An all-off envelope returns
+    `d` unchanged (there is nothing to count)."""
+    if n == 0 or not any(env.days):
         return d
     step = 1 if n > 0 else -1
     remaining = abs(n)
     cur = d
     while remaining > 0:
         cur = cur + timedelta(days=step)
-        if is_working_day(cur):
+        if env.is_working_day(cur):
             remaining -= 1
     return cur
 
 
-def workday_start_on(d: date, shape: DayShape) -> datetime:
-    return _combine_local(d, shape.workday_start)
+def next_workable_moment(dt: datetime, env: WeekEnvelope) -> datetime:
+    """Return the next moment at or after `dt` when work is allowed under
+    `env` — skipping days off, time before/after the day's intervals, and
+    the gaps (breaks) between intervals.
 
-
-def workday_end_on(d: date, shape: DayShape) -> datetime:
-    return _combine_local(d, shape.workday_end)
-
-
-def next_workable_moment(dt: datetime, shape: DayShape) -> datetime:
-    """Return the next moment at or after `dt` when work is allowed.
-
-    Skips: weekends, time before workday_start, time after workday_end. The
-    workday is continuous (no lunch break — that returns with per-worker
-    lunch later).
+    Raises ValueError for an all-off envelope (there is no workable moment;
+    callers must guard — the schedule simply never forecasts such a worker).
     """
+    if not any(env.days):
+        raise ValueError('Envelope has no working time on any day.')
     while True:
         d = dt.date()
-        if not is_working_day(d):
-            next_d = d + timedelta(days=1)
-            while not is_working_day(next_d):
-                next_d += timedelta(days=1)
-            dt = workday_start_on(next_d, shape)
-            continue
+        for start_t, end_t in env.intervals_on(d):
+            int_start = _combine_local(d, start_t)
+            int_end = _combine_local(d, end_t)
+            if dt < int_start:
+                return int_start
+            if dt < int_end:
+                return dt
+        # Past the last interval (or a day off) — start of the next day.
+        dt = _combine_local(d + timedelta(days=1), time(0, 0))
 
-        wd_start = workday_start_on(d, shape)
-        wd_end = workday_end_on(d, shape)
 
-        if dt < wd_start:
-            dt = wd_start
-            continue
-        if dt >= wd_end:
-            next_d = d + timedelta(days=1)
-            while not is_working_day(next_d):
-                next_d += timedelta(days=1)
-            dt = workday_start_on(next_d, shape)
-            continue
-        return dt
+def _interval_end_at(dt: datetime, env: WeekEnvelope) -> datetime:
+    """End of the envelope interval containing `dt`. `dt` must be a workable
+    moment (as returned by next_workable_moment)."""
+    d = dt.date()
+    for start_t, end_t in env.intervals_on(d):
+        if _combine_local(d, start_t) <= dt < _combine_local(d, end_t):
+            return _combine_local(d, end_t)
+    raise ValueError(f'{dt} is not inside a working interval.')
 
 
 def add_work_time(
-    start: datetime, work_duration: timedelta, shape: DayShape,
+    start: datetime, work_duration: timedelta, env: WeekEnvelope,
 ) -> datetime:
-    """Add `work_duration` of work-time (skipping lunch/overnight/weekend)
+    """Add `work_duration` of work-time (skipping breaks/overnights/days off)
     to `start` and return the resulting wall-clock datetime.
 
     If `start` is not in a workable moment, it is first advanced to the
     next workable moment, then the duration is added.
     """
-    cursor = next_workable_moment(start, shape)
+    cursor = next_workable_moment(start, env)
     remaining = work_duration
     while remaining > timedelta(0):
-        d = cursor.date()
-        wd_end = workday_end_on(d, shape)
-
-        # Work time available before end of day (continuous workday).
-        available = wd_end - cursor
+        int_end = _interval_end_at(cursor, env)
+        available = int_end - cursor
         if remaining <= available:
             return cursor + remaining
-
         remaining -= available
-        cursor = next_workable_moment(wd_end, shape)
+        cursor = next_workable_moment(int_end, env)
     return cursor
 
 
 def segments_for(
-    start: datetime, end: datetime, shape: DayShape,
+    start: datetime, end: datetime, env: WeekEnvelope,
 ) -> list:
-    """Split [start, end] at every overnight / non-working boundary.
+    """Split [start, end] at every envelope boundary — overnight, day off,
+    and the gaps between a day's intervals.
 
     Returns a list of (seg_start, seg_end) tuples, each within a single
-    working day. Returns [] if start >= end.
+    working interval. Returns [] if start >= end. Used for FORECAST bars —
+    actuals use day_segments_clamped, which never splits at gaps.
     """
     if start >= end:
         return []
     segments = []
-    cursor = next_workable_moment(start, shape)
+    cursor = next_workable_moment(start, env)
     while cursor < end:
-        d = cursor.date()
-        wd_end = workday_end_on(d, shape)
-
-        seg_end = min(end, wd_end)
+        int_end = _interval_end_at(cursor, env)
+        seg_end = min(end, int_end)
         if seg_end > cursor:
             segments.append((cursor, seg_end))
-
         if seg_end >= end:
             break
-        cursor = next_workable_moment(wd_end, shape)
+        cursor = next_workable_moment(int_end, env)
     return segments
 
 
-def work_minutes_between(a: datetime, b: datetime, shape: DayShape) -> int:
+def work_minutes_between(a: datetime, b: datetime, env: WeekEnvelope) -> int:
     """Total work-time minutes between `a` and `b`. Zero if b <= a."""
     if b <= a:
         return 0
     total = timedelta(0)
-    for seg_start, seg_end in segments_for(a, b, shape):
+    for seg_start, seg_end in segments_for(a, b, env):
         total += seg_end - seg_start
     return int(total.total_seconds() // 60)
+
+
+def day_segments_clamped(
+    start: datetime, end: datetime, axis_start: time, axis_end: time,
+) -> list:
+    """Segment an ACTUAL (logged) interval for display: split ONLY at local
+    midnight, clamp each piece to the display axis hours, and flag what got
+    cut. Deliberately envelope-blind — logged work draws straight over
+    breaks; the envelope is where work is planned, not a claim about where
+    it happened.
+
+    Returns a list of dicts:
+        {'start': dt, 'end': dt, 'clipped_left': bool, 'clipped_right': bool}
+
+    A piece entirely outside the axis is dropped. If NOTHING survives, one
+    one-minute sliver is returned so the work stays visible: at `start` when
+    it lies inside the axis (a just-started blep), otherwise hugging the
+    axis edge nearest the work with the matching clipped flag.
+    """
+    if end < start:
+        end = start
+    # Split at local midnights.
+    pieces = []
+    cursor = start
+    while True:
+        next_midnight = _combine_local(cursor.date() + timedelta(days=1), time(0, 0))
+        piece_end = min(end, next_midnight)
+        pieces.append((cursor, piece_end))
+        if piece_end >= end:
+            break
+        cursor = piece_end
+
+    out = []
+    for piece_start, piece_end in pieces:
+        d = piece_start.date()
+        lo = _combine_local(d, axis_start)
+        hi = _combine_local(d, axis_end)
+        seg_start = max(piece_start, lo)
+        seg_end = min(piece_end, hi)
+        if seg_end > seg_start:
+            out.append({
+                'start': seg_start,
+                'end': seg_end,
+                'clipped_left': piece_start < lo,
+                'clipped_right': piece_end > hi,
+            })
+    if not out:
+        # Visibility sliver — see docstring.
+        first_start = pieces[0][0]
+        d = first_start.date()
+        lo = _combine_local(d, axis_start)
+        hi = _combine_local(d, axis_end)
+        if lo <= first_start < hi:
+            out.append({
+                'start': first_start,
+                'end': first_start + timedelta(minutes=1),
+                'clipped_left': False, 'clipped_right': False,
+            })
+        elif first_start >= hi:
+            out.append({
+                'start': hi - timedelta(minutes=1), 'end': hi,
+                'clipped_left': False, 'clipped_right': True,
+            })
+        else:
+            out.append({
+                'start': lo, 'end': lo + timedelta(minutes=1),
+                'clipped_left': True, 'clipped_right': False,
+            })
+    return out

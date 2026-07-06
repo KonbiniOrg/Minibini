@@ -10,9 +10,12 @@ from apps.jobs.services import JobService
 from apps.schedule.services import (
     CONFIG_DEFAULTS,
     ScheduleService,
-    load_day_shape,
+    load_buffer_minutes,
     load_horizon_days,
+    load_shop_envelope,
+    resolve_envelope,
 )
+from apps.schedule.calendar_arithmetic import WeekEnvelope
 
 
 def date_at_weekday(weekday_target):
@@ -58,21 +61,52 @@ def _seed_user_with_pending_task(est_minutes=120, name='J-101 fab',
     return user, task
 
 
-class LoadDayShapeTest(BaseTestCase):
+class LoadShopEnvelopeTest(BaseTestCase):
 
     def test_defaults_written_on_first_read(self):
         Configuration.objects.filter(key__startswith='schedule_').delete()
-        shape = load_day_shape()
-        # Trigger the horizon read too so every default lands.
+        env = load_shop_envelope()
+        # Trigger the other reads too so every default lands.
+        load_buffer_minutes()
         load_horizon_days()
-        self.assertEqual(shape.workday_start, time(8, 0))
-        self.assertEqual(shape.workday_end, time(17, 0))
-        self.assertEqual(shape.task_buffer_minutes, 10)
+        self.assertEqual(env, WeekEnvelope.default())
+        self.assertEqual(load_buffer_minutes(), 10)
         for key in CONFIG_DEFAULTS:
             self.assertTrue(
                 Configuration.objects.filter(key=key).exists(),
                 f"{key} not persisted",
             )
+
+    def test_bad_config_falls_back_to_default(self):
+        Configuration.objects.update_or_create(
+            key='schedule_week_envelope', defaults={'value': 'not-json{'})
+        self.assertEqual(load_shop_envelope(), WeekEnvelope.default())
+
+
+class ResolveEnvelopeTest(BaseTestCase):
+
+    def _worker(self, envelope=None):
+        u = User.objects.create_user(username=f'res_env_{User.objects.count()}',
+                                     password='x')
+        u.schedule_envelope = envelope
+        u.save()
+        return u
+
+    def test_null_uses_shop_default(self):
+        shop = WeekEnvelope.default()
+        self.assertIs(resolve_envelope(self._worker(None), shop), shop)
+
+    def test_own_envelope_wins(self):
+        shop = WeekEnvelope.default()
+        own = {k: [] for k in ('tue', 'wed', 'thu', 'fri', 'sat', 'sun')}
+        own['mon'] = [['07:00', '15:00']]
+        env = resolve_envelope(self._worker(own), shop)
+        self.assertEqual(env.days[0], ((time(7, 0), time(15, 0)),))
+
+    def test_malformed_falls_back_to_shop(self):
+        shop = WeekEnvelope.default()
+        env = resolve_envelope(self._worker({'mon': 'garbage'}), shop)
+        self.assertIs(env, shop)
 
 
 class LoadHorizonDaysTest(BaseTestCase):
@@ -183,7 +217,7 @@ class HorizonOffsetTest(BaseTestCase):
         now = local_dt(d, 9, 0)
 
         data = ScheduleService.get_schedule(now=now, horizon_days=2, offset=2)
-        expected_start = shift_working_days(d, 2)  # Wed
+        expected_start = shift_working_days(d, 2, WeekEnvelope.default())  # Wed
         self.assertEqual(data['days'][0]['date'], expected_start.isoformat())
         self.assertEqual(data['offset'], 2)
 
@@ -195,7 +229,7 @@ class HorizonOffsetTest(BaseTestCase):
         now = local_dt(d, 9, 0)
 
         data = ScheduleService.get_schedule(now=now, horizon_days=1, offset=-2)
-        expected_start = shift_working_days(d, -2)  # Monday
+        expected_start = shift_working_days(d, -2, WeekEnvelope.default())  # Monday
         self.assertEqual(data['days'][0]['date'], expected_start.isoformat())
 
 
@@ -781,13 +815,14 @@ class YesterdayCompletedExcludedTest(BaseTestCase):
 
     def test_yesterday_completed_not_in_schedule(self):
         from apps.schedule.calendar_arithmetic import is_working_day as _iwd
+        _default_env = WeekEnvelope.default()
 
         user, task = _seed_user_with_pending_task(est_minutes=60)
         task.status = Task.STATUS_IN_PROGRESS; task.save()
         task.status = Task.STATUS_COMPLETE; task.save()
         d_today = date_at_weekday(2)
         d_yesterday = d_today - timedelta(days=1)
-        while not _iwd(d_yesterday):
+        while not _iwd(d_yesterday, _default_env):
             d_yesterday -= timedelta(days=1)
         b_start = local_dt(d_yesterday, 9, 0)
         b_end = b_start + timedelta(minutes=60)
@@ -1036,3 +1071,186 @@ class CompletedLateWorkTest(BaseTestCase):
         self.assertEqual(bar['elapsed_minutes'], 75)
         actual_end = datetime.fromisoformat(bar['segments'][-1]['end'])
         self.assertEqual((actual_end.hour, actual_end.minute), (23, 58))
+
+
+def _week_json(**overrides):
+    data = {k: [['08:00', '17:00']] for k in ('mon', 'tue', 'wed', 'thu', 'fri')}
+    data['sat'] = []
+    data['sun'] = []
+    data.update(overrides)
+    return data
+
+
+class PerWorkerEnvelopeTest(BaseTestCase):
+    """Each worker's forecast cascade runs on THEIR envelope; the page axis
+    is the union; day columns go working when any displayed worker works
+    them; lanes carry envelope_by_day."""
+
+    def _seed(self, username, envelope=None, est_minutes=120, queue=1, job=None):
+        user, _ = User.objects.get_or_create(username=username)
+        if envelope is not None:
+            user.schedule_envelope = envelope
+            user.save()
+        contact = Contact.objects.first()
+        if job is None:
+            job = JobService.create_job(contact=contact, description='Env job')
+            for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
+                job.status = s
+                job.save()
+        rs = RateScheme.objects.first()
+        task = Task.objects.create(
+            job=job, assignee=user, rate_scheme=rs,
+            name=f'{username} task', est_worker_time=timedelta(minutes=est_minutes),
+            worker_queue=queue, status=Task.STATUS_PENDING,
+        )
+        return user, task
+
+    def test_two_workers_cascade_on_their_own_envelopes(self):
+        early = _week_json(**{k: [['07:00', '15:00']] for k in ('mon', 'tue', 'wed', 'thu', 'fri')})
+        u_early, t_early = self._seed('env_early', early, est_minutes=60)
+        u_shop, t_shop = self._seed('env_shop', None, est_minutes=60)
+        d = date_at_weekday(2)  # a Wednesday
+        now = local_dt(d, 6, 0)  # before both starts
+
+        data = ScheduleService.get_schedule(now=now)
+        lanes = {w['user']['id']: w for w in data['workers']}
+        e_start = datetime.fromisoformat(
+            lanes[u_early.pk]['bars'][0]['segments'][0]['start'])
+        s_start = datetime.fromisoformat(
+            lanes[u_shop.pk]['bars'][0]['segments'][0]['start'])
+        self.assertEqual((e_start.hour, e_start.minute), (7, 0))
+        self.assertEqual((s_start.hour, s_start.minute), (8, 0))
+        # Axis spans the union: starts at the earliest worker's 07:00.
+        self.assertEqual(data['axis']['start'], '07:00')
+        self.assertEqual(data['axis']['end'], '17:00')
+
+    def test_forecast_splits_at_envelope_gap(self):
+        lunch = _week_json(**{k: [['08:00', '12:00'], ['12:30', '17:00']]
+                              for k in ('mon', 'tue', 'wed', 'thu', 'fri')})
+        user, task = self._seed('env_lunch', lunch, est_minutes=120)
+        d = date_at_weekday(2)
+        now = local_dt(d, 11, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        bar = next(b for b in lane['bars'] if b['task_id'] == task.pk)
+        self.assertEqual(len(bar['segments']), 2)
+        self.assertTrue(bar['segments'][0]['continues_right'])
+        self.assertTrue(bar['segments'][1]['continues_left'])
+        gap_end = datetime.fromisoformat(bar['segments'][0]['end'])
+        resume = datetime.fromisoformat(bar['segments'][1]['start'])
+        self.assertEqual((gap_end.hour, gap_end.minute), (12, 0))
+        self.assertEqual((resume.hour, resume.minute), (12, 30))
+
+    def test_actual_through_gap_stays_whole(self):
+        lunch = _week_json(**{k: [['08:00', '12:00'], ['12:30', '17:00']]
+                              for k in ('mon', 'tue', 'wed', 'thu', 'fri')})
+        user, task = self._seed('env_blepgap', lunch, est_minutes=240)
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        # Blepped straight through the nominal lunch.
+        Blep.objects.create(
+            user=user, task=task,
+            start_time=local_dt(d, 11, 0), end_time=local_dt(d, 14, 0),
+        )
+        now = local_dt(d, 15, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        actual = next(b for b in lane['bars']
+                      if b['task_id'] == task.pk and b['kind'] == 'actual')
+        self.assertEqual(len(actual['segments']), 1,
+                         'logged work must not split at the envelope gap')
+
+    def test_saturday_worker_gets_working_saturday_column(self):
+        sat_env = _week_json(sat=[['09:00', '13:00']])
+        user, task = self._seed('env_sat', sat_env, est_minutes=60)
+        # Window starting Friday with 2 working days spans Sat (worker-working).
+        d = dj_tz.localdate()
+        while d.weekday() != 4:  # Friday
+            d += timedelta(days=1)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now, horizon_days=2)
+        by_date = {day['date']: day for day in data['days']}
+        saturday = (d + timedelta(days=1)).isoformat()
+        self.assertIn(saturday, by_date)
+        self.assertTrue(by_date[saturday]['is_working'],
+                        'a displayed Saturday worker makes Saturday a working column')
+
+    def test_envelope_by_day_parallel_to_days(self):
+        lunch = _week_json(**{k: [['08:00', '12:00'], ['12:30', '17:00']]
+                              for k in ('mon', 'tue', 'wed', 'thu', 'fri')})
+        user, task = self._seed('env_bd', lunch, est_minutes=60)
+        d = date_at_weekday(2)
+        now = local_dt(d, 9, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        self.assertEqual(len(lane['envelope_by_day']), len(data['days']))
+        first_working = next(
+            i for i, day in enumerate(data['days']) if day['is_working'])
+        self.assertEqual(
+            lane['envelope_by_day'][first_working],
+            [['08:00', '12:00'], ['12:30', '17:00']],
+        )
+
+    def test_all_off_worker_shows_actuals_but_never_forecasts(self):
+        none_env = {k: [] for k in ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')}
+        user, task = self._seed('env_alloff', none_env, est_minutes=60)
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        Blep.objects.create(
+            user=user, task=task,
+            start_time=local_dt(d, 9, 0), end_time=local_dt(d, 10, 0),
+        )
+        now = local_dt(d, 11, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        kinds = {b['kind'] for b in lane['bars'] if b['task_id'] == task.pk}
+        self.assertEqual(kinds, {'actual'})
+
+    def test_axis_payload_present_with_buffer(self):
+        user, task = self._seed('env_axis', None, est_minutes=60)
+        now = local_dt(date_at_weekday(2), 9, 0)
+        data = ScheduleService.get_schedule(now=now)
+        self.assertEqual(
+            set(data['axis'].keys()), {'start', 'end', 'task_buffer_minutes'})
+        # Legacy alias still mirrors the axis until the SPA switches over.
+        self.assertEqual(data['day_shape']['workday_start'], data['axis']['start'])
+        self.assertEqual(data['day_shape']['workday_end'], data['axis']['end'])
+
+
+class MidnightCrosserClipsTest(BaseTestCase):
+    """Rule 3: work the axis doesn't cover clips with a continues flag
+    instead of widening the axis or degenerating to a sliver."""
+
+    def test_midnight_crossing_blep_clips_with_continues_right(self):
+        user, task = _seed_user_with_pending_task(
+            est_minutes=60, name='AllNight', username='allnight_user',
+        )
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        d = date_at_weekday(2)
+        # 16:00 -> 01:00 next day: crosses midnight.
+        Blep.objects.create(
+            user=user, task=task,
+            start_time=local_dt(d, 16, 0),
+            end_time=local_dt(d + timedelta(days=1), 1, 0),
+        )
+        now = local_dt(d + timedelta(days=1), 9, 0)
+
+        data = ScheduleService.get_schedule(now=now)
+        lane = next(w for w in data['workers'] if w['user']['id'] == user.pk)
+        actual = next(b for b in lane['bars']
+                      if b['task_id'] == task.pk and b['kind'] == 'actual')
+        # The pre-midnight piece renders 16:00 up to the axis edge and is
+        # flagged as continuing right; the post-midnight remainder lives in
+        # the compressed overnight (clipped away or its own clipped piece) —
+        # crucially, the axis did NOT stretch to 01:00.
+        first = actual['segments'][0]
+        self.assertEqual(datetime.fromisoformat(first['start']), local_dt(d, 16, 0))
+        self.assertTrue(first['continues_right'])
+        self.assertNotEqual(data['axis']['end'], '01:00')
+        # Elapsed reports the true 9h logged.
+        self.assertEqual(actual['elapsed_minutes'], 540)
