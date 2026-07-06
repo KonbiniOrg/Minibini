@@ -1484,6 +1484,12 @@ def derive_atoms(c):
                 'released_qty':       '0.00',
                 'po_line_item':        None,
             })
+            # The Material IS this line's crystallized atom — record the
+            # claim exactly as _emit_fee does for fee lines. Without it,
+            # accepting a still-open estimate in-app re-crystallizes the
+            # bare line as a Fee, duplicating the material.
+            _emit_estimate_line_item_source(
+                c, li['line_item_pk'], 'material', mat_pk)
 
         # --- 3. Deliverables: finished-good lines (or a Fake Deliverable) --
         _build_deliverables(c, job_pk, deliverable_lines)
