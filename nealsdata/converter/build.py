@@ -162,6 +162,13 @@ def build_configuration(c):
         # canonical list. ('Days' inputs convert to 'hours' × 8 at emit time;
         # see parsing.resolve_li_units_and_qty.)
         ('units_list',               json.dumps(['none', 'ea', 'hours', 'min', 'sheets', 'sq ft', 'ft', 'yd', 'm', 'lbs', 'kg', 'gal', 'qt', 'L', 'bd ft', 'ln ft'])),
+        # The shop's weekly schedule envelope, matching the generator's
+        # synthetic workday (_WORKDAY_START/_WORKDAY_END: Mon–Fri 09–17).
+        ('schedule_week_envelope', json.dumps({
+            'mon': [['09:00', '17:00']], 'tue': [['09:00', '17:00']],
+            'wed': [['09:00', '17:00']], 'thu': [['09:00', '17:00']],
+            'fri': [['09:00', '17:00']], 'sat': [], 'sun': [],
+        })),
     ]
     for key, value in config:
         c.add_fixture('core.configuration', key, {'value': value})
