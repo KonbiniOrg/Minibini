@@ -97,10 +97,11 @@ class DirectTaskCreateServiceTest(TestCase):
         self.assertIsNotNone(task.pk)
 
     def test_create_direct_rejected_on_on_hold_job(self):
-        """TaskService.create_direct raises ValidationError on an on_hold job."""
+        """TaskService.create_direct raises ValidationError on a held job."""
         job = Job.objects.create(
             job_number='DT-SVC-hold', name='On Hold Job',
-            contact=self.contact, status=Job.STATUS_ON_HOLD,
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            on_hold=True, hold_reason='paused',
         )
         with self.assertRaises(ValidationError):
             TaskService.create_direct(

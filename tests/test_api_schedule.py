@@ -71,16 +71,18 @@ class ScheduleOnHoldExclusionTest(BaseTestCase):
         return job
 
     def test_on_hold_job_task_worker_absent_from_schedule(self):
-        """A worker whose only open task is on an on_hold job must not
-        appear in the schedule's workers list."""
+        """A worker whose only open task is on a held job must not
+        appear in the schedule's workers list (no forecast while held)."""
+        from apps.jobs.services import JobService
         contact = Job.objects.first().contact
         worker = self._make_worker()
         job = self._make_job(
             contact,
             Job.STATUS_SUBMITTED,
             Job.STATUS_APPROVED,
-            Job.STATUS_ON_HOLD,
         )
+        JobService.hold_job(job.pk, 'paused')
+        job.refresh_from_db()
         Task.objects.create(
             name='Hold task',
             job=job,
