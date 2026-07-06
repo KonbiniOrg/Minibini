@@ -810,7 +810,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
 - **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
-- **is_material** (bool, default False): marks a bare line as crystallizing into a provisional Material instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
 

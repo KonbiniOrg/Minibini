@@ -9,8 +9,8 @@ Mirrors EstimateAcceptanceService.on_accept (apps/estimates/acceptance.py):
 
 - **add** — crystallize a new atom via the same four-way discriminator
   (service_item → Task, inventory_item → Material, is_material bare →
-  provisional Material, else → Fee) and link it back to the CO line with a
-  ChangeOrderLineItemSource row.
+  established Material at a reverse-markup placeholder cost, else → Fee) and
+  link it back to the CO line with a ChangeOrderLineItemSource row.
 - **remove** — resolve the target estimate line to its *current* atom (through
   the accepted-CO replace chain) and retire it: cancel a Task (bleps preserved
   — cancelled-task time stays on record), **release** a pending un-invoiced
@@ -220,6 +220,9 @@ class ChangeOrderAcceptanceService:
                 accounting_category=li.accounting_category,
                 units=li.units or 'none',
             )
+            # Parity with estimate acceptance: established at acceptance with
+            # a reverse-markup placeholder cost, never left provisional.
+            material = MaterialService.establish_reverse_markup(material)
             ChangeOrderAcceptanceService._link(li, ChangeOrderLineItemSource.SOURCE_MATERIAL, material.pk)
             counts['materials_created'] += 1
             return
@@ -249,6 +252,10 @@ class ChangeOrderAcceptanceService:
                 accounting_category=li.accounting_category or mirror['accounting_category'],
                 units=li.units or mirror['units'],
             )
+            if material.inventory_item_id is None:
+                # The mirrored atom was provisional (pre-parity CO row) — the
+                # replacement is still born established, never provisional.
+                material = MaterialService.establish_reverse_markup(material)
             ChangeOrderAcceptanceService._link(li, ChangeOrderLineItemSource.SOURCE_MATERIAL, material.pk)
             counts['materials_created'] += 1
             return

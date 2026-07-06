@@ -8,8 +8,9 @@ directly), so there is nothing to copy from a worksheet. Instead, acceptance:
      not a percentage adjustment, crystallizes it onto the job:
        - a hand-line with an `inventory_item` (added via "From Inventory") is a
          catalog material → becomes a **Material** atom;
-       - a bare hand-line marked `is_material=True` → becomes a **provisional
-         Material** (no inventory_item, sell price only, cost unset);
+       - a bare hand-line marked `is_material=True` → becomes an **established
+         Material** (QOH-0 lot minted at a reverse-markup placeholder cost,
+         cost_source='estimated');
        - any other hand-line → becomes a **Fee** (the frozen fixed charge).
      Either way the estimate line is source-linked to the atom it created.
   2. Earmarks the job's inventoried materials.
@@ -31,7 +32,7 @@ class EstimateAcceptanceService:
         """Crystallize the estimate's hand-lines into atoms, then earmark the job.
 
         Discriminator order: service_item → Task, inventory_item → Material,
-        is_material (bare) → provisional Material, else → Fee.
+        is_material (bare) → established Material (reverse-markup), else → Fee.
         Returns: {'fees_created': int, 'materials_created': int, 'tasks_created': int}
         """
         from apps.jobs.models import Fee
@@ -90,12 +91,9 @@ class EstimateAcceptanceService:
                 continue
 
             # Bare line marked as a material → Material atom, ESTABLISHED with a
-            # reverse-markup provisional cost. The accepted price is the locked
-            # sell; we back out an implied cost = sell / (1 + markup%) and mint a
-            # QOH-0 lot at that cost (cost_source='estimated'). The cost is a
-            # placeholder — the real cost arrives when a PO line supplies it
-            # (cost_source flips to 'po') — but the material is established from
-            # the start so work can consume against the (to-be-received) lot.
+            # reverse-markup placeholder cost (see
+            # MaterialService.establish_reverse_markup — shared with CO
+            # acceptance so both documents crystallize identically).
             # (pinned discriminator): the service_item branch sits above inventory_item;
             # this is_material branch stays here, between inventory_item and Fee.
             if li.is_material:
@@ -109,15 +107,7 @@ class EstimateAcceptanceService:
                     accounting_category=li.accounting_category,
                     units=li.units or 'none',
                 )
-                sell = li.price or Decimal('0')
-                markup = InventoryService._default_markup_percent()
-                unit_cost = (
-                    sell / (Decimal('1') + markup / Decimal('100'))
-                ).quantize(Decimal('0.01'))
-                material = MaterialService.establish(
-                    material, unit_cost=unit_cost,
-                    cost_source=Material.COST_SOURCE_ESTIMATED,
-                )
+                material = MaterialService.establish_reverse_markup(material)
                 EstimateLineItemSource.objects.create(
                     estimate_line_item=li,
                     source_type=EstimateLineItemSource.SOURCE_MATERIAL,

@@ -3,7 +3,8 @@
 Mirrors EstimateAcceptanceService.on_accept (tests/test_acceptance_fees.py):
 - add    → crystallize a new atom via the same four-way discriminator
            (service_item → Task, inventory_item → Material, is_material bare →
-           provisional Material, else → Fee), source-linked to the CO line.
+           established Material with reverse-markup cost, else → Fee),
+           source-linked to the CO line.
 - remove → retire the target line's current atom: cancel a Task (bleps
            preserved), delete a pending un-invoiced Material (earmark released),
            delete an un-invoiced Fee. Consumed / invoiced / terminal atoms are
@@ -172,7 +173,13 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         earmark = Earmark.objects.get(job=self.job, inventory_item=self.pli)
         self.assertEqual(earmark.quantity, Decimal('5'))
 
-    def test_bare_material_add_line_crystallizes_provisional_material(self):
+    def test_bare_material_add_line_establishes_with_reverse_markup(self):
+        # Parity with estimate acceptance: a bare is_material CO line is
+        # ESTABLISHED at acceptance — placeholder cost backed out of the locked
+        # sell (sell / (1 + markup%)), QOH-0 lot, cost_source='estimated' —
+        # not left provisional.
+        Configuration.objects.create(
+            key='default_material_markup_percent', value='25')
         co = self._make_co()
         li = ChangeOrderService.add_line_item(
             co.pk, action=ChangeOrderLineItem.ACTION_ADD,
@@ -182,8 +189,11 @@ class COAddCrystallizationTests(ChangeOrderAcceptanceBase):
         self._accept(co)
 
         mat = Material.objects.get(job=self.job, description='Dragon skin')
-        self.assertIsNone(mat.inventory_item)
-        self.assertEqual(mat.sell_price, Decimal('400.00'))
+        self.assertIsNotNone(mat.inventory_item)
+        self.assertEqual(mat.cost_source, Material.COST_SOURCE_ESTIMATED)
+        self.assertEqual(mat.unit_cost, Decimal('320.00'))   # 400 / 1.25
+        self.assertEqual(mat.sell_price, Decimal('400.00'))  # locked sell, never re-derived
+        self.assertEqual(mat.inventory_item.qty_on_hand, Decimal('0'))
         self.assertEqual(mat.quantity, Decimal('2'))
         src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
         self.assertEqual(src.source_type, ChangeOrderLineItemSource.SOURCE_MATERIAL)
@@ -399,6 +409,39 @@ class COReplaceCrystallizationTests(ChangeOrderAcceptanceBase):
         self.assertEqual(new_mat.sell_price, Decimal('110.00'))
         earmark = Earmark.objects.get(job=self.job, inventory_item=self.pli)
         self.assertEqual(earmark.quantity, Decimal('4'))
+
+    def test_bare_replace_of_provisional_material_establishes_replacement(self):
+        # A pre-parity CO could leave a crystallized material provisional; a
+        # bare replace mirrors its inventory_item (None). The replacement must
+        # still be born established — no material is born provisional from a
+        # document.
+        provisional = MaterialService.create_on_job(
+            job=self.job, description='Foam', quantity=Decimal('3'),
+            sell_price=Decimal('100.00'), inventory_item=None,
+            accounting_category=self.mat_cat, units='sheet',
+        )
+        line = EstimateLineItem.objects.create(
+            estimate=self.estimate, line_number=1,
+            description='Foam', qty=Decimal('3'), price=Decimal('100.00'),
+            units='sheet', accounting_category=self.mat_cat, is_material=True,
+        )
+        EstimateLineItemSource.objects.create(
+            estimate_line_item=line,
+            source_type=EstimateLineItemSource.SOURCE_MATERIAL,
+            source_pk=provisional.pk,
+        )
+        co = self._make_co()
+        li = self._replace_line(
+            co, line, description='Foam v2', qty=Decimal('2'),
+            price=Decimal('120.00'), units='sheet',
+        )
+        self._accept(co)
+
+        src = ChangeOrderLineItemSource.objects.get(change_order_line_item=li)
+        new_mat = Material.objects.get(pk=src.source_pk)
+        self.assertIsNotNone(new_mat.inventory_item)
+        self.assertEqual(new_mat.cost_source, Material.COST_SOURCE_ESTIMATED)
+        self.assertEqual(new_mat.sell_price, Decimal('120.00'))
 
     def test_replace_fee_line_recreates_fee(self):
         line, old_fee = self._fee_backed_line()

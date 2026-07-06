@@ -568,6 +568,28 @@ class MaterialService:
         return material
 
     @staticmethod
+    def establish_reverse_markup(material):
+        """Establish a document-crystallized bare material at acceptance.
+
+        The accepted price is the locked sell; back out an implied placeholder
+        cost = sell / (1 + default markup %) and mint a QOH-0 lot at that cost
+        (cost_source='estimated'). The real cost arrives when a PO line
+        supplies it (cost_source flips to 'po'), but the material is
+        established from the start so work can consume against the
+        (to-be-received) lot. Shared by estimate and CO acceptance so both
+        documents crystallize bare material lines identically.
+        """
+        sell = material.sell_price or Decimal('0')
+        markup = InventoryService._default_markup_percent()
+        unit_cost = (
+            sell / (Decimal('1') + markup / Decimal('100'))
+        ).quantize(Decimal('0.01'))
+        return MaterialService.establish(
+            material, unit_cost=unit_cost,
+            cost_source=Material.COST_SOURCE_ESTIMATED,
+        )
+
+    @staticmethod
     def update_pricing(material, *, unit_cost=None, sell_price=None, propagate_to_pli=False):
         """Update unit_cost and/or sell_price on a Material. If propagate_to_pli is
         True and the Material is PLI-linked, also update the PLI's purchase_price /
