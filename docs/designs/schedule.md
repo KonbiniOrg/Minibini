@@ -129,15 +129,18 @@ bleps — is unrestricted by job/task status **including held jobs**: past
 work happened and renders; only the future is paused.
 
 **Jobs (chip strip).** The `jobs` payload that feeds the top `JobChipStrip`
-is exactly the board's In Progress column — both go through
-`BoardService.in_progress_column_jobs()` (see
-`jobs-tasks-and-worksheets.md`): every `in_progress` job (held or not) plus
+is the board's In Progress column payload, **verbatim** — both surfaces
+consume `BoardService.strip_jobs_payload()` (see
+`jobs-tasks-and-worksheets.md`), which owns the set
+(`in_progress_column_jobs()`: every `in_progress` job, held or not, plus
 unheld pre-approval jobs with ≥1 assigned, still-planned task, by
-`due_date`. Chips carry `pre_approval` / `on_hold` / `hold_reason`. The
-strip is broader than the lane bars in one direction (an in_progress job
-with nothing scheduled still shows) and narrower in another (a
-`work_complete` job drops off the strip while its completed work still
-renders as `actual` bars). Lane bars are self-describing
+`due_date`) AND the serialization (`sub_status`, `pre_approval` /
+`on_hold` / `hold_reason`, `task_total` / `task_completed`, accent-color
+fallback) — so board and schedule can't drift on membership, order, or
+shape. The strip is broader than the lane bars in one direction (an
+in_progress job with nothing scheduled still shows) and narrower in
+another (a `work_complete` job drops off the strip while its completed
+work still renders as `actual` bars). Lane bars are self-describing
 (`job_number`/`job_name`/`accent_color` travel on the bar).
 
 **Per-worker walk.** Tasks are walked in pure `(worker_queue, pk)` order —

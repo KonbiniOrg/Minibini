@@ -237,60 +237,17 @@ class ScheduleService:
                     env.is_working_day(day_date) for env in worker_envs.values()
                 )
 
-        # Jobs for the JobChipStrip at top = the job board's In Progress column.
-        # Reuse the board's own definition of that set so the two can never
-        # drift: every in_progress job (minus unpaid sub-statuses), in due_date
-        # order. This is deliberately broader than the lane bars — a job appears
-        # as a chip even with no assigned work or no tasks at all (the board
-        # shows those with a 'needs-tasks' sub-status). Completed work on a
-        # now-finished (work_complete) job still renders in the lanes below (its
-        # bars are self-describing), but that job is not in_progress, so it's not
-        # on the strip. Both the board's ApprovedArea and the schedule render the
-        # same JobChipStrip, which sorts nothing, so the order must match too.
+        # Jobs for the JobChipStrip at top = the job board's In Progress
+        # column — the SAME payload, verbatim. strip_jobs_payload() owns both
+        # the set (in_progress_column_jobs: in_progress jobs plus unheld
+        # pre-approval jobs with assigned planned work, due_date order) and
+        # the serialization (sub_status, flags, task counts), so the two
+        # surfaces can't drift on membership, order, or shape. The strip is
+        # deliberately broader than the lane bars — a chip can have no bars —
+        # while a work_complete job keeps its lane bars (self-describing)
+        # after dropping off the strip.
         from apps.jobs.services import BoardService
-        jobs = BoardService.in_progress_column_jobs()
-        # Task counts per job — the chip hover popup renders the board's
-        # JobCard progress bar, so the payload must match get_approved_data's
-        # (cancelled tasks excluded).
-        from django.db.models import Count
-        strip_job_ids = [j.pk for j in jobs]
-        stats_by_job = {
-            s['job_id']: s
-            for s in Task.objects.filter(job_id__in=strip_job_ids)
-            .exclude(status=Task.STATUS_CANCELLED)
-            .values('job_id')
-            .annotate(
-                total=Count('task_id'),
-                completed=Count('task_id', filter=Q(status=Task.STATUS_COMPLETE)),
-            )
-        }
-        jobs_payload = []
-        for j in jobs:
-            contact_name = ''
-            if j.contact_id:
-                fn = j.contact.first_name or ''
-                ln = j.contact.last_name or ''
-                contact_name = (fn + ' ' + ln).strip()
-            jobs_payload.append({
-                'job_id': j.pk,
-                'job_number': getattr(j, 'job_number', '') or '',
-                # Job has both `name` (short) and `description` (long). The
-                # board's JobCard uses `name`; reuse it here.
-                'name': getattr(j, 'name', '') or getattr(j, 'description', '') or '',
-                'pre_approval': j.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
-                'on_hold': j.on_hold,
-                'hold_reason': j.hold_reason,
-                'task_total': stats_by_job.get(j.pk, {}).get('total', 0),
-                'task_completed': stats_by_job.get(j.pk, {}).get('completed', 0),
-                'accent_color': j.accent_color,
-                'contact_id': j.contact_id,
-                'contact_name': contact_name,
-                'project_manager_name': (
-                    (j.project_manager.get_full_name() or j.project_manager.username)
-                    if j.project_manager_id else None
-                ),
-                'due_date': j.due_date.isoformat() if j.due_date else None,
-            })
+        jobs_payload = BoardService.strip_jobs_payload()
 
         worker_lanes = []
         for worker in workers:

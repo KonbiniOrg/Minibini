@@ -1669,6 +1669,42 @@ class BoardService:
         ]
 
     @staticmethod
+    def strip_jobs_payload():
+        """The chip/card payload for the shared In Progress surface — the
+        single serialization of `in_progress_column_jobs()`, consumed
+        verbatim by BOTH the board column (`get_approved_data`) and the
+        schedule chip strip (`ScheduleService.get_schedule`). One dict shape
+        so the two surfaces can't drift: `_serialize_job` fields (incl.
+        sub_status and the pre_approval/on_hold flags), an accent-color
+        fallback, and the task_total/task_completed counts the hover
+        popup's progress bar reads (cancelled tasks excluded)."""
+        from django.db.models import Count, Q as DjQ
+        from apps.jobs.models import Task
+
+        jobs = BoardService.in_progress_column_jobs()
+        stats_by_job = {
+            s['job_id']: s
+            for s in Task.objects.filter(job_id__in=[j.pk for j in jobs])
+            .exclude(status=Task.STATUS_CANCELLED)
+            .values('job_id')
+            .annotate(
+                total=Count('task_id'),
+                completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
+            )
+        }
+        payload = []
+        for i, job in enumerate(jobs):
+            job_data = BoardService._serialize_job(job)
+            job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
+                i % len(BoardService.ACCENT_COLORS)
+            ]
+            s = stats_by_job.get(job.pk, {'total': 0, 'completed': 0})
+            job_data['task_total'] = s['total']
+            job_data['task_completed'] = s['completed']
+            payload.append(job_data)
+        return payload
+
+    @staticmethod
     def get_approved_data():
         """Return in_progress jobs where work is still active (not unpaid).
 
@@ -1680,35 +1716,9 @@ class BoardService:
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        approved_jobs = BoardService.in_progress_column_jobs()
-
-        approved_list = []
-        for i, job in enumerate(approved_jobs):
-            job_data = BoardService._serialize_job(job)
-            job_data['accent_color'] = job.accent_color or BoardService.ACCENT_COLORS[
-                i % len(BoardService.ACCENT_COLORS)
-            ]
-            approved_list.append(job_data)
-
+        approved_list = BoardService.strip_jobs_payload()
         color_map = {j['job_id']: j['accent_color'] for j in approved_list}
-
         approved_job_ids = [j['job_id'] for j in approved_list]
-
-        # Task counts per job (for progress bar in popup)
-        from django.db.models import Count, Q as DjQ
-        stats = Task.objects.filter(
-            job_id__in=approved_job_ids
-        ).exclude(status=Task.STATUS_CANCELLED).values(
-            'job_id'
-        ).annotate(
-            total=Count('task_id'),
-            completed=Count('task_id', filter=DjQ(status=Task.STATUS_COMPLETE)),
-        )
-        stats_by_job = {s['job_id']: s for s in stats}
-        for j in approved_list:
-            s = stats_by_job.get(j['job_id'], {'total': 0, 'completed': 0})
-            j['task_total'] = s['total']
-            j['task_completed'] = s['completed']
 
         tasks = Task.objects.filter(
             job_id__in=approved_job_ids,

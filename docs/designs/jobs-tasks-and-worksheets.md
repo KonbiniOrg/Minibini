@@ -927,20 +927,25 @@ when `STATUS_IN_PROGRESS` was added.
 
 **The In Progress column set is work-driven**, not a plain status
 filter. `BoardService.in_progress_column_jobs()` is the single
-definition, shared with the schedule's top-line chip strip
-(`ScheduleService.get_schedule`) so the two never drift: every
-`in_progress` job — held or not; a held `in_progress` job **keeps** its
-column placement — **plus** unheld pre-approval (`draft`/`submitted`)
-jobs with at least one task that is assigned AND still planned
-(pending/in_progress) — deliberate work-ahead someone chose to assign.
-The pre-approval trigger is self-limiting: the job drops back off both
-surfaces the moment its assigned tasks complete. `approved` stays
-excluded — release-to-floor is the gate. Pre-approval jobs appear in
-**both** board areas: their Pipeline card is unchanged, and their In
-Progress work card gets a dashed "quote" treatment. Card and chip
-payloads carry `pre_approval`, `on_hold`, and `hold_reason`; a held
-job's card shows an ON HOLD banner (`hold_reason` on hover) and its
-chip gets grey diagonal bars.
+definition: every `in_progress` job — held or not; a held `in_progress`
+job **keeps** its column placement — **plus** unheld pre-approval
+(`draft`/`submitted`) jobs with at least one task that is assigned AND
+still planned (pending/in_progress) — deliberate work-ahead someone
+chose to assign. The pre-approval trigger is self-limiting: the job
+drops back off both surfaces the moment its assigned tasks complete.
+`approved` stays excluded — release-to-floor is the gate. Pre-approval
+jobs appear in **both** board areas: their Pipeline card is unchanged,
+and their In Progress work card gets a dashed "quote" treatment.
+
+`BoardService.strip_jobs_payload()` is the single **serialization** of
+that set — `_serialize_job` fields (incl. `sub_status` and the
+`pre_approval`/`on_hold`/`hold_reason` flags), an accent-color fallback,
+and `task_total`/`task_completed` for the hover popup's progress bar
+(cancelled tasks excluded). Both the board column (`get_approved_data`)
+and the schedule chip strip (`ScheduleService.get_schedule`) consume it
+verbatim, so the two surfaces can't drift on membership, order, or
+shape. A held job's card shows an ON HOLD banner (`hold_reason` on
+hover) and its chip gets grey diagonal bars.
 
 ### 8.2 Sub-status derivation
 

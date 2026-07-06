@@ -547,6 +547,26 @@ class ScheduleWorkDrivenScopeTest(BaseTestCase):
         self.assertEqual(chip['task_total'], 2)
         self.assertEqual(chip['task_completed'], 1)
 
+    def test_chip_payload_is_the_board_payload(self):
+        """One serializer feeds both surfaces: the schedule's jobs payload
+        must be byte-identical to the board's In Progress jobs payload —
+        including sub_status (the blocked hatch never worked on the
+        schedule strip because its hand-rolled dict lacked the key)."""
+        from apps.jobs.services import BoardService
+        worker = self._worker('wd_paysym')
+        job = self._job(Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+                        Job.STATUS_IN_PROGRESS)
+        self._task(job, worker, status=Task.STATUS_BLOCKED,
+                   blocked_reason='waiting on paint')
+
+        result = ScheduleService.get_schedule(now=timezone.now())
+        board = BoardService.get_approved_data()
+
+        chip = next(j for j in result['jobs'] if j['job_id'] == job.pk)
+        card = next(j for j in board['jobs'] if j['job_id'] == job.pk)
+        self.assertEqual(chip, card)
+        self.assertEqual(chip['sub_status'], 'blocked')
+
     def test_held_job_history_renders_but_never_forecasts(self):
         """A held in_progress job: past bleps stay visible as actuals; the
         planned remainder emits no forecast while held."""
