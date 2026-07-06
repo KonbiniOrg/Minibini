@@ -38,11 +38,18 @@ describe('TaskBar', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ task_id: 5 }));
   });
 
-  it('marks a pre-approval bar with the pre-approval class', () => {
+  it('marks a pre-approval FORECAST bar with the pre-approval class', () => {
     const { container } = render(TaskBar, {
-      props: { bar: bar({ pre_approval: true }), timeToX, panelStart, panelEnd },
+      props: { bar: bar({ pre_approval: true, kind: 'forecast' }), timeToX, panelStart, panelEnd },
     });
     expect(container.querySelector('.task-bar')).toHaveClass('pre-approval');
+  });
+
+  it('leaves a pre-approval ACTUAL bar plain — logged work is fact', () => {
+    const { container } = render(TaskBar, {
+      props: { bar: bar({ pre_approval: true, kind: 'actual' }), timeToX, panelStart, panelEnd },
+    });
+    expect(container.querySelector('.task-bar')).not.toHaveClass('pre-approval');
   });
 
   it('does not mark a normal bar pre-approval', () => {

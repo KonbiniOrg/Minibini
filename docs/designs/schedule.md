@@ -241,7 +241,9 @@ Board's `JobChipStrip` is reused at the top.
   (`forecast` bright accent, `actual` darkened). Zigzag edges via `clip-path`
   on segments flagged `continues_left/right` (which now also mark axis
   clipping). `actual` bars recede slightly; the running session keeps full
-  opacity with a bright ring. A `pre_approval` bar gets a dashed outline.
+  opacity with a bright ring. A `pre_approval` **forecast** bar gets a
+  dashed outline; a pre-approval job's `actual` bars render plain — logged
+  past work is immutable fact whatever the job's current status.
 - **Per-lane shading**: each `WorkerLane` shades its OWN off-envelope
   regions from `envelope_by_day` — the margins before/after that worker's
   hours, the gaps between their intervals, and whole panels on their days
