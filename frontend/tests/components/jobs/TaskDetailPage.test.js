@@ -153,3 +153,27 @@ describe('TaskDetailPage stop-work session prompt survives the blep refresh', ()
     currentBlep.set(null);
   });
 });
+
+describe('TaskDetailPage does not refetch in a loop', () => {
+  it('fetch count stabilizes after load', async () => {
+    // Regression: loadTask read `task` ($state) synchronously inside the
+    // mount $effect, making the effect depend on `task` — which loadTask
+    // itself reassigns → infinite refetch loop at network speed. The
+    // mock stops answering after 20 task fetches so a looping page
+    // fails the count assertion instead of starving the test runner.
+    mockApi({ can_manage: true });
+    const inner = api.get.getMockImplementation();
+    let taskFetches = 0;
+    api.get.mockImplementation((url) => {
+      if (url === '/api/tasks/7/') {
+        taskFetches += 1;
+        if (taskFetches > 20) return new Promise(() => {});
+      }
+      return inner(url);
+    });
+    const { findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByText('Task: Mill');
+    await new Promise((r) => setTimeout(r, 250));
+    expect(taskFetches).toBeLessThan(5);
+  });
+});
