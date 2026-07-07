@@ -11,6 +11,12 @@
     user,
     canManage = false,
     activeBlepOnThisTask = null,
+    // TaskDetailPage relocates Start Work to its toolbar (via the
+    // exported startWork()) and relies on the yellow band as the only
+    // stop/cancel surface while a session runs — avoids two Cancel
+    // buttons in one row (blep-cancel beside task-cancel). Direction
+    // to be refined with the task-page design pass.
+    hideStartStop = false,
     onChanged = () => {},
     onConflict = () => {},
   } = $props();
@@ -168,7 +174,7 @@
   // ENTERED_QTY task comes back as a prior_session_qty conflict. Resolve
   // it (add / complete / skip), then re-post with prior_qty_handled.
   // Cancelling the prompt aborts the start — the old session keeps running.
-  async function startWork() {
+  export async function startWork() {
     busy = true;
     try {
       const resp = await api.post(`/api/tasks/${task.task_id}/start-work/`, {});
@@ -221,8 +227,8 @@
 </script>
 
 <div class="actions">
-  {#if show.startWork}<button type="button" onclick={startWork} disabled={busy}>Start Work</button>{/if}
-  {#if show.stopWork}
+  {#if show.startWork && !hideStartStop}<button type="button" onclick={startWork} disabled={busy}>Start Work</button>{/if}
+  {#if show.stopWork && !hideStartStop}
     {#if underMinimum}
       <button type="button" class="cancel-work" onclick={cancelWork} disabled={busy}>Cancel</button>
     {:else}

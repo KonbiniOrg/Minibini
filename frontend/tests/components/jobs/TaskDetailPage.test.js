@@ -119,37 +119,60 @@ describe('TaskDetailPage entered-qty add field', () => {
   });
 });
 
-describe('TaskDetailPage stop-work session prompt survives the blep refresh', () => {
-  it('shows the session modal after Stop Work despite the background refetch', async () => {
-    // Real blepActivity store (not mocked): notifyBlepChanged bumps the
-    // version, which makes the page refetch. That refetch must NOT blank
-    // the page ("Loading…") and remount TaskActions — that would destroy
-    // the just-opened session modal. Regression caught by driving the
-    // real app.
+describe('TaskDetailPage prompt modals vs background refetch', () => {
+  it('keeps an open prompt modal through a blep-change broadcast (no page blank)', async () => {
+    // Real blepActivity store (not mocked): a broadcast (e.g. a band stop
+    // finishing elsewhere) makes the page refetch. That refetch must NOT
+    // blank the page ("Loading…") and remount TaskActions — that would
+    // destroy any open prompt modal. Regression caught by driving the
+    // real app; invariants documented in jobs-tasks-and-worksheets §10.1a.
+    mockApi({ scheme_algorithm: 'entered_qty', scheme_name: 'Press',
+              scheme_unit_label: 'pcs', actual_qty: '9.00',
+              status: 'in_progress' });
+    api.post.mockReset();
+    api.post.mockResolvedValue({ needs_actual_qty: true,
+                                 unit_label: 'pcs', current_qty: '9.00' });
+    const { findByText, getByRole, findByRole, queryByText } = render(TaskDetailPage, {
+      props: { params: { id: 3, taskId: 7 } },
+    });
+    await findByText('Task: Mill');
+    await fireEvent.click(getByRole('button', { name: 'Complete' }));
+    await findByRole('heading', { name: 'Settle up quantity' });
+    const { notifyBlepChanged } = await import('@/stores/blepActivity.js');
+    await notifyBlepChanged();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(queryByText('Loading…')).toBeNull();
+    expect(getByRole('heading', { name: 'Settle up quantity' })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage toolbar Start Work', () => {
+  it('starts work from the toolbar button (relocated next to edit task)', async () => {
+    mockApi({ status: 'pending' });
+    api.post.mockReset();
+    api.post.mockResolvedValue({ status: 'ok', blep_id: 1 });
+    const { findByText, getByRole } = render(TaskDetailPage, {
+      props: { params: { id: 3, taskId: 7 } },
+    });
+    await findByText('Task: Mill');
+    await fireEvent.click(getByRole('button', { name: 'Start Work' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/7/start-work/', {});
+  });
+
+  it('shows no start/stop controls while the user bleps this task — the band is the stop surface', async () => {
     const { currentBlep } = await import('@/stores/currentBlep.js');
     currentBlep.set({
       id: 9, task: { id: 7, name: 'Mill' },
       start_time: new Date(Date.now() - 30 * 60000).toISOString(),
       blep_minimum_minutes: 1,
     });
-    mockApi({ scheme_algorithm: 'entered_qty', scheme_name: 'Press',
-              scheme_unit_label: 'pcs', actual_qty: '9.00',
-              status: 'in_progress' });
-    api.post.mockReset();
-    api.post.mockImplementation((url) => {
-      if (url.endsWith('/stop-work/')) {
-        return Promise.resolve({ status: 'ok', prompt_actual_qty: true,
-                                 unit_label: 'pcs', current_qty: '9.00' });
-      }
-      return Promise.resolve({});
-    });
-    const { findByText, getByRole, findByRole } = render(TaskDetailPage, {
+    mockApi({ status: 'in_progress' });
+    const { findByText, queryByRole } = render(TaskDetailPage, {
       props: { params: { id: 3, taskId: 7 } },
     });
     await findByText('Task: Mill');
-    await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
-    expect(await findByRole('heading', { name: 'Quantity this session' }))
-      .toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+    expect(queryByRole('button', { name: 'Stop Work' })).toBeNull();
     currentBlep.set(null);
   });
 });

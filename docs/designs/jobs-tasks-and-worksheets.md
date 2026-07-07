@@ -1159,7 +1159,7 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5). Owns the three ENTERED_QTY prompt flows: session prompt after own Stop, settle-up on Complete, and prior-session settle before Start (estimates-and-prices.md §4.2) |
+| `TaskActions.svelte` | Renders the status-appropriate button row gated by status + permissions, and owns the three ENTERED_QTY prompt flows: session prompt after own Stop, settle-up on Complete, prior-session settle before Start (estimates-and-prices.md §4.2). With `hideStartStop` (used by TaskDetailPage) the row drops Start/Stop/blep-Cancel — the page's toolbar hosts Start Work via the exported `startWork()`, and the yellow band is the only stop surface. Full-row consumers (TaskQuickCard) keep Start/Stop inline; there, while the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
@@ -1181,9 +1181,13 @@ carelessly. The chain:
    that ordering is fixed.
 3. `TaskDetailPage` itself subscribes to that broadcast (the
    `lastBlepVersion` effect) to refresh Work Sessions/status in place.
-   **So the same click that opens the session modal also refetches the
-   page under it.** The modal is `TaskActions` component state — it only
-   survives because the page refreshes *in place*.
+   **So a gesture can open a prompt modal and refetch the page under it
+   in the same breath.** On the detail page the stop itself now happens
+   from the band (whose session modal lives outside the page — see
+   below), but TaskActions' other prompt modals (settle-up,
+   prior-session) are component state sitting on the page while
+   broadcasts land — they only survive because the page refreshes
+   *in place*.
 
 Two invariants keep this working; each has a regression test in
 `frontend/tests/components/jobs/TaskDetailPage.test.js`:
@@ -1191,8 +1195,8 @@ Two invariants keep this working; each has a regression test in
 - **Background refetches never blank the page.** `loadTask` flips
   `loading` only on first load or when the route's `taskId` changed —
   a "Loading…" flip unmounts `TaskActions` and destroys any open prompt
-  modal. (Test: session modal survives a stop with the *real*
-  blepActivity store.)
+  modal. (Test: an open settle-up modal survives a blep-change
+  broadcast from the *real* blepActivity store.)
 - **`loadTask` reads no `$state` it writes.** Its first-load/`taskId`
   bookkeeping lives in the deliberately non-reactive `loadedTaskId`
   variable. Making that decision read `task` turned the mount `$effect`
@@ -1213,6 +1217,16 @@ the `{#if $currentBlep}` block) is restructured.
 ### 10.2 Action visibility
 
 Worker = any authenticated user. Manager = user with `can_manage_jobs`.
+
+Detail-page layout (direction chosen 2026-07-06, to be refined with the
+task-page design pass): **Start Work renders in the toolbar next to
+"edit task"**, not in the actions row; while the user's own session runs
+on this task, no start/stop control renders anywhere on the page — the
+yellow band is the sole stop/cancel surface. This avoids two Cancel
+buttons in one row (the under-minimum blep-Cancel beside the manager's
+task-Cancel). The table below still governs which controls *exist*;
+"Start Work"/"Stop Work" placement on the detail page follows the rule
+above.
 
 | Status | Worker sees | Manager additionally sees |
 |---|---|---|

@@ -38,6 +38,11 @@
   let matModalMode = $state('create');
   let matModalMaterial = $state(null);
 
+  // Ref to TaskActions so the toolbar's relocated Start Work button can
+  // trigger its exported startWork() (same flow: prior-session prompt,
+  // join/takeover conflicts).
+  let taskActionsRef = $state(null);
+
   // Subtasks state
   let subtasks = $state([]);
   let subtaskModalOpen = $state(false);
@@ -332,15 +337,25 @@
       {#if !taskIsTerminal}
         <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
       {/if}
+      <!-- Start Work lives here, next to edit task; while the user's own
+           blep runs, NOTHING renders here — the yellow band is the only
+           stop/cancel surface. Avoids the two-Cancel row (blep-cancel
+           next to task-cancel). To be refined with the task-page design
+           pass. -->
+      {#if (task.status === 'pending' || task.status === 'in_progress') && !activeBlepOnThisTask}
+        <button type="button" onclick={() => taskActionsRef?.startWork()}>Start Work</button>
+      {/if}
       <h2 class="task-title">Task: {task.name}</h2>
     </div>
   {/if}
 
   <TaskActions
+    bind:this={taskActionsRef}
     {task}
     user={$userStore}
     canManage={task?.can_manage}
     {activeBlepOnThisTask}
+    hideStartStop={true}
     onChanged={refresh}
     onConflict={handleConflict}
   />
