@@ -33,11 +33,13 @@ class BlepPermissionError(Exception):
 
 
 class TaskActualQtyRequired(Exception):
-    """Raised when completing an ENTERED_QTY task that has no worker-entered
-    quantity. Carries the rate scheme's unit label so the caller can prompt
-    for the value."""
-    def __init__(self, unit_label=''):
+    """Raised when completing an ENTERED_QTY task without an explicit
+    `add_qty` — completion always settles up through the prompt, even when
+    a running total is already on record. Carries the rate scheme's unit
+    label and the accumulated total so the caller can render the prompt."""
+    def __init__(self, unit_label='', current_qty=None):
         self.unit_label = unit_label
+        self.current_qty = current_qty
         super().__init__(
             'A quantity must be entered before this task can be completed.'
         )
@@ -1174,26 +1176,48 @@ class TaskLifecycleService:
             MaterialService.consume(material)
 
     @staticmethod
-    def set_actual_qty(task, qty):
-        """Record a worker-entered actual quantity (open to any
-        authenticated worker; complete_task enforces it's present/positive
-        for ENTERED_QTY completion)."""
+    def add_actual_qty(task_pk, qty):
+        """Apply a signed increment to an ENTERED_QTY task's actual_qty.
+
+        Every mid-work write is an add — there is no replace path. A
+        negative increment is the correction gesture (fat-fingered 50
+        instead of 5 → add -45), bounded so the total never drops below
+        zero. Locked so concurrent adds (two workers stopping a joined
+        task together) can't lose an entry."""
         from decimal import Decimal, InvalidOperation
-        try:
-            task.actual_qty = Decimal(str(qty))
-        except (InvalidOperation, TypeError, ValueError):
-            raise ValidationError({'actual_qty': 'Invalid decimal.'})
-        task.save(update_fields=['actual_qty'])
-        return task
+        with transaction.atomic():
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+                raise ValidationError('Task is already settled.')
+            if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+                raise ValidationError(
+                    'Task is not billed by entered quantity.')
+            try:
+                qty = Decimal(str(qty))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValidationError({'actual_qty': ['Invalid decimal.']})
+            if qty == 0:
+                raise ValidationError({'actual_qty': ['Must not be zero.']})
+            new_total = (task.actual_qty or Decimal('0')) + qty
+            if new_total < 0:
+                raise ValidationError({'actual_qty': [
+                    'Cannot reduce the total below zero.']})
+            task.actual_qty = new_total
+            task.save(update_fields=['actual_qty'])
+            return task
 
     @staticmethod
-    def complete_task(task_pk, actual_qty=None):
+    def complete_task(task_pk, add_qty=None):
         """Transition task from pending/in_progress/blocked -> complete.
 
-        `actual_qty` (optional Decimal): the worker-entered quantity. An
-        ENTERED_QTY task cannot be completed without a positive quantity —
-        either passed here or already on the task. If it's missing, raises
-        `TaskActualQtyRequired` so the caller can prompt for it.
+        `add_qty` (optional signed Decimal): the settle-up increment for an
+        ENTERED_QTY task. Completion ALWAYS round-trips through the prompt
+        for these tasks — when `add_qty` is absent, raises
+        `TaskActualQtyRequired` (carrying the running total) so the caller
+        can ask "any more to add?". Zero means "nothing more"; negative is
+        a last-moment correction; the resulting total must be positive.
+        The increment is applied under the row lock, so a teammate's
+        concurrent add is simply included in the final total.
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
@@ -1203,13 +1227,15 @@ class TaskLifecycleService:
                     f"Cannot complete task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
-            if actual_qty is not None:
-                if actual_qty <= 0:
-                    raise ValidationError('Quantity must be greater than 0.')
-                task.actual_qty = actual_qty
-            if (task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
-                    and (task.actual_qty is None or task.actual_qty <= 0)):
-                raise TaskActualQtyRequired(task.rate_scheme.unit_label)
+            if task.rate_scheme.algorithm == RateScheme.ENTERED_QTY:
+                if add_qty is None:
+                    raise TaskActualQtyRequired(
+                        task.rate_scheme.unit_label, task.actual_qty)
+                final = (task.actual_qty or Decimal('0')) + add_qty
+                if final <= 0:
+                    raise ValidationError({'add_qty': [
+                        'Final quantity must be greater than 0.']})
+                task.actual_qty = final
             if (task.rate_scheme.algorithm == RateScheme.ELAPSED_TIME
                     and task.rate_scheme.get_actual_qty(task) <= 0):
                 raise TaskTimeRequired()
@@ -1228,8 +1254,8 @@ class TaskLifecycleService:
                     f'otherwise release it (restock its full quantity).'
                 )
             update_fields = {'status': Task.STATUS_COMPLETE, 'blocked_reason': ''}
-            if actual_qty is not None:
-                update_fields['actual_qty'] = actual_qty
+            if add_qty is not None:
+                update_fields['actual_qty'] = task.actual_qty
             BlepService._close_open(task=task)
             Task.objects.filter(pk=task.pk).update(**update_fields)
             task.status = Task.STATUS_COMPLETE
@@ -1360,13 +1386,49 @@ class TaskLifecycleService:
             Task.objects.filter(pk=other_pk).exclude(worker_queue=i).update(worker_queue=i)
 
     @staticmethod
-    def start_work(task_pk, user, action=None, on_behalf_of=None):
+    @staticmethod
+    def prior_session_prompt(user, exclude_task_pk=None):
+        """Return a `prior_session_qty` conflict dict when `user` holds an
+        open blep on an ENTERED_QTY task (optionally excluding one task),
+        else None. Shared by start_work and the clock-out endpoint: an own
+        explicit gesture that would silently close such a session prompts
+        the SPA to settle it first."""
+        qs = Blep.objects.filter(
+            user=user, end_time__isnull=True,
+            task__rate_scheme__algorithm=RateScheme.ENTERED_QTY,
+        ).select_related('task__rate_scheme')
+        if exclude_task_pk is not None:
+            qs = qs.exclude(task_id=exclude_task_pk)
+        prior = qs.first()
+        if prior is None:
+            return None
+        prior_task = prior.task
+        return {
+            'conflict': 'prior_session_qty',
+            'prior_task': {
+                'task_id': prior_task.pk,
+                'name': prior_task.name,
+            },
+            'unit_label': prior_task.rate_scheme.unit_label,
+            'current_qty': (
+                str(prior_task.actual_qty)
+                if prior_task.actual_qty is not None else None
+            ),
+        }
+
+    @staticmethod
+    def start_work(task_pk, user, action=None, on_behalf_of=None,
+                   prior_qty_handled=False):
         """Create a Blep on the given task.
 
         - The blep is attributed to `target` = `on_behalf_of or user`. When
           `on_behalf_of` differs from `user`, the actor (`user`) must hold
           can_manage_time — a manager starting a worker's timer as a
           convenience.
+        - Own starts settle first: without `prior_qty_handled`, an open blep
+          on a different ENTERED_QTY task returns a `prior_session_qty`
+          conflict (mutating nothing) so the SPA can prompt for that
+          session's count. On-behalf starts never prompt.
         - If the task is pending, promotes it to in_progress and consumes
           materials (first worker to start the task), assigning the target.
         - If already in_progress, handles multi-worker conflicts via
@@ -1395,6 +1457,13 @@ class TaskLifecycleService:
                     f"Cannot start work: task status is '{task.status}', "
                     f"must be 'pending' or 'in_progress'."
                 )
+            # Evaluated before the active_worker conflict below: the old
+            # session gets settled before join/takeover on the new task.
+            if not prior_qty_handled and on_behalf_of is None:
+                prompt = TaskLifecycleService.prior_session_prompt(
+                    target, exclude_task_pk=task.pk)
+                if prompt is not None:
+                    return prompt
             now = timezone.now()
 
             # Auto-clock-in: a worker starting a live blep must have an open
@@ -1444,7 +1513,10 @@ class TaskLifecycleService:
                 # it just adds the blep. No takeover-specific state handling.
                 for b in list(other_bleps):
                     BlepService._resolve_open_blep(b, now)
-                return TaskLifecycleService.start_work(task_pk, target)
+                # The prior-session prompt already ran (or was flagged) on
+                # the way in — don't re-prompt on the internal restart.
+                return TaskLifecycleService.start_work(
+                    task_pk, target, prior_qty_handled=True)
             # A blep on an in-progress task must consume any materials that
             # arrived (or refuse while one is still missing) — see the sweep.
             TaskLifecycleService._consume_pending_materials(task)

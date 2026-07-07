@@ -63,3 +63,58 @@ describe('TaskDetailPage per-job can_manage', () => {
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
   });
 });
+
+describe('TaskDetailPage entered-qty add field', () => {
+  const enteredQty = {
+    scheme_algorithm: 'entered_qty', scheme_name: 'Press',
+    scheme_unit_label: 'pcs', actual_qty: '9.00', status: 'in_progress',
+  };
+
+  beforeEach(() => {
+    api.post.mockReset();
+    api.post.mockResolvedValue({ actual_qty: '14.00' });
+  });
+
+  it('shows the running total with units', async () => {
+    mockApi(enteredQty);
+    const { findByText, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByText('Task: Mill');
+    expect(getByText(/Actual so far/)).toBeInTheDocument();
+    expect(getByText(/9.00 pcs/)).toBeInTheDocument();
+  });
+
+  it('posts a signed add and clears the input', async () => {
+    mockApi(enteredQty);
+    const { findByText, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByText('Task: Mill');
+    const input = getByRole('spinbutton', { name: /add/i });
+    await fireEvent.input(input, { target: { value: '-2' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/7/actual-qty/add/', { actual_qty: -2 });
+    });
+    await waitFor(() => expect(input.value).toBe(''));
+  });
+
+  it('never saves on blur — adds are not idempotent', async () => {
+    mockApi(enteredQty);
+    const { findByText, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByText('Task: Mill');
+    const input = getByRole('spinbutton', { name: /add/i });
+    await fireEvent.input(input, { target: { value: '5' } });
+    await fireEvent.blur(input);
+    const addCalls = api.post.mock.calls.filter(([url]) => url.includes('actual-qty/add'));
+    expect(addCalls).toHaveLength(0);
+  });
+
+  it('rejects a zero delta without posting', async () => {
+    mockApi(enteredQty);
+    const { findByText, getByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByText('Task: Mill');
+    await fireEvent.input(getByRole('spinbutton', { name: /add/i }), { target: { value: '0' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(getByText(/non-zero/i)).toBeInTheDocument();
+    const addCalls = api.post.mock.calls.filter(([url]) => url.includes('actual-qty/add'));
+    expect(addCalls).toHaveLength(0);
+  });
+});

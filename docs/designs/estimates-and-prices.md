@@ -406,10 +406,42 @@ without having to remember its own `.quantize()`.
 | Algorithm | `Task.actual_qty` meaning |
 |---|---|
 | `elapsed_time` | unused; should stay `None` (qty derived from Bleps) |
-| `entered_qty` | what the worker entered; `None` until entered |
+| `entered_qty` | running total of worker-entered increments; `None` until first entry |
 
-The "Actual qty" input on `TaskDetailPage` writes `actual_qty`; only
-visible for `entered_qty` schemes.
+For `entered_qty`, **every write is an add — there is no replace path**
+(`TaskLifecycleService.add_actual_qty`, locked with `select_for_update`;
+signed increments, total floored at zero; negative = correction). Entry
+surfaces, all showing the scheme's `unit_label`:
+
+- **Session prompt on own explicit stop** — stop-work's response carries
+  `prompt_actual_qty`/`unit_label`/`current_qty` for an own stop on an
+  `entered_qty` task; the SPA prompts "how many did this session
+  produce?" and posts `POST /api/tasks/{id}/actual-qty/add/`. Skippable
+  (the blep is already closed). The modal's "This completes the task"
+  checkbox turns the submit into one atomic `complete` with `add_qty`.
+- **Prior-session settle on task-switch and clock-out** — `start-work`
+  and `/api/shifts/clock-out` return a `prior_session_qty` conflict
+  (mutating nothing) when the user's own gesture would silently close an
+  open `entered_qty` session on another task; the SPA prompts (naming
+  the prior task), settles (add / complete / skip), and re-posts with
+  `prior_qty_handled: true`. Own gestures only — on-behalf starts,
+  stops, and clock-outs never prompt. Cancelling the prompt aborts the
+  gesture.
+- **TaskDetailPage add field** — shows "Actual so far: N {unit}" with a
+  signed delta input and explicit Add button (never blur-commit: adds
+  are not idempotent). Hidden on terminal tasks.
+- **Completion settle-up** — completing an `entered_qty` task ALWAYS
+  round-trips through the prompt: the bare `complete` answers
+  `needs_actual_qty` + `current_qty`, the modal shows "Entered so far: N
+  — any more to add?", and the re-post carries the final increment as
+  `add_qty` (zero = nothing more; negative = correction; resulting
+  total must be > 0, applied under the row lock).
+
+Paths that close bleps without a prompt (on-behalf gestures, takeover,
+admin closes, `complete_task` closing teammates' bleps, historical
+entry) just leave the running total short; the completion settle-up is
+the backstop, so the billed number is always one a human confirmed.
+Spec: `docs/plans/2026-07-06-entered-qty-per-session-add.md`.
 
 ### 4.3 est_qty semantics
 
@@ -1849,63 +1881,28 @@ transitions the CO `draft → open`.
   `can_manage_jobs` has been designed but not shipped. Pairs with the
   broader worker-friendly mid-job task creation work.
 
-- **Per-session entered quantities (spec exists; not built)** — for
-  `ENTERED_QTY` tasks, prompt for a quantity when a worker explicitly
-  stops their own blep, with entries **adding** to `Task.actual_qty`
-  (atomic, `select_for_update`); rework the TaskDetailPage field from
-  set-the-value into running-total + signed add (explicit Save only —
-  adds aren't idempotent); turn completion into a **settle-up** prompt
-  (always appears, shows the accumulated total, asks "any more to
-  add?" — the final increment is applied server-side under the row
-  lock and the resulting total must be positive; no surface ever asks
-  the user to compute a total); and a "this completes the task"
-  checkbox on the stop prompt for the single-gesture stop+complete.
-  Units (`RateScheme.unit_label`) shown on every entry surface. Approved direction and full details:
-  `docs/plans/2026-07-06-entered-qty-per-session-add.md`. Design
-  decisions worth preserving even if the spec goes stale:
-  - **Why a single accumulator is safe:** every *own explicit* gesture
-    that closes an entered-qty session prompts — stop, starting a blep
-    on another task, explicit clock-out (the latter two via a
-    `prior_session_qty` conflict response + `prior_qty_handled` re-post
-    flag, mirroring the `active_worker` pattern). The paths that
-    genuinely can't prompt (on-behalf gestures, takeover, admin-forced
-    closes, `complete_task` closing teammates' bleps, historical entry)
-    are treated as best-effort provenance gaps; completion — which
-    always has a user looking at that specific task, since the
-    job-level `work-complete` action never completes tasks — is the
-    authoritative settle-up. Missed prompts only degrade the displayed
-    running total, never the billed number.
-  - **Extension path if per-session provenance is ever needed:** a
-    nullable `entered_qty` Decimal on `Blep` — *not* JSON in
-    `Task.actual_qty`. A Blep is the record of a work session, so
-    "what the session produced" is session-shaped data; the column
-    gets lifecycle for free (delete a blep, its entry goes; the blep
-    edit modal is the natural editing surface; user/time provenance
-    already on the row) and avoids the JSON blob's problems (no
-    referential key to bleps, read-modify-write lost updates on a
-    shared blob, summing decimals-as-strings instead of `Sum()`).
-    Shape: running total = `Sum(blep.entered_qty)`;
-    `get_actual_qty` returns `task.actual_qty` when set (the settled
-    override written at completion) else the blep sum. Safe because a
-    complete task can never blep again, so the override can't be
-    stranded by later entries. The no-blep entry path (ENTERED_QTY
-    tasks can complete without any time logged) is why the task-level
-    field must survive in this design.
-  - **Stop+complete rationale (now in the spec):** stop and complete
-    are one gesture approached from two ends — Complete-while-blepping
-    already closes the blep, so the stop prompt offering completion is
-    the mirror image. Because completion takes an *increment*
-    (`add_qty`) rather than a total, the checkbox path is a single
-    atomic `complete` call — a teammate's concurrent add is simply
-    included in the final total, with no
-    predicted-vs-actual-total guard needed. Benign failure mode: stop
-    succeeds, complete fails (pending materials / hold) → blep closed,
-    modal stays open with the error so the typed increment isn't lost,
-    task stays in progress.
+- **Per-blep entered-qty provenance (deferred extension)** — per-session
+  quantities are BUILT (see §4.2) as a single accumulator on Task; if
+  per-session provenance (reviewing/editing who produced what) is ever
+  needed, the extension is a nullable `entered_qty` Decimal on `Blep` —
+  *not* JSON in `Task.actual_qty`. A Blep is the record of a work
+  session, so "what the session produced" is session-shaped data; the
+  column gets lifecycle for free (delete a blep, its entry goes; the
+  blep edit modal is the natural editing surface; user/time provenance
+  already on the row) and avoids the JSON blob's problems (no
+  referential key to bleps, read-modify-write lost updates on a shared
+  blob, summing decimals-as-strings instead of `Sum()`). Shape: running
+  total = `Sum(blep.entered_qty)`; `get_actual_qty` returns
+  `task.actual_qty` when set (the settled value written at completion)
+  else the blep sum. Safe because a complete task can never blep again,
+  so the settled value can't be stranded by later entries. The no-blep
+  entry path (ENTERED_QTY tasks can complete without any time logged)
+  is why the task-level field must survive in this design.
   - **Interaction to guard:** if the job-level `work-complete` action
     ever grows bulk task completion (an open issue considers blocking
     it on in-progress tasks instead), it must refuse on unsettled
-    `ENTERED_QTY` tasks rather than invent quantities.
+    `ENTERED_QTY` tasks rather than invent quantities — the settle-up
+    prompt (§4.2) assumes a human is looking at the specific task.
 
 - **Estimate-vs-actuals reporting** — once `est_qty` and
   `actual_qty` (or Bleps) coexist on Task, a per-job and per-template

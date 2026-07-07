@@ -2,8 +2,9 @@
   import { link } from 'svelte-spa-router';
   import { currentBlep } from '../stores/currentBlep.js';
   import { notifyBlepChanged } from '../stores/blepActivity.js';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
   import { onMount, onDestroy } from 'svelte';
+  import ActualQtyModal from './tasks/ActualQtyModal.svelte';
 
   let now = $state(Date.now());
   let working = $state(false);
@@ -75,14 +76,29 @@
     return wholeMinutes < minMinutes;
   });
 
+  // The session prompt outlives the blep: once Stop lands, the store
+  // clears and the band disappears, so the modal keeps its own copy of
+  // the task id and renders outside the {#if $currentBlep} block.
+  let sessionModal = $state(null); // {taskId, unitLabel, currentQty}
+  let modalError = $state('');
+
   async function act(urlSuffix) {
     const cb = $currentBlep;
     if (!cb || !cb.task) return;
+    const taskId = cb.task.id;
     working = true;
     error = '';
     try {
-      await api.post(`/api/tasks/${cb.task.id}/${urlSuffix}/`, {});
+      const resp = await api.post(`/api/tasks/${taskId}/${urlSuffix}/`, {});
       await notifyBlepChanged();
+      if (resp && resp.prompt_actual_qty) {
+        modalError = '';
+        sessionModal = {
+          taskId,
+          unitLabel: resp.unit_label || '',
+          currentQty: resp.current_qty ?? null,
+        };
+      }
     } catch (e) {
       error = e.message || 'Could not update work.';
     } finally {
@@ -92,6 +108,23 @@
 
   const handleStop = () => act('stop-work');
   const handleCancel = () => act('cancel-work');
+
+  // Checkbox checked = one atomic add-and-complete; on failure the modal
+  // stays open so the typed value isn't lost.
+  async function submitSession(qty, { completesTask }) {
+    modalError = '';
+    try {
+      if (completesTask) {
+        await api.post(`/api/tasks/${sessionModal.taskId}/complete/`, { add_qty: qty ?? 0 });
+      } else if (qty != null) {
+        await api.post(`/api/tasks/${sessionModal.taskId}/actual-qty/add/`, { actual_qty: qty });
+      }
+      sessionModal = null;
+      await notifyBlepChanged();
+    } catch (e) {
+      modalError = errorMessage(e, 'Could not save the quantity.');
+    }
+  }
 </script>
 
 {#if $currentBlep}
@@ -118,6 +151,18 @@
       <p class="error">{error}</p>
     {/if}
   </div>
+{/if}
+
+{#if sessionModal}
+  <ActualQtyModal
+    mode="session"
+    unitLabel={sessionModal.unitLabel}
+    currentQty={sessionModal.currentQty}
+    allowComplete={true}
+    serverError={modalError}
+    onSubmit={submitSession}
+    onClose={() => { sessionModal = null; modalError = ''; }}
+  />
 {/if}
 
 <style>

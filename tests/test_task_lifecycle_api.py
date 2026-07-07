@@ -46,16 +46,17 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.data.get('needs_actual_qty'))
         self.assertEqual(resp.data.get('unit_label'), 'minute')
+        self.assertIsNone(resp.data.get('current_qty'))
         eq_task.refresh_from_db()
         self.assertNotEqual(eq_task.status, Task.STATUS_COMPLETE)
 
-    def test_complete_entered_qty_task_with_value_completes(self):
+    def test_complete_entered_qty_task_with_add_qty_completes(self):
         eq_task = Task.objects.create(
             job=self.job, name='CNC', rate_scheme_id=2,
         )
         resp = self.client.post(
             f'/api/tasks/{eq_task.pk}/complete/',
-            {'actual_qty': '7'}, format='json',
+            {'add_qty': '7'}, format='json',
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data.get('status'), Task.STATUS_COMPLETE)
@@ -63,6 +64,58 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertEqual(eq_task.status, Task.STATUS_COMPLETE)
         from decimal import Decimal
         self.assertEqual(eq_task.actual_qty, Decimal('7'))
+
+    def test_complete_prompt_carries_running_total(self):
+        """A task with qty on record still prompts (settle-up) and reports
+        the accumulated total for the modal."""
+        from decimal import Decimal
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(actual_qty=Decimal('9'))
+        resp = self.client.post(f'/api/tasks/{eq_task.pk}/complete/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data.get('needs_actual_qty'))
+        self.assertEqual(Decimal(resp.data['current_qty']), Decimal('9'))
+        eq_task.refresh_from_db()
+        self.assertNotEqual(eq_task.status, Task.STATUS_COMPLETE)
+
+    def test_complete_add_qty_increments_running_total(self):
+        from decimal import Decimal
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(actual_qty=Decimal('9'))
+        resp = self.client.post(
+            f'/api/tasks/{eq_task.pk}/complete/',
+            {'add_qty': '5'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        eq_task.refresh_from_db()
+        self.assertEqual(eq_task.actual_qty, Decimal('14'))
+
+    def test_complete_zero_add_qty_settles_positive_total(self):
+        from decimal import Decimal
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(actual_qty=Decimal('3'))
+        resp = self.client.post(
+            f'/api/tasks/{eq_task.pk}/complete/',
+            {'add_qty': '0'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get('status'), Task.STATUS_COMPLETE)
+
+    def test_complete_invalid_add_qty_returns_400(self):
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        resp = self.client.post(
+            f'/api/tasks/{eq_task.pk}/complete/',
+            {'add_qty': 'garbage'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
 
     def test_complete_elapsed_task_without_time_signals_needs_time(self):
         # self.task is rate_scheme 1 (elapsed_time) with no bleps logged.
@@ -138,6 +191,68 @@ class TaskLifecycleAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         blep = Blep.objects.get(task=self.task, user=self.user)
         self.assertIsNotNone(blep.end_time)
+
+    def test_stop_work_prompts_for_entered_qty_session(self):
+        """Own explicit stop on an ENTERED_QTY task returns the session
+        prompt fields (blep still closes — the prompt is after the fact)."""
+        from decimal import Decimal
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        Blep.objects.create(
+            task=eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        resp = self.client.post(f'/api/tasks/{eq_task.pk}/stop-work/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data.get('prompt_actual_qty'))
+        self.assertEqual(resp.data.get('unit_label'), 'minute')
+        self.assertEqual(Decimal(resp.data['current_qty']), Decimal('9'))
+        blep = Blep.objects.get(task=eq_task, user=self.user)
+        self.assertIsNotNone(blep.end_time)
+
+    def test_stop_work_prompt_current_qty_null_when_unset(self):
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        resp = self.client.post(f'/api/tasks/{eq_task.pk}/stop-work/')
+        self.assertTrue(resp.data.get('prompt_actual_qty'))
+        self.assertIsNone(resp.data.get('current_qty'))
+
+    def test_stop_work_no_prompt_for_elapsed_task(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        resp = self.client.post(f'/api/tasks/{self.task.pk}/stop-work/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('prompt_actual_qty', resp.data)
+
+    def test_stop_work_on_behalf_never_prompts(self):
+        """The manager stopping a worker's timer doesn't know the count."""
+        worker = self._create_user('ob_eq_target')
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=eq_task, user=worker,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        resp = self.client.post(
+            f'/api/tasks/{eq_task.pk}/stop-work/', {'on_behalf_of': worker.pk})
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('prompt_actual_qty', resp.data)
 
     def test_start_work_on_behalf_attributes_blep_to_target(self):
         # self.user (admin/superuser) bypasses atom checks → acts as manager.
@@ -228,6 +343,29 @@ class TaskLifecycleAPITest(BaseTestCase):
         # Current user should have open blep
         my_blep = Blep.objects.get(task=self.task, user=self.user)
         self.assertIsNone(my_blep.end_time)
+
+    def test_start_work_prior_session_conflict_and_flag(self):
+        from decimal import Decimal
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        Blep.objects.create(
+            task=eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        url = f'/api/tasks/{self.task.pk}/start-work/'
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get('conflict'), 'prior_session_qty')
+        self.assertEqual(resp.data['prior_task']['task_id'], eq_task.pk)
+        # Re-post with the flag: prior session closes, new blep starts.
+        resp2 = self.client.post(url, {'prior_qty_handled': True}, format='json')
+        self.assertEqual(resp2.status_code, 200)
+        self.assertIn('blep_id', resp2.data)
+        blep = Blep.objects.get(task=eq_task, user=self.user)
+        self.assertIsNotNone(blep.end_time)
 
     def test_invalid_transition_returns_400(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_COMPLETE)

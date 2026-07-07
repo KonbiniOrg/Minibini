@@ -40,6 +40,47 @@ describe('CurrentBlepBand', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel-work/', {});
   });
+
+  it('opens the session prompt when stop returns prompt fields and posts the add', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockImplementation((url) => {
+      if (url.endsWith('/stop-work/')) {
+        return Promise.resolve({ status: 'ok', prompt_actual_qty: true, unit_label: 'pcs', current_qty: '9' });
+      }
+      return Promise.resolve({});
+    });
+    const { getByRole } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    // The blep is gone (store cleared by the refresh) but the modal survives.
+    currentBlep.set(null);
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/actual-qty/add/', { actual_qty: 5 });
+  });
+
+  it('checkbox completes the task in the same gesture', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockImplementation((url) => {
+      if (url.endsWith('/stop-work/')) {
+        return Promise.resolve({ status: 'ok', prompt_actual_qty: true, unit_label: 'pcs', current_qty: '9' });
+      }
+      return Promise.resolve({ status: 'complete' });
+    });
+    const { getByRole } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('checkbox'));
+    await fireEvent.click(getByRole('button', { name: 'Add & complete' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/complete/', { add_qty: 5 });
+  });
+
+  it('plain stop without prompt fields opens no modal', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockResolvedValue({ status: 'ok' });
+    const { getByRole, queryByRole } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    expect(queryByRole('spinbutton')).toBeNull();
+  });
 });
 
 // The timer contract (LATER: minute-flooring artifact): a just-started blep

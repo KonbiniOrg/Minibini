@@ -428,7 +428,7 @@ authenticated user**:
   deletable (remove the line/atoms first). See the deletion doctrine
   (`data-constraints.md` §1.11).
 - **Lifecycle** — complete / block / unblock / start-work / stop-work /
-  cancel-work / actual-qty are `IsAuthenticated` (worker operations).
+  cancel-work / actual-qty/add are `IsAuthenticated` (worker operations).
 
 Manager-or-PM only (`CanManageJobOrPM` — `can_manage_jobs` atom **or** the
 job's `project_manager`):
@@ -504,7 +504,7 @@ clears.
 | `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
-| `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). |
+| `actual_qty` | Running total of worker-entered increments for `ENTERED_QTY` schemes (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
 
 `Task.compute_amount()` resolves the actual quantity per scheme algorithm
 and applies modifiers (the **invoice** view); `Task.compute_estimate_amount()`
@@ -521,12 +521,12 @@ sanctioned path to transition a Task. All methods wrap in
 
 | Method | Inputs | Behavior |
 |---|---|---|
-| `complete_task(task_pk)` | — | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check |
+| `complete_task(task_pk, add_qty=None)` | optional signed Decimal | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check. **ENTERED_QTY settle-up:** without `add_qty`, raises `TaskActualQtyRequired` (carrying `unit_label` + `current_qty`) so the caller prompts "any more to add?" — the guard fires BEFORE bleps close, so the prompting round-trip leaves the session running. With `add_qty`, applies the increment under the row lock (zero = nothing more; negative = correction; resulting total must be > 0). |
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
 | `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check |
-| `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
-| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
+| `start_work(task_pk, user, action=None, on_behalf_of=None, prior_qty_handled=False)` | user, optional action / on_behalf_of / prior_qty_handled | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). **Settle-first:** an own start (no `on_behalf_of`) holding an open Blep on a *different* ENTERED_QTY task returns a `prior_session_qty` conflict dict (mutating nothing; evaluated before `active_worker`) so the SPA settles that session; the re-post carries `prior_qty_handled=True`. |
+| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). The API layer adds session-prompt fields (`prompt_actual_qty`/`unit_label`/`current_qty`) to the response for an own stop on an ENTERED_QTY task — the blep is already closed; the prompt is after the fact and skippable. |
 | `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_minutes` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. (Internally delegates to `BlepService._cancel_blep`, which the close primitive also uses.) |
 
 Material consumption happens exactly once: when the first worker calls
@@ -676,6 +676,11 @@ bleps:
   calls `ShiftService.ensure_open_shift(target)` — if the worker has no open
   shift, one is opened at `now` so the new blep is enclosed. Workers normally
   clock in from the Home band, but starting work clocks them in implicitly.
+- **Clock-out settles first.** An own explicit `POST /api/shifts/clock-out`
+  with an open Blep on an ENTERED_QTY task returns a `prior_session_qty`
+  conflict (mutating nothing) so the SPA can prompt for that session's
+  count; the re-post carries `prior_qty_handled`. On-behalf clock-outs
+  never prompt.
 - **Clock-out closes open bleps.** `ShiftService.clock_out` closes the
   worker's open bleps (`end_time = now`) *before* stamping the shift's
   `end_time`, so clocking out never leaves a blep unenclosed. The logout
@@ -1154,10 +1159,11 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
+| `TaskActions.svelte` | Renders the status-appropriate button row (Start Work, Stop Work, Complete, Block, Unblock, Cancel) gated by status + permissions. While the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5). Owns the three ENTERED_QTY prompt flows: session prompt after own Stop, settle-up on Complete, and prior-session settle before Start (estimates-and-prices.md §4.2) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
-| `StartWorkConflictModal.svelte` | Shown when `start-work` returns a `conflict` payload; offers Join / Take over / Cancel |
+| `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
+| `ActualQtyModal.svelte` | Quantity entry for ENTERED_QTY tasks — `complete` mode (settle-up: running total + "any more to add?", signed, final must be > 0) and `session` mode (per-session count; `priorTaskName` names the old task in switch/clock-out context; "This completes the task" checkbox = one atomic complete with `add_qty`). Shared by `TaskActions`, `CurrentBlepBand`, `AssignedTaskList`, `ClockBand` |
 
 ### 10.2 Action visibility
 

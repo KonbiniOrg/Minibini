@@ -123,7 +123,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
         # Drive task completion the same way production does. The scheme is
         # entered_qty, so a quantity must be supplied to complete the task.
-        TaskLifecycleService.complete_task(t.pk, actual_qty=Decimal('1'))
+        TaskLifecycleService.complete_task(t.pk, add_qty=Decimal('1'))
         self.job.refresh_from_db()
         self.assertNotEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
         # Job should be in_progress (setUp walks to in_progress; loose materials
