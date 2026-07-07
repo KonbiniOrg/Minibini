@@ -85,7 +85,13 @@
 
 
   async function loadTask() {
-    loading = true;
+    // Blank the page only on first load or when navigating to a different
+    // task. Background refetches (blep activity, post-add refresh) must
+    // not flip `loading` — that unmounts TaskActions mid-interaction and
+    // destroys any open prompt modal (e.g. the stop-work session prompt).
+    if (!task || String(task.task_id) !== String(params.taskId)) {
+      loading = true;
+    }
     error = '';
     try {
       task = await api.get(`/api/tasks/${params.taskId}/`);

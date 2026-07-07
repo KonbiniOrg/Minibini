@@ -118,3 +118,38 @@ describe('TaskDetailPage entered-qty add field', () => {
     expect(addCalls).toHaveLength(0);
   });
 });
+
+describe('TaskDetailPage stop-work session prompt survives the blep refresh', () => {
+  it('shows the session modal after Stop Work despite the background refetch', async () => {
+    // Real blepActivity store (not mocked): notifyBlepChanged bumps the
+    // version, which makes the page refetch. That refetch must NOT blank
+    // the page ("Loading…") and remount TaskActions — that would destroy
+    // the just-opened session modal. Regression caught by driving the
+    // real app.
+    const { currentBlep } = await import('@/stores/currentBlep.js');
+    currentBlep.set({
+      id: 9, task: { id: 7, name: 'Mill' },
+      start_time: new Date(Date.now() - 30 * 60000).toISOString(),
+      blep_minimum_minutes: 1,
+    });
+    mockApi({ scheme_algorithm: 'entered_qty', scheme_name: 'Press',
+              scheme_unit_label: 'pcs', actual_qty: '9.00',
+              status: 'in_progress' });
+    api.post.mockReset();
+    api.post.mockImplementation((url) => {
+      if (url.endsWith('/stop-work/')) {
+        return Promise.resolve({ status: 'ok', prompt_actual_qty: true,
+                                 unit_label: 'pcs', current_qty: '9.00' });
+      }
+      return Promise.resolve({});
+    });
+    const { findByText, getByRole, findByRole } = render(TaskDetailPage, {
+      props: { params: { id: 3, taskId: 7 } },
+    });
+    await findByText('Task: Mill');
+    await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
+    expect(await findByRole('heading', { name: 'Quantity this session' }))
+      .toBeInTheDocument();
+    currentBlep.set(null);
+  });
+});
