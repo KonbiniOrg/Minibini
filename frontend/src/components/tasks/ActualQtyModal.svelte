@@ -8,11 +8,14 @@
   //   asks "any more to add?" (empty = 0, negative = last-moment
   //   correction); the final total must be positive. Submits the
   //   increment with completesTask: true.
-  // - 'session': "how many did this session produce?" after a stop, or
-  //   for the prior open session when switching tasks / clocking out
-  //   (priorTaskName names the old task; empty submit = explicit skip).
-  //   With allowComplete, a "This completes the task" checkbox turns the
-  //   submit into a single add-and-complete gesture (empty allowed).
+  // - 'session': "how many did this session produce?" — settle-first for
+  //   every gesture (stop / task-switch / clock-out / task-cancel): the
+  //   gesture is still PENDING while this modal is up, the session keeps
+  //   running. Empty submit = explicit skip (proceed without an entry);
+  //   Cancel aborts the gesture entirely. priorTaskName names the old
+  //   task in switch/clock-out/cancel contexts. With allowComplete, a
+  //   "This completes the task" checkbox turns the submit into a single
+  //   add-and-complete gesture (empty allowed).
   //
   // Pure input collector — the caller owns the API calls via
   // onSubmit(qty, {completesTask}); qty is null for an empty input.
@@ -57,17 +60,11 @@
         error = 'Final quantity must be greater than 0.';
         return;
       }
-    } else if (priorTaskName) {
-      // Switch/clock-out context: empty is an explicit skip; a typed
-      // session count must be positive.
+    } else {
+      // Session contexts: empty is an explicit skip (the pending gesture
+      // proceeds without an entry); a typed count must be positive.
       if (entered !== null && !(entered > 0)) {
         error = 'Enter a quantity greater than 0 (or leave empty to skip).';
-        return;
-      }
-    } else {
-      // Plain stop-session add: a session's production is positive.
-      if (!(entered > 0)) {
-        error = 'Enter a quantity greater than 0.';
         return;
       }
     }
@@ -101,8 +98,8 @@
     {:else}
       <p>
         How many <strong>{unit}</strong> did this session produce?
-        (Cancel to skip — you can settle the total when the task is
-        completed.)
+        (Leave empty to skip — you can settle the total when the task is
+        completed. Cancel keeps the session running.)
       </p>
     {/if}
   {/if}

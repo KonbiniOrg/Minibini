@@ -413,24 +413,29 @@ For `entered_qty`, **every write is an add — there is no replace path**
 signed increments, total floored at zero; negative = correction). Entry
 surfaces, all showing the scheme's `unit_label`:
 
-- **Session prompt on own explicit stop** — stop-work's response carries
-  `prompt_actual_qty`/`unit_label`/`current_qty` for an own stop on an
-  `entered_qty` task; the SPA prompts "how many did this session
-  produce?" (leading with "Entered so far: N unit" when a total exists)
-  and posts `POST /api/tasks/{id}/actual-qty/add/`. Skippable
-  (the blep is already closed). The modal's "This completes the task"
-  checkbox turns the submit into one atomic `complete` with `add_qty`.
-  ⚠ Mutate-first-prompt-second: the modal must survive the blep-change
-  refetch of the page under it — fragility notes and the guarding
-  invariants live in jobs-tasks-and-worksheets.md §10.1a.
-- **Prior-session settle on task-switch and clock-out** — `start-work`
-  and `/api/shifts/clock-out` return a `prior_session_qty` conflict
-  (mutating nothing) when the user's own gesture would silently close an
-  open `entered_qty` session on another task; the SPA prompts (naming
-  the prior task), settles (add / complete / skip), and re-posts with
-  `prior_qty_handled: true`. Own gestures only — on-behalf starts,
-  stops, and clock-outs never prompt. Cancelling the prompt aborts the
-  gesture.
+- **Settle-first stop** — an own stop on an `entered_qty` task returns a
+  `prior_session_qty` conflict and mutates NOTHING: the session keeps
+  running (the band stays honest) while the SPA asks "how many did this
+  session produce?" (leading with "Entered so far: N unit" when a total
+  exists). The flagged re-post `{prior_qty_handled: true, add_qty?: N}`
+  applies the increment and closes the blep in ONE transaction — a failed
+  entry can never half-run. Empty submit = skip (stop without an entry);
+  modal Cancel aborts the stop (session keeps running). The "This
+  completes the task" checkbox turns the submit into one atomic
+  `complete` with `add_qty` instead (which also closes the blep).
+  Recording the count is part of the work — that's why stop waits.
+- **Prior-session settle on task-switch, clock-out, and task-cancel** —
+  `start-work`, `/api/shifts/clock-out`, and `POST /api/tasks/{id}/cancel/`
+  return the same `prior_session_qty` conflict (mutating nothing) when
+  the user's own gesture would close an open `entered_qty` session; the
+  SPA prompts (naming the task), settles (add / complete / skip), and
+  re-posts with `prior_qty_handled: true`. Cancel-the-task keeps the
+  count for the same reason cancelled elapsed-time tasks keep their
+  bleps — actuals are history even on dead tasks (no completes-checkbox
+  there: completing while cancelling is contradictory). Own gestures
+  only — on-behalf starts, stops, and clock-outs, and internal bulk
+  cancels (CO acceptance) never prompt. Cancelling the prompt aborts
+  the gesture.
 - **TaskDetailPage add field** — shows "Actual so far: N {unit}" with a
   signed delta input and explicit Add button (never blur-commit: adds
   are not idempotent). Hidden on terminal tasks.
@@ -441,6 +446,9 @@ surfaces, all showing the scheme's `unit_label`:
   `add_qty` (zero = nothing more; negative = correction; resulting
   total must be > 0, applied under the row lock).
 
+Every own explicit gesture is now **settle-first** — nothing mutates
+until the prompt resolves, so no prompt modal ever has to survive a
+refresh of the page under it (jobs-tasks-and-worksheets.md §10.1a).
 Paths that close bleps without a prompt (on-behalf gestures, takeover,
 admin closes, `complete_task` closing teammates' bleps, historical
 entry) just leave the running total short; the completion settle-up is

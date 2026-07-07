@@ -1,9 +1,26 @@
 # Entered-qty: per-session adds on blep stop + confirm-or-correct completion
 
-> **Status: spec, approved direction (2026-07-06).** Implementation lands
-> on `feature/hand-actuals`. Brainstorm decisions recorded below; the
-> deliberately deferred richer design (per-blep provenance) is documented
-> in `docs/designs/estimates-and-prices.md` §16 so it isn't lost.
+> **Status: spec, approved direction (2026-07-06); implemented on
+> `feature/hand-actuals` with two amendments decided during RM's live
+> testing (2026-07-06/07), which SUPERSEDE the corresponding sections
+> below — the durable record is estimates-and-prices.md §4.2 and
+> jobs-tasks-and-worksheets.md §10.1a:**
+>
+> 1. **Stop is settle-first, not stop-then-prompt** (reverses decision 3
+>    and the "Paths that never prompt" framing for stop): an own stop on
+>    an ENTERED_QTY task returns a `prior_session_qty` conflict, the
+>    session keeps running while the modal is up, and the flagged
+>    re-post carries `add_qty` — increment + close in one transaction.
+>    Rationale: recording the count is part of the work, and no prompt
+>    modal has to survive a background refetch anymore.
+> 2. **Task-cancel joined the settle-first gestures**: the canceller's
+>    own open session gets a skippable offer to record its count before
+>    the task settles (parity with cancelled elapsed-time tasks keeping
+>    their bleps). Internal bulk cancels (CO acceptance) never prompt.
+>
+> Brainstorm decisions recorded below; the deliberately deferred richer
+> design (per-blep provenance) is documented in
+> `docs/designs/estimates-and-prices.md` §16 so it isn't lost.
 
 ## What changes, in one paragraph
 

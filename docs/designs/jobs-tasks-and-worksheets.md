@@ -524,9 +524,9 @@ sanctioned path to transition a Task. All methods wrap in
 | `complete_task(task_pk, add_qty=None)` | optional signed Decimal | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check. **ENTERED_QTY settle-up:** without `add_qty`, raises `TaskActualQtyRequired` (carrying `unit_label` + `current_qty`) so the caller prompts "any more to add?" — the guard fires BEFORE bleps close, so the prompting round-trip leaves the session running. With `add_qty`, applies the increment under the row lock (zero = nothing more; negative = correction; resulting total must be > 0). |
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
-| `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check |
+| `cancel_task(task_pk, user=None, prior_qty_handled=False)` | optional user + flag | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check. **Settle-first:** when the *canceller's own* open ENTERED_QTY session would be closed, returns a `prior_session_qty` conflict (mutating nothing) — cancelled tasks keep their recorded count just as they keep their closed bleps. Internal callers (CO acceptance) pass no user and never prompt. |
 | `start_work(task_pk, user, action=None, on_behalf_of=None, prior_qty_handled=False)` | user, optional action / on_behalf_of / prior_qty_handled | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). **Settle-first:** an own start (no `on_behalf_of`) holding an open Blep on a *different* ENTERED_QTY task returns a `prior_session_qty` conflict dict (mutating nothing; evaluated before `active_worker`) so the SPA settles that session; the re-post carries `prior_qty_handled=True`. |
-| `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). The API layer adds session-prompt fields (`prompt_actual_qty`/`unit_label`/`current_qty`) to the response for an own stop on an ENTERED_QTY task — the blep is already closed; the prompt is after the fact and skippable. |
+| `stop_work(task_pk, user, on_behalf_of=None, prior_qty_handled=False, add_qty=None)` | user, optional on_behalf_of / flag / add_qty | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). **Settle-first:** an own stop on an ENTERED_QTY task with an open session returns a `prior_session_qty` conflict and mutates nothing — the session keeps running until the SPA's prompt resolves. The flagged re-post may carry `add_qty` (> 0): increment + close happen in one transaction, so a failed entry never half-runs. |
 | `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_minutes` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. (Internally delegates to `BlepService._cancel_blep`, which the close primitive also uses.) |
 
 Material consumption happens exactly once: when the first worker calls
@@ -1165,54 +1165,44 @@ mount.
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
 | `ActualQtyModal.svelte` | Quantity entry for ENTERED_QTY tasks — `complete` mode (settle-up: running total + "any more to add?", signed, final must be > 0) and `session` mode (per-session count; `priorTaskName` names the old task in switch/clock-out context; "This completes the task" checkbox = one atomic complete with `add_qty`). Shared by `TaskActions`, `CurrentBlepBand`, `AssignedTaskList`, `ClockBand` |
 
-### 10.1a Prompt modals vs. the blep-change broadcast (fragile — read before touching)
+### 10.1a Settle-first prompts and the blep-change broadcast
 
-The stop-work session prompt creates a structural tension that bit us
-once (2026-07-06) and will bite again if either side is changed
-carelessly. The chain:
+Every own explicit gesture that would end or displace an ENTERED_QTY
+session — Stop, Complete, Start-another-task, clock-out, task-cancel —
+is **settle-first**: the endpoint returns a `prior_session_qty` conflict
+(or `needs_actual_qty` for Complete) and mutates NOTHING until the SPA's
+prompt resolves and the flagged re-post lands. Consequences:
 
-1. **Stop closes the blep first; the prompt is after the fact** (spec
-   decision — ending a timer is never held hostage by a quantity
-   dialog, and the prompt is skippable).
-2. Because the blep is *genuinely closed* the moment stop-work returns,
-   the SPA immediately fires `notifyBlepChanged` — the band clears, the
-   home lists refresh. Deferring the broadcast until the modal resolves
-   would make the UI lie ("Working on…" after the timer stopped), so
-   that ordering is fixed.
-3. `TaskDetailPage` itself subscribes to that broadcast (the
-   `lastBlepVersion` effect) to refresh Work Sessions/status in place.
-   **So a gesture can open a prompt modal and refetch the page under it
-   in the same breath.** On the detail page the stop itself now happens
-   from the band (whose session modal lives outside the page — see
-   below), but TaskActions' other prompt modals (settle-up,
-   prior-session) are component state sitting on the page while
-   broadcasts land — they only survive because the page refreshes
-   *in place*.
+- The band stays honest: while a prompt is up, the session genuinely is
+  still running.
+- `notifyBlepChanged` only fires after the gesture truly lands, so a
+  prompt modal never has to survive a same-client background refetch of
+  the page under it. (An earlier design stopped the blep first and
+  prompted after; the modal had to live through the broadcast-triggered
+  refetch, which bred a page-blank bug and an infinite-refetch loop.
+  Settle-first dissolved that class. If a future gesture ever mutates
+  first and prompts second, it re-inherits the survive-the-refresh
+  requirement — don't do that.)
+- The stop settle is atomic: the flagged `stop-work` carries `add_qty`
+  and applies increment + close in one transaction. The other gestures
+  settle in two calls (add, then flagged re-post) because nothing has
+  mutated if the first call fails.
 
-Two invariants keep this working; each has a regression test in
-`frontend/tests/components/jobs/TaskDetailPage.test.js`:
+Two page-level invariants remain as hygiene (multi-tab clients and any
+modal open while an unrelated broadcast lands), each with a regression
+test in `frontend/tests/components/jobs/TaskDetailPage.test.js`:
 
 - **Background refetches never blank the page.** `loadTask` flips
-  `loading` only on first load or when the route's `taskId` changed —
-  a "Loading…" flip unmounts `TaskActions` and destroys any open prompt
+  `loading` only on first load or when the route's `taskId` changed — a
+  "Loading…" flip unmounts `TaskActions` and destroys any open prompt
   modal. (Test: an open settle-up modal survives a blep-change
   broadcast from the *real* blepActivity store.)
 - **`loadTask` reads no `$state` it writes.** Its first-load/`taskId`
   bookkeeping lives in the deliberately non-reactive `loadedTaskId`
-  variable. Making that decision read `task` turned the mount `$effect`
-  into an infinite refetch loop (full task-page API fan-out at 4-5
-  req/s). The general rule is codified in `frontend/README.md`
-  §"Loaders called from `$effect` are write-only". (Test: fetch count
-  stays bounded after load.)
-
-The other prompt flows don't face this: the settle-up (Complete) and
-prior-session (Start / clock-out) prompts open *before* any mutation,
-so nothing has broadcast yet while they're up. Only flows that mutate
-first and prompt second inherit the survive-the-refresh requirement —
-keep that in mind if a future gesture adopts the same
-mutate-then-prompt shape, or if `CurrentBlepBand`'s modal (which
-sidesteps the problem by holding its own copy of the task id outside
-the `{#if $currentBlep}` block) is restructured.
+  variable — reading `task` there once turned the mount `$effect` into
+  an infinite refetch loop (full task-page API fan-out at 4-5 req/s).
+  General rule: `frontend/README.md` §"Loaders called from `$effect`
+  are write-only". (Test: fetch count stays bounded after load.)
 
 ### 10.2 Action visibility
 

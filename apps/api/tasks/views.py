@@ -211,7 +211,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
     def cancel(self, request, pk=None):
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
-        TaskLifecycleService.cancel_task(task.pk)
+        result = TaskLifecycleService.cancel_task(
+            task.pk, user=request.user,
+            prior_qty_handled=bool(request.data.get('prior_qty_handled')),
+        )
+        if isinstance(result, dict) and 'conflict' in result:
+            return Response(result)
         return Response({'status': Task.STATUS_CANCELLED})
 
     def _resolve_on_behalf_of(self, request):
@@ -249,33 +254,36 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
 
     @action(detail=True, methods=['post'], url_path='stop-work')
     def stop_work(self, request, pk=None):
+        from decimal import Decimal, InvalidOperation
         from apps.jobs.services import TaskLifecycleService, BlepPermissionError
         task = self._get_task_or_404(pk)
         on_behalf_of, err = self._resolve_on_behalf_of(request)
         if err:
             return err
+        raw_qty = request.data.get('add_qty') if request.data else None
+        add_qty = None
+        if raw_qty is not None and raw_qty != '':
+            try:
+                add_qty = Decimal(str(raw_qty))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {'detail': 'Invalid quantity.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            TaskLifecycleService.stop_work(
+            result = TaskLifecycleService.stop_work(
                 task.pk, request.user, on_behalf_of=on_behalf_of,
+                prior_qty_handled=bool(request.data.get('prior_qty_handled')),
+                add_qty=add_qty,
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        payload = {'status': 'ok'}
-        # Session prompt: own explicit stop on an entered-qty task. The blep
-        # is already closed — the prompt is after the fact and skippable.
-        # On-behalf stops never prompt (the actor doesn't know the count).
-        from apps.jobs.models import RateScheme
-        if (on_behalf_of is None
-                and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY):
-            payload.update({
-                'prompt_actual_qty': True,
-                'unit_label': task.rate_scheme.unit_label,
-                'current_qty': (
-                    str(task.actual_qty) if task.actual_qty is not None
-                    else None
-                ),
-            })
-        return Response(payload)
+        # Settle-first: own stop on an entered-qty task with an open session
+        # returns the conflict (nothing mutated — the session keeps running);
+        # the SPA prompts and re-posts with prior_qty_handled (+ add_qty).
+        if isinstance(result, dict) and 'conflict' in result:
+            return Response(result)
+        return Response({'status': 'ok'})
 
     @action(detail=True, methods=['post'], url_path='cancel-work')
     def cancel_work(self, request, pk=None):

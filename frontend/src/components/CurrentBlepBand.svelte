@@ -76,9 +76,10 @@
     return wholeMinutes < minMinutes;
   });
 
-  // The session prompt outlives the blep: once Stop lands, the store
-  // clears and the band disappears, so the modal keeps its own copy of
-  // the task id and renders outside the {#if $currentBlep} block.
+  // Settle-first stop: the conflict response means NOTHING happened —
+  // the blep is still running and the band stays up (honest UI) while
+  // the modal asks for the session count. The task id is still captured
+  // so the settle posts target the right task even if the store shifts.
   let sessionModal = $state(null); // {taskId, unitLabel, currentQty}
   let modalError = $state('');
 
@@ -90,15 +91,16 @@
     error = '';
     try {
       const resp = await api.post(`/api/tasks/${taskId}/${urlSuffix}/`, {});
-      await notifyBlepChanged();
-      if (resp && resp.prompt_actual_qty) {
+      if (resp && resp.conflict === 'prior_session_qty') {
         modalError = '';
         sessionModal = {
           taskId,
           unitLabel: resp.unit_label || '',
           currentQty: resp.current_qty ?? null,
         };
+        return;
       }
+      await notifyBlepChanged();
     } catch (e) {
       error = e.message || 'Could not update work.';
     } finally {
@@ -109,15 +111,19 @@
   const handleStop = () => act('stop-work');
   const handleCancel = () => act('cancel-work');
 
-  // Checkbox checked = one atomic add-and-complete; on failure the modal
-  // stays open so the typed value isn't lost.
+  // One call per outcome, atomic server-side: checkbox = complete with
+  // add_qty (closes the blep too); otherwise a flagged stop carrying the
+  // optional count. On failure the modal stays open, the session still
+  // running — nothing half-done.
   async function submitSession(qty, { completesTask }) {
     modalError = '';
     try {
       if (completesTask) {
         await api.post(`/api/tasks/${sessionModal.taskId}/complete/`, { add_qty: qty ?? 0 });
-      } else if (qty != null) {
-        await api.post(`/api/tasks/${sessionModal.taskId}/actual-qty/add/`, { actual_qty: qty });
+      } else {
+        const body = { prior_qty_handled: true };
+        if (qty != null) body.add_qty = qty;
+        await api.post(`/api/tasks/${sessionModal.taskId}/stop-work/`, body);
       }
       sessionModal = null;
       await notifyBlepChanged();

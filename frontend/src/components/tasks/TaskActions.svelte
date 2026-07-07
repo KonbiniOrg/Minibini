@@ -23,8 +23,9 @@
 
   let busy = $state(false);
   let settleModal = $state(null);  // {unitLabel, currentQty} — settle-up at Complete
-  let sessionModal = $state(null); // {unitLabel, currentQty} — prompt after own Stop
-  let priorModal = $state(null);   // prior_session_qty conflict dict — settle before Start
+  let sessionModal = $state(null); // conflict dict — settle before own Stop
+  let priorModal = $state(null);   // conflict dict — settle before Start
+  let cancelModal = $state(null);  // conflict dict — settle before task-Cancel
   let modalError = $state('');     // server error shown inside the open modal
   let blepModal = $state(false);   // true while the historical-time prompt is open
 
@@ -126,22 +127,21 @@
     completeTask();
   }
 
-  // Stop always succeeds first (the blep closes regardless); the session
-  // prompt is after the fact and skippable. prompt_actual_qty only comes
-  // back for an own stop on an ENTERED_QTY task.
+  // Settle-first stop: an own stop on an ENTERED_QTY task returns a
+  // prior_session_qty conflict and mutates NOTHING — the session keeps
+  // running (band stays honest) until the prompt resolves. Recording the
+  // count is part of the work.
   async function stopWork() {
     busy = true;
     try {
       const resp = await api.post(`/api/tasks/${task.task_id}/stop-work/`, {});
+      if (resp && resp.conflict === 'prior_session_qty') {
+        modalError = '';
+        sessionModal = resp;
+        return;
+      }
       await notifyBlepChanged();
       onChanged();
-      if (resp && resp.prompt_actual_qty) {
-        modalError = '';
-        sessionModal = {
-          unitLabel: resp.unit_label || '',
-          currentQty: resp.current_qty ?? null,
-        };
-      }
     } catch (e) {
       showError(errorMessage(e, 'Action failed.'));
     } finally {
@@ -149,25 +149,70 @@
     }
   }
 
-  // Session modal submit (stop flow). Checkbox checked = one atomic
-  // add-and-complete call; on failure the modal stays open so the typed
-  // value isn't lost (uncheck and Add, or cancel).
+  // Session modal submit (stop flow). One call per outcome, all atomic
+  // server-side: checkbox = complete with add_qty (closes the blep too);
+  // otherwise a flagged stop carrying the optional count. On failure the
+  // modal stays open, the session still running — nothing half-done.
   async function submitSession(qty, { completesTask }) {
     modalError = '';
     busy = true;
     try {
       if (completesTask) {
         await api.post(`/api/tasks/${task.task_id}/complete/`, { add_qty: qty ?? 0 });
-      } else if (qty != null) {
-        await api.post(`/api/tasks/${task.task_id}/actual-qty/add/`, { actual_qty: qty });
+      } else {
+        const body = { prior_qty_handled: true };
+        if (qty != null) body.add_qty = qty;
+        await api.post(`/api/tasks/${task.task_id}/stop-work/`, body);
       }
       sessionModal = null;
+      await notifyBlepChanged();
       onChanged();
     } catch (e) {
       modalError = errorMessage(e, 'Could not save the quantity.');
     } finally {
       busy = false;
     }
+  }
+
+  // Settle-first cancel: parity with elapsed-time tasks, whose closed
+  // bleps survive cancellation — a cancelled entered-qty task keeps its
+  // count too, so the canceller's own open session gets one skippable
+  // offer before the task settles. Modal Cancel aborts the task-cancel.
+  async function postCancel(priorQtyHandled) {
+    busy = true;
+    try {
+      const body = priorQtyHandled ? { prior_qty_handled: true } : {};
+      const resp = await api.post(`/api/tasks/${task.task_id}/cancel/`, body);
+      if (resp && resp.conflict === 'prior_session_qty') {
+        modalError = '';
+        cancelModal = resp;
+        return;
+      }
+      cancelModal = null;
+      await notifyBlepChanged();
+      onChanged();
+    } catch (e) {
+      showError(errorMessage(e, 'Action failed.'));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function submitCancel(qty) {
+    modalError = '';
+    busy = true;
+    try {
+      if (qty != null) {
+        await api.post(`/api/tasks/${task.task_id}/actual-qty/add/`, { actual_qty: qty });
+      }
+    } catch (e) {
+      modalError = errorMessage(e, 'Could not save the quantity.');
+      busy = false;
+      return;
+    }
+    busy = false;
+    cancelModal = null;
+    await postCancel(true);
   }
 
   // Start settles first: without the flag, an open session on another
@@ -222,7 +267,7 @@
   };
   const unblock = () => call(`/api/tasks/${task.task_id}/unblock/`);
   const cancel = () => {
-    if (confirm('Cancel this task?')) call(`/api/tasks/${task.task_id}/cancel/`);
+    if (confirm('Cancel this task?')) postCancel(false);
   };
 </script>
 
@@ -254,12 +299,25 @@
 {#if sessionModal}
   <ActualQtyModal
     mode="session"
-    unitLabel={sessionModal.unitLabel}
-    currentQty={sessionModal.currentQty}
+    unitLabel={sessionModal.unit_label || ''}
+    currentQty={sessionModal.current_qty ?? null}
     allowComplete={true}
     serverError={modalError}
     onSubmit={submitSession}
     onClose={() => { sessionModal = null; modalError = ''; }}
+  />
+{/if}
+
+{#if cancelModal}
+  <ActualQtyModal
+    mode="session"
+    unitLabel={cancelModal.unit_label || ''}
+    currentQty={cancelModal.current_qty ?? null}
+    priorTaskName={cancelModal.prior_task?.name || ''}
+    allowComplete={false}
+    serverError={modalError}
+    onSubmit={submitCancel}
+    onClose={() => { cancelModal = null; modalError = ''; }}
   />
 {/if}
 

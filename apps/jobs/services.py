@@ -1335,8 +1335,18 @@ class TaskLifecycleService:
             return task
 
     @staticmethod
-    def cancel_task(task_pk):
-        """Transition task from pending/in_progress/blocked -> cancelled."""
+    def cancel_task(task_pk, user=None, prior_qty_handled=False):
+        """Transition task from pending/in_progress/blocked -> cancelled.
+
+        Settle-first (same family as start_work / clock-out): cancelling
+        retains recorded quantities just as it retains closed bleps, so
+        when the *canceller's own* open blep on an ENTERED_QTY task would
+        be closed by this cancel, return a `prior_session_qty` conflict
+        (mutating nothing) so the SPA can offer — skippably — to record
+        the session's count first. Internal callers (change-order
+        acceptance) pass no `user` and never prompt; other workers'
+        sessions close silently, as with complete.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             _assert_job_not_on_hold(task.job, 'cancel this task')
@@ -1346,6 +1356,20 @@ class TaskLifecycleService:
                     f"Cannot cancel task: status is '{task.status}', "
                     f"must be 'pending', 'in_progress', or 'blocked'."
                 )
+            if (user is not None and not prior_qty_handled
+                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and Blep.objects.filter(
+                        task=task, user=user, end_time__isnull=True,
+                    ).exists()):
+                return {
+                    'conflict': 'prior_session_qty',
+                    'prior_task': {'task_id': task.pk, 'name': task.name},
+                    'unit_label': task.rate_scheme.unit_label,
+                    'current_qty': (
+                        str(task.actual_qty)
+                        if task.actual_qty is not None else None
+                    ),
+                }
             BlepService._close_open(task=task)
             # Pending materials ride back to the job as loose rows (task=NULL)
             # instead of staying "needed" on a dead task; the user releases
@@ -1385,7 +1409,6 @@ class TaskLifecycleService:
         for i, other_pk in enumerate(others, start=2):
             Task.objects.filter(pk=other_pk).exclude(worker_queue=i).update(worker_queue=i)
 
-    @staticmethod
     @staticmethod
     def prior_session_prompt(user, exclude_task_pk=None):
         """Return a `prior_session_qty` conflict dict when `user` holds an
@@ -1530,12 +1553,23 @@ class TaskLifecycleService:
             return {'task': task, 'blep': blep}
 
     @staticmethod
-    def stop_work(task_pk, user, on_behalf_of=None):
+    def stop_work(task_pk, user, on_behalf_of=None, prior_qty_handled=False,
+                  add_qty=None):
         """Close the target's open Blep on this task.
 
         `target` = `on_behalf_of or user`. Stopping another user's timer
         (e.g. a worker who left and forgot to clock out) requires the actor
         (`user`) to hold can_manage_time.
+
+        Settle-first for own stops on ENTERED_QTY tasks: without
+        `prior_qty_handled`, returns a `prior_session_qty` conflict dict
+        and mutates NOTHING — the session keeps running until the SPA's
+        prompt resolves (recording the count is part of the work, and the
+        band stays honest because nothing has happened yet). The flagged
+        re-post may carry `add_qty` (the session count, > 0): the increment
+        applies and the blep closes in one transaction, so a failed entry
+        can never half-run. On-behalf stops never conflict — the actor
+        doesn't know the count.
         """
         target = on_behalf_of or user
         if target != user and not _has_manage_time(user):
@@ -1543,7 +1577,30 @@ class TaskLifecycleService:
                 "Stopping another user's timer requires can_manage_time."
             )
         with transaction.atomic():
-            task = Task.objects.get(pk=task_pk)
+            task = Task.objects.select_for_update().get(pk=task_pk)
+            if (on_behalf_of is None and not prior_qty_handled
+                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and Blep.objects.filter(
+                        task=task, user=target, end_time__isnull=True,
+                    ).exists()):
+                return {
+                    'conflict': 'prior_session_qty',
+                    'prior_task': {'task_id': task.pk, 'name': task.name},
+                    'unit_label': task.rate_scheme.unit_label,
+                    'current_qty': (
+                        str(task.actual_qty)
+                        if task.actual_qty is not None else None
+                    ),
+                }
+            if add_qty is not None:
+                if task.rate_scheme.algorithm != RateScheme.ENTERED_QTY:
+                    raise ValidationError(
+                        'Task is not billed by entered quantity.')
+                if add_qty <= 0:
+                    raise ValidationError({'add_qty': [
+                        'Must be greater than 0.']})
+                task.actual_qty = (task.actual_qty or Decimal('0')) + add_qty
+                task.save(update_fields=['actual_qty'])
             closed = BlepService._close_open(user=target, task=task)
             if not closed:
                 raise ValidationError(

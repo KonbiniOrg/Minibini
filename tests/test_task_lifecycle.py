@@ -728,6 +728,81 @@ class PriorSessionQtyStartWorkTest(BaseTestCase):
         self.assertEqual(second.get('conflict'), 'active_worker')
 
 
+class CancelTaskPriorSessionTest(BaseTestCase):
+    """Cancelling a task retains recorded quantities just as it retains
+    bleps (parity with elapsed-time tasks, whose closed bleps survive
+    cancellation). So the canceller's own open ENTERED_QTY session gets a
+    skippable prior_session_qty offer before the task settles. Internal
+    callers (CO acceptance) pass no user and never prompt."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.user = User.objects.first()
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.eq_task = Task.objects.create(
+            name='CNC', job=self.job, rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=self.eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        self.blep = Blep.objects.create(
+            task=self.eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+
+    def test_own_open_session_prompts_and_mutates_nothing(self):
+        result = TaskLifecycleService.cancel_task(
+            self.eq_task.pk, user=self.user)
+        self.assertEqual(result.get('conflict'), 'prior_session_qty')
+        self.assertEqual(result['prior_task']['task_id'], self.eq_task.pk)
+        self.assertEqual(
+            self.Decimal(result['current_qty']), self.Decimal('9'))
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_IN_PROGRESS)
+        self.blep.refresh_from_db()
+        self.assertIsNone(self.blep.end_time)
+
+    def test_flag_proceeds_with_cancel(self):
+        result = TaskLifecycleService.cancel_task(
+            self.eq_task.pk, user=self.user, prior_qty_handled=True)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+        self.blep.refresh_from_db()
+        self.assertIsNotNone(self.blep.end_time)
+
+    def test_no_user_never_prompts(self):
+        """Internal bulk callers (change-order acceptance) pass no user."""
+        result = TaskLifecycleService.cancel_task(self.eq_task.pk)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+    def test_elapsed_task_never_prompts(self):
+        elapsed = Task.objects.create(
+            name='Labor', job=self.job, rate_scheme_id=1,
+        )
+        Task.objects.filter(pk=elapsed.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=elapsed, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.cancel_task(elapsed.pk, user=self.user)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+    def test_other_workers_session_never_prompts(self):
+        """A manager cancelling a task someone else is working doesn't know
+        the count — their session closes silently (same as complete)."""
+        other = User.objects.create_user(username='ctps_other', password='x')
+        self.blep.delete()
+        Blep.objects.create(
+            task=self.eq_task, user=other,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.cancel_task(
+            self.eq_task.pk, user=self.user)
+        self.assertEqual(result.status, Task.STATUS_CANCELLED)
+
+
 class BlockNoRollupRegressionTest(BaseTestCase):
     """Blocking/unblocking a task must NOT bubble up to Job status."""
 

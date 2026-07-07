@@ -88,28 +88,69 @@ const activeBlep = () => ({
   blep_minimum_minutes: 1,
 });
 
-describe('TaskActions — stop-work session prompt', () => {
-  it('opens the session modal on prompt_actual_qty and posts the add', async () => {
-    api.post.mockImplementation((url) => {
-      if (url.endsWith('/stop-work/')) {
-        return Promise.resolve({ status: 'ok', prompt_actual_qty: true,
-                                 unit_label: 'pcs', current_qty: '9' });
+describe('TaskActions — settle-first stop', () => {
+  const stopConflict = {
+    conflict: 'prior_session_qty',
+    prior_task: { task_id: 5, name: 'Press parts' },
+    unit_label: 'pcs', current_qty: '9',
+  };
+
+  it('opens the session modal on the conflict and settles in ONE flagged stop', async () => {
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/stop-work/') && !body?.prior_qty_handled) {
+        return Promise.resolve(stopConflict);
       }
-      return Promise.resolve({});
+      return Promise.resolve({ status: 'ok' });
     });
     const { getByRole } = render(TaskActions, {
       props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
                activeBlepOnThisTask: activeBlep() },
     });
     await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
-    const input = getByRole('spinbutton');
-    await fireEvent.input(input, { target: { value: '5' } });
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
     await fireEvent.click(getByRole('button', { name: 'Add' }));
-    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/actual-qty/add/',
-                                          { actual_qty: 5 });
+    await vi.waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/stop-work/',
+                                            { prior_qty_handled: true, add_qty: 5 });
+    });
+    const addCalls = api.post.mock.calls.filter(
+      ([url]) => url.includes('actual-qty/add'));
+    expect(addCalls).toHaveLength(0);
   });
 
-  it('does not open a modal when stop has no prompt fields', async () => {
+  it('empty submit skips the entry and just stops', async () => {
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/stop-work/') && !body?.prior_qty_handled) {
+        return Promise.resolve(stopConflict);
+      }
+      return Promise.resolve({ status: 'ok' });
+    });
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
+               activeBlepOnThisTask: activeBlep() },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    await vi.waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/stop-work/',
+                                            { prior_qty_handled: true });
+    });
+  });
+
+  it('modal Cancel aborts the stop — the session keeps running', async () => {
+    api.post.mockResolvedValue(stopConflict);
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
+               activeBlepOnThisTask: activeBlep() },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    const flagged = api.post.mock.calls.filter(
+      ([, body]) => body?.prior_qty_handled);
+    expect(flagged).toHaveLength(0);
+  });
+
+  it('does not open a modal when stop returns no conflict', async () => {
     api.post.mockResolvedValue({ status: 'ok' });
     const { getByRole, queryByRole } = render(TaskActions, {
       props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
@@ -119,11 +160,10 @@ describe('TaskActions — stop-work session prompt', () => {
     expect(queryByRole('spinbutton')).toBeNull();
   });
 
-  it('checkbox turns the submit into a single complete with add_qty', async () => {
-    api.post.mockImplementation((url) => {
-      if (url.endsWith('/stop-work/')) {
-        return Promise.resolve({ status: 'ok', prompt_actual_qty: true,
-                                 unit_label: 'pcs', current_qty: '9' });
+  it('checkbox settles-and-completes in one atomic complete call', async () => {
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/stop-work/') && !body?.prior_qty_handled) {
+        return Promise.resolve(stopConflict);
       }
       return Promise.resolve({ status: 'complete' });
     });
@@ -137,23 +177,20 @@ describe('TaskActions — stop-work session prompt', () => {
     await fireEvent.click(getByRole('button', { name: 'Add & complete' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/complete/',
                                           { add_qty: 5 });
-    const addCalls = api.post.mock.calls.filter(
-      ([url]) => url.includes('actual-qty/add'));
-    expect(addCalls).toHaveLength(0);
+    // complete closes the blep server-side — no stop re-post needed.
+    const flaggedStops = api.post.mock.calls.filter(
+      ([url, body]) => url.endsWith('/stop-work/') && body?.prior_qty_handled);
+    expect(flaggedStops).toHaveLength(0);
   });
 
-  it('keeps the modal open with the error when the checkbox complete fails', async () => {
-    api.post.mockImplementation((url) => {
-      if (url.endsWith('/stop-work/')) {
-        return Promise.resolve({ status: 'ok', prompt_actual_qty: true,
-                                 unit_label: 'pcs', current_qty: '9' });
+  it('keeps the modal open with the error when the settle fails', async () => {
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/stop-work/') && !body?.prior_qty_handled) {
+        return Promise.resolve(stopConflict);
       }
-      if (url.endsWith('/complete/')) {
-        return Promise.reject(Object.assign(new Error('fail'), {
-          status: 400, data: { detail: 'Cannot complete: unconsumed materials.' },
-        }));
-      }
-      return Promise.resolve({});
+      return Promise.reject(Object.assign(new Error('fail'), {
+        status: 400, data: { detail: 'Cannot reduce the total below zero.' },
+      }));
     });
     const { getByRole, getByText } = render(TaskActions, {
       props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
@@ -161,13 +198,61 @@ describe('TaskActions — stop-work session prompt', () => {
     });
     await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
     await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
-    await fireEvent.click(getByRole('checkbox'));
-    await fireEvent.click(getByRole('button', { name: 'Add & complete' }));
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
     await vi.waitFor(() => {
-      expect(getByText(/unconsumed materials/)).toBeInTheDocument();
+      expect(getByText(/below zero/)).toBeInTheDocument();
     });
-    // Still open — the typed value is not lost.
     expect(getByRole('spinbutton')).toBeInTheDocument();
+  });
+});
+
+describe('TaskActions — settle-first task cancel', () => {
+  const cancelConflict = {
+    conflict: 'prior_session_qty',
+    prior_task: { task_id: 5, name: 'Press parts' },
+    unit_label: 'pcs', current_qty: '9',
+  };
+
+  it('offers the session count before cancelling, then re-posts with the flag', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/cancel/') && !body?.prior_qty_handled) {
+        return Promise.resolve(cancelConflict);
+      }
+      return Promise.resolve({ status: 'cancelled' });
+    });
+    const { getByRole, getByText } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
+               canManage: true },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    expect(getByText(/Press parts/)).toBeInTheDocument();
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    await vi.waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/actual-qty/add/',
+                                            { actual_qty: 5 });
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel/',
+                                            { prior_qty_handled: true });
+    });
+    window.confirm.mockRestore();
+  });
+
+  it('modal Cancel aborts the task-cancel entirely', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post.mockResolvedValue(cancelConflict);
+    const { getByRole, getAllByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 },
+               canManage: true },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    // The modal's Cancel (the row's Cancel is behind the modal overlay).
+    const cancels = getAllByRole('button', { name: 'Cancel' });
+    await fireEvent.click(cancels[cancels.length - 1]);
+    const flagged = api.post.mock.calls.filter(
+      ([, body]) => body?.prior_qty_handled);
+    expect(flagged).toHaveLength(0);
+    window.confirm.mockRestore();
   });
 });
 

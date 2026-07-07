@@ -80,15 +80,29 @@ describe('ActualQtyModal — session mode', () => {
     expect(onSubmit).toHaveBeenCalledWith(5, { completesTask: false });
   });
 
-  it('rejects a non-positive session count', async () => {
+  it('rejects a typed non-positive session count', async () => {
     const onSubmit = vi.fn();
     const { getByRole, getByText } = render(ActualQtyModal, {
       props: { mode: 'session', unitLabel: 'pcs',
                onSubmit, onClose: vi.fn() },
     });
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '0' } });
     await fireEvent.click(getByRole('button', { name: 'Add' }));
     expect(getByText(/greater than 0/)).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('empty submit is an explicit skip in every session context', async () => {
+    // Settle-first everywhere: the gesture (stop / switch / clock-out /
+    // cancel) is still pending while this modal is up, so Cancel aborts
+    // the gesture and empty-submit means "no entry, proceed".
+    const onSubmit = vi.fn();
+    const { getByRole } = render(ActualQtyModal, {
+      props: { mode: 'session', unitLabel: 'pcs',
+               onSubmit, onClose: vi.fn() },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    expect(onSubmit).toHaveBeenCalledWith(null, { completesTask: false });
   });
 
   it('checkbox switches submit to Add & complete and allows empty input', async () => {
