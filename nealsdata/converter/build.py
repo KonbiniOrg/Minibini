@@ -1649,7 +1649,13 @@ def build_invoices(c):
                 'units':               'none',  # intentional: FreeAgent invoice line items carry no unit signal
                 'description':         description,
                 'price':               f'{price:.2f}',
-                'accounting_category': None,
+                # Every line needs an AC (mirrors the estimate-line rule):
+                # deterministic, plausible pick across the four seeded
+                # categories — DLV/PRD/MTL/SVC by description + Item Type +
+                # classification. build_seed runs first, so ac_by_code is set.
+                'accounting_category': c.ac_by_code.get(
+                    P.pick_invoice_line_ac(item_type, description,
+                                           classification)),
                 'taxable_override':    None,
                 'tax_rate_override':   None,
             })
