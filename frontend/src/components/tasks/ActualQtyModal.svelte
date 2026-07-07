@@ -89,6 +89,9 @@
     </p>
   {:else}
     <h3>Quantity this session</h3>
+    {#if currentQty != null}
+      <p>Entered so far: <strong>{currentQty} {unit}</strong>.</p>
+    {/if}
     {#if priorTaskName}
       <p>
         Your open session on <strong>{priorTaskName}</strong> — how many

@@ -124,6 +124,23 @@ describe('ActualQtyModal — session mode', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('shows the running total when one is on record', () => {
+    const { getByText } = render(ActualQtyModal, {
+      props: { mode: 'session', unitLabel: 'pcs', currentQty: '6.00',
+               onSubmit: vi.fn(), onClose: vi.fn() },
+    });
+    expect(getByText(/Entered so far/)).toBeInTheDocument();
+    expect(getByText(/6.00 pcs/)).toBeInTheDocument();
+  });
+
+  it('omits the running-total line when nothing is recorded yet', () => {
+    const { queryByText } = render(ActualQtyModal, {
+      props: { mode: 'session', unitLabel: 'pcs', currentQty: null,
+               onSubmit: vi.fn(), onClose: vi.fn() },
+    });
+    expect(queryByText(/Entered so far/)).toBeNull();
+  });
+
   it('names the prior task in the switch/clock-out context', () => {
     const { getByText } = render(ActualQtyModal, {
       props: { mode: 'session', unitLabel: 'pcs', priorTaskName: 'Cut panels',

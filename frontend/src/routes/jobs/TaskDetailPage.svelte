@@ -387,8 +387,12 @@
                 {addQtySaving ? 'Adding…' : 'Add'}
               </button>
             {/if}
-            {#if addQtyAdded}<span class="saved-flash">added</span>{/if}
-            {#if addQtyError}<span class="field-error">{addQtyError}</span>{/if}
+            <!-- Always-present feedback slot: transient "added"/error text
+                 must not resize the table column (visible layout jump). -->
+            <span class="add-feedback">
+              {#if addQtyAdded}<span class="saved-flash">added</span>{/if}
+              {#if addQtyError}<span class="field-error">{addQtyError}</span>{/if}
+            </span>
           </td></tr>
       {:else if task.scheme_algorithm === 'elapsed_time'}
         <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
@@ -531,6 +535,7 @@
   .saved-flash { color: #166534; font-size: 12px; margin-left: 6px; }
   .add-qty { margin-left: 10px; }
   .add-qty input { width: 90px; }
+  .add-feedback { display: inline-block; min-width: 14em; }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
