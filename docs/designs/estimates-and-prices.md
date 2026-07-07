@@ -416,9 +416,13 @@ surfaces, all showing the scheme's `unit_label`:
 - **Session prompt on own explicit stop** — stop-work's response carries
   `prompt_actual_qty`/`unit_label`/`current_qty` for an own stop on an
   `entered_qty` task; the SPA prompts "how many did this session
-  produce?" and posts `POST /api/tasks/{id}/actual-qty/add/`. Skippable
+  produce?" (leading with "Entered so far: N unit" when a total exists)
+  and posts `POST /api/tasks/{id}/actual-qty/add/`. Skippable
   (the blep is already closed). The modal's "This completes the task"
   checkbox turns the submit into one atomic `complete` with `add_qty`.
+  ⚠ Mutate-first-prompt-second: the modal must survive the blep-change
+  refetch of the page under it — fragility notes and the guarding
+  invariants live in jobs-tasks-and-worksheets.md §10.1a.
 - **Prior-session settle on task-switch and clock-out** — `start-work`
   and `/api/shifts/clock-out` return a `prior_session_qty` conflict
   (mutating nothing) when the user's own gesture would silently close an

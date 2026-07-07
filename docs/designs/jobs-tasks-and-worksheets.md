@@ -1165,6 +1165,51 @@ mount.
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
 | `ActualQtyModal.svelte` | Quantity entry for ENTERED_QTY tasks — `complete` mode (settle-up: running total + "any more to add?", signed, final must be > 0) and `session` mode (per-session count; `priorTaskName` names the old task in switch/clock-out context; "This completes the task" checkbox = one atomic complete with `add_qty`). Shared by `TaskActions`, `CurrentBlepBand`, `AssignedTaskList`, `ClockBand` |
 
+### 10.1a Prompt modals vs. the blep-change broadcast (fragile — read before touching)
+
+The stop-work session prompt creates a structural tension that bit us
+once (2026-07-06) and will bite again if either side is changed
+carelessly. The chain:
+
+1. **Stop closes the blep first; the prompt is after the fact** (spec
+   decision — ending a timer is never held hostage by a quantity
+   dialog, and the prompt is skippable).
+2. Because the blep is *genuinely closed* the moment stop-work returns,
+   the SPA immediately fires `notifyBlepChanged` — the band clears, the
+   home lists refresh. Deferring the broadcast until the modal resolves
+   would make the UI lie ("Working on…" after the timer stopped), so
+   that ordering is fixed.
+3. `TaskDetailPage` itself subscribes to that broadcast (the
+   `lastBlepVersion` effect) to refresh Work Sessions/status in place.
+   **So the same click that opens the session modal also refetches the
+   page under it.** The modal is `TaskActions` component state — it only
+   survives because the page refreshes *in place*.
+
+Two invariants keep this working; each has a regression test in
+`frontend/tests/components/jobs/TaskDetailPage.test.js`:
+
+- **Background refetches never blank the page.** `loadTask` flips
+  `loading` only on first load or when the route's `taskId` changed —
+  a "Loading…" flip unmounts `TaskActions` and destroys any open prompt
+  modal. (Test: session modal survives a stop with the *real*
+  blepActivity store.)
+- **`loadTask` reads no `$state` it writes.** Its first-load/`taskId`
+  bookkeeping lives in the deliberately non-reactive `loadedTaskId`
+  variable. Making that decision read `task` turned the mount `$effect`
+  into an infinite refetch loop (full task-page API fan-out at 4-5
+  req/s). The general rule is codified in `frontend/README.md`
+  §"Loaders called from `$effect` are write-only". (Test: fetch count
+  stays bounded after load.)
+
+The other prompt flows don't face this: the settle-up (Complete) and
+prior-session (Start / clock-out) prompts open *before* any mutation,
+so nothing has broadcast yet while they're up. Only flows that mutate
+first and prompt second inherit the survive-the-refresh requirement —
+keep that in mind if a future gesture adopts the same
+mutate-then-prompt shape, or if `CurrentBlepBand`'s modal (which
+sidesteps the problem by holding its own copy of the task id outside
+the `{#if $currentBlep}` block) is restructured.
+
 ### 10.2 Action visibility
 
 Worker = any authenticated user. Manager = user with `can_manage_jobs`.
