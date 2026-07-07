@@ -4,6 +4,7 @@
   import { canManageTime, canManageFinancials } from '../../stores/permissions.js';
   import ShiftRequestQueue from '../../components/users/ShiftRequestQueue.svelte';
   import PayrollReport from '../../components/users/PayrollReport.svelte';
+  import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
 
   let tab = $state('users');
   const canSeeShifts = $derived($canManageTime || $canManageFinancials);
@@ -48,12 +49,16 @@
   <button class:active={tab === 'users'} onclick={() => tab = 'users'}>Users</button>
   {#if canSeeShifts}
     <button class:active={tab === 'shifts'} onclick={() => tab = 'shifts'}>Shifts</button>
+    <button class:active={tab === 'sessions'} onclick={() => tab = 'sessions'}>Work Sessions</button>
   {/if}
 </nav>
 
 {#if tab === 'shifts'}
   <ShiftRequestQueue />
   <PayrollReport />
+{:else if tab === 'sessions'}
+  <!-- All users' work sessions (bleps), recent-first, paged. -->
+  <WorkSessionsList showWorker={true} title="" />
 {:else}
 
 <p><a href="/users/new" use:link>New user</a></p>
