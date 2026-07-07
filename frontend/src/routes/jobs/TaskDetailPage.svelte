@@ -38,22 +38,23 @@
   let matModalMode = $state('create');
   let matModalMaterial = $state(null);
 
+  // Ref to TaskActions so the toolbar's relocated Start Work button can
+  // trigger its exported startWork() (same flow: prior-session prompt,
+  // join/takeover conflicts).
+  let taskActionsRef = $state(null);
+
   // Subtasks state
   let subtasks = $state([]);
   let subtaskModalOpen = $state(false);
   let assignModalOpen = $state(false);
-  let actualQtyError = $state('');
-  let actualQtyInput = $state('');
-  let actualQtySaving = $state(false);
-  let actualQtySaved = $state(false);
-
-  // Keep the local input in sync when the task reloads (e.g., after a save
-  // round-trip), but don't fight the user while they're typing.
-  $effect(() => {
-    if (task && !actualQtySaving) {
-      actualQtyInput = task.actual_qty ?? '';
-    }
-  });
+  // The actual-qty surface is add-only: the running total displays
+  // read-only and the input is a signed delta (negative = correction).
+  // Adds are NOT idempotent, so nothing commits implicitly — only the
+  // Add button / Enter, never blur, never a client retry.
+  let addQtyError = $state('');
+  let addQtyInput = $state('');
+  let addQtySaving = $state(false);
+  let addQtyAdded = $state(false);
 
   // Edit-task modal
   let editTaskOpen = $state(false);
@@ -88,11 +89,24 @@
   });
 
 
+  // Deliberately NOT $state: loadTask runs inside $effects, and reading
+  // reactive state it also writes (e.g. `task`) would make those effects
+  // depend on it — an infinite refetch loop. A plain variable adds no
+  // dependency.
+  let loadedTaskId = null;
+
   async function loadTask() {
-    loading = true;
+    // Blank the page only on first load or when navigating to a different
+    // task. Background refetches (blep activity, post-add refresh) must
+    // not flip `loading` — that unmounts TaskActions mid-interaction and
+    // destroys any open prompt modal (e.g. the stop-work session prompt).
+    if (loadedTaskId === null || String(loadedTaskId) !== String(params.taskId)) {
+      loading = true;
+    }
     error = '';
     try {
       task = await api.get(`/api/tasks/${params.taskId}/`);
+      loadedTaskId = params.taskId;
       if (task?.job?.id) {
         await loadJobContext(task.job.id);
       }
@@ -119,20 +133,30 @@
     }
   }
 
-  async function saveActualQty(value) {
+  async function addActualQty() {
     if (!task) return;
-    actualQtyError = '';
-    actualQtySaved = false;
-    actualQtySaving = true;
+    addQtyError = '';
+    addQtyAdded = false;
+    const delta = parseFloat(addQtyInput);
+    if (!Number.isFinite(delta) || delta === 0) {
+      addQtyError = 'Enter a non-zero amount to add (negative to correct).';
+      return;
+    }
+    addQtySaving = true;
     try {
-      await api.patch(`/api/tasks/${task.task_id}/actual-qty/`, { actual_qty: value });
-      await loadTask();
-      actualQtySaved = true;
-      setTimeout(() => { actualQtySaved = false; }, 1500);
+      const resp = await api.post(
+        `/api/tasks/${task.task_id}/actual-qty/add/`, { actual_qty: delta });
+      addQtyInput = '';
+      addQtyAdded = true;
+      setTimeout(() => { addQtyAdded = false; }, 1500);
+      // Refresh silently (no loading flip — it would remount the row
+      // mid-interaction); the response total is authoritative.
+      const fresh = await api.get(`/api/tasks/${task.task_id}/`);
+      task = { ...fresh, actual_qty: resp.actual_qty };
     } catch (e) {
-      actualQtyError = e.message || 'Could not save actual qty';
+      addQtyError = e.message || 'Could not add to actual qty';
     } finally {
-      actualQtySaving = false;
+      addQtySaving = false;
     }
   }
 
@@ -313,15 +337,25 @@
       {#if !taskIsTerminal}
         <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
       {/if}
+      <!-- Start Work lives here, next to edit task; while the user's own
+           blep runs, NOTHING renders here — the yellow band is the only
+           stop/cancel surface. Avoids the two-Cancel row (blep-cancel
+           next to task-cancel). To be refined with the task-page design
+           pass. -->
+      {#if (task.status === 'pending' || task.status === 'in_progress') && !activeBlepOnThisTask}
+        <button type="button" onclick={() => taskActionsRef?.startWork()}>Start Work</button>
+      {/if}
       <h2 class="task-title">Task: {task.name}</h2>
     </div>
   {/if}
 
   <TaskActions
+    bind:this={taskActionsRef}
     {task}
     user={$userStore}
     canManage={task?.can_manage}
     {activeBlepOnThisTask}
+    hideStartStop={true}
     onChanged={refresh}
     onConflict={handleConflict}
   />
@@ -362,15 +396,25 @@
       {#if task.scheme_algorithm === 'entered_qty'}
         <tr><td><strong>Actual {task.scheme_unit_label}s</strong></td>
           <td>
-            <input
-              type="number" step="0.01"
-              bind:value={actualQtyInput}
-              onkeydown={(e) => { if (e.key === 'Enter') saveActualQty(actualQtyInput); }}>
-            <button type="button" onclick={() => saveActualQty(actualQtyInput)} disabled={actualQtySaving}>
-              {actualQtySaving ? 'Saving…' : 'Save'}
-            </button>
-            {#if actualQtySaved}<span class="saved-flash">saved</span>{/if}
-            {#if actualQtyError}<span class="field-error">{actualQtyError}</span>{/if}
+            Actual so far: <strong>{task.actual_qty ?? 0} {task.scheme_unit_label}</strong>
+            {#if !taskIsTerminal}
+              <label class="add-qty">
+                <span class="sr-only">Add ({task.scheme_unit_label})</span>
+                <input
+                  type="number" step="any" placeholder="+ / −"
+                  bind:value={addQtyInput}
+                  onkeydown={(e) => { if (e.key === 'Enter') addActualQty(); }}>
+              </label>
+              <button type="button" onclick={addActualQty} disabled={addQtySaving}>
+                {addQtySaving ? 'Adding…' : 'Add'}
+              </button>
+            {/if}
+            <!-- Always-present feedback slot: transient "added"/error text
+                 must not resize the table column (visible layout jump). -->
+            <span class="add-feedback">
+              {#if addQtyAdded}<span class="saved-flash">added</span>{/if}
+              {#if addQtyError}<span class="field-error">{addQtyError}</span>{/if}
+            </span>
           </td></tr>
       {:else if task.scheme_algorithm === 'elapsed_time'}
         <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
@@ -511,6 +555,13 @@
   .error { color: #a8071a; }
   .field-error { color: #a8071a; font-size: 13px; margin-left: 6px; }
   .saved-flash { color: #166534; font-size: 12px; margin-left: 6px; }
+  .add-qty { margin-left: 10px; }
+  .add-qty input { width: 90px; }
+  .add-feedback { display: inline-block; min-width: 14em; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
   .toolbar {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
     padding: 8px 24px;

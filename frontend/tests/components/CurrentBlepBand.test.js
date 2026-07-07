@@ -7,15 +7,21 @@ vi.mock('@/stores/currentBlep.js', async () => {
 });
 vi.mock('@/stores/blepActivity.js', () => ({ notifyBlepChanged: vi.fn() }));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
-vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { post: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 
 import { currentBlep } from '@/stores/currentBlep.js';
 import { api } from '@/lib/api.js';
+import { notifyBlepChanged } from '@/stores/blepActivity.js';
 import CurrentBlepBand from '@/components/CurrentBlepBand.svelte';
 
 beforeEach(() => {
   api.post.mockReset();
   api.post.mockResolvedValue({});
+  notifyBlepChanged.mockReset();
   currentBlep.set(null);
   sessionStorage.clear();
 });
@@ -39,6 +45,70 @@ describe('CurrentBlepBand', () => {
     const { getByRole } = render(CurrentBlepBand);
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel-work/', {});
+  });
+
+  it('keeps the band and settles in one flagged stop when the conflict arrives', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/stop-work/') && !body?.prior_qty_handled) {
+        return Promise.resolve({ conflict: 'prior_session_qty',
+                                 prior_task: { task_id: 5, name: 'Cut' },
+                                 unit_label: 'pcs', current_qty: '9' });
+      }
+      return Promise.resolve({ status: 'ok' });
+    });
+    const { getByRole, getByText } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    // Nothing happened yet: the blep is still running, the band stays.
+    expect(notifyBlepChanged).not.toHaveBeenCalled();
+    expect(getByText(/Working on/)).toBeInTheDocument();
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    await vi.waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/stop-work/',
+                                            { prior_qty_handled: true, add_qty: 5 });
+      expect(notifyBlepChanged).toHaveBeenCalled();
+    });
+  });
+
+  it('checkbox completes the task in the same gesture', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/stop-work/') && !body?.prior_qty_handled) {
+        return Promise.resolve({ conflict: 'prior_session_qty',
+                                 prior_task: { task_id: 5, name: 'Cut' },
+                                 unit_label: 'pcs', current_qty: '9' });
+      }
+      return Promise.resolve({ status: 'complete' });
+    });
+    const { getByRole } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('checkbox'));
+    await fireEvent.click(getByRole('button', { name: 'Add & complete' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/complete/', { add_qty: 5 });
+  });
+
+  it('modal Cancel keeps the session running', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockResolvedValue({ conflict: 'prior_session_qty',
+                                 prior_task: { task_id: 5, name: 'Cut' },
+                                 unit_label: 'pcs', current_qty: null });
+    const { getByRole, getAllByRole } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    const cancels = getAllByRole('button', { name: 'Cancel' });
+    await fireEvent.click(cancels[cancels.length - 1]);
+    const flagged = api.post.mock.calls.filter(([, body]) => body?.prior_qty_handled);
+    expect(flagged).toHaveLength(0);
+    expect(notifyBlepChanged).not.toHaveBeenCalled();
+  });
+
+  it('plain stop without prompt fields opens no modal', async () => {
+    currentBlep.set({ task: { id: 5, name: 'Cut' }, start_time: new Date(Date.now() - 120000).toISOString(), blep_minimum_minutes: 1 });
+    api.post.mockResolvedValue({ status: 'ok' });
+    const { getByRole, queryByRole } = render(CurrentBlepBand);
+    await fireEvent.click(getByRole('button', { name: 'Stop' }));
+    expect(queryByRole('spinbutton')).toBeNull();
   });
 });
 

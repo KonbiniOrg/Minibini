@@ -20,18 +20,18 @@ describe('StartWorkConflictModal', () => {
     expect(queryByText(/already working/i)).toBeNull();
   });
 
-  it('joins the existing session', async () => {
+  it('joins the existing session (carrying prior_qty_handled — the prior-session prompt already ran on the first post)', async () => {
     const onResolved = vi.fn();
     const { getByRole } = render(StartWorkConflictModal, { props: { conflict, taskId: 5, onResolved } });
     await fireEvent.click(getByRole('button', { name: /Join/ }));
-    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/start-work/', { action: 'join' });
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/start-work/', { action: 'join', prior_qty_handled: true });
     expect(onResolved).toHaveBeenCalled();
   });
 
   it('takes over on behalf of a worker', async () => {
     const { getByRole } = render(StartWorkConflictModal, { props: { conflict, taskId: 5, onBehalfOf: 2 } });
     await fireEvent.click(getByRole('button', { name: /Take over/ }));
-    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/start-work/', { action: 'takeover', on_behalf_of: 2 });
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/start-work/', { action: 'takeover', on_behalf_of: 2, prior_qty_handled: true });
   });
 
   it('cancels via onCancel', async () => {

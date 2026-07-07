@@ -163,20 +163,26 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             TaskLifecycleService, TaskActualQtyRequired, TaskTimeRequired,
         )
         task = self._get_task_or_404(pk)
-        raw_qty = request.data.get('actual_qty') if request.data else None
-        actual_qty = None
+        raw_qty = request.data.get('add_qty') if request.data else None
+        add_qty = None
         if raw_qty is not None and raw_qty != '':
             try:
-                actual_qty = Decimal(str(raw_qty))
+                add_qty = Decimal(str(raw_qty))
             except (InvalidOperation, ValueError):
                 return Response(
                     {'detail': 'Invalid quantity.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         try:
-            TaskLifecycleService.complete_task(task.pk, actual_qty=actual_qty)
+            TaskLifecycleService.complete_task(task.pk, add_qty=add_qty)
         except TaskActualQtyRequired as e:
-            return Response({'needs_actual_qty': True, 'unit_label': e.unit_label})
+            return Response({
+                'needs_actual_qty': True,
+                'unit_label': e.unit_label,
+                'current_qty': (
+                    str(e.current_qty) if e.current_qty is not None else None
+                ),
+            })
         except TaskTimeRequired:
             return Response({'needs_time_logged': True})
         return Response({'status': Task.STATUS_COMPLETE})
@@ -205,7 +211,12 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
     def cancel(self, request, pk=None):
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
-        TaskLifecycleService.cancel_task(task.pk)
+        result = TaskLifecycleService.cancel_task(
+            task.pk, user=request.user,
+            prior_qty_handled=bool(request.data.get('prior_qty_handled')),
+        )
+        if isinstance(result, dict) and 'conflict' in result:
+            return Response(result)
         return Response({'status': Task.STATUS_CANCELLED})
 
     def _resolve_on_behalf_of(self, request):
@@ -233,6 +244,7 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             result = TaskLifecycleService.start_work(
                 task.pk, request.user, action=request.data.get('action'),
                 on_behalf_of=on_behalf_of,
+                prior_qty_handled=bool(request.data.get('prior_qty_handled')),
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
@@ -242,17 +254,35 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
 
     @action(detail=True, methods=['post'], url_path='stop-work')
     def stop_work(self, request, pk=None):
+        from decimal import Decimal, InvalidOperation
         from apps.jobs.services import TaskLifecycleService, BlepPermissionError
         task = self._get_task_or_404(pk)
         on_behalf_of, err = self._resolve_on_behalf_of(request)
         if err:
             return err
+        raw_qty = request.data.get('add_qty') if request.data else None
+        add_qty = None
+        if raw_qty is not None and raw_qty != '':
+            try:
+                add_qty = Decimal(str(raw_qty))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {'detail': 'Invalid quantity.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
-            TaskLifecycleService.stop_work(
+            result = TaskLifecycleService.stop_work(
                 task.pk, request.user, on_behalf_of=on_behalf_of,
+                prior_qty_handled=bool(request.data.get('prior_qty_handled')),
+                add_qty=add_qty,
             )
         except BlepPermissionError as e:
             return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        # Settle-first: own stop on an entered-qty task with an open session
+        # returns the conflict (nothing mutated — the session keeps running);
+        # the SPA prompts and re-posts with prior_qty_handled (+ add_qty).
+        if isinstance(result, dict) and 'conflict' in result:
+            return Response(result)
         return Response({'status': 'ok'})
 
     @action(detail=True, methods=['post'], url_path='cancel-work')
@@ -264,20 +294,20 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         TaskLifecycleService.cancel_work(task.pk, request.user)
         return Response({'status': 'ok'})
 
-    @action(detail=True, methods=['patch'], url_path='actual-qty',
+    @action(detail=True, methods=['post'], url_path='actual-qty/add',
             permission_classes=[IsAuthenticated])
-    def actual_qty(self, request, pk=None):
-        """Allow any authenticated worker to record their actual qty on a task."""
+    def actual_qty_add(self, request, pk=None):
+        """Apply a signed increment to the task's running actual qty.
+
+        Open to any authenticated worker — the entry surfaces (session
+        prompt, task-detail add field) are worker gestures. Every write
+        is an add; there is no replace endpoint."""
         task = self.get_object()
         qty = request.data.get('actual_qty')
         if qty is None:
             return Response({'actual_qty': ['Required.']}, status=status.HTTP_400_BAD_REQUEST)
         from apps.jobs.services import TaskLifecycleService
-        try:
-            TaskLifecycleService.set_actual_qty(task, qty)
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else {'actual_qty': ['Invalid decimal.']}
-            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+        task = TaskLifecycleService.add_actual_qty(task.pk, qty)
         return Response({'actual_qty': str(task.actual_qty)})
 
 

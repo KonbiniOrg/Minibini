@@ -222,6 +222,28 @@ def classify_line_item(item_type, description):
     return 'task'
 
 
+DELIVERY_KEYWORDS = ('delivery', 'deliver', 'shipping', 'freight', 'courier')
+
+
+def pick_invoice_line_ac(item_type, description, classification):
+    """Accounting-category CODE for an invoice line item.
+
+    Deterministic and plausible per line (no randomness — regen must be
+    reproducible), spreading lines across all four seeded categories:
+    delivery-ish descriptions → DLV; FreeAgent 'Products' → PRD; the
+    material classification → MTL; everything else (labour, discounts,
+    credits) → SVC.
+    """
+    desc = (description or '').lower()
+    if any(kw in desc for kw in DELIVERY_KEYWORDS):
+        return 'DLV'
+    if (item_type or '').strip().lower() == 'products':
+        return 'PRD'
+    if classification == 'material':
+        return 'MTL'
+    return 'SVC'
+
+
 def parse_checklist(cell):
     """Parse a Kanban 'Checklist' cell into ordered task entries.
 

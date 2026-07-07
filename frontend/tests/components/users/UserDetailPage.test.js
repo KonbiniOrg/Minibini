@@ -62,3 +62,28 @@ describe('UserDetailPage schedule envelope section', () => {
     expect(await findByText(/must not overlap/)).toBeInTheDocument();
   });
 });
+
+describe('UserDetailPage work sessions section', () => {
+  it('lists the target user\'s sessions, scoped and without the worker column', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/users/7/') return Promise.resolve({ ...TARGET });
+      if (url.startsWith('/api/bleps/')) {
+        return Promise.resolve({ count: 1, results: [{
+          blep_id: 1, user: 7, user_name: 'Wanda Seven',
+          task: 4, task_name: 'Cut', job_id: 3, job_number: 'JOB-3', job_name: 'W',
+          start_time: '2026-03-01T14:00:00', end_time: '2026-03-01T15:00:00',
+        }] });
+      }
+      return Promise.resolve([]);
+    });
+    const { findByText, getByRole, queryByText } = render(UserDetailPage, {
+      props: { params: { id: 7 } },
+    });
+    expect(await findByText('Cut')).toBeInTheDocument();
+    expect(getByRole('heading', { name: 'Work Sessions' })).toBeInTheDocument();
+    // Scoped to this user; single-user surface suppresses the worker column.
+    const blepCall = api.get.mock.calls.find(([u]) => u.startsWith('/api/bleps/'));
+    expect(blepCall[0]).toContain('user=7');
+    expect(queryByText('Worker')).toBeNull();
+  });
+});

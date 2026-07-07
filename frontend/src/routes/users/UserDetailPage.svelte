@@ -5,6 +5,7 @@
   import { fieldErrors } from '../../lib/formErrors.js';
   import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
   import EnvelopeEditor from '../../components/schedule/EnvelopeEditor.svelte';
+  import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
 
   const { params = {} } = $props();
 
@@ -351,4 +352,8 @@
 
   <h3>Expenses</h3>
   <UserReimbursementPanel {user} />
+
+  <!-- This user's work sessions (bleps), recent-first, paged; the worker
+       column is suppressed — every row is this user. -->
+  <WorkSessionsList userId={user.id} />
 {/if}

@@ -23,6 +23,81 @@ class ShiftAPITest(BaseTestCase):
         a2 = self.client.get('/api/shifts/active/')
         self.assertIsNone(a2.data['shift'])
 
+    def _open_entered_qty_session(self, user):
+        """Open a shift + an open blep on an ENTERED_QTY task for `user`.
+        Fixture rate scheme 2 is entered_qty (unit 'minute')."""
+        from decimal import Decimal
+        from apps.jobs.models import Job, Task, Blep
+        from apps.core.models import Shift
+        job = Job.objects.first()
+        task = Task.objects.create(name='CNC', job=job, rate_scheme_id=2)
+        Task.objects.filter(pk=task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        Shift.objects.create(
+            user=user, start_time=timezone.now() - timedelta(hours=2))
+        blep = Blep.objects.create(
+            task=task, user=user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        return task, blep
+
+    def test_clock_out_prompts_for_open_entered_qty_session(self):
+        from decimal import Decimal
+        task, blep = self._open_entered_qty_session(self.user)
+        r = self.client.post('/api/shifts/clock-out/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data.get('conflict'), 'prior_session_qty')
+        self.assertEqual(r.data['prior_task']['task_id'], task.pk)
+        self.assertEqual(Decimal(r.data['current_qty']), Decimal('9'))
+        # Nothing mutated: shift and blep still open.
+        blep.refresh_from_db()
+        self.assertIsNone(blep.end_time)
+        a = self.client.get('/api/shifts/active/')
+        self.assertIsNotNone(a.data['shift'])
+
+    def test_clock_out_with_flag_closes_blep_and_shift(self):
+        task, blep = self._open_entered_qty_session(self.user)
+        r = self.client.post(
+            '/api/shifts/clock-out/', {'prior_qty_handled': True},
+            format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertNotIn('conflict', r.data)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+        a = self.client.get('/api/shifts/active/')
+        self.assertIsNone(a.data['shift'])
+
+    def test_clock_out_no_prompt_for_elapsed_session(self):
+        from apps.jobs.models import Job, Task, Blep
+        from apps.core.models import Shift
+        job = Job.objects.first()
+        task = Task.objects.create(name='Labor', job=job, rate_scheme_id=1)
+        Task.objects.filter(pk=task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        Shift.objects.create(
+            user=self.user, start_time=timezone.now() - timedelta(hours=2))
+        Blep.objects.create(
+            task=task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        r = self.client.post('/api/shifts/clock-out/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertNotIn('conflict', r.data)
+
+    def test_manager_clock_out_other_user_never_prompts(self):
+        from django.contrib.auth.models import Permission
+        mgr = User.objects.create_user(username='api_shift_mgr2', password='x')
+        mgr.user_permissions.add(Permission.objects.get(
+            codename='can_manage_time', content_type__app_label='core'))
+        mgr = User.objects.get(pk=mgr.pk)
+        task, blep = self._open_entered_qty_session(self.user)
+        self.client.force_authenticate(user=mgr)
+        r = self.client.post(
+            '/api/shifts/clock-out/', {'user': self.user.pk}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertNotIn('conflict', r.data)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
     def test_double_clock_in_400(self):
         self.client.post('/api/shifts/clock-in/', {}, format='json')
         r = self.client.post('/api/shifts/clock-in/', {}, format='json')

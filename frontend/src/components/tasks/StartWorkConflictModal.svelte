@@ -18,7 +18,9 @@
     busy = true;
     error = '';
     try {
-      const body = { action };
+      // The prior-session prompt already ran on the first start-work post
+      // (this conflict came back from it) — don't re-prompt on the re-post.
+      const body = { action, prior_qty_handled: true };
       if (onBehalfOf) body.on_behalf_of = onBehalfOf;
       await api.post(`/api/tasks/${taskId}/start-work/`, body);
       await notifyBlepChanged();
