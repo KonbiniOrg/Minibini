@@ -1849,6 +1849,64 @@ transitions the CO `draft → open`.
   `can_manage_jobs` has been designed but not shipped. Pairs with the
   broader worker-friendly mid-job task creation work.
 
+- **Per-session entered quantities (spec exists; not built)** — for
+  `ENTERED_QTY` tasks, prompt for a quantity when a worker explicitly
+  stops their own blep, with entries **adding** to `Task.actual_qty`
+  (atomic, `select_for_update`); rework the TaskDetailPage field from
+  set-the-value into running-total + signed add (explicit Save only —
+  adds aren't idempotent); turn completion into a **settle-up** prompt
+  (always appears, shows the accumulated total, asks "any more to
+  add?" — the final increment is applied server-side under the row
+  lock and the resulting total must be positive; no surface ever asks
+  the user to compute a total); and a "this completes the task"
+  checkbox on the stop prompt for the single-gesture stop+complete.
+  Units (`RateScheme.unit_label`) shown on every entry surface. Approved direction and full details:
+  `docs/plans/2026-07-06-entered-qty-per-session-add.md`. Design
+  decisions worth preserving even if the spec goes stale:
+  - **Why a single accumulator is safe:** every *own explicit* gesture
+    that closes an entered-qty session prompts — stop, starting a blep
+    on another task, explicit clock-out (the latter two via a
+    `prior_session_qty` conflict response + `prior_qty_handled` re-post
+    flag, mirroring the `active_worker` pattern). The paths that
+    genuinely can't prompt (on-behalf gestures, takeover, admin-forced
+    closes, `complete_task` closing teammates' bleps, historical entry)
+    are treated as best-effort provenance gaps; completion — which
+    always has a user looking at that specific task, since the
+    job-level `work-complete` action never completes tasks — is the
+    authoritative settle-up. Missed prompts only degrade the displayed
+    running total, never the billed number.
+  - **Extension path if per-session provenance is ever needed:** a
+    nullable `entered_qty` Decimal on `Blep` — *not* JSON in
+    `Task.actual_qty`. A Blep is the record of a work session, so
+    "what the session produced" is session-shaped data; the column
+    gets lifecycle for free (delete a blep, its entry goes; the blep
+    edit modal is the natural editing surface; user/time provenance
+    already on the row) and avoids the JSON blob's problems (no
+    referential key to bleps, read-modify-write lost updates on a
+    shared blob, summing decimals-as-strings instead of `Sum()`).
+    Shape: running total = `Sum(blep.entered_qty)`;
+    `get_actual_qty` returns `task.actual_qty` when set (the settled
+    override written at completion) else the blep sum. Safe because a
+    complete task can never blep again, so the override can't be
+    stranded by later entries. The no-blep entry path (ENTERED_QTY
+    tasks can complete without any time logged) is why the task-level
+    field must survive in this design.
+  - **Stop+complete rationale (now in the spec):** stop and complete
+    are one gesture approached from two ends — Complete-while-blepping
+    already closes the blep, so the stop prompt offering completion is
+    the mirror image. Because completion takes an *increment*
+    (`add_qty`) rather than a total, the checkbox path is a single
+    atomic `complete` call — a teammate's concurrent add is simply
+    included in the final total, with no
+    predicted-vs-actual-total guard needed. Benign failure mode: stop
+    succeeds, complete fails (pending materials / hold) → blep closed,
+    modal stays open with the error so the typed increment isn't lost,
+    task stays in progress.
+  - **Interaction to guard:** if the job-level `work-complete` action
+    ever grows bulk task completion (an open issue considers blocking
+    it on in-progress tasks instead), it must refuse on unsettled
+    `ENTERED_QTY` tasks rather than invent quantities.
+
 - **Estimate-vs-actuals reporting** — once `est_qty` and
   `actual_qty` (or Bleps) coexist on Task, a per-job and per-template
   variance report becomes trivial. "We're at 7 of 12 estimated" or
