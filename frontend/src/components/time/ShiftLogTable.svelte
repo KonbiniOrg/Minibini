@@ -1,15 +1,8 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import { formatSessionDateTime as fmt } from '../../lib/format.js';
   let { shifts = [], showWorker = false, actions = undefined } = $props();
   let now = $state(Date.now());
-  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-  function fmt(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso); let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${DOW[d.getDay()]} ${h}:${String(d.getMinutes()).padStart(2,'0')} ${ap}`;
-  }
   function dur(s) {
     const end = s.end_time ? new Date(s.end_time).getTime() : now;
     const mins = Math.max(0, Math.round((end - new Date(s.start_time).getTime())/60000));

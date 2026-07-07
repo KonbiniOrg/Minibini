@@ -147,6 +147,20 @@ The rule, which the whole codebase already followed implicitly:
 - If a loader genuinely must branch on reactive state, wrap the read in
   `untrack()` — and treat needing that as a design smell first.
 
+### Timestamps: day names expire after a week
+
+App-wide display convention (RM, 2026-07-06): a bare day name ("Sat
+2:05 PM") is only meaningful within the last 7 days — beyond that it's
+ambiguous and must give way to the calendar date ("Mar 1, 2:05 PM"),
+with the year appended when it isn't the current year ("Dec 30 2025,
+9:30 AM"). A day name *alongside* a date ("Sun 3/1", ActivityPage event
+rows) is fine at any age — the rule targets day-name-only timestamps.
+
+Use `formatSessionDateTime` from `src/lib/format.js` (BlepLogTable and
+ShiftLogTable already do) instead of hand-rolling per-component
+formatters. **Most older surfaces predate this rule — fix violations as
+you find them** and route the fix through the shared helper.
+
 ### API Responses
 
 - All API responses return JSON with a 200 status, even for operations like DELETE that normally have no meaningful data to return. No 204 responses. An empty response is `{}`.
