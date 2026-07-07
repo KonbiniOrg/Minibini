@@ -2,6 +2,7 @@
   import Router, { location } from 'svelte-spa-router';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
+  import MessageOverlay from './components/MessageOverlay.svelte';
   import { user, authChecked, checkAuth } from './stores/auth.js';
   import { refreshCurrentBlep, currentBlep } from './stores/currentBlep.js';
   import LoginPage from './routes/LoginPage.svelte';
@@ -16,10 +17,11 @@
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobEditPage from './routes/jobs/JobEditPage.svelte';
   import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
-  import CreateWorksheetPage from './routes/jobs/CreateWorksheetPage.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
-  import InventoryListPage from './routes/inventory/InventoryListPage.svelte';
+  import CatalogInventoryPage from './routes/catalog/CatalogInventoryPage.svelte';
+  import CatalogServiceItemsPage from './routes/catalog/CatalogServiceItemsPage.svelte';
+  import CatalogEarmarksPage from './routes/catalog/CatalogEarmarksPage.svelte';
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
@@ -31,8 +33,6 @@
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
   import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
-  import WorksheetDetailPage from './routes/worksheets/WorksheetDetailPage.svelte';
-  import PlanTaskDetailPage from './routes/worksheets/PlanTaskDetailPage.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
   import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
@@ -79,14 +79,11 @@
     '/jobs/:id': JobDetailPage,
     '/jobs/:id/edit': JobEditPage,
     '/jobs/:id/duplicate': DuplicateJobPage,
-    '/jobs/:id/create-worksheet': CreateWorksheetPage,
     '/jobs/:id/tasklist': JobTaskListPage,
     '/jobs/:id/history': JobHistoryPage,
     '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/shipments/:sid/print': PackingListPrint,
-    '/worksheets/:id': WorksheetDetailPage,
-    '/worksheets/:wsId/plan-tasks/:planTaskId': PlanTaskDetailPage,
     '/estimates/:id/wizard': EstimateWizardPage,
     '/estimates/:id/send': EstimateSendPage,
     '/estimates/:id': EstimateDetailPage,
@@ -104,7 +101,9 @@
     '/bills/:id/edit': BillFormPage,
     '/bills/:id': BillDetailPage,
     '/settings': SettingsPage,
-    '/inventory': InventoryListPage,
+    '/catalog': CatalogInventoryPage,
+    '/catalog/service-items': CatalogServiceItemsPage,
+    '/catalog/earmarks': CatalogEarmarksPage,
     '/users': UserListPage,
     '/users/new': UserCreatePage,
     '/users/:id': UserDetailPage,
@@ -125,6 +124,24 @@
 
   checkAuth();
 
+  // Session expiry: api.js dispatches this when an authenticated-only call
+  // comes back unauthenticated. Drop to the login screen with a notice
+  // instead of letting each component degrade silently.
+  let sessionExpired = $state(false);
+  $effect(() => {
+    function onExpired() {
+      if ($user) {
+        sessionExpired = true;
+        user.set(null);
+      }
+    }
+    window.addEventListener('minibini:session-expired', onExpired);
+    return () => window.removeEventListener('minibini:session-expired', onExpired);
+  });
+  $effect(() => {
+    if ($user) sessionExpired = false;
+  });
+
   // Refresh the global current-Blep band on auth + every SPA route change.
   $effect(() => {
     if ($user) {
@@ -140,7 +157,7 @@
 {#if !$authChecked}
   <p>Loading...</p>
 {:else if !$user}
-  <LoginPage />
+  <LoginPage notice={sessionExpired ? 'Your session expired — please log in again.' : ''} />
 {:else}
   <CurrentBlepBand />
   <Sidebar />
@@ -152,4 +169,5 @@
   <div class="page-content">
     <Router {routes} />
   </div>
+  <MessageOverlay />
 {/if}

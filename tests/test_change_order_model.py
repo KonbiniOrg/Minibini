@@ -8,6 +8,9 @@ def _add_line(co):
     return ChangeOrderLineItem.objects.create(
         change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
         description='Added scope', qty=1, price=100, line_number=1,
+        # A bare add line needs an AC to pass the send guard (it crystallizes
+        # into a Fee at acceptance). 901 = 'SVC' in unit_test_data.json.
+        accounting_category_id=901,
     )
 
 

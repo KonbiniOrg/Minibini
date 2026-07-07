@@ -4,6 +4,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { getPaymentAccounts } from '../../lib/paymentAccounts.js';
   import { canManageFinancials } from '../../stores/permissions.js';
+  import { showError } from '../../stores/messages.js';
   import LineItemModal from '../../components/LineItemModal.svelte';
   import RecordPaymentModal from '../../components/RecordPaymentModal.svelte';
 
@@ -69,7 +70,7 @@
       await api.delete(`/api/bills/${billId}/line-items/${li.line_item_id}/`);
       await load();
     } catch (e) {
-      alert(e.message || 'Could not delete line item.');
+      showError(errorMessage(e, 'Could not delete line item.'));
     }
   }
 
@@ -83,7 +84,7 @@
       cancelReason = '';
       await load();
     } catch (e) {
-      alert(e.message || `Could not perform action: ${action}`);
+      showError(errorMessage(e, `Could not perform action: ${action}`));
     }
   }
 
@@ -105,7 +106,7 @@
       await api.delete(`/api/bills/${billId}/`);
       push('/bills');
     } catch (e) {
-      alert(e.message || 'Could not delete bill.');
+      showError(errorMessage(e, 'Could not delete bill.'));
     }
   }
 

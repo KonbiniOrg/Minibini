@@ -1,13 +1,19 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
-  import { canManageFinancials } from '../../stores/permissions.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { orderPrefillQty } from '../../lib/materials.js';
+  import { canMarkWorkComplete } from '../../lib/jobActions.js';
   import TaskTree from '../../components/TaskTree.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import MaterialModal from '../../components/MaterialModal.svelte';
+  import FeeModal from '../../components/FeeModal.svelte';
   import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
+  import Modal from '../../components/Modal.svelte';
 
   let { params = {} } = $props();
 
@@ -38,6 +44,10 @@
   let materialModalTaskId = $state(null);
   let materialModalJobId = $state(null);
 
+  let feeModalOpen = $state(false);
+  let feeModalMode = $state('create');
+  let feeModalFee = $state(null);
+
   let selectedTaskId = $state(null);
 
   let subtaskModalOpen = $state(false);
@@ -46,8 +56,33 @@
   let assignModalOpen = $state(false);
   let assignModalTask = $state(null);
 
+  // Picker state
+  let pickerOpen = $state(false);
+  let taskPresetTemplateId = $state(null);
+  let taskPresetName = $state('');
+  let materialPresetPli = $state(null);
+  let materialPresetDescription = $state('');
+  let feePresetDescription = $state('');
+  let defaultMaterialCategoryId = $state(null);
+
   // Status action state
   let statusBusy = $state(false);
+
+  // Order flow — draft-PO chooser dialog
+  let orderDialogOpen = $state(false);
+  let orderMaterial = $state(null);
+  let orderDrafts = $state([]);
+  let orderBusy = $state(false);
+
+  // Receipt qty prompt — shared by "Mark on-hand" (quiet) and "Mark received"
+  // (customer-supplied), both hitting the mark-on-hand endpoint.
+  let receiptDialogOpen = $state(false);
+  let receiptMaterial = $state(null);
+  let receiptQty = $state('');
+  let receiptBusy = $state(false);
+
+  // Attach-expense against an existing pending material
+  let attachExpenseMaterial = $state(null);
 
   const jobLocked = $derived(
     job && ['completed', 'cancelled', 'rejected'].includes(job.status)
@@ -122,7 +157,7 @@
 
   async function loadTemplates() {
     try {
-      const resp = await api.get('/api/task-templates/?page_size=100');
+      const resp = await api.get('/api/service-items/?page_size=100');
       templates = resp.results || resp;
     } catch (e) {
       templates = [];
@@ -138,6 +173,17 @@
     }
   }
 
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      defaultMaterialCategoryId = s.default_material_accounting_category != null
+        ? Number(s.default_material_accounting_category)
+        : null;
+    } catch (e) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   async function reload() {
     await loadJob();
   }
@@ -147,22 +193,52 @@
       loadJob();
       loadTemplates();
       loadCategories();
+      loadSettings();
     }
   });
 
+  // Picker surface handler
+  function handleChoose(choice) {
+    pickerOpen = false;
+    if (choice.type === 'service') {
+      taskModalTask = null;
+      taskModalMode = 'template';
+      taskPresetTemplateId = choice.serviceItem.template_id;
+      taskPresetName = '';
+      taskModalOpen = true;
+    } else if (choice.type === 'freeform-task') {
+      // Manual/freeform task — WorkItemForm's manual mode; user picks the rate
+      // scheme there. Typed text seeds the name.
+      taskModalTask = null;
+      taskModalMode = 'manual';
+      taskPresetTemplateId = null;
+      taskPresetName = choice.typed;
+      taskModalOpen = true;
+    } else if (choice.type === 'inventory') {
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalJobId = job.job_id;
+      materialModalMode = 'create';
+      materialPresetPli = choice.inventoryItem;
+      materialPresetDescription = '';
+      materialModalOpen = true;
+    } else if (choice.isMaterial) {
+      materialModalMaterial = null;
+      materialModalTaskId = null;
+      materialModalJobId = job.job_id;
+      materialModalMode = 'create';
+      materialPresetPli = null;
+      materialPresetDescription = choice.typed;
+      materialModalOpen = true;
+    } else {
+      feeModalFee = null;
+      feeModalMode = 'create';
+      feePresetDescription = choice.typed;
+      feeModalOpen = true;
+    }
+  }
+
   // Task modal handlers
-  function openAddManualTask() {
-    taskModalTask = null;
-    taskModalMode = 'manual';
-    taskModalOpen = true;
-  }
-
-  function openAddTemplateTask() {
-    taskModalTask = null;
-    taskModalMode = 'template';
-    taskModalOpen = true;
-  }
-
   function openEditTask(task) {
     taskModalTask = task;
     taskModalMode = 'manual';
@@ -175,7 +251,7 @@
       await api.delete(`/api/jobs/${job.job_id}/tasks/${task.task_id}/`);
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not delete task.');
+      showError(errorMessage(e, 'Could not delete task.'));
     }
   }
 
@@ -185,7 +261,7 @@
       await api.post(`/api/tasks/${task.task_id}/cancel/`);
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not cancel task.');
+      showError(errorMessage(e, 'Could not cancel task.'));
     }
   }
 
@@ -204,14 +280,6 @@
     materialModalOpen = true;
   }
 
-  function openAddJobMaterial() {
-    materialModalMaterial = null;
-    materialModalTaskId = null;
-    materialModalJobId = job.job_id;
-    materialModalMode = 'create';
-    materialModalOpen = true;
-  }
-
   function openEditMaterial(material, task) {
     materialModalMaterial = material;
     materialModalTaskId = task ? task.task_id : null;
@@ -226,12 +294,16 @@
       await api.post(`/api/materials/${material.material_id}/consume/`, {});
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not consume.');
+      showError(errorMessage(e, 'Could not consume.'));
     }
   }
 
   async function handleRestockMaterial(material, _task) {
-    const raw = window.prompt(`Restock quantity (max ${material.quantity}):`, material.quantity);
+    // Same predicate as TaskTree.restockLabel: with stock on hand this reads
+    // as returning it; otherwise it's a release of the planned quantity.
+    const verb = material.inventory_item != null && Number(material.qty_on_hand) > 0
+      ? 'Restock' : 'Release';
+    const raw = window.prompt(`${verb} quantity (max ${material.quantity}):`, material.quantity);
     if (raw === null) return;
     const quantity = raw.trim();
     if (!quantity) return;
@@ -239,7 +311,7 @@
       await api.post(`/api/materials/${material.material_id}/restock/`, { quantity });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not restock.');
+      showError(errorMessage(e, 'Could not restock.'));
     }
   }
 
@@ -252,7 +324,7 @@
       await api.post(`/api/materials/${material.material_id}/draw-more/`, { quantity });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not draw more.');
+      showError(errorMessage(e, 'Could not draw more.'));
     }
   }
 
@@ -262,8 +334,90 @@
       selectedTaskId = null;
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not move material.');
+      showError(errorMessage(e, 'Could not move material.'));
     }
+  }
+
+  // Order flow. Zero open drafts → POST immediately (starts a new PO). One or
+  // more → open the chooser so the user can append to an existing draft or
+  // start a new one. Reversible process step: no confirm() dialog.
+  async function startOrder(material) {
+    try {
+      const resp = await api.get('/api/purchase-orders/?status=draft&page_size=100');
+      const drafts = resp.results || resp;
+      if (!drafts.length) {
+        await submitOrder(material, null);
+        return;
+      }
+      orderMaterial = material;
+      orderDrafts = drafts;
+      orderDialogOpen = true;
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message || 'Could not load draft purchase orders.');
+    }
+  }
+
+  async function submitOrder(material, poId) {
+    orderBusy = true;
+    try {
+      const resp = await api.post(`/api/materials/${material.material_id}/order/`,
+        poId ? { po_id: poId } : {});
+      orderDialogOpen = false;
+      orderMaterial = null;
+      if (resp.po_id && resp.po_number) {
+        showSuccess('Added to', {
+          href: `#/purchase-orders/${resp.po_id}`, label: resp.po_number,
+        });
+      } else {
+        showSuccess(`Added to ${resp.po_number || 'a new purchase order'}.`);
+      }
+      await reload();
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message || 'Could not order material.');
+    } finally {
+      orderBusy = false;
+    }
+  }
+
+  function closeOrderDialog() {
+    orderDialogOpen = false;
+    orderMaterial = null;
+  }
+
+  // Receipt prompt (Mark on-hand / Mark received) — quantity input, not a
+  // confirmation. Defaults to the outstanding shortfall.
+  function startReceipt(material) {
+    receiptMaterial = material;
+    receiptQty = orderPrefillQty(material);
+    receiptDialogOpen = true;
+  }
+
+  async function submitReceipt() {
+    const quantity = String(receiptQty).trim();
+    if (!quantity) return;
+    receiptBusy = true;
+    try {
+      await api.post(`/api/materials/${receiptMaterial.material_id}/mark-on-hand/`, { quantity });
+      receiptDialogOpen = false;
+      receiptMaterial = null;
+      await reload();
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message || 'Could not mark received.');
+    } finally {
+      receiptBusy = false;
+    }
+  }
+
+  function closeReceiptDialog() {
+    receiptDialogOpen = false;
+    receiptMaterial = null;
+  }
+
+  function openAttachExpense(material) {
+    attachExpenseMaterial = material;
   }
 
   function handleMaterialSaved() {
@@ -271,6 +425,19 @@
     materialModalMaterial = null;
     materialModalTaskId = null;
     materialModalJobId = null;
+    reload();
+  }
+
+  // Fee modal handlers
+  function openEditFee(fee) {
+    feeModalFee = fee;
+    feeModalMode = 'edit';
+    feeModalOpen = true;
+  }
+
+  function handleFeeSaved() {
+    feeModalOpen = false;
+    feeModalFee = null;
     reload();
   }
 
@@ -295,7 +462,7 @@
       });
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not reorder.');
+      showError(errorMessage(e, 'Could not reorder.'));
     }
   }
 
@@ -314,7 +481,7 @@
       await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
       await reload();
     } catch (e) {
-      alert(e.message || 'Could not mark work complete.');
+      showError(errorMessage(e, 'Could not mark work complete.'));
     } finally {
       statusBusy = false;
     }
@@ -331,12 +498,10 @@
   <div class="toolbar">
     <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
-      <button type="button" onclick={openAddTemplateTask}>Add Task From Template</button>
-      <button type="button" onclick={openAddManualTask}>Add Manual Task</button>
-      <button type="button" onclick={openAddJobMaterial}>Add Material</button>
+      <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
-    {#if job?.can_manage}
+    {#if job?.can_manage && canMarkWorkComplete(job.status)}
       <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
     {/if}
   </div>
@@ -346,9 +511,8 @@
     {jobMaterials}
     readonly={false}
     {jobLocked}
+    jobOnHold={job?.on_hold ?? false}
     canManage={job?.can_manage}
-    canManageFinancials={$canManageFinancials}
-    jobId={job?.job_id}
     onEditTask={openEditTask}
     onDeleteTask={handleDeleteTask}
     onAddMaterial={openAddMaterial}
@@ -356,6 +520,9 @@
     onConsumeMaterial={handleConsumeMaterial}
     onRestockMaterial={handleRestockMaterial}
     onDrawMoreMaterial={handleDrawMoreMaterial}
+    onOrderMaterial={startOrder}
+    onMarkOnHand={startReceipt}
+    onAttachExpense={openAttachExpense}
     onAddSubtask={openAddSubtask}
     onReorder={handleReorder}
     onTaskClick={handleTaskClick}
@@ -364,8 +531,12 @@
     onMoveMaterial={handleMoveMaterial}
     expenses={jobExpenses}
     onEditExpense={openEditExpense}
+    fees={job.fees || []}
+    onEditFee={openEditFee}
     bind:selectedTaskId
   />
+
+  <!-- Fees now render inside the TaskTree table (above), included in the grand total. -->
 
   <!-- Modals -->
   <WorkItemForm
@@ -376,6 +547,8 @@
     item={taskModalTask}
     isEdit={!!taskModalTask}
     {templates}
+    presetTemplateId={taskPresetTemplateId}
+    presetName={taskPresetName}
     onSaved={handleTaskSaved}
     onClose={() => { taskModalOpen = false; }}
   />
@@ -387,9 +560,25 @@
     taskId={materialModalTaskId}
     jobId={materialModalJobId}
     {categories}
+    presetDescription={materialPresetDescription}
+    presetPli={materialPresetPli}
+    {defaultMaterialCategoryId}
     onSaved={handleMaterialSaved}
     onClose={() => { materialModalOpen = false; }}
   />
+
+  <FeeModal
+    open={feeModalOpen}
+    mode={feeModalMode}
+    fee={feeModalFee}
+    jobId={job.job_id}
+    {categories}
+    presetDescription={feePresetDescription}
+    onSaved={handleFeeSaved}
+    onClose={() => { feeModalOpen = false; }}
+  />
+
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} taskSurface={true} />
 
   <ExpenseModal
     open={expenseModalOpen}
@@ -415,6 +604,49 @@
     onSaved={() => { assignModalOpen = false; assignModalTask = null; reload(); }}
     onClose={() => { assignModalOpen = false; assignModalTask = null; }}
   />
+
+  <!-- Order chooser: Esc-only (no onSave) — with drafts present, Enter has no
+       unambiguous primary action; the user picks a draft or "Start new PO". -->
+  <Modal open={orderDialogOpen} onCancel={closeOrderDialog} busy={orderBusy} maxWidth="480px" label="Order material">
+    <h3>Order — {orderMaterial?.description || '(material)'}</h3>
+    <p class="dialog-hint">Add this material to an open draft purchase order, or start a new one.</p>
+    <ul class="draft-list">
+      {#each orderDrafts as po (po.po_id)}
+        <li>
+          <button type="button" disabled={orderBusy} onclick={() => submitOrder(orderMaterial, po.po_id)}>
+            {po.po_number} — {po.business_name || 'no vendor'}
+          </button>
+        </li>
+      {/each}
+    </ul>
+    <p class="dialog-actions">
+      <button type="button" disabled={orderBusy} onclick={() => submitOrder(orderMaterial, null)}>Start new PO</button>
+      <button type="button" disabled={orderBusy} onclick={closeOrderDialog}>Cancel</button>
+    </p>
+  </Modal>
+
+  <!-- Receipt qty prompt: native <form> owns Enter (Modal omits onSave). -->
+  <Modal open={receiptDialogOpen} onCancel={closeReceiptDialog} busy={receiptBusy} maxWidth="420px" label="Mark received">
+    <form onsubmit={(e) => { e.preventDefault(); submitReceipt(); }}>
+      <h3>Mark received — {receiptMaterial?.description || '(material)'}</h3>
+      <p>
+        <label for="receipt-qty"><strong>Quantity received</strong></label><br>
+        <input id="receipt-qty" type="number" step="0.01" min="0" bind:value={receiptQty} required>
+      </p>
+      <p class="dialog-actions">
+        <button type="submit" disabled={receiptBusy}>Mark received</button>
+        <button type="button" disabled={receiptBusy} onclick={closeReceiptDialog}>Cancel</button>
+      </p>
+    </form>
+  </Modal>
+
+  <ExpenseModal
+    open={attachExpenseMaterial != null}
+    initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
+    initialMaterial={attachExpenseMaterial}
+    onSaved={() => { attachExpenseMaterial = null; loadJob(); }}
+    onClose={() => { attachExpenseMaterial = null; }}
+  />
 {/if}
 
 <style>
@@ -430,4 +662,20 @@
   }
   .toolbar button:hover { background: #f3f4f6; }
   .toolbar button:disabled { opacity: 0.5; cursor: default; }
+
+  .dialog-hint { color: #555; font-size: 13px; }
+  .draft-list { list-style: none; padding: 0; margin: 8px 0; max-height: 40vh; overflow-y: auto; }
+  .draft-list li { margin: 0 0 4px; }
+  .draft-list button {
+    width: 100%; text-align: left; padding: 8px 10px;
+    border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
+  }
+  .draft-list button:hover { background: #f3f4f6; }
+  .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .dialog-actions button {
+    padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
+    background: #fff; cursor: pointer; font-size: 13px;
+  }
+  .dialog-actions button:hover { background: #f3f4f6; }
+  .dialog-actions button:disabled { opacity: 0.5; cursor: default; }
 </style>

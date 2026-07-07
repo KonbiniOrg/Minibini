@@ -66,8 +66,15 @@ both estimates and change orders; if unset, notifications are silently skipped),
 there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
 removed).
 
-Schedule view: `schedule_workday_start` (`08:00`), `schedule_workday_end`
-(`17:00`), `schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
+Schedule view: `schedule_week_envelope` (JSON; the shop's default work week —
+`{"mon": [["08:00","17:00"]], …, "sat": [], "sun": []}`: exactly the seven keys
+`mon`…`sun`, each an ordered list of `["HH:MM","HH:MM"]` intervals — zero-padded
+`HH:MM`, start < end, strictly increasing across the day, non-overlapping,
+non-touching; gaps are breaks, an empty list is a day off; validated by
+`apps.schedule.calendar_arithmetic.validate_week_envelope`),
+`schedule_task_buffer_minutes` (`10`), `schedule_horizon_days` (`3`).
+(`schedule_workday_start` / `schedule_workday_end` were retired — the weekly
+envelope replaces them.)
 
 Activity page: `activity_recent_days` (`5`) — integer ≥ 1; the backward
 "recent" look-back window (in days) governing the whole Activity dashboard
@@ -92,6 +99,14 @@ persisting a closed blep; the UI's Stop control reads Cancel below the
 threshold. **Invariant: a sub-minimum close is never persisted — it is
 cancelled.** See `jobs-tasks-and-worksheets.md` §4.5/§5.5.
 
+Materials: `default_material_accounting_category` (unset) — string-encoded
+`AccountingCategory` PK applied to `is_material=True` hand-lines (Estimate and
+ChangeOrder) with no explicit AC, and used to pre-fill `MaterialModal`'s
+category field (`jobs-tasks-and-worksheets.md` §9.5). Editable in **Settings →
+Accounting Categories → Materials** (blank clears it). The settings API
+(`PATCH /api/settings/`) rejects a value that isn't blank or an existing
+**active** `AccountingCategory` id. See `estimates-and-prices.md` §6.4.
+
 ---
 
 ### 1.2 User
@@ -101,6 +116,14 @@ set later).
 
 - Standard Django user fields apply (username unique, etc.)
 - **contact** (optional OneToOne → Contact): set after Contacts exist
+- **schedule_envelope** (nullable JSONField, default null; migration
+  `core.0025`): the user's personal weekly work envelope in the canonical
+  week-envelope shape (see `schedule_week_envelope` in §1.1). Null = use the
+  shop default. Validated by
+  `apps.schedule.calendar_arithmetic.validate_week_envelope` on both write
+  endpoints (`PUT /api/auth/me/schedule-envelope/`,
+  `PUT /api/users/{id}/schedule-envelope/`); exposed read-only on the auth
+  `UserSerializer` and admin `UserDetailSerializer`.
 - **Permissions**: 4 custom atoms defined on the model:
   `can_manage_jobs`, `can_manage_financials`, `can_manage_time`,
   `can_manage_config`. There is no `can_approve_expenses` atom — it was
@@ -272,7 +295,7 @@ with `default_contact` pointing to that Contact, then update the Contact's
 
 ---
 
-### 1.6 PriceListItem
+### 1.6 InventoryItem
 
 Depends on: AccountingCategory.
 
@@ -282,37 +305,45 @@ Depends on: AccountingCategory.
   warns on null to catch corrupt fixtures.
 - **purchase_price**, **selling_price**: non-negative decimals
 - **qty_on_hand**, **qty_sold**, **qty_wasted**: non-negative decimals
-- **is_inventoried**: boolean. If false, all quantity fields should be 0.
-- **is_active**: boolean, default True (soft delete)
-- **Deletion blocked** if referenced by any line item, earmark, or adjustment
+  (`qty_on_hand` has a DB `CHECK >= 0`)
+- **is_active**: boolean, default True — the **only** retirement flag (a manual
+  human judgment). `is_catalog`/`is_inventoried` and the computed
+  `is_finished_lot` are **dropped**: one item kind, no catalog/lot fork, no
+  auto-hiding. Clutter is handled by ranking (in-stock then newest), not hiding.
+- **Deletion blocked** (`InventoryService.assert_item_deletable`) if referenced
+  by any line item (PROTECT), Material, Earmark, or Expense stock receipt —
+  the SET_NULL FKs would otherwise silently demote established materials.
+  Never-referenced rows (mistake correction) delete; everything else retires
+  via `is_active` and simply sinks in the ranking at QOH 0. No auto-delete and
+  no auto-hiding (`collect_if_finished` and the hide-on-spend filter are gone).
 
 ---
 
-### 1.7 ServiceItem
+### 1.7 RateScheme
 
-Depends on: AccountingCategory. (`db_table = 'service_items'`, FK field
-`service_item`, API `/api/service-items/`.)
+Depends on: AccountingCategory. (`db_table = 'rate_schemes'`, FK field
+`rate_scheme`, API `/api/rate-schemes/`.)
 
 The service price list — a named, priced service the shop performs.
-Describes how a Task/PlanTask/TaskTemplate's billable amount is computed.
-Once any atom references an entry, it is effectively immutable; edits must
-go through `supersede()`, which forks a new entry and renames the old row.
+Describes how a Task/ServiceItem's billable amount is computed. Once any
+atom references an entry, it is effectively immutable; edits must go
+through `supersede()`, which forks a new entry and renames the old row.
 See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
 
 - **name**: required, unique, max 100 chars. `supersede()` renames the old
   row to `"<name> (v{N})"` before creating the new one to preserve the
   DB-level unique constraint.
-- **algorithm**: one of `elapsed_time`, `entered_qty`, `flat_fee`, `percentage`
+- **algorithm**: one of `elapsed_time`, `entered_qty`, `percentage`
+  (the former `flat_fee` algorithm was **removed** — fixed charges are the
+  `Fee` atom, §1.8a).
 - **rate**: decimal(10,2). Semantics depend on `algorithm`:
-  - `flat_fee`: per-unit price; **must be positive** (`validate_data.py`
-    raises an error for `rate <= 0`).
   - `elapsed_time` / `entered_qty`: per-unit price; **must be ≥ 0**
-    (`ServiceItem.clean()` raises `ValidationError` for negative values
+    (`RateScheme.clean()` raises `ValidationError` for negative values
     on these two algorithms).
   - `percentage`: the percent value (e.g. `10` = 10% surcharge; `-5` = 5%
     discount). **Negative values are allowed** only for `percentage`. This
     is the sole exception to the non-negative rate invariant.
-    `validate_data.py` (line ~515) raises an error if a non-`percentage`
+    `validate_data.py` raises an error if a non-`percentage`
     service has a negative rate.
 - **unit_label**: max 50 chars
 - **modifiers**: JSON list of `{key, label, percent}` dicts (default `[]`).
@@ -323,13 +354,13 @@ See `docs/designs/estimates-and-prices.md` for algorithm/modifier semantics.
 
 #### `percentage` algorithm — applicability constraints
 
-A `percentage` service can **never** back a `Task`, `PlanTask`, or
-`TaskTemplate`. The application enforces this in multiple places:
+A `percentage` service can **never** back a `Task` or `ServiceItem`. The
+application enforces this in multiple places:
 
-- `TaskService.create_direct` rejects a `percentage` service_item.
+- `TaskService.create_direct` rejects a `percentage` rate_scheme.
 - `EstimateLineItemSerializer` / `InvoiceLineItemSerializer` reject it on atom-based lines.
-- `GET /api/service-items/?task_applicable=true` excludes `percentage` entries from the response.
-- `ServiceItem.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
+- `GET /api/rate-schemes/?task_applicable=true` excludes `percentage` entries from the response.
+- `RateScheme.effective_rate()` and `get_actual_qty()` raise `ValueError` if called on a `percentage` entry.
 
 A `percentage` entry that is **not** referenced by any atom (it can only be
 used as `EstimateLineItem.adjustment_service` or
@@ -338,7 +369,7 @@ is therefore always un-frozen and can be superseded freely.
 
 #### Frozen fields
 
-Once any PlanTask, Task, or TaskTemplate references an entry, the fields
+Once any Task or ServiceItem references an entry, the fields
 `name`, `description`, `algorithm`, `rate`, `unit_label`, `modifiers`, and
 `accounting_category` are frozen (`FROZEN_FIELDS`). `clean()` rejects edits.
 The only legitimate mutations on a referenced entry are
@@ -358,16 +389,14 @@ Depends on: Contact.
 ```
 draft → submitted → approved → in_progress → work_complete → completed
                   ↘ rejected   ↘ cancelled    ↘ cancelled    ↘ cancelled
-                                 ↘ on_hold     ↘ on_hold
 draft → rejected
 ```
 
 Valid transitions:
 - `draft` → `submitted`, `rejected`
 - `submitted` → `approved`, `rejected`
-- `approved` → `in_progress`, `on_hold`, `cancelled`
-- `in_progress` → `work_complete`, `on_hold`, `cancelled`
-- `on_hold` → `approved`, `in_progress`, `cancelled`
+- `approved` → `in_progress`, `cancelled`
+- `in_progress` → `work_complete`, `cancelled`
 - `work_complete` → `completed`, `cancelled`, `in_progress`
 - `cancelled` → `in_progress`
 - `rejected`, `completed` → (terminal)
@@ -382,10 +411,15 @@ released. `completed` = fully closed; gated on **both** all invoices
 resolved **and** all deliverables shipped (see "Implied state" below and
 §2.5).
 
-`on_hold` is a general pause primitive (CO negotiation, awaiting
-deposit, backordered material). Reachable only from the active work
-band. The CO-accept path auto-advances `on_hold → approved`; non-CO
-holds resume manually.
+`on_hold` is a **flag** (BooleanField, default False), not a status — a
+held job keeps its true underlying status. It is the general pause
+primitive (CO negotiation, awaiting deposit, backordered material),
+settable only while the job is `approved` or `in_progress`, via
+`JobService.hold_job(pk, reason)` (reason required; rejected while any
+open Blep exists). `JobService.release_job(pk)` drops the flag (blocked
+while a live CO exists — see "Implied state" below); the CO-accept path
+clears the hold itself and the job resumes its true status directly.
+Non-CO holds resume manually.
 
 #### Fields
 
@@ -394,7 +428,8 @@ holds resume manually.
 - **contact** (required FK → Contact, PROTECT)
 - **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
-- **hold_reason**: TextField, blank-allowed. Free-form pause reason ("CO-2026-0007 in negotiation", "awaiting deposit"). Cleared automatically by `Job.save()` on exit to `approved` / `in_progress`.
+- **on_hold**: BooleanField, default False. Orthogonal pause flag — see above. Set/cleared only via `JobService.hold_job` / `release_job` (also cleared by CO acceptance and by cancellation); the API exposes it read-only (`POST /api/jobs/{id}/hold/` / `.../release/` are the write paths) and a status PATCH of `'on_hold'` is a 400.
+- **hold_reason**: TextField, blank-allowed. Free-form pause reason ("CO-2026-0007 in negotiation", "awaiting deposit"). Cleared automatically by `Job.save()` whenever the `on_hold` flag drops.
 - **name** / **description** / **customer_po_number**: optional text
 
 #### Date rules
@@ -415,7 +450,7 @@ holds resume manually.
   `cancelled`, or `rejected`. Immutable once set — *except* it is cleared
   back to null when a Job is reactivated to `in_progress` from
   `work_complete`/`cancelled`. Must be null for
-  `draft`/`submitted`/`approved`/`in_progress`/`on_hold`/`work_complete`.
+  `draft`/`submitted`/`approved`/`in_progress`/`work_complete`.
 
 #### Implied state from other models
 
@@ -430,14 +465,21 @@ holds resume manually.
 - Job `completed` → all Deliverables on the Job have `qty_picked_up == qty_ordered` (the all-shipped gate; §2.5).
 - All Invoices for a Job `paid`/`cancelled` AND all deliverables shipped → Job must be `completed` (`JobService.maybe_complete_if_resolved`).
 - Job `cancelled` → all Invoices for the Job must be `cancelled` *or* outstanding under the stop-and-bill flow (see `invoicing-and-expenses.md` — `CANCELLED` is in `BILLABLE_JOB_STATUSES`; the Unpaid lane keeps a cancelled-with-open-invoice job visible until its invoices clear).
-- Job `on_hold` → no exit to an active status while any `ChangeOrder` on the job is `draft` or `open`. The CO-accept handler auto-advances `on_hold → approved`; a discarded draft CO also clears the guard.
+- Job held (`on_hold` flag) → no release while any `ChangeOrder` on the job is `draft` or `open` — the release guard, enforced by `JobService.release_job` and by the cancel path. The CO-accept handler clears the hold itself (the job's true status is preserved); a discarded draft CO also clears the guard.
+- Job held → no status change at all (`JobService.update_job` rejects) **except** cancellation, which runs the release guard and drops the flag as part of the transition.
 
-Transitions **into** `on_hold` or `cancelled` are rejected by `JobService.update_job` if any `Blep` on the job's tasks is open (`end_time__isnull=True`).
+`JobService.hold_job` and transitions into `cancelled` are rejected if any `Blep` on the job's tasks is open (`end_time__isnull=True`).
 
-While `on_hold`, the following are blocked (purely by status filter — no Task is touched):
-- New bleps (`BlepService` job-status guard).
+**Job deletion (Rule 1 at job scale)**: `JobService.assert_job_deletable` (run
+by the `DELETE /api/jobs/{id}/` endpoint) refuses when the job has any bleps,
+any invoice, or any non-draft estimate/change order — the cascade would destroy
+recorded work wholesale; those jobs are `cancelled` instead. An unworked draft
+quote still hard-deletes.
+
+While held (`on_hold` flag), the following are blocked (purely by flag filter — no Task is touched):
+- New bleps (explicit `if job.on_hold` check in `_assert_job_allows_blep`, ahead of the status allow-list).
 - Task and material mutations (`_assert_job_not_on_hold` in `JobService`).
-- Schedule rendering (`ScheduleService` excludes on-hold jobs).
+- Schedule forecasting (`ScheduleService` never forecasts a held job; its history bars still render).
 - Shipment creation (`ShipmentService._assert_job_not_on_hold`).
 
 See `docs/designs/jobs-tasks-and-worksheets.md` for the loose-pending-material
@@ -445,64 +487,59 @@ guard on `in_progress → work_complete`.
 
 ---
 
-### 1.9 EstWorksheet
+### 1.8a Fee
 
-Depends on: Job.
+Depends on: Job, AccountingCategory, (optionally) Task.
+(`db_table = 'fees'`, FK field `job` `related_name='fees'`, API
+`POST /api/jobs/{id}/fees/`.)
 
-**One mutable worksheet per job.** The worksheet is decoupled from the
-estimate — no FK to it, no status/version/parent. It relates to the estimate
-only through the shared `job` (one estimate tree per job).
+A **fixed charge** owned by the Job — `quantity × unit_rate`. The
+crystallized form of an accepted estimate hand-line, and the replacement
+for the removed `flat_fee` RateScheme algorithm. No lifecycle, no actuals;
+always billable.
 
-#### Fields
+- **job** (required FK → Job, CASCADE)
+- **task** (optional OneToOne → Task, SET_NULL): the work behind the charge
+- **description**: CharField(255), blank default `''`
+- **quantity**: decimal(10,2), default `1.00`
+- **unit_rate**: decimal(10,2) — **required**
+- **accounting_category** (required FK → AccountingCategory, PROTECT) —
+  **NOT NULL**; a missing value surfaces as a `ValidationError` (→ 400) via
+  `full_clean`, never a 500
+- **sort_order**: PositiveInteger, default 0
 
-- **job** (required FK → Job)
-- **created_date**: set on creation
+`compute_amount() = (quantity × unit_rate).quantize('0.01')`. Writes go
+through `FeeService.create_on_job` / `update` / `delete` (on-hold guarded).
 
-(There is no `status`, `version`, `parent`, or `estimate` field.)
-
-#### Implied state from other models
-
-- The worksheet has no stored status. Its **editability is derived** from the
-  job's live estimate (`WorksheetService.is_editable`): editable while the
-  job's latest non-superseded estimate is `draft` (or the job has no
-  estimate); **frozen** once an estimate is sent (`open`) and through accept.
-  Revising a sent estimate yields a new draft, which unlocks it again.
-- A worksheet cannot be deleted while one of its PlanTasks/PlanMaterials is
-  claimed by an `EstimateLineItemSource` (the estimate line items must be
-  removed first).
+- **Deletion (Rule 1)**: `FeeService.delete` refuses while the fee is claimed
+  by any estimate/CO line or on a live invoice — removing an agreed charge is
+  a change order, not a delete. Unreferenced fees (setup scratch, mistakes)
+  delete freely.
 
 ---
 
-### 1.10 PlanTask
+### 1.9 ~~EstWorksheet~~ (removed)
 
-Depends on: EstWorksheet, ServiceItem.
+> **Removed** with the planning layer. There is no worksheet model. Work
+> atoms (`Task`, `Material`, `Fee`) live directly on the `Job`; the estimate
+> is a lens that projects them.
 
-The planning-side counterpart to Task. Lives on an EstWorksheet; no
-lifecycle, no hierarchy, no Bleps. Carries billing fields directly so a
-worksheet is a self-contained pricing artefact.
+---
 
-- **est_worksheet** (required FK → EstWorksheet, CASCADE)
-- **service_item** (required FK → ServiceItem, PROTECT)
-- **active_modifiers**: JSON list of modifier keys (always a list, default
-  `[]`). For `flat_fee` services, this is `[]` — modifiers are percentage
-  adjustments only, and flat-fee entries have no percentage modifiers.
-- **est_qty** (required at the application layer — `clean()` raises if null):
-  decimal in the service price's units. DB column is nullable, but every
-  PlanTask must have a value.
-- **est_worker_time**: optional Duration
-- **name**: required, max 255 chars; **description**: text, default ''
-- **sort_order**: auto-assigned per worksheet on save
+### 1.10 ~~PlanTask~~ (removed)
 
-PlanTasks are flat (no `parent_task`). Hierarchy is Job-side only.
+> **Removed** with the planning layer. There is no planning-side task model.
+> `Task` (§1.11) is the single work-and-billing task; the estimate projects
+> a Task's `est_qty` via `Task.compute_estimate_amount`.
 
 ---
 
 ### 1.11 Task
 
-Depends on: Job, ServiceItem, (optionally) User, PlanTask, TaskTemplate.
+Depends on: Job, RateScheme, (optionally) User, ServiceItem.
 
-The work-side counterpart to PlanTask. Lives on a Job; carries lifecycle,
-hierarchy, and Bleps.
+The Job's metered work atom. Lives on a Job; carries lifecycle, hierarchy,
+and Bleps.
 
 #### Status machine
 
@@ -526,15 +563,12 @@ Valid transitions:
 #### Fields
 
 - **job** (required FK → Job, CASCADE)
-- **service_item** (required FK → ServiceItem, PROTECT): NOT NULL at DB level
+- **rate_scheme** (required FK → RateScheme, PROTECT): NOT NULL at DB level
 - **active_modifiers**: JSON list of modifier keys (always a list, never a
-  dict — see ServiceItem §1.7). For `flat_fee` services this is `[]`.
+  dict — see RateScheme §1.7).
 - **est_qty** (inherited from `TaskBase`): nullable on Task — both at the DB
-  level and the application layer. Unlike `PlanTask`, `Task.clean()` does
-  **not** reject null (asymmetric enforcement; pinned by
-  `tests/test_plan_task_est_qty_required.py`). For `flat_fee` it is the
-  billable quantity (charge is `service_item.rate × est_qty`), with
-  `ServiceItem.get_actual_qty` falling back to `Decimal('1')` when null.
+  level and the application layer. `Task.clean()` does **not** reject null.
+  Drives the **estimate** lens (`Task.compute_estimate_amount`).
 
   In practice a null `est_qty` can only arise on a task **added directly to
   the Job with the quantity left blank** — specifically the two manual
@@ -543,32 +577,22 @@ Valid transitions:
     - subtask — `POST /api/tasks/{id}/subtasks/` → `TaskSerializer.save()`
       (the serializer treats `est_qty` as `required=False`)
 
-  Every other creation route guarantees a non-null value, so nothing carried
-  over from a worksheet or generated from a template is ever null:
-    - worksheet carry-over (`AtomCarryOverService._carry_over_plan_tasks`,
-      `JobService.copy_from_worksheet`) copies `PlanTask.est_qty`, which
-      `PlanTask.clean()` forces non-null
-    - direct-estimate line-item carry-over
-      (`_create_task_from_line_item`) uses `line_item.qty` (`BaseLineItem.qty`
-      is `default=0.00`, not nullable)
-    - `TaskService.create_from_template` defaults to the template's
-      `default_billable_qty` (NOT NULL)
+  Template-generation routes guarantee a non-null value:
+    - `TaskService.create_from_template` defaults to `Decimal('1')`
     - the job-side `add-from-template` API defaults a blank to `Decimal('1')`;
       bulk template expansion uses `TemplateTaskAssociation.est_qty`
       (`default=1`)
 - **est_worker_time**: optional Duration — but **required (and must be > 0)
   once `assignee` is set**; assigned work has to be schedulable
 - **actual_qty**: optional decimal — worker-entered qty for `entered_qty`
-  schemes. Null for `elapsed_time` (derived from Bleps) and `flat_fee`.
+  schemes. Null for `elapsed_time` (derived from Bleps). Drives the
+  **invoice** lens (`Task.compute_amount`).
 - **status**: default `pending`
 - **blocked_reason**: text, default '' — set by `block_task(reason=...)`, cleared by `unblock_task`/`complete_task`/`cancel_task`. The previous reason is overwritten and not preserved anywhere; once `@history` is added to Task (see `jobs-tasks-and-worksheets.md` §13), each block/unblock will surface in the HistoryPanel
 - **worker_queue**: optional integer — position in assignee's queue
 - **assignee** (optional FK → User, SET_NULL): setting it requires a
   non-zero `est_worker_time` (see that field)
 - **parent_task** (optional FK → self, CASCADE)
-- **source_template** (optional FK → TaskTemplate, SET_NULL)
-- **source_plan_task** (optional OneToOne → PlanTask, SET_NULL): set by
-  carry-over; enforces idempotency.
 - **sort_order**: auto-assigned per Job on save
 - **name** / **description**: text
 
@@ -583,6 +607,10 @@ Valid transitions:
   such requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
+- **Deletion (Rule 1)**: `TaskService.delete_task` refuses when the task is
+  in-progress/complete, has bleps, is claimed by a **non-draft** estimate/CO,
+  or is on a live invoice — "cancel it instead." Draft claims stay deletable
+  (release them by removing the line/atoms first).
 - All Tasks on a Job terminal → `TaskLifecycleService._check_job_work_complete`
   walks the Job toward `work_complete` (silent-fail on loose pending
   task-less Materials; see §2.6, §2.7).
@@ -603,12 +631,15 @@ Depends on: Task, User.
     since transitioned to `blocked`, `complete`, or `cancelled` (e.g.
     a worker forgot to clock in for work they did earlier today).
   - **Job-status precondition (both paths)**: the task's Job must be in
-    a status where work belongs. `start_work` requires `approved` or
-    `in_progress`; `create_historical` also permits `work_complete` and
-    `cancelled` (the latter so forgotten time can be logged for billing
-    under the stop-and-bill flow — see `invoicing-and-expenses.md`).
-    Any other Job status (`draft`, `submitted`, `rejected`, `completed`,
-    `on_hold`) is rejected with `ValidationError`.
+    a status where work belongs. Pre-approval work is permitted:
+    `start_work` allows `draft`, `submitted`, `approved`, and
+    `in_progress`; `create_historical` additionally permits
+    `work_complete` and `cancelled` (the latter so forgotten time can be
+    logged for billing under the stop-and-bill flow — see
+    `invoicing-and-expenses.md`). Any other Job status (`rejected`,
+    `completed`) is rejected with `ValidationError`, and a **held** job
+    (`on_hold` flag) is rejected on both paths by an explicit check in
+    `_assert_job_allows_blep`, ahead of the status allow-list.
 - Steady-state invariant: a Blep's task is in `in_progress`, `blocked`,
   `complete`, or `cancelled` — never `pending`, because `start_work`
   promotes before creating and `create_historical` is only sensibly
@@ -634,6 +665,11 @@ Depends on: Task, User.
   §1.2a for the full invariant, the auto-clock-in / clock-out behaviour, and
   the backfill. Self-edit window for direct user blep edits is **30h** (matches
   the shift self-edit window — §1.2a).
+- **Deletion (invoiced-task freeze)**: `BlepService.delete` refuses — for
+  every actor, own-window or `can_manage_time` — when the blep's task is on a
+  live invoice: billed actuals are frozen (deleting a blep under an invoiced
+  ELAPSED_TIME task would change the basis of a charged number). Estimate
+  claims never block (estimates bill `est_qty`).
 
 ---
 
@@ -706,15 +742,12 @@ Enforced in `Estimate.clean()`.
 - **estimate** (required FK → Estimate, CASCADE)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule
   is skipped on subclasses lacking that field.
-- **price_list_item** (optional FK → PriceListItem, PROTECT): set when the
+- **inventory_item** (optional FK → InventoryItem, PROTECT): set when the
   line bills a freeform PLI rather than a plan-side atom
-- **source_template** (optional FK → TaskTemplate, SET_NULL): preserves the
-  catalog ref for direct-estimate lines so carry-over can still create a
-  Task at acceptance even with no PlanTask
-- **adjustment_service** (optional FK → ServiceItem, PROTECT): set when
+- **adjustment_service** (optional FK → RateScheme, PROTECT): set when
   this line is a percentage adjustment. A line with `adjustment_service_id`
   set is an **adjustment line**; `adjustment_service.algorithm` must be
-  `percentage`. Cannot coexist with `source_template` or `price_list_item`.
+  `percentage`. Cannot coexist with `inventory_item`.
 - **adjustment_target_categories** (M2M → AccountingCategory, blank):
   the categories the adjustment applies to. Empty = all non-adjustment lines.
   Must only be set when `adjustment_service` is set.
@@ -735,16 +768,20 @@ Enforced in `Estimate.clean()`.
 
 #### EstimateLineItemSource
 
-Polymorphic row joining a line item to a plan-side atom.
+Polymorphic row joining a line item to a Job atom (Task, Material, or Fee).
 
 - **estimate_line_item** (required FK → EstimateLineItem, CASCADE)
-- **source_type**: `plan_task` or `plan_material`
+- **source_type**: `task`, `material`, or `fee`
 - **source_pk**: integer pointing at the atom
-- `unique_together = [('source_type', 'source_pk')]` — a plan atom can be
-  referenced by at most one line item, ever. (Worksheet revisions copy
-  atoms, so this never fires across revisions in practice.)
-- The atom's worksheet's `job` must match the line item's estimate's `job`
-  (validator-enforced).
+- `unique_together = [('source_type', 'source_pk')]` — an atom can be
+  referenced by at most one estimate line item, ever. On revision,
+  `revise_estimate` **moves** the source rows to the new revision (rather
+  than duplicating), so the live estimate is the one lens over the atom.
+- The atom's `job` must match the line item's estimate's `job`
+  (validator-enforced — `validate_data.check_estimate_source_job_consistency`;
+  the invoice side has the parallel `check_invoice_source_job_consistency`).
+  Fee atoms are validated by `validate_data.check_fees` (unit_rate > 0,
+  accounting_category present, quantity ≥ 0, `task.job == fee.job`).
 
 See `docs/designs/estimates-and-prices.md`.
 
@@ -781,9 +818,12 @@ Valid transitions (`ChangeOrder.VALID_TRANSITIONS`):
 #### Invariants
 
 - **One live CO per job**: at most one ChangeOrder per Job in `draft` or `open`.
-- **Create requires `on_hold`**: `ChangeOrderService.create` raises `ValidationError` unless `Job.status == on_hold` and the job has an `accepted` Estimate.
+- **Create requires the hold flag**: `ChangeOrderService.create` raises `ValidationError` unless `job.on_hold` is set and the job has an `accepted` Estimate.
 - **Line item requirement**: cannot transition out of `draft` without at least one ChangeOrderLineItem. Enforced in `ChangeOrder.clean()`.
-- **Job exit guard**: a Job cannot leave `on_hold` while any of its COs is `draft` or `open`.
+- **AC send guard**: cannot transition `draft → open` while any bare `add` line (no `service_item`, no `inventory_item`) lacks an `accounting_category` — it crystallizes into a Fee / provisional Material at acceptance and the category must be pinned before the customer can accept. Enforced in `ChangeOrder.clean()`.
+- **Release guard**: a held Job cannot be released (`JobService.release_job`) or cancelled while any of its COs is `draft` or `open`.
+- **Acceptance clears the hold**: on transition to `accepted`, the handler drops the job's `on_hold` flag — the job resumes its true underlying status directly (held from `in_progress` goes straight back to `in_progress`).
+- **Acceptance crystallizes atoms**: on transition to `accepted`, `ChangeOrderAcceptanceService.on_accept` applies the line deltas to the Job's atoms (add → Task/Material/Fee; remove/replace → retire the target's current atom) in the same transaction, after the hold is cleared (atom writes are blocked while held). See `estimates-and-prices.md` §14.11.
 
 #### ChangeOrderLineItem
 
@@ -792,18 +832,29 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - **change_order** (required FK → ChangeOrder, CASCADE)
 - **action** (CharField, required): one of `add`, `remove`, `replace`
 - **target_line_item** (optional FK → EstimateLineItem, PROTECT): required for `remove` / `replace`; must be null for `add` (enforced by `clean()`)
-- **source_template** (optional FK → TaskTemplate, SET_NULL): catalog provenance
-- **price_list_item** (optional FK → PriceListItem, SET_NULL)
+- **inventory_item** (optional FK → InventoryItem, SET_NULL)
+- **service_item** (optional FK → ServiceItem, PROTECT): deferred service descriptor; crystallizes to a Task at CO acceptance (mirrors `EstimateLineItem.service_item`)
+- **is_material** (bool, default False): marks a bare line as crystallizing into an established Material (reverse-markup placeholder cost) instead of a Fee (mirrors `EstimateLineItem.is_material`); authoring rejects it alongside an `inventory_item`/`service_item` and applies the `default_material_accounting_category` config default
+- `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
+
+#### ChangeOrderLineItemSource
+
+`db_table = 'co_li_sources'`. The CO analog of EstimateLineItemSource (§ estimates doc §6.2/§14.4): polymorphic join from a ChangeOrderLineItem to the atom it crystallized at acceptance.
+
+- **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
+- **source_type**: `task` | `material` | `fee`; **source_pk**: positive int
+- `unique_together (source_type, source_pk)` — an atom is claimed by at most one CO line
+- Rows exist only for add/replace lines of accepted COs; purged when the referenced atom is deleted by a later CO's remove/replace.
 
 See `docs/designs/estimates-and-prices.md`.
 
 ---
 
-### 1.14 WorkTemplate / TaskTemplate / TemplateTaskAssociation / TemplateMaterialAssociation
+### 1.14 WorkTemplate / ServiceItem / TemplateTaskAssociation / TemplateMaterialAssociation
 
-The template system used to populate Jobs and EstWorksheets with reusable
-task/material structures.
+The template system used to populate Jobs with reusable task/material
+structures.
 
 #### WorkTemplate
 
@@ -811,54 +862,50 @@ task/material structures.
 - **base_price**: optional decimal
 - **created_date**: auto-set
 - Hard-deleted. Nothing in the system holds a back-reference to a
-  WorkTemplate after it has populated a Job or Worksheet, so a delete
-  cascades cleanly through its TemplateTaskAssociation and
-  TemplateMaterialAssociation rows.
+  WorkTemplate after it has populated a Job, so a delete cascades cleanly
+  through its TemplateTaskAssociation and TemplateMaterialAssociation rows.
 
-#### TaskTemplate
+#### ServiceItem
 
 - **template_name**: max 255 chars; **description**: text
-- **service_item** (required FK → ServiceItem, PROTECT): default service
-  price for generated PlanTasks / Tasks. Superseded entries raise
+- **rate_scheme** (required FK → RateScheme, PROTECT): default service
+  price for generated Tasks. Superseded entries raise
   `SchemeSupersededError` from `generate_task()`. The template holds **no
-  price** of its own — the price is always read from `service_item.rate`.
+  price** of its own — the price is always read from `rate_scheme.rate`.
 - **default_active_modifiers**: JSON list of modifier keys (always a list,
-  never a dict). For `flat_fee` service prices this is `[]`.
-- **default_billable_qty** (required, decimal): used as `est_qty` when
-  generating
+  never a dict).
 - **work_templates**: M2M via `TemplateTaskAssociation`
 - **is_active**: boolean, default True — the soft-delete flag.
-  `WorkTemplate.generate_tasks_for_worksheet` and `generate_tasks_for_job`
-  filter associations by `task_template__is_active=True`, and the
-  TaskTemplate picker UI hides inactive entries. Soft-delete (not
-  hard-delete) is the intended path because `Task.source_template` and
-  `EstimateLineItem.source_template` are `SET_NULL` FKs — hard-deleting
-  a TaskTemplate would lose the catalog reference on every Task and
-  EstimateLineItem that originated from it.
+  `WorkTemplate.generate_tasks_for_job` filters associations by
+  `service_item__is_active=True`, and the ServiceItem picker UI hides
+  inactive entries. Soft-delete (not hard-delete) is the intended path so
+  historical references to a retired ServiceItem are preserved.
 
 #### TemplateTaskAssociation
 
-- **work_template**, **task_template**: CASCADE FKs
+- **work_template**, **service_item**: CASCADE FKs
 - **est_qty**: decimal, default 1 (quantity passed to `generate_task()`)
 - **sort_order**: integer, default 0
-- `unique_together = ['work_template', 'task_template']`
+- `unique_together = ['work_template', 'service_item']`
 
 #### TemplateMaterialAssociation
 
 - **work_template** (FK → WorkTemplate, CASCADE)
-- **price_list_item** (required FK → PriceListItem, PROTECT) — templates
+- **inventory_item** (required FK → InventoryItem, PROTECT) — templates
   carry no freeform materials; everything goes through the PLI catalog
 - **template_task_association** (optional FK → TemplateTaskAssociation,
   SET_NULL): if set, generated material attaches to the corresponding
-  generated PlanTask/Task. `clean()` enforces this association belongs to
+  generated Task. `clean()` enforces this association belongs to
   the same WorkTemplate.
 - **quantity** (required, decimal); **sort_order**: integer, default 0
 
 ---
 
-### 1.15 Material (+ PlanMaterial)
+### 1.15 Material
 
-Real-side and plan-side material rows; both extend `MaterialBase` (abstract).
+The Job's material atom; extends `MaterialBase` (abstract). (The plan-side
+`PlanMaterial` was **removed** with the planning layer — there is one
+material model, created directly on the Job.)
 
 #### Shared fields (MaterialBase)
 
@@ -866,36 +913,53 @@ Real-side and plan-side material rows; both extend `MaterialBase` (abstract).
 - **quantity**: decimal, default 0 (non-negative)
 - **units**: max 50 chars, default 'none'
 - **unit_cost**, **sell_price**: decimals, default 0
-- **price_list_item** (optional FK → PriceListItem, SET_NULL)
+- **inventory_item** (optional FK → InventoryItem, SET_NULL)
 - **accounting_category** (required FK → AccountingCategory, PROTECT)
 
 On save, `_populate_from_pli()` fills `description`, `units`, `unit_cost`,
 `sell_price`, `accounting_category` from the linked PLI. A PLI-linked
-Material/PlanMaterial is effectively immutable for description/units/AC
+Material is effectively immutable for description/units/AC
 (pricing carve-out — see `docs/designs/materials-inventory-and-purchasing.md`).
-Either a description or a `price_list_item` must be present.
-
-#### PlanMaterial
-
-Worksheet-side. No inventory side effects.
-
-- **est_worksheet** (required FK → EstWorksheet, CASCADE)
-- **plan_task** (optional FK → PlanTask, CASCADE): if set, task-bound;
-  otherwise floats at the worksheet level. `clean()` enforces
-  `plan_task.est_worksheet == est_worksheet`.
+Either a description or a `inventory_item` must be present.
 
 #### Material
 
 - **job** (required FK → Job, CASCADE)
 - **task** (optional FK → Task, SET_NULL): if null, the Material floats on
   the Job. `clean()` enforces `task.job == job` when both are set.
-- **consumption_state**: `pending` or `consumed`. Default `pending`. Flipped
-  to `consumed` by `MaterialService.consume`.
-- **restocked_qty**: decimal, default 0, non-negative. Tracks returned qty
-  for expense-bound materials.
+- **consumption_state**: `pending`, `consumed`, or `released`. Default
+  `pending`. Flipped to `consumed` by `MaterialService.consume` (reversible via
+  `unconsume`); to `released` (terminal) by `MaterialService.release` / the
+  restock-to-zero rule — the "planned it, didn't use it" retirement (full
+  restock while referenced, job-completion loose release, PO sever, CO
+  descope). Every other lifecycle op requires `pending`.
+- **released_qty** (renamed from `restocked_qty` 2026-07-03): decimal, default
+  0, non-negative. Quantity restocked/released back out of the plan —
+  universal, not just expense-bound. Invariant: `quantity + released_qty` =
+  originally planned (release zeroes `quantity` into it, so released rows sum
+  to zero in aggregates; the expense-void reversal reconstructs the purchase
+  from the sum).
+- **Deletion (Rule 1)**: a pending material that nothing references (no
+  expense, no PO link, no estimate/CO claim, not invoiced —
+  `MaterialService._is_referenced`) may hard-delete; referenced materials are
+  released instead.
 - **po_line_item** (optional FK → PurchaseOrderLineItem, SET_NULL)
-- **source_plan_material** (optional OneToOne → PlanMaterial, SET_NULL):
-  set by carry-over; enforces idempotency.
+- **cost_source**: `estimated` / `entered` / `po` / `expense` /
+  `customer_supplied`, or **NULL**. Provenance enum answering "is this cost
+  real?" and "who owns this?". **Invariant: `cost_source IS NULL` ⇔
+  `inventory_item IS NULL`** — a material is *provisional* (no lot) exactly when
+  it has no provenance, and *established* (lot-backed) exactly when it has one.
+  `establish` sets it when it mints/attaches the lot. `po` overrides
+  `estimated`/`entered` (sell price untouched). Set by service code only.
+- **Provisional refusals**: a provisional material (`inventory_item IS NULL`)
+  cannot be **consumed** (`consume` raises), **ordered**, or **marked on-hand** —
+  all require a lot first.
+- **Customer-supplied lock** (`cost_source == 'customer_supplied'`): born
+  established at a deliberate, **locked $0** (`unit_cost = sell_price = 0`).
+  `create_on_job` rejects a `customer_supplied` add that also carries an
+  `inventory_item` or any non-zero `unit_cost`/`sell_price`; `update_fields`
+  rejects any pricing edit (including sell) on a customer-supplied material. It
+  is never ordered or expense-attached; arrival is via **Mark received**.
 
 #### Implied state from other models
 
@@ -903,6 +967,11 @@ Worksheet-side. No inventory side effects.
   upsert via `InventoryService._mutate_earmark(pli, job, +qty)`. See §2.6.
 - Consume / Restock flip earmarks back via `_mutate_earmark(..., -qty)`.
 - Job entering `work_complete` releases all remaining earmarks for the Job.
+- **Deletion purges document claims**: `Material.delete()` (like
+  `Fee.delete()` and `Task.delete()`) calls `purge_source_rows_for_atom`
+  (`apps/estimates/claims.py`) — no `EstimateLineItemSource` /
+  `ChangeOrderLineItemSource` / `InvoiceLineItemSource` row may outlive its
+  atom, on any deletion path (restock-to-zero, PO sever, CO retirement, …).
 
 ---
 
@@ -952,8 +1021,8 @@ Enforced in `Invoice.clean()`.
 - No `task` FK — the `task` property returns `None` for
   `BaseLineItem.clean()` compatibility. Source atoms are joined via
   `InvoiceLineItemSource`.
-- **price_list_item** (optional FK → PriceListItem, PROTECT)
-- **adjustment_service** (optional FK → ServiceItem, PROTECT): set when
+- **inventory_item** (optional FK → InventoryItem, PROTECT)
+- **adjustment_service** (optional FK → RateScheme, PROTECT): set when
   this line is a percentage adjustment. `adjustment_service.algorithm` must
   be `percentage`. Cannot be combined with `InvoiceLineItemSource` atom
   sources (an adjustment line has no source atoms).
@@ -965,13 +1034,14 @@ Enforced in `Invoice.clean()`.
 
 #### InvoiceLineItemSource
 
-Polymorphic row joining an `InvoiceLineItem` to its real-side source atom.
+Polymorphic row joining an `InvoiceLineItem` to its source atom (a Job
+`Task`, `Material`, or `Fee`, or a material-less `Expense`).
 
 - **invoice_line_item** (required FK → InvoiceLineItem, CASCADE)
-- **source_type**: `material` or `task`; **source_pk**: integer
-- `unique_together = [('source_type', 'source_pk')]` — global. A Task or
-  Material can be billed by at most one Invoice line, ever. Prevents
-  double-billing across invoice revisions.
+- **source_type**: `task`, `material`, `fee`, or `expense`; **source_pk**: integer
+- `unique_together = [('source_type', 'source_pk')]` — global. An atom can
+  be billed by at most one Invoice line, ever. Prevents double-billing
+  across invoice revisions.
 
 ---
 
@@ -1000,7 +1070,13 @@ is genuinely terminal.
 
 #### Fields
 
-- **business** (required FK → Business, PROTECT)
+- **business** (FK → Business, PROTECT, **nullable**): the vendor. Nullable so
+  a draft can be created **vendor-less** (the Order-from-material flow spins up a
+  draft PO before the supplier is known). **Required at issue** — `clean()`
+  raises `{'business': ['A purchase order needs a vendor before it can be
+  issued.']}` on any non-`draft` status with no business (unconditional; also
+  blocks an update nulling the vendor on an issued PO). Vendor-less drafts are
+  deleted, not cancelled, so there is no cancelled exemption.
 - **contact** (optional FK → Contact, PROTECT): if set, contact must have a
   business. On creation, if both contact and business are provided, contact's
   business must match.
@@ -1041,7 +1117,7 @@ line item ordered (`Material.po_line_item`).
   "service PO" feature. No flow currently populates it; the field is
   null on every PO line. Defined directly on the subclass, not on
   `BaseLineItem`.
-- **price_list_item** (optional FK → PriceListItem, PROTECT)
+- **inventory_item** (optional FK → InventoryItem, PROTECT)
 - **line_number**: auto-generated sequentially per PO if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 - **qty_received**: decimal, default 0 (populated by receive actions)
@@ -1116,8 +1192,8 @@ Only `draft` Bills can be deleted.
   from the source PO line); since PO-line `task` is always null today,
   this field is null in practice too. Defined directly on the subclass,
   not on `BaseLineItem`.
-- **price_list_item** (optional FK → PriceListItem, PROTECT)
-- Cannot have both **task** and **price_list_item** set (mutually exclusive
+- **inventory_item** (optional FK → InventoryItem, PROTECT)
+- Cannot have both **task** and **inventory_item** set (mutually exclusive
   per `BaseLineItem.clean()`)
 - **line_number**: auto-generated sequentially per bill if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work) values
@@ -1126,19 +1202,19 @@ Only `draft` Bills can be deleted.
 
 ### 1.19 Earmark
 
-Depends on: PriceListItem, Job.
+Depends on: InventoryItem, Job.
 
 A per-PLI-per-Job aggregate row representing the inventory committed to a
-Job. There is exactly one row per `(price_list_item, job)`; quantity reflects
+Job. There is exactly one row per `(inventory_item, job)`; quantity reflects
 the running sum of Material commitments minus consumption/restock.
 
-- **price_list_item** (required FK → PriceListItem, CASCADE): PLI should be
+- **inventory_item** (required FK → InventoryItem, CASCADE): PLI should be
   inventoried (`is_inventoried=True`); a non-inventoried PLI never reaches
   `_mutate_earmark`
 - **job** (required FK → Job, CASCADE)
 - **quantity**: must be positive (> 0). Rows with `quantity <= 0` are deleted
   by `_mutate_earmark`. Warn if quantity exceeds PLI's `qty_on_hand`.
-- `unique_together = [('price_list_item', 'job')]`
+- `unique_together = [('inventory_item', 'job')]`
 - `InventoryService._mutate_earmark` is the SOLE writer. Direct
   `Earmark.objects.create` calls outside that method (or
   `release_earmarks_for_job`) violate the invariant.
@@ -1158,9 +1234,9 @@ See §2.6 and `docs/designs/materials-inventory-and-purchasing.md`.
 
 ### 1.20 InventoryAdjustment
 
-Depends on: PriceListItem.
+Depends on: InventoryItem.
 
-- **price_list_item** (required FK → PriceListItem, CASCADE): warn if PLI is
+- **inventory_item** (required FK → InventoryItem, CASCADE): warn if PLI is
   not inventoried
 - **quantity_change**: decimal (can be positive or negative)
 - **reason**: text, default ''
@@ -1477,51 +1553,37 @@ Implemented in `Estimate._maybe_update_job_status()` which fires
 
 ---
 
-### 2.3 Estimate accepted → atoms carried over to Job
+### 2.3 Estimate accepted → hand-lines crystallized into Fees
 
 **Trigger:** Estimate status changes to `accepted`; the `estimate_accepted`
-signal calls `AtomCarryOverService.carry_over_for_estimate(estimate)`.
+signal calls `EstimateAcceptanceService.on_accept(estimate)`.
 
-**Effects:**
-- For each PlanTask on the estimate's worksheet → create a Task on the Job
-  (copying `name`, `description`, `service_item_id`, `active_modifiers`,
-  `est_qty`, `est_worker_time`, `sort_order`). `Task.source_plan_task` is
-  set; the OneToOne enforces idempotency.
-- For each PlanMaterial on the worksheet → create a Material on the Job
-  (task-bound if the PlanMaterial was attached to a PlanTask, floating
-  otherwise) via `MaterialService.create_on_job`, which also fires §2.6.
-- For direct-estimate line items with `source_template` set and no source
-  row → create a Task on the Job from the TaskTemplate.
-- For direct-estimate line items with `price_list_item` set and no source
-  row → create a Material on the Job.
+**Effects** (the work already lives on the Job — Tasks/Materials were
+created directly — so nothing is "carried over"):
+- For each `EstimateLineItem` with **no source row** (a hand-line) that is
+  not a percentage adjustment → create a `Fee` on the Job (`description`,
+  `quantity = qty or 1`, `unit_rate = price or 0`, `accounting_category`,
+  `sort_order = line_number`) and record an `EstimateLineItemSource`
+  (`source_type='fee'`) back to it.
+- Atom-backed lines (Task/Material sources) are skipped.
+- `InventoryService.create_earmarks_for_job(job)` earmarks the job's
+  inventoried materials.
 
-**Data constraint:** An `accepted` Estimate should have matching atoms on
-its Job. `Task.source_plan_task` and `Material.source_plan_material`
-(both OneToOne) ensure re-firing the signal does not duplicate atoms.
+**Data constraint:** Every hand-authored line on an `accepted` Estimate
+should have a corresponding `Fee` on its Job, claimed by a `fee` source
+row. Because the crystallized line becomes source-backed, re-firing the
+signal does not duplicate Fees.
 
-See `docs/designs/estimates-and-prices.md` and
-`apps/estimates/carry_over.py`.
+See `docs/designs/estimates-and-prices.md` §9 and
+`apps/estimates/acceptance.py`.
 
 ---
 
-### 2.4 Estimate status change → EstWorksheet status update
+### 2.4 ~~Estimate status change → EstWorksheet status update~~ (removed)
 
-**Trigger:** Estimate status changes.
-
-**Effects (mapping):**
-- Estimate `draft` → Worksheet `draft`
-- Estimate `open`, `accepted`, `rejected` → Worksheet `final`
-- Estimate `superseded` → Worksheet `superseded`
-
-All EstWorksheets linked to the Estimate (via `estimate` FK) are updated.
-
-**Data constraint:** A worksheet with a linked estimate must have the status
-dictated by the mapping above. When an Estimate transitions to `open` (sent),
-the worksheet moves from `draft` → `final` — the worksheet's transition
-timestamp should match the Estimate's `sent_date`.
-
-Implemented by the `estimate_status_changed_for_worksheet` signal in
-`apps/estimates/signals.py`.
+> **Removed** with the planning layer. There is no worksheet to update; the
+> `estimate_status_changed_for_worksheet` signal was deleted. Estimate
+> editability now derives from the live estimate's own status.
 
 ---
 
@@ -1536,7 +1598,7 @@ Implemented by the `estimate_status_changed_for_worksheet` signal in
 1. **All invoices resolved** — every `Invoice` for the Job is `paid` or `cancelled`.
 2. **All deliverables shipped** — `DeliverableService.all_deliverables_shipped(job)` returns True, i.e. every `Deliverable`'s `qty_picked_up == qty_ordered`. Prepared-but-not-picked-up does not count. A job with zero deliverables is vacuously shipped.
 
-When both hold, the handler walks the state machine through `in_progress` → `work_complete` → `completed` if the Job is still `approved` at the moment of resolution (each step via `JobService.update_job`). Before the walk, any loose pending Materials on the Job are released (restocked) so the `work_complete` materials gate cannot strand the Job — this is an unattended path with no user to resolve them. A `HistoryEntry` records the release if anything was released. Job's `completed_date` is set to `now()`. A `HistoryEntry` of `entry_type='action'` attributed to `system` records the auto-complete.
+A third precondition guards both: the Job's **work must be finished** — `work_complete`, or `approved`/`in_progress` with at least one Task and every Task terminal (the loose-material-stranded case). When all hold, the handler releases any loose pending Materials (claimed → `released` history, unclaimed → deleted; a `HistoryEntry` records the release) and walks the state machine up to `completed` (each step via `JobService.update_job`). Jobs with open Tasks, task-less jobs (a deposit invoice paid before work starts), and `draft`/`submitted` jobs are a no-op; a held job never auto-completes either — status changes are blocked while the `on_hold` flag is set. Job's `completed_date` is set to `now()`. A `HistoryEntry` of `entry_type='action'` attributed to `system` records the auto-complete.
 
 Manual `JobService.update_job(status=completed)` enforces the all-shipped precondition independently and raises `ValidationError('All deliverables must be shipped before completing the job.')` otherwise.
 
@@ -1550,8 +1612,8 @@ Implemented in `JobService.maybe_complete_if_resolved` (`apps/jobs/services.py`)
 
 ### 2.6 Inventoried Material on Job → Earmark created
 
-**Trigger:** A Material with an inventoried `price_list_item` is created on a
-Job — via any path (direct add, template populate, worksheet copy, PO line
+**Trigger:** A Material with an inventoried `inventory_item` is created on a
+Job — via any path (Work-surface add, template populate, PO line
 creation, expense submission).
 
 **Effects:**
@@ -1661,27 +1723,19 @@ should also have no open Bleps.
 - The previous version's status is set to `superseded`.
 - The previous version's `closed_date` is set.
 - The new version's `parent` FK points to the previous version.
-- The worksheet linked to the previous Estimate moves to `superseded` via
-  §2.4.
+- Each line's `EstimateLineItemSource` rows are **moved** onto the new
+  revision (the live revision is the one lens over the job atoms).
 
 **Data constraint:** In a version chain (same `estimate_number`), all versions
 below the maximum must be `superseded` with a `closed_date` set.
 
 ---
 
-### 2.11 EstWorksheet version chain → supersession
+### 2.11 ~~EstWorksheet version chain → supersession~~ (removed)
 
-**Trigger:** `create_new_version()` is called on an EstWorksheet.
-
-**Effects:**
-- Current worksheet marked `superseded`.
-- New worksheet created with `version = old.version + 1`, `parent = old`,
-  `status = draft`, `estimate = None`.
-- All PlanTasks (with their PlanMaterials) are copied to the new worksheet.
-
-**Data constraint:** In a worksheet version chain (same Job), parent
-worksheets should be `superseded`. Child version numbers must be higher than
-parent's.
+> **Removed** with the planning layer. Worksheets had no version chain in
+> the final pre-removal design and the model is now gone entirely. The
+> estimate keeps its own version chain (§2.10).
 
 ---
 
@@ -1694,8 +1748,7 @@ an Estimate from `draft` to `open`.
 - If the Job has zero `Deliverable` rows, `ValidationError` is raised and
   no state changes.
 - Otherwise the transition proceeds normally (Estimate goes `open`, signal
-  walks the Job through `draft → submitted` if needed, the worksheet — if
-  draft — moves to `final`).
+  walks the Job through `draft → submitted` if needed).
 
 **Data constraint:** Every `open` (or `accepted` / `superseded` / `rejected`
 that was previously `open`) Estimate must have a Job with at least one
@@ -1719,9 +1772,9 @@ Shipment.
 
 ---
 
-### 2.14 ServiceItem supersession
+### 2.14 RateScheme supersession
 
-**Trigger:** `ServiceItem.supersede(**overrides)` is called.
+**Trigger:** `RateScheme.supersede(**overrides)` is called.
 
 **Effects:**
 - The old row is renamed to `"<orig> (v{N})"` where N is the chain depth.
@@ -1730,7 +1783,7 @@ Shipment.
 - The old row's `replaced_by` is set to the new row; `replaced_at` is set
   to `now()`.
 
-**Data constraint:** A ServiceItem with `replaced_by` set must have
+**Data constraint:** A RateScheme with `replaced_by` set must have
 `replaced_at` set, and vice versa. Templates referencing a superseded
 entry should be updated to point at the new entry; otherwise
 `generate_task()` raises `SchemeSupersededError`.
@@ -1747,7 +1800,7 @@ as side effects of object operations.
 - **entry_type**: `audit` (field changes), `action` (system status
   transitions), `note` (user-written text)
 - **object_type**: string identifier (e.g. `job`, `estimate`, `contact`,
-  `business`, `estworksheet`, `invoice`, `purchaseorder`, `bill`)
+  `business`, `inventoryitem`, `invoice`, `purchaseorder`, `bill`)
 - **object_id**: integer PK of the referenced object
 - **user** (FK → User, nullable): `audit` → acting user; `action` →
   `system` user; `note` → authoring user
@@ -1758,7 +1811,7 @@ as side effects of object operations.
 
 ### What generates history
 
-`@history`-decorated models: Contact, Business, Job, Estimate, EstWorksheet,
+`@history`-decorated models: Contact, Business, Job, Estimate, ChangeOrder,
 Invoice, PurchaseOrder, Bill, Shift, ShiftChangeRequest, BlepChangeRequest.
 The decorator creates `audit` entries on create and update.
 

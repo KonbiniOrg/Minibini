@@ -6,7 +6,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError as DRFValidationError
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.purchasing.models import PurchaseOrder, Bill
@@ -133,8 +133,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             PurchaseOrderService.delete_po(po.pk, sever_decisions=sever_decisions)
-        except DjangoValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         return Response({'message': f'PO {po.po_number} deleted.'})
@@ -169,7 +167,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 if material_id is not None:
                     data['material_id'] = material_id
                 item = service.add_line_item(parent.pk, **data)
-        except (DjangoValidationError, NotFoundError) as e:
+        except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.line_item_serializer_class(item)
@@ -187,7 +185,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
         if request.method == 'DELETE':
             try:
                 service.delete_line_item(item.pk)
-            except (DjangoValidationError, NotFoundError) as e:
+            except NotFoundError as e:
                 return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             return Response({'message': 'Line item deleted.'})
 
@@ -206,7 +204,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 data.pop('sever_decision', None)
                 data.pop('material_id', None)
                 item = service.update_line_item(item.pk, **data)
-        except (DjangoValidationError, NotFoundError) as e:
+        except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.line_item_serializer_class(item)
         return Response(serializer.data)
@@ -228,8 +226,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             po = PurchaseOrderService.cancel_po(pk, sever_decisions=sever_decisions)
-        except DjangoValidationError as e:
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except NotFoundError:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         except ServiceError as e:
@@ -252,7 +248,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 entry_type='audit',
                 object_type=obj_type,
                 object_id=po.pk,
-                user=request.user if hasattr(request, 'user') and request.user.is_authenticated else None,
                 text=reason,
             )
 
@@ -314,13 +309,9 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             po = PurchaseOrderEmailService.send_po(
                 po, to=to, subject=subject, body=body,
                 cc=cc, bcc=bcc, extra_attachments=extra_attachments,
-                user=request.user,
             )
-        except DjangoValidationError as e:
-            return Response(
-                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        except DjangoValidationError:
+            raise  # plain validation errors render via the contract handler
         except Exception as e:
             return Response(
                 {'detail': str(e)},
@@ -343,7 +334,6 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             entry_type='note',
             object_type='purchaseorder',
             object_id=obj.pk,
-            user=request.user,
             text=text,
         )
         serializer = HistoryEntrySerializer(entry)
@@ -400,7 +390,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             )
         try:
             po = PurchaseOrderReceivingService.cancel_line_item(
-                po, line_item_id, request.user, note=note,
+                po, line_item_id, note=note,
                 sever_decision=sever_decision,
             )
         except Exception as e:
@@ -591,9 +581,6 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
         try:
             bill = BillService.update_bill(
                 serializer.instance.pk, **serializer.validated_data)
-        except DjangoValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
-            raise DRFValidationError(detail)
         except NotFoundError as e:
             raise NotFound(detail=str(e))
         serializer.instance = bill
@@ -625,18 +612,14 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
                 {'payment_account_id': ['A payment account is required.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            payment = BillPaymentService.record_payment(
-                bill,
-                amount=data.get('amount'),
-                payment_date=data.get('payment_date'),
-                reference=data.get('reference', ''),
-                payment_account_id=payment_account_id,
-                user=request.user,
-            )
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages if hasattr(e, 'messages') else str(e)},
-                            status=status.HTTP_400_BAD_REQUEST)
+        payment = BillPaymentService.record_payment(
+            bill,
+            amount=data.get('amount'),
+            payment_date=data.get('payment_date'),
+            reference=data.get('reference', ''),
+            payment_account_id=payment_account_id,
+            user=request.user,
+        )
         return Response(BillPaymentSerializer(payment).data,
                         status=status.HTTP_201_CREATED)
 
@@ -649,9 +632,6 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
                 BillPaymentService.delete_payment(int(payment_id))
                 return Response({'message': 'Payment deleted.'})
             payment = BillPaymentService.update_payment(int(payment_id), **request.data)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages if hasattr(e, 'messages') else str(e)},
-                            status=status.HTTP_400_BAD_REQUEST)
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         return Response(BillPaymentSerializer(payment).data)
@@ -661,13 +641,7 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             url_name='payment-retry-sync')
     def retry_sync(self, request, pk=None, payment_id=None):
         self.get_object()  # permission + existence check on the bill
-        try:
-            payment = BillPaymentService.retry(int(payment_id))
-        except DjangoValidationError as e:
-            return Response(
-                {'detail': e.messages[0] if hasattr(e, 'messages') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        payment = BillPaymentService.retry(int(payment_id))
         if payment is None:  # delete branch completed — the payment was removed
             return Response({'message': 'Payment deleted.'})
         return Response(BillPaymentSerializer(payment).data)
@@ -681,6 +655,6 @@ class BillViewSet(JSONDestroyMixin, StatusTransitionMixin, LineItemMixin, viewse
             qbo_id = QBOBillSyncService.push_bill(bill)
             return Response({'qbo_id': qbo_id, 'status': 'synced'})
         except ValueError as e:
-            return Response({'error': str(e)}, status=400)
+            return Response({'detail': str(e)}, status=400)
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
+            return Response({'detail': str(e)}, status=500)

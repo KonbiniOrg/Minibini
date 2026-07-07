@@ -18,7 +18,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.core.models import AccountingCategory
 from apps.core.adjustments import recompute_adjustments
-from apps.jobs.models import ServiceItem
+from apps.jobs.models import RateScheme
 
 
 class AdjustmentFieldsTest(TestCase):
@@ -73,16 +73,16 @@ class ComputeAdjustmentAmountTest(TestCase):
             accounting_category=self.materials,
         )
 
-        # A 15% percentage ServiceItem (rush surcharge)
-        self.rush_svc = ServiceItem.objects.create(
-            name='Rush-adj', algorithm=ServiceItem.PERCENTAGE,
+        # A 15% percentage RateScheme (rush surcharge)
+        self.rush_svc = RateScheme.objects.create(
+            name='Rush-adj', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('15.00'), unit_label='%',
             accounting_category=self.labor,
         )
 
-        # A -10% percentage ServiceItem (discount)
-        self.discount_svc = ServiceItem.objects.create(
-            name='Discount-adj', algorithm=ServiceItem.PERCENTAGE,
+        # A -10% percentage RateScheme (discount)
+        self.discount_svc = RateScheme.objects.create(
+            name='Discount-adj', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('-10.00'), unit_label='%',
             accounting_category=self.labor,
         )
@@ -128,6 +128,22 @@ class ComputeAdjustmentAmountTest(TestCase):
         result = compute_adjustment_amount(adj, siblings)
         self.assertEqual(result, Decimal('-14.00'))
 
+    def test_compute_adjustment_null_ac_sibling_excluded_by_target_set(self):
+        """A sibling with NO accounting category is outside any non-empty
+        target set (None is never in target_ids) — 15% of labor-only (100)."""
+        from apps.core.adjustments import compute_adjustment_amount
+        from apps.estimates.models import EstimateLineItem
+
+        EstimateLineItem.objects.create(
+            estimate=self.est, line_number=5, description='no AC',
+            qty=Decimal('1'), price=Decimal('60.00'),
+        )
+        adj = self._make_adj_line(self.rush_svc, 3)
+        adj.adjustment_target_categories.set([self.labor.pk])
+        siblings = EstimateLineItem.objects.filter(estimate=self.est).exclude(pk=adj.pk)
+        result = compute_adjustment_amount(adj, siblings)
+        self.assertEqual(result, Decimal('15.00'))
+
     def test_compute_adjustment_skips_other_adjustments(self):
         """Another adjustment sibling must NOT be included in the subtotal base."""
         from apps.core.adjustments import compute_adjustment_amount
@@ -171,8 +187,8 @@ class RecomputeAdjustmentsHelperTest(TestCase):
             units='ea', description='Base', price=Decimal('100.00'),
             accounting_category=self.cat,
         )
-        self.pct_svc = ServiceItem.objects.create(
-            name='RushRH', algorithm=ServiceItem.PERCENTAGE,
+        self.pct_svc = RateScheme.objects.create(
+            name='RushRH', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -232,8 +248,8 @@ class EstimateAutoRecomputeTest(TestCase):
             units='ea', description='Base', price=Decimal('200.00'),
             accounting_category=self.cat,
         )
-        self.pct_svc = ServiceItem.objects.create(
-            name='Rush-EA', algorithm=ServiceItem.PERCENTAGE,
+        self.pct_svc = RateScheme.objects.create(
+            name='Rush-EA', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -245,13 +261,16 @@ class EstimateAutoRecomputeTest(TestCase):
         self.assertEqual(self.adj.price, Decimal('20.00'))
 
     def test_add_line_item_updates_adjustment(self):
-        """Adding a base line triggers recompute: adj = 10% of (200 + 50) = 25."""
-        from apps.estimates.services import EstimateService
-        EstimateService.add_line_item(
-            self.est.pk, description='Extra', qty=Decimal('1'),
-            units='ea', price=Decimal('50.00'),
-            accounting_category=self.cat,
+        """Adding a base line triggers recompute: adj = 10% of (200 + 50) = 25.
+        (Phase 6 removed manual add_line_item; lines are saved via LineItemService —
+        the same path the wizard/projection uses, which recomputes adjustments.)"""
+        from apps.core.services import LineItemService
+        from apps.estimates.models import EstimateLineItem
+        li = EstimateLineItem(
+            estimate=self.est, description='Extra', qty=Decimal('1'),
+            units='ea', price=Decimal('50.00'), accounting_category=self.cat,
         )
+        LineItemService.save_line_item(li)
         self.adj.refresh_from_db()
         self.assertEqual(self.adj.price, Decimal('25.00'))
 
@@ -303,8 +322,8 @@ class InvoiceAutoRecomputeTest(TestCase):
             units='ea', description='Base', price=Decimal('200.00'),
             accounting_category=self.cat,
         )
-        self.pct_svc = ServiceItem.objects.create(
-            name='LateFee-IA', algorithm=ServiceItem.PERCENTAGE,
+        self.pct_svc = RateScheme.objects.create(
+            name='LateFee-IA', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('5.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -351,9 +370,9 @@ class EstimateWizardAutoRecomputeTest(TestCase):
 
     def setUp(self):
         from apps.contacts.models import Contact
-        from apps.estimates.models import EstWorksheet
-        from apps.estimates.services import EstimateService, EstimateWizardService
-        from apps.jobs.models import PlanTask
+        from apps.estimates.models import Estimate
+        from apps.estimates.services import EstimateService
+        from apps.jobs.models import Task
         from apps.jobs.services import JobService
 
         self.cat = AccountingCategory.objects.create(
@@ -363,22 +382,25 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             first_name='WZ', last_name='Test', email='wz@t.com', work_number='555-4444',
         )
         self.job = JobService.create_job(name='WZ Job', contact=self.contact)
-        self.ws = EstWorksheet.objects.create(job=self.job)
 
-        flat_svc = ServiceItem.objects.create(
-            name='FlatWZ', algorithm=ServiceItem.FLAT_FEE,
+        flat_svc = RateScheme.objects.create(
+            name='FlatWZ', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('100.00'), unit_label='hr',
             accounting_category=self.cat,
         )
-        self.pt = PlanTask.objects.create(
-            name='Wiring', est_worksheet=self.ws,
-            service_item=flat_svc, est_qty=Decimal('1'),
+        # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks.
+        self.pt = Task.objects.create(
+            name='Wiring', job=self.job,
+            rate_scheme=flat_svc, est_qty=Decimal('1'),
         )
 
-        self.est = EstimateWizardService.open_for_worksheet(self.ws)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
-        pct_svc = ServiceItem.objects.create(
-            name='WizRush', algorithm=ServiceItem.PERCENTAGE,
+        pct_svc = RateScheme.objects.create(
+            name='WizRush', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )
@@ -392,7 +414,7 @@ class EstimateWizardAutoRecomputeTest(TestCase):
         """Adding an atom via the wizard recomputes existing adjustment lines."""
         from apps.estimates.services import EstimateWizardService
         line_item = EstimateWizardService.add_atoms_to_new_line_item(
-            self.est, [{'type': 'plan_task', 'id': self.pt.pk}],
+            self.est, [{'type': 'task', 'id': self.pt.pk}],
         )
         self.assertIsNotNone(line_item.pk)
         self.adj.refresh_from_db()
@@ -432,8 +454,8 @@ class SaveLineItemChokePointTest(TestCase):
             accounting_category=self.cat,
         )
         # A 10% adjustment line (price=0 initially)
-        pct_svc = ServiceItem.objects.create(
-            name='Rush-CK', algorithm=ServiceItem.PERCENTAGE,
+        pct_svc = RateScheme.objects.create(
+            name='Rush-CK', algorithm=RateScheme.PERCENTAGE,
             rate=Decimal('10.00'), unit_label='%',
             accounting_category=self.cat,
         )

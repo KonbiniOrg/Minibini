@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  errorMessage: (e, fallback) => (e && e.message) || fallback || 'Request failed.',
+}));
 
 import { api } from '@/lib/api.js';
 import MaterialModal from '@/components/MaterialModal.svelte';
@@ -16,29 +19,103 @@ beforeEach(() => {
 });
 
 describe('MaterialModal', () => {
-  it('creates a freeform material on a task (cost is document-sourced, not typed)', async () => {
+  it('creates a freeform material on a task with a typed cost (establishes it on save)', async () => {
     const onSaved = vi.fn();
     const { getByLabelText, getByRole } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10, onSaved },
     });
     await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '2' } });
-    // Unit Cost is disabled for a freeform material — not set here.
+    await fireEvent.input(getByLabelText(/Unit Cost/), { target: { value: '5' } });
     await fireEvent.input(getByLabelText(/Sell Price/), { target: { value: '8' } });
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(api.post).toHaveBeenCalledWith('/api/tasks/10/materials/', {
-      description: 'Steel', quantity: 2, units: 'none', unit_cost: '0', sell_price: 8,
+      description: 'Steel', quantity: 2, units: 'none', unit_cost: 5, sell_price: 8,
       inventory_item: null, accounting_category: null,
     });
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it('disables the unit cost field for a freeform (no-PLI) material', () => {
-    const { getByLabelText } = render(MaterialModal, {
+  it('enables the unit cost field for a freeform (no-PLI) material, with helper text', () => {
+    const { getByLabelText, getByText } = render(MaterialModal, {
       props: { open: true, mode: 'create', taskId: 10 },
     });
+    expect(getByLabelText(/Unit Cost/)).not.toBeDisabled();
+    expect(getByText(/Entering a cost sets this material up for ordering/)).toBeInTheDocument();
+  });
+
+  it('customer-supplied checkbox zeroes and disables pricing, and posts customer_supplied with no pricing fields', async () => {
+    const onSaved = vi.fn();
+    const { getByLabelText, getByRole } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10, onSaved },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Customer trim' } });
+    await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '1' } });
+    await fireEvent.input(getByLabelText(/Unit Cost/), { target: { value: '5' } });
+
+    await fireEvent.click(getByLabelText(/Customer-supplied/));
+
+    expect(getByLabelText(/Unit Cost/).value).toBe('');
     expect(getByLabelText(/Unit Cost/)).toBeDisabled();
+    expect(getByLabelText(/Sell Price/)).toBeDisabled();
+
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/10/materials/', {
+      description: 'Customer trim', quantity: 1, units: 'none',
+      inventory_item: null, accounting_category: null,
+      customer_supplied: true,
+    });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('shows "Set pricing" title and button when editing a genuinely provisional material', () => {
+    const { getByRole } = render(MaterialModal, {
+      props: {
+        open: true, mode: 'edit',
+        material: {
+          material_id: 5, inventory_item: null, cost_source: null,
+          unit_cost: 0, sell_price: 0, units: 'none', quantity: 1,
+          description: 'Raw board',
+        },
+      },
+    });
+    expect(getByRole('heading', { name: 'Set pricing' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Set pricing' })).toBeInTheDocument();
+  });
+
+  it('shows "Set pricing" for an expense-sourced no-item material (matches the TaskTree button condition)', () => {
+    // materialStatus() keys any no-item row as needs-pricing regardless of
+    // cost_source — the modal must agree with the button that opened it.
+    const { getByRole } = render(MaterialModal, {
+      props: {
+        open: true, mode: 'edit',
+        material: {
+          material_id: 7, inventory_item: null, cost_source: 'expense',
+          unit_cost: 12, sell_price: 0, units: 'ea', quantity: 1,
+          description: 'Site-bought fasteners',
+        },
+      },
+    });
+    expect(getByRole('heading', { name: 'Set pricing' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Set pricing' })).toBeInTheDocument();
+  });
+
+  it('disables pricing with a locked note when editing a customer-supplied material', () => {
+    const { getByLabelText, getByText } = render(MaterialModal, {
+      props: {
+        open: true, mode: 'edit',
+        material: {
+          material_id: 6, inventory_item: 42, cost_source: 'customer_supplied',
+          unit_cost: 0, sell_price: 0, units: 'ea', quantity: 3,
+          description: 'Customer panel',
+        },
+      },
+    });
+    expect(getByLabelText(/Unit Cost/)).toBeDisabled();
+    expect(getByLabelText(/Sell Price/)).toBeDisabled();
+    expect(getByText(/Customer-supplied — carried at \$0/)).toBeInTheDocument();
   });
 
   it('prompts to propagate a PLI price change, then patches with the flag', async () => {
@@ -95,5 +172,77 @@ describe('MaterialModal', () => {
     await fireEvent.mouseDown(await findByText(/grey felt/));
     await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '4' } });
     expect(await findByText(/Only 3.00 of 5.00/)).toBeInTheDocument();
+  });
+
+  it('renders API field errors under the matching inputs', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { quantity: ['A valid number is required.'], sell_price: ['A valid number is required too.'] },
+    });
+    const { getByLabelText, getByRole, findByText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByText('A valid number is required.')).toHaveClass('field-error');
+    expect(await findByText('A valid number is required too.')).toHaveClass('field-error');
+  });
+
+  it('renders an operation error in the form footer after the buttons', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Job is not editable.',
+      data: { detail: 'Job is not editable.' },
+    });
+    const { getByLabelText, getByRole, findByRole } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+
+    expect(await findByRole('alert')).toHaveTextContent('Job is not editable.');
+  });
+
+  it('clears a stale field error when the user edits a field', async () => {
+    api.post.mockRejectedValue({
+      status: 400,
+      message: 'Bad request',
+      data: { quantity: ['A valid number is required.'] },
+    });
+    const { getByLabelText, getByRole, findByText, queryByText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', taskId: 10 },
+    });
+    await fireEvent.input(getByLabelText(/Description/), { target: { value: 'Steel' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText('A valid number is required.')).toBeInTheDocument();
+
+    await fireEvent.input(getByLabelText(/Quantity/), { target: { value: '3' } });
+    expect(queryByText('A valid number is required.')).toBeNull();
+  });
+
+  it('seeds description from presetDescription on create', async () => {
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: [], presetDescription: 'plywood' },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('plywood');
+  });
+
+  it('prefills from presetPli on create (PLI-locked)', async () => {
+    const pli = { inventory_item_id: 22, code: 'BOLT-14', description: 'Hex bolt',
+      purchase_price: '0.25', selling_price: '0.50', units: 'ea' };
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: [], presetPli: pli },
+    });
+    expect(getByLabelText(/description/i)).toHaveValue('Hex bolt');
+  });
+
+  it('freeform create (no presetPli) prefills AC from defaultMaterialCategoryId', async () => {
+    const cats = [{ id: 7, code: 'MAT', name: 'Materials' }];
+    const { getByLabelText } = render(MaterialModal, {
+      props: { open: true, mode: 'create', jobId: 5, categories: cats, defaultMaterialCategoryId: 7 },
+    });
+    expect(getByLabelText(/accounting category/i)).toHaveValue('7');
   });
 });

@@ -1,5 +1,6 @@
 <script>
   import UnitsSelect from '../UnitsSelect.svelte';
+  import Modal from '../Modal.svelte';
   import JobPicker from '../JobPicker.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
 
@@ -33,6 +34,18 @@
   let editForm = $state({});
 
   let changeJobLine = $state(null);
+
+  function saveChangeJob() {
+    if (!changeJobLine) return;
+    if (onChangeLineJob) {
+      onChangeLineJob(
+        changeJobLine.line_item_id,
+        changeJobId ?? null,
+        changeJobLine.material,
+      );
+    }
+    changeJobLine = null;
+  }
   let changeJobId = $state(null);
   let changeJobRow = $state(null);
 
@@ -228,7 +241,7 @@
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
             <td class="text-right">${(Number(editForm.qty) * Number(editForm.price)).toFixed(2)}</td>
-            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} /></td>
+            <td><JobPicker bind:value={editJobId} selectedItem={editJobRow} onSelect={(j) => { editJobRow = j; }} openOnly /></td>
             <td>
               <button onclick={saveEdit}>Save</button>
               <button onclick={cancelEdit}>Cancel</button>
@@ -339,28 +352,21 @@
   <p><a href={`#/bills/new?po=${po.po_id}`}>Create Bill</a></p>
 {/if}
 
-{#if changeJobLine}
-  <div class="overlay">
-    <div class="dialog">
-      <h3>Change Job for Line #{changeJobLine.line_number}</h3>
+<Modal open={changeJobLine != null}
+  onCancel={() => { changeJobLine = null; }}
+  label="Change Job">
+<form onsubmit={(e) => { e.preventDefault(); saveChangeJob(); }}>
+  {#if changeJobLine}
+    <h3>Change Job for Line #{changeJobLine.line_number}</h3>
       <p class="preserve-breaks"><strong><LinkifiedText text={changeJobLine.description} /></strong></p>
-      <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} />
+      <JobPicker bind:value={changeJobId} selectedItem={changeJobRow} onSelect={(j) => { changeJobRow = j; }} openOnly />
       <p>
-        <button onclick={() => {
-          if (onChangeLineJob) {
-            onChangeLineJob(
-              changeJobLine.line_item_id,
-              changeJobId ?? null,
-              changeJobLine.material,
-            );
-          }
-          changeJobLine = null;
-        }}>Save</button>
-        <button onclick={() => { changeJobLine = null; }}>Cancel</button>
+        <button type="submit">Save</button>
+        <button type="button" onclick={() => { changeJobLine = null; }}>Cancel</button>
       </p>
-    </div>
-  </div>
-{/if}
+  {/if}
+</form>
+</Modal>
 
 <style>
   .text-right { text-align: right; }
@@ -391,11 +397,4 @@
   .line-status.partial { background: #fef3c7; color: #92400e; }
   .line-status.pending { background: #f3f4f6; color: #374151; }
   .line-status.cancelled { background: #fee2e2; color: #991b1b; }
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .dialog {
-    background: white; padding: 20px; max-width: 600px; border-radius: 6px;
-  }
 </style>

@@ -14,9 +14,10 @@ class ConsumeTest(TestCase):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact', email='c@test.com'
         )
-        self.job = Job.objects.create(job_number='JOB-C-1', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-C-1', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=cat, is_catalog=True,
+            code='I', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -91,9 +92,9 @@ class ConsumeTest(TestCase):
         )
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
-        # sanity: quantity=3, restocked_qty=2
+        # sanity: quantity=3, released_qty=2
         self.assertEqual(m.quantity, Decimal('3'))
-        self.assertEqual(m.restocked_qty, Decimal('2'))
+        self.assertEqual(m.released_qty, Decimal('2'))
         qoh_before = self.pli.qty_on_hand
         sold_before = self.pli.qty_sold
         e_before = Earmark.objects.get(
@@ -119,9 +120,10 @@ class RestockTest(TestCase):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact', email='r@test.com'
         )
-        self.job = Job.objects.create(job_number='JOB-R-1', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-R-1', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=cat, is_catalog=True,
+            code='I', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -147,7 +149,9 @@ class RestockTest(TestCase):
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
         self.assertEqual(m.quantity, Decimal('3'))
-        self.assertEqual(m.restocked_qty, Decimal('0'))
+        # Restock tracks the return universally now (was expense-bound only):
+        # quantity + released_qty always reconstructs the original plan.
+        self.assertEqual(m.released_qty, Decimal('2'))
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         e = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('3'))
@@ -164,7 +168,7 @@ class RestockTest(TestCase):
         self.assertFalse(Earmark.objects.filter(
             inventory_item=self.pli, job=self.job).exists())
 
-    def test_partial_restock_expense_bound_shrinks_quantity_and_bumps_restocked_qty(self):
+    def test_partial_restock_expense_bound_shrinks_quantity_and_bumps_released_qty(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), inventory_item=self.pli,
@@ -173,13 +177,15 @@ class RestockTest(TestCase):
         MaterialService.restock(m, Decimal('2'))
         m.refresh_from_db()
         self.assertEqual(m.quantity, Decimal('3'))
-        self.assertEqual(m.restocked_qty, Decimal('2'))
+        self.assertEqual(m.released_qty, Decimal('2'))
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         e = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('3'))
         self.assertTrue(Material.objects.filter(pk=m.pk).exists())
 
-    def test_full_restock_expense_bound_keeps_row_with_quantity_zero(self):
+    def test_full_restock_expense_bound_releases_row(self):
+        # An expense-bound material is referenced, so restock-to-zero lands it
+        # in the released state (the old keep-pending-at-zero limbo, named).
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('5'), inventory_item=self.pli,
@@ -188,8 +194,8 @@ class RestockTest(TestCase):
         MaterialService.restock(m, Decimal('5'))
         m.refresh_from_db()
         self.assertEqual(m.quantity, Decimal('0'))
-        self.assertEqual(m.restocked_qty, Decimal('5'))
-        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(m.released_qty, Decimal('5'))
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_RELEASED)
         self.assertFalse(Earmark.objects.filter(
             inventory_item=self.pli, job=self.job).exists())
         self.assertTrue(Material.objects.filter(pk=m.pk).exists())
@@ -212,9 +218,10 @@ class DrawMoreTest(TestCase):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact', email='d@test.com'
         )
-        self.job = Job.objects.create(job_number='JOB-D-1', contact=self.contact)
+        self.job = Job.objects.create(job_number='JOB-D-1', contact=self.contact,
+                                      status=Job.STATUS_APPROVED)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=cat, is_catalog=True,
+            code='I', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -255,3 +262,24 @@ class DrawMoreTest(TestCase):
         )
         with self.assertRaises(ValidationError):
             MaterialService.draw_more(m, Decimal('1'))
+
+    def test_draw_more_forbidden_on_po_linked(self):
+        """Same rule as expense-bound: the quantity is pinned by a procurement
+        document. Received-then-draw-more would re-show a concluded PO as the
+        row's supply; the recourse is a second material row, ordered on its
+        own (spec: one row ↔ one procurement story)."""
+        from apps.core.models import AppState, Configuration
+        Configuration.objects.create(
+            key='po_number_sequence', value='PO-{year}-{counter:04d}')
+        AppState.objects.create(key='po_counter', value='0')
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('1'), inventory_item=self.pli,
+        )
+        MaterialService.order(m)
+        m.refresh_from_db()
+        with self.assertRaises(ValidationError) as ctx:
+            MaterialService.draw_more(m, Decimal('2'))
+        self.assertIn('purchase order', str(ctx.exception))
+        m.refresh_from_db()
+        self.assertEqual(m.quantity, Decimal('1'))

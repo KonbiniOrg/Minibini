@@ -61,10 +61,6 @@ class ChangeOrderViewSet(
         job_id = data.get('job')
         try:
             co = ChangeOrderService.create(job_id=job_id)
-        except DjangoValidationError as e:
-            from rest_framework.exceptions import ValidationError as DRFValidationError
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            raise DRFValidationError({'detail': msg})
         except NotFoundError as e:
             from rest_framework.exceptions import NotFound
             raise NotFound(str(e))
@@ -77,9 +73,6 @@ class ChangeOrderViewSet(
         # that only exist after the service runs. Instead, delegate directly.
         try:
             co = ChangeOrderService.create(job_id=request.data.get('job'))
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         serializer = self.get_serializer(co)
@@ -92,27 +85,41 @@ class ChangeOrderViewSet(
         if new_status and new_status != instance.status:
             try:
                 updated = ChangeOrderService.update_status(instance.pk, new_status)
-            except DjangoValidationError as e:
-                from rest_framework.exceptions import ValidationError as DRFValidationError
-                msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-                raise DRFValidationError({'detail': msg})
             except NotFoundError as e:
                 from rest_framework.exceptions import NotFound
                 raise NotFound(str(e))
             serializer.instance = updated
         else:
-            serializer.save()
+            serializer.instance = ChangeOrderService.update_fields(
+                serializer.instance, **serializer.validated_data)
 
     def destroy(self, request, *args, **kwargs):
         co = self.get_object()
         try:
             ChangeOrderService.discard_draft(co.pk)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
         return Response({'message': 'Change order discarded.'})
+
+    @action(detail=True, methods=['post'], url_path='line-items-from-service',
+            url_name='line-items-from-service')
+    def line_items_from_service(self, request, pk=None):
+        """Create a deferred service line (service_item descriptor + snapshot).
+
+        Mints NO Task; the Task crystallizes at CO acceptance
+        (ChangeOrderAcceptanceService.on_accept). Mirrors the estimate's
+        line-items-from-service action."""
+        co = self.get_object()
+        try:
+            line_item = ChangeOrderService.add_line_item_from_service(
+                co.pk,
+                request.data.get('service_item'),
+                request.data.get('qty'),
+            )
+        except NotFoundError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ChangeOrderLineItemSerializer(line_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='seed-new', url_name='seed-new')
     def seed_new(self, request, pk=None):
@@ -121,9 +128,6 @@ class ChangeOrderViewSet(
             new_co = ChangeOrderService.seed_new(pk)
         except NotFoundError as e:
             return Response({'detail': str(e)}, status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            msg = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(new_co)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -160,13 +164,10 @@ class ChangeOrderViewSet(
         try:
             record = ChangeOrderEmailService.send_change_order(
                 co, to=to, subject=subject, body=body, cc=cc, bcc=bcc,
-                extra_attachments=extra_attachments, user=request.user,
+                extra_attachments=extra_attachments,
             )
-        except DjangoValidationError as e:
-            return Response(
-                {'detail': e.messages if hasattr(e, 'messages') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        except DjangoValidationError:
+            raise  # plain validation errors render via the contract handler
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({

@@ -65,7 +65,10 @@ describe('RecordPaymentModal', () => {
     await fireEvent.input(getByLabelText(/amount/i), { target: { value: '50' } });
     await fireEvent.click(getByText(/save/i));
     expect(api.post).not.toHaveBeenCalled();
-    expect(getByText(/choose a payment account/i)).toBeTruthy();
+    // Native form validation is the blocker now: the required account select
+    // is invalid, so the submit never fires (the JS message stays as the
+    // backstop for browsers/paths that skip constraint validation).
+    expect(container.querySelector('select:invalid')).toBeTruthy();
   });
 
   it('shows a configure-accounts message and no form when none are configured', async () => {

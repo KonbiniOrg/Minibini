@@ -5,7 +5,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 ## What this doc owns
 
 - The `Invoice`, `InvoiceLineItem`, and `InvoiceLineItemSource` models.
-- The invoice wizard (re-aggregating real-side atoms — `Task`, `Material` — into invoice line items).
+- The invoice wizard (re-aggregating the job's atoms — `Task`, `Material`, plus `Fee` and `Expense` claims — into invoice line items).
 - The Minibini-side shape of "send an invoice to QBO": which states transition, which surfaces show what.
 - The `Expense` and `Reimbursement` models, services, and viewsets.
 - Per-expense permission scoping in the API.
@@ -14,7 +14,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 
 - Service-layer conventions, `LineItemMixin`, `StatusTransitionMixin`, two-phase delete, the line-item delete-and-renumber rule. See `docs/designs/architecture-and-conventions.md` and `CLAUDE.md`.
 - `Job`, `Task`, `Blep`, `WorkTemplate` shape. See `docs/designs/jobs-tasks-and-worksheets.md`.
-- The estimate wizard (`EstimateLineItemSource`, plan-side atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
+- The estimate wizard (`EstimateLineItemSource`, the same Job atoms, in-sync rule). The invoice wizard mirrors it; see `docs/designs/estimates-and-prices.md` for the shared structure and the `LineItemSource` claim model.
 - `Material` shape, `MaterialService.consume`, `is_expense_bound`, the "Materials (no task)" bucket. See `docs/designs/materials-inventory-and-purchasing.md`.
 - `Bill` (vendor-side AP, lives next to `PurchaseOrder`). See `docs/designs/materials-inventory-and-purchasing.md`.
 - OAuth, `QBOSyncLog`, payment polling, sync-failure plumbing. See `docs/designs/quickbooks-integration.md`. This doc references the push points but does not describe their internals.
@@ -25,7 +25,7 @@ The customer-facing billing side of Minibini and the employee/company expense le
 
 `apps/invoicing/models.py` — `Invoice`.
 
-One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The job is the only structural parent; an invoice does not link to an estimate or to the worksheet that produced the job.
+One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The job is the only structural parent; an invoice does not link to an estimate — it is a lens over the job's atoms (with `copy_from_estimate` as a convenience seeding path).
 
 ### Fields
 
@@ -50,13 +50,13 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 |---|---|
 | `draft` | Editable. Wizard works against this state. Default on create. |
 | `open` | Sent to customer; awaiting payment. Set by the send-to-customer flow (`InvoiceEmailService.send_invoice` flips `draft → open` on send success, stamping `sent_date`). Payment polling treats `open` (and `partly-paid`) as its input states and promotes `open → paid` / `partly-paid` automatically. |
-| `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). |
+| `cancelled` | Terminal. Frees its claimed atoms (the wizard treats cancelled-invoice claims as available). Set via `InvoiceService.cancel` (API: `InvoiceViewSet.cancel`), which loads the invoice and calls `.save()` so the completion gate fires — a cancelled invoice counts as resolved, so cancelling the last unresolved invoice on a `work_complete`, all-shipped job auto-completes it. |
 | `superseded` | Defined in choices, no current transition. |
 | `partly-paid` | Set by `QBOPaymentPollingService.poll_all` when QBO reports a partial payment (some balance paid, some outstanding). |
-| `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()`, which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate walks the job through `approved → in_progress → work_complete → completed` (each step via `JobService.update_job`) only if **both** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials` restocks them and a `HistoryEntry` logs it — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
+| `paid` | Set by the polling service when QBO reports the invoice fully paid (balance zero); also reachable by any other path that writes `STATUS_PAID`. When written, `Invoice.save()` stamps `closed_date` (if unset) and calls `_maybe_complete_job()` (also fired on entry to `cancelled`), which delegates to `JobService.maybe_complete_if_resolved(job)` — the single completion gate (see "All-shipped completion gate" below). The gate completes the job (via `JobService.update_job`) only if the job's **work is finished** (`work_complete`, or `approved`/`in_progress` with ≥1 task, all terminal — the loose-material-stranded case) **and** all of the job's invoices are resolved (paid or cancelled) **and** every Deliverable on the job is fully picked up. A job whose work is open (including a deposit-invoiced task-less job) is left untouched. Before the walk it releases any loose pending Materials on the job — `JobService.release_loose_materials`; claimed ones become `released` history, unclaimed delete — so the `work_complete` materials gate cannot strand the job on this unattended path. A `cancelled` job is never auto-completed (the state machine forbids `cancelled → completed`). |
 | `defaulted` | Defined in choices, no current transition. |
 
-`InvoiceViewSet.status_actions` registers only `cancel` (writes `STATUS_CANCELLED` directly via a queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
+`InvoiceViewSet.status_actions` registers only `cancel`, which delegates to `InvoiceService.cancel` (loads the invoice and calls `.save()` so the completion gate runs — not a bypassing queryset update). Everything else is set by direct `save()` or by code that has not yet been written.
 
 `Invoice.clean()` blocks transitioning out of `draft` if there are zero `InvoiceLineItem` rows.
 
@@ -103,7 +103,7 @@ cancelled invoice frees its claimed atoms back to the pool.
 
 ### InvoiceLineItem
 
-Inherits `BaseLineItem` (description, qty, units, price, accounting_category, taxable_override, etc. — see `apps/core/models.py`). Has no direct `task` FK; `task` is exposed as a `@property` returning `None` purely so `BaseLineItem.clean()`'s "task XOR price_list_item" rule passes. Source linkage is via the `InvoiceLineItemSource` join table.
+Inherits `BaseLineItem` (description, qty, units, price, accounting_category, taxable_override, etc. — see `apps/core/models.py`). Has no direct `task` FK; `task` is exposed as a `@property` returning `None` purely so `BaseLineItem.clean()`'s "task XOR inventory_item" rule passes. Source linkage is via the `InvoiceLineItemSource` join table.
 
 `db_table = 'invoice_li'`. Parent field name (for `LineItemMixin`) is `invoice`.
 
@@ -111,7 +111,7 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 
 **Adjustment fields** (parallel to `EstimateLineItem`):
 
-- `adjustment_service` — nullable FK to `ServiceItem` (PROTECT). Set when
+- `adjustment_service` — nullable FK to `RateScheme` (PROTECT). Set when
   this line is a percentage adjustment (e.g. rush surcharge, volume discount).
   A line with `adjustment_service_id` set is an **adjustment line**.
 - `adjustment_target_categories` — M2M to `AccountingCategory`. The
@@ -121,36 +121,36 @@ Deletion goes through `LineItemService.delete_line_item_with_renumber(line_item)
 
 ### InvoiceLineItemSource
 
-Polymorphic join between `InvoiceLineItem` and the atom it represents (a real-side `Task` or `Material`). "Polymorphic" only in the sense that the atom side may be one of two model types; this is not a Django generic relation.
+Polymorphic join between `InvoiceLineItem` and the job atom it represents (a `Task`, `Material`, `Fee`, or `Expense`). "Polymorphic" only in the sense that the atom side may be one of several model types; this is not a Django generic relation.
 
 | Field | Type | Notes |
 |---|---|---|
 | `source_id` | AutoField PK | |
 | `invoice_line_item` | FK InvoiceLineItem (CASCADE) | `related_name='sources'`. |
-| `source_type` | CharField(20), choices `'task'` / `'material'` | `SOURCE_TASK = 'task'`, `SOURCE_MATERIAL = 'material'`. |
-| `source_pk` | PositiveIntegerField | The `Task.pk` or `Material.pk`. |
+| `source_type` | CharField(20), choices `'task'` / `'material'` / `'fee'` / `'expense'` | `SOURCE_TASK`, `SOURCE_MATERIAL`, `SOURCE_FEE`, `SOURCE_EXPENSE`. |
+| `source_pk` | PositiveIntegerField | The `Task.pk` / `Material.pk` / `Fee.pk` / `Expense.pk`. |
 
 `db_table = 'invoice_line_item_sources'`.
 `unique_together = [('source_type', 'source_pk')]` — DB-level enforcement of whole-atom claim. An atom cannot appear in two `InvoiceLineItemSource` rows.
 
-`InvoiceLineItemSource.resolve()` returns the concrete `Task` or `Material` instance.
+`InvoiceLineItemSource.resolve()` returns the concrete `Task` / `Material` / `Fee` / `Expense` instance.
 
-### Atoms on the real side
+### Atoms — same Job atoms as the estimate
 
-Invoice atoms differ from estimate atoms:
+Both the estimate and the invoice are **lenses** over the **same Job atoms** (see `estimates-and-prices.md` §7) — `Task`, `Material`, `Fee` — plus, invoice-only, material-less `Expense`s.
 
-| Side | Atoms |
-|---|---|
-| Estimate (plan) | `PlanTask`, `PlanMaterial` (estimate-side atom names — see estimates doc). |
-| Invoice (real) | `Task`, `Material`. |
+| Atom | Invoice billable amount | Billable when |
+|---|---|---|
+| `Task` | `task.compute_amount()` — actuals (bleps / `actual_qty`) via the `RateScheme` | `status == complete` |
+| `Material` | `quantity × sell_price` | `consumption_state == consumed` |
+| `Fee` | `quantity × unit_rate` | always |
+| `Expense` (material-less) | the expense amount | always (submitted) |
 
-A `Task`'s billable amount is `task.compute_amount()` — driven by the task's `RateScheme` (elapsed-bleps, entered qty, or flat fee). A `Material`'s amount is `quantity * sell_price`. See `InvoiceWizardService._atom_computed_amount`.
+See `InvoiceWizardService._atom_computed_amount`. The estimate side projects `est_qty` (`Task.compute_estimate_amount`) instead — the lens difference.
 
-### Unique-constraint difference vs. the estimate side
+### Whole-atom claim constraint
 
-The estimate wizard's `EstimateLineItemSource` unique constraint is **not estimate-scoped**, because plan-side atoms get duplicated on worksheet revisions and a flat global unique constraint would block the dup-and-revise pattern. See estimates doc.
-
-The invoice side uses a flat, global unique constraint — `unique_together = [('source_type', 'source_pk')]` — and that is correct here. Real-side atoms (`Task`, `Material`) are not duplicated across invoices; an atom is a single physical thing, and the constraint enforces the project's "no double billing" rule directly at the DB.
+The invoice side uses a flat, global unique constraint — `unique_together = [('source_type', 'source_pk')]`. A job atom is a single physical thing and is not duplicated across invoices, so the constraint enforces the project's "no double billing" rule directly at the DB. (The estimate side uses the same shape — see estimates doc — and on revision *moves* the source rows to the new revision rather than duplicating.)
 
 When the wizard hits a race, `InvoiceWizardService` catches `IntegrityError` and raises `ClaimConflict(atom_ids=...)`. The viewset translates this to HTTP 409 with `{'error': 'atoms_already_claimed', 'atom_ids': [...]}`.
 
@@ -158,7 +158,7 @@ When the wizard hits a race, `InvoiceWizardService` catches `IntegrityError` and
 
 - Deleting an `InvoiceLineItem` deletes its `InvoiceLineItemSource` rows (CASCADE).
 - Deleting an `Invoice` cascades to its line items, then to their sources. All claimed atoms become available again.
-- Deleting a `Task` or `Material` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
+- Deleting a `Task` / `Material` / `Fee` / `Expense` does not affect `InvoiceLineItemSource` rows directly (no FK; the join uses `source_type`+`source_pk`). A claimed atom that gets deleted leaves a dangling source whose `resolve()` raises `DoesNotExist`. Atom deletion is gated upstream — Tasks with bleps don't get hard-deleted in normal flows.
 
 ### Per-atom `invoice` field (API) and "Invoiced" indicator (UI)
 
@@ -242,7 +242,7 @@ includes `EstimateLineItemSourceSerializer` with the same `description` +
 
 ## Invoice wizard
 
-The invoice wizard re-aggregates real-side atoms into the invoice line items the customer wants to see. It is the structural parallel of the estimate wizard.
+The invoice wizard re-aggregates the job's atoms into the invoice line items the customer wants to see. It is the structural parallel of the estimate wizard (both are lenses over the same Job atoms).
 
 For the shared concepts — source pool, claim semantics, in-sync vs. override rule, two-pane UI shape, manual vs. bundled line items — see `docs/designs/estimates-and-prices.md`.
 
@@ -255,6 +255,7 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 | Method | Responsibility |
 |---|---|
 | `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done; the wizard pool draws from non-cancelled Tasks, whose actuals stay billable. |
+| `send_all_atoms(invoice)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines — unlike `seed_all_atoms` (the fresh-document "Apply everything"), which requires an empty invoice. `POST /api/invoices/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Invoice" button. |
 | `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — non-cancelled tasks for the job, plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. Atom keys are normalized to match the estimate wizard so the frontend `WizardAtomRow` component is shared. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
@@ -262,11 +263,17 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 `InvoiceService.discard_draft(invoice)` is the discard path — validates draft status, then hard-deletes the invoice (cascade frees all claimed atoms).
 
+### Copy from estimate (`copy_from_estimate`)
+
+`InvoiceService.copy_from_estimate(invoice)` (`POST /api/invoices/{id}/copy-from-estimate/`) seeds a fresh draft invoice from the job's **accepted-estimate agreement** (`compose_agreement(invoice.job)`) — one `InvoiceLineItem` per agreement line (description, qty, price, units, accounting_category; adjustment lines also carry `adjustment_service` + target categories). Preconditions (else `ValidationError`): the invoice is `draft`, has no existing line items, and is the only non-cancelled invoice for the job (i.e. it's the first invoice).
+
+**Fee-claim-on-copy.** A hand-line on the accepted estimate was crystallized into a `Fee` on the job at acceptance time (see `estimates-and-prices.md` §9). When `compose_agreement` surfaces such a line it carries the `source_fee_id`; `copy_from_estimate` then writes an `InvoiceLineItemSource` (`source_type='fee'`, `source_pk=fee.pk`) for that line. This claims the Fee so the wizard source pool marks it billed and the whole-atom unique constraint blocks double-billing it through the atom-pull path.
+
 ### Defaults when bundling N atoms into a new line item
 
 | Case | Description | Units | Qty | Price | Accounting category |
 |---|---|---|---|---|---|
-| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity` or `1` for tasks) | Atom-derived (`Material.sell_price` or `task.compute_amount()`) | Atom's effective category |
+| Single atom | Atom's name/description | Atom's units (rate scheme unit, or PLI units, or `'none'`) | Atom's intrinsic qty (`Material.quantity`; an ENTERED_QTY task's actual qty; `1` for ELAPSED_TIME tasks) | Atom-derived (`Material.sell_price`; an ENTERED_QTY task's `effective_rate()`; the blep roll-up total for ELAPSED_TIME) | Atom's effective category |
 | Multi-atom — uniform task bundle | `''` (UI prompts user to name) | Rate scheme `unit_label` | Summed actual quantities | Common effective rate | Uniform-or-null |
 | Multi-atom — anything else | `''` (UI prompts user to name) | `'none'` | `1` | Sum of atom amounts | Uniform-or-null (set if all atoms share one category) |
 
@@ -306,12 +313,12 @@ All wizard endpoints require `IsAuthenticated` + `CanManageFinancials` (`Invoice
 
 `frontend/src/routes/invoices/InvoiceWizardPage.svelte` is the SPA route at `#/invoices/:id/wizard`. Two panes:
 
-- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the real-side `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate wizard has its own source-pool component because the atom shape and grouping differ.
+- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate wizard has its own source-pool component because the atom shape and grouping differ.
 - Right: `frontend/src/components/wizards/WizardLineItemCard.svelte` — shared with the estimate wizard. One card per line item, in-sync/override price display, atom remove buttons.
 
 Footer actions use `frontend/src/components/wizards/WizardActions.svelte` — also shared.
 
-`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard detail view of an invoice. It shares the same **JobHeader** band as the atom-pull wizard page. On `draft` invoices, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte` (the shared modal also used on the estimate detail page). Adding a line item offers a toggle between **manual entry** and **"From Price List"** (catalog mode, which POSTs `{price_list_item, qty}` and copies description/units/selling_price/accounting_category from the PLI). Editing an existing line item edits its fields only, with no catalog toggle.
+`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard detail view of an invoice. It shares the same **JobHeader** band as the atom-pull wizard page. On `draft` invoices, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte` (the shared modal also used on the estimate detail page). Adding a line item offers a toggle between **manual entry** and **"From Price List"** (catalog mode, which POSTs `{inventory_item, qty}` and copies description/units/selling_price/accounting_category from the PLI). Editing an existing line item edits its fields only, with no catalog toggle.
 
 A **"Show Billables"** link is shown on the detail page only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`). If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the link is absent.
 
@@ -326,7 +333,7 @@ On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeh
 ## Invoice adjustment lines
 
 Percentage adjustments (rush surcharges, volume discounts, etc.) can be added
-as `InvoiceLineItem` rows backed by a `PERCENTAGE` `ServiceItem`. The
+as `InvoiceLineItem` rows backed by a `PERCENTAGE` `RateScheme`. The
 mechanics mirror the estimate side exactly — see
 `docs/designs/estimates-and-prices.md` §2.2 and §5.3b for the
 `compute_adjustment_amount` helper and the `percentage` algorithm semantics.
@@ -343,7 +350,7 @@ an invoice leaves `draft` the stored price is frozen automatically.
 
 | Method | Behavior |
 |---|---|
-| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `ServiceItem` at the end of the invoice's line list, calls `_recompute_adjustments`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
+| `add_adjustment_line(invoice, *, adjustment_service_id, target_category_ids=[])` | Creates a new `InvoiceLineItem` backed by a PERCENTAGE `RateScheme` at the end of the invoice's line list, calls `_recompute_adjustments`, and returns the saved line. Raises `ValidationError` if the invoice is not `draft` or the service is not `PERCENTAGE`. |
 | `_recompute_adjustments(invoice)` | Internal helper. Calls `recompute_adjustments()` over all `InvoiceLineItem` rows for the invoice. Called after every line-item mutation. |
 
 ### API endpoints
@@ -466,11 +473,12 @@ customer-sync flow, and connection lifecycle, see
 
 `JobService.maybe_complete_if_resolved(job)` (in `apps/jobs/services.py`) is the single auto-completion gate. It runs from two triggers:
 
-- `Invoice._maybe_complete_job` (on entry to `paid` / `cancelled`) — delegates to it.
+- `Invoice._maybe_complete_job` (on entry to `paid` / `cancelled`) — delegates to it. `Invoice.save()` fires it whenever the status transitions **into** `paid` or `cancelled`; the API cancel action (`InvoiceViewSet.cancel`) routes through `InvoiceService.cancel`, which loads the invoice and calls `.save()` so the gate runs (it does **not** use a bypassing `QuerySet.update()`).
 - `ShipmentService.mark_picked_up` — calls it at the end of every shipment pickup.
 
-Whichever lands last — the final payment or the final shipment — completes the job, provided **both** of these hold:
+Whichever lands last — the final payment or the final shipment — completes the job, provided **all** of these hold:
 
+- **The job's work is finished.** `work_complete`, or `approved`/`in_progress` with at least one task and every task terminal — the loose-material-stranded case, where a pending task-less material blocked the `work_complete` transition; this unattended path releases those materials (claimed → `released` history, unclaimed → deleted) and walks the job up. Anything else is a no-op: an `in_progress` job with open tasks (a follow-up to send plans/photos, a post-job meeting), a deposit invoice paid before any work starts (task-less job), and `draft`/`submitted` jobs have no finished work at all; a held job never auto-completes either — status changes are blocked while the `on_hold` flag is set.
 - **All invoices resolved.** Every `Invoice` for the job is `paid` or `cancelled`.
 - **All deliverables shipped.** `DeliverableService.all_deliverables_shipped(job)` returns True only when every `Deliverable` on the job has `qty_picked_up == qty_ordered`. Prepared-but-not-picked-up does not count; a job with zero deliverables is vacuously shipped.
 
@@ -507,7 +515,7 @@ Tracks two kinds of business expenses:
 | `reference_number` | CharField(50), blank | Check number, confirmation number, etc. Always optional. |
 | `job` | FK Job (SET_NULL, nullable, `expenses`) | **The cost anchor.** `null` = overhead. Job P&L groups expenses by this directly. `SET_NULL` mirrors `material` (the financial record outlives a hard-deleted job, becoming overhead). |
 | `material` | FK Material (SET_NULL, nullable, `expenses`) | The ONE consumable material this expense *created* (cost-expense mode), or null. Expenses never link an existing material. `material.job` must equal `job`. |
-| `stock_pli` / `stock_qty` | FK PriceListItem (inventoried) + Decimal | Stock-receipt mode: an inventoried purchase that bumped QOH. Mutually exclusive with `material`; `amount` is not job-costed (cost-at-consumption). |
+| `stock_pli` / `stock_qty` | FK InventoryItem (inventoried) + Decimal | Stock-receipt mode: an inventoried purchase that bumped QOH. Mutually exclusive with `material`; `amount` is not job-costed (cost-at-consumption). |
 | `status` | CharField — see machine | Default `submitted`. |
 | `qbo_id` | CharField(50), blank | Set when the QBO push succeeds (company-paid only — personal expenses' QBO IDs live on their reimbursement batch). |
 | `qbo_sync_error` | TextField, blank | |
@@ -609,7 +617,7 @@ submitted ──► reimbursed     (batch created — QBO Purchase push owned by
      └──────► rejected       (terminal; never pushes to QBO)
 ```
 
-`ExpenseService.reject` only accepts personal expenses in `submitted` status. Rejecting also unwinds any associated Materials: clears their inventory earmark, reverses the ad-hoc PLI receipt, and deletes the Material — refusing if any material is already in the `consumed` state.
+`ExpenseService.reject` only accepts personal expenses in `submitted` status. Rejecting also unwinds any associated Materials: clears their inventory earmark, reverses the ad-hoc PLI receipt, and deletes the Material — refusing if any material is already `consumed` **or claimed by an estimate/change-order line** (deletion doctrine Rule 1: block the upstream event so reject's delete is always of an unreferenced row; remove the claiming line first).
 
 **Company-paid:**
 
@@ -648,10 +656,10 @@ The previous `can_approve_expenses` permission atom is retired. `apps/api/permis
 
 `Expense.material` is the optional job-costing link. When an expense is linked to a Material, the Material is "expense-bound" — see `docs/designs/materials-inventory-and-purchasing.md` for `Material.is_expense_bound` and `MaterialService.consume`.
 
-`ExpenseService.submit` accepts an optional `new_material={'job_id', 'description', 'quantity', 'price', 'price_list_item_id'}` payload that creates a Material on the expense's job inline:
+`ExpenseService.submit` accepts an optional `new_material={'job_id', 'description', 'quantity', 'price', 'inventory_item_id'}` payload that creates a Material on the expense's job inline:
 
 - Calls `MaterialService.create_on_job(job=..., task=None, ...)` — the material has no parent task. The "Materials (no task)" bucket from the wizard's source pool surfaces these.
-- If a `PriceListItem` is provided and `is_inventoried`, calls `InventoryService.receive_ad_hoc_purchase(material)` to record the receipt.
+- If a `InventoryItem` is provided and `is_inventoried`, calls `InventoryService.receive_ad_hoc_purchase(material)` to record the receipt.
 - Whole flow runs in one transaction with the `Expense.save()`.
 
 ### `purchased_by` vs. `entered_by`
@@ -718,7 +726,7 @@ See `docs/designs/quickbooks-integration.md`. One `Purchase` per batch, with one
 | `submit(*, entered_by, payment_method, amount, purchased_on, accounting_category, description='', payment_account_id='', reference_number='', purchased_by=None, new_material=None, job=None, stock_pli=None, stock_qty=None) -> Expense` | Atomic create. `new_material` with an inventoried PLI → a stock receipt (QOH ↑, no material); otherwise a consumable material at the entered cost. No existing-material linking. Calls `_push_and_set_status` for company-paid; leaves personal `submitted`. |
 | `update(*, expense, actor, **fields) -> Expense` | Editable fields: amount, purchased_on, description, accounting_category, payment_method, payment_account_id, reference_number, purchased_by, job, **stock_qty** (adjusts the receipt's QOH by the delta). `material` is not editable post-create. Guards: invoiced-freeze + reimbursed-money lock; a linked material follows a job change. Calls `_resync` if `expense.qbo_id`. |
 | `delete(*, expense, actor)` | Voids the QBO Purchase if `qbo_id` and not in a batch. Hard-deletes the row. (Reimbursed expenses' QBO state is owned by the batch, so this path doesn't void QBO for them.) |
-| `reject(*, expense, actor) -> Expense` | Personal + `submitted` only. Unwinds materials (earmark, ad-hoc receipt, delete) — refuses if any material is `consumed`. Sets `STATUS_REJECTED`. |
+| `reject(*, expense, actor) -> Expense` | Personal + `submitted` only. Unwinds materials (earmark, ad-hoc receipt, delete) — refuses if any material is `consumed` or claimed by an estimate/CO line. Sets `STATUS_REJECTED`. |
 | `retry_sync(*, expense, actor) -> Expense` | `sync_failed` only. Re-pushes via `_push_and_set_status`. |
 
 `_resync` is QBO-aware: if the expense is in a reimbursement batch, it re-pushes the whole batch (`QBOExpenseSyncService.update_reimbursement`); otherwise it re-pushes the standalone expense (`QBOExpenseSyncService.update_expense`). On failure, it flips the owner (batch or expense) to `sync_failed`.

@@ -21,8 +21,8 @@ from apps.estimates.models import ChangeOrder
 from apps.estimates.services import ChangeOrderEmailService
 from apps.jobs.models import Job
 
-# Shown when a CO is still `open` but its job has moved off on_hold out from
-# under it — the customer can no longer respond.
+# Shown when a CO is still `open` but its job's hold has been released out
+# from under it — the customer can no longer respond.
 CLOSED_MESSAGE = (
     'This change order is not open for response.  Please contact us for '
     'further information.'
@@ -31,13 +31,13 @@ CLOSED_MESSAGE = (
 
 def _is_actionable(co):
     """Customer may act only on an OPEN CO whose job is still awaiting them.
-    An open CO is authored and sent while the job is on_hold and stays on_hold
-    until the customer accepts (then it goes approved); so "awaiting customer"
-    maps to job on_hold. Gate on both so a shop action that races the click
-    no-ops."""
+    An open CO is authored and sent while the job is held and the job stays
+    held until the customer accepts (acceptance clears the hold); so
+    "awaiting customer" maps to the job's on_hold flag. Gate on both so a
+    shop action that races the click no-ops."""
     if co.status != ChangeOrder.STATUS_OPEN:
         return False
-    return co.job_id is not None and co.job.status == Job.STATUS_ON_HOLD
+    return co.job_id is not None and co.job.on_hold
 
 
 def _money(value):

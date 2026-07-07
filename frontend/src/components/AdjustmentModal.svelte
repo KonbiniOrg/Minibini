@@ -1,5 +1,6 @@
 <script>
   import { api } from '../lib/api.js';
+  import Modal from './Modal.svelte';
 
   let {
     open = false,
@@ -27,7 +28,7 @@
 
   async function loadServices() {
     try {
-      const resp = await api.get('/api/service-items/?page_size=100');
+      const resp = await api.get('/api/rate-schemes/?page_size=100');
       const all = resp.results || resp;
       services = all.filter(s => s.algorithm === 'percentage');
     } catch (_) {
@@ -45,7 +46,7 @@
 
   async function submit() {
     if (!selectedServiceId) {
-      error = 'Please choose a percentage service before adding.';
+      error = 'Please choose a rate before adding.';
       return;
     }
     busy = true;
@@ -64,21 +65,19 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" role="dialog" aria-modal="true" aria-label="Add Adjustment">
-    <div class="modal">
+<Modal {open} onCancel={onClose} label="Add Adjustment" maxWidth="720px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) submit(); }}>
       <h3>Add Percentage Adjustment</h3>
 
       <p>
-        <label for="adj-service"><strong>Percentage Service *</strong></label><br>
         <select
           id="adj-service"
-          aria-label="Percentage service"
+          aria-label="Percentage rate scheme"
           bind:value={selectedServiceId}
         >
-          <option value="">-- Select a service --</option>
+          <option value="">-- Select a rate --</option>
           {#each services as svc}
-            <option value={svc.service_item_id}>
+            <option value={svc.rate_scheme_id}>
               {svc.name} ({svc.rate}%)
             </option>
           {/each}
@@ -104,23 +103,15 @@
       </div>
 
       <div class="buttons">
-        <button type="button" onclick={submit} disabled={busy}>Add Adjustment</button>
+        <button type="submit" disabled={busy}>Add Adjustment</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</form>
+</Modal>
+
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal, 100);
-  }
-  .modal {
-    background: white; padding: 16px; max-width: 480px; width: 90%;
-    border: 1px solid #ccc; border-radius: 4px;
-  }
   .category-list {
     display: flex; flex-direction: column; gap: 4px;
     max-height: 180px; overflow-y: auto;

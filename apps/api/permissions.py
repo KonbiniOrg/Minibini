@@ -31,6 +31,24 @@ class CanManageFinancialsOrConfig(BasePermission):
                 or request.user.has_perm('core.can_manage_config'))
 
 
+class CanManageJobsOrConfig(BasePermission):
+    """The saved-work (ServiceItem) catalog is built by plan-builders (jobs) and
+    config admins alike — either atom grants create. (The catalog is expected to
+    leave the config-only area, like Inventory; this is the first step.)"""
+    def has_permission(self, request, view):
+        return (request.user.has_perm('core.can_manage_jobs')
+                or request.user.has_perm('core.can_manage_config'))
+
+
+class CanManageJobsOrFinancialsOrConfig(BasePermission):
+    """The catalog (ServiceItems) is shared workshop vocabulary: plan-builders
+    (jobs), the money role (financials), and config admins may all manage it."""
+    def has_permission(self, request, view):
+        return (request.user.has_perm('core.can_manage_jobs')
+                or request.user.has_perm('core.can_manage_financials')
+                or request.user.has_perm('core.can_manage_config'))
+
+
 class CanManageJobOrPM(BasePermission):
     """can_manage_jobs atom OR being the target job's project_manager.
 

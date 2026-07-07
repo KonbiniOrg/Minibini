@@ -17,11 +17,12 @@ class POReverseReceiptWithMaterialTest(TestCase):
         c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()
-        self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
+        self.job = Job.objects.create(job_number='J-1', contact=c, description='j',
+                                      status=Job.STATUS_APPROVED)
         cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
         self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=cat, is_catalog=True,
+            selling_price=Decimal('2.00'), accounting_category=cat,
             qty_on_hand=Decimal('0.00'),
         )
         self.po = PurchaseOrder.objects.create(business=self.business)

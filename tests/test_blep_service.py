@@ -12,8 +12,8 @@ class BlepServicePrimitivesTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Task', job=self.job, service_item_id=1)
-        self.other_task = Task.objects.create(name='Other', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
+        self.other_task = Task.objects.create(name='Other', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
         self.other_user = User.objects.create_user(username='worker2', password='x')
 
@@ -78,7 +78,7 @@ class CreateHistoricalTest(BaseTestCase):
         for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
             self.job.status = s
             self.job.save()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_historical', password='x')
         self.manager = User.objects.create_user(username='m', password='x')
         from django.contrib.auth.models import Permission
@@ -191,11 +191,18 @@ class CreateHistoricalTest(BaseTestCase):
         self.assertEqual(self.task.status, Task.STATUS_COMPLETE)
 
     def test_create_historical_consumes_materials_on_pending_task(self):
-        from apps.inventory.models import Material
+        from decimal import Decimal
+        from apps.inventory.models import InventoryItem, Material
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.first()
+        # Established + stocked: consume() now refuses provisional materials, so
+        # the sweep can only consume a material with a received lot.
+        pli = InventoryItem.objects.create(
+            code='BLEP-H1', accounting_category=cat, qty_on_hand=Decimal('5'),
+        )
         mat = Material.objects.create(
             job=self.job, task=self.task, description='Test Material',
+            inventory_item=pli, quantity=Decimal('2'),
             accounting_category=cat,
         )
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
@@ -204,26 +211,71 @@ class CreateHistoricalTest(BaseTestCase):
         mat.refresh_from_db()
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
 
-    def test_create_historical_on_in_progress_task_does_not_consume(self):
-        from apps.inventory.models import Material
+    def test_create_historical_on_in_progress_task_sweeps_pending_materials(self):
+        # A blep means work is happening — a hand-added blep on a started task
+        # consumes the task's pending materials (the blep-start sweep), the
+        # same as a live start.
+        from decimal import Decimal
+        from apps.inventory.models import InventoryItem, Material
         from apps.core.models import AccountingCategory
         cat = AccountingCategory.objects.first()
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        # Established + stocked: the blep-start sweep can only consume a material
+        # with a received lot (consume() refuses provisional materials).
+        pli = InventoryItem.objects.create(
+            code='BLEP-H2', accounting_category=cat, qty_on_hand=Decimal('5'),
+        )
         mat = Material.objects.create(
             job=self.job, task=self.task, description='M',
+            inventory_item=pli, quantity=Decimal('2'),
             accounting_category=cat,
         )
         start, end = self._times(2, 1)
         BlepService.create_historical(self.user, self.task, start, end)
         mat.refresh_from_db()
-        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
+    def test_create_historical_assigns_unassigned_pending_task(self):
+        # Mirrors start_work: the first worker whose blep promotes the task
+        # becomes its assignee.
+        self.assertIsNone(self.task.assignee_id)
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee_id, self.user.pk)
+
+    def test_create_historical_for_other_assigns_target_not_actor(self):
+        start, end = self._times(2, 1)
+        BlepService.create_historical(
+            self.manager, self.task, start, end, target_user=self.other_user,
+        )
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee_id, self.other_user.pk)
+
+    def test_create_historical_keeps_existing_assignee(self):
+        Task.objects.filter(pk=self.task.pk).update(assignee=self.other_user)
+        self.task.refresh_from_db()
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.assignee_id, self.other_user.pk)
+
+    def test_create_historical_on_in_progress_task_does_not_assign(self):
+        # Assignment rides the pending→in_progress promotion only — a blep on
+        # an already-started task is "helping" (same rule as start_work).
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        self.task.refresh_from_db()
+        start, end = self._times(2, 1)
+        BlepService.create_historical(self.user, self.task, start, end)
+        self.task.refresh_from_db()
+        self.assertIsNone(self.task.assignee_id)
 
 
 class UpdateBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_update', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')
@@ -323,7 +375,7 @@ class DeleteBlepTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
         self.user = User.objects.create_user(username='worker1_delete', password='x')
         from django.contrib.auth.models import Permission
         self.manager = User.objects.create_user(username='m', password='x')

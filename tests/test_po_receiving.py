@@ -33,7 +33,6 @@ class POReceivingTestBase(BaseTestCase):
                 description='Test PLI',
                 purchase_price=Decimal('10.00'),
                 qty_on_hand=Decimal('0.00'),
-                is_catalog=True,
                 accounting_category=self.category,
             )
         for i in range(num_items):

@@ -28,7 +28,6 @@ class HistoryRoutingTest(TestCase):
         self.assertIs(history_model_for('business'), CrmHistory)
         self.assertIs(history_model_for('bill'), PurchasingHistory)
         # untracked object types route nowhere
-        self.assertIsNone(history_model_for('estworksheet'))
         self.assertIsNone(history_model_for('shift'))
 
     def test_unknown_object_type_raises(self):

@@ -13,13 +13,12 @@ from apps.inventory.models import Material
 
 
 def _advance_job_to_on_hold(job):
-    """Advance a draft job through submitted -> approved -> on_hold."""
-    job.status = Job.STATUS_SUBMITTED
-    job.save()
-    job.status = Job.STATUS_APPROVED
-    job.save()
-    job.status = Job.STATUS_ON_HOLD
-    job.save()
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -38,6 +37,9 @@ def _add_co_line(co):
         qty=1,
         price=Decimal('250'),
         line_number=1,
+        # A bare add line needs an AC to pass the send guard (it crystallizes
+        # into a Fee at acceptance). 901 = 'SVC' in unit_test_data.json.
+        accounting_category_id=901,
     )
 
 
@@ -61,9 +63,10 @@ class ChangeOrderServiceCreateTests(FixtureTestCase):
 
     def test_create_raises_when_job_not_on_hold(self):
         from apps.estimates.change_order_service import ChangeOrderService
-        # Move job back to approved (on_hold -> approved is valid)
-        self.job.status = Job.STATUS_APPROVED
-        self.job.save()
+        from apps.jobs.services import JobService
+        # Release the hold — the job stays approved underneath.
+        JobService.release_job(self.job.pk)
+        self.job.refresh_from_db()
         with self.assertRaises(ValidationError) as ctx:
             ChangeOrderService.create(job_id=self.job.pk)
         self.assertIn('on hold', str(ctx.exception).lower())
@@ -111,7 +114,9 @@ class ChangeOrderServiceCreateTests(FixtureTestCase):
 
 
 class ChangeOrderServiceAcceptTests(FixtureTestCase):
-    """update_status(accepted) advances job to approved, writes history, leaves Tasks+Materials alone."""
+    """update_status(accepted) advances job to approved, writes history, and
+    crystallizes the CO's deltas onto the Job's atoms (full coverage in
+    tests/test_change_order_acceptance.py)."""
 
     def setUp(self):
         super().setUp()
@@ -124,7 +129,7 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         )
         _advance_job_to_on_hold(self.job)
 
-    def test_accept_advances_job_to_approved(self):
+    def test_accept_clears_hold_and_preserves_status(self):
         from apps.estimates.change_order_service import ChangeOrderService
         co = ChangeOrderService.create(job_id=self.job.pk)
         _add_co_line(co)
@@ -132,7 +137,29 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
         self.job.refresh_from_db()
+        self.assertFalse(self.job.on_hold)
+        self.assertEqual(self.job.hold_reason, '')
+        # Held from approved → still approved underneath.
         self.assertEqual(self.job.status, Job.STATUS_APPROVED)
+
+    def test_accept_resumes_in_progress_job_directly(self):
+        """⚠ Behavior change vs the status model: a job held from in_progress
+        goes straight back to in_progress on CO acceptance — no second
+        release-to-floor step."""
+        from apps.estimates.change_order_service import ChangeOrderService
+        from apps.jobs.services import JobService
+        # Rebuild the hold from in_progress.
+        JobService.release_job(self.job.pk)
+        JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+        JobService.hold_job(self.job.pk, 'CO editing')
+        co = ChangeOrderService.create(job_id=self.job.pk)
+        _add_co_line(co)
+        ChangeOrderService.mark_open(co.pk)
+        ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
+
+        self.job.refresh_from_db()
+        self.assertFalse(self.job.on_hold)
+        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
 
     def test_accept_writes_history_entry(self):
         from apps.estimates.change_order_service import ChangeOrderService
@@ -146,8 +173,11 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         history_after = JobHistory.objects.filter(object_type='changeorder').count()
         self.assertGreater(history_after, history_before)
 
-    def test_accept_does_not_create_tasks_or_materials(self):
+    def test_accept_crystallizes_added_line_into_fee(self):
+        """A bare add line becomes a Fee atom on the job at acceptance (it used
+        to stay document-only); no Task or Material is minted for it."""
         from apps.estimates.change_order_service import ChangeOrderService
+        from apps.jobs.models import Fee
         task_count_before = Task.objects.count()
         mat_count_before = Material.objects.count()
 
@@ -156,6 +186,8 @@ class ChangeOrderServiceAcceptTests(FixtureTestCase):
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
+        fee = Fee.objects.get(job=self.job, description='Extra scope')
+        self.assertEqual(fee.unit_rate, Decimal('250'))
         self.assertEqual(Task.objects.count(), task_count_before)
         self.assertEqual(Material.objects.count(), mat_count_before)
 
@@ -192,7 +224,7 @@ class ChangeOrderServiceRejectTests(FixtureTestCase):
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_REJECTED)
 
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
 
 
 class ChangeOrderServiceSeedNewTests(FixtureTestCase):
@@ -231,6 +263,7 @@ class ChangeOrderServiceSeedNewTests(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co_src, action=ChangeOrderLineItem.ACTION_ADD,
             description='Another item', qty=2, price=Decimal('75'), line_number=2,
+            accounting_category_id=901,
         )
         ChangeOrderService.mark_open(co_src.pk)
         ChangeOrderService.update_status(co_src.pk, ChangeOrder.STATUS_REJECTED)
@@ -273,7 +306,8 @@ class ChangeOrderServiceDiscardDraftTests(FixtureTestCase):
 
 
 class OnHoldExitGuardTests(FixtureTestCase):
-    """JobService.update_job must block leaving on_hold while a live CO exists."""
+    """Releasing the hold (JobService.release_job) — and cancelling while
+    held — must be blocked while a live (draft/open) CO exists."""
 
     def setUp(self):
         super().setUp()
@@ -297,20 +331,13 @@ class OnHoldExitGuardTests(FixtureTestCase):
         co.refresh_from_db()
         return co
 
-    # --- rejection cases: draft CO blocks all exits ---
+    # --- rejection cases: draft CO blocks release and cancel ---
 
-    def test_draft_co_blocks_transition_to_in_progress(self):
+    def test_draft_co_blocks_release(self):
         from apps.jobs.services import JobService
         self._make_draft_co()
         with self.assertRaises(ValidationError) as ctx:
-            JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
-        self.assertIn('change order', str(ctx.exception).lower())
-
-    def test_draft_co_blocks_transition_to_approved(self):
-        from apps.jobs.services import JobService
-        self._make_draft_co()
-        with self.assertRaises(ValidationError) as ctx:
-            JobService.update_job(self.job.pk, status=Job.STATUS_APPROVED)
+            JobService.release_job(self.job.pk)
         self.assertIn('change order', str(ctx.exception).lower())
 
     def test_draft_co_blocks_transition_to_cancelled(self):
@@ -320,60 +347,54 @@ class OnHoldExitGuardTests(FixtureTestCase):
             JobService.update_job(self.job.pk, status=Job.STATUS_CANCELLED)
         self.assertIn('change order', str(ctx.exception).lower())
 
-    # --- rejection cases: open CO blocks all exits ---
+    # --- rejection cases: open CO blocks release ---
 
-    def test_open_co_blocks_transition_to_in_progress(self):
+    def test_open_co_blocks_release(self):
         from apps.jobs.services import JobService
         self._make_open_co()
         with self.assertRaises(ValidationError) as ctx:
-            JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+            JobService.release_job(self.job.pk)
         self.assertIn('change order', str(ctx.exception).lower())
 
-    def test_open_co_blocks_transition_to_approved(self):
-        from apps.jobs.services import JobService
-        self._make_open_co()
-        with self.assertRaises(ValidationError) as ctx:
-            JobService.update_job(self.job.pk, status=Job.STATUS_APPROVED)
-        self.assertIn('change order', str(ctx.exception).lower())
+    # --- allowed cases: no live CO means release is permitted ---
 
-    # --- allowed cases: no live CO means exit is permitted ---
-
-    def test_no_co_allows_exit_to_in_progress(self):
+    def test_no_co_allows_release(self):
         from apps.jobs.services import JobService
-        # No CO created — job may leave on_hold freely.
-        JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+        # No CO created — the hold releases freely; status was preserved.
+        JobService.release_job(self.job.pk)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+        self.assertFalse(self.job.on_hold)
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)
 
-    def test_accepted_co_allows_exit_to_in_progress(self):
-        """A job whose only CO is already accepted (terminal) can leave on_hold."""
+    def test_accepted_co_allows_release(self):
+        """A job whose only CO is already accepted (terminal) can be re-held
+        and released freely."""
         from apps.estimates.change_order_service import ChangeOrderService
         from apps.jobs.services import JobService
         co = self._make_open_co()
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
-        # Job was advanced to approved by _handle_accepted; move it back to on_hold manually
-        # to test the guard in isolation.
+        # Accept cleared the hold; re-hold to test the guard in isolation.
         self.job.refresh_from_db()
-        self.job.status = Job.STATUS_ON_HOLD
-        self.job.save()
+        JobService.hold_job(self.job.pk, 'second thoughts')
 
-        # Now the CO is accepted (terminal) — exit should be allowed.
-        JobService.update_job(self.job.pk, status=Job.STATUS_IN_PROGRESS)
+        # The CO is accepted (terminal) — release should be allowed.
+        JobService.release_job(self.job.pk)
         self.job.refresh_from_db()
-        self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
+        self.assertFalse(self.job.on_hold)
 
-    # --- regression: accept-driven advance still works ---
+    # --- regression: accept-driven un-hold still works ---
 
-    def test_accept_co_advances_job_despite_guard(self):
-        """When a CO is accepted, ChangeOrderService._handle_accepted calls
-        JobService.update_job(on_hold -> approved).  The guard must NOT block
-        this, because the CO is already terminal (accepted) at that point."""
+    def test_accept_co_clears_hold_despite_guard(self):
+        """When a CO is accepted, _handle_accepted clears the hold. The guard
+        must NOT block this, because the CO is already terminal (accepted) at
+        that point."""
         from apps.estimates.change_order_service import ChangeOrderService
         co = self._make_open_co()
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
 
         self.job.refresh_from_db()
-        self.assertEqual(
-            self.job.status, Job.STATUS_APPROVED,
-            'Accepting a CO must still advance the job to approved.',
+        self.assertFalse(
+            self.job.on_hold,
+            'Accepting a CO must still clear the hold.',
         )
+        self.assertEqual(self.job.status, Job.STATUS_APPROVED)

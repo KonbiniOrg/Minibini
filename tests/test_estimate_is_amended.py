@@ -20,10 +20,90 @@ from apps.jobs.services import JobService
 
 
 def _advance_job_to_on_hold(job):
-    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_ON_HOLD):
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
         job.status = s
         job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
+
+
+class EstimateIsAmendedModelTest(FixtureTestCase):
+    """The amended rule lives once on Estimate.is_amended(); the serializer and
+    the board pipeline both call it."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.create(
+            first_name='Mo', last_name='D', email='mo@acme.com')
+        self.job = JobService.create_job(name='Model Amend Job', contact=self.contact)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-MAMEND-1', version=1,
+            status=Estimate.STATUS_ACCEPTED)
+
+    def _co(self, status):
+        return ChangeOrder.objects.create(
+            job=self.job, estimate=self.est, status=status)
+
+    def test_accepted_estimate_no_co_is_not_amended(self):
+        self.assertFalse(self.est.is_amended())
+
+    def test_accepted_estimate_with_only_draft_co_is_not_amended(self):
+        self._co(ChangeOrder.STATUS_DRAFT)
+        self.assertFalse(self.est.is_amended())
+
+    def test_accepted_estimate_with_accepted_co_is_amended(self):
+        self._co(ChangeOrder.STATUS_ACCEPTED)
+        self.assertTrue(self.est.is_amended())
+
+    def test_non_accepted_estimate_short_circuits(self):
+        self.est.status = Estimate.STATUS_OPEN
+        # Even with an accepted CO present, a non-accepted estimate is not amended.
+        self._co(ChangeOrder.STATUS_ACCEPTED)
+        self.assertFalse(self.est.is_amended())
+
+
+class EstimateIsAmendedAnnotationTest(FixtureTestCase):
+    """List paths pre-annotate the amended flag so is_amended() costs zero
+    queries per row (the N+1 half of the 2026-06-08 LATER entry)."""
+
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.create(
+            first_name='An', last_name='No', email='anno@acme.com')
+        self.job = JobService.create_job(name='Anno Job', contact=self.contact)
+        self.est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-ANNO-1', version=1,
+            status=Estimate.STATUS_ACCEPTED)
+
+    def test_annotated_row_answers_without_queries(self):
+        ChangeOrder.objects.create(
+            job=self.job, estimate=self.est,
+            status=ChangeOrder.STATUS_ACCEPTED)
+        est = Estimate.with_amended_flag(
+            Estimate.objects.filter(pk=self.est.pk)).get()
+        with self.assertNumQueries(0):
+            self.assertTrue(est.is_amended())
+
+    def test_annotated_row_false_without_queries(self):
+        est = Estimate.with_amended_flag(
+            Estimate.objects.filter(pk=self.est.pk)).get()
+        with self.assertNumQueries(0):
+            self.assertFalse(est.is_amended())
+
+    def test_annotation_ignores_non_accepted_cos(self):
+        ChangeOrder.objects.create(
+            job=self.job, estimate=self.est, status=ChangeOrder.STATUS_DRAFT)
+        est = Estimate.with_amended_flag(
+            Estimate.objects.filter(pk=self.est.pk)).get()
+        self.assertFalse(est.is_amended())
+
+    def test_unannotated_row_still_works(self):
+        ChangeOrder.objects.create(
+            job=self.job, estimate=self.est,
+            status=ChangeOrder.STATUS_ACCEPTED)
+        self.assertTrue(Estimate.objects.get(pk=self.est.pk).is_amended())
 
 
 class EstimateIsAmendedSerializerTest(FixtureTestCase):
@@ -56,7 +136,7 @@ class EstimateIsAmendedSerializerTest(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), price=Decimal('50'),
-            line_number=1)
+            line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(co.pk)
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)
         return co
@@ -110,7 +190,7 @@ class BoardPipelineIsAmendedTest(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), price=Decimal('50'),
-            line_number=1)
+            line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(co.pk)
         # Accept -> job advances on_hold -> approved (lands in the pipeline panel).
         ChangeOrderService.update_status(co.pk, ChangeOrder.STATUS_ACCEPTED)

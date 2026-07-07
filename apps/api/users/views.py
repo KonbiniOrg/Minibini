@@ -4,7 +4,7 @@ from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.core.models import User
-from apps.api.permissions import CanManageConfig
+from apps.api.permissions import CanManageConfig, CanManageTime
 from .serializers import (
     UserListSerializer,
     UserDetailSerializer,
@@ -24,6 +24,10 @@ class UserViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
+        if self.action == 'schedule_envelope':
+            # Schedule planning is a time-domain concern: time managers get
+            # this one write without full user-admin power.
+            return [IsAuthenticated(), (CanManageTime | CanManageConfig)()]
         return [IsAuthenticated(), CanManageConfig()]
 
     def get_serializer_class(self):
@@ -78,6 +82,17 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'detail': 'Password reset.'})
+
+    @action(detail=True, methods=['put'], url_path='schedule-envelope')
+    def schedule_envelope(self, request, pk=None):
+        """Set (or null out) a worker's weekly schedule envelope."""
+        from apps.api.auth.serializers import ScheduleEnvelopeSerializer
+        target = self.get_object()
+        serializer = ScheduleEnvelopeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target.schedule_envelope = serializer.validated_data['schedule_envelope']
+        target.save()
+        return Response(UserDetailSerializer(target).data)
 
     @action(detail=True, methods=['put'], url_path='permissions')
     def permissions(self, request, pk=None):

@@ -4,6 +4,7 @@
   import { user as currentUser } from '../../stores/auth.js';
   import { fieldErrors } from '../../lib/formErrors.js';
   import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
+  import EnvelopeEditor from '../../components/schedule/EnvelopeEditor.svelte';
 
   const { params = {} } = $props();
 
@@ -37,6 +38,12 @@
   let statusMessage = $state('');
   let statusSaving = $state(false);
 
+  let envForm = $state({ schedule_envelope: null });
+  let envDirty = $state(false);
+  let envErrors = $state({});
+  let envMessage = $state('');
+  let envSaving = $state(false);
+
   let isSelf = $derived(
     $currentUser && user && $currentUser.id === user.id
   );
@@ -60,6 +67,33 @@
     profileForm.first_name = user.first_name || '';
     profileForm.last_name = user.last_name || '';
     permForm.permissions = [...(user.permissions || [])];
+    envForm.schedule_envelope = user.schedule_envelope ?? null;
+    envDirty = false;
+  }
+
+  async function saveEnvelope(e) {
+    e.preventDefault();
+    envErrors = {};
+    envMessage = '';
+    envSaving = true;
+    try {
+      const updated = await api.put(
+        `/api/users/${user.id}/schedule-envelope/`,
+        { schedule_envelope: envForm.schedule_envelope }
+      );
+      user = updated;
+      envForm.schedule_envelope = user.schedule_envelope ?? null;
+      envDirty = false;
+      envMessage = 'Schedule saved.';
+    } catch (err) {
+      if (err.data && typeof err.data === 'object') {
+        envErrors = err.data;
+      } else {
+        envErrors = { non_field_errors: ['Could not save the schedule.'] };
+      }
+    } finally {
+      envSaving = false;
+    }
   }
 
   async function saveProfile(e) {
@@ -297,6 +331,23 @@
   </p>
   {#each fieldErrors(statusErrors, 'non_field_errors') as msg}<p>{msg}</p>{/each}
   {#if statusMessage}<p>{statusMessage}</p>{/if}
+
+  <h3>Schedule envelope</h3>
+  <form onsubmit={saveEnvelope}>
+    <EnvelopeEditor
+      value={envForm.schedule_envelope}
+      allowNull={true}
+      onchange={(v) => { envForm.schedule_envelope = v; envDirty = true; envMessage = ''; }}
+    />
+    <p>
+      <button type="submit" disabled={envSaving || !envDirty}>
+        {envSaving ? 'Saving...' : 'Save schedule'}
+      </button>
+    </p>
+    {#each fieldErrors(envErrors, 'schedule_envelope') as msg}<p class="err">{msg}</p>{/each}
+    {#each fieldErrors(envErrors, 'non_field_errors') as msg}<p>{msg}</p>{/each}
+    {#if envMessage}<p>{envMessage}</p>{/if}
+  </form>
 
   <h3>Expenses</h3>
   <UserReimbursementPanel {user} />

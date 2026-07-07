@@ -1,40 +1,50 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { modalKeys } from '../lib/modalKeys.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { showError } from '../stores/messages.js';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
+  import Modal from './Modal.svelte';
 
   let {
     open = false,
     mode = 'manual', // 'manual' | 'template'
-    context = 'job', // 'job' | 'worksheet' | 'subtask'
+    context = 'job', // 'job' | 'subtask'
     contextId = null, // job pk, worksheet pk, or parent task pk
     item = null,     // for edit mode; null for create
     isEdit = false,
     templates = [],
+    rateScheme = null, // optional pre-selected RateScheme (manual mode only)
+    presetTemplateId = null, // optional pre-selected ServiceItem id (template mode only)
+    presetName = '', // optional pre-fill for the name (manual / custom-task create only)
     onSaved = () => {},
     onClose = () => {},
   } = $props();
 
   let templateId = $state('');
   let lastFilledTemplateId = $state('');
-  let serviceItemId = $state('');
+  let rateSchemeId = $state('');
   let name = $state('');
   let description = $state('');
   let activeModifiers = $state([]);
   let estQty = $state('');
   let estWorkerTime = $state(''); // accepts "HH:MM" or "" for null
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
+  let saveToCatalog = $state(false); // custom-task create only: also save as a ServiceItem
+  let taskCreated = $state(false);   // guards double task-create if catalog save fails + retry
 
   let schemes = $state([]);
   let loading = $state(true);
 
   onMount(async () => {
     try {
-      const resp = await api.get('/api/service-items/');
+      const resp = await api.get('/api/rate-schemes/');
       schemes = resp.results || resp;
     } catch (e) {
-      error = e.message || 'Could not load services.';
+      formError = e.message || 'Could not load rate schemes.';
     } finally {
       loading = false;
     }
@@ -51,19 +61,30 @@
     if (isEdit && item) {
       name = item.name || '';
       description = item.description || '';
-      serviceItemId = item.service_item ?? '';
+      rateSchemeId = item.rate_scheme ?? '';
       loadModifiers(item.active_modifiers);
       estQty = item.est_qty ?? '';
       estWorkerTime = formatDuration(item.est_worker_time);
       templateId = '';
     } else {
-      name = ''; description = '';
-      serviceItemId = ''; activeModifiers = [];
+      name = (mode === 'manual' ? (presetName || '') : ''); description = '';
+      activeModifiers = [];
       estQty = ''; estWorkerTime = '';
-      templateId = '';
+      // Keep numeric so it matches the numeric <option value={tmpl.template_id}>
+      // (Svelte 5 selects match option values with strict ===; String() here left
+      // the preset unselected in the pulldown).
+      templateId = (mode === 'template' && presetTemplateId != null) ? presetTemplateId : '';
       lastFilledTemplateId = '';
+      if (mode === 'manual' && rateScheme) {
+        rateSchemeId = rateScheme.rate_scheme_id;
+      } else {
+        rateSchemeId = '';
+      }
     }
-    error = '';
+    saveToCatalog = false;
+    taskCreated = false;
+    formError = '';
+    fieldErrs = {};
   });
 
   // In template mode, when the user picks a template, defaults flow downward.
@@ -80,17 +101,15 @@
     name = selectedTemplate.template_name || '';
     description = selectedTemplate.description || '';
     loadModifiers(selectedTemplate.default_active_modifiers);
-    if (selectedTemplate.default_billable_qty) {
-      estQty = selectedTemplate.default_billable_qty;
-    }
-    serviceItemId = selectedTemplate.service_item ?? '';
+    estQty = '1'; // templates no longer carry a default qty; estimator sets the magnitude
+    rateSchemeId = selectedTemplate.rate_scheme ?? '';
   });
 
   const selectedScheme = $derived(
-    schemes.find(s => s.service_item_id === Number(serviceItemId)) || null
+    (mode === 'manual' && rateScheme && rateScheme.rate_scheme_id === Number(rateSchemeId))
+      ? rateScheme
+      : (schemes.find(s => s.rate_scheme_id === Number(rateSchemeId)) || null)
   );
-
-  const estQtyRequired = $derived(context === 'worksheet');
 
   function formatDuration(value) {
     // Server returns ISO 8601 like "PT1H30M" or HH:MM:SS — accept either, render HH:MM
@@ -145,52 +164,45 @@
   }
 
   async function save() {
+    formError = '';
+    fieldErrs = {};
     if (!name || !name.trim()) {
-      error = 'Name is required.';
-      return;
-    }
-    if (estQtyRequired && !estQty) {
-      error = 'Estimated qty is required on the worksheet.';
+      formError = 'Name is required.';
       return;
     }
     if (!isEdit && mode === 'template' && !templateId) {
-      error = 'Please pick a template.';
+      formError = 'Please pick a template.';
       return;
     }
-    if (mode === 'manual' && !serviceItemId) {
-      error = 'Please pick a service.';
+    if (mode === 'manual' && !rateSchemeId) {
+      formError = 'Please pick a rate scheme.';
       return;
     }
 
     const estWorkerTimeISO = durationToISO(estWorkerTime);
     if (estWorkerTimeISO === false) {
-      error = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
+      formError = `Could not parse "${estWorkerTime}" as a duration. Use HH:MM (e.g. 1:30) or decimal hours (e.g. 1.5).`;
       return;
     }
 
     busy = true;
-    error = '';
     try {
       const payload = {
         name,
         description,
-        service_item: serviceItemId,
+        rate_scheme: rateSchemeId,
         active_modifiers: activeModifiers,
         est_qty: estQty || null,
         est_worker_time: estWorkerTimeISO,
       };
 
       if (isEdit && item) {
-        const url = context === 'worksheet'
-          ? `/api/est-worksheets/${contextId}/tasks/${item.plan_task_id || item.task_id}/`
-          : `/api/jobs/${contextId}/tasks/${item.task_id}/`;
+        const url = `/api/jobs/${contextId}/tasks/${item.task_id}/`;
         await api.patch(url, payload);
       } else if (mode === 'template') {
-        const url = context === 'worksheet'
-          ? `/api/est-worksheets/${contextId}/add-from-template/`
-          : `/api/jobs/${contextId}/add-from-template/`;
+        const url = `/api/jobs/${contextId}/add-from-template/`;
         await api.post(url, {
-          task_template_id: Number(templateId),
+          service_item_id: Number(templateId),
           name,
           description,
           est_qty: estQty || null,
@@ -199,23 +211,33 @@
         });
       } else {
         let url;
-        if (context === 'worksheet') {
-          url = `/api/est-worksheets/${contextId}/tasks/`;
-        } else if (context === 'subtask') {
+        if (context === 'subtask') {
           url = `/api/tasks/${contextId}/subtasks/`;
         } else {
           url = `/api/jobs/${contextId}/tasks/`;
         }
-        await api.post(url, payload);
+        // taskCreated guards a double create if the optional catalog save fails + retry.
+        if (!taskCreated) {
+          await api.post(url, payload);
+          taskCreated = true;
+        }
+        if (saveToCatalog) {
+          await api.post('/api/service-items/', {
+            template_name: name,
+            description,
+            rate_scheme: rateSchemeId,
+            default_active_modifiers: activeModifiers,
+          });
+        }
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || 'Could not save.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -223,13 +245,12 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy) save(); }, onCancel: onClose }}>
-    <div class="modal">
+<Modal {open} onCancel={onClose}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy) save(); }}>
       <h3>{isEdit ? 'Edit Task' : (mode === 'template' ? 'Add Task From Template' : 'Add Manual Task')}</h3>
 
       {#if loading}
-        <p>Loading services…</p>
+        <p>Loading rate schemes…</p>
       {:else}
         {#if !isEdit && mode === 'template'}
           <p>
@@ -241,44 +262,52 @@
                 {/each}
               </select>
             </label>
+            <FieldError errors={fieldErrs} field="service_item_id" />
           </p>
         {/if}
 
         {#if mode === 'manual'}
-          <p>
-            <label><strong>Service *</strong><br>
-              <select bind:value={serviceItemId}>
-                <option value="">-- select --</option>
-                {#each schemes as s (s.service_item_id)}
-                  <option value={s.service_item_id}>{s.name}</option>
-                {/each}
-              </select>
-            </label>
-          </p>
+          {#if rateScheme}
+            <p><strong>Rate Scheme:</strong> {rateScheme.name}</p>
+          {:else}
+            <p>
+              <label><strong>Rate Scheme *</strong><br>
+                <select bind:value={rateSchemeId}>
+                  <option value="">-- select --</option>
+                  {#each schemes as s (s.rate_scheme_id)}
+                    <option value={s.rate_scheme_id}>{s.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <FieldError errors={fieldErrs} field="rate_scheme" />
+            </p>
+          {/if}
         {/if}
 
         <p>
           <label><strong>Name *</strong><br>
             <input type="text" bind:value={name} style="width:100%;box-sizing:border-box;">
           </label>
+          <FieldError errors={fieldErrs} field="name" />
         </p>
         <p>
           <label><strong>Description</strong><br>
             <input type="text" bind:value={description} style="width:100%;box-sizing:border-box;">
           </label>
+          <FieldError errors={fieldErrs} field="description" />
         </p>
 
         {#if selectedScheme}
           {#if mode === 'template'}
             <p>
-              <strong>Service:</strong> {selectedScheme.name} —
+              <strong>Rate Scheme:</strong> {selectedScheme.name} —
               ${selectedScheme.rate}/{selectedScheme.unit_label}
               <small>(from template)</small>
             </p>
           {:else}
             <p>
               <strong>Rate:</strong> ${selectedScheme.rate}/{selectedScheme.unit_label}
-              <small>(from service)</small>
+              <small>(from rate scheme)</small>
             </p>
           {/if}
           {#if selectedScheme.modifiers && selectedScheme.modifiers.length > 0}
@@ -296,14 +325,16 @@
                   </label>
                 </p>
               {/each}
+              <FieldError errors={fieldErrs} field="active_modifiers" />
             </fieldset>
           {/if}
 
           <p>
-            <label><strong>Estimated qty {estQtyRequired ? '*' : ''}</strong><br>
+            <label><strong>Estimated qty</strong><br>
               <input type="number" step="0.01" bind:value={estQty}>
               <small>{selectedScheme.unit_label}</small>
             </label>
+            <FieldError errors={fieldErrs} field="est_qty" />
           </p>
         {/if}
 
@@ -312,24 +343,28 @@
             <input type="text" placeholder="e.g. 1:30 or 1.5" bind:value={estWorkerTime}>
             <small>HH:MM or decimal hours (1.5 = 1h30m)</small>
           </label>
+          <FieldError errors={fieldErrs} field="est_worker_time" />
         </p>
 
+        {#if mode === 'manual' && !isEdit}
+          <p>
+            <label>
+              <input type="checkbox" bind:checked={saveToCatalog}>
+              Save to catalog (reuse this as a service item)
+            </label>
+          </p>
+        {/if}
+
         <div class="buttons">
-          <button type="button" onclick={save} disabled={busy}>Save</button>
+          <button type="submit" disabled={busy}>Save</button>
           <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
         </div>
-        {#if error}<p class="error">{error}</p>{/if}
+        <FormMessage error={formError} />
       {/if}
-    </div>
-  </div>
-{/if}
+</form>
+</Modal>
+
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
 </style>

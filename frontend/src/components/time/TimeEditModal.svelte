@@ -1,6 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
   import { notifyShiftChanged } from '../../stores/shift.js';
   import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
@@ -72,8 +72,10 @@
             : `This shift would not cover blep(s) on ${names}.`;
         }
       } else {
-        const resp = await api.get(`/api/shifts/?user=${uid}&since=${encodeURIComponent(
-          new Date(new Date(s).getTime() - 86400000).toISOString())}`);
+        // `since` = the blep start: the backend returns shifts still active at/
+        // after that time (overnight, multi-day, and open shifts included), so
+        // no lookback offset is needed.
+        const resp = await api.get(`/api/shifts/?user=${uid}&since=${encodeURIComponent(s)}`);
         const shifts = resp.results || resp;
         // An ongoing shift (no end_time yet) is still running, so it encloses
         // any blep starting at/after its start — matches the backend's
@@ -145,9 +147,8 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{ onSave: () => { if (!busy && !blocked) save(); }, onCancel: onClose }}>
-    <div class="modal">
+<Modal {open} onCancel={onClose} maxWidth="630px">
+<form onsubmit={(e) => { e.preventDefault(); if (!busy && !blocked) save(); }}>
       <h3>{action === 'request' ? 'Request change' : action === 'create' ? 'Add' : 'Edit'}
           {recordType === 'shift' ? 'shift' : 'time entry'}</h3>
       <p><label><strong>Start</strong><br>
@@ -174,7 +175,7 @@
       {/if}
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy || blocked || (action === 'request' && !reason.trim())}>
+        <button type="submit" disabled={busy || blocked || (action === 'request' && !reason.trim())}>
           {action === 'request' ? 'Submit request' : 'Save'}
         </button>
         {#if action === 'edit' && record}
@@ -183,14 +184,11 @@
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
-    </div>
-  </div>
-{/if}
+</form>
+</Modal>
+
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex;
-             align-items: center; justify-content: center; z-index: var(--z-modal); }
-  .modal { background: white; padding: 1.5em; border: 2px solid #333; max-width: 420px; width: 90%; }
   .buttons { display: flex; gap: 0.5em; margin-top: 1em; }
   .error { color: #b91c1c; }
   .warn { color: #b45309; }

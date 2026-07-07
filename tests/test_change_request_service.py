@@ -11,13 +11,15 @@ class ChangeRequestServiceTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.user = User.objects.create_user(username='crs_u', password='x')
-        self.mgr = User.objects.create_user(username='crs_mgr', password='x', is_superuser=True)
+        from tests.base import grant_atoms
+        self.mgr = grant_atoms(
+            User.objects.create_user(username='crs_mgr', password='x'), 'can_manage_time')
         # Floor to the whole minute: Shift/Blep save() stores minute-granular
         # times, so filters/expectations derived from self.now must be on a
         # minute boundary to match the stored values.
         self.now = timezone.now().replace(second=0, microsecond=0)
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
 
     def test_approve_create_request_makes_shift(self):
         r = ShiftChangeRequest.objects.create(

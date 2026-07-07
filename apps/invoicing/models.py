@@ -104,8 +104,12 @@ class Invoice(models.Model):
         # Call parent save
         super().save(*args, **kwargs)
 
-        # Check if status changed to paid and all invoices for the job are now paid
-        if old_status and old_status != self.status and self.status == Invoice.STATUS_PAID:
+        # Re-check job completion whenever this invoice transitions into a
+        # resolved status (paid or cancelled). A cancelled invoice counts as
+        # resolved in JobService.maybe_complete_if_resolved, so cancelling the
+        # last unresolved invoice on an all-shipped job should complete it.
+        if (old_status and old_status != self.status
+                and self.status in (Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)):
             self._maybe_complete_job()
 
     def _maybe_complete_job(self):
@@ -139,7 +143,7 @@ class InvoiceLineItem(BaseLineItem):
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
     adjustment_service = models.ForeignKey(
-        'jobs.ServiceItem', on_delete=models.PROTECT,
+        'jobs.RateScheme', on_delete=models.PROTECT,
         null=True, blank=True, related_name='+',
         help_text='Set when this line is a percentage adjustment (rush/discount).',
     )
@@ -175,10 +179,12 @@ class InvoiceLineItemSource(models.Model):
     SOURCE_MATERIAL = 'material'
     SOURCE_TASK = 'task'
     SOURCE_EXPENSE = 'expense'
+    SOURCE_FEE = 'fee'
     SOURCE_TYPE_CHOICES = [
         (SOURCE_MATERIAL, 'Material'),
         (SOURCE_TASK, 'Task'),
         (SOURCE_EXPENSE, 'Expense'),
+        (SOURCE_FEE, 'Fee'),
     ]
 
     source_id = models.AutoField(primary_key=True)
@@ -195,7 +201,7 @@ class InvoiceLineItemSource(models.Model):
         unique_together = [('source_type', 'source_pk')]
 
     def resolve(self):
-        """Return the concrete atom instance (Material or Task) referenced by this source."""
+        """Return the concrete atom instance referenced by this source."""
         if self.source_type == self.SOURCE_MATERIAL:
             from apps.inventory.models import Material
             return Material.objects.get(pk=self.source_pk)
@@ -205,6 +211,9 @@ class InvoiceLineItemSource(models.Model):
         if self.source_type == self.SOURCE_EXPENSE:
             from apps.expenses.models import Expense
             return Expense.objects.get(pk=self.source_pk)
+        if self.source_type == self.SOURCE_FEE:
+            from apps.jobs.models import Fee
+            return Fee.objects.get(pk=self.source_pk)
         raise ValueError(f'Unknown source_type: {self.source_type}')
 
     def __str__(self):

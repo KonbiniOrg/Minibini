@@ -1,5 +1,7 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
+  import { orderPrefillQty } from '../../lib/materials.js';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { push, querystring } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
@@ -15,8 +17,6 @@
   let categories = $state([]);
   let loading = $state(true);
   let loadError = $state(null);
-  let error = $state(null);
-  let success = $state(null);
   let showAddLineItem = $state(false);
   let showReceiveForm = $state(false);
   let busy = $state(false);
@@ -85,7 +85,7 @@
         // stays model-agnostic. (PLI-backed → inventory_item drives it; freeform
         // → description/cost.)
         prefilledLine = {
-          qty: mat.quantity,
+          qty: orderPrefillQty(mat),
           inventory_item: mat.inventory_item || null,
           description: mat.description,
           price: mat.unit_cost,
@@ -108,25 +108,22 @@
   }
 
   async function reload() {
-    error = null;
     try {
       po = await api.get(`/api/purchase-orders/${params.id}/`);
       history = await api.get(`/api/purchase-orders/${params.id}/history/`);
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not reload purchase order.'));
     }
   }
 
   async function handleStatusAction(actionName, data = {}) {
     busy = true;
-    error = null;
-    success = null;
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/${actionName}/`, data);
       await reload();
-      success = `Purchase order ${actionName}d.`;
+      showSuccess(`Purchase order ${actionName}d.`);
     } catch (e) {
-      error = e.data?.detail || e.data?.reason?.[0] || e.message;
+      showError(errorMessage(e, `Could not ${actionName} purchase order.`));
     } finally {
       busy = false;
     }
@@ -144,16 +141,14 @@
     const linkedMaterials = collectLinkedMaterials(po.line_items);
     const runCancel = async (severDecisions) => {
       busy = true;
-      error = null;
-      success = null;
       try {
         const payload = { reason };
         if (severDecisions) payload.sever_decisions = severDecisions;
         await api.post(`/api/purchase-orders/${po.po_id}/cancel/`, payload);
         await reload();
-        success = 'Purchase order cancelled.';
+        showSuccess('Purchase order cancelled.');
       } catch (e) {
-        error = e.data?.detail || e.data?.reason?.[0] || e.message;
+        showError(errorMessage(e, 'Could not cancel purchase order.'));
       } finally {
         busy = false;
         severPrompt = null;
@@ -174,14 +169,13 @@
     const linkedMaterials = collectLinkedMaterials(po.line_items);
     const runDelete = async (severDecisions) => {
       busy = true;
-      error = null;
       try {
         const payload = severDecisions ? { sever_decisions: severDecisions } : null;
         await api.delete(`/api/purchase-orders/${po.po_id}/?confirm=true`, payload);
         severPrompt = null;
         push('/purchase-orders');
       } catch (e) {
-        error = e.data?.detail || e.message;
+        showError(errorMessage(e, 'Could not delete purchase order.'));
         busy = false;
         severPrompt = null;
       }
@@ -197,7 +191,6 @@
   }
 
   async function handleAddLineItem(data) {
-    error = null;
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/line-items/`, data);
       showAddLineItem = false;
@@ -209,12 +202,11 @@
       prefilledLine = null;
       await reload();
     } catch (e) {
-      error = e.data ? JSON.stringify(e.data) : e.message;
+      showError(errorMessage(e, 'Could not add line item.'));
     }
   }
 
   async function handleEditLineItem(lineItemId, data) {
-    error = null;
     try {
       await api.patch(
         `/api/purchase-orders/${po.po_id}/line-items/${lineItemId}/`,
@@ -222,25 +214,23 @@
       );
       await reload();
     } catch (e) {
-      error = e.data ? JSON.stringify(e.data) : e.message;
+      showError(errorMessage(e, 'Could not update line item.'));
     }
   }
 
   async function handleDeleteLineItem(lineItem) {
     // No confirm: draft-only line edit, re-addable by hand.
-    error = null;
     try {
       await api.delete(
         `/api/purchase-orders/${po.po_id}/line-items/${lineItem.line_item_id}/`
       );
       await reload();
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not delete line item.'));
     }
   }
 
   async function handleReorder(itemIds) {
-    error = null;
     try {
       await api.post(
         `/api/purchase-orders/${po.po_id}/line-items/reorder/`,
@@ -248,21 +238,19 @@
       );
       await reload();
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not reorder line items.'));
     }
   }
 
   async function handleReceiveAll() {
     // No confirm: reversible via the Reverse Receipt action.
     busy = true;
-    error = null;
-    success = null;
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/receive-all/`);
-      success = 'All items received.';
+      showSuccess('All items received.');
       await reload();
     } catch (e) {
-      error = e.data?.detail || e.message;
+      showError(errorMessage(e, 'Could not receive items.'));
     } finally {
       busy = false;
     }
@@ -270,15 +258,13 @@
 
   async function handleReceiveItems(items) {
     busy = true;
-    error = null;
-    success = null;
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/receive/`, { items });
       showReceiveForm = false;
-      success = 'Items received.';
+      showSuccess('Items received.');
       await reload();
     } catch (e) {
-      error = e.data?.detail || e.message;
+      showError(errorMessage(e, 'Could not receive items.'));
     } finally {
       busy = false;
     }
@@ -297,16 +283,14 @@
       : [];
     const runCancelLine = async (severDecision) => {
       busy = true;
-      error = null;
-      success = null;
       try {
         const payload = { line_item_id: lineItemId, note };
         if (severDecision) payload.sever_decision = severDecision;
         await api.post(`/api/purchase-orders/${po.po_id}/cancel-line-item/`, payload);
-        success = 'Line item cancelled.';
+        showSuccess('Line item cancelled.');
         await reload();
       } catch (e) {
-        error = e.data?.detail || e.message;
+        showError(errorMessage(e, 'Could not cancel line item.'));
       } finally {
         busy = false;
         severPrompt = null;
@@ -324,17 +308,15 @@
 
   async function handleReverseReceipt(lineItemId, note) {
     busy = true;
-    error = null;
-    success = null;
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/reverse-receipt/`, {
         line_item_id: lineItemId,
         note,
       });
-      success = 'Receipt reversed.';
+      showSuccess('Receipt reversed.');
       await reload();
     } catch (e) {
-      error = e.data?.detail || e.message;
+      showError(errorMessage(e, 'Could not reverse receipt.'));
     } finally {
       busy = false;
     }
@@ -343,7 +325,6 @@
   async function handleChangeLineJob(lineItemId, newJobId, existingMaterial) {
     const runPatch = async (severDecision) => {
       busy = true;
-      error = null;
       try {
         const payload = { job: newJobId };
         if (severDecision) payload.sever_decision = severDecision;
@@ -353,7 +334,7 @@
         );
         await reload();
       } catch (e) {
-        error = e.data?.detail || e.message;
+        showError(errorMessage(e, 'Could not change the line item\'s job.'));
       } finally {
         busy = false;
         severPrompt = null;
@@ -381,7 +362,7 @@
       await api.post(`/api/purchase-orders/${params.id}/notes/`, { text });
       history = await api.get(`/api/purchase-orders/${params.id}/history/`);
     } catch (e) {
-      error = e.message;
+      showError(errorMessage(e, 'Could not add note.'));
     }
   }
 
@@ -391,24 +372,11 @@
   });
 </script>
 
-{#if error}
-  <div class="error-overlay">
-    <div class="error-overlay-content">
-      <button class="error-overlay-close" onclick={() => { error = null; }}>&times;</button>
-      <p><strong>Error:</strong> {error}</p>
-    </div>
-  </div>
-{/if}
-
 {#if loading}
   <p>Loading...</p>
 {:else if loadError}
-  <p>Error: {loadError}</p>
+  <p><em>Error: {loadError}</em></p>
 {:else if po}
-  {#if success}
-    <p><strong>{success}</strong></p>
-  {/if}
-
   <PurchaseOrderDetail
     {po}
     {canManageFinancials}
@@ -464,19 +432,3 @@
     onCancel={() => { severPrompt = null; }}
   />
 {/if}
-
-<style>
-  .error-overlay {
-    position: fixed; top: 0; left: 0; right: 0;
-    background: #fee2e2; border-bottom: 2px solid #dc2626;
-    padding: 12px 16px; z-index: var(--z-toast);
-  }
-  .error-overlay-content {
-    max-width: 800px; margin: 0 auto; position: relative;
-  }
-  .error-overlay-close {
-    position: absolute; top: 0; right: 0;
-    background: none; border: none; font-size: 20px;
-    cursor: pointer; color: #dc2626;
-  }
-</style>

@@ -23,7 +23,7 @@ class ReleaseLooseMaterialsHelperTest(TestCase):
         )
         self.cat = AccountingCategory.objects.create(name='B6 Cat', code='B6')
         self.pli = InventoryItem.objects.create(
-            code='I-B6', accounting_category=self.cat, is_catalog=True,
+            code='I-B6', accounting_category=self.cat,
             qty_on_hand=Decimal('20'),
         )
         self.job = Job.objects.create(
@@ -56,7 +56,7 @@ class InvoiceCompletionConsolidationTest(TestCase):
         )
         self.cat = AccountingCategory.objects.create(name='B6 Inv Cat', code='B6I')
         self.pli = InventoryItem.objects.create(
-            code='I-B6I', accounting_category=self.cat, is_catalog=True,
+            code='I-B6I', accounting_category=self.cat,
             qty_on_hand=Decimal('20'),
         )
 
@@ -64,6 +64,18 @@ class InvoiceCompletionConsolidationTest(TestCase):
         job = Job.objects.create(
             job_number=f'J-B6I-{Job.objects.count()}', contact=self.contact,
             status=Job.STATUS_APPROVED,
+        )
+        # Finished work is a completion-gate precondition (>=1 task, all
+        # terminal); these tests' subject is the earmark/material release.
+        from apps.jobs.models import RateScheme, Task
+        scheme = RateScheme.objects.create(
+            name=f'B6I hourly {Job.objects.count()}',
+            algorithm=RateScheme.ELAPSED_TIME, rate=Decimal('100'),
+            unit_label='hour', accounting_category=self.cat,
+        )
+        Task.objects.create(
+            job=job, name='Done', rate_scheme=scheme,
+            status=Task.STATUS_COMPLETE,
         )
         if status != Job.STATUS_APPROVED:
             for s in (Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE):

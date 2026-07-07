@@ -12,8 +12,8 @@ from decimal import Decimal
 
 from apps.contacts.models import Contact
 from apps.core.models import Configuration, AccountingCategory, AppState
-from apps.jobs.models import Job, Task, ServiceItem
-from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, TaskTemplate
+from apps.jobs.models import Job, Task, RateScheme
+from apps.estimates.models import Estimate, EstimateLineItem, WorkTemplate, ServiceItem
 from apps.jobs.services import TaskService
 from apps.estimates.services import EstimateService
 from apps.core.models import User
@@ -66,8 +66,8 @@ class TaskCreationWorkflowTest(TestCase):
         )
         self.user = User.objects.create_user(username="testuser")
         self.ac = AccountingCategory.objects.create(code='X-tw', name='X-tw')
-        self.scheme = ServiceItem.objects.create(
-            name='S-tw', algorithm='flat_fee', rate=Decimal('1'),
+        self.scheme = RateScheme.objects.create(
+            name='S-tw', algorithm='entered_qty', rate=Decimal('1'),
             unit_label='ea', accounting_category=self.ac,
         )
 
@@ -78,7 +78,7 @@ class TaskCreationWorkflowTest(TestCase):
             name="Test Task",
             assignee=self.user,
             est_worker_time=timedelta(hours=1),
-            service_item_id=self.scheme.pk,
+            rate_scheme_id=self.scheme.pk,
         )
 
         self.assertEqual(task.job, self.job)
@@ -86,11 +86,10 @@ class TaskCreationWorkflowTest(TestCase):
         self.assertEqual(task.assignee, self.user)
 
     def test_task_from_active_template(self):
-        """Test Task creation from active TaskTemplate."""
-        template = TaskTemplate.objects.create(
+        """Test Task creation from active ServiceItem."""
+        template = ServiceItem.objects.create(
             template_name="Test Task Template",
-            service_item=self.scheme,
-            default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
             is_active=True
         )
 
@@ -101,10 +100,9 @@ class TaskCreationWorkflowTest(TestCase):
 
     def test_task_from_inactive_template_rejected(self):
         """Test Task creation from inactive template is rejected."""
-        template = TaskTemplate.objects.create(
+        template = ServiceItem.objects.create(
             template_name="Inactive Template",
-            service_item=self.scheme,
-            default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
             is_active=False
         )
 
@@ -113,29 +111,26 @@ class TaskCreationWorkflowTest(TestCase):
 
         self.assertIn("is not active", str(context.exception))
 
-    def test_task_template_with_scheme(self):
-        """Test TaskTemplate carries billing via service_item."""
-        template = TaskTemplate.objects.create(
+    def test_service_item_with_scheme(self):
+        """Test ServiceItem carries billing via rate_scheme."""
+        template = ServiceItem.objects.create(
             template_name="Labor Template",
-            service_item=self.scheme,
-            default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
             description="Standard labor template with pricing",
             is_active=True
         )
 
-        self.assertEqual(template.service_item, self.scheme)
+        self.assertEqual(template.rate_scheme, self.scheme)
 
         # Sanity check: can create task from this template
         TaskService.create_from_template(template, self.job)
 
-    def test_task_template_minimal_fields(self):
-        """TaskTemplate requires only name, service_item, and default_billable_qty."""
-        template = TaskTemplate.objects.create(
+    def test_service_item_minimal_fields(self):
+        """ServiceItem requires only name and rate_scheme."""
+        template = ServiceItem.objects.create(
             template_name="Simple Template",
-            service_item=self.scheme,
-            default_billable_qty=Decimal('1.00'),
+            rate_scheme=self.scheme,
             is_active=True
         )
 
-        self.assertEqual(template.service_item, self.scheme)
-        self.assertEqual(template.default_billable_qty, Decimal('1.00'))
+        self.assertEqual(template.rate_scheme, self.scheme)

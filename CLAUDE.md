@@ -12,6 +12,10 @@ Minibini is a Django-based job shop management system for handling jobs, estimat
 
 **Never use the multiple-choice / AskUserQuestion framework when brainstorming with this user.** Conduct design discussions as unstructured, back-and-forth prose — one idea or question at a time, in conversational paragraphs. This overrides any skill or default that prefers multiple-choice questions.
 
+## Engineering Principles
+
+**Test-count is never an architecture argument.** How many tests would need updating — or how many a given placement "auto-fixes" — is *not* a valid reason to choose or reject where a guard, invariant, abstraction, or transition belongs. Decide placement on correctness alone: where the invariant is actually true and must hold. Then update whatever tests fall out. A large blast radius is *signal about the change's reach*, not a veto, and never a justification. Relocating or weakening a real invariant to spare test churn is exactly how real invariants get quietly lost. If you catch yourself citing test counts, broken tests, or "this avoids touching N files" as support for a design decision, stop — that reasoning is inadmissible; re-argue the decision on its merits, and if the correct placement is expensive, surface the trade-off explicitly instead of letting test cost silently pick the design.
+
 ## Essential Commands
 
 ```bash
@@ -163,7 +167,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 - `/api/jobs/`, `/api/contacts/`, `/api/businesses/`, `/api/payment-terms/`
 - `/api/estimates/`, `/api/est-worksheets/`, `/api/plan-tasks/`, `/api/rate-schemes/`, `/api/tasks/`, `/api/bleps/`
 - `/api/invoices/`, `/api/purchase-orders/`, `/api/bills/`
-- `/api/price-list-items/`, `/api/materials/`, `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
+- `/api/inventory/`, `/api/materials/`, `/api/earmarks/` (read-only), `/api/work-templates/`, `/api/task-templates/`, `/api/accounting-categories/`
 - `/api/expenses/`, `/api/reimbursements/`
 - `/api/jobs/{id}/deliverables/`, `/api/shipments/` (Shipments are flat; Deliverables are job-nested)
 - `/api/users/` (admin), `/api/qbo/` (OAuth + accounts + payment-accounts)
@@ -172,7 +176,7 @@ Django serves only two URL prefixes now: `/admin/` (Django admin) and `/api/` (t
 Per-viewset action endpoints (status transitions, line items, wizard, etc.) live in the topic docs.
 
 ### Svelte SPA (`frontend/`, served on `:9000` in dev)
-Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
+Hash-based routing (`#/path`). The SPA is the only UI; covers home, jobs (board + detail + task list + task detail), schedule, contacts, businesses, estimates, worksheets, invoices (incl. wizard), purchase orders, catalog (inventory / service items / earmarks tabs), expenses, reimbursements, users, settings, profile, email, search. (The legacy Django HTML views have been removed.)
 
 ## Frontend (Svelte SPA)
 
@@ -208,9 +212,34 @@ DRF-based API serving the Svelte frontend. Session-based authentication (no toke
 
 501 stub list and viewset compliance details are in `docs/designs/architecture-and-conventions.md` §3.6 and §3.8.
 
+**Error responses — USE THIS STRUCTURE** (full contract:
+`docs/designs/architecture-and-conventions.md` §3.9):
+
+- Exactly two error shapes: `{'detail': '<sentence>'}` for operation errors,
+  `{'<field>': ['msg', ...]}` (with `non_field_errors` for cross-field) for
+  validation. `{'message': ...}` is success-only; the `'error'` key is
+  retired — never emit it.
+- Do NOT catch a service `ValidationError` just to re-render it as a 400 —
+  the central handler (`apps/api/exceptions.py`, registered in settings)
+  renders uncaught `ValidationError` (and `ProtectedError` → 409) in
+  contract shape. Catch only to change the status code or add payload, and
+  `raise` any variant the catch doesn't reshape.
+- In services, raise `ValidationError({'field': ['msg']})` when the problem
+  belongs to an input field, plain `ValidationError('sentence')` otherwise —
+  that choice is what the SPA renders.
+- Frontend: route every error through `triageError(e)`
+  (`lib/errorTriage.js`) to its venue — `FieldError` slots under inputs,
+  `FormMessage` under the form's buttons, or the global overlay
+  (`stores/messages.js` `showError`/`showSuccess`) for form-less and
+  infrastructure errors. Never `JSON.stringify(e.data)`, never display
+  bare `e.message`, never `window.alert()` for API results; branch on
+  `err.status` / `err.data?.code` for flow (e.g. 409). Exemplar:
+  `RateSchemeManager.svelte`; rules: `frontend/README.md` → Error
+  Handling.
+
 ## UI Conventions
 
-The UI is the Svelte SPA. It uses semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green borders) for user feedback, owned by `frontend/src/lib/api.js`. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns. (The Django HTML view layer and its template conventions were removed; only the PDF templates below remain.)
+The UI is the Svelte SPA. It uses semantic HTML, per-component `<style>` blocks, and an **error-overlay / success-overlay** pattern (red / green bordered boxes; CSS classes in `frontend/src/css/app.css`, markup per page) for user feedback. Error *text* always comes from `errorMessage()` / `fieldErrors()` — see the error-response contract above. SPA UI conventions are documented in `frontend/README.md`; the architecture doc covers the cross-cutting view-mode, sidebar, and history-panel patterns. (The Django HTML view layer and its template conventions were removed; only the PDF templates below remain.)
 
 **Table markup:** Always wrap `<tr>` rows in `<tbody>` (or `<thead>`/`<tfoot>`). Svelte 5 strict mode rejects `<tr>` as a direct child of `<table>` and the build will fail.
 
@@ -323,6 +352,7 @@ Estimates/worksheets support versioning via parent-child relationships. Old vers
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
 - **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
+- **NEVER judge test pass/fail by a piped command's exit code.** `python manage.py test ... | tail` (or any pipe) reports the *last* command's exit code (`tail`'s, always 0), NOT Django's — so a green-looking exit can hide real failures. To gate on results, read the actual `OK` / `FAILED (failures=…, errors=…)` summary line and the `Ran N tests` count from the output (e.g. write to a file and grep it, or run without a pipe so the exit code is Django's). This applies to background runs especially.
 - **Front-end (Svelte SPA):** component/unit tests use Vitest, in `frontend/tests/`; run `npm run test:run` from `frontend/`. Extend TDD to the SPA — add/update a component's test in the same change. Patterns, conventions, and the behavior-vs-display triage live in `docs/designs/frontend-testing.md`.
 
 ## Development Features

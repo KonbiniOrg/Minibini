@@ -1,5 +1,5 @@
 """Bundling 2+ atoms in a wizard: when every atom is a task sharing one
-ServiceItem and identical active_modifiers, the line item is summarized
+RateScheme and identical active_modifiers, the line item is summarized
 (units = scheme unit_label, qty = summed actuals, price = effective rate)
 instead of the qty=1 / units='none' fallback."""
 
@@ -11,12 +11,12 @@ from django.utils import timezone
 
 from apps.contacts.models import Contact
 from apps.core.models import AccountingCategory, Configuration, AppState
-from apps.estimates.models import EstWorksheet
+from apps.estimates.models import Estimate
 from apps.estimates.services import EstimateWizardService
-from apps.inventory.models import Material, PlanMaterial, InventoryItem
+from apps.inventory.models import Material, InventoryItem
 from apps.invoicing.models import Invoice
 from apps.invoicing.services import InvoiceWizardService
-from apps.jobs.models import Blep, Job, PlanTask, ServiceItem, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 
 
 class InvoiceWizardBundleSummaryTest(TestCase):
@@ -34,26 +34,26 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-1',
         )
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        self.scheme = ServiceItem.objects.create(
-            name='Widgets', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme = RateScheme.objects.create(
+            name='Widgets', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             accounting_category=self.cat,
         )
-        self.scheme_rush = ServiceItem.objects.create(
-            name='Widgets-rush', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme_rush = RateScheme.objects.create(
+            name='Widgets-rush', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             modifiers=[{'key': 'rush', 'percent': 50}],
             accounting_category=self.cat,
         )
-        self.scheme_other = ServiceItem.objects.create(
-            name='Jobs', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme_other = RateScheme.objects.create(
+            name='Jobs', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('99.00'), unit_label='jobs',
             accounting_category=self.cat,
         )
 
     def _task(self, scheme, actual_qty, modifiers=None):
         t = Task.objects.create(
-            job=self.job, name='T', service_item=scheme,
+            job=self.job, name='T', rate_scheme=scheme,
             actual_qty=Decimal(str(actual_qty)),
             active_modifiers=modifiers or [],
         )
@@ -86,13 +86,13 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         # elapsed_time bills logged time: the bundle sums each task's Blep
         # hours (the actuals), never est_qty. These tasks carry no est_qty,
         # so a non-zero summed qty can only come from the Bleps.
-        scheme_hourly = ServiceItem.objects.create(
-            name='Bench', algorithm=ServiceItem.ELAPSED_TIME,
+        scheme_hourly = RateScheme.objects.create(
+            name='Bench', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50.00'), unit_label='hours',
             accounting_category=self.cat,
         )
-        a = Task.objects.create(job=self.job, name='T', service_item=scheme_hourly)
-        b = Task.objects.create(job=self.job, name='T', service_item=scheme_hourly)
+        a = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
+        b = Task.objects.create(job=self.job, name='T', rate_scheme=scheme_hourly)
         start = timezone.now()
         Blep.objects.create(task=a, user=self.user, start_time=start, end_time=start + timedelta(hours=2))
         Blep.objects.create(task=b, user=self.user, start_time=start, end_time=start + timedelta(hours=3))
@@ -137,18 +137,21 @@ class InvoiceWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'none')
         self.assertEqual(li.qty, Decimal('1'))
 
-    def test_single_task_unchanged(self):
+    def test_single_entered_qty_task_keeps_qty_and_rate(self):
+        # A single ENTERED_QTY task carries its real qty × rate onto the
+        # line (matching what a uniform multi-task bundle already did),
+        # instead of collapsing to qty 1 / price = total.
         a = self._task(self.scheme, 3)
         li = self._bundle(a)
-        self.assertEqual(li.qty, Decimal('1'))
-        self.assertEqual(li.price, Decimal('30.00'))
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('10.00'))
         self.assertEqual(li.units, 'widgets')
 
     def test_add_material_makes_non_uniform_falls_back_to_reprice(self):
         # Adding a material to a task line item makes the source set
         # non-uniform: qty is kept and the per-unit price is recomputed.
         a = self._task(self.scheme, 3)  # 3 * 10 = 30
-        li = self._bundle(a)            # single task: qty=1, price=30
+        li = self._bundle(a)            # single entered-qty task: qty=3, price=10
         mat = Material.objects.create(
             job=self.job, task=a, description='M',
             quantity=Decimal('1'), sell_price=Decimal('5.00'),
@@ -161,8 +164,8 @@ class InvoiceWizardBundleSummaryTest(TestCase):
             li, [{'type': 'material', 'id': mat.pk}],
         )
         li.refresh_from_db()
-        self.assertEqual(li.qty, Decimal('1'))
-        self.assertEqual(li.price, Decimal('35.00'))
+        self.assertEqual(li.qty, Decimal('3'))
+        self.assertEqual(li.price, Decimal('11.67'))  # round(35 / 3, 2)
 
 
 class EstimateWizardBundleSummaryTest(TestCase):
@@ -177,33 +180,37 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-E1',
         )
-        self.ws = EstWorksheet.objects.create(job=self.job)
-        self.scheme = ServiceItem.objects.create(
-            name='E-Widgets', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme = RateScheme.objects.create(
+            name='E-Widgets', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             accounting_category=self.cat,
         )
-        self.scheme_rush = ServiceItem.objects.create(
-            name='E-Widgets-rush', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme_rush = RateScheme.objects.create(
+            name='E-Widgets-rush', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('10.00'), unit_label='widgets',
             modifiers=[{'key': 'rush', 'percent': 50}],
             accounting_category=self.cat,
         )
-        self.scheme_other = ServiceItem.objects.create(
-            name='E-Jobs', algorithm=ServiceItem.ENTERED_QTY,
+        self.scheme_other = RateScheme.objects.create(
+            name='E-Jobs', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('99.00'), unit_label='jobs',
             accounting_category=self.cat,
         )
-        self.estimate = EstimateWizardService.open_for_worksheet(self.ws)
+        self.estimate = Estimate.objects.create(
+            job=self.job, estimate_number=self.job.job_number, version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
 
     def _pt(self, scheme, est_qty, modifiers=None):
-        return PlanTask.objects.create(
-            est_worksheet=self.ws, name='PT', service_item=scheme,
+        # job-owns-atoms refactor (Task 3.1): estimate projects the Job's Tasks
+        # (est_qty-based), now owned directly by the Job.
+        return Task.objects.create(
+            job=self.job, name='PT', rate_scheme=scheme,
             est_qty=Decimal(str(est_qty)), active_modifiers=modifiers or [],
         )
 
     def _bundle(self, *pts):
-        atoms = [{'type': 'plan_task', 'id': p.pk} for p in pts]
+        atoms = [{'type': 'task', 'id': p.pk} for p in pts]
         return EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
 
     def test_same_scheme_no_modifiers_summarized(self):
@@ -222,10 +229,10 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.price, Decimal('15.00'))
 
     def test_flat_fee_same_scheme_summed(self):
-        # flat_fee price now lives on ServiceItem.rate; active_modifiers is [].
+        # flat_fee price now lives on RateScheme.rate; active_modifiers is [].
         # Same scheme + same (empty) modifiers summarizes — est_qty summed, not set to 1.
-        scheme_flat = ServiceItem.objects.create(
-            name='E-Tapping', algorithm=ServiceItem.FLAT_FEE,
+        scheme_flat = RateScheme.objects.create(
+            name='E-Tapping', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('7.00'), unit_label='holes',
             accounting_category=self.cat,
         )
@@ -252,15 +259,15 @@ class EstimateWizardBundleSummaryTest(TestCase):
         self.assertEqual(li.units, 'none')
         self.assertEqual(li.qty, Decimal('1'))
 
-    def test_bundle_with_plan_material_falls_back(self):
+    def test_bundle_with_material_falls_back(self):
         a = self._pt(self.scheme, 3)
-        pm = PlanMaterial.objects.create(
-            est_worksheet=self.ws, description='steel', quantity=Decimal('2'),
+        mat = Material.objects.create(
+            job=self.job, description='steel', quantity=Decimal('2'),
             sell_price=Decimal('5'), accounting_category=self.cat_mat,
         )
         atoms = [
-            {'type': 'plan_task', 'id': a.pk},
-            {'type': 'plan_material', 'id': pm.pk},
+            {'type': 'task', 'id': a.pk},
+            {'type': 'material', 'id': mat.pk},
         ]
         li = EstimateWizardService.add_atoms_to_new_line_item(self.estimate, atoms)
         self.assertEqual(li.units, 'none')

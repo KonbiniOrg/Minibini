@@ -19,7 +19,7 @@ from apps.estimates.models import (
 from apps.expenses.models import Expense
 from apps.inventory.models import Material
 from apps.invoicing.models import Invoice, InvoiceLineItem
-from apps.jobs.models import Blep, Job, ServiceItem, Task
+from apps.jobs.models import Blep, Job, RateScheme, Task
 
 
 def _job(contact, status=Job.STATUS_DRAFT, start_date=None):
@@ -149,8 +149,7 @@ class SpentTests(FixtureTestCase):
         from apps.jobs.financials import compute_job_financials
         from apps.inventory.models import InventoryItem
         pli = InventoryItem.objects.create(
-            code='SR-FIN', description='p', accounting_category=self.cat,
-            is_catalog=True)
+            code='SR-FIN', description='p', accounting_category=self.cat)
         Expense.objects.create(
             entered_by=self.user, amount=Decimal('100.00'),
             purchased_on=date.today(), accounting_category=self.cat,
@@ -193,12 +192,12 @@ class SpentTests(FixtureTestCase):
         from apps.jobs.financials import compute_job_financials
         Configuration.objects.update_or_create(
             key='average_labor_cost', defaults={'value': '30'})
-        scheme = ServiceItem.objects.create(
-            name='Hr-fin', algorithm=ServiceItem.ELAPSED_TIME,
+        scheme = RateScheme.objects.create(
+            name='Hr-fin', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
         task = Task.objects.create(
             job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
-            service_item=scheme)
+            rate_scheme=scheme)
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(task=task, user=self.user,
                             start_time=start, end_time=start + timedelta(hours=2))
@@ -209,12 +208,12 @@ class SpentTests(FixtureTestCase):
     def test_missing_config_treats_labor_as_zero(self):
         from apps.jobs.financials import compute_job_financials
         Configuration.objects.filter(key='average_labor_cost').delete()
-        scheme = ServiceItem.objects.create(
-            name='Hr-fin2', algorithm=ServiceItem.ELAPSED_TIME,
+        scheme = RateScheme.objects.create(
+            name='Hr-fin2', algorithm=RateScheme.ELAPSED_TIME,
             rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
         task = Task.objects.create(
             job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
-            service_item=scheme)
+            rate_scheme=scheme)
         start = timezone.now() - timedelta(hours=2)
         Blep.objects.create(task=task, user=self.user,
                             start_time=start, end_time=start + timedelta(hours=2))

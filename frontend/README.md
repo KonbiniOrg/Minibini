@@ -89,6 +89,41 @@ the jsdom storage shim), see `docs/designs/frontend-testing.md`.
 
 ## Design Decisions
 
+### Modals
+
+Every form modal rides the shared shell, `src/components/Modal.svelte`. The
+shell owns everything cross-cutting so it can't drift per-modal:
+
+- **Geometry:** one place on screen — horizontally centered, anchored
+  `--modal-top` (50px) from the top — so a modal handing off to another
+  (picker → form) never moves on the user. `maxWidth` is the single sanctioned
+  size knob. Every modal is draggable by its grab bar (position resets on each
+  open) to peek at the page behind.
+- **Keyboard contract:**
+  - Every modal passes `onCancel` — **Escape always closes**. A modal with an
+    internal sub-state (confirm-delete, a nested prompt) passes a smarter
+    `onCancel` that backs out one level before closing.
+  - **Enter** is decided by one question: *is the content a native `<form>`?*
+    If yes, the form owns Enter (native submit + `required` validation) and
+    you omit `onSave` — binding both would double-fire. If no (button-driven
+    content), pass `onSave`. Deliberately Esc-only modals (an ambiguous
+    primary action, e.g. `StartWorkConflictModal`'s join-vs-takeover) omit
+    `onSave` **with a comment saying why**.
+  - Pass the modal's in-flight flag as `busy` — the shell suppresses Enter
+    while it's true (the busy-guard lives once, in the shell), so a
+    double-Enter during a slow save can never fire the API twice. The Save
+    *button* still wants its own `disabled={busy}` for the click path.
+- **Not on the shell (deliberate):** `TaskQuickCard` — a positioned popup
+  card with backdrop-click close, not a form modal.
+
+New modals: prefer native-`<form>` content where the modal is genuinely a
+form (free `required` validation, one submit path); wrap it in `<Modal>` and
+wire only `onCancel`. As of 2026-07-04 **every** form modal in the app is a
+native form (`<form onsubmit>` + `type="submit"` save button, all other
+buttons `type="button"` — the HTML default inside a form is submit, so an
+untyped Cancel would save); the shell's `onSave`/`busy` path remains for
+future button-driven modals with an unambiguous primary action.
+
 ### API Responses
 
 - All API responses return JSON with a 200 status, even for operations like DELETE that normally have no meaningful data to return. No 204 responses. An empty response is `{}`.
@@ -122,10 +157,60 @@ Key rules:
 
 ### Error Handling
 
-- The API client (`src/lib/api.js`) checks `content-type` before parsing JSON to guard against HTML error pages from Django.
-- Action errors (delete failures, validation errors) display in an overlay on top of the current page, preserving the content underneath.
-- Load errors (page/object not found) replace the page content.
-- Views catch `ProtectedError`, `ValidationError`, and `ServiceError` from services, returning user-friendly messages.
+The API error contract (two body shapes, status semantics, the central
+backend handler) is documented in
+`docs/designs/architecture-and-conventions.md` §3.9 — read that first.
+Frontend rules:
+
+- The API client (`src/lib/api.js`) attaches `.status` and `.data` to every
+  thrown error; `.data` is `null` when the body wasn't JSON (HTML error
+  pages still carry `.status`).
+
+**The three display venues** (every message goes to exactly one; users
+learn where to look):
+
+1. **Under the input** — field validation errors. Place
+   `<FieldError {errors} field="x" />` (components/) directly below each
+   input; the label stays above. Set the bag (`errors = t.fields`) once in
+   the catch; every slot lights up.
+2. **Under the form's buttons** — operation errors ("Job is on hold"),
+   `non_field_errors`, and the rare in-form success ack. Place
+   `<FormMessage error={...} success={...} />` immediately after the
+   button row. Conflict responses that carry a next step (`code` +
+   machine payload, e.g. the referenced-scheme 409) render an action
+   button in FormMessage's children — see RateSchemeManager for the
+   pattern.
+3. **The global red/green overlay** — everything with no form: failed row
+   actions, infrastructure errors (backend down, 5xx), page-level success
+   acknowledgements. Raise it with `showError(...)` / `showSuccess(...)`
+   from `stores/messages.js`; `MessageOverlay.svelte` (mounted once in
+   App.svelte) renders it. Pages never carry their own overlay markup.
+
+**The uniform catch block** for forms:
+
+```js
+import { triageError } from '../lib/errorTriage.js';
+import { showError } from '../stores/messages.js';
+
+} catch (e) {
+  const t = triageError(e);
+  if (t.overlay) showError(t.overlay);      // infrastructure → venue 3
+  else { formError = t.message; errors = t.fields; }  // venues 2 + 1
+}
+```
+
+Clear `formError`/`errors` at submit start and on open/cancel.
+
+- Never `JSON.stringify(e.data)`; never display bare `e.message`
+  (field-keyed errors reduce it to "Request failed"); never
+  `window.alert()` for API results (`confirm()` for irreversible deletes
+  is fine). Branch on `err.status` / `err.data?.code` for flow decisions.
+- Load errors (page/object not found on mount) are not "messages" — they
+  replace the page content, per the existing convention.
+- The exemplar conversion is `components/RateSchemeManager.svelte`; the
+  primitives are `lib/errorTriage.js`, `components/FieldError.svelte`,
+  `components/FormMessage.svelte`, `stores/messages.js`,
+  `components/MessageOverlay.svelte`.
 
 ### CSS
 
@@ -163,6 +248,18 @@ Key rules:
 - Components use a `<FullOnly>` wrapper to hide sections in lite mode — avoids scattering `$viewMode` checks throughout components.
 - Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
 - Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
+
+### Material status vocabulary
+
+- `lib/materialStatus.js` derives **one display status per material row** from
+  serializer fields (no backend state): **Needs pricing / Needed / Ordered —
+  PO-NNNN / Awaiting customer / On Hand / Consumed / Released** (precedence in
+  that file), plus a `costUnconfirmed` ⚠ when `cost_source === 'estimated'`.
+- **Venue rule:** the job-overview pillar (`TaskTree`) shows these chips
+  passively — **no actions**. All per-material actions (Set pricing / Order /
+  Attach expense / Mark on-hand / Mark received / PO link) live on the task view
+  page (`JobTaskListPage`), each gated on its callback being wired.
+- Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
 ### Delete Flow
 

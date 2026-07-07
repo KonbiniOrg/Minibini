@@ -15,10 +15,10 @@ class MutateEarmarkTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-E-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='A', accounting_category=self.cat, is_catalog=True,
+            code='A', accounting_category=self.cat,
         )
         self.noninv = InventoryItem.objects.create(
-            code='B', accounting_category=self.cat, is_catalog=False,
+            code='B', accounting_category=self.cat,
         )
 
     def test_positive_delta_creates_earmark(self):

@@ -160,11 +160,8 @@
 {/if}
 
 <h3>Tags</h3>
-{#if $canManageJobs}
-  <TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []} />
-{:else}
-  <p>{(contact.tags || []).map(t => t.name).join(', ') || 'No tags.'}</p>
-{/if}
+<TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []}
+  readonly={!$canManageJobs} />
 
 <h3>Jobs</h3>
 {#if visibleJobs.length > 0}

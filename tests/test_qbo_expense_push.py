@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError  # noqa: F401
 from apps.core.models import Configuration, AccountingCategory
 from apps.expenses.models import Expense, Reimbursement
 from apps.contacts.models import Contact, Business
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material
 from apps.expenses.services import ExpenseService
 from apps.qbo.models import QBOSyncLog
@@ -102,7 +102,7 @@ class PaymentAccountsEndpointTest(TestCase):
         self.client_http.force_login(self.admin)
         r = self.client_http.get('/api/qbo/payment-accounts/')
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json(), {'error': 'No active QBO connection'})
+        self.assertEqual(r.json(), {'detail': 'No active QBO connection'})
 
 
 class PushExpenseTest(TestCase):
@@ -578,8 +578,8 @@ class SFMOMAIntegrationTest(TestCase):
         contact.business = self.business
         contact.save()
         self.job = Job.objects.create(contact=contact, job_number='JOB-2026-0042')
-        self.scheme = ServiceItem.objects.create(
-            name='S-sfmoma', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-sfmoma', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.cat,
         )
 

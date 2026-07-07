@@ -29,7 +29,7 @@ from rest_framework.test import APIClient
 from tests.base import BaseTestCase
 from apps.core.models import User, AccountingCategory
 from apps.contacts.models import Contact
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material
 
 
@@ -50,28 +50,29 @@ def _make_job(contact, statuses):
 
 
 def _on_hold_job(contact):
-    return _make_job(contact, [
+    from apps.jobs.services import JobService
+    job = _make_job(contact, [
         Job.STATUS_SUBMITTED,
         Job.STATUS_APPROVED,
-        Job.STATUS_ON_HOLD,
     ])
+    return JobService.hold_job(job.pk, 'guard test hold')
 
 
 def _pending_task(job, scheme):
     return Task.objects.create(
-        job=job, name='Guard Task', service_item=scheme, status=Task.STATUS_PENDING,
+        job=job, name='Guard Task', rate_scheme=scheme, status=Task.STATUS_PENDING,
     )
 
 
 def _blocked_task(job, scheme):
     return Task.objects.create(
-        job=job, name='Blocked Task', service_item=scheme, status=Task.STATUS_BLOCKED,
+        job=job, name='Blocked Task', rate_scheme=scheme, status=Task.STATUS_BLOCKED,
     )
 
 
 def _in_progress_task(job, scheme):
     return Task.objects.create(
-        job=job, name='In Progress Task', service_item=scheme,
+        job=job, name='In Progress Task', rate_scheme=scheme,
         status=Task.STATUS_IN_PROGRESS,
     )
 
@@ -112,8 +113,8 @@ class OnHoldAPIGuardBase(BaseTestCase):
 
         self.contact = Contact.objects.first()
         self.scheme = (
-            ServiceItem.objects.filter(algorithm=ServiceItem.FLAT_FEE).first()
-            or ServiceItem.objects.first()
+            RateScheme.objects.filter(algorithm=RateScheme.ENTERED_QTY).first()
+            or RateScheme.objects.first()
         )
         self.ac = AccountingCategory.objects.first()
 
@@ -187,7 +188,7 @@ class TaskCreateOnHoldTest(OnHoldAPIGuardBase):
         url = f'/api/jobs/{job.pk}/tasks/'
         response = self.client.post(url, {
             'name': 'New Task',
-            'service_item': self.scheme.pk,
+            'rate_scheme': self.scheme.pk,
         }, format='json')
         self.assert_400_on_hold(response)
 
@@ -256,8 +257,8 @@ class TaskReorderOnHoldTest(OnHoldAPIGuardBase):
 
     def test_reorder_tasks_returns_400_when_job_on_hold(self):
         job = _on_hold_job(self.contact)
-        t1 = Task.objects.create(job=job, name='T1', service_item=self.scheme, sort_order=1)
-        t2 = Task.objects.create(job=job, name='T2', service_item=self.scheme, sort_order=2)
+        t1 = Task.objects.create(job=job, name='T1', rate_scheme=self.scheme, sort_order=1)
+        t2 = Task.objects.create(job=job, name='T2', rate_scheme=self.scheme, sort_order=2)
         url = f'/api/jobs/{job.pk}/reorder-tasks/'
         response = self.client.post(url, {'task_id': t1.pk, 'direction': 'down'}, format='json')
         self.assert_400_on_hold(response)
@@ -341,8 +342,8 @@ class TaskMaterialPatchOnHoldTest(OnHoldAPIGuardBase):
         ])
         task = _pending_task(job, self.scheme)
         mat = _material(job, task=task, ac=self.ac)
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        from apps.jobs.services import JobService
+        JobService.hold_job(job.pk, 'guard test hold')
         job.refresh_from_db()
         mat.refresh_from_db()
         return job, task, mat
@@ -384,8 +385,8 @@ class FlatMaterialPatchOnHoldTest(OnHoldAPIGuardBase):
                 purchase_price=Decimal('5.00'), selling_price=Decimal('10.00'),
                 accounting_category=self.ac)
         mat = _material(job, ac=self.ac, pli=pli)
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        from apps.jobs.services import JobService
+        JobService.hold_job(job.pk, 'guard test hold')
         job.refresh_from_db()
         mat.refresh_from_db()
         return job, mat

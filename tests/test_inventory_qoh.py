@@ -5,9 +5,8 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, PlanTask, Task, ServiceItem
-from apps.estimates.models import EstWorksheet
-from apps.inventory.models import PlanMaterial, Material
+from apps.jobs.models import Job, Task, RateScheme
+from apps.inventory.models import Material
 from apps.inventory.models import InventoryItem
 from apps.inventory.models import Earmark
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
@@ -34,8 +33,8 @@ class ConsumeMaterialTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.scheme = ServiceItem.objects.create(
-            name='S-qoh2', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-qoh2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -43,7 +42,7 @@ class ConsumeMaterialTest(TestCase):
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         self.plywood = InventoryItem.objects.create(
             code='PLY.75',
@@ -52,7 +51,6 @@ class ConsumeMaterialTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -123,8 +121,11 @@ class ConsumeMaterialTest(TestCase):
             Earmark.objects.filter(inventory_item=self.plywood, job=self.job).count(), 0
         )
 
-    def test_consume_no_inventory_item_is_noop(self):
-        """Consuming a material without inventory_item does nothing."""
+    def test_consume_provisional_material_refuses(self):
+        """Consuming a provisional (no inventory_item) material now REFUSES
+        rather than silently flipping — pricing must be set and the lot received
+        first. No QOH side effect, state stays pending."""
+        from django.core.exceptions import ValidationError
         material = Material.objects.create(
             job=self.job,
             task=self.task,
@@ -134,7 +135,11 @@ class ConsumeMaterialTest(TestCase):
             sell_price=Decimal('20.00'),
             accounting_category=self.category,
         )
-        MaterialService.consume(material)
+        with self.assertRaises(ValidationError):
+            MaterialService.consume(material)
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
         self.plywood.refresh_from_db()
         self.assertEqual(self.plywood.qty_on_hand, Decimal('20.00'))
 
@@ -159,8 +164,8 @@ class CompleteTaskAdjustmentTest(TestCase):
         )
 
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
-        self.scheme = ServiceItem.objects.create(
-            name='S-qoh3', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-qoh3', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
@@ -168,7 +173,7 @@ class CompleteTaskAdjustmentTest(TestCase):
             name='Install plywood',
             description='Install plywood',
             sort_order=1,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         self.plywood = InventoryItem.objects.create(
             code='PLY.75',
@@ -178,7 +183,6 @@ class CompleteTaskAdjustmentTest(TestCase):
             qty_sold=Decimal('5.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -258,7 +262,6 @@ class ManualAdjustmentTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 

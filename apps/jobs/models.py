@@ -38,8 +38,8 @@ def _pick_least_used_accent_color():
 def copy_active_modifiers(value):
     """Return a copy of an atom's active_modifiers list (modifier keys).
 
-    Legacy flat-fee dicts ({'flat_fee_price': ...}) collapse to [] — the price
-    now lives on ServiceItem.rate, not on the atom.
+    Legacy dicts ({'flat_fee_price': ...}) collapse to [] — fixed charges are
+    now the Fee atom, not a RateScheme algorithm.
     """
     if isinstance(value, dict):
         return []
@@ -52,7 +52,6 @@ class Job(AbstractWorkContainer):
     STATUS_SUBMITTED = 'submitted'
     STATUS_APPROVED = 'approved'
     STATUS_IN_PROGRESS = 'in_progress'
-    STATUS_ON_HOLD = 'on_hold'
     STATUS_WORK_COMPLETE = 'work_complete'
     STATUS_REJECTED = 'rejected'
     STATUS_COMPLETED = 'completed'
@@ -62,8 +61,7 @@ class Job(AbstractWorkContainer):
         (STATUS_DRAFT, 'Draft'),
         (STATUS_SUBMITTED, 'Submitted'),
         (STATUS_APPROVED, 'Approved'),
-        (STATUS_IN_PROGRESS, 'In Progress'),  # NEW — between approved and work_complete
-        (STATUS_ON_HOLD, 'On Hold'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
         (STATUS_WORK_COMPLETE, 'Work Complete'),
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_COMPLETED, 'Completed'),
@@ -78,6 +76,10 @@ class Job(AbstractWorkContainer):
     due_date = models.DateTimeField(null=True, blank=True)
     completed_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default=STATUS_DRAFT)
+    # on_hold is an orthogonal pause flag, not a status: a held job keeps its
+    # true pipeline position underneath. Set/cleared via JobService.hold_job /
+    # release_job (and cleared by change-order acceptance).
+    on_hold = models.BooleanField(default=False)
     hold_reason = models.TextField(blank=True, default='')
     contact = models.ForeignKey('contacts.Contact', on_delete=models.PROTECT)
     project_manager = models.ForeignKey(
@@ -105,9 +107,8 @@ class Job(AbstractWorkContainer):
         VALID_TRANSITIONS = {
             Job.STATUS_DRAFT: [Job.STATUS_SUBMITTED, Job.STATUS_REJECTED],
             Job.STATUS_SUBMITTED: [Job.STATUS_APPROVED, Job.STATUS_REJECTED, Job.STATUS_DRAFT],
-            Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED],
-            Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_ON_HOLD, Job.STATUS_CANCELLED],  # NEW
-            Job.STATUS_ON_HOLD: [Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
+            Job.STATUS_APPROVED: [Job.STATUS_IN_PROGRESS, Job.STATUS_CANCELLED],
+            Job.STATUS_IN_PROGRESS: [Job.STATUS_WORK_COMPLETE, Job.STATUS_CANCELLED],
             Job.STATUS_WORK_COMPLETE: [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_IN_PROGRESS],
             Job.STATUS_REJECTED: [],  # Terminal state
             Job.STATUS_COMPLETED: [],  # Terminal state
@@ -166,6 +167,10 @@ class Job(AbstractWorkContainer):
                 old_job = Job.objects.get(pk=self.pk)
                 old_status = old_job.status
 
+                # Releasing the hold — clear the hold reason
+                if old_job.on_hold and not self.on_hold:
+                    self.hold_reason = ''
+
                 # Handle state transition date setting
                 if old_status != self.status:
                     # Transitioning to 'approved' - set start_date
@@ -176,12 +181,6 @@ class Job(AbstractWorkContainer):
                     if self.status in [Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
                                        Job.STATUS_REJECTED] and not self.completed_date:
                         self.completed_date = timezone.now()
-
-                    # Leaving on_hold into an active status — clear the hold reason
-                    if old_status == Job.STATUS_ON_HOLD and self.status in (
-                        Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS
-                    ):
-                        self.hold_reason = ''
 
             except Job.DoesNotExist:
                 pass
@@ -200,7 +199,7 @@ class Job(AbstractWorkContainer):
 
 
 class TaskBase(models.Model):
-    """Abstract base for PlanTask (worksheet) and Task (work order)."""
+    """Abstract base for Task (work order)."""
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     sort_order = models.PositiveIntegerField(blank=True, null=True)
@@ -213,7 +212,7 @@ class TaskBase(models.Model):
         null=True, blank=True,
         help_text=(
             "Estimated billable quantity in the rate scheme's units. "
-            "Required at the application layer on PlanTask; optional on Task."
+            "Optional on Task."
         ),
     )
 
@@ -227,9 +226,9 @@ class TaskBase(models.Model):
         """Canonical TaskBase field set for cloning to another container.
 
         Excludes identity, status, provenance, hierarchy, and assignee — callers
-        add those. Returns the rate scheme as ``service_item_id`` (not the object)
+        add those. Returns the rate scheme as ``rate_scheme_id`` (not the object)
         so the dict splats straight into ``TaskService.create_direct`` (which
-        takes ``service_item_id``); Django's ``.objects.create()`` accepts the
+        takes ``rate_scheme_id``); Django's ``.objects.create()`` accepts the
         ``_id`` form too, so the raw-create clone paths work as well.
         ``active_modifiers`` is deep-copied here to keep raw-create callers safe
         from shared-reference bugs.
@@ -240,69 +239,9 @@ class TaskBase(models.Model):
             sort_order=self.sort_order,
             est_worker_time=self.est_worker_time,
             est_qty=self.est_qty,
-            service_item_id=self.service_item_id,
+            rate_scheme_id=self.rate_scheme_id,
             active_modifiers=copy_active_modifiers(self.active_modifiers),
         )
-
-
-class PlanTask(TaskBase):
-    """Planning task on an EstWorksheet. No lifecycle, no hierarchy, no bleps."""
-    plan_task_id = models.AutoField(primary_key=True)
-    est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_tasks'
-    )
-    service_item = models.ForeignKey(
-        'jobs.ServiceItem', on_delete=models.PROTECT,
-    )
-    active_modifiers = models.JSONField(default=list, blank=True)
-    # est_qty is now inherited from TaskBase (nullable at DB level; PlanTask.clean()
-    # enforces non-null in Phase B).
-
-    class Meta:
-        db_table = 'plan_tasks'
-
-    def clean(self):
-        super().clean()
-        if self.est_qty is None:
-            raise ValidationError({
-                'est_qty': 'Required: every PlanTask must have an estimated quantity.',
-            })
-
-    def save(self, *args, **kwargs):
-        """Auto-assign sort_order at the worksheet level."""
-        from django.db import transaction
-        if self.sort_order is None:
-            with transaction.atomic():
-                max_order = PlanTask.objects.filter(
-                    est_worksheet=self.est_worksheet
-                ).aggregate(models.Max('sort_order'))['sort_order__max'] or 0
-                self.sort_order = max_order + 1
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-    def compute_amount(self, active_modifiers=None):
-        """Uniform atom interface: total billable amount for this plan task.
-
-        Ignores the active_modifiers argument (uses self.active_modifiers).
-        Parameter is accepted to match the BillableAtom interface.
-        Returns Decimal('0.00') when service_item or est_qty is unset
-        — i.e., billing not yet configured.
-        """
-        if not self.service_item_id or self.est_qty is None:
-            return Decimal('0.00')
-        charge = self.service_item.compute_charge(
-            self.est_qty, self.active_modifiers,
-        )
-        return charge.quantize(Decimal('0.01'))
-
-    def effective_rate(self):
-        if not self.service_item_id:
-            return None
-        return self.service_item.effective_rate(self.active_modifiers)
-
-    @property
-    def effective_accounting_category(self):
-        return self.service_item.accounting_category
 
 
 @history(exclude=['task_id'])
@@ -335,19 +274,6 @@ class Task(TaskBase):
         'self', on_delete=models.CASCADE, null=True, blank=True, related_name='subtasks'
     )
     assignee = models.ForeignKey('core.User', on_delete=models.SET_NULL, null=True, blank=True)
-    source_template = models.ForeignKey(
-        'estimates.TaskTemplate',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        help_text="TaskTemplate this task was created from"
-    )
-    source_plan_task = models.OneToOneField(
-        'jobs.PlanTask',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='carried_task',
-        help_text="PlanTask this task was carried over from (carry-over idempotency)",
-    )
     job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='tasks')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default=STATUS_PENDING)
     blocked_reason = models.TextField(blank=True, default='')
@@ -355,9 +281,9 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text="Position in assignee's work queue on the board"
     )
-    # Billing fields (Phase B: service_item is NOT NULL at the DB level).
-    service_item = models.ForeignKey(
-        'jobs.ServiceItem',
+    # Billing fields (Phase B: rate_scheme is NOT NULL at the DB level).
+    rate_scheme = models.ForeignKey(
+        'jobs.RateScheme',
         on_delete=models.PROTECT,
         related_name='task_set',
     )
@@ -367,7 +293,7 @@ class Task(TaskBase):
         null=True, blank=True,
         help_text=(
             "Worker-entered actual quantity for ENTERED_QTY schemes. "
-            "Null for ELAPSED_TIME (qty derived from bleps) and FLAT_FEE."
+            "Null for ELAPSED_TIME (qty derived from bleps)."
         ),
     )
     # est_qty inherited from TaskBase (nullable on Task).
@@ -376,7 +302,6 @@ class Task(TaskBase):
         db_table = 'tasks'
 
     def clean(self):
-        from django.core.exceptions import ValidationError
         if self.pk:
             old_status = Task.objects.get(pk=self.pk).status
             if old_status != self.status:
@@ -394,7 +319,7 @@ class Task(TaskBase):
                 'est_worker_time':
                     'An assigned task must have an estimated worker time.',
             })
-        # charge guard removed in B4. service_item is NOT NULL at DB level (B8).
+        # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -407,23 +332,45 @@ class Task(TaskBase):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom.
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('task', pk)
+        return result
+
     @property
     def effective_accounting_category(self):
-        return self.service_item.accounting_category
+        return self.rate_scheme.accounting_category
 
     def compute_amount(self, active_modifiers=None):
         """Uniform atom interface: total billable amount for this task.
 
         Ignores the active_modifiers argument (uses self.active_modifiers).
         Parameter is accepted to match the BillableAtom interface shared
-        with PlanTask/Material/PlanMaterial.
+        with Material.
         """
-        qty = self.service_item.get_actual_qty(self)
-        charge = self.service_item.compute_charge(qty, self.active_modifiers)
+        qty = self.rate_scheme.get_actual_qty(self)
+        charge = self.rate_scheme.compute_charge(qty, self.active_modifiers)
+        return charge.quantize(Decimal('0.01'))
+
+    def compute_estimate_amount(self, active_modifiers=None):
+        """Estimate-side amount: bills est_qty, not actuals.
+
+        The estimate wizard projects what the job is *expected* to cost, so it
+        uses est_qty via the rate scheme. (compute_amount() resolves qty from
+        actuals — bleps / actual_qty — which is what the *invoice* wizard wants.)
+        Ignores the active_modifiers argument (uses self.active_modifiers) to
+        match the BillableAtom interface.
+        """
+        charge = self.rate_scheme.compute_charge(
+            self.est_qty or Decimal('0'), self.active_modifiers,
+        )
         return charge.quantize(Decimal('0.01'))
 
     def effective_rate(self):
-        return self.service_item.effective_rate(self.active_modifiers)
+        return self.rate_scheme.effective_rate(self.active_modifiers)
 
 
 class Blep(models.Model):
@@ -466,20 +413,18 @@ class Blep(models.Model):
         return f"Blep {self.pk} for Task {self.task.pk}"
 
 
-class ServiceItem(models.Model):
+class RateScheme(models.Model):
     ELAPSED_TIME = 'elapsed_time'
     ENTERED_QTY = 'entered_qty'
-    FLAT_FEE = 'flat_fee'
     PERCENTAGE = 'percentage'
 
     ALGORITHM_CHOICES = [
         (ELAPSED_TIME, 'Based on time worked'),
         (ENTERED_QTY, 'Worker enters quantity'),
-        (FLAT_FEE, 'Fixed charge'),
         (PERCENTAGE, 'Percentage of other lines'),
     ]
 
-    service_item_id = models.AutoField(primary_key=True)
+    rate_scheme_id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, default='')
     algorithm = models.CharField(max_length=20, choices=ALGORITHM_CHOICES)
@@ -504,32 +449,46 @@ class ServiceItem(models.Model):
     )
 
     class Meta:
-        db_table = 'service_items'
+        db_table = 'rate_schemes'
+
+    def _normalize_modifiers(self):
+        """Drop fully-blank modifier rows (no key/label, no percent) — the
+        editor's untouched "add modifier" row is a no-op, not data."""
+        self.modifiers = [
+            m for m in (self.modifiers or [])
+            if (m.get('key') or '').strip() or (m.get('label') or '').strip()
+            or m.get('percent')
+        ]
 
     def clean(self):
         super().clean()
-        if self.accounting_category_id is None:
-            from django.core.exceptions import ValidationError
+        self._normalize_modifiers()
+        if any(not (m.get('key') or '').strip() for m in self.modifiers):
             raise ValidationError({
-                'accounting_category': 'Required: every ServiceItem must have an AccountingCategory.',
+                'modifiers': 'Each modifier needs a name (key); a percent '
+                             'without one can never be activated.',
+            })
+        if self.accounting_category_id is None:
+            raise ValidationError({
+                'accounting_category': 'Required: every RateScheme must have an AccountingCategory.',
             })
         if self.algorithm != self.PERCENTAGE and self.rate is not None and self.rate < 0:
-            from django.core.exceptions import ValidationError
             raise ValidationError({'rate': 'Only percentage services may have a negative rate.'})
         if self.pk and self.is_referenced():
-            old = ServiceItem.objects.get(pk=self.pk)
+            old = RateScheme.objects.get(pk=self.pk)
             changed = [
                 f for f in self.FROZEN_FIELDS
                 if getattr(self, f) != getattr(old, f)
             ]
             if changed:
-                from django.core.exceptions import ValidationError
-                raise ValidationError({
+                    raise ValidationError({
                     f: 'Scheme is referenced; create a new version instead of editing.'
                     for f in changed
                 })
 
     def save(self, *args, **kwargs):
+        # Normalize on create too — full_clean below only covers updates.
+        self._normalize_modifiers()
         # Belt-and-braces: ensure clean() runs even on bare .save() calls.
         if self.pk:
             self.full_clean()
@@ -539,13 +498,10 @@ class ServiceItem(models.Model):
     def effective_rate(self, active_modifiers=None):
         """Compute the per-unit rate.
 
-        Flat-fee price lives on self.rate (one priced service per item).
         For time/qty schemes, apply additive modifier surcharges.
         """
         if self.algorithm == self.PERCENTAGE:
             raise ValueError('percentage services compute at the document layer, not per-unit')
-        if self.algorithm == self.FLAT_FEE:
-            return self.rate
         modifier_percent = sum(
             m['percent'] for m in self.modifiers if m['key'] in (active_modifiers or [])
         )
@@ -575,38 +531,32 @@ class ServiceItem(models.Model):
             return (Decimal(str(total_seconds)) / 3600).quantize(Decimal('0.01'))
         elif self.algorithm == self.ENTERED_QTY:
             return task.actual_qty or Decimal('0')
-        else:  # FLAT_FEE
-            # flat_fee bills a fixed unit price x estimated quantity. est_qty
-            # comes from the worksheet, carried to the Task and editable there;
-            # fall back to 1 for a genuine one-off fee with no quantity.
-            return task.est_qty if task.est_qty is not None else Decimal('1')
+        else:
+            raise ValueError(f'unknown algorithm: {self.algorithm}')
 
     def get_modifier_inputs(self):
         """Return modifiers list for UI rendering."""
         return list(self.modifiers)
 
     def is_referenced(self):
-        """True if any PlanTask, Task, or TaskTemplate points at this scheme."""
-        from apps.estimates.models import TaskTemplate
-        if PlanTask.objects.filter(service_item=self).exists():
+        """True if any Task or ServiceItem points at this scheme."""
+        from apps.estimates.models import ServiceItem
+        if Task.objects.filter(rate_scheme=self).exists():
             return True
-        if Task.objects.filter(service_item=self).exists():
-            return True
-        if TaskTemplate.objects.filter(service_item=self).exists():
+        if ServiceItem.objects.filter(rate_scheme=self).exists():
             return True
         return False
 
     def reference_counts(self):
         """Return reference counts for the outdated-schemes UI."""
-        from apps.estimates.models import TaskTemplate
+        from apps.estimates.models import ServiceItem
         return {
-            'plan_task_count': PlanTask.objects.filter(service_item=self).count(),
-            'task_count': Task.objects.filter(service_item=self).count(),
-            'task_template_count': TaskTemplate.objects.filter(service_item=self).count(),
+            'task_count': Task.objects.filter(rate_scheme=self).count(),
+            'service_item_count': ServiceItem.objects.filter(rate_scheme=self).count(),
         }
 
     def supersede(self, **overrides):
-        """Create a new ServiceItem inheriting this one's fields, set replaced_by/at.
+        """Create a new RateScheme inheriting this one's fields, set replaced_by/at.
 
         The old row is renamed in place to "<orig> (v{N})" where N is the count
         of pre-existing predecessors + 1. The new row takes the original name
@@ -644,11 +594,11 @@ class ServiceItem(models.Model):
             # update() bypasses full_clean(), which is what we want — `name`
             # is in FROZEN_FIELDS, but renaming during supersede is the one
             # exception, alongside replaced_by/replaced_at.
-            ServiceItem.objects.filter(pk=self.pk).update(name=retired_name)
+            RateScheme.objects.filter(pk=self.pk).update(name=retired_name)
             self.name = retired_name  # keep the in-memory instance in sync
-            new = ServiceItem.objects.create(**defaults)
+            new = RateScheme.objects.create(**defaults)
             replaced_at = timezone.now()
-            ServiceItem.objects.filter(pk=self.pk).update(
+            RateScheme.objects.filter(pk=self.pk).update(
                 replaced_by=new, replaced_at=replaced_at,
             )
             self.replaced_by = new
@@ -657,6 +607,46 @@ class ServiceItem(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Fee(models.Model):
+    """A fixed charge owned by the Job — the crystallized form of an accepted
+    hand-line. Frozen quantity × unit_rate; no actual lifecycle. Optionally
+    points at the Task that is the work behind it."""
+    fee_id = models.AutoField(primary_key=True)
+    job = models.ForeignKey('jobs.Job', on_delete=models.CASCADE, related_name='fees')
+    task = models.OneToOneField('jobs.Task', on_delete=models.SET_NULL,
+                                null=True, blank=True, related_name='fee')
+    description = models.CharField(max_length=255, blank=True, default='')
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
+    unit_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    accounting_category = models.ForeignKey('core.AccountingCategory', on_delete=models.PROTECT)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'fees'
+
+    def compute_amount(self, active_modifiers=None):
+        return (self.quantity * self.unit_rate).quantize(Decimal('0.01'))
+
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom.
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('fee', pk)
+        return result
+
+    @property
+    def effective_accounting_category(self):
+        return self.accounting_category
+
+    @property
+    def units(self):
+        return 'none'
+
+    def __str__(self):
+        return f'Fee {self.pk}: {self.description} ({self.quantity}×{self.unit_rate})'
 
 
 class BlepChangeRequest(TimeChangeRequest):

@@ -12,32 +12,51 @@ class EstimateLineItemSourceSerializer(serializers.Serializer):
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
 
+    def _resolve_or_none(self, obj):
+        # A dangling row (atom deleted out from under the claim — pre-purge
+        # data, or a race) must render as null, never 500 the list endpoint.
+        from django.core.exceptions import ObjectDoesNotExist
+        try:
+            return obj.resolve()
+        except ObjectDoesNotExist:
+            return None
+
     def get_description(self, obj):
-        instance = obj.resolve()
-        from apps.jobs.models import PlanTask
-        if isinstance(instance, PlanTask):
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        from apps.jobs.models import Task
+        if isinstance(instance, Task):
             return instance.name
-        return instance.description  # PlanMaterial
+        return instance.description  # Material / Fee
 
     def get_computed_amount(self, obj):
         from decimal import Decimal
-        instance = obj.resolve()
-        return str(instance.compute_amount().quantize(Decimal('0.01')))
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
+        # Estimate line items project the ESTIMATE quote (est_qty), not actuals.
+        # A Task bills actuals via compute_amount() — $0 until it's worked — so the
+        # estimate must use compute_estimate_amount() instead; Material / Fee have
+        # only compute_amount() (no est/actual split) and fall through.
+        amount_fn = getattr(instance, 'compute_estimate_amount', instance.compute_amount)
+        return str(amount_fn().quantize(Decimal('0.01')))
 
 
 class EstimateLineItemSerializer(serializers.ModelSerializer):
     units = UnitsField()
     sources = EstimateLineItemSourceSerializer(many=True, read_only=True)
     adjustment_service_detail = serializers.SerializerMethodField()
+    service_item_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = EstimateLineItem
         fields = [
-            'line_item_id', 'line_number', 'inventory_item',
+            'line_item_id', 'line_number', 'inventory_item', 'service_item', 'is_material',
             'qty', 'units', 'description', 'price',
             'accounting_category', 'taxable_override', 'tax_rate_override',
             'adjustment_service', 'adjustment_target_categories',
-            'adjustment_service_detail',
+            'adjustment_service_detail', 'service_item_detail',
             'sources',
         ]
         read_only_fields = ['line_item_id']
@@ -52,6 +71,12 @@ class EstimateLineItemSerializer(serializers.ModelSerializer):
             'algorithm': svc.algorithm,
         }
 
+    def get_service_item_detail(self, obj):
+        if obj.service_item_id is None:
+            return None
+        si = obj.service_item
+        return {'template_id': si.template_id, 'name': si.template_name}
+
 
 class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     can_manage_job_path = 'job'
@@ -60,7 +85,6 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     )
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
-    worksheet = serializers.SerializerMethodField()
     is_amended = serializers.SerializerMethodField()
 
     class Meta:
@@ -69,7 +93,7 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'estimate_id', 'job', 'job_number', 'job_name',
             'estimate_number', 'version', 'status', 'is_amended',
             'parent', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items', 'worksheet', 'can_manage',
+            'expiration_date', 'line_items', 'can_manage',
         ]
         read_only_fields = [
             'estimate_id', 'estimate_number', 'version',
@@ -77,30 +101,12 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         ]
 
     def get_is_amended(self, obj):
-        """True when this estimate is the accepted base AND at least one
-        ACCEPTED change order amends it. Purely derived — the stored `status`
-        stays `accepted`; the UI renders "amended" off this flag. Only accepted
-        COs count (they're the only ones in the agreement-of-record), and the
-        accepted-status short-circuit keeps non-accepted estimates query-free."""
-        from apps.estimates.models import ChangeOrder
-        if obj.status != Estimate.STATUS_ACCEPTED:
-            return False
-        return ChangeOrder.objects.filter(
-            estimate=obj, status=ChangeOrder.STATUS_ACCEPTED,
-        ).exists()
+        # Derived "amended" flag — see Estimate.is_amended() for the rule (the
+        # single source of truth shared with the board pipeline payload).
+        return obj.is_amended()
 
     def get_job_number(self, obj):
         return obj.job.job_number if obj.job_id else None
 
     def get_job_name(self, obj):
         return obj.job.name if obj.job_id else ''
-
-    def get_worksheet(self, obj):
-        # Worksheet and estimate relate only through the job (one per job).
-        from apps.estimates.models import EstWorksheet
-        ws = (
-            EstWorksheet.objects.filter(job_id=obj.job_id)
-            .order_by('-est_worksheet_id')
-            .first()
-        )
-        return ws.pk if ws else None

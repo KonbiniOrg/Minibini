@@ -90,10 +90,7 @@ class QBORetrySyncMixin:
     @action(detail=True, methods=['post'], url_path='retry-sync', url_name='retry-sync')
     def retry_sync(self, request, pk=None):
         obj = self.get_object()
-        try:
-            result = self.retry_service_call(obj, request)
-        except ValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
+        result = self.retry_service_call(obj, request)
         if result is None:
             return Response({'message': self.retry_deleted_message})
         obj.refresh_from_db()
@@ -151,12 +148,6 @@ class StatusTransitionMixin:
                         {'detail': str(e)},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                except ValidationError as e:
-                    detail = e.message_dict if hasattr(e, 'message_dict') else e.messages
-                    return Response(
-                        {'detail': detail},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
 
                 instance = self.get_object()
 
@@ -177,7 +168,6 @@ class StatusTransitionMixin:
                             entry_type='audit',
                             object_type=obj_type,
                             object_id=instance.pk,
-                            user=request.user if hasattr(request, 'user') and request.user.is_authenticated else None,
                             text=reason,
                         )
 
@@ -287,9 +277,18 @@ class LineItemMixin:
 
     def _get_line_items_qs(self, parent):
         model = self.line_item_serializer_class.Meta.model
-        return model.objects.filter(
+        qs = model.objects.filter(
             **{self.line_item_parent_field: parent}
         ).order_by('line_number')
+        # Estimate/invoice lines serialize adjustment_service details and
+        # target categories per row — fetch them up front (no-ops for the
+        # line-item models without adjustment fields).
+        field_names = {f.name for f in model._meta.get_fields()}
+        if 'adjustment_service' in field_names:
+            qs = qs.select_related('adjustment_service')
+        if 'adjustment_target_categories' in field_names:
+            qs = qs.prefetch_related('adjustment_target_categories')
+        return qs
 
     def _get_line_item_or_404(self, parent, item_id):
         model = self.line_item_serializer_class.Meta.model
@@ -301,61 +300,6 @@ class LineItemMixin:
         except model.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
-
-
-class PlanTaskMixin:
-    """
-    Adds plan-task CRUD actions to the EstWorksheet viewset.
-
-    Works against PlanTask (worksheet-side model).
-
-    Subclasses declare:
-        plan_task_serializer_class = SomePlanTaskSerializer
-    """
-    plan_task_serializer_class = None
-
-    @action(detail=True, methods=['get', 'post'], url_path='tasks', url_name='tasks')
-    def tasks(self, request, pk=None):
-        worksheet = self.get_object()
-        if request.method == 'GET':
-            from apps.jobs.models import PlanTask
-            tasks = PlanTask.objects.filter(
-                est_worksheet=worksheet,
-            ).select_related('service_item').order_by('sort_order')
-            serializer = self.plan_task_serializer_class(tasks, many=True)
-            return Response(serializer.data)
-
-        serializer = self.plan_task_serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(est_worksheet=worksheet)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['patch', 'delete'],
-            url_path='tasks/(?P<task_id>[0-9]+)', url_name='task-detail')
-    def task_detail(self, request, pk=None, task_id=None):
-        worksheet = self.get_object()
-        task = self._get_plan_task_or_404(worksheet, task_id)
-
-        if request.method == 'DELETE':
-            task.delete()
-            return Response({'message': 'Task deleted.'})
-
-        serializer = self.plan_task_serializer_class(task, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-    def _get_plan_task_or_404(self, worksheet, task_id):
-        from apps.jobs.models import PlanTask
-        try:
-            return PlanTask.objects.get(pk=task_id, est_worksheet=worksheet)
-        except PlanTask.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
-
-
-# Backwards-compat alias — remove after all callers updated
-PlanTaskBundleMixin = PlanTaskMixin
 
 
 class JobTaskMixin:
@@ -377,13 +321,13 @@ class JobTaskMixin:
             return Response(serializer.data)
 
         from apps.jobs.services import TaskService
-        from apps.jobs.models import ServiceItem
+        from apps.jobs.models import RateScheme
         data = request.data
         try:
             task = TaskService.create_direct(
                 job,
                 name=data.get('name', ''),
-                service_item_id=data.get('service_item'),
+                rate_scheme_id=data.get('rate_scheme'),
                 active_modifiers=data.get('active_modifiers') or [],
                 est_qty=data.get('est_qty'),
                 est_worker_time=data.get('est_worker_time'),
@@ -392,16 +336,11 @@ class JobTaskMixin:
                 parent_task_id=data.get('parent_task'),
                 assignee_id=data.get('assignee'),
             )
-        except ServiceItem.DoesNotExist:
+        except RateScheme.DoesNotExist:
             return Response(
-                {'detail': {'service_item': 'ServiceItem not found.'}},
+                {'rate_scheme': ['RateScheme not found.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.task_serializer_class(task)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -417,13 +356,7 @@ class JobTaskMixin:
 
         if request.method == 'DELETE':
             from apps.jobs.services import TaskService as _TaskService
-            try:
-                _TaskService.delete_task(task.pk)
-            except ValidationError as e:
-                return Response(
-                    {'detail': e.message if hasattr(e, 'message') else str(e)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            _TaskService.delete_task(task.pk)
             return Response({'message': 'Task deleted.'})
 
         # Validate request data via the serializer, then delegate the actual
@@ -431,13 +364,7 @@ class JobTaskMixin:
         serializer = self.task_serializer_class(task, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         from apps.jobs.services import TaskService
-        try:
-            task = TaskService.update_task(task.pk, **serializer.validated_data)
-        except ValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+        task = TaskService.update_task(task.pk, **serializer.validated_data)
         serializer = self.task_serializer_class(task)
         return Response(serializer.data)
 
@@ -455,7 +382,7 @@ class JobScopedPermissionMixin:
 
     Configure per viewset:
       - job_object_path: attribute chain instance -> Job ('self' for JobViewSet,
-        'job', 'est_worksheet.job', 'estimate.job', 'change_order.job', ...).
+        'job', 'estimate.job', 'change_order.job', ...).
       - job_create_field: request.data key naming the parent Job on create.
       - job_url_kwarg: URL kwarg holding the job id (job-nested routes).
     """

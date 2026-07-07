@@ -303,8 +303,7 @@ class ShipmentService:
 
     @staticmethod
     def _assert_job_not_on_hold(job):
-        from apps.jobs.models import Job
-        if job.status == Job.STATUS_ON_HOLD:
+        if job.on_hold:
             raise ValidationError('Cannot create a shipment while the job is on hold.')
 
     @staticmethod

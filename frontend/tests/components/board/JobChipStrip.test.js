@@ -53,3 +53,29 @@ describe('JobChipStrip PM initials', () => {
     expect(container.querySelector('.chip-pm')).toBeNull();
   });
 });
+
+describe('JobChipStrip pre-approval and on-hold treatments', () => {
+  it('marks a pre-approval chip and shows the quote badge', () => {
+    const jobs = [{ job_id: 9, job_number: 'JOB-9', name: 'Quote Work', accent_color: '#abc', pre_approval: true }];
+    const { getByText } = render(JobChipStrip, { props: { jobs } });
+    const chip = chipOf(getByText('Quote Work'));
+    expect(chip).toHaveClass('pre-approval');
+    expect(getByText('quote')).toBeInTheDocument();
+  });
+
+  it('marks a held chip with the on-hold class and hold reason hover', () => {
+    const jobs = [{ job_id: 8, job_number: 'JOB-8', name: 'Paused Work', accent_color: '#abc', on_hold: true, hold_reason: 'waiting on CO' }];
+    const { getByText } = render(JobChipStrip, { props: { jobs } });
+    const chip = chipOf(getByText('Paused Work'));
+    expect(chip).toHaveClass('on-hold');
+    expect(chip.title).toContain('waiting on CO');
+  });
+
+  it('renders plain chips without badges or treatment classes', () => {
+    const { getByText, queryByText } = render(JobChipStrip, { props: { jobs: JOBS } });
+    const chip = chipOf(getByText('Alpha'));
+    expect(chip).not.toHaveClass('pre-approval');
+    expect(chip).not.toHaveClass('on-hold');
+    expect(queryByText('quote')).toBeNull();
+  });
+});

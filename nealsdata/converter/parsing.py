@@ -252,7 +252,7 @@ def parse_checklist(cell):
 
 
 def checklist_scheme_name(task_name):
-    """ServiceItem name for a task, chosen by keyword in its name.
+    """RateScheme name for a task, chosen by keyword in its name.
 
     Starts with 'cut' -> 'CNC routing'; contains 'laser' -> 'Laser';
     contains 'draw'/'cad'/'model' -> 'CAD'; otherwise -> 'Shop labor'.
@@ -268,14 +268,20 @@ def checklist_scheme_name(task_name):
 
 
 def infer_algorithm(item_type, units):
-    """ServiceItem.algorithm for a Task-classified line item."""
+    """Billing shape for a Task-classified line item.
+
+    Returns a RateScheme.algorithm ('elapsed_time' / 'entered_qty') for lines
+    that bill as work, or the 'fee' sentinel for a fixed charge — a line with
+    no time/quantity signal. A 'fee' line becomes a jobs.Fee atom (not a
+    Task + RateScheme); the caller routes on this value.
+    """
     it = (item_type or '').strip().lower()
     u = (units or '').strip().lower()
     if it in ('hours', 'days') or u in ('hour', 'hours', 'day', 'days'):
         return 'elapsed_time'
     if u in COUNT_UNITS:
         return 'entered_qty'
-    return 'flat_fee'
+    return 'fee'
 
 
 # --- Synthetic-value helpers (worker times, actuals, blep lengths) -----------

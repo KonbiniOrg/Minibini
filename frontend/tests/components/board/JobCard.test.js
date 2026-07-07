@@ -32,3 +32,38 @@ describe('JobCard project manager line', () => {
     expect(container.querySelector('.pm-line')).toBeNull();
   });
 });
+
+describe('JobCard on-hold treatment', () => {
+  it('shows an ON HOLD banner with the reason as hover text', () => {
+    const { getByText } = render(JobCard, {
+      props: {
+        job: { ...baseJob, sub_status: 'on-hold', on_hold: true, hold_reason: 'waiting on CO' },
+        showProgress: true,
+      },
+    });
+    const banner = getByText('ON HOLD');
+    expect(banner).toBeInTheDocument();
+    expect(banner.title).toContain('waiting on CO');
+  });
+
+  it('renders no hold banner on an unheld card', () => {
+    const { queryByText } = render(JobCard, {
+      props: { job: { ...baseJob, task_total: 1, task_completed: 0 }, showProgress: true },
+    });
+    expect(queryByText('ON HOLD')).toBeNull();
+  });
+});
+
+describe('JobCard pre-approval treatment', () => {
+  it('marks a pre-approval card with the dashed treatment class', () => {
+    const { container } = render(JobCard, {
+      props: { job: { ...baseJob, pre_approval: true }, showProgress: true },
+    });
+    expect(container.querySelector('.job-card')).toHaveClass('pre-approval');
+  });
+
+  it('leaves normal cards untreated', () => {
+    const { container } = render(JobCard, { props: { job: baseJob } });
+    expect(container.querySelector('.job-card')).not.toHaveClass('pre-approval');
+  });
+});

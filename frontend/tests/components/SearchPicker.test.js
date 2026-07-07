@@ -24,6 +24,66 @@ describe('SearchPicker', () => {
     expect(onPick).toHaveBeenCalledWith({ id: 1, name: 'Acme' });
   });
 
+  it('arrow keys walk the results and Enter picks the highlighted row', async () => {
+    const rows = [{ id: 1, name: 'Acme' }, { id: 2, name: 'Bolt Co' }, { id: 3, name: 'Crate' }];
+    const onPick = vi.fn();
+    const { getByPlaceholderText, findByRole, container } = render(SearchPicker, {
+      props: {
+        search: vi.fn().mockResolvedValue(rows),
+        resolveLabel: vi.fn().mockResolvedValue(null),
+        rowLabel: (r) => r.name, onPick, placeholder: 'Search…',
+      },
+    });
+    const input = getByPlaceholderText('Search…');
+    await fireEvent.input(input, { target: { value: 'c' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await findByRole('button', { name: 'Acme' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(container.querySelector('.sp-highlighted').textContent).toContain('Bolt Co');
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(container.querySelector('.sp-highlighted').textContent).toContain('Acme');
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onPick).toHaveBeenCalledWith(rows[0]);
+  });
+
+  it('Enter without a highlight does not pick (form keeps its meaning)', async () => {
+    const onPick = vi.fn();
+    const { getByPlaceholderText, findByRole } = render(SearchPicker, {
+      props: {
+        search: vi.fn().mockResolvedValue([{ id: 1, name: 'Acme' }]),
+        resolveLabel: vi.fn().mockResolvedValue(null),
+        rowLabel: (r) => r.name, onPick, placeholder: 'Search…',
+      },
+    });
+    const input = getByPlaceholderText('Search…');
+    await fireEvent.input(input, { target: { value: 'a' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await findByRole('button', { name: 'Acme' });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('first Escape closes only the dropdown and does not reach the window', async () => {
+    const windowEsc = vi.fn();
+    window.addEventListener('keydown', windowEsc);
+    const { getByPlaceholderText, findByRole, queryByRole } = render(SearchPicker, {
+      props: {
+        search: vi.fn().mockResolvedValue([{ id: 1, name: 'Acme' }]),
+        resolveLabel: vi.fn().mockResolvedValue(null),
+        rowLabel: (r) => r.name, placeholder: 'Search…',
+      },
+    });
+    const input = getByPlaceholderText('Search…');
+    await fireEvent.input(input, { target: { value: 'a' } });
+    await new Promise((r) => setTimeout(r, 300));
+    await findByRole('button', { name: 'Acme' });
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(queryByRole('button', { name: 'Acme' })).toBeNull();  // dropdown closed
+    expect(windowEsc).not.toHaveBeenCalled();                    // modal untouched
+    window.removeEventListener('keydown', windowEsc);
+  });
+
   it('does not search a blank query', async () => {
     const search = vi.fn();
     const { getByPlaceholderText } = render(SearchPicker, {

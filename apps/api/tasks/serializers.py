@@ -10,7 +10,12 @@ from apps.core.units import UnitsField
 class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
-    inventory_item_is_catalog = serializers.SerializerMethodField()
+    po_line_item_id = serializers.SerializerMethodField()
+    po_id = serializers.SerializerMethodField()
+    po_number = serializers.SerializerMethodField()
+    po_status = serializers.SerializerMethodField()
+    qty_on_hand = serializers.SerializerMethodField()
+    qty_on_order = serializers.SerializerMethodField()
     qty_available = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
@@ -20,15 +25,39 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'inventory_item',
             'accounting_category',
-            'consumption_state', 'restocked_qty',
-            'is_expense_bound', 'inventory_item_is_catalog',
-            'qty_available',
+            'consumption_state', 'released_qty', 'cost_source',
+            'is_expense_bound',
+            'po_line_item_id', 'po_id', 'po_number', 'po_status',
+            'qty_on_hand', 'qty_on_order', 'qty_available',
             'invoice',
         ]
         read_only_fields = fields
 
-    def get_inventory_item_is_catalog(self, obj):
-        return bool(obj.inventory_item and obj.inventory_item.is_catalog)
+    def get_po_line_item_id(self, obj):
+        return obj.po_line_item_id
+
+    def get_po_id(self, obj):
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order_id if pol else None
+
+    def get_po_number(self, obj):
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order.po_number if pol else None
+
+    def get_po_status(self, obj):
+        from apps.inventory.serializer_helpers import material_po_line_item
+        pol = material_po_line_item(obj)
+        return pol.purchase_order.status if pol else None
+
+    def get_qty_on_hand(self, obj):
+        from apps.inventory.serializer_helpers import material_qty_on_hand
+        return material_qty_on_hand(obj)
+
+    def get_qty_on_order(self, obj):
+        from apps.inventory.serializer_helpers import material_qty_on_order
+        return material_qty_on_order(obj)
 
     def get_qty_available(self, obj):
         if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
@@ -51,13 +80,16 @@ class MaterialWriteSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    customer_supplied = serializers.BooleanField(
+        write_only=True, required=False, default=False,
+    )
 
     class Meta:
         model = Material
         fields = [
             'material_id', 'description', 'quantity',
             'units', 'unit_cost', 'sell_price', 'inventory_item',
-            'accounting_category', 'propagate_to_pli',
+            'accounting_category', 'propagate_to_pli', 'customer_supplied',
         ]
         read_only_fields = ['material_id']
 
@@ -85,15 +117,16 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
     actual_hours = serializers.SerializerMethodField()
-    scheme_name = serializers.CharField(source='service_item.name', read_only=True, default=None)
-    scheme_algorithm = serializers.CharField(source='service_item.algorithm', read_only=True, default=None)
-    scheme_unit_label = serializers.CharField(source='service_item.unit_label', read_only=True, default=None)
+    scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
+    scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
+    scheme_unit_label = serializers.CharField(source='rate_scheme.unit_label', read_only=True, default=None)
     effective_rate = serializers.SerializerMethodField()
     computed_charge = serializers.SerializerMethodField()
     has_active_blep = serializers.SerializerMethodField()
     active_worker_count = serializers.SerializerMethodField()
     has_bleps = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
+    claimed = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -101,7 +134,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
             'parent_task', 'assignee', 'assignee_name', 'worker_queue',
-            'service_item', 'active_modifiers',
+            'rate_scheme', 'active_modifiers',
             'est_qty', 'est_worker_time', 'actual_qty',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',
             'effective_rate', 'computed_charge',
@@ -109,12 +142,13 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'has_active_blep', 'active_worker_count', 'has_bleps',
             'can_manage',
             'invoice',
+            'claimed',
         ]
         read_only_fields = ['task_id', 'sort_order', 'status']
 
-    def validate_service_item(self, value):
-        from apps.jobs.models import ServiceItem
-        if value and value.algorithm == ServiceItem.PERCENTAGE:
+    def validate_rate_scheme(self, value):
+        from apps.jobs.models import RateScheme
+        if value and value.algorithm == RateScheme.PERCENTAGE:
             raise serializers.ValidationError(
                 'Percentage services are document adjustments and cannot bill a task.'
             )
@@ -153,6 +187,11 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
 
     def get_has_bleps(self, obj):
         return len(obj.blep_set.all()) > 0
+
+    def get_claimed(self, obj):
+        """True iff a non-superseded estimate on this job has claimed this task."""
+        claims = self.context.get('estimate_claims') or frozenset()
+        return ('task', obj.pk) in claims
 
 
 class TaskDetailSerializer(TaskSerializer):

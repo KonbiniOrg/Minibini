@@ -2,12 +2,14 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.core.exceptions import ValidationError as DjangoValidationError
-from apps.inventory.models import InventoryItem, Material
+from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
 from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
-from .serializers import InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer, MaterialAssignTaskSerializer
+from .serializers import (
+    InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer,
+    MaterialAssignTaskSerializer, StockOrderSerializer, EarmarkSerializer,
+)
 
 
 class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
@@ -18,11 +20,11 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        # Only the LIST (and pickers, which list) is scoped by is_active /
-        # hide-on-spend. Detail, update, delete, and detail-actions must reach
-        # ANY item by pk — get_object() runs through get_queryset(), so scoping
-        # it here would 404 a finished/hidden lot or a deactivated item and make
-        # it impossible to retrieve or edit (e.g. to re-promote it to catalog).
+        # Only the LIST (and pickers, which list) is scoped by is_active.
+        # Detail, update, delete, and detail-actions must reach ANY item by
+        # pk — get_object() runs through get_queryset(), so scoping it here
+        # would 404 a deactivated item and make it impossible to retrieve or
+        # edit (e.g. to re-activate it).
         if self.action != 'list':
             return qs
         # Optional filter: ?is_active=true|false (omit to include all).
@@ -33,22 +35,14 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if is_active_param is not None:
             value = is_active_param.lower() in ('true', '1', 'yes')
             qs = qs.filter(is_active=value)
-        # Hide-on-spend: a finished transient lot (not catalog, QOH 0, no
-        # earmarks) is filtered from the active list and allocation pickers.
-        # Catalog management opts back in with ?include_finished=true to reach
-        # finished lots for merge/write-off.
-        include_finished = self.request.query_params.get(
-            'include_finished', '').lower() in ('true', '1', 'yes')
-        if not include_finished:
-            from decimal import Decimal
-            from django.db.models import Count
-            qs = qs.annotate(_em_count=Count('earmark')).exclude(
-                is_catalog=False, qty_on_hand=Decimal('0.00'), _em_count=0,
-            )
         search = self.request.query_params.get('search', '').strip()
         if search:
             from django.db.models import Q
             qs = qs.filter(Q(code__icontains=search) | Q(description__icontains=search))
+        # Order: alphabetical by code (the base queryset's order_by). The main
+        # /#/inventory list is browsed, not searched, so alphabetical wins;
+        # typeahead pickers are already narrowed by ?search and need no rank.
+        # (An in-stock-first ranking was tried 2026-07-05 and reverted.)
         return qs
 
     def get_permissions(self):
@@ -56,7 +50,21 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         # the admin role (config) — either atom grants full CRUD + write-off/merge.
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
+        if self.action == 'order':
+            # Stock ordering is a purchasing act: financials only (matches
+            # the material order action), NOT the config atom.
+            return [IsAuthenticated(), CanManageFinancials()]
         return [IsAuthenticated(), CanManageFinancialsOrConfig()]
+
+    def destroy(self, request, *args, **kwargs):
+        """Hard delete is mistake correction: never-referenced rows only.
+
+        Referenced items retire by deactivation (is_active) — inventory rows
+        are shop history.
+        """
+        item = self.get_object()
+        InventoryService.assert_item_deletable(item)
+        return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         item = InventoryService.create_item(**serializer.validated_data)
@@ -69,19 +77,13 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def write_off(self, request, pk=None):
         """Write off the item's remaining on-hand stock as wasted."""
         item = self.get_object()
-        try:
-            InventoryService.write_off(
-                item, qty=request.data.get('qty'), user=request.user,
-                reason=request.data.get('reason', '') or 'Write-off',
-            )
-        except DjangoValidationError as e:
-            msg = e.message if hasattr(e, 'message') else str(e)
-            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            item.refresh_from_db()
-        except InventoryItem.DoesNotExist:
-            # A reference-free lot is collected (deleted) on write-off.
-            return Response({'message': 'Item written off and removed.', 'deleted': True})
+        InventoryService.write_off(
+            item, qty=request.data.get('qty'),
+            reason=request.data.get('reason', '') or 'Write-off',
+        )
+        # The row always survives a write-off now — inventory rows are kept as
+        # history, never auto-collected.
+        item.refresh_from_db()
         return Response(self.get_serializer(item).data)
 
     @action(detail=False, methods=['post'], url_path='merge')
@@ -92,21 +94,36 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         keep_id = request.data.get('keep_id')
         discard_id = request.data.get('discard_id')
         if not keep_id or not discard_id:
-            return Response({'error': 'keep_id and discard_id are required.'},
+            return Response({'detail': 'keep_id and discard_id are required.'},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             keep = InventoryService.merge(
-                keep_id, discard_id, user=request.user,
+                keep_id, discard_id,
                 overrides=request.data.get('overrides') or {},
             )
         except InventoryItem.DoesNotExist:
-            return Response({'error': 'Item not found.'},
+            return Response({'detail': 'Item not found.'},
                             status=status.HTTP_404_NOT_FOUND)
-        except DjangoValidationError as e:
-            msg = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e))
-            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(keep).data)
+
+    @action(detail=True, methods=['post'])
+    def order(self, request, pk=None):
+        """Order this item to stock — plain PO line, no material link.
+        Optional body po_id appends to that draft (same contract as the
+        material order action)."""
+        from django.shortcuts import get_object_or_404
+        from apps.purchasing.models import PurchaseOrder
+        s = StockOrderSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        item = self.get_object()
+        po = None
+        if s.validated_data.get('po_id'):
+            po = get_object_or_404(PurchaseOrder, pk=s.validated_data['po_id'])
+        po, _li = InventoryService.order_stock(
+            item, s.validated_data['quantity'], po=po)
+        data = self.get_serializer(item).data
+        data['po_id'], data['po_number'] = po.pk, po.po_number
+        return Response(data)
 
 
 class MaterialViewSet(viewsets.ModelViewSet):
@@ -117,63 +134,27 @@ class MaterialViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         # Creation goes through /api/jobs/{id}/materials/; deny top-level create.
-        return Response({'error': 'Create via /api/jobs/{id}/materials/'},
+        return Response({'detail': 'Create via /api/jobs/{id}/materials/'},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def destroy(self, request, *args, **kwargs):
-        return Response({'error': 'Delete via Restock (manual-add) or expense rejection.'},
+        return Response({'detail': 'Delete via Restock (manual-add) or expense rejection.'},
                         status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        propagate = serializer.validated_data.get('propagate_to_pli', False)
-        if instance.inventory_item_id is not None and (
-            'unit_cost' in serializer.validated_data
-            or 'sell_price' in serializer.validated_data
-        ):
-            # Pricing-only path on a PLI-linked instance: route through the service
-            # for the optional PLI propagation.  update_pricing raises ValidationError
-            # on on_hold — catch it here so the caller gets 400, not 500.
-            try:
-                MaterialService.update_pricing(
-                    instance,
-                    unit_cost=serializer.validated_data.get('unit_cost'),
-                    sell_price=serializer.validated_data.get('sell_price'),
-                    propagate_to_pli=propagate,
-                )
-            except DjangoValidationError as e:
-                detail = e.message_dict if hasattr(e, 'message_dict') else (
-                    e.message if hasattr(e, 'message') else str(e)
-                )
-                return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-            instance.refresh_from_db()
-            return Response(MaterialSerializer(instance).data)
-        # Freeform path or non-pricing fields: assert not on_hold before saving,
-        # then fall through to the default serializer save.
-        from apps.jobs.services import _assert_job_not_on_hold
-        try:
-            _assert_job_not_on_hold(instance.job, 'edit this material')
-            if 'sell_price' in serializer.validated_data and (
-                serializer.validated_data['sell_price'] != instance.sell_price
-            ):
-                MaterialService._assert_not_invoiced(instance)
-        except DjangoValidationError as e:
-            detail = e.message_dict if hasattr(e, 'message_dict') else (
-                e.message if hasattr(e, 'message') else str(e)
-            )
-            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
-        serializer.save()
+        fields = dict(serializer.validated_data)
+        propagate = fields.pop('propagate_to_pli', False)
+        instance = MaterialService.update_fields(
+            instance, propagate_to_pli=propagate, **fields)
         return Response(MaterialSerializer(instance).data)
 
     @action(detail=True, methods=['post'])
     def consume(self, request, pk=None):
         m = self.get_object()
-        try:
-            MaterialService.consume(m)
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.consume(m)
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
 
@@ -182,10 +163,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         s = MaterialOpSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         m = self.get_object()
-        try:
-            MaterialService.restock(m, s.validated_data['quantity'])
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.restock(m, s.validated_data['quantity'])
         try:
             m.refresh_from_db()
             return Response(MaterialSerializer(m).data)
@@ -197,10 +175,20 @@ class MaterialViewSet(viewsets.ModelViewSet):
         s = MaterialOpSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         m = self.get_object()
-        try:
-            MaterialService.draw_more(m, s.validated_data['quantity'])
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.draw_more(m, s.validated_data['quantity'])
+        m.refresh_from_db()
+        return Response(MaterialSerializer(m).data)
+
+    @action(detail=True, methods=['post'], url_path='mark-on-hand')
+    def mark_on_hand(self, request, pk=None):
+        """Deliberate no-document receipt (Path 3) / customer-delivery
+        receipt (Path 4) — shop-floor arrival marking, no extra permission
+        beyond the viewset default."""
+        s = MaterialOpSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        m = self.get_object()
+        MaterialService.mark_on_hand(
+            m, s.validated_data['quantity'], user=request.user)
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
 
@@ -209,9 +197,36 @@ class MaterialViewSet(viewsets.ModelViewSet):
         s = MaterialAssignTaskSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         m = self.get_object()
-        try:
-            MaterialService.assign_task(m, s.validated_data['task'])
-        except DjangoValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        MaterialService.assign_task(m, s.validated_data['task'])
         m.refresh_from_db()
         return Response(MaterialSerializer(m).data)
+
+    @action(detail=True, methods=['post'],
+            permission_classes=[IsAuthenticated, CanManageFinancials])
+    def order(self, request, pk=None):
+        """Start (or append to) a draft PO with a line linked to this material
+        (spec Path 1). Optional body {"po_id": <int>} appends to that draft."""
+        from django.shortcuts import get_object_or_404
+        from apps.purchasing.models import PurchaseOrder
+        m = self.get_object()
+        po = None
+        po_id = request.data.get('po_id')
+        if po_id:
+            po = get_object_or_404(PurchaseOrder, pk=po_id)
+        po, _li = MaterialService.order(m, po=po)
+        m.refresh_from_db()
+        data = MaterialSerializer(m).data
+        data['po_id'], data['po_number'] = po.pk, po.po_number
+        return Response(data)
+
+
+class EarmarkViewSet(viewsets.ReadOnlyModelViewSet):
+    """Earmarks are system-managed (created at establish/order, shrunk by
+    restock, deleted by consume/release) — read-only over the API.
+    Unpaginated: the whole table is small and the SPA sorts client-side."""
+    queryset = (Earmark.objects
+                .select_related('inventory_item', 'job')
+                .order_by('inventory_item__code', 'job__job_number'))
+    serializer_class = EarmarkSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None

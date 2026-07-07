@@ -22,7 +22,7 @@ class UnconsumeTest(TestCase):
         )
         self.job = Job.objects.create(job_number='JOB-U-1', contact=self.contact)
         self.pli = InventoryItem.objects.create(
-            code='I', accounting_category=self.cat, is_catalog=True,
+            code='I', accounting_category=self.cat,
             qty_on_hand=Decimal('10'),
         )
 
@@ -40,6 +40,12 @@ class UnconsumeTest(TestCase):
         self.assertEqual(self.pli.qty_sold, Decimal('0'))
 
     def test_unconsume_restores_earmark(self):
+        # Earmark restoration applies to committed (approved+) jobs — that's where
+        # consume removed a real earmark. On an approved job create_on_job earmarks
+        # at creation, consume removes it, and unconsume must put it back.
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('4'), inventory_item=self.pli,
@@ -52,6 +58,22 @@ class UnconsumeTest(TestCase):
         e = Earmark.objects.get(inventory_item=self.pli, job=self.job)
         self.assertEqual(e.quantity, Decimal('4'))
 
+    def test_unconsume_preapproval_does_not_create_earmark(self):
+        # self.job is DRAFT: consume made no earmark (pre-approval), so unconsume
+        # must not create one either — QOH is still restored. Mirrors consume's
+        # earmark no-op so draft jobs never carry earmarks (the D3 invariant).
+        m = MaterialService.create_on_job(
+            job=self.job, task=None, description='x',
+            quantity=Decimal('4'), inventory_item=self.pli,
+        )
+        MaterialService.consume(m)
+        MaterialService.unconsume(m)
+        self.pli.refresh_from_db()
+        self.assertFalse(
+            Earmark.objects.filter(inventory_item=self.pli, job=self.job).exists()
+        )
+        self.assertEqual(self.pli.qty_on_hand, Decimal('10'))
+
     def test_unconsume_requires_consumed_state(self):
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
@@ -62,14 +84,17 @@ class UnconsumeTest(TestCase):
             MaterialService.unconsume(m)
 
     def test_unconsume_no_item_just_flips_state(self):
-        """A material with no inventory item flips state with no QOH effects
-        (the only no-op path under universal tracking)."""
+        """A consumed material with no inventory item flips back to pending with
+        no QOH effects (unconsume's defensive no-item branch). consume() now
+        refuses provisional materials, so this consumed-no-item state can only
+        come from legacy data — construct it directly to exercise the branch."""
         m = MaterialService.create_on_job(
             job=self.job, task=None, description='x',
             quantity=Decimal('2'), inventory_item=None,
             accounting_category=self.cat,
         )
-        MaterialService.consume(m)
+        m.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        m.save(update_fields=['consumption_state'])
         MaterialService.unconsume(m)
         m.refresh_from_db()
         self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)

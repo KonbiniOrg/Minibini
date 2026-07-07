@@ -83,7 +83,7 @@
     {#if job.sub_status === 'needs-invoice'}
       <div class="needs-invoice">
         <span class="pill needs-inv">Needs Invoice</span>
-        <span class="needs-inv-text">Work order complete — no invoice created yet</span>
+        <span class="needs-inv-text">Work complete — no invoice created yet</span>
       </div>
     {:else}
       <table class="line-table">

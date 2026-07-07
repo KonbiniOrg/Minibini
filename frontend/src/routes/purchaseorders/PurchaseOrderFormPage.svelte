@@ -1,5 +1,7 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
   import PurchaseOrderForm from '../../components/purchaseorders/PurchaseOrderForm.svelte';
   import { push, querystring } from 'svelte-spa-router';
 
@@ -9,11 +11,10 @@
   let po = $state(null);
   let businesses = $state([]);
   let loading = $state(true);
-  let errors = $state(null);
+  let formError = $state('');
+  let fieldErrs = $state({});
 
-  // Context from query params (?job=…&material=… , or ?inventory_item=… from the
-  // inventory "order" button). The inventory id is just forwarded through to the
-  // detail page's prefill — no fetch needed here.
+  // Context from query params (?job=…&material=…).
   const initialParams = new URLSearchParams($querystring);
   const contextJobId = initialParams.get('job');
   const contextMaterialId = initialParams.get('material');
@@ -48,14 +49,16 @@
         }
       }
     } catch (e) {
-      errors = e.message;
+      // Load failure has no form to land on — the global overlay is the venue.
+      showError(errorMessage(e, 'Could not load.'));
     } finally {
       loading = false;
     }
   }
 
   async function handleSubmit(data) {
-    errors = null;
+    formError = '';
+    fieldErrs = {};
     try {
       if (isEdit) {
         await api.patch(`/api/purchase-orders/${params.id}/`, data);
@@ -70,14 +73,17 @@
         if (contextJob?.job_id) {
           qs.push(`default_job=${contextJob.job_id}`);
         }
-        if (contextInventoryItemId) {
-          qs.push(`prefill_inventory_item=${contextInventoryItemId}`);
-        }
         const suffix = qs.length ? `?${qs.join('&')}` : '';
         push(`/purchase-orders/${created.po_id}${suffix}`);
       }
     } catch (e) {
-      errors = e.data ? JSON.stringify(e.data) : e.message;
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        formError = t.message;
+        fieldErrs = t.fields;
+      }
     }
   }
 
@@ -103,7 +109,8 @@
   <PurchaseOrderForm
     {po}
     {businesses}
-    {errors}
+    errors={fieldErrs}
+    {formError}
     {contextJob}
     defaultBusinessId={contextBusinessId}
     defaultContactId={contextContactId}

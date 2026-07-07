@@ -37,6 +37,14 @@ class ExpenseSerializer(InvoiceRefMixin, serializers.ModelSerializer):
         source='reimbursement.paid_on', read_only=True, default=None,
     )
     new_material = NewMaterialSerializer(required=False, write_only=True)
+    # Attach mode: link the expense to an existing PENDING material — supplying
+    # its cost and receiving `attach_qty` (default: the material's quantity) into
+    # its lot. Mutually exclusive with `new_material`.
+    material_id = serializers.IntegerField(required=False, write_only=True)
+    attach_qty = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True,
+        write_only=True,
+    )
     job = serializers.PrimaryKeyRelatedField(
         queryset=Job.objects.all(), required=False, allow_null=True,
     )
@@ -53,7 +61,7 @@ class ExpenseSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'status', 'qbo_sync_status', 'qbo_id', 'qbo_sync_error',
             'reimbursement', 'reimbursement_paid_on',
             'created_at', 'updated_at',
-            'new_material',
+            'new_material', 'material_id', 'attach_qty',
             'invoice',
         ]
         read_only_fields = [

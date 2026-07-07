@@ -1,8 +1,14 @@
 <script>
   import { api } from '../../lib/api.js';
+  import EnvelopeEditor from '../schedule/EnvelopeEditor.svelte';
 
-  let workday_start = $state('08:00');
-  let workday_end = $state('17:00');
+  const DEFAULT_ENVELOPE = () => ({
+    mon: [['08:00', '17:00']], tue: [['08:00', '17:00']],
+    wed: [['08:00', '17:00']], thu: [['08:00', '17:00']],
+    fri: [['08:00', '17:00']], sat: [], sun: [],
+  });
+
+  let envelope = $state(DEFAULT_ENVELOPE());
   let task_buffer_minutes = $state('10');
   let horizon_days = $state('3');
   let activity_recent_days = $state('5');
@@ -13,8 +19,13 @@
   async function load() {
     try {
       const data = await api.get('/api/settings/');
-      workday_start = data.schedule_workday_start ?? '08:00';
-      workday_end = data.schedule_workday_end ?? '17:00';
+      try {
+        envelope = data.schedule_week_envelope
+          ? JSON.parse(data.schedule_week_envelope)
+          : DEFAULT_ENVELOPE();
+      } catch (_) {
+        envelope = DEFAULT_ENVELOPE();
+      }
       task_buffer_minutes = data.schedule_task_buffer_minutes ?? '10';
       horizon_days = data.schedule_horizon_days ?? '3';
       activity_recent_days = data.activity_recent_days ?? '5';
@@ -27,8 +38,7 @@
     errors = {};
     try {
       await api.patch('/api/settings/', {
-        schedule_workday_start: workday_start,
-        schedule_workday_end: workday_end,
+        schedule_week_envelope: envelope,
         schedule_task_buffer_minutes: task_buffer_minutes,
         schedule_horizon_days: horizon_days,
         activity_recent_days: activity_recent_days,
@@ -48,19 +58,15 @@
 </script>
 
 <h3>Schedule</h3>
-<p>Controls the layout of the /schedule view: working hours, buffer between
-tasks, and the default rolling-day horizon.</p>
+<p>Controls the layout of the /schedule view: the shop's working week
+(per-day hours, optional breaks, days off), buffer between tasks, and the
+default rolling-day horizon. Workers without a personal envelope follow
+this week.</p>
 
 <fieldset>
-  <legend><strong>Working day</strong></legend>
-  <p><label><strong>Work day start</strong></label><br>
-    <input type="time" bind:value={workday_start}>
-    {#if errors.schedule_workday_start}<em class="err">{errors.schedule_workday_start}</em>{/if}
-  </p>
-  <p><label><strong>Work day end</strong></label><br>
-    <input type="time" bind:value={workday_end}>
-    {#if errors.schedule_workday_end}<em class="err">{errors.schedule_workday_end}</em>{/if}
-  </p>
+  <legend><strong>Working week</strong></legend>
+  <EnvelopeEditor value={envelope} onchange={(v) => { envelope = v; }} />
+  {#if errors.schedule_week_envelope}<em class="err">{errors.schedule_week_envelope}</em>{/if}
 </fieldset>
 
 <fieldset>

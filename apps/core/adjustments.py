@@ -31,7 +31,7 @@ def compute_adjustment_amount(adjustment_line, sibling_lines):
 
     Args:
         adjustment_line: an EstimateLineItem (or InvoiceLineItem) whose
-            ``adjustment_service`` is set to a PERCENTAGE ServiceItem.
+            ``adjustment_service`` is set to a PERCENTAGE RateScheme.
         sibling_lines: iterable of line items on the same parent document,
             excluding ``adjustment_line`` itself.
 

@@ -1,10 +1,13 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
-  import LineItemModal from '../../components/LineItemModal.svelte';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import AdjustmentModal from '../../components/AdjustmentModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
+  import LineItemModal from '../../components/LineItemModal.svelte';
+  import PriceListPicker from '../../components/PriceListPicker.svelte';
+  import EstimateAddLineForm from '../../components/estimates/EstimateAddLineForm.svelte';
   import DeliverablesSection from '../../components/jobs/DeliverablesSection.svelte';
 
   let { params = {} } = $props();
@@ -13,14 +16,39 @@
   let job = $state(null);
   let contact = $state(null);
   let categories = $state([]);
+  let defaultMaterialCategoryId = $state(null);
   let loading = $state(true);
   let error = $state('');
 
-  let modalOpen = $state(false);
-  let modalMode = $state('create');
-  let modalItem = $state(null);
 
   let adjustmentModalOpen = $state(false);
+  let pickerOpen = $state(false);
+  let addChoice = $state(null);
+  let modalOpen = $state(false);
+  let modalMode = $state('edit');
+  let modalItem = $state(null);
+
+  function openEditItem(li) { modalItem = li; modalMode = 'edit'; modalOpen = true; }
+  function handleSaved() { modalOpen = false; modalItem = null; loadEstimate(); }
+
+  function handleChoose(choice) {
+    pickerOpen = false;
+    addChoice = choice;
+  }
+  function handleLineAdded() {
+    addChoice = null;
+    loadEstimate();
+  }
+
+  async function handleDeleteItem(li) {
+    // No confirm: draft-only line edit, re-addable via Show Tasks & Materials.
+    try {
+      await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
+      await loadEstimate();
+    } catch (e) {
+      showError(errorMessage(e, 'Could not delete line item.'));
+    }
+  }
 
   // Per-object gate: atom-holder OR this job's project_manager (server-computed).
   const canManageJobs = $derived(estimate?.can_manage ?? false);
@@ -45,7 +73,7 @@
       const newEst = await api.post(`/api/estimates/${estimate.estimate_id}/revise/`);
       window.location.hash = `/estimates/${newEst.estimate_id}`;
     } catch (e) {
-      alert(e.message || 'Could not revise estimate.');
+      showError(errorMessage(e, 'Could not revise estimate.'));
       revising = false;
     }
   }
@@ -58,7 +86,7 @@
       await loadEstimate();
     } catch (err) {
       e.target.value = estimate.status;
-      alert(err.message || 'Status change failed');
+      showError(errorMessage(err, 'Status change failed.'));
     }
   }
 
@@ -105,10 +133,21 @@
     }
   }
 
+  async function loadSettings() {
+    try {
+      const s = await api.get('/api/settings/');
+      const raw = s.default_material_accounting_category;
+      defaultMaterialCategoryId = raw != null ? Number(raw) : null;
+    } catch (_) {
+      defaultMaterialCategoryId = null;
+    }
+  }
+
   $effect(() => {
     if (params.id) {
       loadEstimate();
       loadCategories();
+      loadSettings();
     }
   });
 
@@ -118,34 +157,6 @@
     return d.toLocaleString();
   }
 
-  function openAddItem() {
-    modalItem = null;
-    modalMode = 'create';
-    modalOpen = true;
-  }
-
-  function openEditItem(li) {
-    modalItem = li;
-    modalMode = 'edit';
-    modalOpen = true;
-  }
-
-  function handleSaved() {
-    modalOpen = false;
-    modalItem = null;
-    loadEstimate();
-  }
-
-  async function handleDeleteItem(li) {
-    // No confirm: draft-only line edit, re-addable by hand.
-    try {
-      await api.delete(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/`);
-      await loadEstimate();
-    } catch (e) {
-      alert(e.message || 'Could not delete line item.');
-    }
-  }
-
   async function handleReorder(itemIds) {
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/reorder/`, {
@@ -153,7 +164,7 @@
       });
       await loadEstimate();
     } catch (e) {
-      alert(e.message || 'Could not reorder line items.');
+      showError(errorMessage(e, 'Could not reorder line items.'));
     }
   }
 
@@ -171,6 +182,18 @@
     handleReorder(ids);
   }
 
+  function lineOutOfSync(li) {
+    // Only meaningful on a draft estimate — once sent/accepted/superseded the line
+    // can no longer be adjusted in the wizard, so flagging it would be misleading.
+    if (!isDraft) return false;
+    // Hand-entered lines have no sources; nothing to be out of sync with.
+    if (!li.sources || li.sources.length === 0) return false;
+    const sum = li.sources.reduce((s, src) => s + (parseFloat(src.computed_amount) || 0), 0);
+    const qty = parseFloat(li.qty) || 0;
+    if (qty <= 0) return false;
+    const expected = Math.round((sum / qty) * 100) / 100;
+    return Math.abs((parseFloat(li.price) || 0) - expected) > 0.001;
+  }
 
 </script>
 
@@ -232,16 +255,6 @@
           {/if}
         </td>
       </tr>
-      <tr>
-        <td>Worksheet</td>
-        <td>
-          {#if estimate.worksheet}
-            <a href={`/worksheets/${estimate.worksheet}`} use:link>#{estimate.worksheet}</a>
-          {:else}
-            <em>None</em>
-          {/if}
-        </td>
-      </tr>
       <tr><td>Status</td><td>{estimate.status}</td></tr>
       <tr><td>Created Date</td><td>{fmtDate(estimate.created_date)}</td></tr>
       <tr><td>Sent Date</td><td>{estimate.sent_date ? fmtDate(estimate.sent_date) : 'Not sent yet'}</td></tr>
@@ -257,11 +270,9 @@
   <h3>Line Items</h3>
   {#if canEdit}
     <p>
-      <button type="button" onclick={openAddItem}>Add Line Item</button>
+      <button type="button" onclick={() => { pickerOpen = true; }}>Add line</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-      {#if estimate.worksheet}
-        <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Worksheet</a>
-      {/if}
+      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Tasks &amp; Materials</a>
     </p>
   {/if}
 
@@ -270,6 +281,9 @@
     <button type="button" onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
     <button type="button" onclick={() => moveDown(i)} disabled={i === lineItems.length - 1}>&#9660;</button>
     <button type="button" onclick={() => handleDeleteItem(li)}>Delete</button>
+    {#if lineOutOfSync(li)}
+      <span class="out-of-sync" title="The line no longer matches its atoms; adjust in Show Tasks &amp; Materials if needed.">⚠ out of sync with atoms</span>
+    {/if}
   {/snippet}
 
   <LineItemTable
@@ -284,12 +298,26 @@
     <DeliverablesSection jobId={estimate.job} canManage={estimate.can_manage} />
   {/if}
 
+  <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
+
+  <EstimateAddLineForm
+    open={addChoice != null}
+    choice={addChoice}
+    estimateId={estimate.estimate_id}
+    {categories}
+    {defaultMaterialCategoryId}
+    onSaved={handleLineAdded}
+    onClose={() => { addChoice = null; }}
+  />
+
   <LineItemModal
     open={modalOpen}
     mode={modalMode}
     apiBase={`/api/estimates/${estimate.estimate_id}`}
     item={modalItem}
     {categories}
+    showMaterialMarker={true}
+    {defaultMaterialCategoryId}
     onSaved={handleSaved}
     onClose={() => { modalOpen = false; }}
   />
@@ -306,6 +334,7 @@
 <style>
   .error { color: #a8071a; }
   .superseded { opacity: 0.6; }
+  .out-of-sync { color: #a55; font-size: 12px; font-weight: 600; margin-left: 6px; }
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 

@@ -1,6 +1,7 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { showError } from '../../stores/messages.js';
   import { user as userStore } from '../../stores/auth.js';
   import { currentBlep } from '../../stores/currentBlep.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
@@ -60,7 +61,7 @@
 
   async function loadTemplates() {
     try {
-      const resp = await api.get('/api/task-templates/?page_size=100');
+      const resp = await api.get('/api/service-items/?page_size=100');
       templates = resp.results || resp;
     } catch (e) {
       templates = [];
@@ -86,7 +87,6 @@
     return cb.task && cb.task.id === task.task_id ? cb : null;
   });
 
-  const userPermissions = $derived($userStore?.permissions || []);
 
   async function loadTask() {
     loading = true;
@@ -227,7 +227,7 @@
       await api.delete(`/api/tasks/${params.taskId}/materials/${material.material_id}/`);
       await loadMaterials();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      showError(errorMessage(e, 'Could not delete material.'));
     }
   }
 
@@ -269,7 +269,7 @@
       await api.delete(`/api/tasks/${parentTask.task_id}/materials/${material.material_id}/`);
       await loadSubtasks();
     } catch (e) {
-      alert(e.message || 'Could not delete material.');
+      showError(errorMessage(e, 'Could not delete material.'));
     }
   }
 
@@ -320,7 +320,6 @@
   <TaskActions
     {task}
     user={$userStore}
-    {userPermissions}
     canManage={task?.can_manage}
     {activeBlepOnThisTask}
     onChanged={refresh}
@@ -376,9 +375,6 @@
       {:else if task.scheme_algorithm === 'elapsed_time'}
         <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
           <td>{Number(task.actual_hours) || 0}</td></tr>
-      {:else if task.scheme_algorithm === 'flat_fee'}
-        <tr><td><strong>Quantity</strong></td>
-          <td>{Number(task.est_qty ?? 1)} {task.scheme_unit_label || ''}</td></tr>
       {/if}
       {#if task.computed_charge}
         <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>
@@ -443,6 +439,7 @@
       <TaskTree
         tasks={subtasks}
         readonly={taskIsTerminal}
+        jobOnHold={job?.on_hold ?? false}
         canManage={task?.can_manage}
         showStatus={true}
         showAssignee={true}
@@ -487,7 +484,6 @@
   <BlepList
     {bleps}
     currentUser={$userStore}
-    {userPermissions}
     onEdit={openEdit}
     onDelete={(b) => { editingBlep = b; modalMode = 'edit'; }}
     onAdd={openCreate}
@@ -499,7 +495,6 @@
     blep={editingBlep}
     taskId={task?.task_id}
     currentUser={$userStore}
-    {userPermissions}
     onSaved={handleSaved}
     onClose={closeModal}
   />

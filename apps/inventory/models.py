@@ -31,11 +31,6 @@ class InventoryItem(models.Model):
     qty_sold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     qty_wasted = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)  # For soft-delete - use instead of hard deletion
-    # Catalog flag: a catalog item is a reorderable *type* (survives at QOH 0,
-    # allocation uncapped); without it, the row is a transient *lot* (hidden when
-    # finished — QOH 0 + no earmarks). Default True: items created via the
-    # price-list/inventory UI are catalog; transient lots are minted is_catalog=False.
-    is_catalog = models.BooleanField(default=True)
 
     # AccountingCategory for categorization and taxability
     accounting_category = models.ForeignKey(
@@ -58,16 +53,22 @@ class InventoryItem(models.Model):
         return self.qty_on_hand - self.qty_earmarked
 
     @property
-    def is_finished_lot(self):
-        """A transient lot whose life is over: not a catalog type, nothing on
-        hand, and nothing waiting for it. Hidden from the active inventory list
-        and allocation pickers (catalog items always survive at QOH 0). Not
-        deleted — line items reference items via PROTECT — just filtered out."""
-        return (
-            not self.is_catalog
-            and self.qty_on_hand == Decimal('0.00')
-            and not self.earmark_set.exists()
-        )
+    def qty_on_order(self):
+        """Outstanding (un-received) quantity across this item's PO lines on
+        non-cancelled POs: Σ max(qty − qty_received − qty_cancelled, 0). The
+        same outstanding calc MaterialSerializer.get_qty_on_order does for a
+        single PO-linked material, aggregated per item. Per-line floor so an
+        over-received line can't eat another line's outstanding quantity."""
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        total = Decimal('0.00')
+        lines = PurchaseOrderLineItem.objects.filter(
+            inventory_item=self,
+        ).exclude(purchase_order__status=PurchaseOrder.STATUS_CANCELLED)
+        for li in lines:
+            outstanding = li.qty - li.qty_received - li.qty_cancelled
+            if outstanding > Decimal('0.00'):
+                total += outstanding
+        return total
 
     class Meta:
         db_table = 'inventory_item'
@@ -82,26 +83,32 @@ class InventoryItem(models.Model):
         return f"{self.code} - {self.description[:50]}"
 
     @property
+    def has_document_line_refs(self):
+        """True if any document line item (estimate/invoice/PO/bill) references
+        this item. Split out of can_be_deleted so unwind paths can test document
+        references separately from earmarks."""
+        from apps.estimates.models import EstimateLineItem
+        from apps.invoicing.models import InvoiceLineItem
+        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
+
+        return (
+            EstimateLineItem.objects.filter(inventory_item=self).exists() or
+            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
+            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
+            BillLineItem.objects.filter(inventory_item=self).exists()
+        )
+
+    @property
     def can_be_deleted(self):
         """
         Check if this price list item can be safely deleted.
         Returns False if any line items reference it.
         """
-        from apps.estimates.models import EstimateLineItem
-        from apps.invoicing.models import InvoiceLineItem
-        from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
-
-        return not (
-            EstimateLineItem.objects.filter(inventory_item=self).exists() or
-            InvoiceLineItem.objects.filter(inventory_item=self).exists() or
-            PurchaseOrderLineItem.objects.filter(inventory_item=self).exists() or
-            BillLineItem.objects.filter(inventory_item=self).exists() or
-            self.earmark_set.exists()
-        )
+        return not (self.has_document_line_refs or self.earmark_set.exists())
 
 
 class MaterialBase(models.Model):
-    """Abstract base for PlanMaterial (planning) and Material (actual)."""
+    """Abstract base for Material (actual)."""
     description = models.CharField(max_length=255, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     units = models.CharField(max_length=50, default='none')
@@ -133,6 +140,10 @@ class MaterialBase(models.Model):
             sell_price=self.sell_price,
             inventory_item=self.inventory_item,
             accounting_category=self.accounting_category,
+            # Carry provenance so a duplicated lot-less document-cost material
+            # keeps its cost_source instead of auto-minting an 'entered' lot in
+            # create_on_job (whose mint gate is cost_source in {None, entered}).
+            cost_source=self.cost_source,
         )
 
     @property
@@ -147,7 +158,7 @@ class MaterialBase(models.Model):
         """Uniform atom interface: total billable amount for this material.
 
         Materials have no modifier concept; the parameter is accepted to match
-        the BillableAtom interface shared with TaskCharge/PlanTask.
+        the BillableAtom interface shared with Task.
         """
         return self.quantity * self.sell_price
 
@@ -166,38 +177,6 @@ class MaterialBase(models.Model):
                 self.accounting_category = self.inventory_item.accounting_category
 
 
-class PlanMaterial(MaterialBase):
-    """Planning material on a Worksheet; optionally attached to a PlanTask. No inventory side effects."""
-    plan_material_id = models.AutoField(primary_key=True)
-    plan_task = models.ForeignKey(
-        'jobs.PlanTask', on_delete=models.CASCADE, related_name='plan_materials',
-        null=True, blank=True,
-    )
-    est_worksheet = models.ForeignKey(
-        'estimates.EstWorksheet', on_delete=models.CASCADE, related_name='plan_materials',
-    )
-
-    class Meta:
-        db_table = 'plan_materials'
-
-    def clean(self):
-        super().clean()
-        if self.plan_task_id and self.est_worksheet_id and (
-            self.plan_task.est_worksheet_id != self.est_worksheet_id
-        ):
-            raise ValidationError('plan_task.est_worksheet must match est_worksheet')
-
-    def save(self, *args, **kwargs):
-        self._populate_from_pli()
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        if self.units and self.units != 'none':
-            return f"{self.description} (qty: {self.quantity:.2f} {self.units})"
-        return f"{self.description} (qty: {self.quantity:.2f})"
-
-
 class TemplateMaterialAssociation(models.Model):
     """A reusable InventoryItem associated with a WorkTemplate.
 
@@ -205,12 +184,11 @@ class TemplateMaterialAssociation(models.Model):
     reusable materials, so a TemplateMaterial-as-separate-catalog was
     redundant. This model just pins which PLI belongs to which WorkTemplate
     (with quantity), optionally pairing to a TemplateTaskAssociation so the
-    generated PlanMaterial/Material attaches to the corresponding generated
-    PlanTask/Task.
+    generated Material attaches to the corresponding generated Task.
 
     Generation semantics: for `quantity` instances of the parent WorkTemplate,
-    each instance gets one PlanMaterial/Material per association, attached
-    to the same-instance PlanTask/Task when `template_task_association` is set.
+    each instance gets one Material per association, attached
+    to the same-instance Task when `template_task_association` is set.
     """
     template_material_association_id = models.AutoField(primary_key=True)
     work_template = models.ForeignKey(
@@ -226,7 +204,7 @@ class TemplateMaterialAssociation(models.Model):
         null=True, blank=True,
         related_name='material_associations',
         help_text='If set, generated material attaches to the corresponding '
-                  'generated PlanTask/Task.',
+                  'generated Task.',
     )
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
     sort_order = models.IntegerField(default=0)
@@ -252,12 +230,40 @@ class TemplateMaterialAssociation(models.Model):
 
 @history(exclude=['material_id'])
 class Material(MaterialBase):
-    """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows."""
+    """Actual material on a Job; optionally attached to a Task. Participates in earmark/QOH flows.
+
+    Lifecycle (consumption_state): born `pending` (planned; earmarked on
+    committed jobs) → `consumed` (task start drew the stock; reversible via
+    unconsume) or `released` (a named event said the job planned it and didn't
+    use it — full restock while referenced, job-completion loose release, PO
+    sever, CO descope; terminal). A pending material that nothing references
+    may instead be hard-deleted (mistake correction / scratch paper). Release
+    moves quantity into released_qty, so released rows sum to zero in every
+    aggregate consumer; quantity + released_qty = originally planned.
+    """
     CONSUMPTION_STATE_PENDING = 'pending'
     CONSUMPTION_STATE_CONSUMED = 'consumed'
+    CONSUMPTION_STATE_RELEASED = 'released'
     CONSUMPTION_STATE_CHOICES = [
         (CONSUMPTION_STATE_PENDING, 'Pending'),
         (CONSUMPTION_STATE_CONSUMED, 'Consumed'),
+        (CONSUMPTION_STATE_RELEASED, 'Released'),
+    ]
+
+    # Provenance: where this material's cost/backing came from. NULL =
+    # provisional (no lot, no meaningful pricing yet). One field answers both
+    # "is this cost real?" and "who owns this thing?" (spec §cost_source).
+    COST_SOURCE_ESTIMATED = 'estimated'          # reverse-markup placeholder — cost unconfirmed
+    COST_SOURCE_ENTERED = 'entered'              # user-entered / catalog-attached pricing
+    COST_SOURCE_PO = 'po'                        # real document cost from a PO line
+    COST_SOURCE_EXPENSE = 'expense'              # real document cost from an attached expense
+    COST_SOURCE_CUSTOMER = 'customer_supplied'   # $0, deliberate and locked
+    COST_SOURCE_CHOICES = [
+        (COST_SOURCE_ESTIMATED, 'Estimated'),
+        (COST_SOURCE_ENTERED, 'Entered'),
+        (COST_SOURCE_PO, 'PO'),
+        (COST_SOURCE_EXPENSE, 'Expense'),
+        (COST_SOURCE_CUSTOMER, 'Customer supplied'),
     ]
 
     material_id = models.AutoField(primary_key=True)
@@ -272,8 +278,12 @@ class Material(MaterialBase):
         max_length=20, choices=CONSUMPTION_STATE_CHOICES,
         default=CONSUMPTION_STATE_PENDING,
     )
-    restocked_qty = models.DecimalField(
+    released_qty = models.DecimalField(
         max_digits=10, decimal_places=2, default=Decimal('0.00'),
+        help_text=(
+            'Quantity restocked/released back out of the plan. '
+            'quantity + released_qty = originally planned.'
+        ),
     )
     po_line_item = models.ForeignKey(
         'purchasing.PurchaseOrderLineItem',
@@ -281,12 +291,9 @@ class Material(MaterialBase):
         null=True, blank=True,
         related_name='+',
     )
-    source_plan_material = models.OneToOneField(
-        'inventory.PlanMaterial',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='carried_material',
-        help_text='PlanMaterial this material was carried over from (carry-over idempotency)',
+    cost_source = models.CharField(
+        max_length=20, choices=COST_SOURCE_CHOICES, null=True, blank=True,
+        help_text='Cost provenance; NULL means provisional (unpriced).',
     )
 
     class Meta:
@@ -296,12 +303,16 @@ class Material(MaterialBase):
     def is_expense_bound(self):
         return self.expenses.exists()
 
+    @property
+    def is_customer_supplied(self):
+        return self.cost_source == self.COST_SOURCE_CUSTOMER
+
     def clean(self):
         super().clean()
         if self.task_id and self.job_id and self.task.job_id != self.job_id:
             raise ValidationError('Material.task.job must match Material.job')
-        if self.restocked_qty < Decimal('0.00'):
-            raise ValidationError('restocked_qty must be non-negative')
+        if self.released_qty < Decimal('0.00'):
+            raise ValidationError('released_qty must be non-negative')
 
     def save(self, *args, **kwargs):
         self._populate_from_pli()
@@ -309,6 +320,15 @@ class Material(MaterialBase):
             self.consumption_state = self.CONSUMPTION_STATE_PENDING
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # No estimate/CO source row may outlive its atom — purge on every
+        # deletion path (restock-to-zero, PO sever, CO retirement, …).
+        from apps.estimates.claims import purge_source_rows_for_atom
+        pk = self.pk
+        result = super().delete(*args, **kwargs)
+        purge_source_rows_for_atom('material', pk)
+        return result
 
     def __str__(self):
         if self.units and self.units != 'none':

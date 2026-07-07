@@ -18,6 +18,17 @@ class User(AbstractUser):
         help_text='Associated contact record for this user'
     )
 
+    schedule_envelope = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Per-worker weekly working pattern for the schedule (canonical '
+            '{"mon": [["08:00", "17:00"]], …} shape). NULL means the worker '
+            'uses the shop default (the schedule_week_envelope Configuration '
+            'key). Validated by apps.schedule.calendar_arithmetic.'
+        ),
+    )
+
     class Meta:
         db_table = 'auth_user'
         verbose_name = 'User'
@@ -302,7 +313,7 @@ class AccountingCategory(models.Model):
 
 
 class AbstractWorkContainer(models.Model):
-    """Abstract base class for work containers (Job, EstWorksheet) containing common fields."""
+    """Abstract base class for work containers (Job) containing common fields."""
 
     class Meta:
         abstract = True
@@ -311,9 +322,8 @@ class AbstractWorkContainer(models.Model):
         """Populate this container's tasks from a WorkTemplate.
 
         Subclasses implement by reading the template's TemplateTaskAssociations
-        and creating the appropriate task type
-        (PlanTask on EstWorksheet, Task on Job). The WorkTemplate is not
-        stored on the container — only its child tasks are materialized.
+        and creating Tasks on the Job. The WorkTemplate is not stored on the
+        container — only its child tasks are materialized.
         """
         raise NotImplementedError
 

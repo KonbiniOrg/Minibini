@@ -156,7 +156,7 @@ class UserListRetrieveTest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         expected_keys = {
             'id', 'username', 'first_name', 'last_name', 'email',
-            'is_active', 'permissions', 'date_joined',
+            'is_active', 'permissions', 'date_joined', 'schedule_envelope',
         }
         self.assertEqual(set(response.data.keys()), expected_keys)
 
@@ -478,6 +478,10 @@ class UserActivateDeactivateTest(BaseTestCase):
         self.admin1.user_permissions.remove(self.manage_config_perm)
         self.admin1.is_superuser = True
         self.admin1.save()
+        # The fixture admin carries the atom explicitly now — strip it so
+        # admin2 really is the last holder.
+        User.objects.get(username='admin').user_permissions.remove(
+            self.manage_config_perm)
         # admin2 already has can_manage_config from setUp; confirm it.
         self.assertTrue(
             self.admin2.user_permissions.filter(codename='can_manage_config').exists()
@@ -700,8 +704,11 @@ class UserPermissionsTest(BaseTestCase):
         only user who has it. D2 (self-demote) would also fire if the
         actor were the target, so we use a separate is_superuser actor.
         """
-        # Strip admin2's can_manage_config so admin1 is the only holder.
+        # Strip admin2's (and the fixture admin's) can_manage_config so
+        # admin1 is the only holder.
         self.admin2.user_permissions.remove(self.manage_config_perm)
+        User.objects.get(username='admin').user_permissions.remove(
+            self.manage_config_perm)
         # Create a superuser who can call the endpoint via is_superuser
         # bypass (they don't need can_manage_config themselves).
         other = User.objects.create_superuser(

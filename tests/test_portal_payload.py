@@ -3,6 +3,7 @@ from django.test import TestCase
 
 from apps.api.portal.views import build_estimate_payload
 from apps.contacts.models import Contact
+from apps.core.models import AccountingCategory
 from apps.deliverables.models import Deliverable
 from apps.deliverables.services import DeliverableService
 from apps.estimates.models import Estimate, EstimateLineItem
@@ -20,7 +21,8 @@ class PortalPayloadTest(TestCase):
         self.est = EstimateService.create_for_job(self.job.pk)
         EstimateLineItem.objects.create(
             estimate=self.est, description='Build widget',
-            qty=Decimal('2'), units='each', price=Decimal('50.00'))
+            qty=Decimal('2'), units='each', price=Decimal('50.00'),
+            accounting_category=AccountingCategory.objects.first())
         Deliverable.objects.create(
             job=self.job, description='One finished widget',
             qty_ordered=Decimal('2'), units='each')

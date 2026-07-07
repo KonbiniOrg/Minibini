@@ -7,8 +7,7 @@ from apps.core.models import AccountingCategory
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.core.models import InventoryHistory
 from apps.inventory.services import InventoryService, MaterialService
-from apps.jobs.models import Job, Task, ServiceItem
-from apps.estimates.models import EstWorksheet, Estimate
+from apps.jobs.models import Job, Task, RateScheme
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 
 
@@ -24,15 +23,15 @@ class ConsumeMaterialTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_catalog=True, qty_on_hand=Decimal('20.00'),
+            qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('0.00'), accounting_category=self.category)
-        self.scheme = ServiceItem.objects.create(
-            name='S-qohs1', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-qohs1', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
             job=self.job, name='Cut steel',
-            sort_order=1, service_item=self.scheme)
+            sort_order=1, rate_scheme=self.scheme)
 
     def test_decreases_qoh_and_increases_qty_sold(self):
         """Consuming material decreases QOH and increases qty_sold."""
@@ -121,8 +120,10 @@ class ConsumeMaterialTest(TestCase):
     # non-catalog lot is NOT skipped — only a None-item material is, covered by
     # test_skips_no_pli below.)
 
-    def test_skips_no_pli(self):
-        """Materials without a PLI are silently skipped."""
+    def test_provisional_material_refuses(self):
+        """A provisional (no-PLI) material now REFUSES consumption — it must be
+        priced and received before work can consume it."""
+        from django.core.exceptions import ValidationError
         material = Material(
             job=self.job,
             task=self.task,
@@ -131,13 +132,16 @@ class ConsumeMaterialTest(TestCase):
             accounting_category=self.category)
         material.save()
 
-        # Should not raise
-        MaterialService.consume(material)
+        with self.assertRaises(ValidationError):
+            MaterialService.consume(material)
+        material.refresh_from_db()
+        self.assertEqual(
+            material.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
     def test_consume_via_job_task(self):
         """Consuming material on a job task reduces earmark for the task's job."""
         wo_task = Task.objects.create(
-            job=self.job, name='Assemble', sort_order=1, service_item=self.scheme)
+            job=self.job, name='Assemble', sort_order=1, rate_scheme=self.scheme)
 
         Earmark.objects.create(
             inventory_item=self.pli, job=self.job,
@@ -168,15 +172,15 @@ class CompleteTaskAdjustmentTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_catalog=True, qty_on_hand=Decimal('20.00'),
+            qty_on_hand=Decimal('20.00'),
             qty_sold=Decimal('5.00'), accounting_category=self.category)
-        self.scheme = ServiceItem.objects.create(
-            name='S-qohs2', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-qohs2', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=self.category,
         )
         self.task = Task.objects.create(
             job=self.job, name='Cut steel',
-            sort_order=1, service_item=self.scheme)
+            sort_order=1, rate_scheme=self.scheme)
 
         self.material = Material(
             job=self.job,
@@ -239,7 +243,7 @@ class ManualAdjustmentTest(TestCase):
         self.category = AccountingCategory.objects.get_or_create(code='SVC', defaults={'name': 'Service', 'taxable': False})[0]
         self.pli = InventoryItem.objects.create(
             code='PLI-001', description='Steel plate',
-            is_catalog=True, qty_on_hand=Decimal('50.00'),
+            qty_on_hand=Decimal('50.00'),
             qty_wasted=Decimal('0.00'), accounting_category=self.category)
 
     def test_positive_adjustment_increases_qoh(self):

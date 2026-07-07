@@ -22,7 +22,7 @@ class POSeverOnCancelTest(TestCase):
         self.cat = AccountingCategory.objects.get_or_create(code='MAT', defaults={'name': 'Material'})[0]
         self.pli = InventoryItem.objects.create(
             code='P', description='p', purchase_price=Decimal('1.00'),
-            selling_price=Decimal('2.00'), accounting_category=self.cat, is_catalog=True,
+            selling_price=Decimal('2.00'), accounting_category=self.cat,
         )
         self.po = PurchaseOrder.objects.create(business=self.business)
         self.line = PurchaseOrderService.add_line_item(
@@ -35,7 +35,7 @@ class POSeverOnCancelTest(TestCase):
         self.po.save()
         with self.assertRaises(ValidationError):
             PurchaseOrderReceivingService.cancel_line_item(
-                self.po, self.line.pk, self.user, note='',
+                self.po, self.line.pk, note='',
             )
 
     def test_cancel_line_item_delete_deletes_material(self):
@@ -43,7 +43,7 @@ class POSeverOnCancelTest(TestCase):
         self.po.save()
         mat_id = self.line.linked_material.pk
         PurchaseOrderReceivingService.cancel_line_item(
-            self.po, self.line.pk, self.user, note='', sever_decision='delete',
+            self.po, self.line.pk, note='', sever_decision='delete',
         )
         self.assertFalse(Material.objects.filter(pk=mat_id).exists())
 
@@ -52,7 +52,7 @@ class POSeverOnCancelTest(TestCase):
         self.po.save()
         mat_id = self.line.linked_material.pk
         PurchaseOrderReceivingService.cancel_line_item(
-            self.po, self.line.pk, self.user, note='', sever_decision='keep',
+            self.po, self.line.pk, note='', sever_decision='keep',
         )
         mat = Material.objects.get(pk=mat_id)
         self.assertIsNone(mat.po_line_item_id)

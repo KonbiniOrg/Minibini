@@ -33,10 +33,12 @@ def _add_can_manage_jobs(user):
 
 
 def _advance_job_to_on_hold(job):
-    """Draft → submitted → approved → on_hold."""
-    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_ON_HOLD):
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
         job.status = s
         job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -138,6 +140,7 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
                 'description': 'Extra scope',
                 'qty': '2.00',
                 'price': '150.00',
+                'accounting_category': 901,
             },
             format='json',
         )
@@ -176,6 +179,7 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
                 'description': 'Extra scope',
                 'qty': '1.00',
                 'price': '250.00',
+                'accounting_category': 901,
             },
             format='json',
         )
@@ -219,7 +223,7 @@ class ChangeOrderDeleteAPITest(FixtureTestCase):
         self.client.post(
             f'/api/change-orders/{self.co_id}/line-items/',
             {'action': ChangeOrderLineItem.ACTION_ADD, 'description': 'Item',
-             'qty': '1', 'price': '100'},
+             'qty': '1', 'price': '100', 'accounting_category': 901},
             format='json',
         )
         self.client.post(f'/api/change-orders/{self.co_id}/mark-open/')
@@ -292,7 +296,7 @@ class ChangeOrderSeedNewAPITest(FixtureTestCase):
         self.client.post(
             f'/api/change-orders/{self.co_id}/line-items/',
             {'action': ChangeOrderLineItem.ACTION_ADD, 'description': 'Scope',
-             'qty': '1', 'price': '100'},
+             'qty': '1', 'price': '100', 'accounting_category': 901},
             format='json',
         )
         self.client.post(f'/api/change-orders/{self.co_id}/mark-open/')
@@ -451,8 +455,10 @@ class DeliverablesBaselineAPITest(FixtureTestCase):
         DeliverableService.snapshot_document(change_order=prior_co)
 
         # Now create a new CO — Trigger 1 should snapshot the prior_co (not the estimate).
-        # First put job back on_hold for the service guard.
-        self.job.status = Job.STATUS_ON_HOLD
+        # First put the job back on hold for the service guard.
+        self.job.refresh_from_db()
+        self.job.on_hold = True
+        self.job.hold_reason = 'CO editing'
         self.job.save()
 
         self.client.force_authenticate(user=self.manager)

@@ -1,77 +1,76 @@
-# Jobs, Tasks, and Worksheets
+# Jobs, Tasks, and Work Atoms
 
 Reference for the work-execution and fulfillment side of Minibini: how
-Jobs, Tasks, Bleps, EstWorksheets, PlanTasks, Templates, Deliverables,
-and Shipments fit together. For service-layer mechanics, mixin catalog,
-permission atoms, history capture, and DELETE conventions, see
+Jobs, Tasks, Bleps, the Fee atom, Templates, Deliverables, and Shipments
+fit together. For service-layer mechanics, mixin catalog, permission
+atoms, history capture, and DELETE conventions, see
 `docs/designs/architecture-and-conventions.md`. For RateScheme / billing
 identity / estimate wizard / supersession, see
-`docs/designs/estimates-and-prices.md`. For Material, PlanMaterial, and
+`docs/designs/estimates-and-prices.md`. For Material and
 TemplateMaterialAssociation, see
 `docs/designs/materials-inventory-and-purchasing.md`.
 
+> **Job-owns-atoms model.** The Job owns its work atoms — **Task**,
+> **Material**, **Fee** — directly, created at any status (including
+> `draft`). The former **planning layer** (`EstWorksheet`, `PlanTask`,
+> `PlanMaterial`, the worksheet API, worksheet→job carry-over) has been
+> **removed**. Sections that described worksheets are kept as tombstones
+> noting the removal. The `Estimate` and `Invoice` are *lenses* over the
+> Job's atoms (see `estimates-and-prices.md` §7).
+
 ## 1. Overview
 
-A Job is the central work-tracking entity. Each Job aggregates:
+A Job is the central work-tracking entity. Each Job aggregates its work
+**atoms** directly plus its customer-facing documents:
 
-- 0+ EstWorksheets (planning artifacts)
-- 0+ Estimates (customer-facing quotes)
-- 0+ Tasks (units of execution; live directly on the Job)
-- 0+ Materials (consumable / billable items; always belong to the Job, optionally linked to a Task)
+- 0+ **Tasks** (metered units of execution; `rate_scheme`, `est_qty`, `actual_qty`)
+- 0+ **Materials** (inventory-backed or freeform; optionally linked to a Task)
+- 0+ **Fees** (fixed charges: `quantity × unit_rate`; optionally linked to a Task)
+- 0+ Estimates (customer-facing quotes — lens over the atoms)
 - 0+ Invoices, Purchase Orders, Bills
 
 Tasks are the only work-execution container the system has. The former
 `WorkOrder` model is gone; `Task.job` is a direct FK. Bleps (time
 entries) hang off Tasks.
 
-EstWorksheets are the planning side: they hold PlanTasks and
-PlanMaterials. PlanMaterials mirror Materials — they always belong to
-the worksheet, and optionally link to a PlanTask. A worksheet is a
-working document that produces an Estimate; once the worksheet is
-finalized, it can be carried over to a Job as actual Tasks and
-Materials.
+All three atom types are created **directly on the Job** at any status
+via `POST /api/jobs/{id}/tasks/`, `/materials/`, `/fees/`. There is no
+separate planning container.
 
 ```
-                       Job
-                        │
-        ┌─────────┬─────┴───────┬──────────────┐
-        ▼         ▼             ▼              ▼
-      Tasks   Materials     Invoices      EstWorksheet
-        │         │         POs, Bills         │
-        ▼         │                  ┌─────────┴────────┐
-      Bleps      (optional FK        ▼                  ▼
-                 to a Task)      PlanTasks        PlanMaterials
-                                                       │
-                                                  (optional FK
-                                                  to a PlanTask)
+                         Job
+                          │
+        ┌─────────┬───────┼────────┬──────────────┐
+        ▼         ▼       ▼        ▼              ▼
+      Tasks   Materials  Fees   Estimates     Invoices
+        │      (opt FK   (opt FK   (lens)      POs, Bills
+        ▼      to Task)  to Task)
+      Bleps
 ```
 
-## 2. AbstractWorkContainer
+## 2. The Job and its atoms
 
-`AbstractWorkContainer` in `apps/core/models.py` is shared by `Job` and
-`EstWorksheet`. The abstract base itself owns very little — just a
-`populate_from_template(template)` stub that subclasses implement.
-Neither subclass stores a back-reference to the `WorkTemplate` it was
-populated from; the template's job is to *materialize* its child tasks
-and materials, after which it is no longer referenced by the
-container.
+`Job` (`apps/jobs/models.py`) extends `AbstractWorkContainer`
+(`apps/core/models.py`), now a thin abstract base whose only behavior is a
+`populate_from_template(template)` stub. (It was formerly shared with
+`EstWorksheet`; with the worksheet model removed, `Job` is its only
+concrete subclass.)
 
-The two subclasses extend this with their own task and material
-relations. Tasks and materials are reverse relations from the child
-side (Task / PlanTask / Material / PlanMaterial all FK back), but
-populate-from-template handles **both** kinds in a single pass:
+The Job's atoms are reverse relations from the child side:
 
-| Subclass | Task model | Material model | populate_from_template generates |
-|---|---|---|---|
-| `Job` | `Task` (`Task.job`) | `Material` (`Material.job`, optional `Material.task`) | Tasks via `WorkTemplate.generate_tasks_for_job`, then Materials via `generate_materials_for_job(task_pairing=...)` |
-| `EstWorksheet` | `PlanTask` (`PlanTask.worksheet`) | `PlanMaterial` (`PlanMaterial.est_worksheet`, optional `PlanMaterial.plan_task`) | PlanTasks via `generate_tasks_for_worksheet`, then PlanMaterials via `generate_materials_for_worksheet(task_pairing=...)` |
+| Atom | Relation | Optional task link |
+|---|---|---|
+| `Task` | `Task.job` (`related_name='tasks'`) | — (hierarchy via `parent_task`) |
+| `Material` | `Material.job` | `Material.task` |
+| `Fee` | `Fee.job` (`related_name='fees'`) | `Fee.task` (OneToOne) |
 
-The `task_pairing` return value from the task generator is the bridge
-that lets the material generator attach each new material to the right
-task — critical for multi-instance template fanout.
-
-EstWorksheet also has its own `job` FK (so a worksheet is always
-attached to a Job). Job has no parent.
+`populate_from_template` generates Tasks via
+`WorkTemplate.generate_tasks_for_job`, then Materials via
+`generate_materials_for_job(task_pairing=...)`. The `task_pairing` return
+value from the task generator is the bridge that lets the material
+generator attach each new material to the right task — critical for
+multi-instance template fanout. The `WorkTemplate` is not stored on the
+Job; only its generated children land there. Job has no parent.
 
 ## 3. Job
 
@@ -85,7 +84,6 @@ attached to a Job). Job has no parent.
 | `submitted` | Estimate has been sent (auto-fired by `estimate_status_changed_for_job`) |
 | `approved` | Estimate accepted; not yet released to the floor |
 | `in_progress` | Released to the floor; tasks may be in flight |
-| `on_hold` | General pause during active work (CO negotiation, awaiting deposit, backordered material, customer gone quiet). Reachable only from `approved` / `in_progress`. |
 | `work_complete` | All tasks terminal; invoicing/payment may still be open |
 | `completed` | Fully closed (terminal). Gated on all deliverables shipped — see §3.3. |
 | `rejected` | Terminal |
@@ -96,9 +94,8 @@ Valid transitions (`Job.clean()` at `apps/jobs/models.py`):
 ```
 draft         → submitted, rejected
 submitted     → approved, rejected, draft
-approved      → in_progress, on_hold, cancelled
-in_progress   → work_complete, on_hold, cancelled
-on_hold       → approved, in_progress, cancelled
+approved      → in_progress, cancelled
+in_progress   → work_complete, cancelled
 work_complete → completed, cancelled, in_progress
 cancelled     → in_progress
 rejected, completed → (terminal)
@@ -129,37 +126,70 @@ marked complete prematurely or cancelled by accident. They are exposed on
 the job-view status pill and gated by `can_manage_jobs` (the pill PATCHes
 `/api/jobs/{id}/`, which already requires that atom).
 
-#### `on_hold` semantics
+`work_complete → in_progress` also fires **automatically** when a new
+incomplete Task lands on a `work_complete` job (`JobService.mark_work_reopened`,
+the mirror of `mark_work_started`) — `work_complete` means every task is
+terminal, and a fresh open task contradicts that. Wired into all three task
+creation paths (`TaskService.create_direct` / `create_from_template`,
+`ServiceItem.generate_task`). The terminal-`completed` case is still an open
+decision (see LATER).
 
-`on_hold` is a general pause primitive — change orders are one consumer
-of it, but not the only one. The Job carries a `hold_reason` text field
-(free-form: "CO-2026-0007 in negotiation", "awaiting deposit") that the
-board pill and job header surface; `Job.save()` clears it on exit to an
-active status.
+#### The `on_hold` flag (pause)
 
-`on_hold` freezes and hides work **as a status query-filter** rather
-than by mutating Tasks — no task is touched, so resume is instant and
-lossless:
+`on_hold` is a **flag** (`BooleanField`, default `False`), not a status —
+a held job keeps its true pipeline position underneath, and holding
+never moves it through the state machine. It is the general pause
+primitive — change orders are one consumer of it, but not the only one
+(awaiting deposit, backordered material, customer gone quiet). The Job
+carries a `hold_reason` text field (free-form: "CO-2026-0007 in
+negotiation", "awaiting deposit") that the board banner and job header
+surface; `Job.save()` clears it whenever the flag drops.
 
-- **New bleps** are rejected (`BlepService`'s job-status guard permits
-  work only on `approved` / `in_progress` / `work_complete`).
-- **Task and material mutations** are blocked by `_assert_job_not_on_hold`
-  in `JobService` (create/edit/delete tasks, change assignment,
-  complete/block/unblock/cancel, edit materials).
-- **The schedule** excludes on-hold jobs (`apps/schedule/services.py`
-  filters both worker selection and the per-worker lane queries — see
-  `docs/designs/schedule.md`).
+Hold and release go through dedicated service methods, not the status
+machine:
+
+- **`JobService.hold_job(pk, reason)`** — allowed only while the job is
+  `approved` or `in_progress`; requires a non-blank reason; **rejected
+  while any open Blep exists** on the job's tasks (parallel to the
+  cancel guard — a manager finds the worker and has them stop first).
+  Sets the flag and stores the reason.
+- **`JobService.release_job(pk)`** — drops the flag. **Release guard**:
+  blocked while any ChangeOrder on the job is live (`draft`/`open`) —
+  resolve the CO (accept, reject, or discard) first. CO **acceptance
+  clears the hold itself** and the job resumes its true status directly
+  (a job held from `in_progress` goes straight back to `in_progress` —
+  there is no detour through `approved`).
+- **API**: `POST /api/jobs/{id}/hold/` (body `{reason}`, required) and
+  `POST /api/jobs/{id}/release/`, via the status-actions mixin.
+  `JobSerializer` exposes `on_hold` and `hold_reason` read-only;
+  PATCHing `status: 'on_hold'` now 400s — it is not a status.
+
+While the flag is set, the job is frozen **as a flag query-filter**
+rather than by mutating Tasks — no task is touched, so resume is
+instant and lossless:
+
+- **New bleps** are rejected — `_assert_job_allows_blep` checks
+  `job.on_hold` explicitly, ahead of its status allow-list (the
+  allow-lists describe pipeline position, and a held job keeps its true
+  status underneath, so omission can't cover it).
+- **Task, material, and fee mutations** are blocked by
+  `_assert_job_not_on_hold` in `JobService` (create/edit/delete tasks,
+  change assignment, complete/block/unblock/cancel, edit materials).
+- **Status changes are blocked** (`JobService.update_job` raises) —
+  **except cancellation**, which runs the same live-CO guard as release
+  and drops the flag as part of the transition.
+- **The schedule** renders a held job's history (actual bars) but never
+  its forecasts (see `docs/designs/schedule.md`).
 - **Shipment creation** is rejected (`ShipmentService._assert_job_not_on_hold`).
-- **The board** slots on-hold jobs into the Pipeline lane with an
-  `on-hold` sub-status, so they stay findable but show no worker task
-  columns.
-- **Transition into `on_hold` is rejected while any open Blep exists**
-  on the job's tasks (parallel to the cancel guard) — a manager finds
-  the worker and has them stop first.
-- **Exit guard**: a Job leaves `on_hold` only when no ChangeOrder on it
-  is live (`draft`/`open`). The CO-accept auto-advance (`on_hold → approved`)
-  is what normally clears the hold; a discarded draft CO also clears
-  the guard.
+- **The board** keeps a held job in its true column — held from
+  `approved` stays in Pipeline; held from `in_progress` keeps its In
+  Progress column placement. `compute_sub_status` returns `on-hold`
+  from the flag (the first branch — it wins over everything, whatever
+  the underlying status). Cards show an ON HOLD banner with
+  `hold_reason` on hover; chips get grey diagonal bars.
+- **Change orders**: CO creation requires `job.on_hold`, and the portal
+  actionability gate reads `co.job.on_hold`. Reject / expire /
+  request-changes leave the job held. See `estimates-and-prices.md` §14.
 
 ### 3.1a Project manager
 
@@ -170,7 +200,7 @@ from all active users (`/api/auth/users/`).
 
 **It grants access, scoped to that one job.** The PM gets
 `can_manage_jobs`-equivalent rights over this job and its contained objects
-(tasks, worksheets, plan-tasks, estimates, change orders, deliverables, and
+(tasks, materials, fees, estimates, change orders, deliverables, and
 their line items) without holding the global atom — via the
 `CanManageJobOrPM` permission class and the per-object `can_manage` flag the
 SPA gates on. It has **no status side effects** and grants **nothing** on
@@ -240,10 +270,20 @@ Entry to `work_complete`, `cancelled`, or `rejected` triggers
 those transitions.
 
 **To `completed`:** `JobService.maybe_complete_if_resolved(job)` is the
-single completion gate, called from both the invoice-paid path
-(`Invoice._maybe_complete_job` delegates to it) and
-`ShipmentService.mark_picked_up` — whichever lands last completes the
-job. It requires **both** all invoices resolved (`paid` or `cancelled`)
+single completion gate, called from both the invoice-resolved path
+(`Invoice._maybe_complete_job` delegates to it on entry to `paid` **or**
+`cancelled`) and `ShipmentService.mark_picked_up` — whichever lands last
+completes the job. It first requires the job's **work to be
+finished**: `work_complete`, or `approved`/`in_progress` with at least
+one task and every task terminal — the one legitimate way a finished job
+is stranded short of `work_complete` is a loose pending material blocking
+the transition, and this unattended path releases exactly those (claimed
+materials become `released` history; unclaimed ones delete). Anything
+else is a no-op: an `in_progress` job with open tasks, a deposit invoice
+paid before any work starts (task-less job), and `draft`/`submitted`
+jobs have no finished work; a held job never auto-completes either —
+status changes are blocked while the `on_hold` flag is set. It then
+requires **both** all invoices resolved (`paid` or `cancelled`)
 **and** all deliverables shipped
 (`DeliverableService.all_deliverables_shipped(job)` returns True only
 when every Deliverable's `qty_picked_up == qty_ordered`; prepared-but-
@@ -253,27 +293,33 @@ all-shipped precondition and raises `ValidationError` otherwise.
 `cancelled` is exempt because the state machine forbids
 `cancelled → completed`.
 
-**Open-Blep entry guard.** Transitions into `on_hold` or `cancelled`
-are rejected by `JobService.update_job` if any Blep on the job's tasks
-is open (`end_time__isnull=True`) — same "coordinate offline" rationale
-as the `block_task` conflict.
+**Open-Blep guard.** `JobService.hold_job` and transitions into
+`cancelled` are rejected if any Blep on the job's tasks is open
+(`end_time__isnull=True`) — same "coordinate offline" rationale as the
+`block_task` conflict.
 
 ### 3.4 Job creation paths
 
-A new Job has no Tasks. There are four ways to populate it:
+A new Job has no atoms. Work is created **directly on the Job** at any
+status (including `draft`). Ways to populate it:
 
 | Path | Trigger | Service | Notes |
 |---|---|---|---|
 | From WorkTemplate | `POST /api/jobs/{id}/populate-from-template` | `JobService.populate_from_template` | Generates Tasks + Materials from a `WorkTemplate`; creates earmarks |
-| From a worksheet | `POST /api/jobs/{id}/copy-from-worksheet` | `JobService.copy_from_worksheet` → `materialize_worksheet_onto_job` | Copies `PlanTask`→`Task` (+ their `PlanMaterial`→`Material`) via the shared core; sets provenance, idempotent, creates earmarks. Same core as estimate-acceptance carry-over |
-| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `TaskTemplate.generate_task` | One task from a `TaskTemplate`; available to any authenticated user (workers can self-serve) |
-| Direct task creation | `POST /api/jobs/{id}/tasks` | `TaskService.create_direct` | One task at a time; freeform |
+| Adding a single template task | `POST /api/jobs/{id}/add-from-template` | `ServiceItem.generate_task` | One Task from a `ServiceItem`; available to any authenticated user (workers can self-serve) |
+| Direct task creation | `POST /api/jobs/{id}/tasks/` | `TaskService.create_direct` | One Task at a time; freeform (requires `rate_scheme_id`) |
+| Direct material creation | `POST /api/jobs/{id}/materials/` | `MaterialService.create_on_job` | One Material; inventory-backed or freeform |
+| Direct fee creation | `POST /api/jobs/{id}/fees/` | `FeeService.create_on_job` | One Fee (fixed charge); also the crystallization target on estimate acceptance (see `estimates-and-prices.md` §9) |
 
-A populate-from-estimate path is also exposed (`POST /api/jobs/{id}/populate-from-estimate`) but is currently a thin wrapper — most workflows go through copy-from-worksheet because the worksheet carries the planning data the estimate doesn't preserve.
+The `populate_from_template` path does not store a back-reference to the
+source template on the Job. The template's role ends once its child Tasks
+and Materials have been generated.
 
-Neither populate path stores a back-reference to the source template on
-the Job. The template's role ends once its child Tasks and Materials
-have been materialized.
+> **Removed.** The worksheet-based creation paths
+> (`POST /api/jobs/{id}/copy-from-worksheet`, `populate-from-estimate`,
+> `JobService.copy_from_worksheet` / `materialize_worksheet_onto_job`) are
+> gone with the planning layer. There is no worksheet to carry over from —
+> work is authored directly on the Job.
 
 ### 3.5 Document numbering
 
@@ -310,24 +356,23 @@ returns `{job_id}` at HTTP 201. Permission: `CanManageJobs`.
 - **Fresh values**: a new `job_number` (via `NumberGenerationService`),
   a new `created_date`, a fresh `accent_color` (least-used from the fixed
   palette, via `_pick_least_used_accent_color`).
-- **Not copied**: `customer_po_number`, `due_date`, `hold_reason`.
+- **Not copied**: `customer_po_number`, `due_date`, the `on_hold` flag,
+  `hold_reason`.
 - **Deliverables**: each source Deliverable's `description`,
   `qty_ordered`, `units`, and `sort_order` are carried over via
   `DeliverableService.create`.
-- **Work source**: work is always sourced from the source Job's
-  *execution layer* — its live `Task`s and `Material`s — never from any
-  old worksheet or estimate.
+- **Work source**: work is always sourced from the source Job's live
+  `Task`s and `Material`s.
 - **Tasks** are copied with billing fields intact but execution state
   fully reset: `status=pending`, no bleps, no assignee, `actual_qty=None`,
-  `worker_queue=None`, `blocked_reason=''`, and `source_template` /
-  `source_plan_task` cleared. Carried: `name`, `description`,
+  `worker_queue=None`, `blocked_reason=''`. Carried: `name`, `description`,
   `sort_order`, `est_worker_time`, `est_qty`, `rate_scheme`,
   `active_modifiers` (via `copy_active_modifiers`).
 - **Materials** carry `description`, `quantity`, `units`, `unit_cost`,
-  `sell_price`, `price_list_item`, `accounting_category`, and their task
+  `sell_price`, `inventory_item`, `accounting_category`, and their task
   attachment (task-less materials stay loose). Inventory state is fully
-  reset: `consumption_state=pending`, `restocked_qty=0`,
-  `po_line_item=None`, `source_plan_material=None`.
+  reset: `consumption_state=pending`, `released_qty=0`,
+  `po_line_item=None`.
 
 #### Outcome A — `path='approved'`
 
@@ -339,28 +384,22 @@ auto-creates an `audit` field-diff entry per hop. The `approved`
 transition sets `start_date` (per §3.2), mirroring the
 estimate-acceptance precedent in `apps/estimates/signals.py`.
 
-- Tasks and Materials land directly on the new Job as its execution
-  layer. Subtask hierarchy (`parent_task`) is preserved via a two-pass
-  remap so parent Tasks are created before their children.
+- Tasks and Materials land directly on the new Job. Subtask hierarchy
+  (`parent_task`) is preserved via a two-pass remap so parent Tasks are
+  created before their children.
 - Earmarks are created via `InventoryService.create_earmarks_for_job`.
-- No estimate and no worksheet are created. Deliverables remain editable
-  (no estimate → editable per `DeliverableService.is_editable`) until
-  they anchor on a Shipment.
+- No estimate is created. Deliverables remain editable (no estimate →
+  editable per `DeliverableService.is_editable`) until they anchor on a
+  Shipment.
 
 #### Outcome B — `path='estimate'`
 
-The new Job stays at `draft`. A fresh `EstWorksheet` (version 1, status
-`draft`, no parent, no linked Estimate) is created and populated with
-`PlanTask` and `PlanMaterial` rows mapped from the source's execution
-Tasks and Materials. Task attachment is preserved (task-less Materials
-become loose PlanMaterials). Because `PlanTask` requires a non-null
-`est_qty`, the service falls back to `actual_qty`, then `Decimal('0.00')`
-if both are absent. PlanTask has no hierarchy, so subtask nesting from
-the source is **flattened** (sort_order is preserved). No earmarks are
-created.
-
-The user then runs the normal re-quote → send → accept → carry-over
-flow from the new worksheet.
+The new Job stays at `draft`, with the source's `Task`s and `Material`s
+copied directly onto it (same `_copy_work_to_job` core as the approved
+path, including subtask hierarchy). No worksheet and no earmarks are
+created — the job sits in `draft` ready for re-estimation. The user then
+runs the normal Start Estimate → send → accept flow; the estimate
+projects the new Job's atoms (`estimates-and-prices.md` §7).
 
 #### Never copied (either path)
 
@@ -383,8 +422,11 @@ authenticated user**:
 - **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
   `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
   Delete is still refused by `TaskService.delete_task` when the task is
-  `in_progress`/`complete` or has any Bleps (→ 400) — that guard applies to
-  everyone.
+  `in_progress`/`complete`, has any Bleps, is claimed by a **non-draft**
+  estimate/change order, or is on a live invoice (→ 400, "cancel it
+  instead") — those guards apply to everyone. Draft-estimate claims stay
+  deletable (remove the line/atoms first). See the deletion doctrine
+  (`data-constraints.md` §1.11).
 - **Lifecycle** — complete / block / unblock / start-work / stop-work /
   cancel-work / actual-qty are `IsAuthenticated` (worker operations).
 
@@ -454,22 +496,22 @@ clears.
 
 ### 4.4 Billing fields
 
-`Task` carries billing identity directly (declared on `Task`, mirrored
-on `PlanTask` via the `TaskBase` abstract):
+`Task` carries billing identity directly via the `TaskBase` abstract:
 
 | Field | Description |
 |---|---|
-| `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. |
-| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); for a `flat_fee` scheme, a `{"flat_fee_price": "<amount>"}` dict instead |
-| `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task; required on PlanTask. |
+| `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. Algorithms: `elapsed_time` / `entered_qty` / `percentage` (no `flat_fee` — fixed charges are the `Fee` atom, §4.7). |
+| `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
+| `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
 | `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
-| `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps) and `FLAT_FEE` |
+| `actual_qty` | Worker-entered quantity for `ENTERED_QTY` schemes; null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). |
 
-`Task.compute_amount()` resolves the actual quantity per scheme
-algorithm and applies modifiers. `Task.effective_rate()` returns the
-modifier-adjusted rate. The full rules — scheme algorithms, modifier
-arithmetic, supersession, `is_referenced()` checks — live in the
-estimates-and-prices doc.
+`Task.compute_amount()` resolves the actual quantity per scheme algorithm
+and applies modifiers (the **invoice** view); `Task.compute_estimate_amount()`
+bills `est_qty` instead (the **estimate** view). `Task.effective_rate()`
+returns the modifier-adjusted rate. The full rules — scheme algorithms,
+modifier arithmetic, supersession, `is_referenced()` checks, the
+documents-as-lenses model — live in the estimates-and-prices doc.
 
 ### 4.5 Lifecycle service
 
@@ -482,7 +524,7 @@ sanctioned path to transition a Task. All methods wrap in
 | `complete_task(task_pk)` | — | pending/in_progress/blocked → complete; closes any open Bleps on the task; clears `blocked_reason`; fires job-completion check |
 | `block_task(task_pk, reason='')` | reason | pending/in_progress → blocked; rejects with `{conflict, workers}` dict if open Bleps exist (caller coordinates offline) |
 | `unblock_task(task_pk)` | — | blocked → in_progress; clears `blocked_reason` |
-| `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); fires job-completion check |
+| `cancel_task(task_pk)` | — | pending/in_progress/blocked → cancelled; closes any open Bleps (no opt-out); detaches the task's *pending* materials to the job as loose rows (task=NULL, earmark kept — user releases by hand if unwanted; consumed/released rows stay attached as history); fires job-completion check |
 | `start_work(task_pk, user, action=None, on_behalf_of=None)` | user, optional action, optional on_behalf_of | First-worker-on-pending: promotes to in_progress, auto-assigns if unassigned, consumes materials, opens a Blep. Worker-on-in-progress: opens a Blep, handling join/takeover via `action` param. With `on_behalf_of`, a `can_manage_time` manager opens the Blep for another worker (403 otherwise). |
 | `stop_work(task_pk, user, on_behalf_of=None)` | user, optional on_behalf_of | Closes the user's open Blep on this task; raises if none. A sub-minimum Blep (`< blep_minimum_minutes` whole minutes) is cancelled with full undo instead of being persisted closed — see the close-primitive note below §5.5. With `on_behalf_of`, a `can_manage_time` manager closes another worker's Blep (403 otherwise). |
 | `cancel_work(task_pk, user)` | user | The under-the-minimum "oops" undo. Deletes the user's open Blep on the task; if it was the first/only activity (the sole reason the task is `in_progress`), reverts the task to `pending` and un-consumes its materials (`MaterialService.unconsume`). Job status and assignee are left alone. Rejects if the session is already ≥ `blep_minimum_minutes` (stop instead) or there is no open Blep. Own-blep only — no `on_behalf_of`. (Internally delegates to `BlepService._cancel_blep`, which the close primitive also uses.) |
@@ -559,6 +601,39 @@ terminates after one level. There is no takeover-specific state handling.
 `block_task` returns a similar conflict shape (`active_workers`, plural,
 no options) when open Bleps exist — there's no override; the requester
 must coordinate offline before retrying.
+
+### 4.7 Fee — the fixed-charge atom
+
+`Fee` (`apps/jobs/models.py`, `db_table='fees'`) is the Job's third
+billable atom: a **fixed charge** — `quantity × unit_rate` — that is a
+pure pricing decision, not a record of work. It has no lifecycle, no
+bleps, and no actuals; it is **always billable**.
+
+| Field | Type | Notes |
+|---|---|---|
+| `fee_id` | AutoField PK | |
+| `job` | FK → Job (CASCADE, `related_name='fees'`) | |
+| `task` | OneToOne → Task (SET_NULL, nullable) | optional link to the work behind the charge |
+| `description` | CharField(255), blank | |
+| `quantity` | Decimal(10,2), default `1.00` | |
+| `unit_rate` | Decimal(10,2) | **required** |
+| `accounting_category` | FK → AccountingCategory (PROTECT) | **required, NOT NULL** |
+| `sort_order` | PositiveInteger, default 0 | |
+
+`Fee.compute_amount() → (quantity × unit_rate).quantize('0.01')`;
+`effective_accounting_category` returns its own `accounting_category`;
+`units` is `'none'`. Writes go through `FeeService`
+(`apps/jobs/services.py`) — `create_on_job` / `update` / `delete`, all
+respecting the on-hold guard — and the API at
+`POST /api/jobs/{id}/fees/` (+ `PATCH`/`DELETE` at
+`/api/jobs/{id}/fees/{fee_pk}/`).
+
+A Fee is created two ways: directly by the user (the task-list page's "Add
+Fee", §9.5), or by **estimate acceptance**, which crystallizes each
+hand-authored estimate line (a line with no atom source) into a Fee on
+the job and links it back via a `fee` source row (see
+`estimates-and-prices.md` §9). The `Fee` replaces the old `flat_fee`
+RateScheme algorithm.
 
 ## 5. Blep (time tracking)
 
@@ -640,7 +715,7 @@ viewset, `ValidationError` to HTTP 400.
 |---|---|
 | `create_historical(actor, task, start_time, end_time, target_user=None)` | Validated historical create; 30h window + `can_manage_time` rules |
 | `update(blep, actor, **fields)` | Update `start_time`, `end_time`, optionally `user`; validates ownership, window, and overlap |
-| `delete(blep, actor)` | Same authorization rules |
+| `delete(blep, actor)` | Same authorization rules, **plus the invoiced-task freeze**: refused for every actor when the blep's task is on a live invoice — billed actuals never change basis after the fact. Estimate claims don't block (estimates bill `est_qty`). |
 
 Validation rules enforced inside `BlepService`:
 
@@ -650,12 +725,32 @@ Validation rules enforced inside `BlepService`:
    on the same task)
 3. 30h rolling window for non-managers (create / update / delete)
 4. **Job-status guard:** a Blep may only be created on a Task whose Job
-   is in a status where work belongs. Live `start_work` allows `approved`
-   and `in_progress` only; backfilled `create_historical` also allows
-   `work_complete` (you may log time after work was marked done). Any
-   other status — `draft`, `submitted`, `rejected`, `completed`,
-   `cancelled` — is rejected with `ValidationError`. The UI is expected
-   to prevent this; the guard is defensive.
+   is in a status where work belongs. **Pre-approval work is permitted:**
+   live `start_work` allows `draft`, `submitted`, `approved`, and
+   `in_progress`; backfilled `create_historical` additionally allows
+   `work_complete` (log time after work was marked done) and `cancelled`
+   (backfill forgotten time for billing). `start_work` rejects
+   `work_complete`/`cancelled`; both reject a **held** job — an explicit
+   `if job.on_hold` check in `_assert_job_allows_blep`, ahead of the
+   status allow-list; `create_historical`
+   also rejects `completed`/`rejected`. Rejections raise `ValidationError`.
+   Starting a `draft`/`submitted` job leaves the **job** status unchanged
+   (`mark_work_started` is a no-op below `approved`) while the **task**
+   advances to `in_progress`. The UI is expected to prevent disallowed
+   cases; the guard is defensive.
+
+   **Pre-approval material consumption gotcha (handled):** starting a task
+   consumes its materials (`_promote_pending_task` → `MaterialService.consume`).
+   Pre-approval this means an in-stock PLI material is drawn down from QOH but
+   **no earmark is created** (consume's earmark step is a no-op when the job
+   has no earmark); an **out-of-stock** PLI material makes `consume` raise, and
+   because `start_work` is atomic the whole start rolls back (no blep, no
+   promotion) — so "material not in stock ⇒ can't start" is the effective
+   pre-approval gate. At approval, `create_earmarks_for_job` **excludes
+   already-consumed materials** so it can't phantom-reserve stock that's already
+   used, and `unconsume` (blep-cancel undo) skips earmark restoration on
+   pre-approval jobs to keep them earmark-free. (Freeform, non-PLI materials are
+   not stock-gated yet — deferred to the freeform-material-procurement spec.)
 5. **No future `end_time`:** a non-null `end_time` more than 30s ahead of
    `now` (`BlepService._CLOCK_SKEW_BUFFER`, tolerating mismatched device
    clocks) is rejected on create and update. You cannot have worked ahead
@@ -728,114 +823,52 @@ and `can_manage_time` rules.
   bumps a version that blep-dependent pages subscribe to and refetch — the
   page updates in place, no reload.
 
-## 6. EstWorksheet
+## 6. ~~EstWorksheet~~ (removed)
 
-`EstWorksheet` (`apps/estimates/models.py`, decorated with
-`@history`) is the planning-side container. **One mutable worksheet per
-job.** It belongs to a Job (FK) and has **no other lifecycle** — no
-`status`, `version`, or `parent`, and **no FK to the estimate**. Worksheet
-and estimate find each other only through the shared `job` (one estimate
-tree per job). The worksheet's fields are just `est_worksheet_id`, `job`,
-and `created_date`; it holds `PlanTask`s and `PlanMaterial`s.
-
-### 6.1 Editability (derived)
-
-A worksheet has no stored status; its editability is **derived from the
-job's live estimate** via `WorksheetService.is_editable(worksheet)`:
-editable while the job's latest non-superseded estimate is a **draft** (or
-the job has no estimate yet), and **frozen once an estimate is sent**
-(open) and through accept. Revising a sent estimate produces a new draft,
-which makes the worksheet editable again — so freezing is never a dead end.
-The worksheet write paths (`add_task_*`, `reorder_items`,
-`open_for_worksheet`) and the API (`EstWorksheet`/`PlanTask` serializers
-expose a computed `editable` flag) all key off this. There is no
-worksheet-status signal — `estimate_status_changed_for_worksheet` and the
-status machine were removed.
-
-### 6.2 No worksheet versioning
-
-There is no worksheet version chain. A job has a single worksheet that is
-edited in place; point-in-time history lives in the `HistoryEntry` audit
-trail. (`create_new_version` / `revise_worksheet` / `finalize` were
-removed.) The estimate keeps its own version chain (it's the customer-facing
-document); see `estimates-and-prices.md` §5.3.
-
-### 6.3 Generating an estimate (one tree)
-
-`EstimateWizardService.open_for_worksheet(worksheet)` returns the job's
-draft estimate, **adopting an existing draft** (e.g. one created directly)
-rather than minting a second, and creating one only when the job has none.
-It refuses if the worksheet is frozen.
-
-### 6.4 Deletion guard
-
-`WorksheetService.delete_worksheet` refuses only when one of the
-worksheet's PlanTasks/PlanMaterials is **claimed by an estimate line item**
-(an `EstimateLineItemSource`) — those line items must be removed first so
-the source rows don't outlive the atoms they reference.
-
-### 6.5 PlanTask vs Task
-
-PlanTask (`apps/jobs/models.py`) is **planning** data: name,
-description, billing fields (`rate_scheme`, `active_modifiers`,
-`est_qty`, `est_worker_time`), `sort_order`. It has no lifecycle, no
-hierarchy, no assignee, no Bleps, no materials of type `Material`.
-PlanTask materials are `PlanMaterial`.
-
-Task is the **execution** mirror: same billing fields plus `status`,
-`assignee`, `parent_task`, `worker_queue`, `actual_qty`, `blocked_reason`,
-plus a back-pointer `source_plan_task` for carry-over idempotency.
-
-Both inherit from `TaskBase` (abstract). The split was introduced when
-the WorkOrder model was removed: a single dual-purpose Task forced
-container-branching across ~30 sites and allowed semantically invalid
-states (worksheet tasks with hierarchy, etc.). After the split,
-PlanTask has only the fields that make sense at planning time, and
-hierarchy can only emerge during work. PlanTask is **estimable** (it
-goes through the estimate wizard) but not billable on its own — billing
-flows through actual Tasks.
-
-Worksheet→job materialization has one shared core,
-`JobService.materialize_worksheet_onto_job(job, worksheet)`, reached two
-ways: automatically on estimate acceptance (`AtomCarryOverService`, Phase
-A) and manually via `JobService.copy_from_worksheet` (see §3.4). The core
-copies the full `TaskBase`/`MaterialBase` field set through
-`copy_fields()`, preserves `sort_order` and `units`, always sets
-`parent_task=None` (hierarchy emerges later), records provenance
-(`source_plan_task` / `source_plan_material`), and creates earmarks.
-`Task.source_plan_task` is a `OneToOneField`, so the same PlanTask cannot
-be carried over twice — which also means the manual copy followed by
-acceptance does not duplicate.
-
-### 6.6 Estimate generation
-
-The estimate wizard reads PlanTasks and PlanMaterials as "atoms" and
-groups them into EstimateLineItems via `EstimateLineItemSource` rows.
-Full mechanics (atom claims, send-all-atoms, line-item recompute on
-sync, plan-side claim semantics) live in
-`docs/designs/estimates-and-prices.md`.
+> **Removed — the planning layer is gone.** `EstWorksheet`, `PlanTask`,
+> `PlanMaterial`, the worksheet API (`/api/est-worksheets/`,
+> `/api/plan-tasks/`), `WorksheetService`, and worksheet→job carry-over
+> (`materialize_worksheet_onto_job`, `AtomCarryOverService`) were all
+> **deleted** in the job-owns-atoms refactor.
+>
+> What replaced each piece:
+>
+> - **Planning data** → the Job's own `Task` / `Material` / `Fee` atoms,
+>   authored directly on the Job at any status (including `draft`). There
+>   is no separate planning container and no `PlanTask`/`PlanMaterial`
+>   mirror.
+> - **`PlanTask` vs `Task` split** → gone. `Task` (and the `TaskBase`
+>   abstract) is the single work-and-billing model; hierarchy
+>   (`parent_task`) lives only on the Job side, as before.
+> - **Estimate generation from a worksheet** → the estimate is a **lens**
+>   that projects the Job's atoms (`est_qty` via
+>   `Task.compute_estimate_amount`). Full wizard mechanics — atom claims,
+>   line-item recompute on sync, claim state — live in
+>   `docs/designs/estimates-and-prices.md` §§6–8.
+> - **Carry-over on accept** → `EstimateAcceptanceService.on_accept`
+>   crystallizes hand-lines into `Fee` atoms and earmarks the job; the
+>   work was already on the Job, so nothing is copied
+>   (`estimates-and-prices.md` §9).
 
 ## 7. Templates
 
-Templates power the populate-from-template paths. They feed both
-worksheets (creating PlanTasks) and Jobs directly (creating Tasks).
+Templates power the populate-from-template paths, which create Tasks and
+Materials directly on the Job.
 
 ### 7.1 Models
 
 | Model | Path | Role |
 |---|---|---|
-| `WorkTemplate` | `apps/estimates/models.py` | Worksheet- or Job-shaped template; carries optional `base_price` |
-| `TaskTemplate` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers`, `default_billable_qty`. For a `flat_fee` scheme, `default_active_modifiers` holds the per-item price as `{"flat_fee_price": str}` — `TaskTemplate.clean()` requires it to be positive. See `estimates-and-prices.md` §2.2. |
-| `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and TaskTemplate; carries `est_qty` and `sort_order` |
+| `WorkTemplate` | `apps/estimates/models.py` | Job-shaped template; carries optional `base_price` |
+| `ServiceItem` | `apps/estimates/models.py` | A single reusable task template; carries `rate_scheme`, `default_active_modifiers` (a list of pre-checked modifier keys). |
+| `TemplateTaskAssociation` | `apps/estimates/models.py` | M2M-with-extras between WorkTemplate and ServiceItem; carries `est_qty` and `sort_order` |
 | `TemplateMaterialAssociation` | `apps/inventory` | Links materials to a WorkTemplate; covered in the Materials doc |
 
-`TaskTemplate.is_active` is the soft-delete flag for task templates.
-`WorkTemplate.generate_tasks_for_worksheet`,
-`generate_tasks_for_job`, and the TaskTemplate picker UI all filter on
-`task_template__is_active=True`. Hard-deleting a TaskTemplate would
-SET_NULL the `source_template` FK on every `Task` and
-`EstimateLineItem` that originated from it (losing the catalog
-reference), so soft-delete is the intended path.
+`ServiceItem.is_active` is the soft-delete flag for task templates.
+`WorkTemplate.generate_tasks_for_job` and the ServiceItem picker UI all
+filter on `service_item__is_active=True`. Soft-delete (not hard-delete)
+is the intended path so historical references to a retired ServiceItem
+are preserved.
 
 `WorkTemplate` has no `is_active` field. Templates are hard-deleted —
 nothing else in the system holds a back-reference to a WorkTemplate, so
@@ -845,12 +878,10 @@ Worksheet, Task, or Material.
 
 ### 7.2 generate_task
 
-`TaskTemplate.generate_task(container, est_qty, ...)`
-(`apps/estimates/models.py`) is the polymorphic creator. It reads
-the container's type and creates the right kind of task:
-
-- `EstWorksheet` → PlanTask
-- `Job` → Task
+`ServiceItem.generate_task(container, est_qty, ...)`
+(`apps/estimates/models.py`) creates a `Task` on a `Job`. The container
+must be a `Job` — it raises `ValueError` for anything else (the
+worksheet/PlanTask branch was removed).
 
 It refuses to fire if the template's `rate_scheme` has been superseded
 (raises `SchemeSupersededError`, which the API translates to HTTP 409).
@@ -860,21 +891,19 @@ Optional overrides: `name`, `description`, `active_modifiers`,
 `est_worker_time`, `assignee`, `sort_order`. Falls back to the
 template's defaults when not provided.
 
-### 7.3 Worksheet/Job-level generation
+### 7.3 Job-level generation
 
 `WorkTemplate` exposes:
 
-- `generate_tasks_for_worksheet(worksheet, quantity=1)` — iterates
-  associations and calls `generate_task` for each, optionally
-  multi-instance (returns `[(association, instance_index, plan_task), ...]`).
-- `generate_tasks_for_job(job, quantity=1)` — same, for Jobs.
-- `generate_materials_for_worksheet(...)` and
-  `generate_materials_for_job(...)` — use the task pairing returned
+- `generate_tasks_for_job(job, quantity=1)` — iterates associations and
+  calls `generate_task` for each, optionally multi-instance (returns
+  `[(association, instance_index, task), ...]`).
+- `generate_materials_for_job(...)` — uses the task pairing returned
   above to attach materials to the right tasks.
 
-The `task_pairing` argument is how the materials side knows which
-PlanTask / Task each generated PlanMaterial / Material belongs to —
-critical for multi-instance template fanout.
+The `task_pairing` argument is how the materials side knows which Task
+each generated Material belongs to — critical for multi-instance template
+fanout.
 
 ## 8. Job Board
 
@@ -884,10 +913,10 @@ comes from `BoardService` (`apps/jobs/services.py`).
 
 ### 8.1 Columns
 
-| Column | Status filter | Endpoint | Purpose |
+| Column | Membership | Endpoint | Purpose |
 |---|---|---|---|
-| Pipeline | `draft`, `submitted`, `approved` | `GET /api/jobs/board/pipeline/` | Jobs being scoped/estimated/awaiting customer |
-| In Progress (URL slug `approved`) | `in_progress` | `GET /api/jobs/board/approved/` | Active work with worker columns + unassigned pool |
+| Pipeline | `draft`, `submitted`, `approved` (a held-from-`approved` job stays here) | `GET /api/jobs/board/pipeline/` | Jobs being scoped/estimated/awaiting customer |
+| In Progress (URL slug `approved`) | work-driven — see below | `GET /api/jobs/board/approved/` | Active work with worker columns + unassigned pool |
 | Unpaid | `work_complete` | `GET /api/jobs/board/unpaid/` | Work done; invoicing/payment outstanding |
 | Closed | `completed`, `rejected`, `cancelled` (within retention) | `GET /api/jobs/board/closed/` | Terminal jobs |
 | Combined | all | `GET /api/jobs/board/` | Single-fetch full board |
@@ -896,13 +925,37 @@ The legacy `approved`/`in_progress` slug mismatch is acknowledged — the
 endpoint name was kept for URL stability after the column was renamed
 when `STATUS_IN_PROGRESS` was added.
 
+**The In Progress column set is work-driven**, not a plain status
+filter. `BoardService.in_progress_column_jobs()` is the single
+definition: every `in_progress` job — held or not; a held `in_progress`
+job **keeps** its column placement — **plus** unheld pre-approval
+(`draft`/`submitted`) jobs with at least one task that is assigned AND
+still planned (pending/in_progress) — deliberate work-ahead someone
+chose to assign. The pre-approval trigger is self-limiting: the job
+drops back off both surfaces the moment its assigned tasks complete.
+`approved` stays excluded — release-to-floor is the gate. Pre-approval
+jobs appear in **both** board areas: their Pipeline card is unchanged,
+and their In Progress work card gets a dashed "quote" treatment.
+
+`BoardService.strip_jobs_payload()` is the single **serialization** of
+that set — `_serialize_job` fields (incl. `sub_status` and the
+`pre_approval`/`on_hold`/`hold_reason` flags), an accent-color fallback,
+and `task_total`/`task_completed` for the hover popup's progress bar
+(cancelled tasks excluded). Both the board column (`get_approved_data`)
+and the schedule chip strip (`ScheduleService.get_schedule`) consume it
+verbatim, so the two surfaces can't drift on membership, order, or
+shape. A held job's card shows an ON HOLD banner (`hold_reason` on
+hover) and its chip gets grey diagonal bars.
+
 ### 8.2 Sub-status derivation
 
 Sub-statuses are computed (`BoardService.compute_sub_status`), not
 stored. Examples (full list in `apps/jobs/services.py`):
 
-- `needs-scoping` — no worksheet
-- `estimating` — worksheet draft
+- `on-hold` — the `on_hold` flag is set (the **first branch** — it wins
+  over everything, whatever the underlying status)
+- `needs-scoping` — no estimate yet
+- `estimating` — a draft estimate exists
 - `awaiting-response` — estimate is open
 - `awaiting-prep` — estimate accepted (Job in `approved`)
 - `needs-tasks` — Job in `in_progress` with no tasks
@@ -957,26 +1010,34 @@ Top-down:
 2. **Description + History** in a flex row. `HistoryPanel`
    (`components/HistoryPanel.svelte`) shows status changes, notes, and
    inline email previews.
-3. **Horizontal accordion pillars** for Worksheet, Estimate, Tasks,
-   Invoice, Purchase Orders. One pillar is expanded; the others render
-   as vertical labels with counts. Clicking a pillar swaps the active
-   one. The default open pillar follows the "furthest along" rule
-   (Job complete → Invoice; has work → Tasks; has estimate → Estimate;
-   else Worksheet).
+3. **Horizontal accordion pillars** — Estimate, Tasks & Materials,
+   Invoices, Shipments, Purchase Orders (`activeSection ∈ {estimate,
+   tasks_materials, invoices, shipments, pos}`). One pillar is expanded;
+   the others render as vertical labels with counts. Clicking a pillar
+   swaps the active one. The pillars are **read-only summaries**: the
+   Estimate pillar shows the estimate document (or **Start Estimate** when
+   the job has none), Tasks & Materials a read-only work table (§9.5),
+   Shipments/PO/Invoice summary panels with links out. Authoring the Job's
+   work atoms happens on the **task-list page**, not the overview. (There is
+   no Plan/Client-View toggle and no Worksheet pillar — the planning layer
+   and the separate "client view" concept were both removed.)
 
 ### 9.2 Components
 
 | Component | Role |
 |---|---|
-| `JobDetail.svelte` | Composes the page; owns accordion state, fetches related data |
+| `JobDetail.svelte` | Composes the page; owns the accordion `activeSection` state, fetches related data |
 | `JobHeader.svelte` | Header + status dropdown |
 | `HistoryPanel.svelte` | Notes + history timeline + email entries |
 | `Accordion.svelte` | Reusable expand/collapse used elsewhere |
+| `ShipmentsPillar.svelte` | Read-only shipments summary inside the Shipments pillar |
 
-The Worksheet pillar shows the displayed worksheet's read-only task
-table (with materials nested under tasks); Estimate shows line items
-with grand total; Tasks shows the active Task list; Invoice / PO
-pillars are summary tables.
+The Estimate pillar shows the estimate document (line items + grand total,
+or **Start Estimate** when the job has none). Tasks & Materials shows a
+**read-only** work table (`wo-table`: Task / assignee / status / time, with
+materials nested); Invoice / PO / Shipments pillars are summary panels with
+links out. The overview does not author atoms — `WorkItemForm` /
+`MaterialModal` / `FeeModal` live on the **task-list page** (§9.5), not here.
 
 ### 9.3 Header financial rollups
 
@@ -1035,6 +1096,52 @@ Expense" button (next to "Add Material", shown when the job isn't locked) opens
 `ExpenseModal` (a thin overlay around `ExpenseForm`) pre-anchored to the job via
 the form's `initialJob` prop; on save the list reloads so the new expense
 surfaces. Expense create is open to any authenticated user.
+
+### 9.5 The work surface (task-list page)
+
+Authoring the Job's own work atoms happens on the **task-list page**
+(`JobTaskListPage.svelte`, `#/jobs/{id}/tasks`), reached from the Tasks &
+Materials pillar. It is available regardless of estimate state, so
+pre-approval / released effort is authored and shown there too. For managers
+it carries two affordances:
+
+- **"Add Work"** — single button that opens `PriceListPicker` (the unified
+  picker, see `estimates-and-prices.md` §6.4). The picker's `onChoose` result
+  routes to:
+  - `{type: 'service'}` → `WorkItemForm` pre-seeded for that `ServiceItem`
+    → `POST /api/jobs/{id}/add-from-template/` (creates a `Task` immediately)
+  - `{type: 'inventory'}` → `MaterialModal` with `presetPli` + `presetDescription`
+    → `POST /api/jobs/{id}/materials/`
+  - `{type: 'freeform', isMaterial: true}` → `MaterialModal` with
+    `presetDescription` + `defaultMaterialCategoryId`
+    → `POST /api/jobs/{id}/materials/`
+  - `{type: 'freeform', isMaterial: false}` → `FeeModal` with `presetDescription`
+    → `POST /api/jobs/{id}/fees/`
+- **"Add Expense"** — opens `ExpenseModal`; open to any authenticated user.
+
+`defaultMaterialCategoryId` is loaded from
+`GET /api/settings/` (`default_material_accounting_category` key) at page
+mount and passed to `MaterialModal` so freeform material lines default to the
+shop's configured material category.
+
+**Per-material status & actions (freeform-materials venue rule).** Each material
+row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-NNNN
+/ Awaiting customer / On Hand / Consumed / Released** (`materialStatus`,
+`frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
+`cost_source === 'estimated'`. **All per-material actions live here on the task
+view page only** — Set pricing (establishes a provisional material), the Order
+dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
+quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
+overview **Tasks & Materials pillar is passive** — it shows the same chips and
+consumed/released styling but no buttons or links. Full vocabulary and action
+table: `materials-inventory-and-purchasing.md` §16.
+
+The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
+of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
+a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
+the job is held (`on_hold` flag), **+ New change order** live on the
+overview's Estimate pillar. (These replaced the deleted Worksheet detail page; the old
+Plan/Client-View toggle is gone.)
 
 ## 10. UI: Task Detail page
 
@@ -1108,41 +1215,23 @@ It refreshes on this client's own blep changes (`blepActivityVersion`) and the
 30s duration tick; it does **not** poll for other workers' clock-ins/outs — a
 general cross-client repolling mechanism is deferred (see Unfinished Work).
 
-## 11. UI: Worksheet Detail page
+## 11. ~~UI: Worksheet Detail page~~ (removed)
 
-Route: `#/worksheets/:id` → `WorksheetDetailPage.svelte`.
-
-### 11.1 Components
-
-| Component | Role |
-|---|---|
-| `WorksheetDetailPage.svelte` | Page shell; fetches `GET /api/est-worksheets/{id}/`; owns modal state |
-| `WorksheetTaskTable.svelte` | Main table — PlanTasks with PlanMaterials nested as sub-rows; grand total footer |
-| `WorkItemForm.svelte` | Modal for creating / editing PlanTasks (freeform or from template). The single modal that replaced the old PlanTaskModal / TaskModal / SubtaskModal — same component is reused on the Job/Task side for subtasks |
-| `PlanMaterialModal.svelte` | Modal for creating / editing PlanMaterials; auto-fills and disables price fields when a PriceListItem is picked |
-| `InventoryItemPicker.svelte` | Reusable type-ahead picker for picking an `InventoryItem`. Built on `SearchPicker`; uses server-side `?search=` (code, description). Accepts a `params` prop for additional filters; "None (freeform)" option via the `header` snippet. Reused on the Materials side and PO line-item form. |
-
-Editing is gated to `can_manage_jobs` and **editable** worksheets — the
-detail page reads the serializer's computed `editable` flag (the worksheet
-is editable while the job's estimate is draft/absent, frozen once it's sent;
-see §6.1). Reordering is via up/down arrows (no drag-and-drop).
-
-### 11.2 PlanTask detail page
-
-Route: `#/worksheets/:wsId/plan-tasks/:planTaskId` →
-`PlanTaskDetailPage.svelte`. Standalone view for a PlanTask with full
-materials context. Reads `GET /api/plan-tasks/{id}/` (the standalone
-endpoint that includes nested materials, worksheet, job).
-
-PlanTask CRUD lives at the worksheet-nested endpoints:
-
-- `GET/POST /api/est-worksheets/{id}/tasks/`
-- `PATCH/DELETE /api/est-worksheets/{id}/tasks/{task_id}/`
-
-Materials CRUD on the standalone endpoint:
-
-- `GET/POST /api/plan-tasks/{id}/materials/`
-- `PATCH/DELETE /api/plan-tasks/{id}/materials/{mid}/`
+> **Removed.** The Worksheet detail page (`WorksheetDetailPage.svelte`),
+> the PlanTask detail page (`PlanTaskDetailPage.svelte`), and the
+> worksheet/plan-task API endpoints (`/api/est-worksheets/…`,
+> `/api/plan-tasks/…`) are gone with the planning layer.
+>
+> Where the work-authoring UI lives now:
+>
+> - **Authoring the Job's work atoms** → the **task-list page** (§9.5), not
+>   the overview. The single **"Add Work"** picker (`PriceListPicker`) routes to
+>   `WorkItemForm` (Task), `MaterialModal` (Material), or `FeeModal` (Fee).
+> - **`InventoryItemPicker.svelte`** (type-ahead `InventoryItem` picker,
+>   built on `SearchPicker`) survives — reused by `MaterialModal` and the
+>   PO line-item form.
+> - **Task detail / CRUD** → `/api/tasks/…` and the job-nested
+>   `/api/jobs/{id}/tasks/{task_pk}/` (see §4, §10).
 
 ## 12. Deliverables and Shipments
 
@@ -1205,7 +1294,7 @@ an already-delivered item is genuinely needed, the escape hatch is to
 finalize the job (`cancelled` + invoice for work done — see
 `invoicing-and-expenses.md`) and start a new one.
 
-Editability keys on **CO state**, not on `on_hold` alone — a non-CO
+Editability keys on **CO state**, not on the hold flag alone — a non-CO
 pause (deposit, backorder) leaves the agreed scope frozen.
 
 Rationale: while the customer is reviewing a `sent` estimate or CO, the
@@ -1244,7 +1333,7 @@ This is the single cross-app modification this feature made; see also
 - A Shipment can only be created server-side once the Job has an accepted
   estimate. Enforced in `ShipmentService.create`; raises before any
   database write.
-- **Shipments are frozen while the Job is `on_hold`.**
+- **Shipments are frozen while the Job is held (`on_hold` flag).**
   `ShipmentService._assert_job_not_on_hold` rejects creation — otherwise
   someone could ship against a proposed-but-unagreed deliverable scope
   during CO negotiation, and the resulting row would anchor mid-flight.
@@ -1327,13 +1416,12 @@ matching the chrome of its neighbors. The list shows simple
 "Edit" link in the panel head opens `<DeliverablesEditModal>` when the
 list is editable.
 
-**Three mount points, one component.** The same `<DeliverablesSection>`
-is mounted on the **Job detail** page, the **Estimate detail** page, and
-the **Worksheet detail** page (bottom of each), so the planning scope can
-be edited wherever the user happens to be pre-acceptance. It takes
-`jobId` plus a `canManage` prop, which each parent feeds from its own
-already-fetched per-object `can_manage` flag (`job.can_manage`,
-`estimate.can_manage`, `worksheet.can_manage` — all from
+**Two mount points, one component.** The same `<DeliverablesSection>`
+is mounted on the **Job detail** page and the **Estimate detail** page
+(bottom of each), so the scope can be edited wherever the user happens to
+be pre-acceptance. It takes `jobId` plus a `canManage` prop, which each
+parent feeds from its own already-fetched per-object `can_manage` flag
+(`job.can_manage`, `estimate.can_manage` — both from
 `JobScopedCanManageMixin` / `JobService.user_can_manage`). The "Edit"
 affordance shows only when `canManage && editability.editable`, so the
 button appears exactly when the server would accept the write (atom
@@ -1428,13 +1516,12 @@ architecture doc flags — see `architecture-and-conventions.md` §2.3.
 
 `apps/estimates/signals.py` defines two custom signals and their
 receivers (the former `estimate_status_changed_for_worksheet` was removed
-when worksheets were decoupled from estimates — worksheet editability is now
-derived, not signal-driven; see §6.1):
+with the worksheet layer):
 
 | Signal | Sender | Receiver | Effect |
 |---|---|---|---|
 | `estimate_status_changed_for_job` | `Estimate.save()` | `update_job_status` | Walks the Job through the right status (draft → submitted → approved on send/accept; **open → rejected** drives the Job to `rejected`); creates a `HistoryEntry` action row attributed to the `system` user; refuses to downgrade or to touch completed/cancelled jobs |
-| `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | `trigger_atom_carry_over` | Calls `AtomCarryOverService.carry_over_for_estimate(estimate)` to copy plan-side atoms to the Job |
+| `estimate_accepted` | `Estimate.save()` (when transitioning to accepted) | acceptance receiver | Calls `EstimateAcceptanceService.on_accept(estimate)` — crystallizes each hand-line into a `Fee` on the Job and earmarks the job's inventoried materials (`estimates-and-prices.md` §9) |
 
 `Estimate.save()` (`apps/estimates/models.py`) is what fires these.
 The receivers do not currently mark estimates superseded automatically —
@@ -1446,11 +1533,15 @@ covers this).
 
 **ChangeOrder uses no signals.** `ChangeOrderService.update_status`
 handles acceptance/rejection side-effects directly: on `→ accepted` it
-advances the Job `on_hold → approved` via `JobService.update_job` and
-writes a `HistoryEntry`; on `→ rejected`/`→ expired` it calls
-`DeliverableService.snapshot_document(change_order=co)` (Trigger 2). No
-Task or Material is mutated by either path — the human applies the
-agreed changes by hand while the job sits in `approved`.
+clears the job's `on_hold` flag — the job resumes its true underlying
+status directly (held from `in_progress` goes straight back to
+`in_progress`; no second release step) — writes a system-attributed
+`HistoryEntry`, then crystallizes the CO's deltas onto the Job's atoms
+(`ChangeOrderAcceptanceService.on_accept`, run after the un-hold because
+atom writes are blocked while held; all in one transaction — see
+`estimates-and-prices.md` §14.11). On `→ rejected`/`→ expired` it calls
+`DeliverableService.snapshot_document(change_order=co)` (Trigger 2) and
+the job stays held.
 
 ## 14. Unfinished work
 
@@ -1470,22 +1561,9 @@ agreed changes by hand while the job sits in `approved`.
   it requires converting the `Task.objects.filter(pk=...).update(...)`
   calls in `TaskLifecycleService` to `task.save()` so the change-tracker
   can capture old/new values.
-- **Workflow routing soft warnings.** `populate-from-template` and
-  `populate-from-estimate` don't warn when the Job has a worksheet
-  (where `copy-from-worksheet` would be preferred), or when the Job
-  already has tasks. Hard prerequisite gates exist; soft steering does
-  not.
-- **Gate Job task population on estimate acceptance.** A Job's tasks
-  should only be populated as a side-effect of estimate acceptance
-  (preferring the worksheet's PlanTasks when one exists, falling back
-  to the estimate's line items, otherwise leaving the user to add
-  tasks by hand). Today `populate-from-template` and
-  `populate-from-estimate` can be invoked at any point in the Job
-  lifecycle, including before an estimate is accepted — which lets
-  Tasks land on a Job that has no agreed-upon scope. Add a status
-  precondition (Job must be `approved` or later, or the estimate
-  must be `accepted`) and remove the standalone populate-from-template
-  surface from the SPA's pre-acceptance flow.
+- **Workflow routing soft warnings.** `populate-from-template` doesn't
+  warn when the Job already has atoms. Hard prerequisite gates exist;
+  soft steering does not.
 - **"Request Edit" button stub.** `RecentTimeList.svelte` shows an
   alert; there's no backend wiring or UI for the request-and-approve
   flow.

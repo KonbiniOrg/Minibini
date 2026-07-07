@@ -2,7 +2,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
@@ -82,37 +81,32 @@ class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
         data = serializer.validated_data.copy()
         purchased_by = data.pop('purchased_by', None)
         new_material = data.pop('new_material', None)
-        # Expenses no longer link an existing material; ignore any inbound id.
+        material_id = data.pop('material_id', None)
+        attach_qty = data.pop('attach_qty', None)
+        # The `material` FK is not client-set; attach uses `material_id`.
         data.pop('material', None)
-        try:
-            expense = ExpenseService.submit(
-                entered_by=self.request.user,
-                purchased_by=purchased_by,
-                new_material=new_material,
-                **data,
-            )
-        except DjangoValidationError as e:
-            raise self._to_drf_validation_error(e)
+        expense = ExpenseService.submit(
+            entered_by=self.request.user,
+            purchased_by=purchased_by,
+            new_material=new_material,
+            material_id=material_id,
+            attach_qty=attach_qty,
+            **data,
+        )
         serializer.instance = expense
 
     def perform_update(self, serializer):
         # Mutate serializer.instance (not a fresh get_object()) so the serialized
         # response reflects the change the service applied.
-        try:
-            ExpenseService.update(
-                expense=serializer.instance,
-                actor=self.request.user,
-                **serializer.validated_data,
-            )
-        except DjangoValidationError as e:
-            raise self._to_drf_validation_error(e)
+        ExpenseService.update(
+            expense=serializer.instance,
+            actor=self.request.user,
+            **serializer.validated_data,
+        )
 
     def destroy(self, request, *args, **kwargs):
         expense = self.get_object()
-        try:
-            ExpenseService.delete(expense=expense, actor=request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
+        ExpenseService.delete(expense=expense, actor=request.user)
         return Response({'message': 'Expense deleted.'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='history', url_name='history')
@@ -131,16 +125,6 @@ class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='reject', url_name='reject')
     def reject(self, request, pk=None):
         expense = self.get_object()
-        try:
-            ExpenseService.reject(expense=expense, actor=request.user)
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages[0]}, status=400)
+        ExpenseService.reject(expense=expense, actor=request.user)
         serializer = self.get_serializer(expense)
         return Response(serializer.data)
-
-    @staticmethod
-    def _to_drf_validation_error(django_error):
-        from rest_framework.exceptions import ValidationError as DRFValidationError
-        if hasattr(django_error, 'message_dict'):
-            return DRFValidationError(django_error.message_dict)
-        return DRFValidationError({'detail': django_error.messages})

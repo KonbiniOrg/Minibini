@@ -1,5 +1,5 @@
 <script>
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
 
   // Reusable prompt for the worker-entered quantity an ENTERED_QTY task
   // needs before it can be completed. Pure input collector — the caller
@@ -19,8 +19,8 @@
   }
 </script>
 
-<div class="overlay" use:modalKeys={{ onSave: submit, onCancel: onClose }}>
-  <div class="modal" role="dialog" tabindex="-1">
+<Modal open={true} onCancel={onClose} maxWidth="570px">
+<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
     <h3>Quantity needed</h3>
     <p>
       This task is billed per <strong>{unitLabel || 'unit'}</strong>.
@@ -34,21 +34,13 @@
     </p>
     {#if error}<p class="error">{error}</p>{/if}
     <div class="buttons">
-      <button type="button" onclick={submit}>Complete task</button>
+      <button type="submit">Complete task</button>
       <button type="button" onclick={onClose}>Cancel</button>
     </div>
-  </div>
-</div>
+</form>
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal-nested);
-  }
-  .modal {
-    background: white; padding: 16px; max-width: 380px;
-    border: 1px solid #ccc;
-  }
   .buttons { display: flex; gap: 8px; margin-top: 12px; }
   .error { color: #a8071a; }
 </style>

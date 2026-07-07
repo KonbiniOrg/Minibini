@@ -113,11 +113,8 @@
 </dl>
 
 <h3>Tags</h3>
-{#if $canManageJobs}
-  <TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []} />
-{:else}
-  <p>{(business.tags || []).map(t => t.name).join(', ') || 'No tags.'}</p>
-{/if}
+<TagEditor endpoint="/api/businesses/{business.business_id}" initialTags={business.tags || []}
+  readonly={!$canManageJobs} />
 
 <FullOnly>
   <h3>Contacts</h3>

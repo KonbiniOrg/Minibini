@@ -27,9 +27,12 @@ def _add_can_manage_jobs(user):
 
 
 def _advance_job_to_on_hold(job):
-    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_ON_HOLD):
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
         job.status = s
         job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -57,7 +60,7 @@ class ChangeOrderSendAPITest(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), price=Decimal('200'),
-            line_number=1)
+            line_number=1, accounting_category_id=901)
 
     def test_send_defaults_requires_auth(self):
         r = self.client.get(

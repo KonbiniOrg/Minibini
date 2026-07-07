@@ -18,33 +18,51 @@
     // Optional { job_id, job_number } to pre-anchor a new expense (e.g. opened
     // from a Task detail page). Ignored when editing an existing expense.
     initialJob = null,
+    // Attach mode: an existing PENDING material this expense records the cost
+    // of (supplies its cost + receives into its lot). When set, the job is
+    // fixed to the material's job and the new-material picker is hidden.
+    initialMaterial = null,
   } = $props();
 
   let isEdit = $derived(!!expense);
 
   // Form state
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let amount = $state(expense?.amount || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let purchased_on = $state(expense?.purchased_on || new Date().toISOString().slice(0, 10));
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let description = $state(expense?.description || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let accounting_category = $state(expense?.accounting_category || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let payment_method = $state(expense?.payment_method || 'personal');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let payment_account_id = $state(expense?.payment_account_id || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let reference_number = $state(expense?.reference_number || '');
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let purchased_by = $state(expense?.purchased_by || $currentUser?.id || null);
   let newMaterial = $state(null);
 
   // Job is the cost anchor. jobId is the numeric id; jobRow is the full job
   // object fed as selectedItem to JobPicker for edit-mode / initialJob prefill.
-  let jobId = $state(expense?.job ?? initialJob?.job_id ?? null);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
+  let jobId = $state(expense?.job ?? initialJob?.job_id ?? initialMaterial?.job ?? null);
   let jobRow = $state(
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     expense?.job
+      // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
       ? { job_id: expense.job, job_number: expense.job_number, name: expense?.job_name }
+      // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
       : (initialJob || null)
   );
 
   // Compound "paid by" select value: "personal" or "company:<account_id>"
   let paidByValue = $state(
+    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     expense?.payment_method === 'company' && expense?.payment_account_id
+      // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
       ? `company:${expense.payment_account_id}`
       : 'personal'
   );
@@ -105,9 +123,13 @@
         job: jobId,
       };
 
-      // If the user queued a purchased item, include it. The backend creates a
-      // consumable material, or — for an inventoried PLI — a stock receipt.
-      if (newMaterial) {
+      // Attach mode: link the cost to an existing pending material (mutually
+      // exclusive with new_material). Otherwise, if the user queued a purchased
+      // item, include it — the backend creates a consumable material, or a
+      // stock receipt for an inventoried PLI.
+      if (initialMaterial) {
+        payload.material_id = initialMaterial.material_id;
+      } else if (newMaterial) {
         payload.new_material = { ...newMaterial, job_id: jobId };
       }
 
@@ -208,13 +230,19 @@
   </p>
   {#each fieldErr('job') as msg}<p><em>{msg}</em></p>{/each}
 
-  <MaterialPicker
-    jobId={jobId}
-    bind:newMaterial={newMaterial}
-    defaultDescription={description}
-    defaultAmount={amount}
-  />
+  {#if initialMaterial}
+    <p class="attach-note">Recording a cost against material:
+      <strong>{initialMaterial.description || '(material)'}</strong></p>
+  {:else}
+    <MaterialPicker
+      jobId={jobId}
+      bind:newMaterial={newMaterial}
+      defaultDescription={description}
+      defaultAmount={amount}
+    />
+  {/if}
   {#each fieldErr('material') as msg}<p class="error"><em>{msg}</em></p>{/each}
+  {#each fieldErr('material_id') as msg}<p class="error"><em>{msg}</em></p>{/each}
 
   {#each fieldErr('non_field_errors') as msg}<p class="error"><em>{msg}</em></p>{/each}
   {#each fieldErr('detail') as msg}<p class="error"><em>{msg}</em></p>{/each}

@@ -5,15 +5,15 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.estimates.models import WorkTemplate, TaskTemplate
+from apps.estimates.models import WorkTemplate, ServiceItem
 from apps.estimates.services import WorkTemplateService
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.services import ConfigurationService
-from apps.api.permissions import CanManageConfig
+from apps.api.permissions import CanManageConfig, CanManageJobsOrFinancialsOrConfig
 from apps.api.mixins import JSONDestroyMixin
 from apps.inventory.models import TemplateMaterialAssociation
 from .serializers import (
-    WorkTemplateSerializer, TaskTemplateSerializer,
+    WorkTemplateSerializer, ServiceItemSerializer,
     ConfigurationSerializer, AccountingCategorySerializer,
     TemplateMaterialAssociationSerializer,
 )
@@ -53,12 +53,9 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
         serializer = TemplateMaterialAssociationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        a = TemplateMaterialAssociation(work_template=template, **serializer.validated_data)
-        try:
-            a.full_clean()
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-        a.save()
+        from apps.inventory.services import TemplateMaterialAssociationService
+        a = TemplateMaterialAssociationService.create(
+            template, **serializer.validated_data)
         return Response(
             TemplateMaterialAssociationSerializer(a).data,
             status=status.HTTP_201_CREATED,
@@ -77,47 +74,52 @@ class WorkTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
         if request.method == 'GET':
             return Response(TemplateMaterialAssociationSerializer(a).data)
 
+        from apps.inventory.services import TemplateMaterialAssociationService
         if request.method == 'DELETE':
-            a.delete()
+            TemplateMaterialAssociationService.delete(a)
             return Response({'message': 'Template material association deleted.'})
 
         serializer = TemplateMaterialAssociationSerializer(a, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        # Apply changes to the instance, then full_clean() to fire model-level
-        # validation (cross-template template_task_association mismatch, etc.)
-        # before saving.
-        for field, value in serializer.validated_data.items():
-            setattr(a, field, value)
-        try:
-            a.full_clean()
-        except DjangoValidationError as e:
-            return Response({'detail': e.messages}, status=status.HTTP_400_BAD_REQUEST)
-        a.save()
+        a = TemplateMaterialAssociationService.update(
+            a, **serializer.validated_data)
         return Response(TemplateMaterialAssociationSerializer(a).data)
 
 
-class TaskTemplateViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
-    queryset = TaskTemplate.objects.all().order_by('template_name')
-    serializer_class = TaskTemplateSerializer
+class ServiceItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
+    queryset = ServiceItem.objects.all().order_by('template_name')
+    serializer_class = ServiceItemSerializer
     lookup_field = 'pk'
-    destroy_response_message = 'Task template deleted.'
+    destroy_response_message = 'Service item deleted.'
+
+    def get_queryset(self):
+        qs = ServiceItem.objects.all().order_by('template_name')
+        if self.action == 'list':
+            search = self.request.query_params.get('search', '').strip()
+            if search:
+                from django.db.models import Q
+                qs = qs.filter(
+                    Q(template_name__icontains=search) | Q(description__icontains=search)
+                )
+        return qs
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageConfig()]
+        # Catalog management is shared: jobs | financials | config.
+        return [IsAuthenticated(), CanManageJobsOrFinancialsOrConfig()]
 
     def perform_create(self, serializer):
-        template = WorkTemplateService.create_task_template(**serializer.validated_data)
+        template = WorkTemplateService.create_service_item(**serializer.validated_data)
         serializer.instance = template
 
     def perform_update(self, serializer):
-        WorkTemplateService.update_task_template(
+        WorkTemplateService.update_service_item(
             self.get_object().pk, **serializer.validated_data
         )
 
     def perform_destroy(self, instance):
-        WorkTemplateService.delete_task_template(instance.pk)
+        WorkTemplateService.delete_service_item(instance.pk)
 
 
 class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
@@ -140,48 +142,44 @@ class AccountingCategoryViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
             self.get_object().pk, **serializer.validated_data
         )
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            ConfigurationService.delete_accounting_category(instance.pk)
+        except DjangoValidationError as e:
+            # PROTECT'd references — a friendly 409, not a ProtectedError 500.
+            return Response({'detail': e.messages[0]},
+                            status=status.HTTP_409_CONFLICT)
+        return Response({'message': self.destroy_response_message})
+
 
 def _validate_schedule_keys(data):
     """Validate schedule_* keys in the incoming settings payload.
 
     Returns an error dict (suitable for a 400 response) or None if valid.
-    Reads any keys present in `data` plus falls back to the current stored
-    values to evaluate cross-key constraints (workday end after start).
+    `schedule_week_envelope` may arrive as a dict or a JSON string; the
+    per-day interval rules (HH:MM, ordered, non-overlapping) live in
+    apps.schedule.calendar_arithmetic.validate_week_envelope.
     """
-    schedule_keys = (
-        'schedule_workday_start', 'schedule_workday_end',
-        'schedule_task_buffer_minutes', 'schedule_horizon_days',
-    )
-    incoming = {k: v for k, v in data.items() if k in schedule_keys}
-    if not incoming:
-        return None
+    errors = {}
 
-    # Pull current values for any keys not being set in this request.
-    current = {}
-    for key in schedule_keys:
-        if key in incoming:
-            current[key] = incoming[key]
-        else:
+    if 'schedule_week_envelope' in data:
+        from apps.schedule.calendar_arithmetic import validate_week_envelope
+        raw = data['schedule_week_envelope']
+        parsed = raw
+        if isinstance(raw, str):
             try:
-                current[key] = Configuration.objects.get(key=key).value
-            except Configuration.DoesNotExist:
-                current[key] = None
-
-    def parse_hhmm(s, label):
-        if s is None:
-            return None
-        try:
-            hh, mm = str(s).split(':')
-            hh, mm = int(hh), int(mm)
-            if not (0 <= hh <= 23 and 0 <= mm <= 59):
-                raise ValueError
-            return hh * 60 + mm
-        except (ValueError, AttributeError):
-            return {'__error__': f"{label} must be HH:MM"}
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                parsed = None
+        if parsed is None:
+            errors['schedule_week_envelope'] = 'must be valid envelope JSON'
+        else:
+            messages = validate_week_envelope(parsed)
+            if messages:
+                errors['schedule_week_envelope'] = ' '.join(messages)
 
     def parse_int(s, label, min_v=0):
-        if s is None:
-            return None
         try:
             n = int(s)
             if n < min_v:
@@ -190,25 +188,16 @@ def _validate_schedule_keys(data):
         except (TypeError, ValueError):
             return {'__error__': f"{label} must be an integer"}
 
-    errors = {}
-
-    wstart = parse_hhmm(current['schedule_workday_start'], 'schedule_workday_start')
-    if isinstance(wstart, dict): errors['schedule_workday_start'] = wstart['__error__']
-    wend = parse_hhmm(current['schedule_workday_end'], 'schedule_workday_end')
-    if isinstance(wend, dict): errors['schedule_workday_end'] = wend['__error__']
-    buf = parse_int(current['schedule_task_buffer_minutes'],
-                    'schedule_task_buffer_minutes', min_v=0)
-    if isinstance(buf, dict): errors['schedule_task_buffer_minutes'] = buf['__error__']
-    horiz = parse_int(current['schedule_horizon_days'],
-                      'schedule_horizon_days', min_v=1)
-    if isinstance(horiz, dict): errors['schedule_horizon_days'] = horiz['__error__']
-
-    if errors:
-        return errors
-
-    # Cross-key checks (only when all relevant values parse).
-    if wstart is not None and wend is not None and wstart >= wend:
-        errors['schedule_workday_end'] = 'must be after schedule_workday_start'
+    if 'schedule_task_buffer_minutes' in data:
+        buf = parse_int(data['schedule_task_buffer_minutes'],
+                        'schedule_task_buffer_minutes', min_v=0)
+        if isinstance(buf, dict):
+            errors['schedule_task_buffer_minutes'] = buf['__error__']
+    if 'schedule_horizon_days' in data:
+        horiz = parse_int(data['schedule_horizon_days'],
+                          'schedule_horizon_days', min_v=1)
+        if isinstance(horiz, dict):
+            errors['schedule_horizon_days'] = horiz['__error__']
 
     return errors or None
 
@@ -257,10 +246,27 @@ def settings_view(request):
                     {'average_labor_cost': 'must be a non-negative number'},
                     status=400,
                 )
+    if 'default_material_accounting_category' in request.data:
+        raw = request.data['default_material_accounting_category']
+        raw = '' if raw is None else str(raw).strip()
+        if raw != '':
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {'default_material_accounting_category': 'must be a category id'},
+                    status=400)
+            if not AccountingCategory.objects.filter(pk=pk, is_active=True).exists():
+                return Response(
+                    {'default_material_accounting_category': 'unknown or inactive category'},
+                    status=400)
     for key, value in request.data.items():
-        Configuration.objects.update_or_create(
-            key=key, defaults={'value': str(value)}
-        )
+        # The envelope is stored as canonical JSON; a dict payload must be
+        # serialized (str(dict) would write unparseable Python repr).
+        if key == 'schedule_week_envelope' and not isinstance(value, str):
+            ConfigurationService.set(key, json.dumps(value))
+        else:
+            ConfigurationService.set(key, str(value))
     configs = Configuration.objects.all()
     data = {c.key: c.value for c in configs}
     return Response(data)
@@ -280,14 +286,11 @@ def units_view(request):
 
     units = request.data
     if not isinstance(units, list) or len(units) == 0:
-        return Response({'error': 'Units must be a non-empty list.'}, status=400)
+        return Response({'detail': 'Units must be a non-empty list.'}, status=400)
     if units[0] != 'none':
-        return Response({'error': '"none" must be the first entry.'}, status=400)
+        return Response({'detail': '"none" must be the first entry.'}, status=400)
     if len(units) != len(set(units)):
-        return Response({'error': 'Duplicate units are not allowed.'}, status=400)
+        return Response({'detail': 'Duplicate units are not allowed.'}, status=400)
 
-    Configuration.objects.update_or_create(
-        key='units_list',
-        defaults={'value': json.dumps(units)},
-    )
+    ConfigurationService.set('units_list', json.dumps(units))
     return Response(units)

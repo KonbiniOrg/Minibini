@@ -11,7 +11,7 @@ from apps.core.models import AccountingCategory
 from apps.expenses.models import Expense
 from apps.inventory.models import InventoryItem, Material
 from apps.inventory.services import MaterialService
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.jobs.services import JobService, TaskLifecycleService
 
 User = get_user_model()
@@ -25,12 +25,12 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             email='wcg@example.com', work_number='555-0199',
         )
         cat = AccountingCategory.objects.create(name='WCG Cat', code='WCG1')
-        self.scheme = ServiceItem.objects.create(
-            name='S-wcg', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-wcg', algorithm=RateScheme.ENTERED_QTY,
             rate=1, unit_label='ea', accounting_category=cat,
         )
         self.pli = InventoryItem.objects.create(
-            code='I-WCG', accounting_category=cat, is_catalog=True,
+            code='I-WCG', accounting_category=cat,
             qty_on_hand=Decimal('10'),
         )
         self.job = Job.objects.create(
@@ -87,7 +87,7 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
         """A pending task-less non-inventoried material also blocks work_complete."""
         cat = AccountingCategory.objects.first()
         non_inv_pli = InventoryItem.objects.create(
-            code='NI-WCG', accounting_category=cat, is_catalog=False,
+            code='NI-WCG', accounting_category=cat,
         )
         MaterialService.create_on_job(
             job=self.job, task=None, description='non-inv pending',
@@ -98,14 +98,18 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
 
     def test_consumed_no_item_does_not_block(self):
         """A consumed task-less material with no inventory item does not block
-        work_complete (the no-side-effect path under universal tracking)."""
+        work_complete. consume() now refuses provisional materials, so this
+        state can only arise from legacy data; construct it directly to verify
+        the gate keys on consumption_state (not inventory_item) and lets it
+        through."""
         cat = AccountingCategory.objects.first()
         m = MaterialService.create_on_job(
-            job=self.job, task=None, description='no-item consume',
+            job=self.job, task=None, description='no-item consumed',
             quantity=Decimal('1'), inventory_item=None,
             accounting_category=cat,
         )
-        MaterialService.consume(m)
+        m.consumption_state = Material.CONSUMPTION_STATE_CONSUMED
+        m.save(update_fields=['consumption_state'])
         JobService.update_status(self.job.pk, Job.STATUS_WORK_COMPLETE)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
@@ -116,9 +120,10 @@ class LooseMaterialWorkCompleteGateTest(TestCase):
             job=self.job, task=None, description='blocking mat',
             quantity=Decimal('2'), inventory_item=self.pli,
         )
-        t = Task.objects.create(job=self.job, name='only task', service_item=self.scheme)
-        # Drive task completion the same way production does.
-        TaskLifecycleService.complete_task(t.pk)
+        t = Task.objects.create(job=self.job, name='only task', rate_scheme=self.scheme)
+        # Drive task completion the same way production does. The scheme is
+        # entered_qty, so a quantity must be supplied to complete the task.
+        TaskLifecycleService.complete_task(t.pk, actual_qty=Decimal('1'))
         self.job.refresh_from_db()
         self.assertNotEqual(self.job.status, Job.STATUS_WORK_COMPLETE)
         # Job should be in_progress (setUp walks to in_progress; loose materials

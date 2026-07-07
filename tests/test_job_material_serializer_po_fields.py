@@ -56,7 +56,7 @@ class MaterialQtyOnHandTest(TestCase):
         self.job = Job.objects.create(job_number='J-QOH', contact=contact, description='j')
         self.pli = InventoryItem.objects.create(
             code='INV', description='inv', accounting_category=cat,
-            is_catalog=True, qty_on_hand=Decimal('5.00'))
+            qty_on_hand=Decimal('5.00'))
         self.mat = Material.objects.create(
             job=self.job, accounting_category=cat, description='widget',
             quantity=Decimal('8.00'), inventory_item=self.pli)
@@ -66,3 +66,21 @@ class MaterialQtyOnHandTest(TestCase):
         data = MaterialSerializer(self.mat).data
         self.assertEqual(data['qty_on_hand'], '5.00')   # PLI QOH, not 8
         self.assertEqual(str(self.mat.quantity), '8.00')  # required still 8
+
+    def test_tasks_serializer_also_exposes_qty_on_hand(self):
+        """The per-task MaterialSerializer (which feeds the task-list TaskTree)
+        must report the same QOH so the 'Actual' column shows real stock."""
+        from apps.api.tasks.serializers import MaterialSerializer as TasksMaterialSerializer
+        data = TasksMaterialSerializer(self.mat).data
+        self.assertEqual(data['qty_on_hand'], '5.00')
+
+    def test_tasks_serializer_qty_on_hand_zero_for_freeform(self):
+        """A freeform (no inventory item) material has no stock concept -> 0."""
+        from apps.inventory.models import Material
+        from apps.api.tasks.serializers import MaterialSerializer as TasksMaterialSerializer
+        freeform = Material.objects.create(
+            job=self.job, accounting_category=self.pli.accounting_category,
+            description='freeform', quantity=Decimal('2.00'),
+        )
+        data = TasksMaterialSerializer(freeform).data
+        self.assertEqual(data['qty_on_hand'], '0')

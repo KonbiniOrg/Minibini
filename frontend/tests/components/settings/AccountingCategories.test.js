@@ -7,14 +7,17 @@ import { api } from '@/lib/api.js';
 import AccountingCategories from '@/components/settings/AccountingCategories.svelte';
 
 const CAT = { id: 1, code: 'C1', name: 'Labor', taxable: true, is_active: true, default_description: '' };
+const INACTIVE_CAT = { id: 2, code: 'C2', name: 'Retired', taxable: true, is_active: false, default_description: '' };
 
 beforeEach(() => {
   api.get.mockReset();
   api.post.mockReset();
   api.patch.mockReset();
-  // categories load resolves; QBO accounts rejects → qboAccounts stays null
+  // categories load resolves; QBO accounts rejects → qboAccounts stays null;
+  // settings load resolves with no default set unless overridden per-test.
   api.get.mockImplementation((url) => {
-    if (url === '/api/accounting-categories/') return Promise.resolve({ results: [CAT] });
+    if (url === '/api/accounting-categories/') return Promise.resolve({ results: [CAT, INACTIVE_CAT] });
+    if (url === '/api/settings/') return Promise.resolve({});
     return Promise.reject({ status: 404 });
   });
   api.post.mockResolvedValue({});
@@ -23,8 +26,8 @@ beforeEach(() => {
 
 describe('AccountingCategories', () => {
   it('loads and lists categories', async () => {
-    const { findByText } = render(AccountingCategories);
-    expect(await findByText('Labor')).toBeInTheDocument();
+    const { findByRole } = render(AccountingCategories);
+    expect(await findByRole('cell', { name: 'Labor' })).toBeInTheDocument();
   });
 
   it('creates a new category', async () => {

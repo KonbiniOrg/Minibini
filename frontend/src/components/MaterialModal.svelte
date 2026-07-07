@@ -1,8 +1,13 @@
 <script>
   import { api } from '../lib/api.js';
+  import { triageError } from '../lib/errorTriage.js';
+  import { materialStatus } from '../lib/materialStatus.js';
+  import { showError } from '../stores/messages.js';
   import InventoryItemPicker from './InventoryItemPicker.svelte';
   import UnitsSelect from './UnitsSelect.svelte';
-  import { modalKeys } from '../lib/modalKeys.js';
+  import Modal from './Modal.svelte';
+  import FieldError from './FieldError.svelte';
+  import FormMessage from './FormMessage.svelte';
 
   let {
     open = false,
@@ -11,6 +16,9 @@
     taskId = null,
     jobId = null,
     categories = [],
+    presetDescription = '',
+    presetPli = null,
+    defaultMaterialCategoryId = null,
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -24,10 +32,12 @@
   let pliLocked = $state(false);
   let accountingCategory = $state('');
   let busy = $state(false);
-  let error = $state('');
+  let formError = $state('');
+  let fieldErrs = $state({});
   let pliUnitCost = $state(null);    // PLI's current price, for prompt comparison
   let pliSellPrice = $state(null);
   let showPropagatePrompt = $state(false);
+  let customerSupplied = $state(false);  // create-mode checkbox only
   // Allocation-time stock visibility for a selected catalog/lot item.
   let pliOnHand = $state(null);
   let pliEarmarked = $state(null);
@@ -52,8 +62,29 @@
     return '';
   });
 
+  // Set when opened on a needs-pricing row — the title/primary action reads
+  // "Set pricing" instead of "Edit Material"/"Save". Reuses materialStatus()
+  // (the same source of truth that renders TaskTree's "Set pricing" button)
+  // so the button and the modal can never disagree about the condition.
+  let isSetPricingEdit = $derived(
+    mode === 'edit' && !!material && materialStatus(material).key === 'needs-pricing'
+  );
+
+  // A material born customer-supplied is established at a locked $0/$0 —
+  // its pricing can never be edited (the backend 400s a pricing PATCH on it).
+  let isCustomerSuppliedMaterial = $derived(
+    mode === 'edit' && !!material && material.cost_source === 'customer_supplied'
+  );
+
+  // Pricing is locked either because the create-mode checkbox is on, or
+  // because we're editing a material that was already born customer-supplied.
+  let pricingLocked = $derived(
+    (mode === 'create' && customerSupplied) || isCustomerSuppliedMaterial
+  );
+
   $effect(() => {
     if (open) {
+      customerSupplied = false;
       if (mode === 'edit' && material) {
         description = material.description || '';
         quantity = material.quantity ?? '';
@@ -71,30 +102,57 @@
         pliUnitCost = pliLocked ? (material.unit_cost ?? null) : null;
         pliSellPrice = pliLocked ? (material.sell_price ?? null) : null;
       } else {
-        description = '';
+        // Reset shared fields first
         quantity = '';
         units = 'none';
         unitCost = '';
         sellPrice = '';
-        pliId = null;
-        pliLocked = false;
-        accountingCategory = '';
         pliUnitCost = null;
         pliSellPrice = null;
+        if (presetPli) {
+          // PLI preset: auto-select the item (sets description, units, prices, AC, pliLocked)
+          pliId = null;
+          pliLocked = false;
+          description = '';
+          accountingCategory = '';
+          handlePliSelect(presetPli);
+        } else {
+          description = (mode === 'create' && !material) ? (presetDescription || '') : '';
+          pliId = null;
+          pliLocked = false;
+          accountingCategory = defaultMaterialCategoryId ?? '';
+        }
       }
-      error = '';
+      formError = '';
+      fieldErrs = {};
       showPropagatePrompt = false;
     }
   });
 
-  // Clear stale error when the user touches any form field. Don't read
-  // `error` inside this effect — that would track it as a dependency and
-  // re-fire the effect (clearing the message) the instant the catch block
-  // sets it.
+  // Clear stale errors when the user touches any form field. Don't read
+  // `formError`/`fieldErrs` inside this effect — that would track them as
+  // dependencies and re-fire the effect (clearing the message) the instant
+  // the catch block sets them.
   $effect(() => {
     description; quantity; units; unitCost; sellPrice; pliId; accountingCategory;
-    error = '';
+    customerSupplied;
+    formError = '';
+    fieldErrs = {};
   });
+
+  function handleCustomerSuppliedToggle(checked) {
+    customerSupplied = checked;
+    if (checked) {
+      // Customer-supplied carries no price and no catalog pick — clear both.
+      unitCost = '';
+      sellPrice = '';
+      pliId = null;
+      pliLocked = false;
+      pliOnHand = null;
+      pliEarmarked = null;
+      pliAvailable = null;
+    }
+  }
 
   function handlePliSelect(pli) {
     if (pli) {
@@ -141,7 +199,8 @@
 
   async function actuallySave(propagate) {
     busy = true;
-    error = '';
+    formError = '';
+    fieldErrs = {};
     showPropagatePrompt = false;
 
     const fullPayload = {
@@ -154,10 +213,28 @@
       accounting_category: accountingCategory || null,
     };
 
+    // Create-mode customer-supplied: no pricing fields, no item pick — just
+    // the flag. The backend rejects customer_supplied paired with any
+    // nonzero (or any) pricing, so those keys must not be sent at all.
+    const createPayload = (mode !== 'edit' && customerSupplied)
+      ? {
+          description: fullPayload.description,
+          quantity: fullPayload.quantity,
+          units: fullPayload.units,
+          inventory_item: null,
+          accounting_category: fullPayload.accounting_category,
+          customer_supplied: true,
+        }
+      : fullPayload;
+
     try {
       if (mode === 'edit' && material) {
-        // PATCH: send only fields appropriate to the row's PLI state.
-        const patch = pliLocked
+        // PATCH: send only fields appropriate to the row's state. A
+        // customer-supplied material's pricing is locked — the backend 400s
+        // any unit_cost/sell_price PATCH on it, so send neither.
+        const patch = isCustomerSuppliedMaterial
+          ? {}
+          : pliLocked
           ? {
               unit_cost: fullPayload.unit_cost,
               sell_price: fullPayload.sell_price,
@@ -172,18 +249,18 @@
             };
         await api.patch(`/api/materials/${material.material_id}/`, patch);
       } else if (taskId) {
-        await api.post(`/api/tasks/${taskId}/materials/`, fullPayload);
+        await api.post(`/api/tasks/${taskId}/materials/`, createPayload);
       } else {
-        await api.post(`/api/jobs/${jobId}/materials/`, fullPayload);
+        await api.post(`/api/jobs/${jobId}/materials/`, createPayload);
       }
       onSaved();
     } catch (e) {
-      if (e.data && typeof e.data === 'object' && !e.data.detail) {
-        error = Object.entries(e.data)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('; ');
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
       } else {
-        error = e.message || e.data?.detail || 'Could not save material.';
+        formError = t.message;
+        fieldErrs = t.fields;
       }
     } finally {
       busy = false;
@@ -191,36 +268,40 @@
   }
 </script>
 
-{#if open}
-  <div class="overlay" use:modalKeys={{
-    onSave: () => { if (!busy && !showPropagatePrompt) save(); },
-    onCancel: () => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); },
-  }}>
-    <div class="modal">
-      <h3>{mode === 'edit' ? 'Edit Material' : 'Add Material'}</h3>
+<Modal {open}
+  onCancel={() => { if (showPropagatePrompt) showPropagatePrompt = false; else onClose(); }}>
+<form onsubmit={(e) => { e.preventDefault(); if (!busy && !showPropagatePrompt) save(); }}>
+      <h3>{isSetPricingEdit ? 'Set pricing' : (mode === 'edit' ? 'Edit Material' : 'Add Material')}</h3>
+
+      {#if mode === 'create'}
+        <p>
+          <label>
+            <input type="checkbox" checked={customerSupplied}
+              onchange={(e) => handleCustomerSuppliedToggle(e.target.checked)}>
+            Customer-supplied (no charge — customer sends it)
+          </label>
+        </p>
+      {/if}
 
       <p>
         <label><strong>Inventory Item</strong><br>
-          <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={false} params={{ is_active: true }} />
+          <InventoryItemPicker value={pliId} onSelect={handlePliSelect} disabled={customerSupplied} params={{ is_active: true }} />
         </label>
+        <FieldError errors={fieldErrs} field="inventory_item" />
       </p>
-
-      {#if pliLocked}
-        <p style="background:#fff7e6;border:1px solid #ffc53d;padding:8px;">
-          Linked to an inventory item. Delete and re-add as freeform to change description, units, or category.
-        </p>
-      {/if}
 
       <p>
         <label><strong>Description</strong><br>
           <input type="text" bind:value={description} disabled={pliLocked} style="width:100%;box-sizing:border-box;">
         </label>
+        <FieldError errors={fieldErrs} field="description" />
       </p>
 
       <p>
         <label><strong>Quantity</strong><br>
           <input type="number" step="0.01" bind:value={quantity} disabled={mode === 'edit'}>
         </label>
+        <FieldError errors={fieldErrs} field="quantity" />
         {#if mode === 'edit'}
           <small style="color:#666;">To change quantity, use Restock or Draw more on the row.</small>
         {/if}
@@ -233,21 +314,26 @@
         <label><strong>Units</strong><br>
           <UnitsSelect bind:value={units} disabled={pliLocked} />
         </label>
+        <FieldError errors={fieldErrs} field="units" />
       </p>
 
       <p>
         <label><strong>Unit Cost</strong><br>
-          <input type="number" step="0.01" bind:value={unitCost} disabled={!pliLocked}>
+          <input type="number" step="0.01" bind:value={unitCost} disabled={pricingLocked}>
         </label>
-        {#if !pliLocked}
-          <br><small><em>A freeform material's cost comes from a linked expense or PO, not manual entry.</em></small>
+        <FieldError errors={fieldErrs} field="unit_cost" />
+        {#if isCustomerSuppliedMaterial}
+          <br><small><em>Customer-supplied — carried at $0.</em></small>
+        {:else if !(mode === 'create' && customerSupplied) && !pliLocked}
+          <br><small><em>Entering a cost sets this material up for ordering.</em></small>
         {/if}
       </p>
 
       <p>
         <label><strong>Sell Price</strong><br>
-          <input type="number" step="0.01" bind:value={sellPrice}>
+          <input type="number" step="0.01" bind:value={sellPrice} disabled={pricingLocked}>
         </label>
+        <FieldError errors={fieldErrs} field="sell_price" />
       </p>
 
       <p>
@@ -259,13 +345,14 @@
             {/each}
           </select>
         </label>
+        <FieldError errors={fieldErrs} field="accounting_category" />
       </p>
 
       <div class="buttons">
-        <button type="button" onclick={save} disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>{isSetPricingEdit ? 'Set pricing' : 'Save'}</button>
         <button type="button" onclick={onClose} disabled={busy}>Cancel</button>
       </div>
-      {#if error}<p class="error">{error}</p>{/if}
+      <FormMessage error={formError} />
 
       {#if showPropagatePrompt}
         <div class="propagate-prompt">
@@ -277,18 +364,11 @@
           </div>
         </div>
       {/if}
-    </div>
-  </div>
-{/if}
+</form>
+</Modal>
 
 <style>
-  .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
-  }
-  .modal { background: white; padding: 16px; max-width: 500px; width: 90%; border: 1px solid #ccc; }
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .error { color: #a8071a; }
   .earmark-warning { margin: 6px 0 0; padding: 6px 8px; background: #fffbe6; border: 1px solid #ffe58f; font-size: 0.9em; }
   .propagate-prompt { margin-top: 12px; padding: 12px; background: #f0f9ff; border: 1px solid #91d5ff; }
 </style>

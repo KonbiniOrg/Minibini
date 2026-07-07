@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db.models import Q, F, CharField, DecimalField
 from django.db.models.functions import Cast, Concat
 from apps.jobs.models import Job, Task
-from apps.estimates.models import Estimate, EstWorksheet, EstimateLineItem
+from apps.estimates.models import Estimate, EstimateLineItem
 from apps.contacts.models import Contact, Business
 from apps.invoicing.models import Invoice, InvoiceLineItem
 from apps.inventory.models import InventoryItem
@@ -20,7 +20,6 @@ class SearchService:
     CATEGORY_INVOICES = 4
     CATEGORY_JOBS = 5
     CATEGORY_ESTIMATES = 6
-    CATEGORY_EST_WORKSHEETS = 8
     CATEGORY_BILLS = 9
     CATEGORY_PURCHASE_ORDERS = 10
 
@@ -32,7 +31,6 @@ class SearchService:
         CATEGORY_INVOICES: 'invoices',
         CATEGORY_JOBS: 'jobs',
         CATEGORY_ESTIMATES: 'estimates',
-        CATEGORY_EST_WORKSHEETS: 'est_worksheets',
         CATEGORY_BILLS: 'bills',
         CATEGORY_PURCHASE_ORDERS: 'purchase_orders',
     }
@@ -48,7 +46,6 @@ class SearchService:
         CATEGORY_INVOICES: 'Invoices',
         CATEGORY_JOBS: 'Jobs',
         CATEGORY_ESTIMATES: 'Estimates',
-        CATEGORY_EST_WORKSHEETS: 'Est Worksheets',
         CATEGORY_BILLS: 'Bills',
         CATEGORY_PURCHASE_ORDERS: 'Purchase Orders',
     }
@@ -56,7 +53,7 @@ class SearchService:
     # Legacy support: List of category keys (for backward compatibility)
     AVAILABLE_CATEGORIES = [
         'businesses', 'inventory_items', 'contacts', 'invoices', 'jobs',
-        'estimates', 'est_worksheets', 'bills', 'purchase_orders'
+        'estimates', 'bills', 'purchase_orders'
     ]
 
     @classmethod
@@ -377,14 +374,6 @@ class SearchService:
 
         return list(po_dict.values()) if po_dict else []
 
-    @staticmethod
-    def search_est_worksheets(query):
-        """Search for est worksheets matching the query"""
-        # Worksheets relate only to a job now; match on the job number.
-        return EstWorksheet.objects.filter(
-            Q(job__job_number__icontains=query)
-        ).select_related('job')
-
     @classmethod
     def search_all_entities(cls, query):
         """Search across all entity types and return categorized results"""
@@ -446,11 +435,6 @@ class SearchService:
             categories['estimates'] = {
                 'grouped_items': parents_with_line_items
             }
-
-        # EST WORKSHEETS
-        est_worksheets = cls.search_est_worksheets(query)
-        if est_worksheets.exists():
-            categories['est_worksheets'] = list(est_worksheets)
 
         # BILLS (with line items grouped by parent)
         bill_groups = cls.search_bills_with_line_items(query)
@@ -542,7 +526,7 @@ class SearchService:
         filtered_categories = {}
 
         for category_name, category_data in categories.items():
-            # Handle flat lists (est_worksheets)
+            # Handle flat lists
             if isinstance(category_data, list):
                 if date_from or date_to:
                     filtered_items = []
@@ -692,7 +676,7 @@ class SearchService:
         """Calculate total count of search results"""
         total = 0
         for category_name, category_data in categories.items():
-            # Handle flat lists (est_worksheets)
+            # Handle flat lists
             if isinstance(category_data, list):
                 total += len(category_data)
             # Handle dict structures
@@ -726,7 +710,6 @@ class SearchService:
             'estimates': 'Estimate',
             'bills': 'Bill',
             'purchase_orders': 'PurchaseOrder',
-            'est_worksheets': 'EstWorksheet',
         }
 
         for category_name, category_data in categories.items():
@@ -751,7 +734,7 @@ class SearchService:
                 elif 'items' in category_data:
                     items_list = category_data['items']
 
-            # Handle flat lists (est_worksheets)
+            # Handle flat lists
             elif isinstance(category_data, list):
                 items_list = category_data
 
@@ -935,18 +918,6 @@ class SearchService:
                     'grouped_items': result_estimates,
                     'items': result_estimates,
                 }
-
-        # EST WORKSHEETS
-        if 'EstWorksheet' in result_ids and result_ids['EstWorksheet']:
-            est_worksheets = EstWorksheet.objects.filter(
-                pk__in=result_ids['EstWorksheet']
-            ).filter(
-                Q(job__job_number__icontains=within_query) |
-                Q(estimate__estimate_number__icontains=within_query)
-            ).select_related('job', 'estimate')
-
-            if est_worksheets.exists():
-                categories['est_worksheets'] = list(est_worksheets)
 
         # BILLS
         if 'Bill' in result_ids and result_ids['Bill']:

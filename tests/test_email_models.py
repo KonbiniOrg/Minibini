@@ -1143,6 +1143,98 @@ class EmailServiceTest(TestCase):
         call_args = mock_mailbox.fetch.call_args
         # The actual date used should be from config, not 30 days back
 
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_fetch_handles_naive_message_date(self, mock_mailbox_class):
+        """A message with a naive Date header (missing/malformed tz) must not
+        error out against the aware cursor — it fetches, and the cursor
+        advances past it and stays aware."""
+        old_date = timezone.now() - timedelta(days=10)
+        AppState.objects.create(
+            key='latest_email_date',
+            value=old_date.isoformat()  # aware cursor
+        )
+        Configuration.objects.create(key='email_retention_days', value='90')
+        Configuration.objects.create(key='email_display_limit', value='30')
+
+        naive_date = (timezone.now() - timedelta(days=1)).replace(tzinfo=None)
+        mock_msg = Mock()
+        mock_msg.uid = '12345'
+        mock_msg.headers = {'message-id': ['<naive@example.com>']}
+        mock_msg.subject = 'Naive Date Email'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['recipient@example.com']
+        mock_msg.cc = []
+        mock_msg.date = naive_date
+        mock_msg.attachments = []
+        mock_msg.text = ''
+        mock_msg.html = ''
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        service = EmailService()
+        stats = service.fetch_emails_by_date_range(days_back=30)
+
+        self.assertEqual(stats['errors'], [])
+        self.assertEqual(stats['new'], 1)
+        self.assertTrue(
+            EmailRecord.objects.filter(message_id='<naive@example.com>').exists())
+        # Cursor advanced past the message and round-trips aware
+        updated = datetime.fromisoformat(
+            AppState.objects.get(key='latest_email_date').value)
+        self.assertIsNotNone(updated.tzinfo)
+        self.assertGreater(updated, old_date)
+
+    @override_settings(
+        EMAIL_IMAP_SERVER='imap.example.com',
+        EMAIL_HOST_USER='test@example.com',
+        EMAIL_HOST_PASSWORD='password123'
+    )
+    @patch('apps.core.services.MailBox')
+    def test_fetch_handles_naive_stored_cursor(self, mock_mailbox_class):
+        """A cursor persisted naive (legacy round-trip) must compare cleanly
+        against an aware message date."""
+        naive_cursor = (timezone.now() - timedelta(days=10)).replace(tzinfo=None)
+        AppState.objects.create(
+            key='latest_email_date',
+            value=naive_cursor.isoformat()  # naive cursor
+        )
+        Configuration.objects.create(key='email_retention_days', value='90')
+        Configuration.objects.create(key='email_display_limit', value='30')
+
+        mock_msg = Mock()
+        mock_msg.uid = '54321'
+        mock_msg.headers = {'message-id': ['<aware@example.com>']}
+        mock_msg.subject = 'Aware Date Email'
+        mock_msg.from_ = 'sender@example.com'
+        mock_msg.to = ['recipient@example.com']
+        mock_msg.cc = []
+        mock_msg.date = timezone.now() - timedelta(days=1)
+        mock_msg.attachments = []
+        mock_msg.text = ''
+        mock_msg.html = ''
+
+        mock_mailbox = MagicMock()
+        mock_mailbox.fetch.return_value = [mock_msg]
+        mock_mailbox.__enter__.return_value = mock_mailbox
+        mock_mailbox_class.return_value.login.return_value = mock_mailbox
+
+        service = EmailService()
+        stats = service.fetch_emails_by_date_range(days_back=30)
+
+        self.assertEqual(stats['errors'], [])
+        self.assertEqual(stats['new'], 1)
+        updated = datetime.fromisoformat(
+            AppState.objects.get(key='latest_email_date').value)
+        self.assertIsNotNone(updated.tzinfo)
+
 
 class PropagateThreadAssociationTest(TestCase):
     """EmailService.propagate_thread_association copies a single FK to

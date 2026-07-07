@@ -1,5 +1,9 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
+  import FieldError from '../../components/FieldError.svelte';
+  import FormMessage from '../../components/FormMessage.svelte';
   import { push, querystring } from 'svelte-spa-router';
   import BusinessPicker from '../../components/BusinessPicker.svelte';
 
@@ -11,7 +15,8 @@
   let vendorPos = $state([]);
   let loadingContacts = $state(false);
   let loading = $state(true);
-  let errors = $state(null);
+  let formError = $state('');
+  let fieldErrs = $state({});
   let saving = $state(false);
   let billStatus = $state('draft');
 
@@ -117,7 +122,8 @@
 
   async function load() {
     loading = true;
-    errors = null;
+    formError = '';
+    fieldErrs = {};
     try {
       const bizData = await api.get('/api/businesses/?page_size=100');
       businesses = bizData.results || [];
@@ -152,7 +158,8 @@
         await fetchPoBilling(contextPoId);
       }
     } catch (e) {
-      errors = e.message;
+      // Load failure has no form to land on — the global overlay is the venue.
+      showError(errorMessage(e, 'Could not load.'));
     } finally {
       loading = false;
     }
@@ -161,7 +168,8 @@
   async function handleSubmit(e) {
     e.preventDefault();
     saving = true;
-    errors = null;
+    formError = '';
+    fieldErrs = {};
     try {
       const body = {
         business: (form.business !== '' && form.business != null) ? Number(form.business) : null,
@@ -179,7 +187,13 @@
         push(`/bills/${created.bill_id}`);
       }
     } catch (e) {
-      errors = e.data ? JSON.stringify(e.data) : e.message;
+      const t = triageError(e);
+      if (t.overlay) {
+        showError(t.overlay);
+      } else {
+        formError = t.message;
+        fieldErrs = t.fields;
+      }
     } finally {
       saving = false;
     }
@@ -199,9 +213,6 @@
   <p>This bill is <strong>{billStatus}</strong> and can no longer be edited.</p>
   <p><a href={`#/bills/${params.id}`}>Back to bill</a></p>
 {:else}
-  {#if errors}
-    <p><strong>Error:</strong> {errors}</p>
-  {/if}
   <form onsubmit={handleSubmit}>
     <p>
       <label><strong>Vendor (Business) *</strong></label><br>
@@ -209,6 +220,7 @@
       <BusinessPicker bind:value={form.business} disabled={!!contextPoId}
         selectedItem={null}
         onSelect={(b) => { pickedBusiness = b; }} />
+      <FieldError errors={fieldErrs} field="business" />
       {#if contextPoId}<br><small>Vendor comes from the purchase order.</small>{/if}
     </p>
 
@@ -225,6 +237,7 @@
           <option value={po.po_id}>{po.po_number}</option>
         {/each}
       </select>
+      <FieldError errors={fieldErrs} field="purchase_order" />
     </p>
     {/if}
     {#if poBilling?.po_fully_billed}
@@ -253,22 +266,26 @@
           {/each}
         {/if}
       </select>
+      <FieldError errors={fieldErrs} field="contact" />
     </p>
 
     <p>
       <label for="vendor_invoice_number"><strong>Vendor Invoice #</strong></label><br>
       <input type="text" id="vendor_invoice_number" bind:value={form.vendor_invoice_number}>
+      <FieldError errors={fieldErrs} field="vendor_invoice_number" />
     </p>
 
     <p>
       <label for="due_date"><strong>Due Date</strong></label><br>
       <input type="date" id="due_date" bind:value={form.due_date}>
+      <FieldError errors={fieldErrs} field="due_date" />
     </p>
 
     <p>
       <button type="submit" disabled={saving}>Save</button>
       <a href={isEdit ? `#/bills/${params.id}` : '#/bills'}>Cancel</a>
     </p>
+    <FormMessage error={formError} />
   </form>
 {/if}
 

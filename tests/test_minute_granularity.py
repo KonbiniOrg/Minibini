@@ -12,7 +12,7 @@ class MinuteGranularityTest(BaseTestCase):
         super().setUp()
         self.user = User.objects.create_user(username='mg_u', password='x')
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='T', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='T', job=self.job, rate_scheme_id=1)
 
     def test_floor_helper(self):
         d = datetime(2026, 5, 31, 16, 30, 45, 123456, tzinfo=tz.utc)

@@ -112,3 +112,46 @@ class BillModelTest(TestCase):
         # Cannot delete the contact due to PROTECT
         with self.assertRaises(models.ProtectedError):
             self.contact.delete()
+
+
+class BillBalanceTest(TestCase):
+    """The coarse-balance rule lives once on the model and is shared by both
+    the detail (BillSerializer) and summary (BillSummarySerializer / the SQL
+    annotation) read paths."""
+
+    def setUp(self):
+        self.default_contact = Contact.objects.create(
+            first_name='Default', last_name='', email='bal.default@test.com')
+        self.business = Business.objects.create(
+            business_name="Bal Vendor", default_contact=self.default_contact)
+        self.default_contact.business = self.business
+        self.default_contact.save()
+
+    def _bill(self, status=Bill.STATUS_RECEIVED, lines=(('2', '25.00'),)):
+        from apps.purchasing.models import BillLineItem
+        bill = Bill.objects.create(
+            business=self.business, vendor_invoice_number='VB-1', status=status)
+        for i, (qty, price) in enumerate(lines, start=1):
+            BillLineItem.objects.create(
+                bill=bill, line_number=i, description='Parts',
+                qty=Decimal(qty), units='ea', price=Decimal(price))
+        return bill
+
+    def test_total_sums_line_items(self):
+        bill = self._bill(lines=(('2', '25.00'), ('1', '10.00')))
+        self.assertEqual(bill.total, Decimal('60.00'))
+
+    def test_balance_is_total_when_unresolved(self):
+        bill = self._bill(status=Bill.STATUS_RECEIVED)
+        self.assertEqual(bill.balance, Decimal('50.00'))
+
+    def test_balance_zero_for_paid_cancelled_refunded(self):
+        # Terminal statuses carry no outstanding balance (Bill.balance rule —
+        # payment-aware since the BillPayment work superseded the old
+        # ZERO_BALANCE_STATUSES coarse rule this test originally pinned).
+        for status in (Bill.STATUS_PAID_IN_FULL, Bill.STATUS_CANCELLED,
+                       Bill.STATUS_REFUNDED):
+            bill = self._bill(status=status)
+            self.assertEqual(
+                bill.balance, Decimal('0.00'),
+                f'{status} bills should report a zero balance')

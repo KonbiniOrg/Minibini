@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.utils import timezone
 from datetime import timedelta
 from apps.jobs.models import Job, Task, Blep
-from apps.estimates.models import Estimate, TaskTemplate
+from apps.estimates.models import Estimate, ServiceItem
 from apps.contacts.models import Contact
 from apps.core.models import User
 from .base import FixtureTestCase
@@ -114,7 +114,7 @@ class TaskModelFixtureTest(FixtureTestCase):
             est_worker_time=timedelta(hours=1),
             job=job,
             name="Cabinet installation",
-            service_item_id=1,
+            rate_scheme_id=1,
         )
         self.assertEqual(new_task.job, job)
         self.assertEqual(Task.objects.count(), 3)  # 2 from fixture + 1 new

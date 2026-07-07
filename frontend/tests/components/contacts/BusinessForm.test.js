@@ -45,4 +45,19 @@ describe('BusinessForm', () => {
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('renders the field-error bag under inputs (incl. nested contact keys) and formError in the footer', () => {
+    const { getByText } = render(BusinessForm, {
+      props: {
+        onSubmit: vi.fn(), onCancel: vi.fn(),
+        errors: { business_name: ['This field is required.'], email: ['Enter a valid email address.'] },
+        formError: 'Could not create.',
+      },
+    });
+    expect(getByText('This field is required.')).toBeInTheDocument();
+    // The nested default-contact create uses the contact payload keys.
+    expect(getByText('Enter a valid email address.')).toBeInTheDocument();
+    const footer = getByText('Could not create.');
+    expect(footer.closest('[role="alert"]')).not.toBeNull();
+  });
 });

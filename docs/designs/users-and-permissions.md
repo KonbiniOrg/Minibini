@@ -22,11 +22,12 @@ Sibling docs that cover the surrounding mechanics:
 
 ## User model
 
-`apps.core.models.User` is an `AbstractUser` subclass with a single extra field and the project's custom permission atoms.
+`apps.core.models.User` is an `AbstractUser` subclass with two extra fields and the project's custom permission atoms.
 
 | Field | Type | Notes |
 |---|---|---|
 | `contact` | `OneToOneField(contacts.Contact, on_delete=SET_NULL, null, blank)` | Optional link to the Contact record representing this user as a person. Nullable — many user accounts have no Contact yet. |
+| `schedule_envelope` | `JSONField(null, blank)` | The user's personal weekly work envelope (canonical week-envelope shape, validated by `apps.schedule.calendar_arithmetic.validate_week_envelope`). Null = use the shop default (`schedule_week_envelope` Configuration key). Added in migration `core.0025`. See `schedule.md` §2. |
 | (inherited) | `AbstractUser` fields | `username`, `email`, `first_name`, `last_name`, `password`, `is_active`, `is_staff`, `is_superuser`, `date_joined`, `last_login`, `user_permissions`, `groups`. |
 
 `Meta`:
@@ -55,7 +56,7 @@ The project defines four custom permission atoms on `User.Meta.permissions`:
 | `can_manage_jobs` | Full CRUD on jobs, estimates, worksheets, plan-tasks, contacts, businesses. Status transitions on each. Cancel/reorder tasks and mark all a job's work complete. Email-to-job actions: link, unlink, create-job-from-email. (Adding/editing/deleting and completing individual tasks is open to any authenticated user — see below.) A Job's `project_manager` gets this atom's powers **scoped to that one job** via `CanManageJobOrPM` — see "Project-manager object access". |
 | `can_manage_financials` | Full CRUD on invoices, purchase orders, bills, price-list items, and their line items. Status transitions (issue, cancel). Expenses/reimbursements writes. Email-to-PO / email-to-bill actions: link, unlink, create-po-from-email. |
 | `can_manage_time` | Edit or delete any user's bleps and shifts, clock another worker in/out, and approve/deny shift & blep change requests. (Tracking, clocking, or editing one's own recent time is `IsAuthenticated`.) |
-| `can_manage_config` | Settings endpoint, work and task templates, accounting categories, user admin viewset, QBO connection management. |
+| `can_manage_config` | Settings endpoint, work templates, accounting categories, user admin viewset, QBO connection management. Service-item (the saved-work catalog) writes are shared three ways — see the endpoint table. |
 
 DRF permission classes in `apps/api/permissions.py`:
 
@@ -129,16 +130,17 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/blep-change-requests/` | `IsAuthenticated` (non-managers see only their own; `?mine=true`, `?status=`) | `IsAuthenticated` to create; `approve` / `deny` require `can_manage_time` | a create-type (null `blep`) request requires `task`; same `conflicts` list + own-record rule as shifts |
 | `/api/rate-schemes/` | `IsAuthenticated` | `can_manage_config` | `supersede` action also `can_manage_config` |
 | `/api/work-templates/` | `IsAuthenticated` | `can_manage_config` | |
-| `/api/task-templates/` | `IsAuthenticated` | `can_manage_config` | |
+| `/api/service-items/` | `IsAuthenticated` | `can_manage_jobs` **or** `can_manage_financials` **or** `can_manage_config` (`CanManageJobsOrFinancialsOrConfig`) | Widened 2026-07 (was create: jobs-or-config, update/delete: config-only) so the Catalog area's Service Items tab lets any of the three atoms manage the shared catalog; list/retrieve stay `IsAuthenticated` (visible to every user in the Catalog UI) |
 | `/api/accounting-categories/` | `IsAuthenticated` | `can_manage_config` | |
 | `/api/invoices/` | `IsAuthenticated` | `can_manage_financials` | `send-defaults` (GET) IsAuth; `send` (POST) `can_manage_financials`. The legacy `send-to-qbo` was removed when the new send flow shipped. |
 | `/api/purchase-orders/` | `IsAuthenticated` | `can_manage_financials` | |
 | `/api/bills/` | `IsAuthenticated` | `can_manage_financials` | `send-to-qbo` also `can_manage_financials` |
-| `/api/price-list-items/` | `IsAuthenticated` | `can_manage_financials` | |
+| `/api/inventory/` (`InventoryItemViewSet`) | `IsAuthenticated` | `can_manage_financials` **or** `can_manage_config` | `order` action (`POST /api/inventory/{id}/order/` — order to stock, no material/job) is `can_manage_financials` only |
+| `/api/earmarks/` (`EarmarkViewSet`) | `IsAuthenticated` | (read-only) | New — `ReadOnlyModelViewSet`, unpaginated, backs the Catalog Earmarks tab |
 | `/api/materials/` | `IsAuthenticated` | `IsAuthenticated` | service enforces consumption-state and immutability rules |
 | `/api/expenses/` | `IsAuthenticated` | `can_manage_financials` for update / destroy / reject / retry-sync | list / retrieve auto-scoped to `purchased_by=user` unless `can_manage_financials`; create open to authenticated |
 | `/api/reimbursements/` | `can_manage_financials` | `can_manage_financials` | |
-| `/api/users/` (admin) | `can_manage_config` | `can_manage_config` | DELETE returns 405 — use deactivate |
+| `/api/users/` (admin) | `can_manage_config` | `can_manage_config` | DELETE returns 405 — use deactivate. Exception: the `schedule-envelope` action is `can_manage_time` **OR** `can_manage_config` — the one user-admin route open to time managers |
 | `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
 | `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
 | `/api/emails/{id}/link-to-job/` etc. | — | `can_manage_jobs` | link-to-job, unlink-from-job, create-job |
@@ -216,10 +218,11 @@ All live under `/api/auth/` (`apps/api/auth/`):
 | `GET` | `/api/auth/me/` | `IsAuthenticated` | Returns the current user as `UserSerializer`. |
 | `PATCH` | `/api/auth/me/` | `IsAuthenticated` | Updates own profile (`email`, `first_name`, `last_name`). Returns `UserSerializer` shape. |
 | `POST` | `/api/auth/me/password/` | `IsAuthenticated` | Change own password. Returns `{"detail": "Password changed."}`. |
+| `PUT` | `/api/auth/me/schedule-envelope/` | `IsAuthenticated` | Set (or reset) one's own weekly schedule envelope. Body `{"schedule_envelope": {...}}` (validated via `validate_week_envelope`) or `{"schedule_envelope": null}` to reset to the shop default. Returns the `UserSerializer` body. |
 | `GET` | `/api/auth/users/` | `IsAuthenticated` | Lightweight assignee dropdown payload: `[{id, username, name}]` filtered to `is_active=True`, ordered by first name then username. Distinct from the admin `/api/users/` namespace. |
 | `POST` | `/api/auth/refresh/` | `AllowAny` | 501 stub. Reserved for token refresh if/when the project moves off session auth. |
 
-`UserSerializer` returns `{id, username, email, first_name, last_name, permissions}` where `permissions` is a sorted list of atom codenames the user effectively has (via `get_all_permissions()`, filtered to `core.can_*`). Superusers' `permissions` list reflects the framework view — Django reports all permissions for a superuser.
+`UserSerializer` returns `{id, username, email, first_name, last_name, permissions, schedule_envelope}` where `permissions` is a sorted list of atom codenames the user effectively has (via `get_all_permissions()`, filtered to `core.can_*`) and `schedule_envelope` is read-only (writes go through the dedicated envelope endpoints). Superusers' `permissions` list reflects the framework view — Django reports all permissions for a superuser.
 
 ### Login flow (SPA)
 
@@ -230,7 +233,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 
 ## User admin
 
-`apps/api/users/` — viewset, serializers, service, URL registration. Mounted at `/api/users/`. All actions require `[IsAuthenticated, CanManageConfig]`.
+`apps/api/users/` — viewset, serializers, service, URL registration. Mounted at `/api/users/`. All actions require `[IsAuthenticated, CanManageConfig]`, with one exception: the `schedule-envelope` action is `CanManageTime | CanManageConfig` — schedule planning is a time-domain concern, so time managers get this single write without full user-admin power. Everything else on `/api/users/` stays `can_manage_config`-only.
 
 ### Endpoints
 
@@ -245,13 +248,14 @@ All live under `/api/auth/` (`apps/api/auth/`):
 | `POST` | `/api/users/:id/deactivate/` | deactivate action | `UserDetailSerializer`. |
 | `POST` | `/api/users/:id/reset-password/` | reset_password action | `PasswordResetSerializer` in; `{"detail": "Password reset."}` out. |
 | `PUT` | `/api/users/:id/permissions/` | permissions action | `PermissionsUpdateSerializer` in; `UserDetailSerializer` out. |
+| `PUT` | `/api/users/:id/schedule-envelope/` | schedule_envelope action | `{"schedule_envelope": {...}\|null}` in (`ScheduleEnvelopeSerializer`, shared with the self-service endpoint; null resets the user to the shop default); `UserDetailSerializer` out. **Permission: `can_manage_time` OR `can_manage_config`** — the one user-admin route open to time managers. |
 
 `pagination_class = None` — small shops, small lists. Revisit if user counts grow beyond a few hundred.
 
 ### Serializers
 
 - **`UserListSerializer`** — `id, username, first_name, last_name, email, is_active, is_superuser, permissions`. All read-only. `permissions` is the user's directly granted atom codenames (filtered to `core.can_*`), sorted.
-- **`UserDetailSerializer`** — list fields plus `date_joined`. All read-only. The viewset writes via `UserUpdateSerializer` and the dedicated action serializers, then returns this for the response body.
+- **`UserDetailSerializer`** — list fields plus `date_joined` and `schedule_envelope`. All read-only. The viewset writes via `UserUpdateSerializer` and the dedicated action serializers, then returns this for the response body.
 - **`UserCreateSerializer`** — `username, email, first_name, last_name, password, password_confirm`. All required. `email` is `EmailField`. `first_name` and `last_name` override Django's default `blank=True` to required. Passwords are `write_only`, validated against `AUTH_PASSWORD_VALIDATORS`, must match. `create()` calls `User.objects.create_user(...)` (which hashes the password). New users default to `is_active=True` and have zero atoms — the admin grants atoms separately via the permissions endpoint.
 - **`UserUpdateSerializer`** — `username, email, first_name, last_name`. All optional. Admins CAN change username here (unlike the self-service serializer). The fields allowlist is the privilege-escalation guard: `password`, `is_active`, `is_staff`, `is_superuser`, `user_permissions`, `groups` are not in the list and are ignored even if sent.
 - **`PasswordResetSerializer`** — pure `Serializer` (not `ModelSerializer`). `password`, `password_confirm`, both write-only. Runs `validate_password`. `save()` calls `target.set_password(...); target.save(update_fields=['password'])`. Does NOT call `update_session_auth_hash` — that's only meaningful for the actor's own session. Target's existing sessions are invalidated on their next request (Django checks the session auth hash against the stored hash).
@@ -314,7 +318,7 @@ If `actor == target` (an admin resetting their own password through this endpoin
 |---|---|---|
 | `/users` | `frontend/src/routes/users/UserListPage.svelte` | List all users with a compact permissions column (short labels). Active first, deactivated grouped below. "New user" link. |
 | `/users/new` | `frontend/src/routes/users/UserCreatePage.svelte` | Create form. On success pushes to the new user's detail page. |
-| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Four independent sub-forms (Profile, Permissions, Reset password, Account status) plus a `UserReimbursementPanel` for expenses. Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
+| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Reset password, Account status, Schedule — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses. Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
 
 The sidebar Users link gates on `hasPerm('can_manage_config')`. The atom labels and codename list are hardcoded in `UserDetailPage.svelte` (`ATOMS` array, four entries). The component uses `currentUser` from the auth store to compute `isSelf` and disable the deactivate button and the `can_manage_config` checkbox when applicable.
 
@@ -322,7 +326,7 @@ The list page renders permissions with a short-label dictionary: `can_manage_job
 
 ## Self-service profile
 
-`apps/api/auth/views.py` extends `me_view` to accept `PATCH` and adds `change_password_view`. Both require `IsAuthenticated` only — every user manages their own account.
+`apps/api/auth/views.py` extends `me_view` to accept `PATCH` and adds `change_password_view` and `me_schedule_envelope_view`. All require `IsAuthenticated` only — every user manages their own account.
 
 ### `PATCH /api/auth/me/`
 
@@ -338,6 +342,10 @@ The list page renders permissions with a short-label dictionary: `can_manage_job
 - `save()` calls `user.set_password(new); user.save()`.
 
 After `serializer.save()`, the view calls `update_session_auth_hash(request, user)` so the user's own session survives the change. Returns `{"detail": "Password changed."}`.
+
+### `PUT /api/auth/me/schedule-envelope/`
+
+`me_schedule_envelope_view` (`IsAuthenticated`, self only). Body `{"schedule_envelope": {...}}` or `{"schedule_envelope": null}` (null resets to the shop default). `ScheduleEnvelopeSerializer` validates the payload via `apps.schedule.calendar_arithmetic.validate_week_envelope` and the view writes `request.user.schedule_envelope`. The editing surface is the bottom of the Home → Time tab (`MyEnvelopeEditor`, wrapping the shared `EnvelopeEditor` component that Settings → Schedule and the user-admin profile page also use). See `schedule.md` §2.
 
 ### Frontend
 

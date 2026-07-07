@@ -136,11 +136,13 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(P.classify_line_item('Discount', 'Cut rate'), 'lineitem')
 
     def test_algorithm_inference(self):
+        # Fixed charges now return the 'fee' sentinel (they become jobs.Fee
+        # atoms, not Task + flat_fee RateScheme).
         self.assertEqual(P.infer_algorithm('Hours', 'hours'), 'elapsed_time')
         self.assertEqual(P.infer_algorithm('Days', 'days'), 'elapsed_time')
-        self.assertEqual(P.infer_algorithm('Services', ''), 'flat_fee')
+        self.assertEqual(P.infer_algorithm('Services', ''), 'fee')
         self.assertEqual(P.infer_algorithm('-no unit-', 'each'), 'entered_qty')
-        self.assertEqual(P.infer_algorithm('-no unit-', ''), 'flat_fee')
+        self.assertEqual(P.infer_algorithm('-no unit-', ''), 'fee')
 
 
 class ChecklistTest(unittest.TestCase):

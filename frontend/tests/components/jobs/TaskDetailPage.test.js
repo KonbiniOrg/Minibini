@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
+import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import TaskDetailPage from '@/routes/jobs/TaskDetailPage.svelte';
 
 // The fetched task carries can_manage = "atom-holder OR this job's PM". The page
@@ -28,7 +34,7 @@ function mockApi(taskOverrides = {}) {
     if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
     if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
     if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
-    if (url.startsWith('/api/task-templates/')) return Promise.resolve([]);
+    if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
     if (url.startsWith('/api/contacts/')) return Promise.resolve({});
     return Promise.resolve([]);
   });

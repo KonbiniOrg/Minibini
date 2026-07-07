@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({
+  api: { get: vi.fn(), post: vi.fn() },
+  errorMessage: (e, fallback) =>
+    e?.data?.detail || e?.message || fallback || 'Something went wrong.',
+}));
 
 import { api } from '@/lib/api.js';
 import JobHistoryPage from '@/routes/jobs/JobHistoryPage.svelte';
@@ -221,5 +225,37 @@ describe('JobHistoryPage', () => {
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/notes/', { text: 'Hello' });
+  });
+
+  it('shows an operation error under the note form when the post fails', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
+      return Promise.resolve({ results: [] });
+    });
+    api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      status: 400, data: { detail: 'Notes are locked.' },
+    }));
+    const { findByRole, getByPlaceholderText, getByRole } =
+      render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
+    await fireEvent.click(getByRole('button', { name: 'Add Note' }));
+    expect(await findByRole('alert')).toHaveTextContent('Notes are locked.');
+  });
+
+  it('shows a field error under the note form on field validation failure', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
+      return Promise.resolve({ results: [] });
+    });
+    api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      status: 400, data: { text: ['This field is too long.'] },
+    }));
+    const { findByRole, findByText, getByPlaceholderText, getByRole } =
+      render(JobHistoryPage, { props: { params: { id: '5' } } });
+    await findByRole('heading', { name: 'History' });
+    await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
+    await fireEvent.click(getByRole('button', { name: 'Add Note' }));
+    expect(await findByText('This field is too long.')).toBeInTheDocument();
   });
 });

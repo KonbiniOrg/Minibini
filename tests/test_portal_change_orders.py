@@ -21,9 +21,12 @@ from apps.jobs.services import JobService
 
 
 def _advance_job_to_on_hold(job):
-    job.status = Job.STATUS_SUBMITTED; job.save()
-    job.status = Job.STATUS_APPROVED; job.save()
-    job.status = Job.STATUS_ON_HOLD; job.save()
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -53,7 +56,7 @@ class PortalChangeOrderTest(TestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), units='ea',
-            price=Decimal('250.00'), line_number=1)
+            price=Decimal('250.00'), line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(self.co.pk)
         self.co.refresh_from_db()
         self.token = self.co.public_token
@@ -128,7 +131,7 @@ class PortalChangeOrderTest(TestCase):
         self.co.refresh_from_db()
         self.job.refresh_from_db()
         self.assertEqual(self.co.status, ChangeOrder.STATUS_REJECTED)
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
         entry = JobHistory.objects.filter(
             object_type='changeorder', object_id=self.co.pk,
             entry_type='action', user__isnull=True,
@@ -146,7 +149,7 @@ class PortalChangeOrderTest(TestCase):
         self.co.refresh_from_db()
         self.job.refresh_from_db()
         self.assertEqual(self.co.status, ChangeOrder.STATUS_SUPERSEDED)
-        self.assertEqual(self.job.status, Job.STATUS_ON_HOLD)
+        self.assertTrue(self.job.on_hold)
         self.assertTrue(
             ChangeOrder.objects.filter(
                 job=self.job, status=ChangeOrder.STATUS_DRAFT,
@@ -202,7 +205,7 @@ class PortalChangeOrderSupersededTokenTest(TestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra', qty=Decimal('1'), units='ea',
-            price=Decimal('50'), line_number=1)
+            price=Decimal('50'), line_number=1, accounting_category_id=901)
         ChangeOrderService.mark_open(self.co.pk)
         self.co.refresh_from_db()
 

@@ -17,6 +17,8 @@ class UserSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
+    # null = "uses the shop default" (the schedule_week_envelope config key).
+    schedule_envelope = serializers.JSONField(read_only=True)
     permissions = serializers.SerializerMethodField()
 
     def get_permissions(self, obj):
@@ -35,6 +37,22 @@ class MeUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['email', 'first_name', 'last_name']
+
+
+class ScheduleEnvelopeSerializer(serializers.Serializer):
+    """Validates a {"schedule_envelope": {...}|null} body. Null resets the
+    user to the shop default. The per-day interval rules live in
+    apps.schedule.calendar_arithmetic.validate_week_envelope."""
+    schedule_envelope = serializers.JSONField(allow_null=True, required=True)
+
+    def validate_schedule_envelope(self, value):
+        if value is None:
+            return None
+        from apps.schedule.calendar_arithmetic import validate_week_envelope
+        messages = validate_week_envelope(value)
+        if messages:
+            raise serializers.ValidationError(messages)
+        return value
 
 
 class PasswordChangeSerializer(serializers.Serializer):

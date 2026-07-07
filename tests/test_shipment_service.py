@@ -46,14 +46,13 @@ class ShipmentCreateGatingTests(FixtureTestCase):
             ShipmentService.create(job_id=job.pk)
 
     def test_create_blocked_when_job_is_on_hold(self):
+        from apps.jobs.services import JobService
         job = _job_with_accepted_estimate()
-        # Advance to on_hold via approved → on_hold (valid transitions).
         job.status = Job.STATUS_SUBMITTED
         job.save()
         job.status = Job.STATUS_APPROVED
         job.save()
-        job.status = Job.STATUS_ON_HOLD
-        job.save()
+        JobService.hold_job(job.pk, 'paused')
         with self.assertRaises(ValidationError):
             ShipmentService.create(job_id=job.pk)
 

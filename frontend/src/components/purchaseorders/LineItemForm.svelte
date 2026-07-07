@@ -15,7 +15,9 @@
 
   let mode = $state('manual'); // 'manual' or 'pli'
   let selectedPLI = $state(null);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let jobId = $state(defaultJob?.job_id ?? null);
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   let jobRow = $state(defaultJob ?? null);
 
   let form = $state({
@@ -148,7 +150,7 @@
 
     <p>
       <label><strong>Job (optional)</strong></label><br>
-      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
+      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} openOnly />
     </p>
 
     <p>

@@ -19,9 +19,12 @@ from apps.jobs.services import JobService
 
 
 def _advance_job_to_on_hold(job):
-    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED, Job.STATUS_ON_HOLD):
+    """Draft → submitted → approved, then hold (on_hold flag)."""
+    from apps.jobs.services import JobService
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
         job.status = s
         job.save()
+    JobService.hold_job(job.pk, 'CO editing')
     job.refresh_from_db()
 
 
@@ -49,7 +52,7 @@ class ChangeOrderPdfTests(FixtureTestCase):
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_ADD,
             description='Extra scope', qty=Decimal('1'), units='ea',
-            price=Decimal('250.00'), line_number=1)
+            price=Decimal('250.00'), line_number=1, accounting_category_id=901)
         ChangeOrderLineItem.objects.create(
             change_order=self.co, action=ChangeOrderLineItem.ACTION_REPLACE,
             target_line_item=self.l1, description='Base work (revised)',

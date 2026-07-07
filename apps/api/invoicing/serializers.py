@@ -26,14 +26,27 @@ class InvoiceLineItemSourceSerializer(serializers.Serializer):
     description = serializers.SerializerMethodField()
     computed_amount = serializers.SerializerMethodField()
 
+    def _resolve_or_none(self, obj):
+        # A dangling row (atom deleted out from under the claim — pre-purge
+        # data, or a race) must render as null, never 500 the list endpoint.
+        from django.core.exceptions import ObjectDoesNotExist
+        try:
+            return obj.resolve()
+        except ObjectDoesNotExist:
+            return None
+
     def get_description(self, obj):
         from apps.invoicing.services import InvoiceWizardService
-        instance = obj.resolve()
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
         return InvoiceWizardService._atom_description(instance)
 
     def get_computed_amount(self, obj):
         from apps.invoicing.services import InvoiceWizardService
-        instance = obj.resolve()
+        instance = self._resolve_or_none(obj)
+        if instance is None:
+            return None
         return str(InvoiceWizardService._atom_computed_amount(instance))
 
 
@@ -82,6 +95,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     job_description = serializers.SerializerMethodField()
     due_date = serializers.SerializerMethodField()
     is_late = serializers.SerializerMethodField()
+    job_has_other_invoices = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -92,12 +106,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'line_items', 'default_send_to',
             'job_number', 'job_name', 'job_description',
             'due_date', 'is_late',
+            'job_has_other_invoices',
         ]
         read_only_fields = [
             'invoice_id', 'invoice_number', 'created_date',
             'sent_date', 'closed_date',
             'qbo_id', 'qbo_payment_status', 'qbo_amount_paid',
             'due_date', 'is_late',
+            'job_has_other_invoices',
+            # Transitions come only from the cancel action / send flow / QBO
+            # polling — a bare PATCH must not flip status. (`job` stays
+            # writable for CREATE, which routes through open_for_job; the
+            # viewset's perform_update strips it so it is create-only.)
+            'status',
         ]
 
     def get_due_date(self, obj):
@@ -135,6 +156,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.job:
             return obj.job.description
         return ''
+
+    def get_job_has_other_invoices(self, obj):
+        """Return True if any non-cancelled Invoice exists for this job other than obj."""
+        return Invoice.objects.filter(
+            job=obj.job,
+        ).exclude(
+            pk=obj.pk,
+        ).exclude(
+            status=Invoice.STATUS_CANCELLED,
+        ).exists()
 
 
 class InvoiceSummarySerializer(serializers.ModelSerializer):

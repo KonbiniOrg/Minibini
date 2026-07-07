@@ -8,13 +8,14 @@
    *   onSubmit: (decisions) => void   // decisions keyed by line_item_id
    *   onCancel: () => void
    */
-  import { modalKeys } from '../../lib/modalKeys.js';
+  import Modal from '../Modal.svelte';
 
   const { items = [], onSubmit, onCancel } = $props();
   let decisions = $state({});
 
   // Default every row to 'keep' — the non-destructive choice (the Material
   // stays planned on its Job; the user opts in to deleting it).
+  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
   for (const it of items) {
     decisions[it.line_item_id] = 'keep';
   }
@@ -24,8 +25,8 @@
   }
 </script>
 
-<div class="overlay" use:modalKeys={{ onSave: submit, onCancel }}>
-  <div class="dialog">
+<Modal open={true} onCancel={onCancel} maxWidth="900px">
+<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
     <h3>Linked Materials — still needed?</h3>
     <p>Each of these Materials is currently linked to a PO line you're about to sever. Decide whether the plan on the Job should stay.</p>
     <table class="data-table">
@@ -57,13 +58,11 @@
       </tbody>
     </table>
     <p>
-      <button onclick={submit}>Confirm</button>
-      <button onclick={onCancel}>Cancel</button>
+      <button type="submit">Confirm</button>
+      <button type="button" onclick={onCancel}>Cancel</button>
     </p>
-  </div>
-</div>
+</form>
+</Modal>
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: var(--z-modal); }
-  .dialog { background: white; padding: 20px; max-width: 600px; border-radius: 6px; }
 </style>

@@ -34,7 +34,7 @@ class TaskStatusFieldTest(BaseTestCase):
         self.job = Job.objects.first()
 
     def test_task_default_status_is_pending(self):
-        task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.assertEqual(task.status, Task.STATUS_PENDING)
 
     def test_task_status_choices(self):
@@ -54,7 +54,7 @@ class TaskTransitionValidationTest(BaseTestCase):
         self.job = Job.objects.first()
 
     def _create_task_with_status(self, status):
-        task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         if status != Task.STATUS_PENDING:
             Task.objects.filter(pk=task.pk).update(status=status)
             task.refresh_from_db()
@@ -135,7 +135,7 @@ class TaskTransitionValidationTest(BaseTestCase):
 
     def test_new_task_no_transition_validation(self):
         """New task (no pk) should not trigger transition validation."""
-        task = Task(name='New Task', job=self.job, status=Task.STATUS_IN_PROGRESS, service_item_id=1)
+        task = Task(name='New Task', job=self.job, status=Task.STATUS_IN_PROGRESS, rate_scheme_id=1)
         task.full_clean()
 
 
@@ -146,7 +146,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_start_work_promotes_pending_to_in_progress(self):
@@ -168,7 +168,7 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
     def test_start_work_closes_users_other_open_blep(self):
-        other_task = Task.objects.create(name='Other Task', job=self.job, service_item_id=1)
+        other_task = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         # Over-minimum so it is CLOSED (not cancelled) when start_work switches tasks.
         old_blep = Blep.objects.create(
@@ -191,10 +191,11 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         TaskLifecycleService.start_work(self.task.pk, self.user)
         mock_consume.assert_called_once_with(mat)
 
-    def test_task_start_consumes_no_item_material_marker(self):
-        """Starting a task flips a no-inventory-item material to consumed
-        (marker-only). No QOH or earmark side effects — the only no-op path
-        under universal tracking.
+    def test_task_start_blocks_on_provisional_material(self):
+        """Starting a task whose material is provisional (no inventory_item)
+        now REFUSES — the promote-time consumption sweep raises rather than
+        silently flipping a not-yet-priced material to consumed. The atomic
+        start_work rolls back, leaving task and material pending.
         """
         from decimal import Decimal
         from apps.core.models import AccountingCategory
@@ -211,10 +212,13 @@ class StartWorkOnPendingTaskTest(BaseTestCase):
         )
         self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
 
-        TaskLifecycleService.start_work(self.task.pk, self.user)
+        with self.assertRaises(ValidationError):
+            TaskLifecycleService.start_work(self.task.pk, self.user)
 
         mat.refresh_from_db()
-        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+        self.task.refresh_from_db()
+        self.assertEqual(mat.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        self.assertEqual(self.task.status, Task.STATUS_PENDING)
         self.assertFalse(
             Earmark.objects.filter(job=self.job).exists()
         )
@@ -247,7 +251,7 @@ class OnBehalfStartStopTest(BaseTestCase):
         self.BlepPermissionError = BlepPermissionError
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='OB Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='OB Task', job=self.job, rate_scheme_id=1)
         self.manager = User.objects.get(username='admin')
         perm = Permission.objects.get(
             codename='can_manage_time', content_type__app_label='core',
@@ -320,7 +324,7 @@ class CompleteTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         _log_time(self.task)
         self.user = User.objects.get(username='admin')
 
@@ -375,7 +379,7 @@ class JobAutoWorkCompleteTest(BaseTestCase):
             contact=fixture_job.contact,
         )
         _approve_job(self.job)
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         _log_time(self.task)
         self.user = User.objects.get(username='admin')
 
@@ -387,13 +391,13 @@ class JobAutoWorkCompleteTest(BaseTestCase):
     def test_complete_with_others_remaining_advances_to_in_progress(self):
         """Completing one task of several advances APPROVED→IN_PROGRESS
         (Bug 1: work has started) but not all the way to WORK_COMPLETE."""
-        Task.objects.create(name='Other Task', job=self.job, service_item_id=1)
+        Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         TaskLifecycleService.complete_task(self.task.pk)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, Job.STATUS_IN_PROGRESS)
 
     def test_complete_with_cancelled_siblings_advances(self):
-        other = Task.objects.create(name='Other Task', job=self.job, service_item_id=1)
+        other = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other.pk).update(status=Task.STATUS_CANCELLED)
         TaskLifecycleService.complete_task(self.task.pk)
         self.job.refresh_from_db()
@@ -411,7 +415,7 @@ class JobAutoWorkCompleteTest(BaseTestCase):
             job_number='J-AUTO-DRAFT', contact=self.job.contact,
         )
         self.assertEqual(job2.status, Job.STATUS_DRAFT)
-        task = Task.objects.create(name='DraftTask', job=job2, service_item_id=1)
+        task = Task.objects.create(name='DraftTask', job=job2, rate_scheme_id=1)
         _log_time(task)
         TaskLifecycleService.complete_task(task.pk)
         job2.refresh_from_db()
@@ -427,7 +431,7 @@ class JobAutoWorkCompleteTest(BaseTestCase):
         # Create another task somehow (bypass the expectation by updating status
         # directly). Then complete it: the _check_job_work_complete guard only
         # fires when job.status == APPROVED or IN_PROGRESS, so this is a no-op.
-        other = Task.objects.create(name='Extra', job=self.job, service_item_id=1)
+        other = Task.objects.create(name='Extra', job=self.job, rate_scheme_id=1)
         _log_time(other)
         with patch(
             'apps.jobs.services.JobService.update_status'
@@ -444,10 +448,10 @@ class CompleteTaskActualQtyTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         self.entered_qty_task = Task.objects.create(
-            name='CNC job', job=self.job, service_item_id=2,
+            name='CNC job', job=self.job, rate_scheme_id=2,
         )
         self.elapsed_task = Task.objects.create(
-            name='Labor', job=self.job, service_item_id=1,
+            name='Labor', job=self.job, rate_scheme_id=1,
         )
         _log_time(self.elapsed_task)
 
@@ -499,7 +503,7 @@ class CompleteTaskActualQtyTest(BaseTestCase):
     def test_elapsed_time_task_without_logged_time_raises(self):
         from apps.jobs.services import TaskTimeRequired
         untracked = Task.objects.create(
-            name='Untracked', job=self.job, service_item_id=1,
+            name='Untracked', job=self.job, rate_scheme_id=1,
         )
         with self.assertRaises(TaskTimeRequired):
             TaskLifecycleService.complete_task(untracked.pk)
@@ -512,7 +516,7 @@ class BlockNoRollupRegressionTest(BaseTestCase):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Task', job=self.job, rate_scheme_id=1)
 
     def test_block_task_does_not_change_job_status(self):
         original = self.job.status
@@ -532,7 +536,7 @@ class BlockTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_block_from_pending(self):
@@ -599,7 +603,7 @@ class CancelTaskTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         self.user = User.objects.get(username='admin')
 
     def test_cancel_from_pending(self):
@@ -642,13 +646,61 @@ class CancelTaskTest(BaseTestCase):
         with self.assertRaises(ValidationError):
             TaskLifecycleService.cancel_task(self.task.pk)
 
+    def test_cancel_detaches_pending_materials_to_job(self):
+        # A cancelled task must not keep "needed" materials captive: pending
+        # rows ride back to the job as loose materials (task=NULL), keeping
+        # their earmark; the user releases them by hand if truly unwanted.
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import Earmark, InventoryItem, Material
+        from apps.inventory.services import MaterialService
+        _approve_job(self.job)
+        cat = AccountingCategory.objects.first()
+        pli = InventoryItem.objects.create(
+            code='CANCEL-DETACH', accounting_category=cat,
+            qty_on_hand=Decimal('0'),
+        )
+        m = MaterialService.create_on_job(
+            job=self.job, task=self.task,
+            description='sheet', quantity=Decimal('2'), inventory_item=pli,
+        )
+        TaskLifecycleService.cancel_task(self.task.pk)
+        m.refresh_from_db()
+        self.assertIsNone(m.task_id)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        e = Earmark.objects.get(inventory_item=pli, job=self.job)
+        self.assertEqual(e.quantity, Decimal('2'))
+
+    def test_cancel_leaves_consumed_materials_attached(self):
+        # Consumed rows are history of work actually done on the task before
+        # cancellation — they stay attached.
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import InventoryItem, Material
+        from apps.inventory.services import MaterialService
+        _approve_job(self.job)
+        cat = AccountingCategory.objects.first()
+        pli = InventoryItem.objects.create(
+            code='CANCEL-KEEP', accounting_category=cat,
+            qty_on_hand=Decimal('5'),
+        )
+        m = MaterialService.create_on_job(
+            job=self.job, task=self.task,
+            description='rod', quantity=Decimal('1'), inventory_item=pli,
+        )
+        MaterialService.consume(m)
+        TaskLifecycleService.cancel_task(self.task.pk)
+        m.refresh_from_db()
+        self.assertEqual(m.task_id, self.task.pk)
+        self.assertEqual(m.consumption_state, Material.CONSUMPTION_STATE_CONSUMED)
+
 
 class StartStopWorkTest(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.job = Job.objects.first()
         _approve_job(self.job)
-        self.task = Task.objects.create(name='Test Task', job=self.job, service_item_id=1)
+        self.task = Task.objects.create(name='Test Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
         self.task.refresh_from_db()
         self.user = User.objects.get(username='admin')
@@ -668,7 +720,7 @@ class StartStopWorkTest(BaseTestCase):
             TaskLifecycleService.start_work(self.task.pk, self.user)
 
     def test_start_work_closes_users_other_blep(self):
-        other_task = Task.objects.create(name='Other Task', job=self.job, service_item_id=1)
+        other_task = Task.objects.create(name='Other Task', job=self.job, rate_scheme_id=1)
         Task.objects.filter(pk=other_task.pk).update(status=Task.STATUS_IN_PROGRESS)
         # Over-minimum so it is CLOSED (not cancelled) when start_work switches tasks.
         old_blep = Blep.objects.create(
@@ -749,7 +801,7 @@ class StartStopWorkTest(BaseTestCase):
         )[0]
         non_inv = InventoryItem.objects.create(
             code='PLI-NI-TKO', description='Labor',
-            is_catalog=False, qty_on_hand=Decimal('0.00'),
+            qty_on_hand=Decimal('0.00'),
             qty_sold=Decimal('0.00'), accounting_category=cat,
         )
         mat = Material.objects.create(

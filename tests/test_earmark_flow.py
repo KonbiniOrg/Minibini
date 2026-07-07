@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.test import TestCase
 from apps.contacts.models import Contact, Business
 from apps.core.models import AccountingCategory
-from apps.jobs.models import Job, Task, ServiceItem
+from apps.jobs.models import Job, Task, RateScheme
 from apps.inventory.models import Material, InventoryItem, Earmark
 from apps.inventory.services import InventoryService
 
@@ -38,7 +38,6 @@ class EarmarkPreviewTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
@@ -48,25 +47,24 @@ class EarmarkPreviewTest(TestCase):
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 
-        self.scheme = ServiceItem.objects.create(
-            name='S-emk', algorithm=ServiceItem.FLAT_FEE,
+        self.scheme = RateScheme.objects.create(
+            name='S-emk', algorithm=RateScheme.ENTERED_QTY,
             rate=Decimal('1'), unit_label='ea', accounting_category=self.category,
         )
         self.task_a = Task.objects.create(
             job=self.job,
             name='Build cabinets',
             sort_order=1,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
         self.task_b = Task.objects.create(
             job=self.job,
             name='Install trim',
             sort_order=2,
-            service_item=self.scheme,
+            rate_scheme=self.scheme,
         )
 
     def test_preview_aggregates_by_item(self):
@@ -152,7 +150,7 @@ class EarmarkPreviewTest(TestCase):
         """Universal tracking: the earmark preview includes every item-backed
         material (catalog or non-catalog lot), not just inventoried ones."""
         non_inv = InventoryItem.objects.create(
-            code='NONINV', description='Not tracked', is_catalog=False,
+            code='NONINV', description='Not tracked',
             accounting_category=self.category,
         )
         Material.objects.create(
@@ -190,7 +188,6 @@ class UpsertEarmarksTest(TestCase):
             qty_on_hand=Decimal('20.00'),
             purchase_price=Decimal('45.00'),
             selling_price=Decimal('90.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
         self.screws = InventoryItem.objects.create(
@@ -200,7 +197,6 @@ class UpsertEarmarksTest(TestCase):
             qty_on_hand=Decimal('50.00'),
             purchase_price=Decimal('8.00'),
             selling_price=Decimal('12.00'),
-            is_catalog=True,
             accounting_category=self.category,
         )
 
@@ -239,42 +235,29 @@ class UpsertEarmarksTest(TestCase):
 
 class CreateEarmarksForJobIsNoopTest(TestCase):
     def test_no_new_earmarks_when_materials_already_upserted(self):
-        """After JobService.copy_from_worksheet populates a job, calling
-        InventoryService.create_earmarks_for_job again should not change
-        any earmark rows."""
+        """After a Job is populated with inventoried materials (which earmark on
+        create), calling InventoryService.create_earmarks_for_job again should
+        not change any earmark rows."""
         from decimal import Decimal
         from apps.core.models import AccountingCategory
-        from apps.jobs.models import Job, PlanTask, ServiceItem
-        from apps.estimates.models import EstWorksheet
-        from apps.inventory.models import InventoryItem, PlanMaterial, Earmark
-        from apps.inventory.services import InventoryService
-        from apps.jobs.services import JobService
+        from apps.jobs.models import Job
+        from apps.inventory.models import InventoryItem, Earmark
+        from apps.inventory.services import InventoryService, MaterialService
         # Setup - follow existing patterns in this file for Contact/Business/Job
         from apps.contacts.models import Contact, Business
         contact = Contact.objects.create(first_name='C', last_name='T')
         biz = Business.objects.create(business_name='B', default_contact=contact)
         contact.business = biz; contact.save()
         cat = AccountingCategory.objects.create(name='c', code='NOP1')
-        scheme_ac = AccountingCategory.objects.create(name='nop-sc', code='NOP-SC')
-        scheme = ServiceItem.objects.create(
-            name='S-nop', algorithm=ServiceItem.FLAT_FEE,
-            rate=Decimal('1'), unit_label='ea', accounting_category=scheme_ac,
-        )
         pli = InventoryItem.objects.create(
-            code='I-NOP', accounting_category=cat, is_catalog=True,
+            code='I-NOP', accounting_category=cat,
         )
-        src_job = Job.objects.create(job_number='JOB-NOP-SRC', contact=contact)
-        ws = EstWorksheet.objects.create(job=src_job)
-        pt = PlanTask.objects.create(
-            est_worksheet=ws, name='pt',
-            service_item=scheme, est_qty=Decimal('1'),
+        dst = Job.objects.create(job_number='JOB-NOP-DST', contact=contact,
+                                 status=Job.STATUS_APPROVED)
+        MaterialService.create_on_job(
+            job=dst, description='x', quantity=Decimal('3'), inventory_item=pli,
         )
-        PlanMaterial.objects.create(
-            plan_task=pt, est_worksheet=ws,
-            description='x', quantity=Decimal('3'), inventory_item=pli,
-        )
-        dst = Job.objects.create(job_number='JOB-NOP-DST', contact=contact)
-        JobService.copy_from_worksheet(dst.pk, ws.pk)
+        InventoryService.create_earmarks_for_job(dst)
         before = {(e.inventory_item_id, e.job_id): e.quantity for e in Earmark.objects.filter(job=dst)}
         InventoryService.create_earmarks_for_job(dst)
         after = {(e.inventory_item_id, e.job_id): e.quantity for e in Earmark.objects.filter(job=dst)}
