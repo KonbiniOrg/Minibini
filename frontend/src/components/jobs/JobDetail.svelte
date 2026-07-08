@@ -1130,59 +1130,7 @@
   .change-request-banner .cr-text { font-style: italic; }
   .change-request-banner .cr-hint { color: #c2410c; margin-left: auto; font-size: 12px; }
 
-  /* HEADER */
-  .job-header {
-    background: #1f2937;
-    color: #fff;
-    padding: 14px 24px;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 24px;
-    align-items: center;
-    height: 110px;
-    box-sizing: border-box;
-    flex: 0 0 auto;
-  }
-  .titleblock { padding-left: 52px; min-width: 0; }
-  /* .edit-link comes from app.css (banner-page vocabulary). */
-  .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
-  .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
-  /* Colors come from the global .status-{status} classes (app.css); only the
-     compact sizing for this dense header is local. */
-  .status-badge { padding: 3px 10px; border-radius: 10px; font-size: 12px; }
-  .status-select-wrapper { position: relative; display: inline-block; }
-  .status-select {
-    appearance: none; -webkit-appearance: none;
-    padding: 3px 26px 3px 10px; border-radius: 10px;
-    font-size: 12px; font-weight: 600; text-transform: capitalize;
-    border: 2px solid transparent; cursor: pointer; outline: none;
-    transition: border-color 0.15s ease;
-  }
-  .status-select:hover { border-color: rgba(0,0,0,0.15); }
-  .status-select:focus { border-color: rgba(0,0,0,0.3); }
-  .status-select-wrapper::after {
-    content: '\25BE'; position: absolute; right: 9px; top: 50%;
-    transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: 0.6;
-  }
-  .dates { opacity: 0.7; }
-  .release-btn { font-size: 12px; padding: 3px 10px; margin-left: 4px; }
-
-  /* P/L grid */
-  .pl-grid {
-    display: grid;
-    grid-template-columns: repeat(4, auto);
-    gap: 22px;
-    background: rgba(255,255,255,0.06);
-    padding: 10px 18px;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.08);
-  }
-  .pl-item { text-align: right; }
-  .pl-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.65; }
-  .pl-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
-  .pl-spent { color: #fca5a5; }
-  .pl-billable { color: #fde68a; }
-  .pl-invoiced { color: #86efac; }
+  /* HEADER: rendered by the JobHeader component, which owns its styles. */
 
   /* MIDBAND */
   .midband {

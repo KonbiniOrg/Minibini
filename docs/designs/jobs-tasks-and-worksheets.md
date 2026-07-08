@@ -214,8 +214,9 @@ display name is added to the board and schedule job payloads
 (`BoardService._serialize_job`, `ScheduleService` jobs_payload) so the chip
 can render it. Where the PM surfaces:
 
-- **Job detail header** (`JobHeader.svelte`) — a "Project manager:" line
-  linking to that manager's filtered job list.
+- **Job detail header** (`JobHeader.svelte`) — a "PM: <Name>" segment on
+  the facts line (right column, above the money grid) linking to that
+  manager's filtered job list.
 - **Board in-progress + schedule top-line chip** (`JobChipStrip.svelte`,
   shared by both) — the PM's **initials** (first + last word of the name,
   uppercased) top-right on the chip, in black opposite the grey job number.
@@ -1016,11 +1017,27 @@ Route: `#/jobs/:id` → `JobDetailPage.svelte`.
 
 Top-down:
 
-1. **JobHeader** (`components/jobs/JobHeader.svelte`) — title `JOB
-   #N: Name`, subtitle (contact / business), a "Project manager:" line
-   (when set; links to `#/jobs?pm=<id>`), status pill (interactive
-   `<select>` for users with `can_manage_jobs`), key dates,
-   customer_po_number.
+1. **JobHeader** (`components/jobs/JobHeader.svelte`) — a **fixed
+   110px** banner (redesigned 2026-07-08 so content can never overflow
+   onto the page below). Left column, always exactly three lines: title
+   `JOB #N: Name` (single line, CSS-ellipsis truncated, full name in
+   the `title` hover), subtitle (contact / business, also truncating),
+   and the status row. Right column: a small facts line (started / due
+   / completed dates, customer PO, and the PM name linking to
+   `#/jobs?pm=<id>`) right-aligned above the financial rollups (§9.3).
+   The status row holds an **Actions ▾** menu (Edit / Duplicate… /
+   History — navigation only; History shows for read-only users too)
+   and the **status pill**, an interactive `<select>` for users whose
+   `can_manage` flag is set. The pill is a **trigger pill**: besides
+   real transitions it carries non-status trigger options (values
+   prefixed `__`) — "Release to floor" is the label on the
+   approved→in_progress transition, "Hold…" opens the hold-reason
+   modal (a `Modal.svelte` dialog; picking the option changes nothing
+   by itself and the pill snaps back until the modal confirms), and on
+   a held job "Release hold" posts the release. **A held job's pill
+   shows only `HOLD`** (striped amber; the true status is deliberately
+   hidden) with the hold reason inline beside it, truncated with the
+   full text on hover.
 2. **Description + History** in a flex row. `HistoryPanel`
    (`components/HistoryPanel.svelte`) shows status changes, notes, and
    inline email previews.

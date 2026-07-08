@@ -15,6 +15,18 @@ import JobHeader from '@/components/jobs/JobHeader.svelte';
 
 const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress', can_manage: true };
 
+function openMenu(getByRole) {
+  return fireEvent.click(getByRole('button', { name: 'Actions' }));
+}
+
+function optionValues(select) {
+  return [...select.options].map((o) => o.value);
+}
+
+function optionLabels(select) {
+  return [...select.options].map((o) => o.textContent.trim());
+}
+
 beforeEach(() => {
   api.patch.mockReset();
   api.patch.mockResolvedValue({});
@@ -24,7 +36,7 @@ beforeEach(() => {
   clearMessage();
 });
 
-describe('JobHeader', () => {
+describe('JobHeader status pill', () => {
   it('patches a direct status change', async () => {
     const onStatusChange = vi.fn();
     const { getByRole } = render(JobHeader, { props: { job, onStatusChange } });
@@ -32,47 +44,53 @@ describe('JobHeader', () => {
     expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'work_complete' });
   });
 
-  it('requires a reason when putting a job on hold', async () => {
+  it('offers Hold as a trigger that opens the reason modal instead of patching', async () => {
     const { getByRole, getByLabelText } = render(JobHeader, { props: { job } });
-    await fireEvent.click(getByRole('button', { name: 'Put on hold' }));
-    // no immediate call — the reason form appears
+    await fireEvent.change(getByRole('combobox'), { target: { value: '__hold' } });
+    // no status patch, no hold call yet — the reason modal appears
+    expect(api.patch).not.toHaveBeenCalled();
     expect(api.post).not.toHaveBeenCalled();
     await fireEvent.input(getByLabelText(/Reason for hold/), { target: { value: 'broken jig' } });
     await fireEvent.click(getByRole('button', { name: 'Confirm Hold' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/hold/', { reason: 'broken jig' });
   });
 
-  it('no longer offers On Hold in the status select', () => {
+  it('snaps the pill back to the current status while the hold modal is open', async () => {
     const { getByRole } = render(JobHeader, { props: { job } });
-    const options = [...getByRole('combobox').options].map((o) => o.value);
-    expect(options).not.toContain('on_hold');
+    const select = getByRole('combobox');
+    await fireEvent.change(select, { target: { value: '__hold' } });
+    expect(select.value).toBe('in_progress');
   });
 
-  it('shows the hold badge + reason and releases via the release action', async () => {
-    const onStatusChange = vi.fn();
-    const heldJob = { ...job, on_hold: true, hold_reason: 'waiting on CO' };
-    const { getByRole, getByText } = render(JobHeader, { props: { job: heldJob, onStatusChange } });
-    expect(getByText('On Hold')).toBeInTheDocument();
-    expect(getByText('waiting on CO')).toBeInTheDocument();
-    await fireEvent.click(getByRole('button', { name: 'Release hold' }));
-    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/release/', {});
-  });
-
-  it('hides the Put on hold button for pre-approval and held jobs', () => {
-    const draftJob = { ...job, status: 'draft' };
-    const { queryByRole, rerender } = render(JobHeader, { props: { job: draftJob } });
-    expect(queryByRole('button', { name: 'Put on hold' })).toBeNull();
-  });
-
-  it('releases an approved job to the floor without prompting (reversible via on-hold)', async () => {
+  it('labels the approved→in_progress transition "Release to floor" and patches it directly', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
-    const onStatusChange = vi.fn();
     const approvedJob = { ...job, status: 'approved' };
-    const { getByRole } = render(JobHeader, { props: { job: approvedJob, onStatusChange } });
-    await fireEvent.click(getByRole('button', { name: 'Release to floor' }));
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
+    const select = getByRole('combobox');
+    expect(optionLabels(select)).toContain('Release to floor');
+    await fireEvent.change(select, { target: { value: 'in_progress' } });
     expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it('does not offer Hold for pre-approval jobs', () => {
+    const draftJob = { ...job, status: 'draft' };
+    const { getByRole } = render(JobHeader, { props: { job: draftJob } });
+    expect(optionValues(getByRole('combobox'))).not.toContain('__hold');
+  });
+
+  it('shows HOLD (not the true status) plus the reason when held, and releases via the pill', async () => {
+    const heldJob = { ...job, on_hold: true, hold_reason: 'waiting on CO' };
+    const { getByRole, getByText, queryByText } = render(JobHeader, { props: { job: heldJob } });
+    const select = getByRole('combobox');
+    expect(select.selectedOptions[0].textContent.trim()).toBe('HOLD');
+    expect(queryByText('In Progress')).toBeNull();
+    expect(getByText(/waiting on CO/)).toBeInTheDocument();
+    expect(optionValues(select)).toEqual(expect.arrayContaining(['__release_hold', 'cancelled']));
+    await fireEvent.change(select, { target: { value: '__release_hold' } });
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/release/', {});
+    expect(api.patch).not.toHaveBeenCalled();
   });
 
   it('raises the global error overlay when a direct status change fails', async () => {
@@ -87,13 +105,13 @@ describe('JobHeader', () => {
     });
   });
 
-  it('shows a hold failure in the hold form message, not the overlay', async () => {
+  it('shows a hold failure in the modal form message, not the overlay', async () => {
     api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400,
       data: { detail: 'Hold not allowed right now.' },
     }));
     const { getByRole, getByLabelText, findByRole } = render(JobHeader, { props: { job } });
-    await fireEvent.click(getByRole('button', { name: 'Put on hold' }));
+    await fireEvent.change(getByRole('combobox'), { target: { value: '__hold' } });
     await fireEvent.input(getByLabelText(/Reason for hold/), { target: { value: 'broken jig' } });
     await fireEvent.click(getByRole('button', { name: 'Confirm Hold' }));
     const msg = await findByRole('alert');
@@ -109,35 +127,91 @@ describe('JobHeader', () => {
     expect(queryByRole('combobox')).toBeNull();
   });
 
-  describe('financial rollups', () => {
-    it('renders the four amounts as currency', () => {
-      const finJob = {
-        ...job,
-        estimated_amount: '1000.00',
-        spent_amount: '250.00',
-        invoiced_amount: '400.00',
-        profit_amount: '150.00',
-      };
-      const { getByText } = render(JobHeader, { props: { job: finJob } });
-      expect(getByText('$1,000.00')).toBeInTheDocument();
-      expect(getByText('$250.00')).toBeInTheDocument();
-      expect(getByText('$400.00')).toBeInTheDocument();
-      expect(getByText('$150.00')).toBeInTheDocument();
-      // The repurposed header no longer has a Billable column.
-      expect(getByText('Profit')).toBeInTheDocument();
-    });
+  it('shows a read-only HOLD badge when a held job is not manageable', () => {
+    user.set({ permissions: [] });
+    const heldJob = { ...job, on_hold: true, hold_reason: 'waiting', can_manage: false };
+    const { getByText, queryByText } = render(JobHeader, { props: { job: heldJob } });
+    expect(getByText('HOLD')).toBeInTheDocument();
+    expect(queryByText('In Progress')).toBeNull();
+  });
+});
 
-    it('falls back to a dash when amounts are absent (e.g. list payloads)', () => {
-      const { getAllByText } = render(JobHeader, { props: { job } });
-      // All four cells show the placeholder.
-      expect(getAllByText('$—').length).toBe(4);
-    });
+describe('JobHeader actions menu', () => {
+  it('offers Edit, Duplicate, and History links when manageable — and no hold actions', async () => {
+    const { getByRole, queryByRole } = render(JobHeader, { props: { job } });
+    await openMenu(getByRole);
+    expect(getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '#/jobs/5/edit');
+    expect(getByRole('link', { name: /Duplicate/ })).toHaveAttribute('href', '#/jobs/5/duplicate');
+    expect(getByRole('link', { name: 'History' })).toHaveAttribute('href', '#/jobs/5/history');
+    // Hold moved to the status pill; the menu carries no action buttons.
+    expect(queryByRole('button', { name: /hold/i })).toBeNull();
+  });
 
-    it('shows a negative profit (unbilled work) with its own styling', () => {
-      const finJob = { ...job, profit_amount: '-50.00' };
-      const { getByText } = render(JobHeader, { props: { job: finJob } });
-      expect(getByText('-$50.00')).toBeInTheDocument();
-    });
+  it('still offers History (but not Edit/Duplicate) when not manageable', async () => {
+    user.set({ permissions: [] });
+    const readOnlyJob = { ...job, can_manage: false };
+    const { getByRole, queryByRole } = render(JobHeader, { props: { job: readOnlyJob } });
+    await openMenu(getByRole);
+    expect(getByRole('link', { name: 'History' })).toBeInTheDocument();
+    expect(queryByRole('link', { name: 'Edit' })).toBeNull();
+    expect(queryByRole('link', { name: /Duplicate/ })).toBeNull();
+  });
+
+  it('closes when a navigation item is clicked', async () => {
+    const { getByRole, queryByRole } = render(JobHeader, { props: { job } });
+    await openMenu(getByRole);
+    await fireEvent.click(getByRole('link', { name: 'History' }));
+    expect(queryByRole('link', { name: 'History' })).toBeNull();
+  });
+});
+
+describe('JobHeader facts line (dates + PO + PM)', () => {
+  it('shows started and due dates', () => {
+    const datedJob = { ...job, start_date: '2026-05-12', due_date: '2026-06-30' };
+    const { getByText } = render(JobHeader, { props: { job: datedJob } });
+    expect(getByText(/Started/)).toBeInTheDocument();
+    expect(getByText(/Due/)).toBeInTheDocument();
+  });
+
+  it('shows the completed date for closed jobs', () => {
+    const closedJob = {
+      ...job, status: 'completed',
+      start_date: '2026-05-12', completed_date: '2026-07-01',
+    };
+    const { getByText } = render(JobHeader, { props: { job: closedJob } });
+    expect(getByText(/Started/)).toBeInTheDocument();
+    expect(getByText(/Completed \d/)).toBeInTheDocument();
+  });
+});
+
+describe('JobHeader financial rollups', () => {
+  it('renders the four amounts as currency', () => {
+    const finJob = {
+      ...job,
+      estimated_amount: '1000.00',
+      spent_amount: '250.00',
+      invoiced_amount: '400.00',
+      profit_amount: '150.00',
+    };
+    const { getByText } = render(JobHeader, { props: { job: finJob } });
+    expect(getByText('$1,000.00')).toBeInTheDocument();
+    expect(getByText('$250.00')).toBeInTheDocument();
+    expect(getByText('$400.00')).toBeInTheDocument();
+    expect(getByText('$150.00')).toBeInTheDocument();
+    // The repurposed header no longer has a Billable column.
+    expect(getByText('Profit')).toBeInTheDocument();
+  });
+
+  it('falls back to a dash when amounts are absent (e.g. list payloads)', () => {
+    const { getAllByText } = render(JobHeader, { props: { job } });
+    // All four cells show the placeholder.
+    expect(getAllByText('$—').length).toBe(4);
+  });
+
+  it('shows a negative profit (unbilled work) with its own styling', () => {
+    const finJob = { ...job, profit_amount: '-50.00' };
+    const { getByText } = render(JobHeader, { props: { job: finJob } });
+    expect(getByText('-$50.00')).toBeInTheDocument();
   });
 });
 
@@ -149,33 +223,35 @@ describe('JobHeader project manager', () => {
     expect(link).toHaveAttribute('href', '#/jobs?pm=3');
   });
 
-  it('renders no PM link when unassigned', () => {
+  it('renders no PM segment when unassigned', () => {
     const { queryByText } = render(JobHeader, { props: { job } });
-    expect(queryByText(/Project manager/i)).toBeNull();
+    expect(queryByText(/PM:/)).toBeNull();
   });
 });
 
 describe('JobHeader per-job can_manage gating', () => {
-  it('shows edit affordances + status dropdown when job.can_manage is true even without the global atom', () => {
+  it('shows edit affordances + status dropdown when job.can_manage is true even without the global atom', async () => {
     user.set({ permissions: [] }); // no can_manage_jobs atom
     const pmJob = { ...job, can_manage: true };
-    const { getByText, getByRole } = render(JobHeader, { props: { job: pmJob } });
-    expect(getByText('edit')).toBeInTheDocument();
+    const { getByRole } = render(JobHeader, { props: { job: pmJob } });
     expect(getByRole('combobox')).toBeInTheDocument();
+    await openMenu(getByRole);
+    expect(getByRole('link', { name: 'Edit' })).toBeInTheDocument();
   });
 
-  it('hides edit affordances + status dropdown when job.can_manage is false even with the global atom', () => {
+  it('hides edit affordances + status dropdown when job.can_manage is false even with the global atom', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
     const lockedJob = { ...job, can_manage: false };
-    const { queryByText, queryByRole } = render(JobHeader, { props: { job: lockedJob } });
-    expect(queryByText('edit')).toBeNull();
+    const { getByRole, queryByRole } = render(JobHeader, { props: { job: lockedJob } });
     expect(queryByRole('combobox')).toBeNull();
+    await openMenu(getByRole);
+    expect(queryByRole('link', { name: 'Edit' })).toBeNull();
   });
 
-  it('shows Release to floor for an approved job when job.can_manage is true', () => {
+  it('offers Release to floor in the pill for an approved job when job.can_manage is true', () => {
     user.set({ permissions: [] });
     const approvedPmJob = { ...job, status: 'approved', can_manage: true };
     const { getByRole } = render(JobHeader, { props: { job: approvedPmJob } });
-    expect(getByRole('button', { name: 'Release to floor' })).toBeInTheDocument();
+    expect(optionLabels(getByRole('combobox'))).toContain('Release to floor');
   });
 });
