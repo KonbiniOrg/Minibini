@@ -495,6 +495,7 @@
 {:else if job}
   <JobHeader {job} {contact} onStatusChange={reload} />
 
+  <div class="page-body">
   <div class="toolbar">
     <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
@@ -647,13 +648,14 @@
     onSaved={() => { attachExpenseMaterial = null; loadJob(); }}
     onClose={() => { attachExpenseMaterial = null; }}
   />
+  </div>
 {/if}
 
 <style>
   .error { color: #a8071a; }
   .toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 24px;
+    padding: 8px 0;
   }
   .back-link { font-size: 13px; }
   .toolbar button {

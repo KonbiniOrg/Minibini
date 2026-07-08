@@ -251,6 +251,7 @@
   {:else if job}
     <JobHeader {job} {contact} onStatusChange={load} />
 
+    <div class="page-body">
     <header class="page-header">
       <h2>History</h2>
       <p><a use:link href={`/jobs/${jobId}`}>← Back to overview</a></p>
@@ -403,6 +404,7 @@
       </div>
       {/if}
     </div>
+  </div>
   {:else}
     <p class="err">Failed to load job.</p>
   {/if}
@@ -410,7 +412,7 @@
 
 <style>
   .page { padding: 0 0 20px 0; }
-  .page-header { padding: 0 24px; }
+  .page-header { padding: 0; }
   .page-header h2 { margin-top: 16px; margin-bottom: 4px; }
   .body { max-width: 820px; padding: 0 24px; }
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid #d1d5db; margin: 12px 0 16px; }

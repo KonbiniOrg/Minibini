@@ -289,6 +289,7 @@
   {:else if job}
     <JobHeader {job} {contact} onStatusChange={load} />
 
+    <div class="page-body">
     <header class="page-header">
       <h2>Shipments</h2>
       <p><a use:link href={`/jobs/${jobId}`}>← Back to overview</a></p>
@@ -375,6 +376,7 @@
         </tbody>
       </table>
     {/if}
+  </div>
   {:else}
     <p class="err">Failed to load job.</p>
   {/if}
@@ -382,7 +384,7 @@
 
 <style>
   .page { padding: 0 0 20px 0; }
-  .page-header { padding: 0 24px; }
+  .page-header { padding: 0; }
   .page-header h2 { margin-top: 16px; }
   .matrix { margin: 0 24px; width: calc(100% - 48px); }
   .action-row {

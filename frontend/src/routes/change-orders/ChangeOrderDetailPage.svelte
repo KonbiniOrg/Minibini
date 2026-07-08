@@ -672,6 +672,7 @@
     <JobHeader {job} {contact} onStatusChange={loadCO} />
   {/if}
 
+  <div class="page-body">
   <!-- CO toolbar -->
   <div class="toolbar">
     <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
@@ -1033,6 +1034,7 @@
     onSaved={handleAddLineSaved}
     onClose={() => { addLineFormOpen = false; addLineChoice = null; }}
   />
+  </div>
 {/if}
 
 <style>
@@ -1040,7 +1042,7 @@
 
   .toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 24px;
+    padding: 8px 0;
   }
   .back-link { font-size: 13px; }
   .page-title { font-size: 18px; font-weight: 600; }

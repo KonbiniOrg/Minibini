@@ -96,6 +96,7 @@
   });
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading...</p>
 {:else if error && !job}
@@ -149,6 +150,7 @@
     <FormMessage error={formError} />
   </form>
 {/if}
+</div>
 
 <style>
   .error { color: #a8071a; }

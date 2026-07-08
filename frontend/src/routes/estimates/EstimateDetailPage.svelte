@@ -206,6 +206,7 @@
     <JobHeader {job} {contact} onStatusChange={loadEstimate} />
   {/if}
 
+  <div class="page-body">
   <div class="toolbar">
     <a href={`/jobs/${estimate.job}`} use:link class="back-link">&laquo; back to overview</a>
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
@@ -329,6 +330,7 @@
     onSaved={() => { adjustmentModalOpen = false; loadEstimate(); }}
     onClose={() => { adjustmentModalOpen = false; }}
   />
+  </div>
 {/if}
 
 <style>
@@ -340,7 +342,7 @@
 
   .toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 24px;
+    padding: 8px 0;
   }
   .back-link { font-size: 13px; }
   .action-link {

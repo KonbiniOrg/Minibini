@@ -104,6 +104,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Contacts &amp; Businesses ({count})</h2>
 
 <p><a href="#/contacts/new">New Contact</a> &nbsp; <a href="#/businesses/new">New Business</a></p>
@@ -198,6 +199,7 @@
     </p>
   {/if}
 {/if}
+</div>
 
 <style>
   .index-bar {

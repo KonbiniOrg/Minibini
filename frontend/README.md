@@ -272,6 +272,57 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   one-offs) and intentionally bespoke tables keep their own styling — `.data-table`
   is opt-in, not a global default. Scope is the Svelte SPA only; Django HTML
   templates follow their own table conventions (see root `CLAUDE.md`).
+- **Page frame (`.page-body`):** the router wrapper (`.page-content` in
+  `App.svelte`) has no padding, so raw page content sits flush at the left edge
+  and gets covered by the slide-in sidebar. Give a page's main content a 10px
+  left/right gutter by wrapping it in `<div class="page-body">`. The class is
+  just `padding: 0 10px` — fluid width, zero-specificity, so scoped component
+  styles always win. It is **opt-in** (like `.data-table`): a page gets the
+  gutter only by adopting the wrapper.
+  - **Structure:** a full-bleed header (a dark edge-to-edge band such as
+    `JobHeader` or `CustomerHeader`) stays a sibling **outside** `.page-body` so
+    it can still run edge to edge; only the body beneath it is wrapped. Pages with
+    no banner — just a plain flush-left `<h2>` — wrap all their content, heading
+    included. Fixed-position modals/overlays are unaffected by the padding and may
+    sit inside or outside.
+  - **Full-bleed header components (peers):** `JobHeader`
+    (`components/jobs/JobHeader.svelte`) and `CustomerHeader`
+    (`components/contacts/CustomerHeader.svelte`, used by both the contact and
+    business detail pages) are peer banner components. Each is rendered by the
+    route **above** `.page-body` and gets its own background color to signal the
+    area — job = gray-800 `#1f2937`, contacts/business = red-950 `#450a0a`. More
+    area headers with their own colors are planned.
+  - **Subheaders:** anything a page wants to render *inside* the body that reads
+    as a sub-bar (toolbars, filter rows) lives inside `.page-body` and aligns to
+    the 10px gutter (drop any of its own horizontal padding so it lines up). A
+    formal subheader class vocabulary is anticipated but not yet built.
+  - **Tab headers:** the page-level tab bars (`catalog-tabs`, `settings-tabs`,
+    `home-tabs` on Home + Users) share a `flex` + `border-bottom: 2px #ccc`
+    idiom. To make the grey underline run edge-to-edge while the tabs stay
+    indented, they break out of the gutter with `margin: 0 -10px` and push the
+    tabs in with `padding-left: 120px`. This works because each tab `<nav>` is a
+    direct child of `.page-body`. (In-content sub-tabs — the est/inv/po tabs in
+    the job overview, the history tablist — are not page tab headers and keep
+    their own styling.)
+  - **Rollout — three page categories:**
+    1. **Fully individualized (no buffer):** Job board (`#/jobs/board`), Job
+       overview (`JobDetailPage`), and `#/schedule` own their whole layout; the
+       login screen and the shipment packing-list *print* page aren't
+       sidebar-framed pages. These deliberately do **not** get `.page-body`.
+    2. **Pages with a full-bleed banner header (buffer under the header):** every
+       page that renders the shared `JobHeader` band — job task-list, shipments,
+       history, estimate/invoice/change-order detail, and the estimate/invoice
+       wizards — plus the contact/business detail pages (which render the peer
+       `CustomerHeader`). The banner stays a full-bleed sibling; the body beneath
+       it is wrapped in `.page-body`. Where such a page had a sub-bar with its own
+       `24px` side padding (a `.toolbar` or `.page-header`), that padding was
+       zeroed so it aligns to the 10px gutter.
+    3. **Everything else (whole content buffered):** all remaining list/form/
+       detail/send pages, including search and the contacts/business list+form
+       pages — wrapped in full.
+
+    The only route-level `.svelte` files without `.page-body` are the five
+    Category-1 pages above.
 
 ### Routing
 

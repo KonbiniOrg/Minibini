@@ -372,6 +372,7 @@
   });
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading...</p>
 {:else if loadError}
@@ -424,6 +425,7 @@
 
   <p><a href="#/purchase-orders">Back to list</a></p>
 {/if}
+</div>
 
 {#if severPrompt}
   <MaterialSeverDialog

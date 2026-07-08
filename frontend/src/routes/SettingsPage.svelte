@@ -55,6 +55,7 @@
   loadSaved();
 </script>
 
+<div class="page-body">
 <h2>Settings</h2>
 
 <nav class="settings-tabs">
@@ -132,13 +133,16 @@
 {:else if tab === 'business'}
   <BusinessSettings />
 {/if}
+</div>
 
 <style>
   .settings-tabs {
     display: flex;
     gap: 0;
     border-bottom: 2px solid #ccc;
-    margin-bottom: 1em;
+    /* Full-bleed underline (break out of .page-body's 10px), tabs indented 120px. */
+    margin: 0 -10px 1em;
+    padding-left: 120px;
   }
   .settings-tabs button {
     padding: 0.4em 1.2em;

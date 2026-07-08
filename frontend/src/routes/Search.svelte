@@ -147,6 +147,7 @@
   }
 </script>
 
+<div class="page-body">
 <h2>Search{query ? `: "${query}"` : ''}</h2>
 
 {#if !query}
@@ -446,6 +447,7 @@
     </aside>
   </div>
 {/if}
+</div>
 
 <style>
   .search-layout {

@@ -197,6 +197,7 @@
   });
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading...</p>
 {:else if loadError}
@@ -357,3 +358,4 @@
        column is suppressed — every row is this user. -->
   <WorkSessionsList userId={user.id} />
 {/if}
+</div>

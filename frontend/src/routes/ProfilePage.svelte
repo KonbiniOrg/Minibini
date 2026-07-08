@@ -81,6 +81,7 @@
 
 </script>
 
+<div class="page-body">
 <h2>Profile</h2>
 
 <h3>Account info</h3>
@@ -206,3 +207,4 @@
     Switch to {$viewMode === 'full' ? 'lite' : 'full'} view
   </button>
 </p>
+</div>

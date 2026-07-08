@@ -31,6 +31,16 @@ body[data-view-mode="full"] {
   background-color: #fffde6;
 }
 
+/*
+ * Page frame primitive. Opt in with class="page-body" on the element that
+ * holds a page's main content. Fluid width, 10px breathing room on the sides
+ * so content clears the left edge (and the slide-in sidebar) instead of
+ * squishing to x=0. Full-bleed headers (e.g. .job-header, .customer-financials)
+ * stay OUTSIDE this wrapper so they can still run edge-to-edge.
+ * Zero-specificity friendly: it's just padding, so scoped component styles win.
+ */
+.page-body { padding: 0 10px; }
+
 table, th, td {
   border: 1px solid #ccc;
   border-collapse: collapse;

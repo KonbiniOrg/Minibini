@@ -185,6 +185,7 @@
   {#if job}
     <JobHeader {job} {contact} />
   {/if}
+  <div class="page-body">
   <div class="toolbar">
     <a href={`/invoices/${invoice.invoice_id}`} use:link class="back-link">&laquo; back to invoice</a>
     <span class="page-title">Billables: {invoice.invoice_number}</span>
@@ -232,10 +233,11 @@
     discardRoute={invoice.job ? `/jobs/${invoice.job}` : '/'}
     onDone={flushRegistry.flushAll}
   />
+  </div>
 {/if}
 
 <style>
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 24px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
   .back-link { font-size: 13px; }
   .page-title { font-size: 18px; font-weight: 600; }
 </style>

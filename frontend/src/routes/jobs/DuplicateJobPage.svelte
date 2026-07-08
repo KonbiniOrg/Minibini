@@ -45,6 +45,7 @@
   });
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading…</p>
 {:else if loadError}
@@ -80,3 +81,4 @@
     <a href="#/jobs/{params.id}">Cancel</a>
   </p>
 {/if}
+</div>

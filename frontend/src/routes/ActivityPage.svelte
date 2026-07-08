@@ -62,6 +62,7 @@
   }
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading…</p>
 {:else if error}
@@ -154,6 +155,7 @@
     {/if}
   </section>
 {/if}
+</div>
 
 <style>
   .error { color: #a8071a; }

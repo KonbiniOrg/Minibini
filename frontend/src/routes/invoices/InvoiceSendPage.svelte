@@ -62,6 +62,7 @@
   });
 </script>
 
+<div class="page-body">
 <p><a href="#/invoices/{params.id}">&larr; Cancel and return to Invoice</a></p>
 
 <h2>Send Invoice</h2>
@@ -110,6 +111,7 @@
     </table>
   </section>
 {/if}
+</div>
 
 <style>
   .doc-ref { color: #555; }

@@ -22,7 +22,10 @@
     display: flex;
     gap: 0;
     border-bottom: 2px solid #ccc;
-    margin-bottom: 1em;
+    /* Break out of .page-body's 10px gutter so the grey underline runs
+       edge-to-edge, while the tabs themselves are indented 100px from the left. */
+    margin: 0 -10px 1em;
+    padding-left: 120px;
   }
   .catalog-tabs a {
     padding: 0.4em 1.2em;

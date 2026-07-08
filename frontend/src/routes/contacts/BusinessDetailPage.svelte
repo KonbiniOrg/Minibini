@@ -2,6 +2,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import BusinessDetail from '../../components/contacts/BusinessDetail.svelte';
+  import CustomerHeader from '../../components/contacts/CustomerHeader.svelte';
   import { push } from 'svelte-spa-router';
 
   const { params = {} } = $props();
@@ -96,13 +97,13 @@
 {:else if loadError}
   <p><em>Error: {loadError}</em></p>
 {:else if business}
+  <CustomerHeader name={business.business_name} {financials} />
   <BusinessDetail
     {business}
     {invoices}
     {purchaseOrders}
     {bills}
     {history}
-    {financials}
     onEdit={() => push(`/businesses/${params.id}/edit`)}
     onDelete={handleDelete}
     onInvoicePageChange={loadInvoices}
@@ -111,6 +112,7 @@
     onAddNote={handleAddNote}
   />
 
+  <div class="page-body">
   {#if deleteConfirm}
     <p>
       <strong>Are you sure?</strong> This business is associated with:
@@ -124,4 +126,5 @@
   {/if}
 
   <p><a href="#/businesses">Back to list</a></p>
+  </div>
 {/if}

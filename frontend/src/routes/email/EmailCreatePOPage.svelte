@@ -58,6 +58,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Create Purchase Order from Email</h2>
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
@@ -83,3 +84,4 @@
     <p><small>Line items can be added on the PO detail page after creation.</small></p>
   </form>
 {/if}
+</div>

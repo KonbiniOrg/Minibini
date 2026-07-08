@@ -126,6 +126,7 @@
   }
 </script>
 
+<div class="page-body">
 {#if loading}
   <p>Loading...</p>
 {:else if error}
@@ -290,6 +291,7 @@
     onClose={() => { showPayment = false; }}
   />
 {/if}
+</div>
 
 <style>
   .error { color: #a8071a; }

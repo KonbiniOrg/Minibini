@@ -153,6 +153,7 @@
     <JobHeader {job} {contact} onStatusChange={loadInvoice} />
   {/if}
 
+  <div class="page-body">
   <div class="toolbar">
     <a href={`/jobs/${invoice.job}`} use:link class="back-link">&laquo; back to overview</a>
     <span class="page-title">Invoice: {invoice.invoice_number}</span>
@@ -253,13 +254,14 @@
     onSaved={() => { adjustmentModalOpen = false; loadInvoice(); }}
     onClose={() => { adjustmentModalOpen = false; }}
   />
+  </div>
 {/if}
 
 <style>
   .error { color: #a8071a; }
   .toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 24px;
+    padding: 8px 0;
   }
   .back-link { font-size: 13px; }
   .action-link {

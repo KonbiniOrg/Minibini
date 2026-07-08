@@ -330,6 +330,7 @@
   {#if job}
     <JobHeader {job} {contact} onStatusChange={refresh} />
   {/if}
+  <div class="page-body">
   {#if task.job}
     <div class="toolbar">
       <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
@@ -549,6 +550,7 @@
     onSaved={() => { assignModalOpen = false; refresh(); }}
     onClose={() => { assignModalOpen = false; }}
   />
+  </div>
 {/if}
 
 <style>
@@ -564,7 +566,7 @@
   }
   .toolbar {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
-    padding: 8px 24px;
+    padding: 8px 0;
   }
   .back-link { font-size: 13px; }
   .task-title { font-size: 18px; margin: 0; margin-left: auto; }

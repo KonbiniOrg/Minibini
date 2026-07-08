@@ -33,6 +33,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Businesses ({count})</h2>
 
 <p><a href="#/businesses/new">New Business</a></p>
@@ -56,3 +57,4 @@
     </p>
   {/if}
 {/if}
+</div>

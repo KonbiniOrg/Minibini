@@ -50,6 +50,7 @@
   load();
 </script>
 
+<div class="page-body">
 <CatalogTabs />
 
 {#if loading}
@@ -111,6 +112,7 @@
     onDone={() => { orderRow = null; load(); }}
     onCancel={() => orderRow = null} />
 {/if}
+</div>
 
 <style>
   .short td { background: #fff1f0; }

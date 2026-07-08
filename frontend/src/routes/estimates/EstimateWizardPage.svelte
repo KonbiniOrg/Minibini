@@ -168,6 +168,7 @@
   {#if job}
     <JobHeader {job} {contact} />
   {/if}
+  <div class="page-body">
   <div class="toolbar">
     <a href={`/estimates/${estimate.estimate_id}`} use:link class="back-link">&laquo; back to Estimate</a>
     <span class="page-title">Tasks &amp; Materials: {estimate.estimate_number}</span>
@@ -213,10 +214,11 @@
     discardRoute={estimate.job ? `/jobs/${estimate.job}` : '/'}
     onDone={flushRegistry.flushAll}
   />
+  </div>
 {/if}
 
 <style>
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 24px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
   .back-link { font-size: 13px; }
   .page-title { font-size: 18px; font-weight: 600; }
 </style>

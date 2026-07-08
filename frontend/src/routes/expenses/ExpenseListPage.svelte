@@ -85,6 +85,7 @@
   load();
 </script>
 
+<div class="page-body">
 <h2>Expenses</h2>
 
 {#snippet invoicedLink(inv)}
@@ -229,6 +230,7 @@
     </tbody>
   </table>
 {/if}
+</div>
 
 <style>
   .badge-invoiced {

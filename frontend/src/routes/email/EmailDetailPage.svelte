@@ -41,6 +41,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Email Details</h2>
 
 <p><a href="#/email">&larr; Back to Inbox</a></p>
@@ -76,6 +77,7 @@
     </div>
   </div>
 {/if}
+</div>
 
 <style>
   .layout {

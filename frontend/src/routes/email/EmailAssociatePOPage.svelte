@@ -47,6 +47,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>Associate Email with Existing Purchase Order</h2>
 
 <p><a href="#/email/{params.id}">&larr; Back to Email</a></p>
@@ -84,3 +85,4 @@
     </p>
   </form>
 {/if}
+</div>
