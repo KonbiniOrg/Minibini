@@ -615,12 +615,27 @@ Cross-cutting UI/API conventions and shared components.
   tab treatment (distinct from the page-level `.page-tabs`) during those
   pages' passes. _Done when:_ one in-content tab idiom exists with a
   per-area accent, or a deliberate exception is recorded.
-- **No shared form-layout vocabulary.** — _added 2026-07-08 (CSS review pass)_
+- **No shared form-layout vocabulary.** — _added 2026-07-08 (CSS review pass); scoped 2026-07-08_
   Zero `.form-row`/`fieldset`/label conventions exist; every form page and
   modal lays out label+input rows ad hoc (the modal *shell* is shared via
   `Modal.svelte`, the inner form styling is not). Worth defining a small
   form kit in app.css before many more page passes touch forms.
-  _Done when:_ app.css has a form-row vocabulary and new/touched forms use it.
+  **Scope (decided with RM):** the kit is for *record forms* — the
+  create/edit pages (contacts, businesses, jobs, expenses, users, settings)
+  and modal interiors — and it is **opt-in** (a class on the form, like
+  `.data-table`/`.page-body`), never default styling on bare
+  `<form>`/`<label>`. The app's inline-edit surfaces must NOT adopt it:
+  wizard line-item cards (`WizardLineItemCard`), the CO deliverables
+  drafting grid (`ChangeOrderDetailPage`), the shipment qty matrix
+  (`JobShipmentsPage`), and the small single-purpose widgets (hold-reason,
+  add-qty chip, note textareas, TagEditor, status selects, login). Those
+  three grid/card surfaces are a *separate* inline-edit vocabulary to
+  design during their own page passes — currently three unrelated
+  implementations. Mark each with a one-line "inline-edit surface,
+  deliberately not the form kit" comment when the kit lands.
+  _Done when:_ app.css has an opt-in form-row vocabulary, new/touched
+  record forms use it, and the inline-edit surfaces carry the
+  do-not-convert comment.
 - **Grey literals instead of text-color tokens.** — _added 2026-07-08 (CSS review pass)_
   Secondary text is written as raw hexes across ~40 files (`#999` ×18,
   `#888` ×16, `#666` ×15, `#6b7280` ×11, `#9ca3af` ×11 — five different
