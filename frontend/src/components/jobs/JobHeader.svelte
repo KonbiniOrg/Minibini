@@ -226,7 +226,7 @@
       {/if}
       {#if job.on_hold && job.hold_reason}
         <span class="hold-reason" title={job.hold_reason}>
-          <span class="hold-reason-label">Hold:</span> {job.hold_reason}
+          <span class="hold-reason-label">Why:</span> {job.hold_reason}
         </span>
       {/if}
     </div>
@@ -288,14 +288,17 @@
   }
 
   .menu-wrapper { position: relative; flex: 0 0 auto; }
+  /* A solid neutral pill — same shape/weight as the status pill so it reads
+     as its peer, but deliberately colorless so it never looks like a second
+     status. */
   .menu-btn {
-    font-size: 12px; padding: 3px 12px;
-    background: rgba(255,255,255,0.12); color: #fff;
-    border: 1px solid rgba(255,255,255,0.35); border-radius: 10px;
+    font-size: 12px; font-weight: 600; padding: 3px 12px;
+    background: #e5e7eb; color: #1f2937;
+    border: 2px solid transparent; border-radius: 10px;
     cursor: pointer;
   }
   .menu-caret { font-size: 10px; opacity: 0.7; }
-  .menu-btn:hover, .menu-btn[aria-expanded="true"] { background: rgba(255,255,255,0.22); }
+  .menu-btn:hover, .menu-btn[aria-expanded="true"] { background: #f9fafb; }
   .menu {
     position: absolute; top: calc(100% + 4px); left: 0;
     background: #fff; color: #1f2937;
