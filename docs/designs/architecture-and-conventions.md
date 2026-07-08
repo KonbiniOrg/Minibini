@@ -657,6 +657,37 @@ Rule of thumb when working on a new SPA component: if you reuse a
 class name from another component and the styling vanishes, this is
 the cause. Either copy the rule in, or promote it to global.
 
+### 5.5a Shared UI families in `app.css`
+
+Three cross-page style families live in `frontend/src/css/app.css`
+(promoted global per §5.5's "better long-term fix"; 2026-07). They are
+generic on purpose — no page-specific names or references:
+
+- **`.status-badge` + `.status-{status}`** — THE status pill. One base
+  pill class plus per-status color modifiers keyed by status name
+  (document statuses *and* the task-activity keys from
+  `lib/taskActivity.js`: working/ongoing/unstarted/blocked/complete/
+  cancelled). The former per-component copies (JobHeader, JobDetail,
+  PurchaseOrderDetail, EstimateDetailPage, InvoiceDetailPage,
+  ChangeOrderDetailPage) are gone; change orders' `status-co-*` names
+  were folded into the plain names. Components may locally override
+  base *sizing* for dense contexts (JobHeader/JobDetail do) but never
+  colors — a shared status name shares its color everywhere. The header
+  status `<select>`s reuse the same color classes. Tasks join via
+  `TaskActivityIndicator`'s `pill` prop; the board's `TaskCard` reads
+  `activity.color` inline rather than keeping a parallel palette.
+- **`.stat-chips` / `.stat-chip`** — a strip of small labeled value
+  cards (the job-board chip look): each chip is a card whose shaded
+  header bar (`.stat-chip-header`) carries an uppercase label, bodies
+  (`.stat-chip-body`) size to content so header bars stay uniform
+  across the strip. `money` on a chip tints its header green to group
+  financial chips into a family. First consumer: the task detail
+  header (jobs-tasks-and-worksheets §10.2).
+- **`.action-band`** — a full-width strip of the actions operating on
+  the entity above it; buttons inside get consistent sizing, with
+  `primary` (the one most-expected action) and `quiet` (housekeeping,
+  e.g. an Edit button riding along) modifiers.
+
 ### 5.6 Preserving line breaks in free-text fields
 
 Large free-text fields (`TextField`s — descriptions, notes, reasons,

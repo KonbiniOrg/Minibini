@@ -11,12 +11,11 @@
     user,
     canManage = false,
     activeBlepOnThisTask = null,
-    // TaskDetailPage relocates Start Work to its toolbar (via the
-    // exported startWork()) and relies on the yellow band as the only
+    // Stop/blep-cancel suppressed while Start still renders: the task
+    // detail page passes this because the global yellow band is its only
     // stop/cancel surface while a session runs — avoids two Cancel
-    // buttons in one row (blep-cancel beside task-cancel). Direction
-    // to be refined with the task-page design pass.
-    hideStartStop = false,
+    // buttons in one row (blep-cancel beside task-cancel).
+    hideStop = false,
     onChanged = () => {},
     onConflict = () => {},
   } = $props();
@@ -272,8 +271,8 @@
 </script>
 
 <div class="actions">
-  {#if show.startWork && !hideStartStop}<button type="button" onclick={startWork} disabled={busy}>Start Work</button>{/if}
-  {#if show.stopWork && !hideStartStop}
+  {#if show.startWork}<button type="button" class="primary" onclick={startWork} disabled={busy}>Start Work</button>{/if}
+  {#if show.stopWork && !hideStop}
     {#if underMinimum}
       <button type="button" class="cancel-work" onclick={cancelWork} disabled={busy}>Cancel</button>
     {:else}

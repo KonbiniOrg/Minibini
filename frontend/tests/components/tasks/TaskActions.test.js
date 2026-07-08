@@ -65,6 +65,45 @@ describe('TaskActions', () => {
     confirmSpy.mockRestore();
   });
 
+  it('hideStop still offers Start Work when no own session runs here', () => {
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 }, hideStop: true },
+    });
+    expect(getByRole('button', { name: 'Start Work' })).toBeInTheDocument();
+  });
+
+  it('hideStop renders neither Stop Work nor the under-minimum Cancel while own session runs', () => {
+    const overMinimum = {
+      start_time: new Date(Date.now() - 30 * 60000).toISOString(),
+      blep_minimum_minutes: 1,
+    };
+    const { queryByRole } = render(TaskActions, {
+      props: {
+        task: { task_id: 5, status: 'in_progress' },
+        user: { id: 1 },
+        activeBlepOnThisTask: overMinimum,
+        hideStop: true,
+      },
+    });
+    expect(queryByRole('button', { name: 'Stop Work' })).toBeNull();
+    // Start Work also absent — there's already an active session here.
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+
+    const underMinimum = {
+      start_time: new Date().toISOString(),
+      blep_minimum_minutes: 60,
+    };
+    const { queryByRole: q2 } = render(TaskActions, {
+      props: {
+        task: { task_id: 6, status: 'in_progress' },
+        user: { id: 1 },
+        activeBlepOnThisTask: underMinimum,
+        hideStop: true,
+      },
+    });
+    expect(q2('button', { name: 'Cancel' })).toBeNull();
+  });
+
   it('raises the global error overlay when an action fails', async () => {
     api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400,

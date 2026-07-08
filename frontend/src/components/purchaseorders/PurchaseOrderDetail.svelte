@@ -371,15 +371,8 @@
 <style>
   .text-right { text-align: right; }
   .status-line { margin-bottom: 12px; }
-  .status-badge {
-    padding: 4px 12px; border-radius: 12px; font-size: 13px;
-    font-weight: 600; text-transform: capitalize;
-  }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-issued { background: #dbeafe; color: #1e40af; }
-  .status-partly_received { background: #fef3c7; color: #92400e; }
-  .status-received_in_full { background: #d1fae5; color: #065f46; }
-  .status-cancelled { background: #fee2e2; color: #991b1b; }
+  /* Status pill styling and colors come from the global .status-badge /
+     .status-{status} classes (app.css). */
   .action-bar { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
   .action-bar button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;

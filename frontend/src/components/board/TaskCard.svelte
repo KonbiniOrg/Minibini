@@ -1,5 +1,6 @@
 <script>
   import { taskActivity } from '../../lib/taskActivity.js';
+  import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
 
   let { task, draggable = false } = $props();
 
@@ -50,14 +51,6 @@
     clearTimeout(hideTimer);
   });
 
-  function dotClass() {
-    return `dot-${activity?.key || 'unstarted'}`;
-  }
-
-  function labelClass() {
-    return `tsb-${activity?.key || 'unstarted'}`;
-  }
-
   function isUrgent() {
     return task.status === 'blocked' && task.job_due_date && new Date(task.job_due_date) < new Date();
   }
@@ -103,7 +96,7 @@
 >
   <div class="task-border" style="background: {task.accent_color || '#94a3b8'};"></div>
   <div class="task-body">
-    <span class="task-dot {dotClass()}"></span>
+    <TaskActivityIndicator {task} compact />
     <div class="task-info">
       <div class="task-name">{task.name}</div>
       <div class="task-job-label">{deadlineLabel()}</div>
@@ -112,7 +105,7 @@
       {/if}
     </div>
     {#if badgeLabel}
-      <span class="task-status-badge {labelClass()}">{badgeLabel}</span>
+      <span class="task-status-badge" style={`color:${activity.color}`}>{badgeLabel}</span>
     {/if}
   </div>
 </div>
@@ -130,7 +123,7 @@
       <div class="tp-head">
         <div class="tp-name">{task.name}</div>
         {#if badgeLabel}
-          <span class="tp-status {labelClass()}">{badgeLabel}</span>
+          <span class="tp-status" style={`color:${activity.color}`}>{badgeLabel}</span>
         {/if}
       </div>
       {#if task.status === 'blocked' && task.blocked_reason}
@@ -154,28 +147,10 @@
   .task-card.urgent { background: #fff5f5; }
   .task-border { width: 8px; flex-shrink: 0; border-radius: 7px 0 0 7px; }
   .task-body { flex: 1; min-width: 0; padding: 7px 8px; display: flex; align-items: center; gap: 6px; }
-  .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .dot-unstarted { background: #cbd5e1; }
-  .dot-ongoing { background: #3b82f6; box-shadow: 0 0 4px rgba(59,130,246,0.27); }
-  .dot-blocked { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.27); }
-  .dot-complete { background: #047857; }
-  .dot-cancelled { background: #cbd5e1; }
-  .dot-working { background: #16a34a; animation: card-dot-pulse 1.4s ease-out infinite; }
-  @keyframes card-dot-pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(22,163,74,0.55); }
-    70%  { box-shadow: 0 0 0 5px rgba(22,163,74,0); }
-    100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
-  }
   .task-info { flex: 1; min-width: 0; }
   .task-name { font-size: 11px; font-weight: 500; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .task-job-label { font-size: 9px; color: #999; }
   .task-status-badge { font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 700; flex-shrink: 0; }
-  .tsb-unstarted { color: #94a3b8; }
-  .tsb-ongoing { color: #3b82f6; }
-  .tsb-blocked { color: #ef4444; }
-  .tsb-complete { color: #047857; }
-  .tsb-cancelled { color: #94a3b8; }
-  .tsb-working { color: #16a34a; }
 
   .task-popup {
     position: fixed;

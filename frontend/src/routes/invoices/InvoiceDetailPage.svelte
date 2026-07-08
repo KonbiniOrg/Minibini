@@ -272,14 +272,8 @@
   }
   .action-link:hover { background: #f3f4f6; }
   .page-title { font-size: 18px; font-weight: 600; }
-  .status-badge {
-    padding: 4px 12px; border-radius: 12px; font-size: 13px;
-    font-weight: 600; text-transform: capitalize;
-  }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-sent { background: #dbeafe; color: #1e40af; }
-  .status-paid { background: #dcfce7; color: #166534; }
-  .status-cancelled { background: #fef3c7; color: #92400e; }
+  /* Status pill styling and colors come from the global .status-badge /
+     .status-{status} classes (app.css). */
   .late-flag { color: #b91c1c; font-weight: 600; }
   .success-msg { padding: 8px 24px; color: #166534; }
   .metadata-table { border-collapse: collapse; margin: 0 24px 16px; }

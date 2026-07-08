@@ -95,6 +95,96 @@ dd {
   overflow-wrap: anywhere;
 }
 
+/*
+ * Status pills. ONE source of truth for status badge/select coloring — the
+ * per-component .status-badge copies were consolidated here (2026-07). Apply
+ * `status-badge status-{status}` to a span, or `status-{status}` alone to a
+ * styled control (e.g. the header status <select>). Color classes are keyed by
+ * status/activity name; where two domains share a name they share the color
+ * (that's the point). Components may locally override base *sizing* for dense
+ * contexts (e.g. the job header) but never the colors.
+ */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px; border-radius: 12px; font-size: 13px;
+  font-weight: 600; text-transform: capitalize;
+}
+/* Document statuses */
+.status-draft { background: #f3f4f6; color: #374151; }
+.status-submitted { background: #dbeafe; color: #1e40af; }
+.status-open { background: #dbeafe; color: #1e40af; }
+.status-sent { background: #dbeafe; color: #1e40af; }
+.status-issued { background: #dbeafe; color: #1e40af; }
+.status-approved { background: #dcfce7; color: #166534; }
+.status-accepted { background: #dcfce7; color: #166534; }
+.status-paid { background: #dcfce7; color: #166534; }
+.status-in_progress { background: #fef3c7; color: #92400e; }
+.status-partly_received { background: #fef3c7; color: #92400e; }
+.status-expired { background: #fef3c7; color: #92400e; }
+.status-work_complete { background: #e0e7ff; color: #3730a3; }
+.status-completed { background: #dbeafe; color: #1e40af; }
+.status-received_in_full { background: #d1fae5; color: #065f46; }
+.status-rejected { background: #fee2e2; color: #991b1b; }
+.status-cancelled { background: #fef3c7; color: #92400e; }
+.status-superseded { background: #fed7aa; color: #9a3412; }
+/* Task activity keys (lib/taskActivity.js vocabulary) */
+.status-working { background: #dcfce7; color: #166534; }
+.status-ongoing { background: #dbeafe; color: #1e40af; }
+.status-unstarted { background: #f3f4f6; color: #374151; }
+.status-blocked { background: #fee2e2; color: #991b1b; }
+.status-complete { background: #d1fae5; color: #065f46; }
+
+/*
+ * Stat chips. A strip of small labeled value cards (the job-board chip look):
+ * each chip is a card whose shaded header bar carries an uppercase label —
+ * header bars line up uniformly across the strip while each body sizes to its
+ * content (values, links, small inline widgets). `money` tints the header
+ * green to group financial chips into a visible family at the end of a strip.
+ */
+.stat-chips { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.stat-chip {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06); overflow: hidden;
+  display: flex; flex-direction: column; min-width: 74px;
+}
+.stat-chip-header {
+  background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.6px; color: #64748b; padding: 3px 10px;
+  text-align: center; white-space: nowrap;
+}
+.stat-chip.money .stat-chip-header {
+  background: #e0f2e9; border-bottom-color: #cde5d6; color: #3f6b52;
+}
+.stat-chip-body {
+  padding: 5px 12px 6px; flex: 1; font-size: 14px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  white-space: nowrap;
+}
+.stat-chip-body .muted { color: #9ca3af; font-weight: 500; }
+
+/*
+ * Action band. A full-width strip of the actions that operate on the entity
+ * above it. Buttons inside get a consistent size; `primary` marks the one
+ * most-expected action, `quiet` de-emphasizes housekeeping actions (e.g. an
+ * edit button riding along with workflow actions).
+ */
+.action-band {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 20px; background: #fafafa; border-bottom: 1px solid #e5e7eb;
+}
+.action-band button {
+  border: 1px solid #94a3b8; background: #f1f5f9; border-radius: 5px;
+  padding: 8px 18px; font-weight: 600; font-size: 13px; cursor: pointer;
+  color: #1f2937;
+}
+.action-band button:hover { background: #e2e8f0; }
+.action-band button:disabled { opacity: 0.55; cursor: default; }
+.action-band button.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.action-band button.primary:hover { background: #1e40af; }
+.action-band button.quiet { background: #fff; border-color: #cbd5e1; color: #475569; font-weight: 500; }
+.action-band button.quiet:hover { background: #f8fafc; }
+
 .error-overlay,
 .success-overlay {
   position: fixed;

@@ -677,7 +677,7 @@
   <div class="toolbar">
     <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
     <span class="page-title">{co.change_order_number || `CO #${co.change_order_id}`}</span>
-    <span class="status-badge status-co-{co.status}">{changeOrderDisplayStatus(co, siblingCOs)}</span>
+    <span class="status-badge status-{co.status}">{changeOrderDisplayStatus(co, siblingCOs)}</span>
     {#if canManageJobs}
       {#if isDraft}
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
@@ -1050,13 +1050,8 @@
   /* Pushes Discard to the far right in the draft toolbar */
   .toolbar-spacer { flex: 1; }
 
-  .status-badge {
-    padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; text-transform: capitalize;
-  }
-  .status-co-draft { background: #f3f4f6; color: #374151; }
-  .status-co-open { background: #fef3c7; color: #92400e; }
-  .status-co-accepted { background: #dcfce7; color: #166534; }
-  .status-co-rejected { background: #fee2e2; color: #991b1b; }
+  /* Status pill styling and colors come from the global .status-badge /
+     .status-{status} classes (app.css). */
 
   .btn-danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
   .btn-danger:hover { background: #fecaca; }

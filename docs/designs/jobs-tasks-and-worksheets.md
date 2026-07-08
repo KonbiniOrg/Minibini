@@ -1159,7 +1159,7 @@ mount.
 
 | Component | Role |
 |---|---|
-| `TaskActions.svelte` | Renders the status-appropriate button row gated by status + permissions, and owns the three ENTERED_QTY prompt flows: session prompt after own Stop, settle-up on Complete, prior-session settle before Start (estimates-and-prices.md §4.2). With `hideStartStop` (used by TaskDetailPage) the row drops Start/Stop/blep-Cancel — the page's toolbar hosts Start Work via the exported `startWork()`, and the yellow band is the only stop surface. Full-row consumers (TaskQuickCard) keep Start/Stop inline; there, while the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
+| `TaskActions.svelte` | Renders the status-appropriate button row gated by status + permissions, and owns the three ENTERED_QTY prompt flows: session prompt after own Stop, settle-up on Complete, prior-session settle before Start (estimates-and-prices.md §4.2). With `hideStop` (used by TaskDetailPage) Start Work renders normally but Stop/blep-Cancel never do — the yellow band is the page's only stop surface. Full-row consumers (TaskQuickCard) keep Start/Stop inline; there, while the user's own session is under `blep_minimum_minutes` (whole minutes), **Stop Work** reads **Cancel** (delete + undo; §4.5/§5.5) |
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
@@ -1208,15 +1208,39 @@ test in `frontend/tests/components/jobs/TaskDetailPage.test.js`:
 
 Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 
-Detail-page layout (direction chosen 2026-07-06, to be refined with the
-task-page design pass): **Start Work renders in the toolbar next to
-"edit task"**, not in the actions row; while the user's own session runs
-on this task, no start/stop control renders anywhere on the page — the
-yellow band is the sole stop/cancel surface. This avoids two Cancel
-buttons in one row (the under-minimum blep-Cancel beside the manager's
-task-Cancel). The table below still governs which controls *exist*;
-"Start Work"/"Stop Work" placement on the detail page follows the rule
-above.
+Detail-page layout (worker-first redesign, 2026-07-07; spec
+`docs/plans/2026-07-07-task-detail-page-redesign.md`), top to bottom:
+
+1. **JobHeader** (shared, unchanged).
+2. **Task header strip** (`.task-head`) — a crumbs line («&nbsp;job
+   overview · task list · *subtask of &lt;parent&gt;* when
+   `parent_task` is set, linked via the serializer's
+   `parent_task_name`), then the title row: the **activity pill**
+   (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
+   when `task.invoice` is set) to the **left** of the `<h1>` task name,
+   with the **stat-chip strip** right-aligned. Chips (shared
+   `.stat-chips` family, app.css): Assignee (name or muted
+   "Unassigned"; the name itself opens `AssignModal` when
+   `can_manage`), Est Time (`est_worker_time`), Est Qty, Actual, and
+   the money pair Rate + Charge (green-tinted headers; only when the
+   task has a rate scheme). On ENTERED_QTY tasks the Actual chip
+   embeds the signed **+/− Add** input (add-only; Enter or Add commits,
+   never blur; hidden when terminal **or blocked**; success briefly
+   swaps the chip's header label to "added ✓", errors render on a line
+   under the strip). Scheme name + active modifiers live in the Rate
+   chip's tooltip. A blocked task renders its full `blocked_reason` as
+   a red line under the title row.
+3. **Action band** (shared `.action-band` class) — `TaskActions` with
+   `hideStop` (Start Work inside the row, primary-styled; no stop
+   controls here, the yellow band owns stop/cancel while a session
+   runs) plus **Edit Task** as a `quiet` peer button (hidden when
+   terminal).
+4. Sections: **Description → Subtasks → Materials → Work Sessions**
+   (BlepList, whose **Add Entry** button stays — it is the only way to
+   log forgotten historical time from this page).
+
+The old toolbar row, details table, and Charge table are gone. The
+table below still governs which controls *exist*.
 
 | Status | Worker sees | Manager additionally sees |
 |---|---|---|

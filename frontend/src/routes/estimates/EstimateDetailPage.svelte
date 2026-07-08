@@ -354,10 +354,8 @@
   .action-link:hover { background: #f3f4f6; }
   .page-title { font-size: 18px; font-weight: 600; }
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
-  .status-badge {
-    padding: 4px 12px; border-radius: 12px; font-size: 13px;
-    font-weight: 600; text-transform: capitalize;
-  }
+  /* Pill styling/colors come from the global .status-badge / .status-{status}
+     classes (app.css); the select keeps its local control styling. */
   .status-select-wrapper { position: relative; display: inline-block; }
   .status-select {
     appearance: none; -webkit-appearance: none;
@@ -372,12 +370,4 @@
     content: '\25BE'; position: absolute; right: 10px; top: 50%;
     transform: translateY(-50%); font-size: 11px; pointer-events: none; opacity: 0.6;
   }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-open { background: #dbeafe; color: #1e40af; }
-  .status-accepted { background: #dcfce7; color: #166534; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
-  .status-expired { background: #fef3c7; color: #92400e; }
-  .status-superseded { background: #fed7aa; color: #9a3412; }
-
-
 </style>

@@ -1148,10 +1148,9 @@
   .edit-link:hover { opacity: 1; text-decoration: underline; }
   .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
   .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
-  .status-badge {
-    padding: 3px 10px; border-radius: 10px; font-size: 12px;
-    font-weight: 600; text-transform: capitalize;
-  }
+  /* Colors come from the global .status-{status} classes (app.css); only the
+     compact sizing for this dense header is local. */
+  .status-badge { padding: 3px 10px; border-radius: 10px; font-size: 12px; }
   .status-select-wrapper { position: relative; display: inline-block; }
   .status-select {
     appearance: none; -webkit-appearance: none;
@@ -1166,14 +1165,6 @@
     content: '\25BE'; position: absolute; right: 9px; top: 50%;
     transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: 0.6;
   }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-submitted { background: #dbeafe; color: #1e40af; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-in_progress { background: #fef3c7; color: #92400e; }
-  .status-work_complete { background: #e0e7ff; color: #3730a3; }
-  .status-completed { background: #dbeafe; color: #1e40af; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
-  .status-cancelled { background: #fef3c7; color: #92400e; }
   .dates { opacity: 0.7; }
   .release-btn { font-size: 12px; padding: 3px 10px; margin-left: 4px; }
 

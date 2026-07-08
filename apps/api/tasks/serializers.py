@@ -105,6 +105,8 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     can_manage_job_path = 'job'
     invoice_source_type = 'task'
     assignee_name = serializers.SerializerMethodField()
+    parent_task_name = serializers.CharField(
+        source='parent_task.name', read_only=True, default=None)
     actual_hours = serializers.SerializerMethodField()
     scheme_name = serializers.CharField(source='rate_scheme.name', read_only=True, default=None)
     scheme_algorithm = serializers.CharField(source='rate_scheme.algorithm', read_only=True, default=None)
@@ -122,7 +124,8 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         fields = [
             'task_id', 'name', 'description', 'sort_order', 'status',
             'blocked_reason',
-            'parent_task', 'assignee', 'assignee_name', 'worker_queue',
+            'parent_task', 'parent_task_name', 'assignee', 'assignee_name',
+            'worker_queue',
             'rate_scheme', 'active_modifiers',
             'est_qty', 'est_worker_time', 'actual_qty',
             'scheme_name', 'scheme_algorithm', 'scheme_unit_label',

@@ -436,9 +436,11 @@ surfaces, all showing the scheme's `unit_label`:
   only — on-behalf starts, stops, and clock-outs, and internal bulk
   cancels (CO acceptance) never prompt. Cancelling the prompt aborts
   the gesture.
-- **TaskDetailPage add field** — shows "Actual so far: N {unit}" with a
-  signed delta input and explicit Add button (never blur-commit: adds
-  are not idempotent). Hidden on terminal tasks.
+- **TaskDetailPage add field** — the header's **Actual** stat chip
+  shows the running total ("N {unit}") with a signed delta input and
+  explicit Add button beside it (never blur-commit: adds are not
+  idempotent). Hidden on terminal and blocked tasks. Success briefly
+  swaps the chip's header label to "added ✓".
 - **Completion settle-up** — completing an `entered_qty` task ALWAYS
   round-trips through the prompt: the bare `complete` answers
   `needs_actual_qty` + `current_qty`, the modal shows "Entered so far: N
