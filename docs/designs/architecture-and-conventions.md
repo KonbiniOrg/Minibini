@@ -633,29 +633,25 @@ Svelte scopes component `<style>` blocks per component. Class selectors
 defined in one component's `<style>` are silently invisible to the DOM
 rendered by another component, even when the class name matches.
 
-Concrete example we hit: `JobDetail.svelte` defines `.panel`,
+Concrete example we hit: `JobDetail.svelte` defined `.panel`,
 `.panel-head`, `.panel-scroll` for the Description / History card
 chrome. When `DeliverablesSection.svelte` was added as a sibling card,
 its outer element used `class="panel deliverables-panel"`, but the
 panel chrome did not render — the white card, border, rounded corners,
 and uppercase header treatment all came from JobDetail's scoped
 classes, which don't reach a child component's elements. Result: a
-borderless, unstyled list.
+borderless, unstyled list. (For a while the fix was a copied rule
+block in each component — which promptly drifted.)
 
-Workaround in place today: copy the relevant rules into the child
-component's own `<style>` block (`DeliverablesSection.svelte` now owns
-its own `.panel` / `.panel-head` / `.panel-scroll` rules). This works
-but duplicates the styling, so the components can drift.
+**Resolved (2026-07-08):** the CSS reorg pass audited every component
+`<style>` block and promoted all shared chrome — the `.panel` family
+included — into `app.css` (§5.5a); the per-component copies are gone.
 
-Better long-term fix (deferred): extract shared UI chrome (panel
-shapes, common section heads, etc.) into a global stylesheet, or use
-`:global(.panel) { ... }` once in a "host" component. We have not
-audited which selectors deserve this treatment yet. When the styling
-layer is reorganized, this is the first item on the list.
-
-Rule of thumb when working on a new SPA component: if you reuse a
-class name from another component and the styling vanishes, this is
-the cause. Either copy the rule in, or promote it to global.
+The gotcha itself is permanent Svelte behavior, so the rule of thumb
+stands: if you reuse a class name from another component and the
+styling vanishes, this is the cause. **Promote the rule to `app.css`**
+— never copy it into your component; the copy is how the pre-reorg
+drift started.
 
 ### 5.5a Shared UI families in `app.css`
 
