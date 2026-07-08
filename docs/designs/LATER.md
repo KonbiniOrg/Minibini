@@ -600,6 +600,21 @@ IMAP-SMTP machinery and tend to be worked together.
 
 Cross-cutting UI/API conventions and shared components.
 
+- **Four schedule tests are midnight-flaky.** — _added 2026-07-08 (found running the full suite just after midnight)_
+  `tests.test_api_schedule`: `test_lane_bar_carries_job_number_and_name`,
+  `test_work_complete_task_present_in_worker_lane`,
+  `test_blocked_task_with_history_shows_actual_not_forecast`,
+  `test_held_job_history_renders_but_never_forecasts`. Each seeds bleps at
+  `now − 1..2h` and asserts the worker lane renders them — run shortly after
+  midnight, that history lands on *yesterday* and falls outside the schedule
+  window, so the lane is empty/absent (3 FAIL + 1 StopIteration ERROR).
+  Reproduced on a clean tree (unrelated to any pending change); green again
+  later in the day. Fix shape: pass a fixed `now` (mid-afternoon) into
+  `ScheduleService.get_schedule` / seed times relative to that fixed point
+  instead of wall-clock `timezone.now()`.
+  _Done when:_ the schedule suite passes at any time of day (spot-check by
+  passing a just-past-midnight `now`).
+
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings

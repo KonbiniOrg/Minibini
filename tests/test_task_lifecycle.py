@@ -803,6 +803,97 @@ class CancelTaskPriorSessionTest(BaseTestCase):
         self.assertEqual(result.status, Task.STATUS_CANCELLED)
 
 
+class BlockTaskOwnSessionTest(BaseTestCase):
+    """Blocking is how a worker records "I can't proceed" — usually
+    discovered mid-session, so the requester's OWN open blep must not veto
+    the block. It resolves like every other own-gesture (settle-first on
+    ENTERED_QTY, plain close otherwise); only OTHER workers' open sessions
+    keep the active_workers refusal."""
+
+    def setUp(self):
+        super().setUp()
+        from decimal import Decimal
+        self.Decimal = Decimal
+        self.user = User.objects.first()
+        self.job = Job.objects.first()
+        _approve_job(self.job)
+        self.eq_task = Task.objects.create(
+            name='CNC', job=self.job, rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=self.eq_task.pk).update(
+            status=Task.STATUS_IN_PROGRESS, actual_qty=Decimal('9'))
+        self.blep = Blep.objects.create(
+            task=self.eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+
+    def test_own_entered_qty_session_prompts_and_mutates_nothing(self):
+        result = TaskLifecycleService.block_task(
+            self.eq_task.pk, reason='saw blade broke', user=self.user)
+        self.assertEqual(result.get('conflict'), 'prior_session_qty')
+        self.assertEqual(result['prior_task']['task_id'], self.eq_task.pk)
+        self.assertEqual(
+            self.Decimal(result['current_qty']), self.Decimal('9'))
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_IN_PROGRESS)
+        self.blep.refresh_from_db()
+        self.assertIsNone(self.blep.end_time)
+
+    def test_flag_proceeds_with_block_and_closes_own_session(self):
+        result = TaskLifecycleService.block_task(
+            self.eq_task.pk, reason='saw blade broke',
+            user=self.user, prior_qty_handled=True)
+        self.assertEqual(result.status, Task.STATUS_BLOCKED)
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_BLOCKED)
+        self.assertEqual(self.eq_task.blocked_reason, 'saw blade broke')
+        self.blep.refresh_from_db()
+        self.assertIsNotNone(self.blep.end_time)
+
+    def test_own_elapsed_session_blocks_without_prompt(self):
+        elapsed = Task.objects.create(
+            name='Labor', job=self.job, rate_scheme_id=1,
+        )
+        Task.objects.filter(pk=elapsed.pk).update(
+            status=Task.STATUS_IN_PROGRESS)
+        blep = Blep.objects.create(
+            task=elapsed, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.block_task(
+            elapsed.pk, reason='waiting on parts', user=self.user)
+        self.assertEqual(result.status, Task.STATUS_BLOCKED)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_other_workers_session_still_refuses(self):
+        other = User.objects.create_user(username='btos_other', password='x')
+        other_blep = Blep.objects.create(
+            task=self.eq_task, user=other,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        result = TaskLifecycleService.block_task(
+            self.eq_task.pk, reason='x', user=self.user)
+        self.assertEqual(result.get('conflict'), 'active_workers')
+        # Only the OTHER worker is listed — the requester's own session
+        # is not a conflict.
+        listed = [w['user_id'] for w in result['workers']]
+        self.assertEqual(listed, [other.pk])
+        self.eq_task.refresh_from_db()
+        self.assertEqual(self.eq_task.status, Task.STATUS_IN_PROGRESS)
+        # Nothing closed on either session.
+        self.blep.refresh_from_db()
+        other_blep.refresh_from_db()
+        self.assertIsNone(self.blep.end_time)
+        self.assertIsNone(other_blep.end_time)
+
+    def test_no_user_refuses_on_any_open_blep(self):
+        """Caller without user attribution can't claim any session as its
+        own — the pre-existing refusal stands."""
+        result = TaskLifecycleService.block_task(self.eq_task.pk)
+        self.assertEqual(result.get('conflict'), 'active_workers')
+
+
 class BlockNoRollupRegressionTest(BaseTestCase):
     """Blocking/unblocking a task must NOT bubble up to Job status."""
 

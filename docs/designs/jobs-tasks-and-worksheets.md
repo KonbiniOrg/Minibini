@@ -599,8 +599,17 @@ Blep. The restart is `action=None` with no remaining other workers, so it
 terminates after one level. There is no takeover-specific state handling.
 
 `block_task` returns a similar conflict shape (`active_workers`, plural,
-no options) when open Bleps exist — there's no override; the requester
-must coordinate offline before retrying.
+no options) when **other workers'** open Bleps exist — there's no
+override; the requester must coordinate offline before retrying. The SPA
+renders this as an overlay message naming the workers (it is a
+coordination refusal, never the join/takeover chooser). The requester's
+**own** open session does not veto a block — blockers are usually
+discovered mid-session — it settles like every other own gesture: a
+skippable `prior_session_qty` prompt on an ENTERED_QTY task (nothing
+mutates until the flagged re-post, which re-carries the reason), then the
+session closes via the shared resolve (sub-minimum ⇒ cancel with undo).
+Callers passing no `user` can't claim a session as their own, so any
+open Blep refuses (internal-caller semantics unchanged).
 
 ### 4.7 Fee — the fixed-charge atom
 
@@ -1168,7 +1177,8 @@ mount.
 ### 10.1a Settle-first prompts and the blep-change broadcast
 
 Every own explicit gesture that would end or displace an ENTERED_QTY
-session — Stop, Complete, Start-another-task, clock-out, task-cancel —
+session — Stop, Complete, Start-another-task, clock-out, task-cancel,
+task-block —
 is **settle-first**: the endpoint returns a `prior_session_qty` conflict
 (or `needs_actual_qty` for Complete) and mutates NOTHING until the SPA's
 prompt resolves and the flagged re-post lands. Consequences:

@@ -424,18 +424,20 @@ surfaces, all showing the scheme's `unit_label`:
   completes the task" checkbox turns the submit into one atomic
   `complete` with `add_qty` instead (which also closes the blep).
   Recording the count is part of the work — that's why stop waits.
-- **Prior-session settle on task-switch, clock-out, and task-cancel** —
-  `start-work`, `/api/shifts/clock-out`, and `POST /api/tasks/{id}/cancel/`
+- **Prior-session settle on task-switch, clock-out, task-cancel, and
+  task-block** — `start-work`, `/api/shifts/clock-out`,
+  `POST /api/tasks/{id}/cancel/`, and `POST /api/tasks/{id}/block/`
   return the same `prior_session_qty` conflict (mutating nothing) when
   the user's own gesture would close an open `entered_qty` session; the
   SPA prompts (naming the task), settles (add / complete / skip), and
-  re-posts with `prior_qty_handled: true`. Cancel-the-task keeps the
-  count for the same reason cancelled elapsed-time tasks keep their
-  bleps — actuals are history even on dead tasks (no completes-checkbox
-  there: completing while cancelling is contradictory). Own gestures
-  only — on-behalf starts, stops, and clock-outs, and internal bulk
-  cancels (CO acceptance) never prompt. Cancelling the prompt aborts
-  the gesture.
+  re-posts with `prior_qty_handled: true` (block re-carries the reason).
+  Cancel-the-task keeps the count for the same reason cancelled
+  elapsed-time tasks keep their bleps — actuals are history even on dead
+  tasks (no completes-checkbox on cancel or block: completing while
+  cancelling is contradictory, and a blocked task isn't done). Own
+  gestures only — on-behalf starts, stops, and clock-outs, and internal
+  bulk cancels (CO acceptance) never prompt. Cancelling the prompt
+  aborts the gesture.
 - **TaskDetailPage add field** — the header's **Actual** stat chip
   shows the running total ("N {unit}") with a signed delta input and
   explicit Add button beside it (never blur-commit: adds are not

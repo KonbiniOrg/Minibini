@@ -295,6 +295,74 @@ describe('TaskActions — settle-first task cancel', () => {
   });
 });
 
+describe('TaskActions — settle-first block', () => {
+  const blockConflict = {
+    conflict: 'prior_session_qty',
+    prior_task: { task_id: 5, name: 'Press parts' },
+    unit_label: 'pcs', current_qty: '9',
+  };
+
+  it('offers the session count before blocking, then re-posts with the flag and reason', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('saw down');
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/block/') && !body?.prior_qty_handled) {
+        return Promise.resolve(blockConflict);
+      }
+      return Promise.resolve({ status: 'blocked' });
+    });
+    const { getByRole, getByText } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 } },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Block' }));
+    expect(getByText(/Press parts/)).toBeInTheDocument();
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    await vi.waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/actual-qty/add/',
+                                            { actual_qty: 5 });
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/block/',
+                                            { reason: 'saw down', prior_qty_handled: true });
+    });
+    promptSpy.mockRestore();
+  });
+
+  it('modal Cancel aborts the block entirely', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('saw down');
+    api.post.mockResolvedValue(blockConflict);
+    const { getByRole, getAllByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 } },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Block' }));
+    const cancels = getAllByRole('button', { name: 'Cancel' });
+    await fireEvent.click(cancels[cancels.length - 1]);
+    const flagged = api.post.mock.calls.filter(
+      ([, body]) => body?.prior_qty_handled);
+    expect(flagged).toHaveLength(0);
+    promptSpy.mockRestore();
+  });
+
+  it('active_workers refusal raises the overlay naming the workers — never the start-work conflict modal', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('saw down');
+    api.post.mockResolvedValue({
+      conflict: 'active_workers',
+      workers: [{ user_id: 2, name: 'Dana Smith' }, { user_id: 3, name: 'Marcus' }],
+    });
+    const onConflict = vi.fn();
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 }, onConflict },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Block' }));
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)?.text).toMatch(/Dana Smith, Marcus/);
+    });
+    expect(get(overlayMessage)?.kind).toBe('error');
+    // The join/takeover chooser is a start-work affordance — a block
+    // refusal must never route there.
+    expect(onConflict).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+});
+
 describe('TaskActions — settle-up completion', () => {
   it('opens the settle-up modal with the running total and completes with the increment', async () => {
     api.post.mockResolvedValueOnce({ needs_actual_qty: true,
