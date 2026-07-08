@@ -674,6 +674,45 @@ copying a rule between components means it should be promoted instead;
 local overrides may resize a family for dense contexts but never
 recolor it.
 
+#### The page-styling pipeline
+
+The three page categories of the `.page-body` rollout
+(`frontend/README.md` § CSS) are not a fixed taxonomy — they are
+**stations a page moves through**, on two independent axes:
+
+1. **Kit consumer** (the starting state). Category III pages and
+   not-yet-detailed Category II pages are the same thing in different
+   clothes: their entire look comes from the shared vocabulary in
+   `app.css`. Improving the kit (form kit, tab strips, tables,
+   toolbars) improves every page at this station for free. Generic
+   styling sweeps target exactly this pool.
+2. **Banner promotion** (III → II). A page moves under a full-bleed
+   area header when its *area's* header grouping is finalized — an
+   area decision, not a page redesign. Groupings so far: **job**
+   (`JobHeader`, gray-800 `#1f2937`) and **customer**
+   (`CustomerHeader`, red-950 `#450a0a`). More areas are planned;
+   as each lands, its pages move from III to II without other change.
+3. **Detail pass** (the terminal station). A page graduates out of
+   the sweep pool when it gets a deliberate, one-by-one design pass —
+   a layout built *out of* the shared vocabulary but no longer
+   *defined by* the generic defaults. A detailed page still consumes
+   the kit (its pills, chips, action band track global changes), but
+   generic kit-rollout work **skips it**; subsequent changes to it are
+   page-specific decisions.
+
+Category I (fully individualized: board, job overview, schedule) is a
+separate track — those pages use only the BASE layer and get bespoke
+passes on their own schedule.
+
+**Detailed pages** (the skip-list for generic sweeps — keep current as
+passes complete):
+
+| Page | Detail pass |
+|---|---|
+| Task Detail (`#/jobs/:jobId/tasks/:taskId`) | 2026-07-07 (spec `docs/plans/2026-07-07-task-detail-page-redesign.md`) |
+
+#### The founding families
+
 The founding three families (promoted global per §5.5's "better
 long-term fix"; 2026-07). They are generic on purpose — no
 page-specific names or references:

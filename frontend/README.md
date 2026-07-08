@@ -273,6 +273,10 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`;
   plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items). The
   task detail page is the reference implementation of the banner-page kit.
+- **The categories are stations, not a taxonomy** — pages move III→II as area
+  headers land, and out of the generic-sweep pool once they get a bespoke
+  detail pass. The pipeline model and the skip-list of detailed pages live in
+  `docs/designs/architecture-and-conventions.md` §5.5a.
 - Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
 - **z-index scale:** cross-component stacking uses named tokens defined on
   `:root` in `app.css` — `--z-sticky` (100) < `--z-dropdown` (200) <
