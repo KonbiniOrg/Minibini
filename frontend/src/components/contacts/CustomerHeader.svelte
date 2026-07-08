@@ -1,8 +1,11 @@
 <script>
   // Full-bleed banner for the contact/business detail pages, peered with
   // JobHeader — rendered by the route ABOVE the page-body wrapper so it runs
-  // edge to edge. `name` is the contact name or business name.
-  const { name, financials = null } = $props();
+  // edge to edge. `name` is the contact name or business name. The subtitle
+  // slot holds the counterpart link: `business` on contact pages (falling
+  // back to "(individual)" when kind==='contact' and there is none),
+  // `defaultContact` on business pages.
+  const { name, kind = 'business', business = null, defaultContact = null, financials = null } = $props();
 
   function formatAmount(v) {
     if (v == null || v === '') return '$—';
@@ -13,7 +16,16 @@
 </script>
 
 <div class="customer-header">
-  <h2 class="ch-name">{name}</h2>
+  <div class="titleblock">
+    <h2 class="ch-name">{name}</h2>
+    {#if business}
+      <p class="ch-subtitle">at <a href="#/businesses/{business.business_id}">{business.business_name}</a></p>
+    {:else if kind === 'contact'}
+      <p class="ch-subtitle">(individual)</p>
+    {:else if defaultContact}
+      <p class="ch-subtitle">default contact: <a href="#/contacts/{defaultContact.contact_id}">{defaultContact.name}</a></p>
+    {/if}
+  </div>
   {#if financials}
     <div class="ch-numbers">
       <div class="ch-item">
@@ -39,8 +51,22 @@
     padding: 14px 24px;
     margin-bottom: 16px;
   }
-  .ch-name { font-size: 22px; font-weight: 700; color: #fff; margin: 0; padding-left: 52px; }
-  .ch-numbers { display: flex; gap: 22px; }
+  .titleblock { padding-left: 52px; min-width: 0; }
+  .ch-name {
+    font-size: 22px; font-weight: 700; color: #fff; margin: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ch-subtitle { font-size: 13px; opacity: 0.85; color: #fff; margin: 2px 0 0; }
+  .ch-subtitle a { color: #fff; text-decoration: underline; }
+  /* Same surround treatment as JobHeader's money grid. */
+  .ch-numbers {
+    display: flex;
+    gap: 22px;
+    background: rgba(255,255,255,0.06);
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
   .ch-item { text-align: right; }
   .ch-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.65); }
   .ch-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; color: #fff; }

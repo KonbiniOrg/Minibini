@@ -97,7 +97,7 @@
 {:else if loadError}
   <p><em>Error: {loadError}</em></p>
 {:else if business}
-  <CustomerHeader name={business.business_name} {financials} />
+  <CustomerHeader name={business.business_name} defaultContact={business.default_contact} {financials} />
   <BusinessDetail
     {business}
     {invoices}

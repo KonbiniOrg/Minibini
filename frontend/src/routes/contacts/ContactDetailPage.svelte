@@ -93,7 +93,7 @@
 {:else if loadError}
   <p><em>Error: {loadError}</em></p>
 {:else if contact}
-  <CustomerHeader name={contact.name} {financials} />
+  <CustomerHeader name={contact.name} kind="contact" business={contact.business} {financials} />
   <ContactDetail
     {contact}
     {invoices}
