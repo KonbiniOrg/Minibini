@@ -453,7 +453,6 @@
   .entry-body > * + * { margin-top: 5px; }
   .item-note { font-style: italic; }
   .item-line { margin: 1px 0; }
-  .preserve-breaks { white-space: pre-wrap; }
   .err { color: #c00; padding: 0 24px; }
 
   /* Field diffs */

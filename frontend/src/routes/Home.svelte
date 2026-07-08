@@ -51,7 +51,7 @@
 
 <ClockBand />
 
-<nav class="home-tabs">
+<nav class="page-tabs">
   <button class:active={tab === 'work'} onclick={() => tab = 'work'}>Work</button>
   <button class:active={tab === 'time'} onclick={() => tab = 'time'}>Time</button>
   <button class:active={tab === 'expenses'} onclick={() => tab = 'expenses'}>Expenses</button>
@@ -76,25 +76,5 @@
 </div>
 
 <style>
-  .home-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 2px solid #ccc;
-    /* Full-bleed underline (break out of .page-body's 10px), tabs indented 120px. */
-    margin: 0 -10px 1em;
-    padding-left: 120px;
-  }
-  .home-tabs button {
-    padding: 0.4em 1.2em;
-    border: 2px solid #ccc;
-    border-bottom: none;
-    background: #f5f5f5;
-    cursor: pointer;
-    margin-bottom: -2px;
-  }
-  .home-tabs button.active {
-    background: white;
-    border-bottom: 2px solid white;
-    font-weight: bold;
-  }
+  /* Tab strip is the shared .page-tabs (app.css). */
 </style>

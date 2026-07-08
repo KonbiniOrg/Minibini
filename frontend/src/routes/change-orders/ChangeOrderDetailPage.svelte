@@ -1040,12 +1040,7 @@
 <style>
   .error { color: #a8071a; padding: 16px; }
 
-  .toolbar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 0;
-  }
-  .back-link { font-size: 13px; }
-  .page-title { font-size: 18px; font-weight: 600; }
+  /* .toolbar / .back-link / .page-title come from app.css. */
 
   /* Pushes Discard to the far right in the draft toolbar */
   .toolbar-spacer { flex: 1; }

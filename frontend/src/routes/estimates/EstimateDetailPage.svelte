@@ -340,19 +340,7 @@
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 
-  .toolbar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 0;
-  }
-  .back-link { font-size: 13px; }
-  .action-link {
-    display: inline-block; padding: 4px 12px;
-    border: 1px solid #d1d5db; border-radius: 3px;
-    background: #fff; color: #2563eb; text-decoration: none;
-    font-size: 13px; cursor: pointer;
-  }
-  .action-link:hover { background: #f3f4f6; }
-  .page-title { font-size: 18px; font-weight: 600; }
+  /* .toolbar / .back-link / .action-link / .page-title come from app.css. */
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
   /* Pill styling/colors come from the global .status-badge / .status-{status}
      classes (app.css); the select keeps its local control styling. */

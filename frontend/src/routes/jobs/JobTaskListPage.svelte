@@ -653,17 +653,7 @@
 
 <style>
   .error { color: #a8071a; }
-  .toolbar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 8px 0;
-  }
-  .back-link { font-size: 13px; }
-  .toolbar button {
-    padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;
-    background: #fff; cursor: pointer; font-size: 13px;
-  }
-  .toolbar button:hover { background: #f3f4f6; }
-  .toolbar button:disabled { opacity: 0.5; cursor: default; }
+  /* .toolbar (and its buttons) / .back-link come from app.css. */
 
   .dialog-hint { color: #555; font-size: 13px; }
   .draft-list { list-style: none; padding: 0; margin: 8px 0; max-height: 40vh; overflow-y: auto; }

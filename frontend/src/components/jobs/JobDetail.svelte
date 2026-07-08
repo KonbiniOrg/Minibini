@@ -1144,8 +1144,7 @@
     flex: 0 0 auto;
   }
   .titleblock { padding-left: 52px; min-width: 0; }
-  .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
-  .edit-link:hover { opacity: 1; text-decoration: underline; }
+  /* .edit-link comes from app.css (banner-page vocabulary). */
   .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
   .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
   /* Colors come from the global .status-{status} classes (app.css); only the
@@ -1201,24 +1200,7 @@
      unbreakable token (e.g. a pasted URL) wraps instead of shoving the
      Deliverables/History columns off-screen. */
   .midband > :global(*) { min-width: 0; }
-  .panel {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .panel-head {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: #888;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-    flex: 0 0 auto;
-  }
-  .panel-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+  /* .panel / .panel-head / .panel-scroll come from app.css. */
   .description-panel p { margin: 0; line-height: 1.6; color: #333; font-size: 14px; }
   /* Let the inner panel's scroll relax inside our fixed-height panel */
   .history-scroll-host :global(h3) { margin-top: 0; font-size: 14px; }
@@ -1526,11 +1508,8 @@
     margin-left: 6px; padding: 1px 6px;
     background: #dcfce7; border-radius: 8px;
   }
-  .badge-invoiced {
-    font-size: 0.85em; text-decoration: none;
-    border: 1px solid #888; border-radius: 3px;
-    padding: 0 4px; margin-left: 6px;
-  }
+  /* .badge-invoiced comes from app.css — this page previously carried a
+     divergent bordered-box look under the same class name; unified 2026-07. */
 
   /* PO other-job differentiation */
   .other-job { opacity: 0.5; }

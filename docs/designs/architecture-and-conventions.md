@@ -659,9 +659,24 @@ the cause. Either copy the rule in, or promote it to global.
 
 ### 5.5a Shared UI families in `app.css`
 
-Three cross-page style families live in `frontend/src/css/app.css`
-(promoted global per §5.5's "better long-term fix"; 2026-07). They are
-generic on purpose — no page-specific names or references:
+`frontend/src/css/app.css` is the single global stylesheet (imported by
+both the app and portal entries) and is organized in three sections:
+BASE (tokens, element defaults, utilities, page frame), SHARED
+(cross-page families), and PAGE KINDS (vocabulary keyed to the three
+page categories of the `.page-body` rollout — fully-individualized,
+banner pages, plain pages; `frontend/README.md` § CSS). The 2026-07
+consolidation promoted every rule that existed as copies in two or more
+components: `.toolbar` (+ buttons), `.back-link`, `.page-title`,
+`.action-link`, `.edit-link`, `.panel`/`.panel-head`/`.panel-scroll`,
+`.badge-invoiced`, `.row-actions button`, and `.page-tabs`, alongside
+the families below. Rule of the road: page styles arrange and tune;
+copying a rule between components means it should be promoted instead;
+local overrides may resize a family for dense contexts but never
+recolor it.
+
+The founding three families (promoted global per §5.5's "better
+long-term fix"; 2026-07). They are generic on purpose — no
+page-specific names or references:
 
 - **`.status-badge` + `.status-{status}`** — THE status pill. One base
   pill class plus per-status color modifiers keyed by status name

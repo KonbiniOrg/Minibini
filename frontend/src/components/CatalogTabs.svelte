@@ -10,35 +10,11 @@
 
 <h2>Catalog</h2>
 
-<nav class="catalog-tabs">
+<nav class="page-tabs">
   {#each tabs as t (t.path)}
     <a href={t.path} use:link class:active={$location === t.path}>{t.label}</a>
   {/each}
 </nav>
 
-<style>
-  /* Same visual vocabulary as .settings-tabs, but real links (per-tab routes). */
-  .catalog-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 2px solid #ccc;
-    /* Break out of .page-body's 10px gutter so the grey underline runs
-       edge-to-edge, while the tabs themselves are indented 100px from the left. */
-    margin: 0 -10px 1em;
-    padding-left: 120px;
-  }
-  .catalog-tabs a {
-    padding: 0.4em 1.2em;
-    border: 2px solid #ccc;
-    border-bottom: none;
-    background: #f5f5f5;
-    color: inherit;
-    text-decoration: none;
-    margin-bottom: -2px;
-  }
-  .catalog-tabs a.active {
-    background: white;
-    border-bottom: 2px solid white;
-    font-weight: bold;
-  }
-</style>
+<!-- Tab strip is the shared .page-tabs (app.css) — real links, per-tab routes. -->
+

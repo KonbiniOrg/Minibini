@@ -244,8 +244,7 @@
   }
   .titleblock { padding-left: 52px; min-width: 0; }
   .titleblock h1 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; }
-  .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
-  .edit-link:hover { opacity: 1; text-decoration: underline; }
+  /* .edit-link comes from app.css (banner-page vocabulary). */
   .customer-line, .pm-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
   .customer-line a, .pm-line a { color: #fff; text-decoration: underline; }
   .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }

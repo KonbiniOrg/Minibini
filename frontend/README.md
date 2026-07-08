@@ -251,8 +251,28 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 
 ### CSS
 
-- Global styles live in `frontend/src/css/app.css`, imported via `main.js`.
+- Global styles live in `frontend/src/css/app.css`, imported via `main.js`
+  **and** `portal-main.js` — global changes reach the customer portal too.
 - No CSS frameworks. Semantic HTML with minimal global styles.
+- **app.css is organized in three sections** — (1) BASE: tokens, element
+  defaults, utilities, the page frame; (2) SHARED: families any page may use;
+  (3) PAGE KINDS: vocabulary tied to the three page categories of the
+  `.page-body` rollout below (fully-individualized / banner pages / plain
+  pages). Page `<style>` blocks arrange and tune; if you're re-typing a look
+  that exists globally — or copying a rule out of another component — promote
+  it to app.css instead. Components may locally override a global family's
+  *sizing* for dense contexts (e.g. the job header's smaller `.status-badge`)
+  but never its colors.
+- **Shared vocabulary (where the classes live):** `.status-badge` +
+  `.status-{status}` (one pill palette for document statuses *and* task
+  activity keys), `.data-table`, `.badge-invoiced`, `.row-actions` (put it on
+  a cell/container; the small white edit/del buttons inside pick up the
+  look), the feedback overlays; banner-page kit: `.toolbar` (+ its buttons),
+  `.back-link`, `.page-title`, `.action-link`, `.edit-link` (quiet links in a
+  dark banner), `.action-band` (+ `primary`/`quiet` buttons), `.stat-chips` /
+  `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`;
+  plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items). The
+  task detail page is the reference implementation of the banner-page kit.
 - Error overlays (`.error-overlay`) have a red border; success overlays (`.success-overlay`) have a green border. Both share the same layout pattern.
 - **z-index scale:** cross-component stacking uses named tokens defined on
   `:root` in `app.css` — `--z-sticky` (100) < `--z-dropdown` (200) <

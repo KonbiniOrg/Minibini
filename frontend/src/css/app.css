@@ -1,4 +1,26 @@
-/* Global styles */
+/*
+ * Global stylesheet — the app's shared visual vocabulary, in three sections:
+ *
+ *   1. BASE       — tokens, element defaults, utilities, the page frame
+ *   2. SHARED     — cross-page families any page may use
+ *   3. PAGE KINDS — vocabulary tied to the three page categories
+ *                   (frontend/README.md § CSS → "Rollout"):
+ *                     I.   fully-individualized pages (board, job overview,
+ *                          schedule) — own their whole layout, use BASE only
+ *                     II.  banner pages (JobHeader / CustomerHeader up top,
+ *                          .page-body beneath) — the detail-page vocabulary
+ *                     III. plain pages (everything else, wrapped in
+ *                          .page-body) — list/form vocabulary
+ *
+ * Rules of the road: colors and semantics live HERE, once; components may
+ * locally override base *sizing* for dense contexts but never colors. Page
+ * <style> blocks arrange and tune — if you're re-typing a look that exists
+ * here (or copying a rule from another component), promote it instead.
+ * Imported by both entries (main.js and portal-main.js) — changes affect the
+ * customer portal too.
+ */
+
+/* ============================================================ 1. BASE == */
 
 /*
  * z-index scale. One source of truth for cross-component stacking order.
@@ -20,6 +42,13 @@
   --z-modal: 800;
   --z-modal-nested: 900;
   --z-toast: 1000;
+
+  /* Border greys. --border-control outlines interactive things (buttons,
+     inputs, pills-as-controls); --border-subtle separates passive surfaces
+     (cards, chips, section rules). New code should reach for these instead
+     of minting another grey. */
+  --border-control: #d1d5db;
+  --border-subtle: #e5e7eb;
 }
 
 body {
@@ -31,37 +60,10 @@ body[data-view-mode="full"] {
   background-color: #fffde6;
 }
 
-/*
- * Page frame primitive. Opt in with class="page-body" on the element that
- * holds a page's main content. Fluid width, 10px breathing room on the sides
- * so content clears the left edge (and the slide-in sidebar) instead of
- * squishing to x=0. Full-bleed headers (e.g. .job-header, .customer-financials)
- * stay OUTSIDE this wrapper so they can still run edge-to-edge.
- * Zero-specificity friendly: it's just padding, so scoped component styles win.
- */
-.page-body { padding: 0 10px; }
-
 table, th, td {
   border: 1px solid #ccc;
   border-collapse: collapse;
 }
-
-/*
- * Default house style for data/list tables. Opt in with class="data-table"
- * and override per-component as needed (it's a baseline, not a straitjacket).
- * The light grey cell border comes from the global `table, th, td` rule above.
- */
-.data-table { width: 100%; font-size: 14px; }
-.data-table th { text-align: left; font-weight: 600; padding: 8px 16px; background: #f0fdfa; color: #115e59; border-bottom: 2px solid #99f6e4; }
-.data-table td { padding: 8px 16px; }
-/* Subtle zebra striping. `:where()` keeps specificity at zero, so a table's own
- * row classes (e.g. .subtask-row, .material-row) override it without a fight. */
-:where(.data-table) tbody tr:nth-child(even) { background: #f8f9fa; }
-
-/* Alignment utilities (handy on data-table cells). */
-.text-left { text-align: left; }
-.text-center { text-align: center; }
-.text-right { text-align: right; }
 
 h1, h2, h3, h4, h5, h6 {
   color: #1a2a6c;
@@ -82,6 +84,11 @@ dd {
   margin: 0;
 }
 
+/* Alignment utilities (handy on data-table cells). */
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
 /*
  * Preserve line breaks/paragraphs that users type into free-text fields
  * (descriptions, notes, reasons, addresses). pre-wrap keeps newlines and
@@ -94,6 +101,30 @@ dd {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/*
+ * Page frame primitive. Opt in with class="page-body" on the element that
+ * holds a page's main content. Fluid width, 10px breathing room on the sides
+ * so content clears the left edge (and the slide-in sidebar) instead of
+ * squishing to x=0. Full-bleed headers (e.g. .job-header, .customer-financials)
+ * stay OUTSIDE this wrapper so they can still run edge-to-edge.
+ * Zero-specificity friendly: it's just padding, so scoped component styles win.
+ */
+.page-body { padding: 0 10px; }
+
+/* ========================================================== 2. SHARED == */
+
+/*
+ * Default house style for data/list tables. Opt in with class="data-table"
+ * and override per-component as needed (it's a baseline, not a straitjacket).
+ * The light grey cell border comes from the global `table, th, td` rule above.
+ */
+.data-table { width: 100%; font-size: 14px; }
+.data-table th { text-align: left; font-weight: 600; padding: 8px 16px; background: #f0fdfa; color: #115e59; border-bottom: 2px solid #99f6e4; }
+.data-table td { padding: 8px 16px; }
+/* Subtle zebra striping. `:where()` keeps specificity at zero, so a table's own
+ * row classes (e.g. .subtask-row, .material-row) override it without a fight. */
+:where(.data-table) tbody tr:nth-child(even) { background: #f8f9fa; }
 
 /*
  * Status pills. ONE source of truth for status badge/select coloring — the
@@ -135,56 +166,29 @@ dd {
 .status-complete { background: #d1fae5; color: #065f46; }
 
 /*
- * Stat chips. A strip of small labeled value cards (the job-board chip look):
- * each chip is a card whose shaded header bar carries an uppercase label —
- * header bars line up uniformly across the strip while each body sizes to its
- * content (values, links, small inline widgets). `money` tints the header
- * green to group financial chips into a visible family at the end of a strip.
+ * INVOICED marker — the quiet green text-link that stamps a billed task,
+ * material, or expense row and links to the invoice.
  */
-.stat-chips { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
-.stat-chip {
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06); overflow: hidden;
-  display: flex; flex-direction: column; min-width: 74px;
+.badge-invoiced {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.3px; color: #047857; text-decoration: none;
 }
-.stat-chip-header {
-  background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
-  font-size: 9px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.6px; color: #64748b; padding: 3px 10px;
-  text-align: center; white-space: nowrap;
-}
-.stat-chip.money .stat-chip-header {
-  background: #e0f2e9; border-bottom-color: #cde5d6; color: #3f6b52;
-}
-.stat-chip-body {
-  padding: 5px 12px 6px; flex: 1; font-size: 14px; font-weight: 600;
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  white-space: nowrap;
-}
-.stat-chip-body .muted { color: #9ca3af; font-weight: 500; }
+.badge-invoiced:hover { text-decoration: underline; }
 
 /*
- * Action band. A full-width strip of the actions that operate on the entity
- * above it. Buttons inside get a consistent size; `primary` marks the one
- * most-expected action, `quiet` de-emphasizes housekeeping actions (e.g. an
- * edit button riding along with workflow actions).
+ * Row actions — the small white bordered edit/del buttons that live inside
+ * table rows and dense lists. Put class="row-actions" on the cell/container;
+ * the buttons inside pick up the look.
  */
-.action-band {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 12px 20px; background: #fafafa; border-bottom: 1px solid #e5e7eb;
+.row-actions button {
+  font-size: 11px; padding: 2px 6px;
+  margin: 0 2px 2px 0;
+  cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
 }
-.action-band button {
-  border: 1px solid #94a3b8; background: #f1f5f9; border-radius: 5px;
-  padding: 8px 18px; font-weight: 600; font-size: 13px; cursor: pointer;
-  color: #1f2937;
-}
-.action-band button:hover { background: #e2e8f0; }
-.action-band button:disabled { opacity: 0.55; cursor: default; }
-.action-band button.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
-.action-band button.primary:hover { background: #1e40af; }
-.action-band button.quiet { background: #fff; border-color: #cbd5e1; color: #475569; font-weight: 500; }
-.action-band button.quiet:hover { background: #f8fafc; }
+.row-actions button:hover { background: #f0f0f0; }
+.row-actions button:disabled { opacity: 0.4; cursor: default; }
 
+/* Global feedback overlays (rendered by MessageOverlay.svelte). */
 .error-overlay,
 .success-overlay {
   position: fixed;
@@ -222,4 +226,150 @@ dd {
   background: none;
   font-size: 1.5em;
   cursor: pointer;
+}
+
+/* =========================== 3. PAGE KINDS — II. banner-page vocabulary == */
+/* Pages that render a full-bleed banner (JobHeader / CustomerHeader) with
+ * .page-body beneath: the est/inv/PO/CO detail + wizard pages, job task
+ * list, task detail, shipments, history, contact/business detail. The task
+ * detail page is the reference implementation of this vocabulary. */
+
+/*
+ * Sub-bar toolbar: the row of back-links / actions directly under the
+ * banner. Flush to the .page-body gutter (no side padding of its own).
+ */
+.toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 0;
+}
+.toolbar button {
+  padding: 6px 14px; border: 1px solid var(--border-control); border-radius: 4px;
+  background: #fff; cursor: pointer; font-size: 13px;
+}
+.toolbar button:hover { background: #f3f4f6; }
+.toolbar button:disabled { opacity: 0.5; cursor: default; }
+
+/* Toolbar companions. */
+.back-link { font-size: 13px; }
+.page-title { font-size: 18px; font-weight: 600; }
+.action-link {
+  display: inline-block; padding: 4px 12px;
+  border: 1px solid var(--border-control); border-radius: 3px;
+  background: #fff; color: #2563eb; text-decoration: none;
+  font-size: 13px; cursor: pointer;
+}
+.action-link:hover { background: #f3f4f6; }
+
+/* Quiet inline links inside a dark banner (edit / duplicate… / history). */
+.edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
+.edit-link:hover { opacity: 1; text-decoration: underline; }
+
+/*
+ * Action band. A full-width strip of the actions that operate on the entity
+ * above it. Buttons inside get a consistent size; `primary` marks the one
+ * most-expected action, `quiet` de-emphasizes housekeeping actions (e.g. an
+ * edit button riding along with workflow actions).
+ */
+.action-band {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 20px; background: #fafafa; border-bottom: 1px solid var(--border-subtle);
+}
+.action-band button {
+  border: 1px solid #94a3b8; background: #f1f5f9; border-radius: 5px;
+  padding: 8px 18px; font-weight: 600; font-size: 13px; cursor: pointer;
+  color: #1f2937;
+}
+.action-band button:hover { background: #e2e8f0; }
+.action-band button:disabled { opacity: 0.55; cursor: default; }
+.action-band button.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.action-band button.primary:hover { background: #1e40af; }
+.action-band button.quiet { background: #fff; border-color: var(--border-control); color: #475569; font-weight: 500; }
+.action-band button.quiet:hover { background: #f8fafc; }
+
+/*
+ * Stat chips. A strip of small labeled value cards (the job-board chip look):
+ * each chip is a card whose shaded header bar carries an uppercase label —
+ * header bars line up uniformly across the strip while each body sizes to its
+ * content (values, links, small inline widgets). `money` tints the header
+ * green to group financial chips into a visible family at the end of a strip.
+ */
+.stat-chips { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.stat-chip {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06); overflow: hidden;
+  display: flex; flex-direction: column; min-width: 74px;
+}
+.stat-chip-header {
+  background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.6px; color: #64748b; padding: 3px 10px;
+  text-align: center; white-space: nowrap;
+}
+.stat-chip.money .stat-chip-header {
+  background: #e0f2e9; border-bottom-color: #cde5d6; color: #3f6b52;
+}
+.stat-chip-body {
+  padding: 5px 12px 6px; flex: 1; font-size: 14px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  white-space: nowrap;
+}
+.stat-chip-body .muted { color: #9ca3af; font-weight: 500; }
+
+/*
+ * Panel — the white card with an uppercase micro-header used to tile a
+ * dense overview (Description / Deliverables / History on the job page).
+ * Components may extend .panel-head locally (e.g. make it a flex row) but
+ * the chrome itself lives here.
+ */
+.panel {
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.panel-head {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  flex: 0 0 auto;
+}
+.panel-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+
+/* ============================ 3. PAGE KINDS — III. plain-page vocabulary == */
+
+/*
+ * Page-level tab strip (Home, Users, Settings, Catalog). The grey underline
+ * runs edge-to-edge by breaking out of .page-body's 10px gutter; the tabs
+ * are indented 120px. Works because the <nav> is a direct child of
+ * .page-body. Items may be <button>s (local-state tabs) or <a>s (routed
+ * tabs — preferred; see LATER.md on converting the stragglers).
+ */
+.page-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #ccc;
+  margin: 0 -10px 1em;
+  padding-left: 120px;
+}
+.page-tabs button,
+.page-tabs a {
+  padding: 0.4em 1.2em;
+  border: 2px solid #ccc;
+  border-bottom: none;
+  background: #f5f5f5;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  margin-bottom: -2px;
+}
+.page-tabs button.active,
+.page-tabs a.active {
+  background: white;
+  border-bottom: 2px solid white;
+  font-weight: bold;
 }

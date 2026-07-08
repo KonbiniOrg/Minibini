@@ -237,7 +237,5 @@
 {/if}
 
 <style>
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
-  .back-link { font-size: 13px; }
-  .page-title { font-size: 18px; font-weight: 600; }
+  /* .toolbar / .back-link / .page-title come from app.css. */
 </style>

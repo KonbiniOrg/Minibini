@@ -258,7 +258,7 @@
     <td></td>
     <td class="text-right">{fmt(exp.amount)}</td>
     {#if !readonly}
-      <td class="actions-cell">
+      <td class="actions-cell row-actions">
         <button type="button" onclick={() => onEditExpense(exp)}>edit</button>
       </td>
     {/if}
@@ -308,7 +308,7 @@
         <td class="text-right">{fmt(task.effective_rate)}</td>
         <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmt(taskTotal(task))}</td>
         {#if !readonly && !jobLocked}
-          <td class="actions-cell">
+          <td class="actions-cell row-actions">
             {#if !isTerminal(task)}
               <button type="button" onclick={() => onEditTask(task)}>edit</button>
               {#if canDelete(task) && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
@@ -324,7 +324,7 @@
             {/if}
           </td>
         {:else if !readonly}
-          <td class="actions-cell"></td>
+          <td class="actions-cell row-actions"></td>
         {/if}
       </tr>
 
@@ -348,7 +348,7 @@
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly && !jobLocked && !isTerminal(task) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
-            <td class="actions-cell">
+            <td class="actions-cell row-actions">
               {@render matFulfillActions(mat, task)}
               {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, task)}>mark used</button>{/if}
               {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, task)}>{restockLabel(mat)}</button>{/if}
@@ -359,7 +359,7 @@
               {#if onMoveMaterial}<button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>{/if}
             </td>
           {:else if !readonly}
-            <td class="actions-cell"></td>
+            <td class="actions-cell row-actions"></td>
           {/if}
         </tr>
       {/each}
@@ -383,7 +383,7 @@
           <td class="text-right">{fmt(sub.effective_rate)}</td>
           <td class="text-right" class:est-total={taskTotalInfo(sub).isEstimate}>{fmt(taskTotal(sub))}</td>
           {#if !readonly && !jobLocked}
-            <td class="actions-cell">
+            <td class="actions-cell row-actions">
               {#if !isTerminal(sub)}
                 <button type="button" onclick={() => onEditTask(sub)}>edit</button>
                 {#if canDelete(sub) && !sub.has_bleps}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
@@ -394,7 +394,7 @@
               {/if}
             </td>
           {:else if !readonly}
-            <td class="actions-cell"></td>
+            <td class="actions-cell row-actions"></td>
           {/if}
         </tr>
 
@@ -418,7 +418,7 @@
             <td class="text-right">{fmt(mat.sell_price)}</td>
             <td class="text-right">{fmt(materialTotal(mat))}</td>
             {#if !readonly && !jobLocked && !isTerminal(sub) && isMaterialPending(mat) && !isMaterialFinalized(mat)}
-              <td class="actions-cell">
+              <td class="actions-cell row-actions">
                 {@render matFulfillActions(mat, sub)}
                 {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, sub)}>mark used</button>{/if}
                 {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, sub)}>{restockLabel(mat)}</button>{/if}
@@ -429,7 +429,7 @@
                 {#if onMoveMaterial}<button type="button" onclick={() => onMoveMaterial(mat, null)}>detach</button>{/if}
               </td>
             {:else if !readonly}
-              <td class="actions-cell"></td>
+              <td class="actions-cell row-actions"></td>
             {/if}
           </tr>
         {/each}
@@ -458,7 +458,7 @@
           <td class="text-right">{fmt(mat.sell_price)}</td>
           <td class="text-right">{fmt(materialTotal(mat))}</td>
           {#if !readonly && !jobLocked && isMaterialPending(mat) && !isMaterialFinalized(mat)}
-            <td class="actions-cell">
+            <td class="actions-cell row-actions">
               {@render matFulfillActions(mat, null)}
               {#if onConsumeMaterial && materialStatus(mat).key === 'on-hand'}<button type="button" onclick={() => onConsumeMaterial(mat, null)}>mark used</button>{/if}
               {#if onRestockMaterial && !jobOnHold}<button type="button" onclick={() => onRestockMaterial(mat, null)}>{restockLabel(mat)}</button>{/if}
@@ -468,7 +468,7 @@
               {#if onEditMaterial && !jobOnHold && !isCustomerSupplied(mat)}<button type="button" onclick={() => onEditMaterial(mat, null)}>edit</button>{/if}
             </td>
           {:else if !readonly}
-            <td class="actions-cell"></td>
+            <td class="actions-cell row-actions"></td>
           {/if}
         </tr>
         {#if expenseByMaterial[mat.material_id]}
@@ -504,7 +504,7 @@
           <td class="text-right">{fmt(fee.unit_rate)}</td>
           <td class="text-right">{fmt(feeTotal(fee))}</td>
           {#if !readonly}
-            <td class="actions-cell">{#if !jobLocked}<button type="button" onclick={() => onEditFee(fee)}>edit</button>{/if}</td>
+            <td class="actions-cell row-actions">{#if !jobLocked}<button type="button" onclick={() => onEditFee(fee)}>edit</button>{/if}</td>
           {/if}
         </tr>
       {/each}
@@ -533,11 +533,7 @@
   /* Fees are billable but not a task/material — tint them so they read distinctly. */
   .fee-row { background: #f3e8ff; }
   .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }
-  .badge-invoiced {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.3px; color: #047857; text-decoration: none;
-  }
-  .badge-invoiced:hover { text-decoration: underline; }
+  /* .badge-invoiced comes from app.css. */
 
   /* Top-level task rows use the shared .data-table zebra stripe. */
   .subtask-row { background: #f0f9ff; }
@@ -588,13 +584,7 @@
   .actions-cell {
     max-width: 12em;
   }
-  .actions-cell button {
-    font-size: 11px; padding: 2px 6px;
-    margin: 0 2px 2px 0;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
-  }
-  .actions-cell button:hover { background: #f0f0f0; }
-  .actions-cell button:disabled { opacity: 0.4; cursor: default; }
+  /* Buttons in the cell get the shared .row-actions look (app.css). */
 
   .link-btn {
     background: none; border: none; padding: 0; margin: 0;

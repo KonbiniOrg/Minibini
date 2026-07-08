@@ -50,7 +50,7 @@
   <div class="panel-head">
     Deliverables
     {#if canManage && editability.editable}
-      <button type="button" class="edit-link" onclick={openEdit}>Edit</button>
+      <button type="button" class="panel-link" onclick={openEdit}>Edit</button>
     {/if}
   </div>
   <div class="panel-scroll">
@@ -60,7 +60,7 @@
       <p class="empty">
         No deliverables yet.
         {#if canManage && editability.editable}
-          <button type="button" class="edit-link" onclick={openEdit}>Add deliverables</button>
+          <button type="button" class="panel-link" onclick={openEdit}>Add deliverables</button>
         {/if}
       </p>
     {:else}
@@ -84,35 +84,14 @@
 {/if}
 
 <style>
-  /* These mirror the .panel / .panel-head / .panel-scroll rules in
-     JobDetail.svelte. Svelte scopes component styles, so we can't rely on the
-     parent's definitions reaching this component's DOM. */
-  .panel {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
+  /* .panel chrome comes from app.css; locally the head becomes a flex row
+     so the Edit affordance can sit at its right edge. */
   .panel-head {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: #888;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-    flex: 0 0 auto;
     display: flex;
     align-items: baseline;
     gap: 8px;
   }
-  .panel-scroll {
-    overflow-y: auto;
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-  .edit-link {
+  .panel-link {
     background: none;
     border: none;
     color: #1a73e8;

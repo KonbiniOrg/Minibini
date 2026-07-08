@@ -327,7 +327,7 @@
                   <em class:picked={sh.status === 'picked_up'}>{sh.status === 'picked_up' ? 'picked up' : 'prepared'}</em><br>
                   <span class="date">{shipmentDate(sh)}</span>
                 {/if}
-                <div class="actions">
+                <div class="actions row-actions">
                   {#if sh.status === 'prepared' && !isDraft(sh)}
                     <button type="button" onclick={() => pickUp(sh)}>Mark picked up</button>
                   {/if}
@@ -408,7 +408,7 @@
   .ship-head.draft em { color: #92400e; font-weight: 500; }
   .date { color: #777; font-size: 11px; }
   .actions { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
-  .actions button { font-size: 11px; padding: 2px 6px; }
+  /* Buttons pick up the shared .row-actions look (app.css). */
   .actions button.discard { color: #b91c1c; }
   .qty-input { width: 5em; text-align: right; }
   .qty-input.pending-cell {

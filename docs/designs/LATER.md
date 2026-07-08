@@ -600,6 +600,42 @@ IMAP-SMTP machinery and tend to be worked together.
 
 Cross-cutting UI/API conventions and shared components.
 
+- **JobDetail's private `.pill-*` palette (and JobCard's `.doc-pill-*`) should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass)_
+  `components/jobs/JobDetail.svelte` carries ~20 `.pill-*` status-color
+  variants and `components/board/JobCard.svelte` a parallel `.doc-pill-*`
+  set — both are private re-implementations of the consolidated global
+  `.status-{status}` palette. Both files are Category-1 (fully
+  individualized) surfaces, so fold this into their own page-level passes
+  rather than a blind swap. _Done when:_ document-status colors on the job
+  overview and board cards come from the global classes.
+- **In-content tab bars (est/inv/po tabs on the job overview, history tablist) have no shared idiom.** — _added 2026-07-08 (CSS review pass)_
+  JobDetail defines `.est-tabs`/`.inv-tabs`/`.po-tabs` — structurally
+  identical, palette-only differences — and JobHistoryPage has a fourth
+  variant with a different underline weight. Decide a shared in-content
+  tab treatment (distinct from the page-level `.page-tabs`) during those
+  pages' passes. _Done when:_ one in-content tab idiom exists with a
+  per-area accent, or a deliberate exception is recorded.
+- **No shared form-layout vocabulary.** — _added 2026-07-08 (CSS review pass)_
+  Zero `.form-row`/`fieldset`/label conventions exist; every form page and
+  modal lays out label+input rows ad hoc (the modal *shell* is shared via
+  `Modal.svelte`, the inner form styling is not). Worth defining a small
+  form kit in app.css before many more page passes touch forms.
+  _Done when:_ app.css has a form-row vocabulary and new/touched forms use it.
+- **Grey literals instead of text-color tokens.** — _added 2026-07-08 (CSS review pass)_
+  Secondary text is written as raw hexes across ~40 files (`#999` ×18,
+  `#888` ×16, `#666` ×15, `#6b7280` ×11, `#9ca3af` ×11 — five different
+  "muted"s). Border tokens now exist (`--border-control`, `--border-subtle`);
+  text-grey tokens should follow and be adopted opportunistically as pages
+  get their passes. _Done when:_ tokens exist and the design docs name them
+  as the way to write muted text.
+- **Bespoke table headers drift (teal vs yellow vs bare).** — _added 2026-07-08 (CSS review pass)_
+  `.data-table`'s teal band is the house style, but `.materials-table`
+  (task page) uses yellow, ChangeOrder's `.diff-table` and JobDetail's
+  inline tables use their own `th` treatments. Decide per page-pass whether
+  each opts into `.data-table` or records why not.
+  _Done when:_ each bespoke table either adopts the house style or carries
+  a comment naming the reason.
+
 - **Four schedule tests are midnight-flaky.** — _added 2026-07-08 (found running the full suite just after midnight)_
   `tests.test_api_schedule`: `test_lane_bar_carries_job_number_and_name`,
   `test_work_complete_task_present_in_worker_lane`,

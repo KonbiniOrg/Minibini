@@ -512,7 +512,7 @@
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
             <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
             {#if !taskIsTerminal}
-              <td>
+              <td class="row-actions">
                 <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
                 <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
               </td>
@@ -634,14 +634,5 @@
   .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
-  .materials-table button {
-    font-size: 11px; padding: 2px 6px; margin-right: 2px;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
-  }
-  .materials-table button:hover { background: #f0f0f0; }
-  .badge-invoiced {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.3px; color: #047857; text-decoration: none;
-  }
-  .badge-invoiced:hover { text-decoration: underline; }
+  /* Row buttons use .row-actions, INVOICED uses .badge-invoiced (app.css). */
 </style>
