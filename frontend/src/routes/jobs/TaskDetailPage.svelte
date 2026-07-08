@@ -16,6 +16,7 @@
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
   import { formatQtyUnits, formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
@@ -341,6 +342,7 @@
 {:else if task}
   {#if job}
     <JobHeader {job} {contact} onStatusChange={refresh} />
+    <JobNavRail {job} current="tasks" />
   {/if}
 
   <!-- Task header: crumbs, pill + title left, stat chips right -->

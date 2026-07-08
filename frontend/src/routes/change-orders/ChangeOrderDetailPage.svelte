@@ -8,6 +8,7 @@
   import COAddLineForm from '../../components/changeorders/COAddLineForm.svelte';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
   import PriceListPicker from '../../components/PriceListPicker.svelte';
   import UnitsSelect from '../../components/UnitsSelect.svelte';
 
@@ -670,6 +671,7 @@
 {:else if co}
   {#if job}
     <JobHeader {job} {contact} onStatusChange={loadCO} />
+    <JobNavRail {job} current="estimate" />
   {/if}
 
   <div class="page-body">

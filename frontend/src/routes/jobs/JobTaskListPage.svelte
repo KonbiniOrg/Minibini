@@ -12,6 +12,7 @@
   import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
   import PriceListPicker from '../../components/PriceListPicker.svelte';
   import Modal from '../../components/Modal.svelte';
 
@@ -494,6 +495,7 @@
   <p class="error">{error}</p>
 {:else if job}
   <JobHeader {job} {contact} onStatusChange={reload} />
+  <JobNavRail {job} current="tasks" />
 
   <div class="page-body">
   <div class="toolbar">

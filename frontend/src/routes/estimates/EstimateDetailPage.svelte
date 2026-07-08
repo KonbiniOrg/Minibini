@@ -4,6 +4,7 @@
   import { showError } from '../../stores/messages.js';
   import AdjustmentModal from '../../components/AdjustmentModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import LineItemModal from '../../components/LineItemModal.svelte';
   import PriceListPicker from '../../components/PriceListPicker.svelte';
@@ -204,6 +205,7 @@
 {:else if estimate}
   {#if job}
     <JobHeader {job} {contact} onStatusChange={loadEstimate} />
+    <JobNavRail {job} current="estimate" />
   {/if}
 
   <div class="page-body">

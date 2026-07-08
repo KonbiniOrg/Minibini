@@ -6,6 +6,7 @@
   import FieldError from '../../components/FieldError.svelte';
   import FormMessage from '../../components/FormMessage.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
 
   let { params = {} } = $props();
   let jobId = $derived(params.id);
@@ -250,6 +251,7 @@
     <p class="err">{loadError}</p>
   {:else if job}
     <JobHeader {job} {contact} onStatusChange={load} />
+    <JobNavRail {job} />
 
     <div class="page-body">
     <header class="page-header">

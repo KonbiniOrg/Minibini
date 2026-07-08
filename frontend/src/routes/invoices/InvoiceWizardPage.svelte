@@ -3,6 +3,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
   import WizardSourcePool from '../../components/invoices/WizardSourcePool.svelte';
   import AgreementAdjustmentsPanel from '../../components/invoices/AgreementAdjustmentsPanel.svelte';
   import WizardLineItemCard from '../../components/wizards/WizardLineItemCard.svelte';
@@ -184,6 +185,7 @@
 {:else if invoice}
   {#if job}
     <JobHeader {job} {contact} />
+    <JobNavRail {job} current="invoice" />
   {/if}
   <div class="page-body">
   <div class="toolbar">

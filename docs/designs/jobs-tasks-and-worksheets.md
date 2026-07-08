@@ -1053,6 +1053,20 @@ Top-down:
    no Plan/Client-View toggle and no Worksheet pillar — the planning layer
    and the separate "client view" concept were both removed.)
 
+**The job nav rail** (`components/jobs/JobNavRail.svelte`, 2026-07-08) —
+every job page EXCEPT this overview mounts a skinny full-width strip
+directly under the JobHeader: "‹ Overview" far left, then Estimate /
+Tasks / Invoice / Shipments / POs spread evenly across the width (light
+`#f9fafb` strip, 2px gray-400 borders, 11px caps; current section
+underlined, empty categories dimmed and inert). Estimate / Invoice / POs
+link to each category's most recent live document via `nav_targets` on
+the job detail payload (`apps/api/jobs/serializers.py` — detail-only,
+`null` in list context, like the financial rollups); Tasks and
+Shipments link to the job-scoped pages. Mounted on: estimate detail +
+wizard, change-order detail (lights Estimate), invoice detail + wizard,
+task list + task detail (light Tasks), shipments, history (nothing
+lit).
+
 ### 9.2 Components
 
 | Component | Role |

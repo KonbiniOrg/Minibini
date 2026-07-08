@@ -6,6 +6,7 @@
   import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
   import LineItemTable from '../../components/LineItemTable.svelte';
   import LineItemModal from '../../components/LineItemModal.svelte';
   import AdjustmentModal from '../../components/AdjustmentModal.svelte';
@@ -151,6 +152,7 @@
 {:else if invoice}
   {#if job}
     <JobHeader {job} {contact} onStatusChange={loadInvoice} />
+    <JobNavRail {job} current="invoice" />
   {/if}
 
   <div class="page-body">

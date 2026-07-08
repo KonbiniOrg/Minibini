@@ -853,13 +853,15 @@ class JobDetailInvoiceFieldTest(TestCase):
         )
 
         # Absolute pin: guard against flat per-request regressions that the
-        # comparative assertion above cannot catch.  N=15 (was 13 before Task 3.4):
+        # comparative assertion above cannot catch.  N=18 (was 13 before Task 3.4):
         # +1 for the `fees` prefetch query, +1 for EstimateClaimService.claimed_set_for_job
-        # (one query per job-detail to build the estimate-claim set).
+        # (one query per job-detail to build the estimate-claim set),
+        # +3 for `nav_targets` (latest estimate / invoice / PO for the job nav
+        # rail, 2026-07-08; detail-only, skipped in list context).
         # If the jobs viewset gains new prefetches/annotations this number may need
         # updating — update it together with a comment explaining why the count changed.
         self.assertEqual(
-            count_one, 15,
-            f'Absolute query count for job-detail changed: expected 15, got {count_one}. '
+            count_one, 18,
+            f'Absolute query count for job-detail changed: expected 18, got {count_one}. '
             f'Update this pin if the viewset legitimately changed (add a comment explaining why).',
         )

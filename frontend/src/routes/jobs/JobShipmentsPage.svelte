@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
 
   let { params } = $props();
   const jobId = $derived(parseInt(params.jobId, 10));
@@ -288,6 +289,7 @@
     <p>Loading...</p>
   {:else if job}
     <JobHeader {job} {contact} onStatusChange={load} />
+    <JobNavRail {job} current="shipments" />
 
     <div class="page-body">
     <header class="page-header">
