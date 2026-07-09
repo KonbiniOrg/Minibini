@@ -91,6 +91,54 @@ describe('TaskDetailPage header', () => {
   });
 });
 
+describe('TaskDetailPage materials', () => {
+  function mockWithMaterial(mat, taskOverrides = {}) {
+    const task = {
+      task_id: 7, name: 'Mill', status: 'complete', job: { id: 3 },
+      ...taskOverrides,
+    };
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/tasks/7/')) {
+        if (url.includes('/materials')) return Promise.resolve([mat]);
+        if (url.includes('/subtasks')) return Promise.resolve([]);
+        return Promise.resolve(task);
+      }
+      if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
+      return Promise.resolve([]);
+    });
+  }
+
+  it("puts a billed material's INVOICED badge in the trailing actions column, not the description", async () => {
+    mockWithMaterial({
+      material_id: 1, description: 'Steel plate', quantity: '2', units: 'ea',
+      invoice: { id: 12, invoice_number: 'INV-12' },
+    });
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByRole('heading', { name: 'Mill' });
+    await waitFor(() => expect(container.querySelector('.materials-table tbody tr')).not.toBeNull());
+    const cells = container.querySelectorAll('.materials-table tbody tr td');
+    const descCell = cells[0];
+    const lastCell = cells[cells.length - 1];
+    expect(descCell).toHaveTextContent('Steel plate');
+    expect(descCell.querySelector('.badge-invoiced')).toBeNull();
+    expect(lastCell.querySelector('.badge-invoiced')).not.toBeNull();
+  });
+
+  it('keeps the header and body column counts aligned when a completed task has an invoiced material', async () => {
+    mockWithMaterial({
+      material_id: 1, description: 'Steel plate', quantity: '2', units: 'ea',
+      invoice: { id: 12, invoice_number: 'INV-12' },
+    });
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByRole('heading', { name: 'Mill' });
+    await waitFor(() => expect(container.querySelector('.materials-table tbody tr')).not.toBeNull());
+    const headCols = container.querySelectorAll('.materials-table thead th').length;
+    const bodyCols = container.querySelectorAll('.materials-table tbody tr:first-child td').length;
+    expect(bodyCols).toBe(headCols);
+  });
+});
+
 describe('TaskDetailPage stat chips', () => {
   it('renders assignee, est time, est qty, actual, rate and charge chips', async () => {
     mockApi({

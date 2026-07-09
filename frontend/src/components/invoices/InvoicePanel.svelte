@@ -1,5 +1,4 @@
 <script>
-  import { link } from 'svelte-spa-router';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import { canManageFinancials } from '../../stores/permissions.js';
@@ -224,7 +223,6 @@
   {:else if invoice}
   <div class="page-body">
   <div class="toolbar">
-    <a href={`/jobs/${invoice.job}`} use:link class="back-link">&laquo; back to overview</a>
     <span class="page-title">Invoice: {invoice.invoice_number}</span>
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
     {#if $canManageFinancials}
@@ -357,7 +355,7 @@
 
 <style>
   .error { color: #a8071a; }
-  /* .toolbar / .back-link / .action-link / .page-title come from app.css. */
+  /* .toolbar / .action-link / .page-title come from app.css. */
   /* Status pill styling and colors come from the global .status-badge /
      .status-{status} classes (app.css). */
   .late-flag { color: #b91c1c; font-weight: 600; }

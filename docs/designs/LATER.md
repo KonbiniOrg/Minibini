@@ -724,6 +724,20 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the Edit button is hidden (or disabled with a reason) for terminal-status
   jobs in `JobHeader.svelte`, with a component test.
 
+- **`TaskTree`'s `showStatus={false}` branch is dead code — drop it.** — _added 2026-07-09_
+  `TaskTree.svelte`'s `showStatus` prop defaults to `true`, and both render
+  sites resolve to `true` (`TaskDetailPage` passes it explicitly;
+  `TasksPanel` omits it and takes the default). So the `{#if !showStatus}`
+  branches never execute — including the fallback at `TaskTree.svelte:339`,
+  `:409`, `:449` that appends `matStatusChip` into the *description* cell
+  when there's no Status column. RM: likely leftover from when the worksheet
+  object was torn out. Remove the prop and all `!showStatus` branches (or,
+  if a status-less compact rendering is ever wanted, add a caller + a test
+  that pins it — but RM doesn't expect to use it).
+  _Done when:_ the unused `showStatus` prop and its `{#if !showStatus}`
+  branches are removed from `TaskTree.svelte`, or a caller + test exercise
+  the compact mode.
+
 - **`TagViewSet` implicit CRUD — the last `serializer.save()` bypass, left for its original author.** — _added 2026-05-27; narrowed 2026-07-04_
   Sole remainder of the three-layer bypass sweep (A holes, B metadata
   tails, and C config CRUD were all extracted to services 2026-07-04;

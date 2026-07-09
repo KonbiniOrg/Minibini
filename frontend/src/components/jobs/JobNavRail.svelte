@@ -24,11 +24,11 @@
 <nav class="job-nav-rail" aria-label="Job sections">
   <div class="rail-sections">
     {#each sections as s (s.key)}
+      {#if s.seam}<span class="rail-seam" aria-hidden="true"></span>{/if}
       <a
         class="rail-link"
         class:overview={s.key === 'overview'}
         class:active={current === s.key}
-        class:seam={s.seam}
         href={s.href}
       >{s.label}</a>
     {/each}
@@ -74,10 +74,14 @@
   /* Overview is first among the sections but set apart: it's "up a level",
      not a sibling document category. */
   .rail-link.overview { margin-right: 32px; }
-  /* Hairline divider ahead of Emails — the paper-trail seam. */
-  .rail-link.seam {
-    border-left: 1px solid #d1d5db;
-    padding-left: 18px;
-    margin-left: 18px;
+  /* Hairline divider ahead of Emails — the paper-trail seam. It's its own
+     flex item so space-evenly centres it in the POS↔Emails gap, and so the
+     Emails link keeps its natural width (its underline sits under the letters,
+     not stretched across a padding gap). */
+  .rail-seam {
+    align-self: center;
+    width: 1px;
+    height: 14px;
+    background: #d1d5db;
   }
 </style>

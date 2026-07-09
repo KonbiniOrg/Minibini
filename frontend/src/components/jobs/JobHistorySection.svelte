@@ -2,7 +2,6 @@
   import { api } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
-  import { link } from 'svelte-spa-router';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
 
@@ -236,7 +235,6 @@
     <div class="page-body">
     <header class="page-header">
       <h2>History</h2>
-      <p><a use:link href={`/jobs/${jobId}`}>← Back to overview</a></p>
     </header>
 
     <div class="body">

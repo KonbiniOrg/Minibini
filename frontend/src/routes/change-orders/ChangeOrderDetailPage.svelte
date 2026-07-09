@@ -677,7 +677,6 @@
   <div class="page-body">
   <!-- CO toolbar -->
   <div class="toolbar">
-    <a href={`/jobs/${co.job}`} use:link class="back-link">&laquo; back to job{job ? ` ${job.job_number}` : ''}</a>
     <span class="page-title">{co.change_order_number || `CO #${co.change_order_id}`}</span>
     <span class="status-badge status-{co.status}">{changeOrderDisplayStatus(co, siblingCOs)}</span>
     {#if canManageJobs}
@@ -1042,7 +1041,7 @@
 <style>
   .error { color: #a8071a; padding: 16px; }
 
-  /* .toolbar / .back-link / .page-title come from app.css. */
+  /* .toolbar / .page-title come from app.css. */
 
   /* Pushes Discard to the far right in the draft toolbar */
   .toolbar-spacer { flex: 1; }

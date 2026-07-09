@@ -75,6 +75,12 @@
   // The add-qty widget takes new production entries; a blocked task takes none.
   const canAddQty = $derived(!taskIsTerminal && task?.status !== 'blocked');
 
+  // The materials table's trailing column holds row actions (edit/del) when the
+  // task is live, and the INVOICED badge for any billed material. Render it
+  // whenever either has something to show so the header and body stay aligned.
+  const anyMaterialInvoiced = $derived(materials.some((m) => m.invoice));
+  const showMaterialTrailingCol = $derived(!taskIsTerminal || anyMaterialInvoiced);
+
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
   function handleCancel() { conflict = null; }
@@ -344,8 +350,6 @@
   <div class="task-head">
     {#if task.job}
       <div class="crumbs">
-        <a href={`/jobs/${task.job.id}`} use:link>&laquo; job overview</a>
-        <span class="crumb-sep">·</span>
         <a href={`/jobs/${task.job.id}/tasklist`} use:link>task list</a>
         {#if task.parent_task}
           <span class="crumb-sep">·</span>
@@ -497,24 +501,25 @@
           <th class="text-right">Unit Cost</th>
           <th class="text-right">Sell Price</th>
           <th class="text-right">Total</th>
-          {#if !taskIsTerminal}<th>Actions</th>{/if}
+          {#if showMaterialTrailingCol}<th>Actions</th>{/if}
         </tr>
       </thead>
       <tbody>
         {#each materials as mat}
           <tr>
-            <td class="preserve-breaks">{mat.description || '(no description)'}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>
+            <td class="preserve-breaks">{mat.description || '(no description)'}</td>
             <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
             <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
             <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
             <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
-            {#if !taskIsTerminal}
+            {#if showMaterialTrailingCol}
               <td class="row-actions">
-                <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
-                <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
+                {#if !taskIsTerminal}
+                  <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
+                  <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
+                {/if}
+                {#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}
               </td>
-            {:else}
-              <td></td>
             {/if}
           </tr>
         {/each}

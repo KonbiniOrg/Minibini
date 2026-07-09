@@ -321,7 +321,6 @@
   {:else if estimate}
   <div class="page-body">
   <div class="toolbar">
-    <a href={`/jobs/${estimate.job}`} use:link class="back-link">&laquo; back to overview</a>
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}</span>
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
@@ -482,7 +481,7 @@
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 
-  /* .toolbar / .back-link / .action-link / .page-title come from app.css. */
+  /* .toolbar / .action-link / .page-title come from app.css. */
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
   /* Pill styling/colors come from the global .status-badge / .status-{status}
      classes (app.css); the select keeps its local control styling. */

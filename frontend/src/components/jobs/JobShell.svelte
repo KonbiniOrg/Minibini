@@ -7,7 +7,7 @@
 
 {#if job}
   <JobHeader {job} {contact} onStatusChange={onJobChange} />
-  <JobNavRail {job} {current} />
   {#if showBand}<JobContextBand {job} />{/if}
+  <JobNavRail {job} {current} />
 {/if}
 {@render children?.()}

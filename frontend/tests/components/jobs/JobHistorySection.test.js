@@ -30,8 +30,7 @@ describe('JobHistorySection', () => {
     });
     const { findByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    // Back-to-overview link like the sibling job panels
-    expect(getByText('← Back to overview')).toBeInTheDocument();
+    // Up-navigation now lives in the shared JobNavRail, not a per-panel back link.
     expect(getByText('Estimate EST-2025-0001')).toBeInTheDocument();
     expect(getByText('Sent to customer')).toBeInTheDocument();
     expect(getByText('Customer called')).toBeInTheDocument();

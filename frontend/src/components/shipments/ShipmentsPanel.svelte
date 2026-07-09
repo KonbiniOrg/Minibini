@@ -1,6 +1,5 @@
 <script>
   import { api } from '../../lib/api.js';
-  import { link } from 'svelte-spa-router';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -278,7 +277,6 @@
     <div class="page-body">
     <header class="page-header">
       <h2>Shipments</h2>
-      <p><a use:link href={`/jobs/${job.job_id}`}>← Back to overview</a></p>
       <div class="action-row">
         <button type="button" onclick={addShipment}>+ Add shipment</button>
         <button type="button" onclick={saveChanges} disabled={!hasChanges || saving}>

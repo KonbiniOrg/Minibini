@@ -42,8 +42,14 @@ describe('JobNavRail', () => {
     }
   });
 
-  it('puts the seam divider on the Emails entry', () => {
-    const { getByRole } = render(JobNavRail, { props: { job, current: 'tasks' } });
-    expect(getByRole('link', { name: 'Emails' })).toHaveClass('seam');
+  it('renders the seam divider as its own element immediately before Emails', () => {
+    const { getByRole, container } = render(JobNavRail, { props: { job, current: 'tasks' } });
+    const seam = container.querySelector('.rail-seam');
+    expect(seam).not.toBeNull();
+    // The divider sits directly before the Emails link so space-evenly centres
+    // it in the gap, and the Emails link carries no seam styling of its own.
+    const emails = getByRole('link', { name: 'Emails' });
+    expect(seam.nextElementSibling).toBe(emails);
+    expect(emails).not.toHaveClass('seam');
   });
 });

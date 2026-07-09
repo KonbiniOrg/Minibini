@@ -1,12 +1,11 @@
 <script>
-  import EmailPanel from '../EmailPanel.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
-  import DeliverablesSection from './DeliverablesSection.svelte';
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
   import JobNavRail from './JobNavRail.svelte';
+  import JobContextBand from './JobContextBand.svelte';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
@@ -475,7 +474,9 @@
   {/if}
 {/snippet}
 
+<!-- Top sections match every other job page: header → context band → rail. -->
 <JobHeader {job} {contact} {onStatusChange} />
+<JobContextBand {job} />
 <JobNavRail {job} current="overview" />
 
 {#if job.status === 'draft' && job.latest_change_request}
@@ -485,22 +486,6 @@
     <span class="cr-hint">Edit the revised estimate below, then re-send it.</span>
   </div>
 {/if}
-
-<!-- DESCRIPTION + DELIVERABLES + HISTORY (fixed height) -->
-<div class="midband">
-  <div class="panel description-panel">
-    <div class="panel-head">Description</div>
-    <div class="panel-scroll">
-      <p class="preserve-breaks"><LinkifiedText text={job.description || 'No description.'} /></p>
-    </div>
-  </div>
-  <DeliverablesSection jobId={job.job_id} canManage={job.can_manage} />
-  <div class="panel history-panel">
-    <div class="panel-scroll history-scroll-host">
-      <EmailPanel {emails} />
-    </div>
-  </div>
-</div>
 
 <!-- HORIZONTAL ACCORDION -->
 <div class="accordion">
@@ -1132,38 +1117,17 @@
   .change-request-banner .cr-text { font-style: italic; }
   .change-request-banner .cr-hint { color: #c2410c; margin-left: auto; font-size: 12px; }
 
-  /* HEADER: rendered by the JobHeader component, which owns its styles. */
-
-  /* MIDBAND */
-  .midband {
-    display: grid;
-    grid-template-columns: 1fr 1fr 320px;
-    gap: 12px;
-    padding: 12px 24px;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e5e7eb;
-    height: 200px;
-    box-sizing: border-box;
-    flex: 0 0 auto;
-  }
-  /* Let the 1fr columns shrink below their content's intrinsic width so a long
-     unbreakable token (e.g. a pasted URL) wraps instead of shoving the
-     Deliverables/History columns off-screen. */
-  .midband > :global(*) { min-width: 0; }
-  /* .panel / .panel-head / .panel-scroll come from app.css. */
-  .description-panel p { margin: 0; line-height: 1.6; color: #333; font-size: 14px; }
-  /* Let the inner panel's scroll relax inside our fixed-height panel */
-  .history-scroll-host :global(h3) { margin-top: 0; font-size: 14px; }
-  .history-scroll-host :global(.email-scroll),
-  .history-scroll-host :global(.history-scroll) { max-height: none; }
+  /* HEADER / CONTEXT BAND / NAV RAIL: rendered by their own components,
+     which own their styles (shared with every other job page). */
 
   /* ACCORDION */
   .accordion {
     display: flex;
     border-top: 1px solid #e5e7eb;
     flex: 1 1 auto;
-    /* Header is 110px, midband 200px = 310px taken; the rest is ours. */
-    min-height: calc(100vh - 310px);
+    /* Header (110px) + rail (~32px) are fixed; the collapsible context band
+       varies, so floor the accordion at the viewport minus that fixed chrome. */
+    min-height: calc(100vh - 142px);
   }
   .pillar {
     width: 44px;

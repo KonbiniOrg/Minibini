@@ -1,5 +1,4 @@
 <script>
-  import { link } from 'svelte-spa-router';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import { triageError } from '../../lib/errorTriage.js';
@@ -490,7 +489,6 @@
 {:else}
   <div class="page-body">
   <div class="toolbar">
-    <a href={`/jobs/${job.job_id}`} use:link class="back-link">&laquo; back to overview</a>
     {#if !jobLocked}
       <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
@@ -645,7 +643,7 @@
 {/if}
 
 <style>
-  /* .toolbar (and its buttons) / .back-link come from app.css. */
+  /* .toolbar (and its buttons) come from app.css. */
 
   .dialog-hint { color: #555; font-size: 13px; }
   .draft-list { list-style: none; padding: 0; margin: 8px 0; max-height: 40vh; overflow-y: auto; }
