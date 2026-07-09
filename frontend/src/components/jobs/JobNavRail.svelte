@@ -29,6 +29,7 @@
         class="rail-link"
         class:overview={s.key === 'overview'}
         class:active={current === s.key}
+        data-section={s.key}
         href={s.href}
       >{s.label}</a>
     {/each}

@@ -212,7 +212,7 @@
 </script>
 
 {#if subnavItems.length > 0}
-  <DocSubnav items={subnavItems} />
+  <DocSubnav items={subnavItems} section="invoice" />
 {/if}
 
 {#if invoiceId}
@@ -255,7 +255,7 @@
     <p class="success-msg">{success}</p>
   {/if}
 
-  <table class="metadata-table">
+  <table class="data-table">
     <tbody>
       <tr><th>Field</th><th>Value</th></tr>
       <tr><td>Invoice Number</td><td>{invoice.invoice_number}</td></tr>
@@ -359,11 +359,9 @@
   /* Status pill styling and colors come from the global .status-badge /
      .status-{status} classes (app.css). */
   .late-flag { color: #b91c1c; font-weight: 600; }
-  .success-msg { padding: 8px 24px; color: #166534; }
-  .metadata-table { border-collapse: collapse; margin: 0 24px 16px; }
-  .metadata-table th, .metadata-table td { padding: 6px 10px; }
-  h3 { padding: 0 24px; }
-  .seed-buttons { padding: 0 24px; }
+  /* Content aligns to the .page-body gutter (like EstimatePanel and the
+     toolbar) — no extra horizontal inset. */
+  .success-msg { padding: 8px 0; color: #166534; }
   .send-blocked { opacity: 0.5; cursor: not-allowed; }
   .send-blocked-note { font-size: 12px; color: #6b7280; }
 </style>

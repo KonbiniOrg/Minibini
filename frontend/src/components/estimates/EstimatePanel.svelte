@@ -310,7 +310,7 @@
 </script>
 
 {#if subnavItems.length > 0}
-  <DocSubnav items={subnavItems} />
+  <DocSubnav items={subnavItems} section="estimate" />
 {/if}
 
 {#if estimateId}
