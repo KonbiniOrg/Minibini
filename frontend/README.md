@@ -124,6 +124,43 @@ buttons `type="button"` — the HTML default inside a form is submit, so an
 untyped Cancel would save); the shell's `onSave`/`busy` path remains for
 future button-driven modals with an unambiguous primary action.
 
+### Loaders called from `$effect` are write-only
+
+Runes track *reads* transitively: an `$effect` subscribes to every piece of
+`$state` read synchronously anywhere down its call stack, including inside
+helper functions. So a loader that both reads and writes the same state
+(`if (!task || …) { … } task = await api.get(…)`) turns the mount effect
+into an infinite refetch loop — the effect re-runs every time the loader
+lands (2026-07-06: TaskDetailPage refetched its whole fan-out 4-5×/second).
+
+The rule, which the whole codebase already followed implicitly:
+
+- A function invoked from an `$effect` may **write** `$state` freely but
+  must **not synchronously read** `$state` that it (or anything the effect
+  triggers) writes.
+- Loader bookkeeping — "have I already loaded this?", last-loaded ids,
+  in-flight guards — lives in **plain variables, not `$state`** (see
+  `loadedTaskId` in `TaskDetailPage.svelte`), with a comment marking the
+  non-reactivity as deliberate. Version-counter subscriptions (the
+  `lastBlepVersion` pattern) keep their guard in `$state` only because the
+  effect must re-check it; they never feed it back into a loader's reads.
+- If a loader genuinely must branch on reactive state, wrap the read in
+  `untrack()` — and treat needing that as a design smell first.
+
+### Timestamps: day names expire after a week
+
+App-wide display convention (RM, 2026-07-06): a bare day name ("Sat
+2:05 PM") is only meaningful within the last 7 days — beyond that it's
+ambiguous and must give way to the calendar date ("Mar 1, 2:05 PM"),
+with the year appended when it isn't the current year ("Dec 30 2025,
+9:30 AM"). A day name *alongside* a date ("Sun 3/1", ActivityPage event
+rows) is fine at any age — the rule targets day-name-only timestamps.
+
+Use `formatSessionDateTime` from `src/lib/format.js` (BlepLogTable and
+ShiftLogTable already do) instead of hand-rolling per-component
+formatters. **Most older surfaces predate this rule — fix violations as
+you find them** and route the fix through the shared helper.
+
 ### API Responses
 
 - All API responses return JSON with a 200 status, even for operations like DELETE that normally have no meaningful data to return. No 204 responses. An empty response is `{}`.

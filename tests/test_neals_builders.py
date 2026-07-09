@@ -536,20 +536,77 @@ class AtomDerivationTest(unittest.TestCase):
             self.assertEqual(li['classification'], 'material')
 
 
+class InvoiceLineCategoryPickTest(unittest.TestCase):
+    """AC assignment for invoice line items is deterministic and plausible:
+    delivery-ish descriptions → DLV, FreeAgent 'Products' → PRD, the
+    material classification → MTL, everything else (labour, discounts,
+    credits) → SVC. No randomness — regen must be reproducible."""
+
+    def test_delivery_keywords_win_over_everything(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('Products', 'Delivery of finished panels',
+                                   'material'), 'DLV')
+        self.assertEqual(
+            P.pick_invoice_line_ac('Hours', 'shipping & handling', 'task'),
+            'DLV')
+
+    def test_products_item_type_maps_to_prd(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('Products', 'baltic birch ply',
+                                   'material'), 'PRD')
+
+    def test_material_classification_maps_to_mtl(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('-No Unit-', '3/4" MDF sheet',
+                                   'material'), 'MTL')
+
+    def test_labour_and_adjustments_map_to_svc(self):
+        self.assertEqual(
+            P.pick_invoice_line_ac('Hours', 'Cut panels', 'task'), 'SVC')
+        self.assertEqual(
+            P.pick_invoice_line_ac('Discount', 'loyalty discount',
+                                   'lineitem'), 'SVC')
+
+
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
 class InvoiceBuilderTest(unittest.TestCase):
     def setUp(self):
-        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=15)
+        # limit=40, not 15: the 15 most recent spine jobs carry no invoices
+        # at all, which made every line-item assertion in this class
+        # vacuously true. 40 yields real invoice lines.
+        self.c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=40)
         self.c.loader.load()
         self.c.csv_cards = self.c.csv_loader.load()
         self.c.spine = self.c.select_spine()
+        # build_seed populates c.ac_by_code (the seeded ACs) — the
+        # orchestrator runs it before the other builders, so the test
+        # context must too, or emitted lines get a None accounting category.
+        build.build_seed(self.c)
         build.build_contacts_and_businesses(self.c)
         build.build_jobs(self.c)
         build.build_estimates(self.c)
 
     def _models(self, m):
         return [f for f in self.c.fixture_data if f['model'] == m]
+
+    def test_every_invoice_line_item_has_a_seeded_accounting_category(self):
+        # Invoice lines have no source-linked atom to inherit an AC from at
+        # load time, so the converter must emit one on every line (mirrors
+        # the estimate-line rule above). The value must be one of the four
+        # seeded categories.
+        build.build_invoices(self.c)
+        seeded = {self.c.ac_by_code[code] for code in ('SVC', 'MTL', 'PRD', 'DLV')}
+        lis = self._models('invoicing.invoicelineitem')
+        self.assertTrue(lis, 'expected invoice line items in the fixture')
+        for li in lis:
+            self.assertIn(
+                li['fields']['accounting_category'], seeded,
+                f"invoice line {li['pk']} "
+                f"({li['fields'].get('description')!r}) has AC "
+                f"{li['fields']['accounting_category']!r} — every line "
+                f"needs one of the seeded categories",
+            )
 
     def test_invoices_attach_to_jobs_with_contiguous_line_numbers(self):
         build.build_invoices(self.c)

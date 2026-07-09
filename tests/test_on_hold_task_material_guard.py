@@ -169,7 +169,7 @@ class CompleteTaskOnHoldTest(OnHoldGuardBase):
         job = _in_progress_job(self.contact)
         task = _pending_task(job, self.scheme)
         # entered_qty scheme: supply a quantity so the task can complete.
-        result = TaskLifecycleService.complete_task(task.pk, actual_qty=Decimal('1'))
+        result = TaskLifecycleService.complete_task(task.pk, add_qty=Decimal('1'))
         self.assertEqual(result.status, Task.STATUS_COMPLETE)
 
 

@@ -11,9 +11,10 @@ from apps.jobs.models import Job, RateScheme, Task
 User = get_user_model()
 
 
-class ActualQtyActionTest(TestCase):
-    """The /api/tasks/{id}/actual-qty/ PATCH endpoint requires only IsAuthenticated,
-    so workers without can_manage_jobs can record their own actual qty."""
+class ActualQtyAddActionTest(TestCase):
+    """POST /api/tasks/{id}/actual-qty/add/ applies a signed increment to
+    the running total. IsAuthenticated only — any worker on the task can
+    contribute. The old replace-style PATCH endpoint is gone."""
 
     def setUp(self):
         from apps.core.models import AccountingCategory
@@ -40,71 +41,89 @@ class ActualQtyActionTest(TestCase):
             username='plain_worker', password='testpass'
         )
 
-        # A manager with can_manage_jobs — for contrast.
-        self.manager = User.objects.create_user(
-            username='mgr', password='testpass'
-        )
-        perm = Permission.objects.get(codename='can_manage_jobs')
-        self.manager.user_permissions.add(perm)
-
     def _url(self):
-        return f'/api/tasks/{self.task.pk}/actual-qty/'
+        return f'/api/tasks/{self.task.pk}/actual-qty/add/'
 
-    def test_worker_without_manage_jobs_can_set_actual_qty(self):
-        """A worker who cannot manage jobs must still be able to record qty."""
-        self.client.login(username='plain_worker', password='testpass')
-        resp = self.client.patch(
-            self._url(), data={'actual_qty': '7.50'}, content_type='application/json'
+    def _post(self, payload):
+        return self.client.post(
+            self._url(), data=payload, content_type='application/json'
         )
+
+    def test_worker_without_manage_jobs_can_add(self):
+        self.client.login(username='plain_worker', password='testpass')
+        resp = self._post({'actual_qty': '7.50'})
         self.assertEqual(resp.status_code, 200, resp.content)
         self.task.refresh_from_db()
         self.assertEqual(self.task.actual_qty, Decimal('7.50'))
 
-    def test_manager_can_also_set_actual_qty(self):
-        """Managers retain the ability to set actual_qty through this endpoint too."""
-        self.client.login(username='mgr', password='testpass')
-        resp = self.client.patch(
-            self._url(), data={'actual_qty': '3'}, content_type='application/json'
-        )
+    def test_adds_accumulate(self):
+        self.client.login(username='plain_worker', password='testpass')
+        self._post({'actual_qty': '9'})
+        resp = self._post({'actual_qty': '5'})
         self.assertEqual(resp.status_code, 200, resp.content)
         self.task.refresh_from_db()
-        self.assertEqual(self.task.actual_qty, Decimal('3'))
+        self.assertEqual(self.task.actual_qty, Decimal('14'))
 
-    def test_unauthenticated_request_is_rejected(self):
-        """Unauthenticated requests must be denied (401 or 403)."""
-        resp = self.client.patch(
-            self._url(), data={'actual_qty': '5'}, content_type='application/json'
-        )
-        self.assertIn(resp.status_code, (401, 403))
+    def test_negative_add_subtracts(self):
+        self.client.login(username='plain_worker', password='testpass')
+        self._post({'actual_qty': '50'})
+        resp = self._post({'actual_qty': '-45'})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.actual_qty, Decimal('5'))
+
+    def test_add_below_zero_total_rejected(self):
+        self.client.login(username='plain_worker', password='testpass')
+        self._post({'actual_qty': '3'})
+        resp = self._post({'actual_qty': '-4'})
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('actual_qty', resp.json())
+
+    def test_zero_add_rejected(self):
+        self.client.login(username='plain_worker', password='testpass')
+        resp = self._post({'actual_qty': '0'})
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn('actual_qty', resp.json())
 
     def test_missing_actual_qty_returns_400(self):
-        """Omitting actual_qty from the payload returns a 400 error."""
         self.client.login(username='plain_worker', password='testpass')
-        resp = self.client.patch(
-            self._url(), data={}, content_type='application/json'
-        )
+        resp = self._post({})
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertIn('actual_qty', resp.json())
 
     def test_invalid_decimal_returns_400(self):
-        """Non-numeric values return a 400 error."""
         self.client.login(username='plain_worker', password='testpass')
-        resp = self.client.patch(
-            self._url(), data={'actual_qty': 'not-a-number'}, content_type='application/json'
-        )
+        resp = self._post({'actual_qty': 'not-a-number'})
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertIn('actual_qty', resp.json())
 
-    def test_response_echoes_saved_value(self):
-        """The response body includes the saved actual_qty as a string."""
+    def test_unauthenticated_request_is_rejected(self):
+        resp = self._post({'actual_qty': '5'})
+        self.assertIn(resp.status_code, (401, 403))
+
+    def test_response_returns_new_total(self):
         self.client.login(username='plain_worker', password='testpass')
-        resp = self.client.patch(
-            self._url(), data={'actual_qty': '12.5'}, content_type='application/json'
-        )
-        self.assertEqual(resp.status_code, 200, resp.content)
+        self._post({'actual_qty': '9'})
+        resp = self._post({'actual_qty': '3.5'})
         body = resp.json()
         self.assertIn('actual_qty', body)
         self.assertEqual(Decimal(body['actual_qty']), Decimal('12.5'))
+
+    def test_add_on_complete_task_rejected(self):
+        self.client.login(username='plain_worker', password='testpass')
+        Task.objects.filter(pk=self.task.pk).update(
+            status=Task.STATUS_COMPLETE, actual_qty=Decimal('5'))
+        resp = self._post({'actual_qty': '1'})
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_replace_patch_endpoint_is_gone(self):
+        """The old PATCH /actual-qty/ replace endpoint must no longer route."""
+        self.client.login(username='plain_worker', password='testpass')
+        resp = self.client.patch(
+            f'/api/tasks/{self.task.pk}/actual-qty/',
+            data={'actual_qty': '5'}, content_type='application/json',
+        )
+        self.assertIn(resp.status_code, (404, 405), resp.content)
 
 
 class CancelTaskPermissionTest(TestCase):

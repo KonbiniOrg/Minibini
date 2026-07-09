@@ -1,8 +1,10 @@
 <script>
   import { link, push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage as apiErrorMessage } from '../../lib/api.js';
   import { notifyBlepChanged } from '../../stores/blepActivity.js';
+  import { isPriorSessionConflict, settlePriorSession } from '../../lib/priorSession.js';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
+  import ActualQtyModal from '../tasks/ActualQtyModal.svelte';
 
   let { tasks = [] } = $props();
 
@@ -56,15 +58,24 @@
     }
   }
 
-  async function startWork(task) {
+  // Settle-first: an open session on another entered-qty task comes back
+  // as a prior_session_qty conflict — prompt, settle, then re-post with
+  // the flag. Cancelling the prompt aborts the start.
+  let priorModal = $state(null); // {conflict, task}
+  let modalError = $state('');
+
+  async function startWork(task, priorQtyHandled = false) {
     if (busy) return;
     busy = true;
     errorMessage = '';
     try {
-      await api.post(
-        `/api/tasks/${task.id}/start-work/`,
-        {}
-      );
+      const body = priorQtyHandled ? { prior_qty_handled: true } : {};
+      const resp = await api.post(`/api/tasks/${task.id}/start-work/`, body);
+      if (isPriorSessionConflict(resp)) {
+        modalError = '';
+        priorModal = { conflict: resp, task };
+        return;
+      }
       await notifyBlepChanged();
       push(`/jobs/${task.job.id}/tasks/${task.id}`);
     } catch (e) {
@@ -72,6 +83,19 @@
     } finally {
       busy = false;
     }
+  }
+
+  async function submitPrior(qty, { completesTask }) {
+    modalError = '';
+    const { conflict, task } = priorModal;
+    try {
+      await settlePriorSession(conflict, qty, completesTask);
+    } catch (e) {
+      modalError = apiErrorMessage(e, 'Could not settle the previous session.');
+      return;
+    }
+    priorModal = null;
+    await startWork(task, true);
   }
 </script>
 
@@ -130,6 +154,19 @@
     <p class="error">{errorMessage}</p>
   {/if}
 </section>
+
+{#if priorModal}
+  <ActualQtyModal
+    mode="session"
+    unitLabel={priorModal.conflict.unit_label || ''}
+    currentQty={priorModal.conflict.current_qty ?? null}
+    priorTaskName={priorModal.conflict.prior_task?.name || ''}
+    allowComplete={true}
+    serverError={modalError}
+    onSubmit={submitPrior}
+    onClose={() => { priorModal = null; modalError = ''; }}
+  />
+{/if}
 
 <style>
   .error { color: #a8071a; }

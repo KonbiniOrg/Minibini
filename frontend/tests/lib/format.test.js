@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { formatQtyUnits, parseDurationToISO, formatDuration } from '@/lib/format.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { formatQtyUnits, parseDurationToISO, formatDuration, formatSessionDateTime } from '@/lib/format.js';
 
 describe('formatQtyUnits', () => {
   it('returns a dash for null/undefined/empty quantity', () => {
@@ -55,5 +55,32 @@ describe('formatDuration', () => {
 
   it('folds a leading day count into hours', () => {
     expect(formatDuration('2 03:00:00')).toBe('51h 0m');
+  });
+});
+
+describe('formatSessionDateTime', () => {
+  // Session timestamps: day name + time within the last week, calendar
+  // date + time beyond it (day names are ambiguous past 7 days), year
+  // appended when it isn't the current year.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-16T12:00:00'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('uses the day name within the last week', () => {
+    expect(formatSessionDateTime('2026-03-14T14:05:00')).toBe('Sat 2:05 PM');
+  });
+
+  it('uses the calendar date beyond a week', () => {
+    expect(formatSessionDateTime('2026-03-01T14:05:00')).toBe('Mar 1, 2:05 PM');
+  });
+
+  it('appends the year for other years', () => {
+    expect(formatSessionDateTime('2025-12-30T09:30:00')).toBe('Dec 30 2025, 9:30 AM');
+  });
+
+  it('dashes out missing timestamps', () => {
+    expect(formatSessionDateTime(null)).toBe('—');
   });
 });

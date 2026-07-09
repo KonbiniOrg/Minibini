@@ -584,7 +584,7 @@ Valid transitions:
       (`default=1`)
 - **est_worker_time**: optional Duration — but **required (and must be > 0)
   once `assignee` is set**; assigned work has to be schedulable
-- **actual_qty**: optional decimal — worker-entered qty for `entered_qty`
+- **actual_qty**: optional decimal — running total of worker-entered increments for `entered_qty`
   schemes. Null for `elapsed_time` (derived from Bleps). Drives the
   **invoice** lens (`Task.compute_amount`).
 - **status**: default `pending`

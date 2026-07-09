@@ -42,3 +42,29 @@ export function formatDuration(raw) {
   const minutes = parseInt(m, 10) || 0;
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
+
+// Session/timestamp display, app-wide convention: day name + 12-hour time
+// within the last 7 days ("Sat 2:05 PM"); calendar date beyond that
+// ("Mar 1, 2:05 PM" — day names are ambiguous past a week); year appended
+// when it isn't the current year ("Dec 30 2025, 9:30 AM"). Timestamps are
+// rounded to the nearest minute.
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function formatSessionDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(Math.round(new Date(iso).getTime() / 60000) * 60000);
+  let h = d.getHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  const time = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ampm}`;
+  const now = new Date();
+  if (now.getTime() - d.getTime() < WEEK_MS) {
+    return `${DOW[d.getDay()]} ${time}`;
+  }
+  const md = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  const year = d.getFullYear() === now.getFullYear() ? '' : ` ${d.getFullYear()}`;
+  return `${md}${year}, ${time}`;
+}

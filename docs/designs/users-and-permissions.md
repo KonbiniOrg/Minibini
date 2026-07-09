@@ -157,7 +157,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 #### Special cases
 
 - **Task add / edit / delete** — `POST /api/jobs/{id}/tasks/` (add a task) and `GET`/`PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/` (the `task_detail` action: read, edit, delete a task) are all `IsAuthenticated` — any authenticated user may add, edit, and delete a task. Delete is still blocked by `TaskService.delete_task` when the task is `in_progress`/`complete` or has Bleps (400) — that guard applies to everyone. (This revises the earlier policy where adding a task required `can_manage_jobs`.)
-- **Cancelling a task** — `POST /api/tasks/{id}/cancel/` requires `can_manage_jobs` **OR** the task's job's PM (`CanManageJobOrPM`). The other flat task lifecycle actions (`complete`, `block`, `unblock`, `start-work`, `stop-work`, `cancel-work`, `actual-qty`) stay `IsAuthenticated` — they are worker operations.
+- **Cancelling a task** — `POST /api/tasks/{id}/cancel/` requires `can_manage_jobs` **OR** the task's job's PM (`CanManageJobOrPM`). The other flat task lifecycle actions (`complete`, `block`, `unblock`, `start-work`, `stop-work`, `cancel-work`, `actual-qty/add`) stay `IsAuthenticated` — they are worker operations.
 - **Marking all the job's work complete** — `POST /api/jobs/{id}/work-complete/` and **`POST /api/jobs/{id}/reorder-tasks/`** require `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`).
 - **`POST /api/jobs/{id}/add-from-template/`** and **`POST /api/jobs/{id}/create_material/`** are `IsAuthenticated` only — workers can self-serve adding template-driven tasks and materials.
 - **`POST /api/jobs/{id}/duplicate/`** requires `can_manage_jobs` **OR** the job's PM (`CanManageJobOrPM`). Duplicates the Job into a new one; body `{contact_id, path}`, returns `{job_id}` at 201.
@@ -316,13 +316,15 @@ If `actor == target` (an admin resetting their own password through this endpoin
 
 | Route | Component | Purpose |
 |---|---|---|
-| `/users` | `frontend/src/routes/users/UserListPage.svelte` | List all users with a compact permissions column (short labels). Active first, deactivated grouped below. "New user" link. |
+| `/users` | `frontend/src/routes/users/UserListPage.svelte` | Tabbed. **Users** (default): all users with a compact permissions column (short labels), active first, deactivated grouped below, "New user" link. **Shifts** and **Work Sessions** tabs (both gated `can_manage_time` OR `can_manage_financials`): Shifts = `ShiftRequestQueue` + `PayrollReport`; Work Sessions = every user's bleps recent-first via the shared `WorkSessionsList` (worker column shown, paged 25/page against `/api/bleps/`). "Work Sessions" is the UI term for bleps — matches the task detail page's session table. |
 | `/users/new` | `frontend/src/routes/users/UserCreatePage.svelte` | Create form. On success pushes to the new user's detail page. |
-| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Reset password, Account status, Schedule — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses. Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
+| `/users/:id` | `frontend/src/routes/users/UserDetailPage.svelte` | Independent sub-forms (Profile, Permissions, Reset password, Account status, Schedule — an `EnvelopeEditor` writing `PUT /api/users/:id/schedule-envelope/`) plus a `UserReimbursementPanel` for expenses and a per-user **Work Sessions** list (`WorkSessionsList userId={id}` — worker column suppressed, paged). Self-lockout hints rendered client-side; D3 (last-admin) is server-only. |
 
 The sidebar Users link gates on `hasPerm('can_manage_config')`. The atom labels and codename list are hardcoded in `UserDetailPage.svelte` (`ATOMS` array, four entries). The component uses `currentUser` from the auth store to compute `isSelf` and disable the deactivate button and the `can_manage_config` checkbox when applicable.
 
 The list page renders permissions with a short-label dictionary: `can_manage_jobs → "jobs"`, `can_manage_financials → "financials"`, `can_manage_time → "time"`, `can_manage_config → "config"`.
+
+`WorkSessionsList` (`frontend/src/components/time/WorkSessionsList.svelte`) is the shared sessions surface: props `userId` ('me' | id | null=all), `showWorker`, `title`, `sinceDays`, `paginate`, `emptyText`. It owns the fetch (`/api/bleps/` — already ordered `-start_time`, filtered by `?user=`/`?since=`, paged 25 by `StandardPagination`), the Previous/Next pager, blep-activity refresh, and the Edit / Request Edit actions (Edit for `can_manage_time` or own-within-30h rows; Request Edit for own aged rows; others' rows get no action). The home "Recent Time" list (`RecentTimeList.svelte`) is now a thin wrapper over it (`userId="me"`, 7-day window, no pager — home keeps its old naming until the home-page naming pass).
 
 ## Self-service profile
 

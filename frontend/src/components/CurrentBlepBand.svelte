@@ -2,8 +2,9 @@
   import { link } from 'svelte-spa-router';
   import { currentBlep } from '../stores/currentBlep.js';
   import { notifyBlepChanged } from '../stores/blepActivity.js';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
   import { onMount, onDestroy } from 'svelte';
+  import ActualQtyModal from './tasks/ActualQtyModal.svelte';
 
   let now = $state(Date.now());
   let working = $state(false);
@@ -75,13 +76,30 @@
     return wholeMinutes < minMinutes;
   });
 
+  // Settle-first stop: the conflict response means NOTHING happened —
+  // the blep is still running and the band stays up (honest UI) while
+  // the modal asks for the session count. The task id is still captured
+  // so the settle posts target the right task even if the store shifts.
+  let sessionModal = $state(null); // {taskId, unitLabel, currentQty}
+  let modalError = $state('');
+
   async function act(urlSuffix) {
     const cb = $currentBlep;
     if (!cb || !cb.task) return;
+    const taskId = cb.task.id;
     working = true;
     error = '';
     try {
-      await api.post(`/api/tasks/${cb.task.id}/${urlSuffix}/`, {});
+      const resp = await api.post(`/api/tasks/${taskId}/${urlSuffix}/`, {});
+      if (resp && resp.conflict === 'prior_session_qty') {
+        modalError = '';
+        sessionModal = {
+          taskId,
+          unitLabel: resp.unit_label || '',
+          currentQty: resp.current_qty ?? null,
+        };
+        return;
+      }
       await notifyBlepChanged();
     } catch (e) {
       error = e.message || 'Could not update work.';
@@ -92,6 +110,27 @@
 
   const handleStop = () => act('stop-work');
   const handleCancel = () => act('cancel-work');
+
+  // One call per outcome, atomic server-side: checkbox = complete with
+  // add_qty (closes the blep too); otherwise a flagged stop carrying the
+  // optional count. On failure the modal stays open, the session still
+  // running — nothing half-done.
+  async function submitSession(qty, { completesTask }) {
+    modalError = '';
+    try {
+      if (completesTask) {
+        await api.post(`/api/tasks/${sessionModal.taskId}/complete/`, { add_qty: qty ?? 0 });
+      } else {
+        const body = { prior_qty_handled: true };
+        if (qty != null) body.add_qty = qty;
+        await api.post(`/api/tasks/${sessionModal.taskId}/stop-work/`, body);
+      }
+      sessionModal = null;
+      await notifyBlepChanged();
+    } catch (e) {
+      modalError = errorMessage(e, 'Could not save the quantity.');
+    }
+  }
 </script>
 
 {#if $currentBlep}
@@ -118,6 +157,18 @@
       <p class="error">{error}</p>
     {/if}
   </div>
+{/if}
+
+{#if sessionModal}
+  <ActualQtyModal
+    mode="session"
+    unitLabel={sessionModal.unitLabel}
+    currentQty={sessionModal.currentQty}
+    allowComplete={true}
+    serverError={modalError}
+    onSubmit={submitSession}
+    onClose={() => { sessionModal = null; modalError = ''; }}
+  />
 {/if}
 
 <style>
