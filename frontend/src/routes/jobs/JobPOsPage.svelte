@@ -1,10 +1,10 @@
 <script>
   import { api } from '../../lib/api.js';
   import JobShell from '../../components/jobs/JobShell.svelte';
-  import JobHistorySection from '../../components/jobs/JobHistorySection.svelte';
+  import POPanel from '../../components/purchaseorders/POPanel.svelte';
 
   let { params = {} } = $props();
-  const jobId = $derived(params.jobId ?? params.id);
+  const jobId = $derived(params.jobId);
 
   let job = $state(null);
   let contact = $state(null);
@@ -22,8 +22,8 @@
 
 {#if error}<p class="error">{error}</p>
 {:else if job}
-  <JobShell {job} {contact} current="history" onJobChange={loadJob}>
-    <JobHistorySection {job} onJobChange={loadJob} />
+  <JobShell {job} {contact} current="pos" onJobChange={loadJob}>
+    <POPanel {job} />
   </JobShell>
 {:else}<p>Loading…</p>{/if}
 

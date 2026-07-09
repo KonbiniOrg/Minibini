@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -8,16 +8,15 @@ vi.mock('@/lib/api.js', () => ({
 }));
 
 import { api } from '@/lib/api.js';
-import JobHistoryPage from '@/routes/jobs/JobHistoryPage.svelte';
+import JobHistorySection from '@/components/jobs/JobHistorySection.svelte';
 
 const JOB = { job_id: 5, job_number: 'JOB-2025-0005', name: 'Test' };
 
-describe('JobHistoryPage', () => {
+describe('JobHistorySection', () => {
   beforeEach(() => { api.get.mockReset(); api.post.mockReset(); });
 
   it('renders collated entries with source labels', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 1, entry_type: 'action', object_type: 'estimate', object_id: 9,
           username: 'admin', timestamp: '2026-01-02T10:00:00Z',
@@ -29,11 +28,9 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { findByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    // JobHeader is mounted, showing the job title band
-    expect(getByText(/JOB #2025-0005/)).toBeInTheDocument();
-    // Back-to-overview link like the sibling job pages
+    // Back-to-overview link like the sibling job panels
     expect(getByText('← Back to overview')).toBeInTheDocument();
     expect(getByText('Estimate EST-2025-0001')).toBeInTheDocument();
     expect(getByText('Sent to customer')).toBeInTheDocument();
@@ -42,7 +39,6 @@ describe('JobHistoryPage', () => {
 
   it('color-codes by object type, sharing one class for estimates and change orders', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 1, entry_type: 'audit', object_type: 'estimate', object_id: 9,
           username: 'a', timestamp: '2026-01-02T10:00:00Z', changes: { _created: true },
@@ -56,7 +52,7 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { container, findByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     // estimate + changeorder both carry ot-estimate
     expect(container.querySelectorAll('li.ot-estimate').length).toBe(2);
@@ -69,7 +65,6 @@ describe('JobHistoryPage', () => {
     const longOld = 'A'.repeat(150);
     const longNew = 'B'.repeat(150);
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5,
           username: 'a', timestamp: '2026-01-02T10:00:00Z',
@@ -78,7 +73,7 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByRole, queryByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { findByRole, getByRole, queryByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     // full content suppressed until expanded
     expect(queryByText(longOld)).toBeNull();
@@ -89,7 +84,6 @@ describe('JobHistoryPage', () => {
 
   it('renders a short field diff inline without a popover', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 2, entry_type: 'audit', object_type: 'task', object_id: 7,
           username: 'a', timestamp: '2026-01-03T10:00:00Z',
@@ -98,7 +92,7 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByText, queryByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { findByRole, getByText, queryByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(getByText('pending')).toBeInTheDocument();
     expect(getByText('complete')).toBeInTheDocument();
@@ -107,7 +101,6 @@ describe('JobHistoryPage', () => {
 
   it('bundles same-object changes within a minute into one section', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 3, entry_type: 'action', object_type: 'job', object_id: 5, username: 'a',
           timestamp: '2026-01-02T10:00:40Z',
@@ -122,7 +115,7 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole, getByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { container, findByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(container.querySelectorAll('li.entry').length).toBe(1);
     expect(getByText('Work started')).toBeInTheDocument();
@@ -132,7 +125,6 @@ describe('JobHistoryPage', () => {
 
   it('does not bundle different objects or far-apart changes', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 2, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'a',
           timestamp: '2026-01-02T10:05:00Z',
@@ -143,14 +135,13 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { container, findByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(container.querySelectorAll('li.entry').length).toBe(2);
   });
 
   it('does not bundle same-object changes by different users', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 2, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'alice',
           timestamp: '2026-01-02T10:00:30Z',
@@ -161,19 +152,18 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { container, findByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(container.querySelectorAll('li.entry').length).toBe(2);
   });
 
   it('fetches all pages when history is paginated', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
       if (url.includes('page=2')) return Promise.resolve({ count: 130, results: [] });
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ count: 130, results: [] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { findByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(api.get).toHaveBeenCalledWith('/api/jobs/5/history/?page=2&page_size=100');
   });
@@ -181,7 +171,6 @@ describe('JobHistoryPage', () => {
   it('rolls events up per object on the Summary tab', async () => {
     const JOB2 = { ...JOB, tasks: [{ task_id: 7, name: 'Cutting', assignee_name: 'Rae', actual_hours: 3 }] };
     api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB2);
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
         { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'a',
           timestamp: '2026-01-01T00:00:00Z', changes: { _created: true },
@@ -203,7 +192,7 @@ describe('JobHistoryPage', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByRole, getByText } = render(JobHistoryPage, { props: { params: { id: '5' } } });
+    const { findByRole, getByRole, getByText } = render(JobHistorySection, { props: { job: JOB2 } });
     await findByRole('heading', { name: 'History' });
     await fireEvent.click(getByRole('button', { name: 'Summary' }));
     expect(getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
@@ -214,29 +203,35 @@ describe('JobHistoryPage', () => {
   });
 
   it('posts a note then reloads', async () => {
-    api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
-      return Promise.resolve({ results: [] });
-    });
+    api.get.mockResolvedValue({ results: [] });
     api.post.mockResolvedValue({});
     const { findByRole, getByPlaceholderText, getByRole } =
-      render(JobHistoryPage, { props: { params: { id: '5' } } });
+      render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/notes/', { text: 'Hello' });
   });
 
+  it('notifies the parent to refresh the job after a note is added', async () => {
+    api.get.mockResolvedValue({ results: [] });
+    api.post.mockResolvedValue({});
+    const onJobChange = vi.fn();
+    const { findByRole, getByPlaceholderText, getByRole } =
+      render(JobHistorySection, { props: { job: JOB, onJobChange } });
+    await findByRole('heading', { name: 'History' });
+    await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
+    await fireEvent.click(getByRole('button', { name: 'Add Note' }));
+    await waitFor(() => { expect(onJobChange).toHaveBeenCalled(); });
+  });
+
   it('shows an operation error under the note form when the post fails', async () => {
-    api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
-      return Promise.resolve({ results: [] });
-    });
+    api.get.mockResolvedValue({ results: [] });
     api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400, data: { detail: 'Notes are locked.' },
     }));
     const { findByRole, getByPlaceholderText, getByRole } =
-      render(JobHistoryPage, { props: { params: { id: '5' } } });
+      render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
@@ -244,15 +239,12 @@ describe('JobHistoryPage', () => {
   });
 
   it('shows a field error under the note form on field validation failure', async () => {
-    api.get.mockImplementation((url) => {
-      if (url === '/api/jobs/5/') return Promise.resolve(JOB);
-      return Promise.resolve({ results: [] });
-    });
+    api.get.mockResolvedValue({ results: [] });
     api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400, data: { text: ['This field is too long.'] },
     }));
     const { findByRole, findByText, getByPlaceholderText, getByRole } =
-      render(JobHistoryPage, { props: { params: { id: '5' } } });
+      render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
