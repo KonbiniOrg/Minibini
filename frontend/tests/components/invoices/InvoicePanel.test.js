@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -194,9 +194,18 @@ describe('InvoicePanel seed buttons', () => {
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     const btn = await findByText('Apply everything');
 
+    // Track api.get calls before the click to verify reload happens
+    const getCallCountBefore = api.get.mock.calls.length;
+
     await fireEvent.click(btn);
 
+    // Wait for the reload (api.get call) to happen
+    await waitFor(() => {
+      expect(api.get.mock.calls.length).toBeGreaterThan(getCallCountBefore);
+    });
+
     expect(api.post).toHaveBeenCalledWith(`/api/invoices/${inv.invoice_id}/apply-everything/`, {});
+    expect(api.get).toHaveBeenCalledWith(`/api/invoices/${inv.invoice_id}/`);
   });
 
   it('clicking "Copy from estimate" calls POST to copy-from-estimate endpoint then reloads', async () => {
@@ -207,9 +216,18 @@ describe('InvoicePanel seed buttons', () => {
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     const btn = await findByText('Copy from estimate');
 
+    // Track api.get calls before the click to verify reload happens
+    const getCallCountBefore = api.get.mock.calls.length;
+
     await fireEvent.click(btn);
 
+    // Wait for the reload (api.get call) to happen
+    await waitFor(() => {
+      expect(api.get.mock.calls.length).toBeGreaterThan(getCallCountBefore);
+    });
+
     expect(api.post).toHaveBeenCalledWith(`/api/invoices/${inv.invoice_id}/copy-from-estimate/`, {});
+    expect(api.get).toHaveBeenCalledWith(`/api/invoices/${inv.invoice_id}/`);
   });
 });
 
