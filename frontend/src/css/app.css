@@ -368,6 +368,25 @@ dd {
   padding: 0 20px 12px;
 }
 
+/*
+ * Document subnav — the shared strip of document links (Estimate / Invoice / etc.)
+ * used in section panels. Links are navigation-style anchor tags; current item
+ * gets an active underline. Status pills render inline via .status-badge.
+ */
+.doc-subnav {
+  display: flex; gap: 14px; padding: 6px 0; flex-wrap: wrap;
+}
+.doc-subnav-link {
+  font-size: 13px; color: #475569; text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.doc-subnav-link.active {
+  color: #111827; border-bottom-color: #111827;
+}
+.doc-subnav-pill {
+  font-size: 10px; padding: 1px 8px; margin-left: 4px;
+}
+
 /* ============================ 3. PAGE KINDS — III. plain-page vocabulary == */
 
 /*
