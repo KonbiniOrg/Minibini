@@ -685,9 +685,17 @@ The three page categories of the `.page-body` rollout
 2. **Banner promotion** (III → II). A page moves under a full-bleed
    area header when its *area's* header grouping is finalized — an
    area decision, not a page redesign. Groupings so far: **job**
-   (`JobHeader`, gray-800 `#1f2937`) and **customer**
-   (`CustomerHeader`, red-950 `#450a0a`). More areas are planned;
-   as each lands, its pages move from III to II without other change.
+   (gray-800 `#1f2937` — the 2026-07-08 job workspace restructure
+   formalized this into a reusable shell, `JobShell.svelte`:
+   `JobHeader` + `JobNavRail` + a collapsible `JobContextBand`, with one
+   section panel hosted per page; see `jobs-tasks-and-worksheets.md`
+   §9.6) and **customer** (`CustomerHeader`, red-950 `#450a0a`, no rail
+   yet). More areas are planned; as each lands, its pages move from III
+   to II without other change. `JobShell`'s header+rail+band+panel
+   shape is the pattern to reuse when a future area needs the same
+   kind of always-present chrome around several document/list sections
+   — the section pages themselves stay ordinary kit consumers (or get
+   their own detail pass later); only the *shell* is shared.
 3. **Detail pass** (the terminal station). A page graduates out of
    the sweep pool when it gets a deliberate, one-by-one design pass —
    a layout built *out of* the shared vocabulary but no longer

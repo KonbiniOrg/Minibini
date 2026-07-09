@@ -1374,7 +1374,8 @@ cleared when a PO/expense supplies a real cost.
 The job-overview pillar (`TaskTree.svelte`) shows each material's status chip and
 consumed/released styling **only** — no buttons, no links. **All** per-material
 actions (Set pricing / Order dialog / Attach expense / Mark on-hand / Mark
-received / PO link) live on the task view page (`JobTaskListPage`). The presence
+received / PO link) live on the task view page (`#/jobs/:id/tasks`, rendered by
+`TasksPanel.svelte` through the job workspace shell). The presence
 of each action is gated on a callback being wired, so a read-only surface renders
 the same chips without actions.
 

@@ -1012,7 +1012,15 @@ added via the "+" button. Tasks within a column are sorted by
 
 ## 9. UI: Job Detail page
 
-Route: `#/jobs/:id` → `JobDetailPage.svelte`.
+Route: `#/jobs/:id` → `JobDetailPage.svelte`. This is the job's
+**overview** — one of eight equal section pages (Overview, Estimates,
+Tasks, Invoices, Shipments, POs, Emails, History) that share the **job
+workspace shell**. The overview keeps its own bespoke layout (the
+header + rail below, then the accordion pillars); every *other* section
+page instead hosts one panel inside the shared `JobShell` — see §9.6.
+Full design record: `docs/plans/2026-07-08-job-workspace-restructure-design.md`
+(steps 1–3 shipped 2026-07-08 on `feature/job-overview`; step 4 —
+reworking this overview's pillars into something else — is still open).
 
 ### 9.1 Layout
 
@@ -1057,19 +1065,21 @@ Top-down:
    no Plan/Client-View toggle and no Worksheet pillar — the planning layer
    and the separate "client view" concept were both removed.)
 
-**The job nav rail** (`components/jobs/JobNavRail.svelte`, 2026-07-08) —
-every job page EXCEPT this overview mounts a skinny full-width strip
-directly under the JobHeader: "‹ Overview" far left, then Estimate /
-Tasks / Invoice / Shipments / POs spread evenly across the width (light
+**The job nav rail** (`components/jobs/JobNavRail.svelte`) — a skinny
+full-width strip mounted directly under the JobHeader on **every** job
+page, including this overview (2026-07-08 restructure — the rail no
+longer treats Overview as a "‹ back" escape; it's the first of eight
+equal section links, set apart only by extra right margin). Eight
+static, always-valid links spread evenly across the width (light
 `#f9fafb` strip, 2px gray-400 borders, 11px caps; current section
-underlined, empty categories dimmed and inert). Estimate / Invoice / POs
-link to each category's most recent live document via `nav_targets` on
-the job detail payload (`apps/api/jobs/serializers.py` — detail-only,
-`null` in list context, like the financial rollups); Tasks and
-Shipments link to the job-scoped pages. Mounted on: estimate detail +
-wizard, change-order detail (lights Estimate), invoice detail + wizard,
-task list + task detail (light Tasks), shipments, history (nothing
-lit).
+underlined): **Overview · Estimates · Tasks · Invoices · Shipments ·
+POs · Emails · History** (a hairline divider sets Emails apart from POs
+— paper-trail vs. work sections). Every link is a real, always-clickable
+route (`/jobs/:id[/section]`) — there is no dimming and no
+server-computed target: `Job.nav_targets` was retired along with the
+old chevron/dimmed rail (§9.6 has the replacement per-document model).
+Empty sections are real destinations that render a create affordance
+rather than being inert.
 
 ### 9.2 Components
 
@@ -1136,9 +1146,10 @@ Expenses attached to a job (`Expense.job`) surface in two places, fed by
   category, amount); a material-linked expense annotates its material's row
   ("paid $X") rather than getting a duplicate row — keeping the visual count
   honest. The pillar count includes material-less expenses.
-- **Full task list** (`JobTaskListPage`): material-less expenses render in an
-  "Expenses (no material)" section below the task tree, mirroring how taskless
-  materials surface.
+- **Full task list** (`TasksPanel.svelte`, hosted by `JobShell` at
+  `#/jobs/{id}/tasks`): material-less expenses render in an "Expenses (no
+  material)" section below the task tree, mirroring how taskless materials
+  surface.
 
 An expense can be **created in place** from the full task list toolbar: an "Add
 Expense" button (next to "Add Material", shown when the job isn't locked) opens
@@ -1149,10 +1160,13 @@ surfaces. Expense create is open to any authenticated user.
 ### 9.5 The work surface (task-list page)
 
 Authoring the Job's own work atoms happens on the **task-list page**
-(`JobTaskListPage.svelte`, `#/jobs/{id}/tasks`), reached from the Tasks &
-Materials pillar. It is available regardless of estimate state, so
-pre-approval / released effort is authored and shown there too. For managers
-it carries two affordances:
+(`#/jobs/{id}/tasks`, reached from the Tasks & Materials pillar or the
+rail's Tasks link). The route (`JobTaskListPage.svelte`) is thin glue —
+it resolves the job and hosts `TasksPanel.svelte` (`components/tasks/`)
+inside `JobShell` (§9.6); `TasksPanel` owns everything described below.
+It is available regardless of estimate state, so pre-approval / released
+effort is authored and shown there too. For managers it carries two
+affordances:
 
 - **"Add Work"** — single button that opens `PriceListPicker` (the unified
   picker, see `estimates-and-prices.md` §6.4). The picker's `onChoose` result
@@ -1192,9 +1206,115 @@ the job is held (`on_hold` flag), **+ New change order** live on the
 overview's Estimate pillar. (These replaced the deleted Worksheet detail page; the old
 Plan/Client-View toggle is gone.)
 
+### 9.6 The job workspace shell (section pages)
+
+Every job page other than the overview above renders through one shared
+layout component, **`JobShell.svelte`** (`components/jobs/`): `JobHeader`
++ `JobNavRail` + an optional collapsible `JobContextBand`, with the
+page's one **section panel** rendered into its `children` slot. Route
+pages are thin glue — resolve `GET /api/jobs/{id}/` (and its contact),
+pass the job to `JobShell`, host one panel:
+
+| Section | Route | Glue page | Panel |
+|---|---|---|---|
+| Estimates | `#/jobs/:jobId/estimate[/:docId]` | `JobEstimatePage.svelte` | `EstimatePanel.svelte` (`components/estimates/`) |
+| Tasks | `#/jobs/:jobId/tasks` (task detail: `#/jobs/:jobId/tasks/:taskId`, §10) | `JobTaskListPage.svelte` | `TasksPanel.svelte` (`components/tasks/`) |
+| Invoices | `#/jobs/:jobId/invoice[/:docId]` | `JobInvoicePage.svelte` | `InvoicePanel.svelte` (`components/invoices/`) |
+| Shipments | `#/jobs/:jobId/shipments` | `JobShipmentsPage.svelte` | `ShipmentsPanel.svelte` (`components/shipments/`) |
+| Purchase Orders | `#/jobs/:jobId/pos` | `JobPOsPage.svelte` | `POPanel.svelte` (`components/purchaseorders/`) — a job-filtered, read-only PO list; POs aren't job-owned (a PO's lines can span jobs), so this panel never offers create — creation stays on the global Purchase Orders page |
+| Emails | `#/jobs/:jobId/emails` | `JobEmailsPage.svelte` | the existing `EmailPanel.svelte`, promoted full-width (v1 scope: no thread/master-detail redesign yet — LATER.md tracks that separately) |
+| History | `#/jobs/:jobId/history` (also `#/jobs/:id/history`) | `JobHistoryPage.svelte` | `JobHistorySection.svelte` (named to avoid colliding with the existing contact/business/PO `HistoryPanel.svelte`) — the job history timeline + note-adding, previously its own standalone page |
+
+`#/jobs/:id/tasklist` still resolves to the task-list glue page (alias
+kept for old links). `/jobs/:id/edit` and `/jobs/:id/duplicate` are no
+longer standalone pages — both actions are now `JobHeader` modals
+(§9.1) — and redirect (`JobRedirectToOverview.svelte`) straight to the
+overview.
+
+**URL-per-document, with persisted position.** The Estimates and
+Invoices sections each carry more than one document (estimate versions
+plus change orders; a job's invoices over time), so their routes take
+an optional `:docId`. The glue page resolves which document to show
+with precedence **URL param → last-remembered document for this
+job/section → latest**, then normalizes the URL to the resolved
+`/:docId` form via `history.replaceState` (no reload, no remount —
+`EstimatePanel` / `InvoicePanel` re-fetch only the document, not the
+job, when `:docId` changes; the jobId is value-keyed so a doc-only
+navigation doesn't reload the job either). The panel's own subnav
+(`DocSubnav.svelte` — a strip of version/invoice-number pills, each
+with a status badge) updates the URL the same way as the user flips
+documents, so any document is a shareable, bookmarkable, back-button-safe
+link — including superseded estimates and change orders (change orders
+appear in the estimate panel's subnav but still link out to the
+standalone `#/change-orders/:id` route — see below). This closes the
+LATER.md question of whether a superseded estimate's subnav entry
+should redirect to the current estimate instead of showing the old one:
+it doesn't — every version is directly viewable at its own URL.
+`ChangeOrderDetailPage.svelte` is **not** extracted into a panel this
+pass (it's the largest page in the app; the LATER.md componentization
+list still carries it) — it stays a standalone route reached from the
+estimate subnav.
+
+**Per-job persisted position** (`stores/jobWorkspace.js`) is what the
+"last-remembered document" / "restore where I left off" behavior above
+reads and writes. One `localStorage` key (`minibini_job_ws`) holds an
+LRU-capped map (50 jobs) of, per job: which document each section last
+showed (`sections`), each document's lines/reconcile mode (`modes`,
+keyed by *document* id, not section — so leaving invoice #22 in
+reconcile mode can't leak into invoice #23), and the context band's
+collapse state (`band`). The URL is always the source of truth for
+*what's currently displayed*; the store only answers "where did I
+leave off" when a bare section route or the band mounts.
+
+**The context band** (`JobContextBand.svelte`, mounted by `JobShell` on
+every section page — not the overview, which keeps its own
+description/deliverables/email layout in the accordion above) is a
+collapsible strip defaulting to **expanded**, holding the job's
+description, deliverables (`DeliverablesSection`), and a live email
+preview (`EmailPanel`). It fetches nothing while collapsed; expanding
+it triggers the one-time `/api/emails/?job=` fetch. Collapse state
+persists per job via `rememberBand`, read back by `getJobWs` on mount.
+
+**Reconcile mode is a mode of the document panel, not a route.**
+`EstimatePanel` / `InvoicePanel` each hold a `mode` state (`'lines'` |
+`'reconcile'`) and render the shared `ReconcileMode.svelte`
+(`components/wizards/`) — the former `EstimateWizardPage` /
+`InvoiceWizardPage` two-column source-pool ⇄ line-items surface,
+unchanged in behavior, now parameterized per `docType` — in place of
+the line-items view. Toggling calls `rememberMode(jobId, docId, mode)`;
+restoring a remembered `'reconcile'` mode is **validated against the
+document's live status** — reconcile is only offered on a draft, so a
+document that was sent/accepted/superseded since the mode was last
+remembered falls back to `'lines'` rather than resurrecting an editing
+surface on a closed document. This delivers two standing LATER.md
+wizard entries by construction (one component, one in-place toggle,
+same panel, same job load): merging the atom-pull view into the detail
+page as a toggle, and making the Estimate/Invoice atom-pull UIs
+consistent with each other.
+
+**Redirect shims** keep every old bookmark and emitter working:
+
+| Old route | Shim | Lands on |
+|---|---|---|
+| `#/estimates/:id` | `EstimateDetailPage.svelte` (now a ~12-line redirect) | `#/jobs/:jobId/estimate/:id` |
+| `#/estimates/:id/wizard` | `EstimateWizardRedirect.svelte` | same, after `rememberMode(job, id, 'reconcile')` — lands in reconcile mode |
+| `#/invoices/:id` | `InvoiceDetailPage.svelte` (now a ~12-line redirect) | `#/jobs/:jobId/invoice/:id` |
+| `#/invoices/:id/wizard` | `InvoiceWizardRedirect.svelte` | same, remembering reconcile mode first |
+| `#/jobs/:id/edit`, `#/jobs/:id/duplicate` | `JobRedirectToOverview.svelte` | `#/jobs/:id` |
+
+`Job.nav_targets` (the `SerializerMethodField` the old rail used to
+find each section's most recent document) is retired —
+`apps/api/jobs/serializers.py` no longer computes it, since every rail
+link is now a static, always-valid route rather than a server-picked
+document target.
+
 ## 10. UI: Task Detail page
 
-Route: `#/jobs/:jobId/tasks/:taskId` → `TaskDetailPage.svelte`.
+Route: `#/jobs/:jobId/tasks/:taskId` → `TaskDetailPage.svelte`, mounted
+through the job workspace shell (`JobShell`, §9.6 — the rail's Tasks
+link lights up). The page's own composition (component table below)
+and its loading discipline are unchanged from its 2026-07-07 detail
+pass; only the surrounding chrome changed.
 
 Fetches `GET /api/tasks/{id}/` and `GET /api/bleps/?task={id}` on
 mount.

@@ -315,7 +315,13 @@ Clear `formError`/`errors` at submit start and on open/cancel.
     business detail pages) are peer banner components. Each is rendered by the
     route **above** `.page-body` and gets its own background color to signal the
     area — job = gray-800 `#1f2937`, contacts/business = red-950 `#450a0a`. More
-    area headers with their own colors are planned.
+    area headers with their own colors are planned. On job pages, `JobHeader` is
+    always paired with `JobNavRail` (an eight-link section strip) and an
+    optional collapsible `JobContextBand`; the trio is packaged as
+    `components/jobs/JobShell.svelte` — every job route except the overview
+    renders `<JobShell>` and passes its one section panel as the slotted
+    children. See "Job workspace state" below and
+    `docs/designs/jobs-tasks-and-worksheets.md` §9.6.
   - **Subheaders:** anything a page wants to render *inside* the body that reads
     as a sub-bar (toolbars, filter rows) lives inside `.page-body` and aligns to
     the 10px gutter (drop any of its own horizontal padding so it lines up). A
@@ -334,13 +340,17 @@ Clear `formError`/`errors` at submit start and on open/cancel.
        login screen and the shipment packing-list *print* page aren't
        sidebar-framed pages. These deliberately do **not** get `.page-body`.
     2. **Pages with a full-bleed banner header (buffer under the header):** every
-       page that renders the shared `JobHeader` band — job task-list, shipments,
-       history, estimate/invoice/change-order detail, and the estimate/invoice
-       wizards — plus the contact/business detail pages (which render the peer
-       `CustomerHeader`). The banner stays a full-bleed sibling; the body beneath
-       it is wrapped in `.page-body`. Where such a page had a sub-bar with its own
-       `24px` side padding (a `.toolbar` or `.page-header`), that padding was
-       zeroed so it aligns to the 10px gutter.
+       page that renders the shared `JobHeader` band — every job section page
+       (estimate, tasks/task-detail, invoice, shipments, POs, emails, history,
+       all sharing the `JobShell` header+rail+band layout) and the standalone
+       change-order detail page — plus the contact/business detail pages (which
+       render the peer `CustomerHeader`). The banner stays a full-bleed sibling;
+       the body beneath it is wrapped in `.page-body`. Where such a page had a
+       sub-bar with its own `24px` side padding (a `.toolbar` or `.page-header`),
+       that padding was zeroed so it aligns to the 10px gutter. (The estimate/
+       invoice "wizard" is no longer a separate page — it's a mode of the
+       estimate/invoice panel at the same route; see "Job workspace state"
+       below.)
     3. **Everything else (whole content buffered):** all remaining list/form/
        detail/send pages, including search and the contacts/business list+form
        pages — wrapped in full.
@@ -361,6 +371,33 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
 - Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
 
+### Job workspace state
+
+- `stores/jobWorkspace.js` is the per-job equivalent of the `viewMode`
+  pattern above: one `localStorage` key (`minibini_job_ws`), an
+  LRU-capped map (50 jobs) instead of a key-per-job, so retention stays
+  trivial. Per job it remembers which document each section (estimate,
+  invoice) last showed, each document's `lines`/`reconcile` mode (keyed
+  by document id, not section), and the job context band's
+  collapsed/expanded state.
+- The URL is always the source of truth for *what's currently
+  displayed* (`#/jobs/:jobId/estimate/:docId`, etc.) — the store only
+  answers "where did I leave off" when a bare section route or the
+  context band mounts. `getJobWs(jobId)` reads the whole per-job
+  record; `rememberSection` / `rememberMode` / `rememberBand` write one
+  slice each.
+- Restoring a remembered `reconcile` mode is validated against the
+  document's live status (only offered on a draft) before being
+  applied — see `docs/designs/jobs-tasks-and-worksheets.md` §9.6.
+- Routes: every job section is a real route under `#/jobs/:jobId/…`
+  (`estimate[/:docId]`, `invoice[/:docId]`, `tasks[/:taskId]`,
+  `shipments`, `pos`, `emails`, `history`). Old top-level document
+  routes (`#/estimates/:id`, `#/invoices/:id`, and their `/wizard`
+  variants) still resolve — via small redirect-shim route components
+  that translate to the job-scoped URL (and, for the wizard variants,
+  remember reconcile mode first) — so existing bookmarks and emitted
+  links keep working.
+
 ### Material status vocabulary
 
 - `lib/materialStatus.js` derives **one display status per material row** from
@@ -370,7 +407,9 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - **Venue rule:** the job-overview pillar (`TaskTree`) shows these chips
   passively — **no actions**. All per-material actions (Set pricing / Order /
   Attach expense / Mark on-hand / Mark received / PO link) live on the task view
-  page (`JobTaskListPage`), each gated on its callback being wired.
+  page (`#/jobs/:id/tasks`, rendered by `TasksPanel.svelte` through the job
+  workspace shell — see "Job workspace state" below), each gated on its
+  callback being wired.
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
 ### Delete Flow

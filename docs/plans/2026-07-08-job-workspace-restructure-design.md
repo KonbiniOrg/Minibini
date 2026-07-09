@@ -2,6 +2,12 @@
 
 _2026-07-08, RM + Claude. Agreed direction; implementation on its own branch._
 
+> **Status (2026-07-08):** Sequencing steps 1–3 (section-panel extraction,
+> job shell, wizard-as-mode) shipped on `feature/job-overview`, this
+> commit. Step 4 (rework the overview — kill the pillars, design the
+> replacement) remains open. See `docs/designs/jobs-tasks-and-worksheets.md`
+> §9.6 for the shipped shell's durable reference.
+
 ## The shift
 
 From hub-and-spoke ("the overview is the job; everything else is a document

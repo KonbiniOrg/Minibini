@@ -796,7 +796,7 @@ No `Task` is created at authoring time. The Task is created at acceptance by `on
 | `{type: 'inventory', inventoryItem}` | User picked a catalog `InventoryItem` |
 | `{type: 'freeform', typed, isMaterial}` | User typed a description; `isMaterial` checkbox sets the `is_material` flag |
 
-On the **estimate detail page** (`EstimateDetailPage.svelte`), the picker is followed by `EstimateAddLineForm.svelte`, which handles the post-selection form (qty, units, AC) and dispatches to the correct endpoint: `line-items-from-service/` for service picks, the standard `line-items/` POST for inventory or freeform picks.
+On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobId/estimate/:docId`), the picker is followed by `EstimateAddLineForm.svelte`, which handles the post-selection form (qty, units, AC) and dispatches to the correct endpoint: `line-items-from-service/` for service picks, the standard `line-items/` POST for inventory or freeform picks.
 
 On the **job task-list page** (`JobTaskListPage.svelte`), the same picker opens `WorkItemForm` (service pick → Task via `/add-from-template/`), `MaterialModal` (inventory pick — `presetPli`, `presetDescription`, `defaultMaterialCategoryId`), or `FeeModal` (freeform non-material — `presetDescription`). See `docs/designs/jobs-tasks-and-worksheets.md` §9.5.
 
@@ -938,11 +938,11 @@ Permissions: read is `IsAuthenticated`; write actions require
 
 | Component | Path | Role |
 |---|---|---|
-| `EstimateWizardPage.svelte` | `frontend/src/routes/estimates/` | Page shell. Two-column layout (source pool left, line items right). Loads estimate + line-items + source-pool on mount; `reloadAfterAction` refreshes line items and reconciles atom states locally |
-| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to the page. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
+| `ReconcileMode.svelte` | `frontend/src/components/wizards/` | Reconcile-mode view, rendered in place by `EstimatePanel`/`InvoicePanel` (§12; `jobs-tasks-and-worksheets.md` §9.6) — not a route. Two-column layout (source pool left, line items right), parameterized per `docType` via a config block. Loads doc + line-items + source-pool on mount; re-fetches line items after every action and reconciles atom states locally |
+| `WizardSourcePool.svelte` | `frontend/src/components/estimates/` | Renders the flat atom list; binds `selectedAtoms` to `ReconcileMode`. Each atom is a `WizardAtomRow`. The invoice wizard has its own task-grouped `WizardSourcePool.svelte` that reuses the same row. |
 | `WizardAtomRow.svelte` | `frontend/src/components/wizards/` | One source-pool atom row, shared by both wizards: checkbox + `description — qty units × $rate = $total` + claim state |
 | `WizardLineItemCard.svelte` | `frontend/src/components/wizards/` | One line-item card with its source rows; surfaces "Add Here" and per-source remove |
-| `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Return to estimate detail) |
+| `WizardActions.svelte` | `frontend/src/components/wizards/` | Bottom action bar (Discard draft, Done — flips the panel back to lines mode in place) |
 | `LineItemModal.svelte` | `frontend/src/components/` | Shared modal for direct (no-atom) line item create/edit. Used by **both** the Invoice and Estimate detail pages (manual/catalog toggle on add; field-edit on edit). The estimate detail page authors hand-lines again via **Add Line Item** + per-line **Edit** (Phase 6's atoms-only projection was reversed). |
 
 The invoice-side wizard is structurally parallel — same source pool,
@@ -1110,30 +1110,47 @@ is sent (out of draft), the snapshot is permanent.
 
 ## 11. UI: Estimate Detail page
 
-Route: `#/estimates/:id` → `EstimateDetailPage.svelte`
-(`frontend/src/routes/estimates/`).
+Route: `#/jobs/:jobId/estimate[/:docId]` → `JobEstimatePage.svelte`
+(`frontend/src/routes/jobs/`), which hosts `EstimatePanel.svelte`
+(`frontend/src/components/estimates/`) inside the job workspace shell
+(`JobShell` — header + nav rail + collapsible context band; see
+`jobs-tasks-and-worksheets.md` §9.6). The bare section route
+(`#/jobs/:jobId/estimate`) restores whichever version/CO the user last
+viewed for this job (or the latest); picking a different version via
+the panel's subnav (`DocSubnav.svelte`) updates the URL to
+`/:docId` in place — no remount, no job refetch. The old
+`#/estimates/:id` route still works: `EstimateDetailPage.svelte` is now
+a small redirect shim into the job-scoped URL (old bookmarks, emitted
+`source_link`s, and search results all keep working).
 
 ### 11.1 Layout
 
 Top-down:
 
-1. **JobHeader** — same component used on the Job detail page, and
-   shared with the atom-pull (wizard) page.
-2. **Toolbar** — back link, page title (with `superseded` styling
+1. **JobHeader + JobNavRail + JobContextBand** — the job workspace
+   shell (`JobShell`), shared by every job section page.
+2. **DocSubnav** — one pill per estimate version (oldest→newest,
+   labeled `v1`, `v2`, …, each with a status badge) plus this job's
+   change orders, appended in `change_order_number` order. Change-order
+   pills still link out to the standalone `#/change-orders/:id` route
+   (`ChangeOrderDetailPage.svelte` is not extracted into a panel this
+   pass — see `jobs-tasks-and-worksheets.md` §9.6).
+3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
    with `can_manage_jobs` when transitions are allowed), action
-   buttons.
-3. **Field table** — estimate number, job link, version, status, dates.
-4. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
+   buttons, and a **Reconcile** / **Back to lines** toggle (§12).
+4. **Field table** — estimate number, job link, version, status, dates.
+5. **Line Items area** — heading, then (when `canEdit` = `canManageJobs && isDraft`)
    an actions row with a single **"Add line"** button, an **"Add Adjustment"**
-   button, and a **"Show Tasks & Materials"** link to the wizard at
-   `#/estimates/{id}/wizard`. "Add line" opens `PriceListPicker` (§6.4) — one
-   entry point for service picks, inventory picks, and freeform fee/material lines.
-5. **Line items table** (`LineItemTable.svelte`) — line items with per-line
+   button, and a **"Show Tasks & Materials"** button that flips the panel into
+   reconcile mode (§12) in place — no navigation. "Add line" opens
+   `PriceListPicker` (§6.4) — one entry point for service picks, inventory
+   picks, and freeform fee/material lines.
+6. **Line items table** (`LineItemTable.svelte`) — line items with per-line
    **Edit** / **Delete** and reorder (move-up / move-down) when editable, plus an
    "⚠ out of sync with atoms" marker on any line whose stored price no longer
    matches its atoms' computed total. (Atom-backed lines are still pulled/edited
-   via the wizard; hand-lines are authored directly.)
+   via reconcile mode; hand-lines are authored directly.)
 
 ### 11.2 Action buttons
 
@@ -1143,7 +1160,7 @@ Top-down:
 | `open` | "Resend Email" (navigation link) | navigates to `#/estimates/{id}/send` |
 | `draft` | "Add line" | opens `PriceListPicker` → `EstimateAddLineForm` (§6.4) — unified entry for service, inventory, and freeform (fee or material) lines |
 | `draft` | "Add Adjustment" | opens `AdjustmentModal` (percentage `RateScheme`) |
-| `draft` | "Show Tasks & Materials" (navigation link) | navigates to the wizard at `#/estimates/{id}/wizard` (pulls the job's atoms into atom-backed lines) |
+| `draft` | "Show Tasks & Materials" / "Reconcile" | flips `EstimatePanel`'s local `mode` to `'reconcile'` — same route, same panel, no navigation (pulls the job's atoms into atom-backed lines; §12) |
 | `open` | "Revise Estimate" | `POST /api/estimates/{id}/revise/` → opens new draft revision |
 | any | status `<select>` | `PATCH /api/estimates/{id}/` with `{status}` (when transitions are valid) |
 
@@ -1190,14 +1207,36 @@ Create/View model:
 
 ---
 
-## 12. UI: Estimate Wizard page
+## 12. UI: Estimate Wizard (reconcile mode)
 
-Route: `#/estimates/:id/wizard` → `EstimateWizardPage.svelte`
-(`frontend/src/routes/estimates/`).
+The "wizard" is no longer a separate route — it's **reconcile mode**,
+one of two view modes (`'lines'` | `'reconcile'`) that `EstimatePanel`
+(§11) toggles in place, both rendered at the same
+`#/jobs/:jobId/estimate/:docId` URL, same job load, no remount. In
+reconcile mode the panel renders the shared
+`ReconcileMode.svelte` (`frontend/src/components/wizards/`) —
+parameterized per `docType` (`'estimate'` | `'invoice'`; the invoice
+side is structurally identical, see `invoicing-and-expenses.md`) — in
+place of the line-items view. The former standalone
+`EstimateWizardPage.svelte` is gone; the old route
+`#/estimates/:id/wizard` is now a redirect shim
+(`EstimateWizardRedirect.svelte`) that remembers `'reconcile'` mode for
+that document (`rememberMode`, `stores/jobWorkspace.js`) and bounces to
+the job-scoped URL, so old bookmarks land back in reconcile mode.
+
+**Mode persistence and validation.** Which mode a document was left in
+is remembered per document id (`stores/jobWorkspace.js`, keyed by
+`docId` — not by section, so leaving invoice #22 in reconcile can't
+leak into invoice #23). Restoring a remembered `'reconcile'` mode is
+**validated against the estimate's live status**: reconcile is only
+offered while the document is still an editable `draft`, so an estimate
+sent/accepted/superseded since the mode was last remembered falls back
+to `'lines'` instead of resurrecting an edit surface on a closed
+document.
 
 ### 12.1 Flow
 
-Two columns:
+Two columns, unchanged from the former wizard page's behavior:
 
 - **Source pool** (left) — `WizardSourcePool` shows every Task and
   Material on the **Job**. Each atom is clickable (checkbox-style) when
@@ -1208,10 +1247,11 @@ Two columns:
   has an "Add Here" button (enabled when atoms are selected) that
   appends the selected atoms via `add-atoms`. A trailing "New line
   item" placeholder card has its own "Add Here" that calls
-  `line-items-from-atoms`. A "+ Manual" button drops a blank line
-  item via the standard line-items POST.
+  `line-items-from-atoms`. Estimates don't offer a manual-line button
+  here (`hasManualLine: false` in `ReconcileMode`'s per-doc-type
+  config) — hand lines are added from the lines view's "Add line".
 
-After every action, `reloadAfterAction` re-fetches estimate + line
+After every action, `ReconcileMode` re-fetches the estimate + line
 items, then **reconciles** atom states client-side from the new
 claims map without re-fetching the source pool. `claimed_by_other`
 atoms (snapshotted at mount) are left alone.
@@ -1222,16 +1262,19 @@ atoms (snapshotted at mount) are left alone.
 
 - **Discard draft** — `DELETE /api/estimates/{id}/?confirm=true` (sends
   the confirm token to the discard-draft path on `EstimateService.discard_draft`).
-- **Return** — navigate to `/estimates/{id}` (the detail page).
+- **Done** — flips the panel back to `'lines'` mode at the same URL
+  (`onExit`, no navigation); flushed pending edits first
+  (`flushRegistry.flushAll()`).
 
-### 12.3 Wizard entry
+### 12.3 Reconcile-mode entry
 
-The estimate (and its wizard) is reached from the Job overview's
-**Estimate** pillar: "Start Estimate" creates the draft estimate directly
-on the job (`POST /api/estimates/` with `{job}`), and "Show Tasks &
-Materials" (on the estimate detail) opens the wizard at
-`#/estimates/{id}/wizard`. There is no longer a worksheet page or
-worksheet-side wizard entry.
+The estimate is reached from the Job overview's **Estimate** pillar (or
+the rail's Estimates link): "Start Estimate" creates the draft estimate
+directly on the job (`POST /api/estimates/` with `{job}`), landing on
+`#/jobs/:jobId/estimate/:newId`. "Show Tasks & Materials" / "Reconcile"
+(on the estimate panel, §11.2) flips that same page into reconcile
+mode. There is no longer a worksheet page, a worksheet-side wizard
+entry, or a separate wizard route.
 
 ---
 
@@ -1555,7 +1598,7 @@ references it (a non-accepted estimate short-circuits to `False`). Both
 read paths call it: `EstimateSerializer.get_is_amended` and the board
 pipeline payload's per-estimate `is_amended` (`BoardService.
 _serialize_pipeline_job`). The frontend renders
-`is_amended ? 'amended' : status` (`JobDetail`, `EstimateDetailPage`, the
+`is_amended ? 'amended' : status` (`JobDetail`, `EstimatePanel`, the
 board `PipelineColumn`); there is no client-side re-derivation. Only
 accepted COs flip it — a draft/open CO does not, matching
 `compose_agreement`, which only applies accepted COs. (The CO detail/job

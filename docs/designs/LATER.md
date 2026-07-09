@@ -35,17 +35,26 @@ wrap a 1000-line page in heavy mocks; extract first.
 
 **Primary (≥ 400 lines, as of 2026-06-04):**
 
-- `change-orders/ChangeOrderDetailPage.svelte` — **1038** (by far the largest; top priority)
+- `change-orders/ChangeOrderDetailPage.svelte` — **1038**, now **1117** (by far the largest; top
+  priority). Deliberately **not** extracted by the 2026-07-08 job-workspace restructure — it
+  stays a standalone route reached from the estimate panel's subnav (see
+  `docs/plans/2026-07-08-job-workspace-restructure-design.md`); sequenced last once the shell
+  pattern is boring on simpler documents.
 - `jobs/TaskDetailPage.svelte` — 527
 - `Search.svelte` — 499
 - `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
-- `jobs/JobTaskListPage.svelte` — 427
-- `jobs/JobShipmentsPage.svelte` — 418
 - `worksheets/WorksheetDetailPage.svelte` — 407
 
+**Extracted by the 2026-07-08 job-workspace restructure** (no longer oversized — thin route
+glue now hosts a tested panel component through `JobShell`):
+`jobs/JobTaskListPage.svelte` (was 427 → `TasksPanel.svelte`),
+`jobs/JobShipmentsPage.svelte` (was 418 → `ShipmentsPanel.svelte`),
+`estimates/EstimateDetailPage.svelte` (was 344 → `EstimatePanel.svelte`, and the route file
+itself is now a 12-line redirect shim), `invoices/InvoiceDetailPage.svelte` (→
+`InvoicePanel.svelte`, also now a 12-line redirect shim).
+
 **Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
-`estimates/EstimateDetailPage.svelte` (344), `users/UserDetailPage.svelte` (306),
-`contacts/ContactListPage.svelte` (301).
+`users/UserDetailPage.svelte` (306), `contacts/ContactListPage.svelte` (301).
 
 _Done when:_ each oversized route has had its UI pass with inline logic/sub-views
 extracted into (tested) components, or a deliberate note recorded for why a given
@@ -142,13 +151,6 @@ Status coupling, transitions, and what a job may do at each stage.
   the worksheet-naming question).
   _Done when:_ the consolidation design settles on user-facing names and the UI is
   relabeled (or the idea is explicitly dropped).
-
-- **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
-  In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
-  its "View Full Estimate" link correctly points to the old one. Open question: should clicking
-  the tab itself jump straight to the current live estimate instead of showing the superseded
-  one? Unsure which is less confusing. _Done when:_ the superseded-tab click behavior is decided
-  and consistent.
 
 - **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
   RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it
@@ -307,23 +309,6 @@ Billing mechanics and money-record lifecycle.
 ## Wizard & line-item UX
 
 The atom-pull surfaces on estimates and invoices.
-
-- **Merge the source-pull ("wizard") view into the detail page as an in-place toggle.** — _added 2026-06-02_
-  The estimate/invoice detail pages link out to a separate `/…/:id/wizard` route for the
-  atom-pull view ("Show Worksheet" / "Show Billables"). That's approach (a): a rename + a
-  navigation. Approach (b) — deferred here — is to make the source-pull surface an in-place
-  *view toggle* on the detail page itself (no separate route), so the "normal" and "pull from
-  source" views share one page, one header, and one load. Bigger restructure (folds
-  `EstimateWizardPage`/`InvoiceWizardPage` into the detail components). Until then, the two
-  views' headers are kept visually matched so the navigation feels seamless.
-  _Done when:_ the detail page can switch between the line-item view and the atom-pull view
-  without a route change, and the standalone wizard routes are retired.
-
-- **Make the Estimate and Invoice atom/source-pull UIs consistent.** — _added 2026-06-03_
-  The atom-pull ("wizard") surfaces for Estimates and Invoices look noticeably different, so a
-  user who learns one doesn't recognize the other. They should share interaction vocabulary and
-  layout so the pattern transfers. _Done when:_ the Estimate and Invoice atom-pull views present
-  the same structure and controls (differing only where the domains genuinely differ).
 
 - **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
   Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
@@ -623,7 +608,8 @@ Cross-cutting UI/API conventions and shared components.
   overview and board cards come from the global classes.
 - **In-content tab bars (est/inv/po tabs on the job overview, history tablist) have no shared idiom.** — _added 2026-07-08 (CSS review pass)_
   JobDetail defines `.est-tabs`/`.inv-tabs`/`.po-tabs` — structurally
-  identical, palette-only differences — and JobHistoryPage has a fourth
+  identical, palette-only differences — and `JobHistorySection.svelte`
+  (formerly `JobHistoryPage.svelte`; extracted 2026-07-08) has a fourth
   variant with a different underline weight. Decide a shared in-content
   tab treatment (distinct from the page-level `.page-tabs`) during those
   pages' passes. _Done when:_ one in-content tab idiom exists with a
@@ -682,8 +668,9 @@ Cross-cutting UI/API conventions and shared components.
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings
-  (`SettingsPage.svelte`, six tabs) and the job history page
-  (`JobHistoryPage.svelte`) still use local `$state` tabs under a single URL.
+  (`SettingsPage.svelte`, six tabs) and the job history section
+  (`JobHistorySection.svelte`, formerly `JobHistoryPage.svelte`) still use
+  local `$state` tabs under a single URL.
   _Done when:_ those pages' tabs are routes (or a deliberate exception is
   recorded for them).
 

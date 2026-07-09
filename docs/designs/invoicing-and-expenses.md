@@ -311,16 +311,58 @@ All wizard endpoints require `IsAuthenticated` + `CanManageFinancials` (`Invoice
 
 ### Frontend
 
-`frontend/src/routes/invoices/InvoiceWizardPage.svelte` is the SPA route at `#/invoices/:id/wizard`. Two panes:
+The invoice detail view lives at `#/jobs/:jobId/invoice[/:docId]` →
+`JobInvoicePage.svelte` (`frontend/src/routes/jobs/`), which hosts
+`InvoicePanel.svelte` (`frontend/src/components/invoices/`) inside the
+job workspace shell (`JobShell` — header + nav rail + collapsible
+context band; see `jobs-tasks-and-worksheets.md` §9.6). The bare
+section route restores whichever invoice the user last viewed for this
+job (or the latest); picking a different invoice via the panel's
+subnav (`DocSubnav.svelte`, one pill per invoice with a status badge)
+updates the URL to `/:docId` in place — no remount, no job refetch. The
+old `#/invoices/:id` route still works: `InvoiceDetailPage.svelte` is
+now a small redirect shim into the job-scoped URL.
 
-- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate wizard has its own source-pool component because the atom shape and grouping differ.
-- Right: `frontend/src/components/wizards/WizardLineItemCard.svelte` — shared with the estimate wizard. One card per line item, in-sync/override price display, atom remove buttons.
+The atom-pull "wizard" is no longer a separate route — it's
+**reconcile mode**, a `mode` (`'lines'` | `'reconcile'`) that
+`InvoicePanel` toggles in place at the same URL, rendering
+`ReconcileMode.svelte` (`frontend/src/components/wizards/`) in place of
+the line-items view. `ReconcileMode` is shared with the estimate side
+(parameterized per `docType`); for invoices its config sets
+`hasManualLine: true` and `hasAgreementAdjustments: true` (the invoice
+side adds a manual-line button and the agreement-adjustments panel that
+the estimate side doesn't need). Two panes, unchanged in behavior from
+the former `InvoiceWizardPage`:
 
-Footer actions use `frontend/src/components/wizards/WizardActions.svelte` — also shared.
+- Left: `frontend/src/components/invoices/WizardSourcePool.svelte` — invoice-specific source pool (renders the `Task → atoms` tree, with the synthetic "Materials (no task)" group). The estimate side has its own source-pool component because the atom shape and grouping differ.
+- Right: `frontend/src/components/wizards/WizardLineItemCard.svelte` — shared with the estimate side. One card per line item, in-sync/override price display, atom remove buttons.
 
-`InvoiceDetailPage.svelte` (`frontend/src/routes/invoices/InvoiceDetailPage.svelte`) is the standard detail view of an invoice. It shares the same **JobHeader** band as the atom-pull wizard page. On `draft` invoices, users with `can_manage_financials` can add, edit, delete, and reorder line items using `LineItemModal.svelte` (the shared modal also used on the estimate detail page). Adding a line item offers a toggle between **manual entry** and **"From Price List"** (catalog mode, which POSTs `{inventory_item, qty}` and copies description/units/selling_price/accounting_category from the PLI). Editing an existing line item edits its fields only, with no catalog toggle.
+Footer actions use `frontend/src/components/wizards/WizardActions.svelte`
+— also shared; **Done** flips the panel back to `'lines'` mode in
+place rather than navigating.
 
-A **"Show Billables"** link is shown on the detail page only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`). If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the link is absent.
+The old route `#/invoices/:id/wizard` is now a redirect shim
+(`InvoiceWizardRedirect.svelte`) that remembers `'reconcile'` mode for
+that invoice (`rememberMode`, `stores/jobWorkspace.js`) before bouncing
+to the job-scoped URL, so old wizard bookmarks land back in reconcile
+mode. Restoring a remembered `'reconcile'` mode is **validated against
+the invoice's live status** — reconcile is only offered on a `draft`
+invoice, so one sent/paid since the mode was last remembered falls back
+to `'lines'`.
+
+`InvoicePanel` (formerly `InvoiceDetailPage.svelte`'s inline logic) is
+the standard detail view of an invoice. It shares the same **JobHeader**
+band (via `JobShell`) as reconcile mode — same page, same shell. On
+`draft` invoices, users with `can_manage_financials` can add, edit,
+delete, and reorder line items using `LineItemModal.svelte` (the shared
+modal also used on the estimate panel). Adding a line item offers a
+toggle between **manual entry** and **"From Price List"** (catalog
+mode, which POSTs `{inventory_item, qty}` and copies
+description/units/selling_price/accounting_category from the PLI).
+Editing an existing line item edits its fields only, with no catalog
+toggle.
+
+A **"Show Billables"** button is shown on the panel only to users with `can_manage_financials`, only when the invoice is in `draft` status, and only when the job has at least one task or material (`hasBillables`) — it flips the panel into reconcile mode rather than navigating. If the invoice is not draft, the user lacks the permission, or the job has no billable sources, the button is absent.
 
 On `open` or `partly-paid` invoices a disabled **"Revise (coming soon)"** placeholder button appears in the toolbar — invoice revision is not yet implemented.
 
@@ -791,8 +833,11 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 | Surface | Component |
 |---|---|
 | Invoice list | `frontend/src/routes/invoices/InvoiceListPage.svelte` (route `#/invoices`) |
-| Invoice detail | `frontend/src/routes/invoices/InvoiceDetailPage.svelte` |
-| Invoice wizard | `frontend/src/routes/invoices/InvoiceWizardPage.svelte` (route `#/invoices/:id/wizard`) |
+| Invoice detail (glue) | `frontend/src/routes/jobs/JobInvoicePage.svelte` (route `#/jobs/:jobId/invoice[/:docId]`) |
+| Invoice detail (panel) | `frontend/src/components/invoices/InvoicePanel.svelte` — hosted by `JobInvoicePage` inside `JobShell` |
+| Old detail route (shim) | `frontend/src/routes/invoices/InvoiceDetailPage.svelte` (route `#/invoices/:id`, redirects into the job-scoped URL) |
+| Reconcile mode (was "wizard") | `frontend/src/components/wizards/ReconcileMode.svelte` — a mode of `InvoicePanel`, not a route |
+| Old wizard route (shim) | `frontend/src/routes/invoices/InvoiceWizardRedirect.svelte` (route `#/invoices/:id/wizard`, remembers reconcile mode then redirects) |
 | Source pool | `frontend/src/components/invoices/WizardSourcePool.svelte` |
 | Line item modal (shared with estimates) | `frontend/src/components/LineItemModal.svelte` |
 | Line item card (shared with estimates) | `frontend/src/components/wizards/WizardLineItemCard.svelte` |
@@ -813,13 +858,15 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 
 **Backend — `?summary=true` opt-in (dual contract).** The financials list page calls `GET /api/invoices/?summary=true`. Only in **summary mode** does `InvoiceViewSet` switch to the lightweight `InvoiceSummarySerializer`, apply the annotated totals, default the status filter to **open** (open + partly-paid), and apply the status presets / due-date range / `?business=` / `?contact=` / ordering. **Without** `summary=true`, the list endpoint keeps its original contract — the full `InvoiceSerializer` (with nested `line_items`) and **all** statuses (no default filter). This preserves the pre-existing consumer `GET /api/invoices/?job=<id>`, which the **Job overview** (`JobDetailPage`) uses to render each invoice's line items and compute billed/paid rollups. (Switching the bare list action to the summary serializer + default-open unconditionally was a regression that left the Job overview showing invoices with no line items and no totals.) List read permission stays `IsAuthenticated` in both modes — the Financials sidebar gate is a UI convention only.
 
-`InvoiceWizardPage` tracks `selectedAtoms` with `$state`; "Add to line item" and "Create new line item" both POST and reload. 409 from the API surfaces as an alert prompting the user to reopen the wizard for a fresh source pool.
+`ReconcileMode` tracks `selectedAtoms` with `$state`; "Add to line item" and "Create new line item" both POST and reload. 409 from the API surfaces as a `FormMessage` prompting the user to reload the reconcile view for a fresh source pool.
 
 ### Job overview — Create/View model
 
-The Job overview page (invoice pillar) follows a Create/View model:
+The Job overview page (invoice pillar) and the Invoices section
+(`InvoicePanel`, when the job has no invoices yet) follow a Create/View
+model:
 
-- **"Create Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and navigates to the new invoice detail page. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only).
+- **"Create Invoice"** / **"Start Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and navigates to the new invoice at `#/jobs/:jobId/invoice/:newId`. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only).
 - **"View Invoice"** — shown whenever any invoice exists for the job, regardless of its status.
 
 Both can appear together: for example, a job may have a sent (`open`) invoice and no draft, in which case "View Invoice" and "Create Invoice" are both shown (the "Create" would open a second draft for the new billing event). One draft per job is guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job` — a second "Create" while a draft already exists returns the existing draft rather than creating a new one. (The `unique_draft_invoice_per_job` partial unique constraint is declared on the model but is **not** created on MySQL, which doesn't support conditional unique constraints — Django emits `models.W036` — so the invariant rests on the service, not the DB.)
