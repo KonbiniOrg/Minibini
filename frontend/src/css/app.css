@@ -263,6 +263,9 @@ dd {
 /* Quiet inline links inside a dark banner (edit / duplicate… / history). */
 .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
 .edit-link:hover { opacity: 1; text-decoration: underline; }
+/* A <button> wearing .edit-link (e.g. opening a modal instead of navigating)
+   needs its native chrome stripped so the shared quiet-link look applies. */
+.header-action { background: none; border: none; cursor: pointer; font: inherit; }
 
 /*
  * Action band. A full-width strip of the actions that operate on the entity

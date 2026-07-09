@@ -15,8 +15,7 @@
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
-  import JobEditPage from './routes/jobs/JobEditPage.svelte';
-  import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
+  import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import CatalogInventoryPage from './routes/catalog/CatalogInventoryPage.svelte';
@@ -81,8 +80,8 @@
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,
-    '/jobs/:id/edit': JobEditPage,
-    '/jobs/:id/duplicate': DuplicateJobPage,
+    '/jobs/:id/edit': JobRedirectToOverview,
+    '/jobs/:id/duplicate': JobRedirectToOverview,
     '/jobs/:id/history': JobHistoryPage,
     '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/estimate': JobEstimatePage,

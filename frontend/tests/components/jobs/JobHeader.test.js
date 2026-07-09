@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
-  api: { patch: vi.fn(), post: vi.fn() },
+  api: { patch: vi.fn(), post: vi.fn(), get: vi.fn() },
   errorMessage: (e, fallback) =>
     e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
+vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 
 import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
@@ -14,10 +15,6 @@ import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import JobHeader from '@/components/jobs/JobHeader.svelte';
 
 const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress', can_manage: true };
-
-function openMenu(getByRole) {
-  return fireEvent.click(getByRole('button', { name: 'Actions' }));
-}
 
 function optionValues(select) {
   return [...select.options].map((o) => o.value);
@@ -32,6 +29,8 @@ beforeEach(() => {
   api.patch.mockResolvedValue({});
   api.post.mockReset();
   api.post.mockResolvedValue({});
+  api.get.mockReset();
+  api.get.mockResolvedValue([]);
   user.set({ permissions: ['can_manage_jobs'] });
   clearMessage();
 });
@@ -136,32 +135,35 @@ describe('JobHeader status pill', () => {
   });
 });
 
-describe('JobHeader actions menu', () => {
-  it('offers Edit, Duplicate, and History links when manageable — and no hold actions', async () => {
+describe('JobHeader Edit/Duplicate', () => {
+  it('offers Edit and Duplicate buttons when manageable, and no History link or Actions menu', () => {
     const { getByRole, queryByRole } = render(JobHeader, { props: { job } });
-    await openMenu(getByRole);
-    expect(getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '#/jobs/5/edit');
-    expect(getByRole('link', { name: /Duplicate/ })).toHaveAttribute('href', '#/jobs/5/duplicate');
-    expect(getByRole('link', { name: 'History' })).toHaveAttribute('href', '#/jobs/5/history');
-    // Hold moved to the status pill; the menu carries no action buttons.
-    expect(queryByRole('button', { name: /hold/i })).toBeNull();
+    expect(getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(getByRole('button', { name: /Duplicate/ })).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Actions' })).toBeNull();
+    expect(queryByRole('link', { name: 'History' })).toBeNull();
   });
 
-  it('still offers History (but not Edit/Duplicate) when not manageable', async () => {
+  it('hides Edit/Duplicate when not manageable', () => {
     user.set({ permissions: [] });
     const readOnlyJob = { ...job, can_manage: false };
-    const { getByRole, queryByRole } = render(JobHeader, { props: { job: readOnlyJob } });
-    await openMenu(getByRole);
-    expect(getByRole('link', { name: 'History' })).toBeInTheDocument();
-    expect(queryByRole('link', { name: 'Edit' })).toBeNull();
-    expect(queryByRole('link', { name: /Duplicate/ })).toBeNull();
+    const { queryByRole } = render(JobHeader, { props: { job: readOnlyJob } });
+    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(queryByRole('button', { name: /Duplicate/ })).toBeNull();
   });
 
-  it('closes when a navigation item is clicked', async () => {
-    const { getByRole, queryByRole } = render(JobHeader, { props: { job } });
-    await openMenu(getByRole);
-    await fireEvent.click(getByRole('link', { name: 'History' }));
-    expect(queryByRole('link', { name: 'History' })).toBeNull();
+  it('opens the edit dialog, prefilled with the job name, when Edit is clicked', async () => {
+    const { getByRole, findByRole } = render(JobHeader, { props: { job } });
+    await fireEvent.click(getByRole('button', { name: 'Edit' }));
+    const dialog = await findByRole('dialog', { name: 'Edit job' });
+    expect(within(dialog).getByLabelText(/Name/i).value).toBe('Widget');
+  });
+
+  it('opens the duplicate dialog when Duplicate… is clicked', async () => {
+    const { getByRole, findByRole } = render(JobHeader, { props: { job } });
+    await fireEvent.click(getByRole('button', { name: /Duplicate/ }));
+    const dialog = await findByRole('dialog', { name: 'Duplicate job' });
+    expect(within(dialog).getByText(/Duplicate JOB-5/)).toBeInTheDocument();
   });
 });
 
@@ -230,22 +232,20 @@ describe('JobHeader project manager', () => {
 });
 
 describe('JobHeader per-job can_manage gating', () => {
-  it('shows edit affordances + status dropdown when job.can_manage is true even without the global atom', async () => {
+  it('shows edit affordances + status dropdown when job.can_manage is true even without the global atom', () => {
     user.set({ permissions: [] }); // no can_manage_jobs atom
     const pmJob = { ...job, can_manage: true };
     const { getByRole } = render(JobHeader, { props: { job: pmJob } });
     expect(getByRole('combobox')).toBeInTheDocument();
-    await openMenu(getByRole);
-    expect(getByRole('link', { name: 'Edit' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Edit' })).toBeInTheDocument();
   });
 
-  it('hides edit affordances + status dropdown when job.can_manage is false even with the global atom', async () => {
+  it('hides edit affordances + status dropdown when job.can_manage is false even with the global atom', () => {
     user.set({ permissions: ['can_manage_jobs'] });
     const lockedJob = { ...job, can_manage: false };
-    const { getByRole, queryByRole } = render(JobHeader, { props: { job: lockedJob } });
+    const { queryByRole } = render(JobHeader, { props: { job: lockedJob } });
     expect(queryByRole('combobox')).toBeNull();
-    await openMenu(getByRole);
-    expect(queryByRole('link', { name: 'Edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 
   it('offers Release to floor in the pill for an approved job when job.can_manage is true', () => {

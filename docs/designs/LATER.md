@@ -731,10 +731,10 @@ Cross-cutting UI/API conventions and shared components.
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
 
-- **Remove "Edit" from the job Actions menu for closed jobs.** — _added 2026-07-08_
-  The JobHeader Actions menu (Edit / Duplicate… / History) shows Edit regardless of
+- **Remove "Edit" from the job header for closed jobs.** — _added 2026-07-08_
+  The JobHeader's Edit button (opens `JobEditModal.svelte`) shows regardless of
   status; a closed job (completed/rejected/cancelled) shouldn't offer it.
-  _Done when:_ the Edit item is hidden (or disabled with a reason) for terminal-status
+  _Done when:_ the Edit button is hidden (or disabled with a reason) for terminal-status
   jobs in `JobHeader.svelte`, with a component test.
 
 - **`TagViewSet` implicit CRUD — the last `serializer.save()` bypass, left for its original author.** — _added 2026-05-27; narrowed 2026-07-04_

@@ -3,6 +3,8 @@
   import { showError } from '../../stores/messages.js';
   import FormMessage from '../FormMessage.svelte';
   import Modal from '../Modal.svelte';
+  import JobEditModal from './JobEditModal.svelte';
+  import DuplicateJobModal from './DuplicateJobModal.svelte';
 
   const {
     job,
@@ -87,25 +89,10 @@
     job.customer_po_number ? `PO: ${job.customer_po_number}` : null,
   ].filter(Boolean).join(' · '));
 
-  // ⋯ actions menu
-  let menuOpen = $state(false);
-  let menuEl = $state(null);
-
-  function toggleMenu() {
-    menuOpen = !menuOpen;
-  }
-
-  function closeMenu() {
-    menuOpen = false;
-  }
-
-  function onWindowClick(e) {
-    if (menuOpen && menuEl && !menuEl.contains(e.target)) menuOpen = false;
-  }
-
-  function onWindowKeydown(e) {
-    if (menuOpen && e.key === 'Escape') menuOpen = false;
-  }
+  // Edit / Duplicate modals — openable from any job page (the header is the
+  // one place both are always mounted). History moved to the rail.
+  let editOpen = $state(false);
+  let dupOpen = $state(false);
 
   async function handleStatusChange(e) {
     const picked = e.target.value;
@@ -180,8 +167,6 @@
   }
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onWindowKeydown} />
-
 <div class="job-header">
   <div class="titleblock">
     <h1 title={titleText}>{titleText}</h1>
@@ -191,18 +176,10 @@
       {/if}
     </p>
     <div class="status-row">
-      <span class="menu-wrapper" bind:this={menuEl}>
-        <button type="button" class="menu-btn" aria-expanded={menuOpen} onclick={toggleMenu}>Actions <span aria-hidden="true" class="menu-caret">▾</span></button>
-        {#if menuOpen}
-          <div class="menu">
-            {#if canManageJobs}
-              <a href="#/jobs/{job.job_id}/edit" onclick={closeMenu}>Edit</a>
-              <a href="#/jobs/{job.job_id}/duplicate" onclick={closeMenu}>Duplicate…</a>
-            {/if}
-            <a href="#/jobs/{job.job_id}/history" onclick={closeMenu}>History</a>
-          </div>
-        {/if}
-      </span>
+      {#if canManageJobs}
+        <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        <button type="button" class="edit-link header-action" onclick={() => { dupOpen = true; }}>Duplicate…</button>
+      {/if}
       {#if showStatusSelect}
         <span class="status-select-wrapper">
           <select
@@ -263,6 +240,19 @@
   <FormMessage error={holdError} />
 </Modal>
 
+<JobEditModal
+  {job}
+  open={editOpen}
+  onSaved={() => { editOpen = false; if (onStatusChange) onStatusChange(); }}
+  onClose={() => { editOpen = false; }}
+/>
+
+<DuplicateJobModal
+  {job}
+  open={dupOpen}
+  onClose={() => { dupOpen = false; }}
+/>
+
 <style>
   /* Fixed-height banner: the left titleblock is a hard three-line budget
      (truncating title / customer / status row) and the right factblock is
@@ -286,34 +276,6 @@
     /* The title may never wrap: it truncates, full name on hover. */
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-
-  .menu-wrapper { position: relative; flex: 0 0 auto; }
-  /* A solid neutral pill — same shape/weight as the status pill so it reads
-     as its peer, but deliberately colorless so it never looks like a second
-     status. */
-  .menu-btn {
-    font-size: 12px; font-weight: 600; padding: 3px 12px;
-    background: #e5e7eb; color: #1f2937;
-    border: 2px solid transparent; border-radius: 10px;
-    cursor: pointer;
-  }
-  .menu-caret { font-size: 10px; opacity: 0.7; }
-  .menu-btn:hover, .menu-btn[aria-expanded="true"] { background: #f9fafb; }
-  .menu {
-    position: absolute; top: calc(100% + 4px); left: 0;
-    background: #fff; color: #1f2937;
-    border: 1px solid #d1d5db; border-radius: 6px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
-    min-width: 160px; padding: 4px;
-    display: flex; flex-direction: column;
-    z-index: var(--z-dropdown);
-  }
-  .menu a {
-    display: block; border-radius: 4px;
-    padding: 6px 10px; font-size: 13px;
-    color: #1f2937; text-decoration: none; cursor: pointer;
-  }
-  .menu a:hover { background: #f3f4f6; }
 
   .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .customer-line a { color: #fff; text-decoration: underline; }

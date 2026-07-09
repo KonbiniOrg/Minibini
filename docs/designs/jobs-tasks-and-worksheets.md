@@ -330,13 +330,14 @@ for the pattern/counter mechanism.
 
 ### 3.6 Job duplication
 
-A Job can be duplicated into a brand-new Job via the "Duplicate…" link
+A Job can be duplicated into a brand-new Job via the "Duplicate…" button
 in the SPA Job detail header (gated on the job's `can_manage` — atom or
-its PM). The link
-navigates to an intermediate page (`#/jobs/:id/duplicate`,
-`DuplicateJobPage.svelte`) where the user chooses a **Customer**
-(pre-filled from the source job's contact, editable) and a **path**
-(`approved` or `estimate`), then submits.
+its PM). The button opens `DuplicateJobModal.svelte` — a modal, not a
+route — where the user chooses a **Customer** (pre-filled from the
+source job's contact, editable) and a **path** (`approved` or
+`estimate`), then submits. (The old standalone `#/jobs/:id/duplicate`
+page is gone; the route now redirects to the job overview for any
+stale deep links.)
 
 The Customer field is a searchable picker (`ContactPicker.svelte`, built on
 `SearchPicker`), not a dropdown — the contacts table is large, so it queries
@@ -1025,8 +1026,11 @@ Top-down:
    and the status row. Right column: a small facts line (started / due
    / completed dates, customer PO, and the PM name linking to
    `#/jobs?pm=<id>`) right-aligned above the financial rollups (§9.3).
-   The status row holds an **Actions ▾** menu (Edit / Duplicate… /
-   History — navigation only; History shows for read-only users too)
+   The status row holds quiet **Edit** / **Duplicate…** buttons (shown
+   only when `can_manage` — the old Actions ▾ menu and its History
+   entry are gone; each button opens a modal — `JobEditModal.svelte` /
+   `DuplicateJobModal.svelte` — instead of navigating, and History is
+   now a rail section on every job page)
    and the **status pill**, an interactive `<select>` for users whose
    `can_manage` flag is set. The pill is a **trigger pill**: besides
    real transitions it carries non-status trigger options (values
