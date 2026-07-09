@@ -600,6 +600,19 @@ IMAP-SMTP machinery and tend to be worked together.
 
 Cross-cutting UI/API conventions and shared components.
 
+- **Notes should come out of History as a first-class sub-object.** — _added 2026-07-08 (RM, during the job-workspace design)_
+  Notes today are just history entries (`entry_type='note'`, write-only via
+  `POST /{jobs,contacts,businesses}/{id}/notes/`, immutable, rendered inside
+  history feeds). But notes bridge two distinct uses: **live time-gapped
+  communication between workers during a job** and **after-the-fact review**
+  — bundling them inside History buries the live-communication half where
+  nobody looks until something goes wrong. Promote Notes to a first-class
+  sub-object with its own surface (likely its own panel or header-band slot
+  in the job workspace restructure; decide the model/API shape then).
+  _Done when:_ notes have their own UI surface (and whatever model/API
+  separation that requires), with the history feed still recording them (or
+  a recorded decision otherwise).
+
 - **JobDetail's private `.pill-*` palette (and JobCard's `.doc-pill-*`) should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass)_
   `components/jobs/JobDetail.svelte` carries ~20 `.pill-*` status-color
   variants and `components/board/JobCard.svelte` a parallel `.doc-pill-*`

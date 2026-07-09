@@ -20,18 +20,65 @@ context travel with the user.
 2. **The JobHeader expands** to include description, deliverables, and
    email, and gains a **collapse option** so the expanded context is
    hidable. Collapsed/expanded state persists like other local UI state.
-3. **The nav rail stays always available** on every job page (it may also
-   join the overview — decide when the overview is reworked).
+3. **The nav rail stays always available** on every job page, **including
+   the reworked overview** (whether it docks into the collapsible header
+   block alongside the three detail sections or stays its own strip is an
+   implementation-time call — RM is agnostic). Every rail link is always
+   valid: empty sections are real destinations (see 6), so no dimming.
 4. **Wizards are an alternate view type of Estimate or Invoice** from the
    user's perspective — a *mode* of the document surface, not a separate
    destination. Restores the user to whatever mode they left the page in.
 5. **No combo views yet.** The architecture leaves room for them (see
    taxonomy) but none ship in this pass.
+6. **Section pages, one panel each** (confirmed 2026-07-08: NOT all
+   five panels stacked on every page). Each panel carries **subnavigation
+   over all associated objects of its type** (estimate versions + change
+   orders; the job's invoices; tasks; shipments; the job's POs). Which
+   document is shown is **per-job persisted user state** — restored on
+   return, defaulting to the latest when no state exists for that job.
+7. **Empty sections still display** — a job fresh from creation has none
+   of these; a job awaiting approval has no invoices — rendering the
+   panel frame with a create affordance (like today's "Start Estimate"
+   pillar), not a dead end.
+8. **The rail grows to eight: Overview · Estimates · Tasks · Invoices ·
+   Shipments · POs · Emails · History** (decided 2026-07-08; nine if
+   Notes graduates — see 11). With the rail on the overview page too,
+   Overview stops being an "up a level" escape (the ‹ chevron grammar
+   dissolves) and becomes the first sibling destination, lit like any
+   other when you're on it — kept first, with its wider gap, as the
+   anchor. Email and History are taxonomically distinct from the
+   Big Five (paper trail, not sub-object work surfaces) and have
+   different lifecycle uses — email is a live reference used constantly
+   while estimating/task setup/work happen; history is forensic (what
+   happened when, after the fact) and owner review across jobs. They get
+   **separate section pages**, but everything lives in the one rail —
+   fewer places to learn navigation beats taxonomy purity. Optional
+   polish: a wider gap or hairline divider between POs and Emails to
+   mark the seam. **History comes out of the Actions menu** (it was
+   navigation, not an action), leaving Actions = Edit + Duplicate.
+9. **Job edit (and Duplicate) become modals** — the job's own fields are
+   a thin record (name, contact, PM, dates, customer PO, description);
+   a modal lets you edit from any job page without disturbing panel
+   state. Old `/jobs/:id/edit` route shims or retires.
+10. **The email panel is the full reading surface** — wide, master-detail
+   (thread list + full conversation; first consumer of the LATER.md
+   thread-view idea). The header band's email box stays as the
+   glanceable live-reference preview with a "view all →" tether into the
+   panel. Band = context that travels with you; panel = the full
+   surface — that preview→surface relationship is the design's grammar
+   (description and deliverables in the band work the same way), not
+   duplication to eliminate.
+11. **Notes** are flagged to become a first-class sub-object
+   (LATER.md 2026-07-08) — they bridge live communication and the
+   forensic record. Not scheduled in this pass; the workspace should
+   just not paint them into the History corner architecturally.
 
 ## Architecture: section panels + a job shell
 
 - **Section panels** — `EstimatePanel`, `TasksPanel`, `InvoicePanel`,
-  `ShipmentsPanel`, `POPanel`: the working guts of today's route pages,
+  `ShipmentsPanel`, `POPanel`, plus the paper-trail pair `EmailPanel`
+  (master-detail thread reading) and `HistoryPanel` (the collated feed,
+  absorbing today's JobHistoryPage): the working guts of today's route pages,
   extracted into components that take a job (plus their own document id)
   and own their data loading. This is the same extraction LATER.md already
   wants for the oversized route pages (TaskDetailPage 527 lines,
@@ -75,9 +122,26 @@ context travel with the user.
 
 - **POs aren't job-owned**: `POPanel` is a job-filtered PO list with
   click-through, not a single document; the PO detail page stays global.
-- **Document identity survives**: keep `/estimates/:id` etc. for
-  superseded versions, history links, and search; job-scoped routes
-  resolve to the latest and render the same panel in the same shell.
+- **One route family, all under the job** (decided 2026-07-08 — RM wants
+  past documents inside the structure too, with full job context):
+  - `#/jobs/:jobId/estimate`, `#/jobs/:jobId/invoice`, etc. — the five
+    section routes. The bare route restores the user's per-job document
+    state (or the latest). Routes deliberately do NOT drive document
+    selection — that's panel state persisted in localStorage (RM: "the
+    user goes back to the state they left the page in"; routes are not
+    the mechanism she cares about).
+  - Superseded estimates and earlier invoices are reached through the
+    panel's own subnavigation — same shell, same panel, full job context.
+    An optional `/:docId` form (or the shim writing state before
+    navigating) covers deep links that must land on a specific document
+    (history `source_link`s, search results) — implementation detail.
+  - The old document routes (`/estimates/:id`, `/invoices/:id`,
+    `/change-orders/:id`) become **redirect shims** into the job-scoped
+    structure. Existing emitters and bookmarks keep working; internal
+    emitters migrate over time; the shim stays (it's cheap).
+  - Consequence for the nav rail: every section link is always valid
+    (empty sections render with a create affordance), so the rail needs
+    no dimming and `nav_targets` retires.
 - **Context band restraint**: description/deliverables/email on working
   pages must default collapsed (especially in reconcile mode) — glanceable
   context, not a vertical tax.
