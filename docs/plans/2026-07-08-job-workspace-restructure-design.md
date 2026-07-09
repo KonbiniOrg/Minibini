@@ -125,16 +125,22 @@ context travel with the user.
 - **One route family, all under the job** (decided 2026-07-08 — RM wants
   past documents inside the structure too, with full job context):
   - `#/jobs/:jobId/estimate`, `#/jobs/:jobId/invoice`, etc. — the five
-    section routes. The bare route restores the user's per-job document
-    state (or the latest). Routes deliberately do NOT drive document
-    selection — that's panel state persisted in localStorage (RM: "the
-    user goes back to the state they left the page in"; routes are not
-    the mechanism she cares about).
+    section routes, **plus a canonical `/:docId` form** (amended
+    2026-07-08 after review; RM confirmed this matches her intent).
+    The panel's subnav **updates the URL** to `/:docId` as the user
+    flips documents — this is a same-component param change, no remount,
+    no job refetch (TaskDetailPage already navigates task→task this
+    way; the shell keeps the job payload, the panel refetches only its
+    document). The URL is the source of truth for *what you're looking
+    at* — shareable links, history `source_link`s, search results, and
+    the back button all work. localStorage persists only *where you
+    left off* per job (last document per section, per-document
+    wizard/reconcile mode, band collapse) so the **bare section route**
+    — what the nav rail links to — restores your last position,
+    defaulting to the latest document.
   - Superseded estimates and earlier invoices are reached through the
-    panel's own subnavigation — same shell, same panel, full job context.
-    An optional `/:docId` form (or the shim writing state before
-    navigating) covers deep links that must land on a specific document
-    (history `source_link`s, search results) — implementation detail.
+    panel's own subnavigation — same shell, same panel, full job
+    context, URL updating as above.
   - The old document routes (`/estimates/:id`, `/invoices/:id`,
     `/change-orders/:id`) become **redirect shims** into the job-scoped
     structure. Existing emitters and bookmarks keep working; internal
@@ -309,7 +315,50 @@ forever — consider pruning or capping).
 6. Notes as ninth rail item (LATER.md; not this pass).
 7. Combos (future; read-mostly; estimate|invoice first — RM compares
    these daily via two browser windows today).
-8. Whether TaskDetailPage's existing route survives inside TasksPanel
-   subnav or becomes panel state like documents.
+8. ~~Whether TaskDetailPage's existing route survives inside TasksPanel
+   subnav or becomes panel state like documents.~~ **Resolved
+   2026-07-08:** it survives as a real route rendered through the shell.
+   Tasks are deep-linked from everywhere (schedule quick card, board,
+   home lists, blep band), and with URL-per-document (amended routes
+   bullet above) the rule is uniform: everything addressable gets a
+   route. Its loading discipline (background refetches never blank the
+   page; write-only loaders — both regression-tested) must survive the
+   shell migration intact.
 9. LATER.md "superseded estimate's tab" question (2026-06-03) — the
    estimate panel's subnav is where that gets answered.
+
+---
+
+# Second-pass review notes (2026-07-08, RM agreed)
+
+Sharp edges to sand during implementation — additions, not reversals:
+
+1. **Mode restore validates against status.** Reconcile mode is only
+   valid on a draft document. Restoring persisted state must check the
+   document's *current* status and fall back to lines mode — leaving
+   invoice #22 in reconcile and returning after someone sent it must
+   not resurrect an editing surface.
+2. **The collapsed band fetches nothing.** The expanded JobHeader means
+   every section page could pay the description/deliverables/email
+   fan-out that only the overview pays today. Lazy-load band content on
+   expand. Also: the hold-reason-form overflow hack and the header's
+   `z:30` stacking context assume the fixed 110px band — rework them
+   deliberately with the collapse mechanics, don't inherit them.
+3. **ChangeOrderDetailPage extracts LAST.** Not just "biggest risk" —
+   sequence it after ShipmentsPanel and at least one document panel
+   prove the pattern. The shim removes any user-facing pressure; CO can
+   stay a standalone route reached from the estimate subnav until the
+   pattern is boring.
+4. **Step 4 (overview rework) explicitly retires the JobDetail CSS
+   debt** — the private `.pill-*` palette, the three cloned in-content
+   tab bars, the 454-line style block (LATER.md 2026-07-08 entries).
+   Name them in the step or they migrate into the new overview.
+5. **localStorage: one key, LRU-capped map** (e.g. 50 jobs), not a key
+   per job — retention becomes trivial.
+6. **Empty-section create affordances gate on `can_manage`** (per-object,
+   carried through panels) — a worker on an empty Estimates section sees
+   an empty state, not a dead button.
+7. **Pipeline bookkeeping** (architecture doc §5.5a): the shell IS the
+   banner-page pattern formalized — the job area's header grouping
+   becomes JobHeader + rail + band. Section pages remain kit consumers;
+   the skip-list is unchanged except task detail (already on it).
