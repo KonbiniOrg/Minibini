@@ -105,3 +105,27 @@ describe('JobEstimatePage document resolution', () => {
     expect(await findByRole('button', { name: /start estimate/i })).toBeInTheDocument();
   });
 });
+
+describe('JobEstimatePage doc-subnav navigation (no job-context refetch)', () => {
+  it('does not refetch the job or estimate list when only docId changes', async () => {
+    const e1 = est(7, 1);
+    const e2 = est(8, 2);
+    mockApi({ estimates: [e1, e2], byId: { 7: e1, 8: e2 } });
+
+    const { findByText, rerender } = render(JobEstimatePage, {
+      props: { params: { jobId: 3, docId: '7' } },
+    });
+    expect(await findByText('Estimate: EST-7')).toBeInTheDocument();
+
+    // Fresh params object, same jobId — this is what svelte-spa-router hands
+    // the still-mounted component on every doc-subnav navigation.
+    await rerender({ params: { jobId: 3, docId: '8' } });
+    expect(await findByText('Estimate: EST-8')).toBeInTheDocument();
+
+    const jobFetches = api.get.mock.calls.filter(([url]) => url === '/api/jobs/3/');
+    const estimateListFetches = api.get.mock.calls.filter(([url]) => url.startsWith('/api/estimates/?job='));
+
+    expect(jobFetches).toHaveLength(1);
+    expect(estimateListFetches).toHaveLength(2);
+  });
+});

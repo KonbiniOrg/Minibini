@@ -110,9 +110,17 @@
     }
   }
 
+  // Value-keyed: the glue (JobEstimatePage) assigns a new `job` object on
+  // every loadJob() run, even when the job itself hasn't changed. Deriving
+  // jobId memoizes on the value, so the effect below only reruns when the
+  // job actually changes. The load functions read this derived (not
+  // job.job_id directly) so they don't reintroduce a dependency on the raw
+  // job object.
+  const jobId = $derived(job?.job_id);
+
   async function loadVersions() {
     try {
-      const resp = await api.get(`/api/estimates/?job=${job.job_id}`);
+      const resp = await api.get(`/api/estimates/?job=${jobId}`);
       estimates = resp?.results || resp || [];
     } catch (_) {
       estimates = [];
@@ -123,7 +131,7 @@
 
   async function loadChangeOrders() {
     try {
-      const resp = await api.get(`/api/change-orders/?job=${job.job_id}`);
+      const resp = await api.get(`/api/change-orders/?job=${jobId}`);
       changeOrders = resp?.results || resp || [];
     } catch (_) {
       changeOrders = [];
@@ -158,7 +166,7 @@
   });
 
   $effect(() => {
-    if (job?.job_id) {
+    if (jobId) {
       loadVersions();
       loadChangeOrders();
     }

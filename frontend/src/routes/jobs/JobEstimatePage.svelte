@@ -10,16 +10,24 @@
   let estimates = $state([]);
   let error = $state('');
 
+  // Value-keyed: svelte-spa-router hands this still-mounted component a new
+  // `params` object on every doc-subnav navigation, even when only :docId
+  // changed. Deriving jobId memoizes on the value, so the effect below only
+  // reruns when the job actually changes, not on every doc switch. The load
+  // functions read this derived (not params.jobId directly) so they don't
+  // reintroduce a dependency on the raw params object.
+  const jobId = $derived(params.jobId);
+
   async function loadJob() {
     try {
-      job = await api.get(`/api/jobs/${params.jobId}/`);
+      job = await api.get(`/api/jobs/${jobId}/`);
       contact = job?.contact ? await api.get(`/api/contacts/${job.contact}/`).catch(() => null) : null;
     } catch (e) { error = e.message || 'Could not load job.'; }
   }
 
   async function loadEstimates() {
     try {
-      const resp = await api.get(`/api/estimates/?job=${params.jobId}`);
+      const resp = await api.get(`/api/estimates/?job=${jobId}`);
       estimates = (resp?.results || resp || []).slice().sort((a, b) => a.version - b.version);
     } catch (_) {
       estimates = [];
@@ -27,7 +35,7 @@
   }
 
   $effect(() => {
-    if (params.jobId) {
+    if (jobId) {
       loadJob();
       loadEstimates();
     }
