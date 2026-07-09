@@ -329,6 +329,25 @@ forever — consider pruning or capping).
 
 ---
 
+# Pre-implementation resolutions (2026-07-08, RM confirmed)
+
+- **Branch:** `feature/job-overview`.
+- **Email section, v1:** the existing email surface promoted to a
+  full-width section page inside the panel frame — NO master-detail
+  thread redesign in this pass (it lands later, drop-in, same frame).
+- **Band default: EXPANDED** — description/deliverables/email context is
+  needed for most panel work; it collapses on click and the per-job
+  persisted state remembers. (Reverses the earlier collapsed-default
+  lean; the "restraint" bullet is satisfied by one sticky click.)
+- Rail stays its own strip (doesn't dock into the band). PO/Emails
+  hairline divider: yes. Actions menu dissolves into two quiet header
+  links (Edit, Duplicate…) — fall back to a menu only if crowding.
+- Overview midband/pillars untouched until step 4 (its own design
+  conversation). CO page stays a standalone route this pass, reached
+  from the estimate subnav.
+- LATER.md "superseded estimate's tab" (2026-06-03) closes when this
+  ships — every version is directly viewable at its own URL.
+
 # Second-pass review notes (2026-07-08, RM agreed)
 
 Sharp edges to sand during implementation — additions, not reversals:
