@@ -15,8 +15,7 @@
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
-  import JobHeader from '../../components/jobs/JobHeader.svelte';
-  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
+  import JobShell from '../../components/jobs/JobShell.svelte';
   import { formatQtyUnits, formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
@@ -340,11 +339,7 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if task}
-  {#if job}
-    <JobHeader {job} {contact} onStatusChange={refresh} />
-    <JobNavRail {job} current="tasks" />
-  {/if}
-
+  <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
   <!-- Task header: crumbs, pill + title left, stat chips right -->
   <div class="task-head">
     {#if task.job}
@@ -589,6 +584,7 @@
     onClose={() => { assignModalOpen = false; }}
   />
   </div>
+  </JobShell>
 {/if}
 
 <style>
