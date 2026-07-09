@@ -24,7 +24,7 @@
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
-  import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
+  import InvoiceWizardRedirect from './routes/invoices/InvoiceWizardRedirect.svelte';
   import BillListPage from './routes/bills/BillListPage.svelte';
   import BillFormPage from './routes/bills/BillFormPage.svelte';
   import BillDetailPage from './routes/bills/BillDetailPage.svelte';
@@ -34,7 +34,7 @@
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
-  import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
+  import EstimateWizardRedirect from './routes/estimates/EstimateWizardRedirect.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
   import JobEstimatePage from './routes/jobs/JobEstimatePage.svelte';
@@ -94,7 +94,7 @@
     '/jobs/:jobId/emails': JobEmailsPage,
     '/jobs/:id/tasklist': JobTaskListPage,
     '/shipments/:sid/print': PackingListPrint,
-    '/estimates/:id/wizard': EstimateWizardPage,
+    '/estimates/:id/wizard': EstimateWizardRedirect,
     '/estimates/:id/send': EstimateSendPage,
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
@@ -103,7 +103,7 @@
     '/purchase-orders/:id/send': PurchaseOrderSendPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices': InvoiceListPage,
-    '/invoices/:id/wizard': InvoiceWizardPage,
+    '/invoices/:id/wizard': InvoiceWizardRedirect,
     '/invoices/:id/send': InvoiceSendPage,
     '/invoices/:id': InvoiceDetailPage,
     '/bills': BillListPage,

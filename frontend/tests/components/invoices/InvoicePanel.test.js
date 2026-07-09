@@ -11,6 +11,7 @@ vi.mock('svelte-spa-router', () => ({
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
+import { getJobWs, rememberMode } from '@/stores/jobWorkspace.js';
 import InvoicePanel from '@/components/invoices/InvoicePanel.svelte';
 
 const JOB = {
@@ -382,6 +383,64 @@ describe('InvoicePanel adjustment affordances', () => {
 });
 
 // ─── Line-item actions ────────────────────────────────────────────────────────
+
+describe('InvoicePanel reconcile mode', () => {
+  beforeEach(() => { localStorage.clear(); });
+
+  function mockReconcile(invoice) {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === `/api/invoices/${invoice.invoice_id}/`) return Promise.resolve({ ...invoice });
+      if (url === `/api/invoices/${invoice.invoice_id}/line-items/`) return Promise.resolve([]);
+      if (url === `/api/invoices/${invoice.invoice_id}/source-pool/`) return Promise.resolve({ tasks: [] });
+      if (url === `/api/invoices/${invoice.invoice_id}/agreement-adjustments/`) return Promise.resolve({ adjustments: [] });
+      if (url.startsWith('/api/invoices/?job=')) return Promise.resolve({ results: [invoice] });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      return Promise.resolve({});
+    });
+  }
+
+  it('flips to reconcile mode and persists the choice per docId', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
+    const { findByRole, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
+    expect(await findByText('Send all to Invoice')).toBeInTheDocument();
+    expect(getJobWs(9).modes['5']).toBe('reconcile');
+    expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
+  });
+
+  it('restores reconcile mode on mount for a draft doc when remembered', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    rememberMode(9, 5, 'reconcile');
+    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
+    const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    expect(await findByText('Send all to Invoice')).toBeInTheDocument();
+  });
+
+  it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    rememberMode(9, 5, 'reconcile');
+    mockReconcile(makeInvoice({ invoice_id: 5, status: 'open' }));
+    const { findByText, queryByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await findByText('Line Items');
+    expect(queryByText('Send all to Invoice')).toBeNull();
+    expect(queryByRole('button', { name: 'Reconcile' })).toBeNull();
+    expect(queryByRole('button', { name: 'Back to lines' })).toBeNull();
+  });
+
+  it('reloads the invoice when flipping back to lines', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
+    const { findByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
+    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
+    await findByRole('button', { name: 'Back to lines' });
+    const before = api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length;
+    await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
+    expect(api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length).toBeGreaterThan(before);
+    expect(getJobWs(9).modes['5']).toBe('lines');
+  });
+});
 
 describe('InvoicePanel line-item actions', () => {
   it('Delete on a line calls the line-item delete endpoint', async () => {

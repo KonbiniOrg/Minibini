@@ -11,6 +11,7 @@ vi.mock('svelte-spa-router', () => ({
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
+import { getJobWs, rememberMode } from '@/stores/jobWorkspace.js';
 import EstimatePanel from '@/components/estimates/EstimatePanel.svelte';
 
 const JOB = { job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, can_manage: true };
@@ -285,6 +286,65 @@ describe('EstimatePanel line-item actions', () => {
     const deleteBtn = await findByText('Delete');
     deleteBtn.click();
     expect(api.delete).toHaveBeenCalledWith('/api/estimates/7/line-items/42/');
+  });
+});
+
+describe('EstimatePanel reconcile mode', () => {
+  beforeEach(() => { localStorage.clear(); });
+
+  function mockReconcile(estimate) {
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === `/api/estimates/${estimate.estimate_id}/`) return Promise.resolve({ ...estimate });
+      if (url === `/api/estimates/${estimate.estimate_id}/line-items/`) return Promise.resolve({ results: [] });
+      if (url === `/api/estimates/${estimate.estimate_id}/source-pool/`) return Promise.resolve({ atoms: [] });
+      if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: [estimate] });
+      if (url.startsWith('/api/change-orders/?job=')) return Promise.resolve({ results: [] });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      if (url.startsWith('/api/settings/')) return Promise.resolve({});
+      return Promise.resolve({});
+    });
+  }
+
+  it('flips to reconcile mode and persists the choice per docId', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
+    const { findByRole, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
+    expect(await findByText('Source pool (job atoms)')).toBeInTheDocument();
+    expect(getJobWs(9).modes['7']).toBe('reconcile');
+    expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
+  });
+
+  it('restores reconcile mode on mount for a draft doc when remembered', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    rememberMode(9, 7, 'reconcile');
+    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
+    const { findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    expect(await findByText('Source pool (job atoms)')).toBeInTheDocument();
+  });
+
+  it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    rememberMode(9, 7, 'reconcile');
+    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'open' }));
+    const { findByText, queryByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Line Items');
+    expect(queryByText('Source pool (job atoms)')).toBeNull();
+    expect(queryByRole('button', { name: 'Reconcile' })).toBeNull();
+    expect(queryByRole('button', { name: 'Back to lines' })).toBeNull();
+  });
+
+  it('reloads the estimate when flipping back to lines', async () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
+    await findByRole('button', { name: 'Back to lines' });
+    const before = api.get.mock.calls.filter(([u]) => u === '/api/estimates/7/').length;
+    await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
+    expect(api.get.mock.calls.filter(([u]) => u === '/api/estimates/7/').length).toBeGreaterThan(before);
+    expect(getJobWs(9).modes['7']).toBe('lines');
   });
 });
 

@@ -7,6 +7,8 @@
   import LineItemModal from '../LineItemModal.svelte';
   import AdjustmentModal from '../AdjustmentModal.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
+  import ReconcileMode from '../wizards/ReconcileMode.svelte';
+  import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
   let { job, invoiceId, onJobChange = () => {} } = $props();
 
@@ -36,6 +38,29 @@
   let modalMode = $state('create');
   let modalItem = $state(null);
   let adjustmentModalOpen = $state(false);
+
+  // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
+  // mode comes from the per-doc workspace memory, but is validated against the
+  // live doc: reconcile is only restorable while the invoice is still an
+  // editable draft (someone may have sent it since the mode was remembered).
+  let mode = $state('lines');
+  let modeInitializedFor = $state(null);
+  $effect(() => {
+    if (invoice && String(invoice.invoice_id) === String(invoiceId)
+        && modeInitializedFor !== String(invoiceId)) {
+      const remembered = getJobWs(job?.job_id).modes[String(invoiceId)] ?? 'lines';
+      mode = (remembered === 'reconcile' && canEditLineItems) ? 'reconcile' : 'lines';
+      modeInitializedFor = String(invoiceId);
+    }
+  });
+
+  function setMode(next) {
+    mode = next;
+    rememberMode(job?.job_id, invoiceId, next);
+    // Returning to lines must show fresh data — reconcile mode may have mutated
+    // the invoice's line items.
+    if (next === 'lines') loadInvoice();
+  }
 
   let lineItems = $derived(
     (invoice?.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
@@ -219,6 +244,13 @@
         Revise (coming soon)
       </button>
     {/if}
+    {#if canEditLineItems}
+      {#if mode === 'reconcile'}
+        <button type="button" onclick={() => setMode('lines')}>Back to lines</button>
+      {:else}
+        <button type="button" onclick={() => setMode('reconcile')}>Reconcile</button>
+      {/if}
+    {/if}
   </div>
 
   {#if success}
@@ -244,6 +276,14 @@
     </tbody>
   </table>
 
+  {#if mode === 'reconcile'}
+    <ReconcileMode
+      docType="invoice"
+      docId={invoice.invoice_id}
+      onChanged={loadInvoice}
+      onExit={() => setMode('lines')}
+    />
+  {:else}
   <h3>Line Items</h3>
   {#if canEditLineItems}
     {#if lineItems.length === 0}
@@ -261,7 +301,7 @@
       <button type="button" onclick={openAddItem}>Add Line Item</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
       {#if hasBillables}
-        <a href={`/invoices/${invoice.invoice_id}/wizard`} use:link>Show Billables</a>
+        <button type="button" onclick={() => setMode('reconcile')}>Show Billables</button>
       {/if}
     </p>
   {/if}
@@ -298,6 +338,7 @@
     onSaved={() => { adjustmentModalOpen = false; loadInvoice(); }}
     onClose={() => { adjustmentModalOpen = false; }}
   />
+  {/if}
   </div>
   {/if}
 {:else if !listLoaded}

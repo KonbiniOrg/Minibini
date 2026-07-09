@@ -9,6 +9,8 @@
   import EstimateAddLineForm from './EstimateAddLineForm.svelte';
   import DeliverablesSection from '../jobs/DeliverablesSection.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
+  import ReconcileMode from '../wizards/ReconcileMode.svelte';
+  import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
   let { job, estimateId, onJobChange = () => {} } = $props();
 
@@ -97,6 +99,29 @@
   let isSuperseded = $derived(estimate?.status === 'superseded');
   let isDraft = $derived(estimate?.status === 'draft');
   let canEdit = $derived(canManageJobs && isDraft);
+
+  // Reconcile (wizard) is a mode of this panel, not a separate route. Initial
+  // mode comes from the per-doc workspace memory, but is validated against the
+  // live doc: reconcile is only restorable while the estimate is still an
+  // editable draft (someone may have sent it since the mode was remembered).
+  let mode = $state('lines');
+  let modeInitializedFor = $state(null);
+  $effect(() => {
+    if (estimate && String(estimate.estimate_id) === String(estimateId)
+        && modeInitializedFor !== String(estimateId)) {
+      const remembered = getJobWs(job?.job_id).modes[String(estimateId)] ?? 'lines';
+      mode = (remembered === 'reconcile' && canEdit) ? 'reconcile' : 'lines';
+      modeInitializedFor = String(estimateId);
+    }
+  });
+
+  function setMode(next) {
+    mode = next;
+    rememberMode(job?.job_id, estimateId, next);
+    // Returning to lines must show fresh data — reconcile mode may have mutated
+    // the estimate's line items.
+    if (next === 'lines') loadEstimate();
+  }
 
   async function loadEstimate() {
     docLoading = true;
@@ -324,6 +349,13 @@
         {revising ? 'Revising...' : 'Revise Estimate'}
       </button>
     {/if}
+    {#if canEdit}
+      {#if mode === 'reconcile'}
+        <button type="button" onclick={() => setMode('lines')}>Back to lines</button>
+      {:else}
+        <button type="button" onclick={() => setMode('reconcile')}>Reconcile</button>
+      {/if}
+    {/if}
   </div>
 
   <table class="data-table" class:superseded={isSuperseded}>
@@ -356,12 +388,20 @@
     <p><em>This estimate has been superseded and cannot be modified.</em></p>
   {/if}
 
+  {#if mode === 'reconcile'}
+    <ReconcileMode
+      docType="estimate"
+      docId={estimate.estimate_id}
+      onChanged={loadEstimate}
+      onExit={() => setMode('lines')}
+    />
+  {:else}
   <h3>Line Items</h3>
   {#if canEdit}
     <p>
       <button type="button" onclick={() => { pickerOpen = true; }}>Add line</button>
       <button type="button" onclick={() => { adjustmentModalOpen = true; }}>Add Adjustment</button>
-      <a href={`/estimates/${estimate.estimate_id}/wizard`} use:link>Show Tasks &amp; Materials</a>
+      <button type="button" onclick={() => setMode('reconcile')}>Show Tasks &amp; Materials</button>
     </p>
   {/if}
 
@@ -418,6 +458,7 @@
     onSaved={() => { adjustmentModalOpen = false; loadEstimate(); }}
     onClose={() => { adjustmentModalOpen = false; }}
   />
+  {/if}
   </div>
   {/if}
 {:else if !listLoaded}
