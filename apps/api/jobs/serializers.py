@@ -60,7 +60,6 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     spent_amount = serializers.SerializerMethodField()
     invoiced_amount = serializers.SerializerMethodField()
     profit_amount = serializers.SerializerMethodField()
-    nav_targets = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
@@ -73,7 +72,6 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'created_date', 'start_date', 'due_date', 'completed_date',
             'tasks', 'materials', 'fees', 'latest_change_request',
             'estimated_amount', 'spent_amount', 'invoiced_amount', 'profit_amount',
-            'nav_targets',
         ]
         # on_hold/hold_reason are read-only — writes go through the hold/
         # release actions so the service guards always run.
@@ -122,36 +120,6 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         if pm is None:
             return None
         return pm.get_full_name() or pm.username
-
-    def get_nav_targets(self, obj):
-        """The ids the job nav rail links to: each category's most recent
-        live document (superseded versions excluded — they're old copies of
-        the same document, not the destination). Detail-only, like the
-        financial rollups: three queries per row would be an N+1 in a list."""
-        view = self.context.get('view')
-        if view is not None and getattr(view, 'action', None) == 'list':
-            return None
-        from apps.estimates.models import Estimate
-        from apps.inventory.models import Material
-        from apps.invoicing.models import Invoice
-        from apps.purchasing.models import PurchaseOrder
-        estimate = (Estimate.objects.filter(job=obj)
-                    .exclude(status=Estimate.STATUS_SUPERSEDED)
-                    .order_by('-version', '-pk').first())
-        invoice = (Invoice.objects.filter(job=obj)
-                   .exclude(status=Invoice.STATUS_SUPERSEDED)
-                   .order_by('-pk').first())
-        po_line_ids = Material.objects.filter(
-            job=obj, po_line_item__isnull=False,
-        ).values_list('po_line_item_id', flat=True)
-        po = (PurchaseOrder.objects
-              .filter(purchaseorderlineitem__in=po_line_ids)
-              .order_by('-pk').first())
-        return {
-            'estimate': estimate.pk if estimate else None,
-            'invoice': invoice.pk if invoice else None,
-            'po': po.pk if po else None,
-        }
 
     def get_latest_change_request(self, obj):
         """Most recent customer 'Request changes' comment across the job's
