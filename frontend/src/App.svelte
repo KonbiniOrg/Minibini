@@ -39,6 +39,7 @@
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
   import JobEstimatePage from './routes/jobs/JobEstimatePage.svelte';
+  import JobInvoicePage from './routes/jobs/JobInvoicePage.svelte';
   import JobHistoryPage from './routes/jobs/JobHistoryPage.svelte';
   import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
@@ -84,6 +85,8 @@
     '/jobs/:jobId/shipments': JobShipmentsPage,
     '/jobs/:jobId/estimate': JobEstimatePage,
     '/jobs/:jobId/estimate/:docId': JobEstimatePage,
+    '/jobs/:jobId/invoice': JobInvoicePage,
+    '/jobs/:jobId/invoice/:docId': JobInvoicePage,
     '/jobs/:jobId/tasks': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
     '/jobs/:id/tasklist': JobTaskListPage,
