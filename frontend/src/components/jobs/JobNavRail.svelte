@@ -1,32 +1,36 @@
 <script>
   // The job nav rail: a skinny full-bleed strip welded under the JobHeader on
-  // every job page EXCEPT the overview (which hosts these sections itself).
-  // "‹ Overview" goes up a level; the section links jump to each category's
-  // most recent live document (ids from job.nav_targets, computed server-side
-  // on the job detail payload) or the job-scoped page for tasks/shipments.
-  // A category with no document yet renders dimmed and inert — the rail is
-  // identical on every page so it reads as chrome, not content.
+  // every job page, including the overview. Eight always-valid, job-scoped
+  // section links — no server-computed document targets, no dimmed/inert
+  // states. Every section is a static route (`/jobs/:id[/section]`); each
+  // page decides internally what to show when the underlying document
+  // doesn't exist yet. Overview sits first among the sections, set apart
+  // with extra right margin rather than living outside them as a separate
+  // "‹ Overview" back-link.
   const { job, current = null } = $props();
 
-  let targets = $derived(job?.nav_targets ?? {});
   let sections = $derived([
-    { key: 'estimate', label: 'Estimate', href: targets.estimate != null ? `#/estimates/${targets.estimate}` : null },
-    { key: 'tasks', label: 'Tasks', href: `#/jobs/${job.job_id}/tasklist` },
-    { key: 'invoice', label: 'Invoice', href: targets.invoice != null ? `#/invoices/${targets.invoice}` : null },
+    { key: 'overview',  label: 'Overview',  href: `#/jobs/${job.job_id}` },
+    { key: 'estimate',  label: 'Estimates', href: `#/jobs/${job.job_id}/estimate` },
+    { key: 'tasks',     label: 'Tasks',     href: `#/jobs/${job.job_id}/tasks` },
+    { key: 'invoice',   label: 'Invoices',  href: `#/jobs/${job.job_id}/invoice` },
     { key: 'shipments', label: 'Shipments', href: `#/jobs/${job.job_id}/shipments` },
-    { key: 'pos', label: 'POs', href: targets.po != null ? `#/purchase-orders/${targets.po}` : null },
+    { key: 'pos',       label: 'POs',       href: `#/jobs/${job.job_id}/pos` },
+    { key: 'emails',    label: 'Emails',    href: `#/jobs/${job.job_id}/emails`, seam: true },
+    { key: 'history',   label: 'History',   href: `#/jobs/${job.job_id}/history` },
   ]);
 </script>
 
 <nav class="job-nav-rail" aria-label="Job sections">
-  <a class="rail-overview" href="#/jobs/{job.job_id}">‹ Overview</a>
   <div class="rail-sections">
     {#each sections as s (s.key)}
-      {#if s.href}
-        <a class="rail-link" class:active={current === s.key} href={s.href}>{s.label}</a>
-      {:else}
-        <span class="rail-link empty" title="Nothing here yet">{s.label}</span>
-      {/if}
+      <a
+        class="rail-link"
+        class:overview={s.key === 'overview'}
+        class:active={current === s.key}
+        class:seam={s.seam}
+        href={s.href}
+      >{s.label}</a>
     {/each}
   </div>
 </nav>
@@ -43,7 +47,7 @@
     align-items: stretch;
     border-top: 2px solid #9ca3af;
     border-bottom: 2px solid #9ca3af;
-    padding: 0 24px 0 76px; /* text aligns with the header's title block */
+    padding: 0 24px;
     box-sizing: border-box;
     flex: 0 0 auto;
     font-size: 11px;
@@ -52,26 +56,28 @@
     letter-spacing: 0.8px;
   }
   .job-nav-rail a { text-decoration: none; }
-  .rail-overview,
-  .rail-link {
-    display: inline-flex;
-    align-items: center;
-    color: rgba(31, 41, 55, 0.65);
-    border-bottom: 2px solid transparent;
-  }
-  .rail-overview {
-    margin-right: 48px; /* set apart: "up a level", not a sibling section */
-    letter-spacing: 0.4px;
-  }
-  /* The sections spread across the full remaining width. */
+  /* The sections spread across the full width. */
   .rail-sections {
     flex: 1;
     display: flex;
     align-items: stretch;
     justify-content: space-evenly;
   }
-  .rail-overview:hover,
-  a.rail-link:hover { color: #1f2937; }
+  .rail-link {
+    display: inline-flex;
+    align-items: center;
+    color: rgba(31, 41, 55, 0.65);
+    border-bottom: 2px solid transparent;
+  }
+  .rail-link:hover { color: #1f2937; }
   .rail-link.active { color: #1f2937; border-bottom-color: #1f2937; }
-  .rail-link.empty { color: rgba(31, 41, 55, 0.28); cursor: default; }
+  /* Overview is first among the sections but set apart: it's "up a level",
+     not a sibling document category. */
+  .rail-link.overview { margin-right: 32px; }
+  /* Hairline divider ahead of Emails — the paper-trail seam. */
+  .rail-link.seam {
+    border-left: 1px solid #d1d5db;
+    padding-left: 18px;
+    margin-left: 18px;
+  }
 </style>

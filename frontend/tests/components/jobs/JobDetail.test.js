@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
@@ -49,11 +49,13 @@ describe('JobDetail', () => {
       tasks: [], materials: [], can_manage: false,
     };
     user.set({ permissions: [] });
-    const { getByText, queryByText } = render(JobDetail, { props: { job, expenses: [] } });
+    const { getByText, container } = render(JobDetail, { props: { job, expenses: [] } });
     expect(getByText('Tasks & Materials')).toBeInTheDocument();
-    // The old separate pillar labels are gone.
-    expect(queryByText('Tasks')).toBeNull();
-    expect(queryByText('Materials')).toBeNull();
+    // The old separate pillar labels are gone from the accordion (the nav
+    // rail's own "Tasks" section link is a separate, unrelated element).
+    const accordion = within(container.querySelector('.accordion'));
+    expect(accordion.queryByText('Tasks')).toBeNull();
+    expect(accordion.queryByText('Materials')).toBeNull();
   });
 });
 
@@ -67,13 +69,16 @@ describe('JobDetail — single Estimate pillar', () => {
   const noEstimates = { results: [] };
 
   it('shows a single "Estimate" pillar label (not separate Worksheets / Estimates pillars)', () => {
-    const { getByText, queryByText } = render(JobDetail, {
+    const { getByText, container } = render(JobDetail, {
       props: { job: baseJob, worksheets: noWorksheets, estimates: noEstimates },
     });
     expect(getByText('Estimate')).toBeInTheDocument();
-    expect(queryByText('Worksheet')).not.toBeInTheDocument();
-    expect(queryByText('Worksheets')).not.toBeInTheDocument();
-    expect(queryByText('Estimates')).not.toBeInTheDocument();
+    // Scoped to the accordion — the nav rail's own "Estimates" section link
+    // is a separate, unrelated element.
+    const accordion = within(container.querySelector('.accordion'));
+    expect(accordion.queryByText('Worksheet')).not.toBeInTheDocument();
+    expect(accordion.queryByText('Worksheets')).not.toBeInTheDocument();
+    expect(accordion.queryByText('Estimates')).not.toBeInTheDocument();
   });
 
   it('renders the estimate document with no Work / Client View toggle', async () => {
@@ -270,11 +275,12 @@ describe('JobDetail — hasBillables (Invoices pillar)', () => {
       job_id: 300, job_number: 'JOB-300', name: 'Billable', status: 'in_progress', can_manage: true,
       tasks: [{ task_id: 9, name: 'Cut', claimed: true }], materials: [], fees: [],
     };
-    const { getByText } = render(JobDetail, {
+    const { container } = render(JobDetail, {
       props: { job, estimates: { results: [] }, invoices: { results: [] } },
     });
-    await fireEvent.click(getByText('Invoices'));
-    expect(getByText('Create Invoice')).toBeInTheDocument();
+    // "Invoices" now also labels a nav rail link; click the accordion pillar.
+    await fireEvent.click(within(container.querySelector('.accordion')).getByText('Invoices'));
+    expect(within(container.querySelector('.accordion')).getByText('Create Invoice')).toBeInTheDocument();
   });
 
   it('hides "Create Invoice" when the job owns no atoms', async () => {
@@ -282,10 +288,11 @@ describe('JobDetail — hasBillables (Invoices pillar)', () => {
       job_id: 301, job_number: 'JOB-301', name: 'Empty', status: 'in_progress', can_manage: true,
       tasks: [], materials: [], fees: [],
     };
-    const { getByText, queryByText } = render(JobDetail, {
+    const { container } = render(JobDetail, {
       props: { job, estimates: { results: [] }, invoices: { results: [] } },
     });
-    await fireEvent.click(getByText('Invoices'));
-    expect(queryByText('Create Invoice')).toBeNull();
+    // "Invoices" now also labels a nav rail link; click the accordion pillar.
+    await fireEvent.click(within(container.querySelector('.accordion')).getByText('Invoices'));
+    expect(within(container.querySelector('.accordion')).queryByText('Create Invoice')).toBeNull();
   });
 });

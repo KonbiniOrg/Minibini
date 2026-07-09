@@ -6,6 +6,7 @@
   import ShipmentsPillar from './ShipmentsPillar.svelte';
   import { link } from 'svelte-spa-router';
   import JobHeader from './JobHeader.svelte';
+  import JobNavRail from './JobNavRail.svelte';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
@@ -475,6 +476,7 @@
 {/snippet}
 
 <JobHeader {job} {contact} {onStatusChange} />
+<JobNavRail {job} current="overview" />
 
 {#if job.status === 'draft' && job.latest_change_request}
   <div class="change-request-banner">
