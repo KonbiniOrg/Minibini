@@ -267,6 +267,10 @@ class WorkAggregatesTests(FixtureTestCase):
         complete_task = self._task(Task.STATUS_COMPLETE, hours=10, name='done')
         active_task = self._task(Task.STATUS_IN_PROGRESS, hours=20, name='active')
         self._task(Task.STATUS_BLOCKED, hours=5, name='blocked')
+        # Cancelled work is excluded from tasks_total / est_time_total_hours
+        # (board precedent: BoardService.strip_jobs_payload computes progress
+        # with .exclude(status=STATUS_CANCELLED), so progress can reach 100%
+        # when all live tasks complete) but still counts in tasks_terminal.
         self._task(Task.STATUS_CANCELLED, hours=3, name='cancelled')
         self._task(Task.STATUS_PENDING, hours=None, name='pending')
 
@@ -285,11 +289,12 @@ class WorkAggregatesTests(FixtureTestCase):
             self.job, today=date(2026, 1, 15), envelope=WeekEnvelope.default())
         work = result['work']
 
-        self.assertEqual(work['tasks_total'], 5)
+        self.assertEqual(work['tasks_total'], 4)  # cancelled excluded
         self.assertEqual(work['tasks_complete'], 1)
         self.assertEqual(work['tasks_blocked'], 1)
         self.assertEqual(work['tasks_terminal'], 2)  # complete + cancelled
-        self.assertEqual(work['est_time_total_hours'], '38.0')  # 10+20+5+3
+        # 10+20+5 — the cancelled task's 3h must NOT appear here.
+        self.assertEqual(work['est_time_total_hours'], '35.0')
         self.assertEqual(work['est_time_complete_hours'], '10.0')
         self.assertEqual(
             work['working_now'],

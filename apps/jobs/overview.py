@@ -81,7 +81,13 @@ def _work_summary(job):
     from apps.jobs.models import Blep, Task
 
     tasks = list(job.tasks.all())
-    tasks_total = len(tasks)
+    # Cancelled tasks are dead work: excluded from the total count and the
+    # total estimated hours, matching the board's progress stat
+    # (BoardService.strip_jobs_payload counts with STATUS_CANCELLED
+    # excluded) so progress can reach 100% when all live tasks complete.
+    # They still count toward tasks_terminal.
+    live_tasks = [t for t in tasks if t.status != Task.STATUS_CANCELLED]
+    tasks_total = len(live_tasks)
     tasks_complete = sum(1 for t in tasks if t.status == Task.STATUS_COMPLETE)
     tasks_blocked = sum(1 for t in tasks if t.status == Task.STATUS_BLOCKED)
     tasks_terminal = sum(
@@ -91,7 +97,7 @@ def _work_summary(job):
 
     total_est = timedelta()
     complete_est = timedelta()
-    for t in tasks:
+    for t in live_tasks:
         if not t.est_worker_time:
             continue
         total_est += t.est_worker_time
