@@ -71,9 +71,9 @@ def _blep_hours(job):
 
     Every blep counts regardless of the task's RateScheme or status
     (cancelled-task hours were still worked). A running blep counts its time
-    so far via Blep.elapsed. This is the hours figure both `_labor_cost` rates
-    and `spend_breakdown`'s `labor_hours` reports — computed once so the two
-    can never disagree.
+    so far via Blep.elapsed. `spend_breakdown` uses this single hours figure
+    for both its `labor` ($) and `labor_hours` terms, so the two can never
+    disagree.
     """
     from apps.jobs.models import Blep
 
