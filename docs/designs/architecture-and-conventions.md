@@ -704,9 +704,15 @@ The three page categories of the `.page-body` rollout
    generic kit-rollout work **skips it**; subsequent changes to it are
    page-specific decisions.
 
-Category I (fully individualized: board, job overview, schedule) is a
-separate track — those pages use only the BASE layer and get bespoke
-passes on their own schedule.
+Category I (fully individualized: board, schedule) is a separate track —
+those pages use only the BASE layer and get bespoke passes on their own
+schedule. **The job overview is no longer purely Category I** (2026-07-09):
+it mounts `JobShell` like every other job page (header + rail + context
+band are the shared chrome, banner-promoted per the "job" area entry
+above), but its `.page-body` content — the six `.summary-block` lifecycle
+blocks — is still a fully individualized, bespoke layout, not a kit-consumer
+body. So the page is a hybrid: shell chrome from the II/banner track, body
+from the I/bespoke track.
 
 **Detailed pages** (the skip-list for generic sweeps — keep current as
 passes complete):
@@ -745,6 +751,20 @@ page-specific names or references:
   the entity above it; buttons inside get consistent sizing, with
   `primary` (the one most-expected action) and `quiet` (housekeeping,
   e.g. an Edit button riding along) modifiers.
+- **`.summary-block` + `.stat-spread`** — the lifecycle-summary family
+  (2026-07-09, job overview redesign): tiles a subject's lifecycle into
+  fixed-order blocks, each in one of three temperatures —
+  `.summary-block.active` (white card, blue left edge, shadow, full
+  `.stat-spread` of `.stat` groups top-aligned so label rows form one
+  line), `.summary-block.frozen` (flat grey one-liner), `.summary-block.dormant`
+  (dashed ghost one-liner). `.stat` holds `.stat-label` / `.stat-value`
+  (with an optional `.unit` suffix and a `.status-badge` pill) /
+  `.stat-sub` / an optional `.stat-progress` bar. `.clock-line` (+
+  `.clock-good` / `.clock-warn` / `.clock-bad`) is a hairline-topped
+  trailing status line inside an active block. First (and so far only)
+  consumer: the job overview's six blocks (`jobs-tasks-and-worksheets.md`
+  §9) — generic on purpose, named for reuse by other lifecycle
+  summaries.
 
 ### 5.6 Preserving line breaks in free-text fields
 
@@ -853,10 +873,14 @@ descriptions (`LineItemTable`, `JobDetail` invoice + PO lines,
 descriptions) get the §5.6 wrap but are not linkified.
 
 **Layout note:** a long unbreakable token (URL) in a CSS grid/flex column
-won't shrink the track unless the item has `min-width: 0`. The job-overview
-midband sets `.midband > * { min-width: 0 }` for this; pair `overflow-wrap:
-anywhere` (now part of `.preserve-breaks`) with `min-width: 0` anywhere a
-free-text field sits in a grid/flex track.
+won't shrink the track unless the item has `min-width: 0`. Pair
+`overflow-wrap: anywhere` (now part of `.preserve-breaks`) with
+`min-width: 0` anywhere a free-text field sits in a grid/flex track. (The
+`.midband` class this note used to reference was retired with the
+accordion-pillar overview — 2026-07-09; `app.css` currently has no
+`min-width: 0` rule for the context band's `.context-band-grid`, which
+replaced it. Verify before relying on this if a long-URL overflow bug
+turns up in `JobContextBand`.)
 
 ### 5.9 Time-edit modal (shifts + bleps)
 

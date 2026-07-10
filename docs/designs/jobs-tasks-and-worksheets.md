@@ -828,8 +828,10 @@ and `can_manage_time` rules.
   into one label vocabulary via `lib/taskActivity.js` — **Working** (an
   open Blep right now) / **Ongoing** (`in_progress`, none open) /
   **Unstarted** (`pending`) / **Blocked** — surfaced identically on the
-  board card, the job overview Tasks pillar, task detail, task tree, home,
-  and schedule quick card.
+  board card, task detail, task tree, home, and schedule quick card. (The
+  job overview's Work block, §9, shows its own "working now" clock line —
+  worker + task name — rather than this shared label vocabulary; it
+  aggregates, it doesn't list task rows.)
   `pending` vs `in_progress` stays distinct in the model (it gates
   material consumption) but reads as plain "Unstarted" vs "Ongoing"; the
   only real-time signal that stands out is "Working."
@@ -1013,18 +1015,22 @@ added via the "+" button. Tasks within a column are sorted by
 ## 9. UI: Job Detail page
 
 Route: `#/jobs/:id` → `JobDetailPage.svelte`. This is the job's
-**overview** — one of eight equal section pages (Overview, Estimates,
-Tasks, Invoices, Shipments, POs, Emails, History) that share the **job
-workspace shell**. The overview keeps its own bespoke layout (the
-header + rail below, then the accordion pillars); every *other* section
-page instead hosts one panel inside the shared `JobShell` — see §9.6.
-Full design record: `docs/plans/2026-07-08-job-workspace-restructure-design.md`
-(steps 1–3 shipped 2026-07-08 on `feature/job-overview`; step 4 —
-reworking this overview's pillars into something else — is still open).
+**overview** — the first of eight equal section pages (Overview,
+Estimates, Tasks, Invoices, Shipments, POs, Emails, History) that share
+the **job workspace shell**, `JobShell` (§9.6) — `JobHeader` + collapsible
+`JobContextBand` + `JobNavRail`, exactly like every other job page. It is
+the job's **summary, not a work surface**: it answers "where does this
+job stand?" through **six lifecycle blocks in fixed order** (§9.1a), each
+carrying aggregates/clocks/one-line facts and never a list of rows —
+authoring and detail-browsing happen on the section pages the rail links
+to. Full design record:
+`docs/plans/2026-07-08-job-workspace-restructure-design.md` (steps 1–3,
+the shell itself) and `docs/plans/2026-07-09-job-overview-redesign.md`
+(step 4, this page's content — shipped 2026-07-09 on `feature/job-overview`).
 
 ### 9.1 Layout
 
-Top-down:
+Top-down, via `JobShell`:
 
 1. **JobHeader** (`components/jobs/JobHeader.svelte`) — a **fixed
    110px** banner (redesigned 2026-07-08 so content can never overflow
@@ -1050,23 +1056,21 @@ Top-down:
    shows only `HOLD`** (striped amber; the true status is deliberately
    hidden) with the hold reason inline beside it, truncated with the
    full text on hover.
-2. **Description + History** in a flex row. `HistoryPanel`
-   (`components/HistoryPanel.svelte`) shows status changes, notes, and
-   inline email previews.
-3. **Horizontal accordion pillars** — Estimate, Tasks & Materials,
-   Invoices, Shipments, Purchase Orders (`activeSection ∈ {estimate,
-   tasks_materials, invoices, shipments, pos}`). One pillar is expanded;
-   the others render as vertical labels with counts. Clicking a pillar
-   swaps the active one. The pillars are **read-only summaries**: the
-   Estimate pillar shows the estimate document (or **Start Estimate** when
-   the job has none), Tasks & Materials a read-only work table (§9.5),
-   Shipments/PO/Invoice summary panels with links out. Authoring the Job's
-   work atoms happens on the **task-list page**, not the overview. (There is
-   no Plan/Client-View toggle and no Worksheet pillar — the planning layer
-   and the separate "client view" concept were both removed.)
+2. **`JobContextBand`** (§9.6) — the same collapsible description /
+   deliverables / email strip every job page gets, defaulting expanded.
+   The overview does **not** get a bespoke midband; this is its only
+   context row.
+3. **`JobNavRail`** (below).
+4. **The six summary blocks** (`.page-body > .summary-blocks`, §9.1a) —
+   stacked full-width, generous vertical spacing. The page is tall by
+   design.
+
+There is no Plan/Client-View toggle and no Worksheet block — the
+planning layer and the separate "client view" concept were both
+removed before this page existed in its current form.
 
 **The job nav rail** (`components/jobs/JobNavRail.svelte`) — a skinny
-full-width strip mounted directly under the JobHeader on **every** job
+full-width strip mounted directly under the context band on **every** job
 page, including this overview (2026-07-08 restructure — the rail no
 longer treats Overview as a "‹ back" escape; it's the first of eight
 equal section links, set apart only by extra right margin). Eight
@@ -1081,22 +1085,86 @@ old chevron/dimmed rail (§9.6 has the replacement per-document model).
 Empty sections are real destinations that render a create affordance
 rather than being inert.
 
+### 9.1a The six lifecycle blocks
+
+**Concept.** Each block carries a **temperature** driven by job/document
+state — where the heat sits on the page tells you the job's stage before
+you read a number:
+
+- **Active** (`.summary-block.active`) — the block's lifecycle moment is
+  live: full-width white card, blue left heat-edge, a `.stat-spread` of
+  stat groups, an optional trailing `.clock-line`.
+- **Frozen** (`.summary-block.frozen`) — the moment has settled: one flat
+  grey line of facts.
+- **Dormant** (`.summary-block.dormant`) — not yet: one dashed ghost line.
+
+CSS vocabulary: `docs/designs/architecture-and-conventions.md` §5.5a
+(`.summary-block` / `.stat-spread` family). **No block-level links or
+actions this pass** (RM decision 2026-07-09): the rail sits directly
+above and corner links would duplicate it; Spend has no honest
+destination at all; clocks/signals are display-only pending a later
+pass. Blocks never list rows (tasks, line items, POs) — the section
+pages do that.
+
+**Fixed order: Scope → Work → Materials → Spend → Invoicing → Delivery**
+(the two money blocks sit adjacent deliberately — spent vs. billed vs.
+scope reads as one story). Block names describe *aspects of the job's
+health*, not documents (the rail names the surfaces).
+
+| Block | Dormant | Active | Frozen |
+|---|---|---|---|
+| **Scope** | no estimate exists yet | current estimate is draft/open, **or** a draft/open change order re-activates a settled estimate (customer-response clock, 7 days) | estimate terminal and no live CO — total, version, accepted/CO dates, deliverable count |
+| **Work** | job not yet approved | approved/in_progress with non-terminal tasks — progress (by estimated worker time, falling back to task count), task counts + blocked pill, Due stat (working-day countdown, omitted with no due date), "working now" clock | all tasks terminal / job `work_complete`+ (or stopped for good: cancelled/rejected) — task count + hours logged |
+| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` § Venue rule, and LATER.md) | POs exist, all received |
+| **Spend** | nothing spent | anything spent, job not terminal — Labor ($ + hours), Materials ($ bought), Total spent (% of scope) | job terminal — same three figures as settled facts |
+| **Invoicing** | no invoices | anything unbilled/unpaid — one stat group per invoice (payment-latency clock: green "paid in N days" / red "sent N days ago, unpaid"), Remaining to bill, Billed % (collapses oldest paid invoices past 4 rows) | fully billed and paid |
+| **Delivery** | nothing prepared yet | a prepared shipment awaits pickup (red past 3 working days), or work is done with nothing shipped | everything picked up |
+
+**Backend.** `GET /api/jobs/{id}/overview/` (`JobViewSet.overview` action
+→ `apps.jobs.overview.JobOverviewService.summary`) is the one aggregate
+read the SPA can't cheaply compute: `{due, spend, work}` —
+- `due`: working-day countdown to `Job.due_date` via
+  `apps.schedule.calendar_arithmetic.is_working_day` against the shop's
+  `load_shop_envelope()`; `null` with no due date; negative = overdue.
+- `spend`: the labor/materials split, delegated entirely to
+  `apps.jobs.financials.spend_breakdown(job)` (§9.3) — `{labor,
+  labor_hours, materials_bought, total}`, string-formatted. This is the
+  same source of truth as the header's Spent figure; the two can never
+  drift apart.
+- `work`: task counts (`tasks_total`/`tasks_complete`/`tasks_blocked`/
+  `tasks_terminal`), estimated-vs-completed worker-hours, and
+  `working_now` (task name + worker name per open Blep). **Cancelled
+  tasks are excluded from `tasks_total` and the hour totals** (matching
+  the board's progress stat) but still count toward `tasks_terminal`.
+
+Everything else the blocks need (estimates, change orders, invoices,
+POs, shipments, deliverable count) comes from the page's existing
+per-list fetches — `JobDetailPage.svelte` fires them all in parallel
+alongside the overview call, `now` captured once per load so every
+block reads the same instant.
+
+**Frontend.** `frontend/src/lib/jobOverview.js` is the pure view-model —
+every block rule, clock, temperature, and copy string lives there
+(`scopeBlock`, `workBlock`, `materialsBlock`, `spendBlock`,
+`invoicingBlock`, `deliveryBlock`; no fetching, no `Date.now()` — `now`
+is always passed in). Threshold constants ship as named exports
+(`RESPONSE_CLOCK_DAYS = 7`, `DUE_PRESSURE_WORKING_DAYS = 5`,
+`PICKUP_CLOCK_WORKING_DAYS = 3`, `INVOICE_ROW_MAX = 4`) with a comment
+pointing at `Configuration` as the eventual home — no config UI yet.
+`components/jobs/overview/*.svelte` (one thin wrapper per block, e.g.
+`ScopeBlock.svelte`) call the lib and hand the result to the shared
+`SummaryBlock.svelte` renderer, which draws the three temperatures and
+is the only place the `.summary-block`/`.stat-spread` markup lives.
+
 ### 9.2 Components
 
 | Component | Role |
 |---|---|
-| `JobDetail.svelte` | Composes the page; owns the accordion `activeSection` state, fetches related data |
+| `JobDetail.svelte` | Composes the page (~120 lines): mounts `JobShell`, derives the two inputs the lib can't take raw (materials Coverage signal, estimate/CO arrays), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
-| `HistoryPanel.svelte` | Notes + history timeline + email entries |
-| `Accordion.svelte` | Reusable expand/collapse used elsewhere |
-| `ShipmentsPillar.svelte` | Read-only shipments summary inside the Shipments pillar |
-
-The Estimate pillar shows the estimate document (line items + grand total,
-or **Start Estimate** when the job has none). Tasks & Materials shows a
-**read-only** work table (`wo-table`: Task / assignee / status / time, with
-materials nested); Invoice / PO / Shipments pillars are summary panels with
-links out. The overview does not author atoms — `WorkItemForm` /
-`MaterialModal` / `FeeModal` live on the **task-list page** (§9.5), not here.
+| `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
+| `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |
+| `components/jobs/overview/{Scope,Work,Materials,Spend,Invoicing,Delivery}Block.svelte` | Thin wrappers: call their `lib/jobOverview.js` function, pass the result to `SummaryBlock` |
 
 ### 9.3 Header financial rollups
 
@@ -1130,6 +1198,19 @@ The job-board Unpaid and Closed cards consume the same module via
 invoiced, `spent`, `profit`), so the board and header can never drift. The cards
 label the figure "Invoiced".
 
+**`spend_breakdown(job)`** (same module, added 2026-07-09) splits the
+Spent figure into its labor/materials parts —
+`{labor, labor_hours, materials_bought, total}`, all Decimal, money
+terms quantized to cents. `total` is the same value `_spent(job)`
+returns (by construction — `_spent` just calls `spend_breakdown(job)['total']`
+— so the header figure and the split can never drift apart). `labor`
+= all blep hours on the job × `average_labor_cost`; `materials_bought`
+= non-rejected, non-stock-receipt job expenses + consumed materials
+with no linked expense at cost (the same two terms the Spent bullet
+above describes, just not summed with labor). This is the job
+overview's Spend block's only data source (§9.1a) — the overview never
+re-derives the split.
+
 **Deferred — Billable.** A fifth figure (value of work earned, at selling price,
 optionally plus estimate for not-yet-actualed lines) is intentionally not built;
 its definition is unsettled. When chosen it slots into `compute_job_financials`
@@ -1138,18 +1219,14 @@ rework to the other four.
 
 ### 9.4 Expenses on the Job UI
 
-Expenses attached to a job (`Expense.job`) surface in two places, fed by
-`/api/expenses/?job=<id>`:
-
-- **Job overview** (`JobDetail`): the **Materials** pillar becomes "Materials &
-  Expenses". Material-less expenses render as their own rows (description,
-  category, amount); a material-linked expense annotates its material's row
-  ("paid $X") rather than getting a duplicate row — keeping the visual count
-  honest. The pillar count includes material-less expenses.
-- **Full task list** (`TasksPanel.svelte`, hosted by `JobShell` at
-  `#/jobs/{id}/tasks`): material-less expenses render in an "Expenses (no
-  material)" section below the task tree, mirroring how taskless materials
-  surface.
+Expenses attached to a job (`Expense.job`) surface on the **full task
+list** (`TasksPanel.svelte`, hosted by `JobShell` at `#/jobs/{id}/tasks`,
+fed by `/api/expenses/?job=<id>`): material-less expenses render in an
+"Expenses (no material)" section below the task tree, mirroring how
+taskless materials surface. The job overview does not list expense rows
+(no block lists rows, §9.1a) — its Spend block shows the aggregate
+labor/materials dollar split instead (`spend_breakdown`, §9.3), which
+already folds in every expense.
 
 An expense can be **created in place** from the full task list toolbar: an "Add
 Expense" button (next to "Add Material", shown when the job isn't locked) opens
@@ -1160,8 +1237,8 @@ surfaces. Expense create is open to any authenticated user.
 ### 9.5 The work surface (task-list page)
 
 Authoring the Job's own work atoms happens on the **task-list page**
-(`#/jobs/{id}/tasks`, reached from the Tasks & Materials pillar or the
-rail's Tasks link). The route (`JobTaskListPage.svelte`) is thin glue —
+(`#/jobs/{id}/tasks`, reached from the rail's Tasks link). The route
+(`JobTaskListPage.svelte`) is thin glue —
 it resolves the job and hosts `TasksPanel.svelte` (`components/tasks/`)
 inside `JobShell` (§9.6); `TasksPanel` owns everything described below.
 It is available regardless of estimate state, so pre-approval / released
@@ -1195,28 +1272,33 @@ row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-
 view page only** — Set pricing (establishes a provisional material), the Order
 dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
 quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
-overview **Tasks & Materials pillar is passive** — it shows the same chips and
-consumed/released styling but no buttons or links. Full vocabulary and action
-table: `materials-inventory-and-purchasing.md` §16.
+job overview shows no material rows at all — its Materials block is an
+aggregate Coverage stat only (§9.1a; `materials-inventory-and-purchasing.md`
+§ Venue rule). Full vocabulary and action table:
+`materials-inventory-and-purchasing.md` §16.
 
-The Job overview's **Tasks & Materials** pillar shows a **read-only** mirror
-of these atoms (`wo-table`) — it does not author. **Start Estimate** (creates
-a draft estimate directly — `POST /api/estimates/` with `{job}`) and, while
-the job is held (`on_hold` flag), **+ New change order** live on the
-overview's Estimate pillar. (These replaced the deleted Worksheet detail page; the old
+**Start Estimate** (creates a draft estimate directly — `POST /api/estimates/`
+with `{job}`) and, while the job is held (`on_hold` flag), **Create Change
+Order** live on `EstimatePanel.svelte` (the Estimates section page,
+`#/jobs/:jobId/estimate` — §9.6, `estimates-and-prices.md` §11.4), not on
+the overview. (These replaced the deleted Worksheet detail page; the old
 Plan/Client-View toggle is gone.)
 
 ### 9.6 The job workspace shell (section pages)
 
-Every job page other than the overview above renders through one shared
-layout component, **`JobShell.svelte`** (`components/jobs/`): `JobHeader`
-+ `JobNavRail` + an optional collapsible `JobContextBand`, with the
-page's one **section panel** rendered into its `children` slot. Route
-pages are thin glue — resolve `GET /api/jobs/{id}/` (and its contact),
-pass the job to `JobShell`, host one panel:
+Every job page — the overview above included, since 2026-07-09 —
+renders through one shared layout component, **`JobShell.svelte`**
+(`components/jobs/`): `JobHeader` + an optional collapsible
+`JobContextBand` + `JobNavRail`, with the page's own content rendered
+into its `children` slot. For the seven other sections that content is
+one **section panel**; for the overview it's the six summary blocks
+(§9.1a) — the overview is the one `JobShell` consumer whose body isn't
+a panel. Route pages are thin glue — resolve `GET /api/jobs/{id}/` (and
+its contact), pass the job to `JobShell`, host the content:
 
-| Section | Route | Glue page | Panel |
+| Section | Route | Glue page | Content |
 |---|---|---|---|
+| Overview | `#/jobs/:id` | `JobDetailPage.svelte` | `JobDetail.svelte` — six summary blocks (§9.1a), not a panel |
 | Estimates | `#/jobs/:jobId/estimate[/:docId]` | `JobEstimatePage.svelte` | `EstimatePanel.svelte` (`components/estimates/`) |
 | Tasks | `#/jobs/:jobId/tasks` (task detail: `#/jobs/:jobId/tasks/:taskId`, §10) | `JobTaskListPage.svelte` | `TasksPanel.svelte` (`components/tasks/`) |
 | Invoices | `#/jobs/:jobId/invoice[/:docId]` | `JobInvoicePage.svelte` | `InvoicePanel.svelte` (`components/invoices/`) |
@@ -1267,8 +1349,7 @@ collapse state (`band`). The URL is always the source of truth for
 leave off" when a bare section route or the band mounts.
 
 **The context band** (`JobContextBand.svelte`, mounted by `JobShell` on
-every section page — not the overview, which keeps its own
-description/deliverables/email layout in the accordion above) is a
+every job page, the overview included, since 2026-07-09) is a
 collapsible strip defaulting to **expanded**, holding the job's
 description, deliverables (`DeliverablesSection`), and a live email
 preview (`EmailPanel`). It fetches nothing while collapsed; expanding
@@ -1653,31 +1734,39 @@ pick, pack, and mark goods picked up without elevated permissions).
 
 ### 12.8 UI
 
-**Job detail page**: a third column appears in the existing Description
-| ... | History flex row. Renders as a `<DeliverablesSection>` panel
-matching the chrome of its neighbors. The list shows simple
-`qty units description` lines (no headers, no computed columns). An
-"Edit" link in the panel head opens `<DeliverablesEditModal>` when the
-list is editable.
+**One mount point** (2026-07-09, superseding the earlier two-mount-point
+design below): `<DeliverablesSection>` now lives inside
+`JobContextBand.svelte` (§9.6), the collapsible strip `JobShell` mounts
+on **every** job page — overview, Estimates section, Tasks, Invoices,
+etc. Since `EstimatePanel` (the Estimates section) is itself hosted
+inside `JobShell`, the old "mounted separately on the Job detail page
+and the Estimate detail page" split collapsed into one shared component
+instance reached from any job page — the scope is still editable
+wherever the user happens to be pre-acceptance, just via the shared
+band rather than two direct mounts. It renders as a `<DeliverablesSection>`
+panel matching the chrome of its neighbors (Description, Email) inside
+the band's grid. The list shows simple `qty units description` lines
+(no headers, no computed columns). An "Edit" link in the panel head
+opens `<DeliverablesEditModal>` when the list is editable.
 
-**Two mount points, one component.** The same `<DeliverablesSection>`
-is mounted on the **Job detail** page and the **Estimate detail** page
-(bottom of each), so the scope can be edited wherever the user happens to
-be pre-acceptance. It takes `jobId` plus a `canManage` prop, which each
-parent feeds from its own already-fetched per-object `can_manage` flag
-(`job.can_manage`, `estimate.can_manage` — both from
-`JobScopedCanManageMixin` / `JobService.user_can_manage`). The "Edit"
-affordance shows only when `canManage && editability.editable`, so the
-button appears exactly when the server would accept the write (atom
-holder **or** the job's PM, and the list not yet locked by a sent/
-accepted estimate or open change order — see §12.2). The component is
-only ever mounted on Job-related pages, so `jobId` is always resolvable.
+`<DeliverablesSection>` takes `jobId` plus a `canManage` prop, fed from
+`job.can_manage` (`JobScopedCanManageMixin` / `JobService.user_can_manage`
+— `JobContextBand` always has the job object, so this is always
+resolvable). The "Edit" affordance shows only when
+`canManage && editability.editable`, so the button appears exactly when
+the server would accept the write (atom holder **or** the job's PM, and
+the list not yet locked by a sent/accepted estimate or open change
+order — see §12.2).
 
-A read-only **Shipments pillar** sits between the Invoices and Purchase
-Orders pillars in the accordion. It renders the same matrix table as
-the editor page (one row per Deliverable, one column per Shipment with
-status + date in the header) and a "Manage shipments →" link to the
-editor.
+`ShipmentsPillar.svelte` — the read-only shipments matrix that used to
+sit between the Invoices and Purchase Orders accordion pillars — is
+**orphaned** since the pillars were retired (2026-07-09): nothing
+imports it. Its job (a shipments summary reachable from the job's
+landing page) is not currently replaced anywhere — the overview's
+Delivery block (§9.1a) shows aggregate stats only, and the full matrix
+lives on the Shipments section page (`ShipmentsPanel.svelte`, reached
+via the rail). See `docs/designs/LATER.md` — delete the orphan once RM
+confirms nothing planned wants it.
 
 **Job Shipments page** at `#/jobs/:jobId/shipments`: the editable
 matrix. Adds + Discard (local for drafts, server for persisted),

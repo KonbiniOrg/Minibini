@@ -62,10 +62,14 @@ _Done when:_ each oversized route has had its UI pass with inline logic/sub-view
 extracted into (tested) components, or a deliberate note recorded for why a given
 page stays whole.
 
-> Related: `components/jobs/JobDetail.svelte` is a similarly oversized
-> **component** (not a route). It has a mount-only test today; its deep
-> derivations (version timeline, CO delta layering) warrant the same
-> extract-and-unit-test treatment. Noted in `docs/designs/frontend-testing.md`.
+> Resolved 2026-07-09: `components/jobs/JobDetail.svelte`'s deep
+> derivations (version timeline, CO delta layering, etc.) were the
+> accordion-pillar era's logic. The 2026-07-09 overview redesign
+> replaced the pillars with six summary blocks and extracted every rule
+> into `lib/jobOverview.js` (pure functions, unit-tested) + one dumb
+> renderer (`components/jobs/overview/SummaryBlock.svelte`) + six thin
+> wrapper components — `JobDetail.svelte` itself is now ~120 lines of
+> glue. No longer oversized; no longer carries untested deep logic.
 
 ---
 
@@ -193,6 +197,42 @@ Status coupling, transitions, and what a job may do at each stage.
   (e.g. debounce, or ignore a change while a transition is in flight).
   _Done when:_ reproduced and fixed (one selection = one transition), or confirmed a stray
   double-click that can't reasonably recur.
+
+## Job overview (2026-07-09 six-block redesign)
+
+The overview replaced its accordion pillars with six lifecycle summary
+blocks this pass (`docs/plans/2026-07-09-job-overview-redesign.md`;
+durable reference `docs/designs/jobs-tasks-and-worksheets.md` §9). Debt
+and open questions specific to that redesign:
+
+- **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
+  `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
+  matrix that used to sit in the accordion between Invoices and
+  Purchase Orders) has zero importers now that the accordion pillars
+  are gone — the overview's Delivery block shows aggregate stats only,
+  and the full matrix already lives on the Shipments section page
+  (`ShipmentsPanel.svelte`). Same story one layer down:
+  `components/Accordion.svelte` (+ its private `css/accordion.css`) had
+  exactly one consumer, `JobDetail.svelte`'s pillar expand/collapse,
+  which is also gone — nothing else in the app imports `Accordion.svelte`
+  today (only its own test, `tests/components/Accordion.test.js`, still
+  references it directly). _Done when:_ RM confirms nothing planned
+  wants either component, then both (`ShipmentsPillar.svelte`,
+  `Accordion.svelte` + `accordion.css` + their tests) are deleted — or a
+  future reuse is identified and they stay.
+- **Overview Coverage stat counts only `materialStatus` "Needed" as SHORT.** — _added 2026-07-09_
+  The Materials block's Coverage signal (`JobDetail.svelte`'s `coverage`
+  derivation, consumed by `materialsBlock()` in `lib/jobOverview.js`)
+  flags `SHORT` only when a job material's status is exactly **Needed**
+  (established, stock short, no PO link). Materials in **Needs pricing**
+  or **Awaiting customer** are also short of stock with no incoming
+  supply lined up, but don't count toward `SHORT` — so a job stuck
+  waiting on pricing or a customer-supplied item can show a clean `OK`
+  Coverage stat while materials are, in practice, not covered. Revisit
+  if RM wants those statuses folded into the SHORT count (or a separate
+  signal for them) once the block has lived a while.
+  _Done when:_ RM has decided whether Needs-pricing/Awaiting-customer
+  materials should affect the Coverage stat, and the behavior matches.
 
 ## Change orders
 
@@ -650,22 +690,28 @@ Cross-cutting UI/API conventions and shared components.
   separation that requires), with the history feed still recording them (or
   a recorded decision otherwise).
 
-- **JobDetail's private `.pill-*` palette (and JobCard's `.doc-pill-*`) should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass)_
-  `components/jobs/JobDetail.svelte` carries ~20 `.pill-*` status-color
-  variants and `components/board/JobCard.svelte` a parallel `.doc-pill-*`
-  set — both are private re-implementations of the consolidated global
-  `.status-{status}` palette. Both files are Category-1 (fully
-  individualized) surfaces, so fold this into their own page-level passes
-  rather than a blind swap. _Done when:_ document-status colors on the job
-  overview and board cards come from the global classes.
-- **In-content tab bars (est/inv/po tabs on the job overview, history tablist) have no shared idiom.** — _added 2026-07-08 (CSS review pass)_
-  JobDetail defines `.est-tabs`/`.inv-tabs`/`.po-tabs` — structurally
-  identical, palette-only differences — and `JobHistorySection.svelte`
-  (formerly `JobHistoryPage.svelte`; extracted 2026-07-08) has a fourth
-  variant with a different underline weight. Decide a shared in-content
-  tab treatment (distinct from the page-level `.page-tabs`) during those
-  pages' passes. _Done when:_ one in-content tab idiom exists with a
-  per-area accent, or a deliberate exception is recorded.
+- **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
+  Originally paired with `JobDetail.svelte`'s `.pill-*` palette, both
+  private re-implementations of the consolidated global `.status-{status}`
+  palette. **JobDetail's half is done**: the 2026-07-09 overview redesign
+  deleted the `.pill-*` palette along with the accordion pillars —
+  `SummaryBlock.svelte` renders document-status pills via the shared
+  `.status-badge status-{tone}` classes directly. `components/board/JobCard.svelte`
+  still carries its own `.doc-pill-*` set (`DOC_PILL_STYLES`,
+  draft/open/accepted/rejected/expired), untouched. _Done when:_
+  document-status colors on board cards come from the global classes too.
+- **In-content tab bars (history tablist) have no shared idiom.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
+  Originally three variants: JobDetail's `.est-tabs`/`.inv-tabs`/`.po-tabs`
+  plus `JobHistorySection.svelte`'s tablist. **JobDetail's three are gone**
+  — the 2026-07-09 overview redesign deleted them with the accordion
+  pillars, and the Estimates/Invoices sections' own in-content document
+  switcher is now the shared `DocSubnav.svelte` (one pill per version/
+  invoice, status badge inline) rather than a bespoke tab bar.
+  `JobHistorySection.svelte`'s `.tabs`/`role="tablist"` remains the one
+  outlier with its own underline weight, not yet reconciled with
+  `DocSubnav` or `.page-tabs`. _Done when:_ `JobHistorySection`'s tablist
+  adopts a shared idiom (`DocSubnav`-style or `.page-tabs`) or a
+  deliberate exception is recorded.
 - **No shared form-layout vocabulary.** — _added 2026-07-08 (CSS review pass); scoped 2026-07-08_
   Zero `.form-row`/`fieldset`/label conventions exist; every form page and
   modal lays out label+input rows ad hoc (the modal *shell* is shared via
@@ -789,6 +835,25 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the unused `showStatus` prop and its `{#if !showStatus}`
   branches are removed from `TaskTree.svelte`, or a caller + test exercise
   the compact mode.
+
+- **Per-row `total` on the unfiltered estimate/CO/invoice list serializers is an N+1.** — _added 2026-07-09_
+  `EstimateSerializer.get_total`, `ChangeOrderSerializer.get_total`, and
+  `InvoiceSerializer.get_total` (all added/extended 2026-07-09 for the
+  job-overview redesign — `docs/designs/estimates-and-prices.md` §5.5,
+  §14.2; `docs/designs/invoicing-and-expenses.md`) are per-object
+  `SerializerMethodField`s: each re-queries its line items (or, for
+  `ChangeOrderSerializer`, calls `compose_change_order_diff`) with no
+  queryset-level annotation. Fine for the job-overview fetch (page-sized:
+  the current estimate + a handful of COs/invoices for one job), but
+  a genuinely unfiltered list (e.g. `GET /api/estimates/`,
+  `GET /api/invoices/` without `?job=` or `?summary=true`) pays one extra
+  query per row. `InvoiceSummarySerializer` (the `?summary=true` path)
+  already avoids this via `InvoiceViewSet.get_queryset` annotations
+  (`total_anno`) — the same `prefetch_related`/annotation treatment is
+  the candidate fix for the other list paths, if/when one of them is
+  used at real scale unfiltered. _Done when:_ the unfiltered list
+  endpoints' `total` computation is annotated/prefetched (or a decision
+  is recorded that current call sites never hit this at scale).
 
 - **`TagViewSet` implicit CRUD — the last `serializer.save()` bypass, left for its original author.** — _added 2026-05-27; narrowed 2026-07-04_
   Sole remainder of the three-layer bypass sweep (A holes, B metadata

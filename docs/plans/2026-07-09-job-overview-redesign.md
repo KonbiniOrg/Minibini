@@ -6,6 +6,19 @@ overview. Mockups: `.superpowers/brainstorm/1591-1783649531/content/`
 iteration). Parent design: `docs/plans/2026-07-08-job-workspace-restructure-design.md`
 (this is its deferred step 4)._
 
+> **Status: shipped 2026-07-09 on `feature/job-overview`.** Backend
+> (`apps/jobs/financials.spend_breakdown`, `GET /api/jobs/{id}/overview/`
+> via `apps.jobs.overview.JobOverviewService`), frontend
+> (`lib/jobOverview.js`, `components/jobs/overview/*`, `JobDetail.svelte`
+> rebuilt around the six blocks through `JobShell`), and computed `total`
+> fields on the estimate/CO/invoice serializers all landed. Durable
+> reference: `docs/designs/jobs-tasks-and-worksheets.md` §9 (§9.1a for the
+> six blocks in detail). Deferred items below (block-level links, actions,
+> Configuration-backed thresholds) are tracked in
+> `docs/designs/LATER.md` § Job overview where a concrete gap was found
+> during the closing verification pass; most of "Out of scope" remains
+> genuinely future work, not yet re-opened.
+
 ## Concept
 
 The overview is the job's **summary**, not a work surface. It answers

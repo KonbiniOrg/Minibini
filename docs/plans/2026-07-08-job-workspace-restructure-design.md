@@ -2,11 +2,15 @@
 
 _2026-07-08, RM + Claude. Agreed direction; implementation on its own branch._
 
-> **Status (2026-07-08):** Sequencing steps 1–3 (section-panel extraction,
-> job shell, wizard-as-mode) shipped on `feature/job-overview`, this
-> commit. Step 4 (rework the overview — kill the pillars, design the
-> replacement) remains open. See `docs/designs/jobs-tasks-and-worksheets.md`
-> §9.6 for the shipped shell's durable reference.
+> **Status (2026-07-09):** All four steps shipped on `feature/job-overview`.
+> Steps 1–3 (section-panel extraction, job shell, wizard-as-mode) shipped
+> 2026-07-08. **Step 4 (rework the overview — kill the pillars, design the
+> replacement) shipped 2026-07-09**: the accordion pillars are gone,
+> replaced by six lifecycle summary blocks; the overview now mounts
+> `JobShell` like every other job page. See
+> `docs/plans/2026-07-09-job-overview-redesign.md` for step 4's own spec
+> and `docs/designs/jobs-tasks-and-worksheets.md` §9 (shell: §9.6, blocks:
+> §9.1a) for the durable reference.
 
 ## The shift
 
@@ -309,10 +313,15 @@ forever — consider pruning or capping).
 - `docs/designs/jobs-tasks-and-worksheets.md` §9 (and the rail paragraph
   added 2026-07-08, plus §9.1's JobHeader description) must be rewritten
   when this ships — they describe the pillar overview being killed.
+  **Done 2026-07-09** — §9 was rewritten for the six-block overview
+  (§9.1a) alongside the rest of this doc's step 4.
 
 ## Open questions deliberately left
 
-1. Overview bottom area design (step 4 — design when reached).
+1. ~~Overview bottom area design (step 4 — design when reached).~~
+   **Resolved 2026-07-09:** six lifecycle summary blocks (Scope → Work →
+   Materials → Spend → Invoicing → Delivery), spec
+   `docs/plans/2026-07-09-job-overview-redesign.md`.
 2. Rail docks into collapsible header vs stays its own strip (RM agnostic).
 3. PO/Emails hairline divider polish (optional).
 4. Actions menu at 2 items: keep menu vs direct buttons.

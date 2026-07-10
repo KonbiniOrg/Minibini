@@ -44,6 +44,18 @@ One per draft, one per real billing event. Linked to `Job` (FK, `CASCADE`). The 
 
 `@history(exclude=['invoice_id'])` decorates the model — status changes auto-write `HistoryEntry` rows.
 
+`InvoiceSerializer` additionally exposes a read-only `total`
+`SerializerMethodField` (`Σ line.qty × line.price` across the invoice's
+line items, quantized to cents) — the authoritative document total,
+matching `InvoiceSummarySerializer.total_anno` and
+`financials._invoiced`. The job-overview Invoicing block
+(`frontend/src/lib/jobOverview.js`) consumes this rather than
+recomputing client-side (adjustment/percentage lines make a client-side
+`qty*price` walk fragile). It is a per-object method field with no
+queryset annotation on the plain (non-`summary=true`) list action, so
+an unfiltered `/api/invoices/?job=<id>` pays one extra query per
+invoice row — see `docs/designs/LATER.md` for the N+1 note.
+
 ### Status machine
 
 | Value | Meaning |
@@ -856,20 +868,28 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 
 **Filters:** status preset, due-date range (from/to), and a `CustomerPicker` component that emits `{type: 'business'|'contact', id}`. A business selection maps to `?business=<id>`, rolling up invoices for all of that business's contacts; a contact selection maps to `?contact=<id>`.
 
-**Backend — `?summary=true` opt-in (dual contract).** The financials list page calls `GET /api/invoices/?summary=true`. Only in **summary mode** does `InvoiceViewSet` switch to the lightweight `InvoiceSummarySerializer`, apply the annotated totals, default the status filter to **open** (open + partly-paid), and apply the status presets / due-date range / `?business=` / `?contact=` / ordering. **Without** `summary=true`, the list endpoint keeps its original contract — the full `InvoiceSerializer` (with nested `line_items`) and **all** statuses (no default filter). This preserves the pre-existing consumer `GET /api/invoices/?job=<id>`, which the **Job overview** (`JobDetailPage`) uses to render each invoice's line items and compute billed/paid rollups. (Switching the bare list action to the summary serializer + default-open unconditionally was a regression that left the Job overview showing invoices with no line items and no totals.) List read permission stays `IsAuthenticated` in both modes — the Financials sidebar gate is a UI convention only.
+**Backend — `?summary=true` opt-in (dual contract).** The financials list page calls `GET /api/invoices/?summary=true`. Only in **summary mode** does `InvoiceViewSet` switch to the lightweight `InvoiceSummarySerializer`, apply the annotated totals, default the status filter to **open** (open + partly-paid), and apply the status presets / due-date range / `?business=` / `?contact=` / ordering. **Without** `summary=true`, the list endpoint keeps its original contract — the full `InvoiceSerializer` (with nested `line_items`) and **all** statuses (no default filter). This preserves the pre-existing consumer `GET /api/invoices/?job=<id>`, which the **job overview** page (`JobDetailPage` → `JobDetail.svelte` → `InvoicingBlock`) uses for its Invoicing block, reading each invoice's computed `total` field (above) rather than walking `line_items` itself. (Switching the bare list action to the summary serializer + default-open unconditionally was a regression that left the Job overview showing invoices with no line items and no totals.) List read permission stays `IsAuthenticated` in both modes — the Financials sidebar gate is a UI convention only.
 
 `ReconcileMode` tracks `selectedAtoms` with `$state`; "Add to line item" and "Create new line item" both POST and reload. 409 from the API surfaces as a `FormMessage` prompting the user to reload the reconcile view for a fresh source pool.
 
-### Job overview — Create/View model
+### Starting an invoice — Create/View model
 
-The Job overview page (invoice pillar) and the Invoices section
-(`InvoicePanel`, when the job has no invoices yet) follow a Create/View
-model:
+**Superseded by the 2026-07-08 job-workspace restructure and the
+2026-07-09 overview redesign:** there is no longer an "invoice pillar"
+on the job overview — the overview has no authoring affordances at all
+(display-only summary blocks; see `jobs-tasks-and-worksheets.md` §9).
+The Create/View model now lives entirely on the Invoices section
+(`InvoicePanel.svelte`, when the job has no invoices yet):
 
-- **"Create Invoice"** / **"Start Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and navigates to the new invoice at `#/jobs/:jobId/invoice/:newId`. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only).
-- **"View Invoice"** — shown whenever any invoice exists for the job, regardless of its status.
+- **"Start Invoice"** — shown when the job's status is billable (`approved`, `in_progress`, `work_complete`, `completed`, or `cancelled`) **and** no draft invoice exists. POSTs `{job}` to `/api/invoices/` (routed through `InvoiceWizardService.open_for_job`) and reloads the panel onto the new draft. Shown/allowed for users with `can_manage_jobs` **or** `can_manage_financials` (the `create` action of `InvoiceViewSet` is `(CanManageJobs | CanManageFinancials)`, matching the frontend gate and the wizard path; all other invoice write actions, including line-item editing, stay `can_manage_financials`-only).
+- **Viewing** — once an invoice exists, `InvoicePanel`'s own subnav
+  (`DocSubnav.svelte`) lists every invoice for the job; picking one
+  shows it in place (no separate "View" button — the Invoices section
+  route *is* the view). The overview's Invoicing block shows a stat
+  summary only, with no link into the panel (the rail is the
+  navigation).
 
-Both can appear together: for example, a job may have a sent (`open`) invoice and no draft, in which case "View Invoice" and "Create Invoice" are both shown (the "Create" would open a second draft for the new billing event). One draft per job is guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job` — a second "Create" while a draft already exists returns the existing draft rather than creating a new one. (The `unique_draft_invoice_per_job` partial unique constraint is declared on the model but is **not** created on MySQL, which doesn't support conditional unique constraints — Django emits `models.W036` — so the invariant rests on the service, not the DB.)
+"Start Invoice" and the subnav's existing invoices can both be present at once: a job may have a sent (`open`) invoice and no draft, in which case the subnav shows the `open` invoice and "Start Invoice" is still offered (it would open a second draft for the new billing event). One draft per job is guaranteed by the application-level get-or-create in `InvoiceWizardService.open_for_job` — a second "Start Invoice" while a draft already exists returns the existing draft rather than creating a new one. (The `unique_draft_invoice_per_job` partial unique constraint is declared on the model but is **not** created on MySQL, which doesn't support conditional unique constraints — Django emits `models.W036` — so the invariant rests on the service, not the DB.)
 
 A standalone invoice list is available at `#/invoices` — see "Invoice list page" above.
 

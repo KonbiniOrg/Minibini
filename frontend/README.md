@@ -318,10 +318,12 @@ Clear `formError`/`errors` at submit start and on open/cancel.
     area headers with their own colors are planned. On job pages, `JobHeader` is
     always paired with `JobNavRail` (an eight-link section strip) and an
     optional collapsible `JobContextBand`; the trio is packaged as
-    `components/jobs/JobShell.svelte` — every job route except the overview
-    renders `<JobShell>` and passes its one section panel as the slotted
-    children. See "Job workspace state" below and
-    `docs/designs/jobs-tasks-and-worksheets.md` §9.6.
+    `components/jobs/JobShell.svelte` — **every** job route, including the
+    overview (since the 2026-07-09 six-block redesign), renders
+    `<JobShell>` and passes its content as the slotted children — one
+    section panel for the other seven routes, the six summary blocks for
+    the overview. See "Job workspace state" below and
+    `docs/designs/jobs-tasks-and-worksheets.md` §9.6, §9.1a.
   - **Subheaders:** anything a page wants to render *inside* the body that reads
     as a sub-bar (toolbars, filter rows) lives inside `.page-body` and aligns to
     the 10px gutter (drop any of its own horizontal padding so it lines up). A
@@ -331,32 +333,40 @@ Clear `formError`/`errors` at submit start and on open/cancel.
     idiom. To make the grey underline run edge-to-edge while the tabs stay
     indented, they break out of the gutter with `margin: 0 -10px` and push the
     tabs in with `padding-left: 120px`. This works because each tab `<nav>` is a
-    direct child of `.page-body`. (In-content sub-tabs — the est/inv/po tabs in
-    the job overview, the history tablist — are not page tab headers and keep
-    their own styling.)
+    direct child of `.page-body`. (In-content sub-tabs — `DocSubnav.svelte`'s
+    per-document pills on the Estimates/Invoices section pages, the history
+    tablist — are not page tab headers and keep their own styling. The job
+    overview's old est/inv/po tab bars were retired with the accordion pillars,
+    2026-07-09.)
   - **Rollout — three page categories:**
-    1. **Fully individualized (no buffer):** Job board (`#/jobs/board`), Job
-       overview (`JobDetailPage`), and `#/schedule` own their whole layout; the
-       login screen and the shipment packing-list *print* page aren't
-       sidebar-framed pages. These deliberately do **not** get `.page-body`.
+    1. **Fully individualized (no buffer):** Job board (`#/jobs/board`) and
+       `#/schedule` own their whole layout; the login screen and the shipment
+       packing-list *print* page aren't sidebar-framed pages. These deliberately
+       do **not** get `.page-body`. **The job overview left this category
+       2026-07-09** — see category 2.
     2. **Pages with a full-bleed banner header (buffer under the header):** every
-       page that renders the shared `JobHeader` band — every job section page
-       (estimate, tasks/task-detail, invoice, shipments, POs, emails, history,
-       all sharing the `JobShell` header+rail+band layout) and the standalone
-       change-order detail page — plus the contact/business detail pages (which
-       render the peer `CustomerHeader`). The banner stays a full-bleed sibling;
-       the body beneath it is wrapped in `.page-body`. Where such a page had a
-       sub-bar with its own `24px` side padding (a `.toolbar` or `.page-header`),
-       that padding was zeroed so it aligns to the 10px gutter. (The estimate/
+       page that renders the shared `JobHeader` band — every job page, the
+       overview included since 2026-07-09 (estimate, tasks/task-detail, invoice,
+       shipments, POs, emails, history, overview, all sharing the `JobShell`
+       header+rail+band layout) and the standalone change-order detail page —
+       plus the contact/business detail pages (which render the peer
+       `CustomerHeader`). The banner stays a full-bleed sibling; the body
+       beneath it is wrapped in `.page-body`. Where such a page had a sub-bar
+       with its own `24px` side padding (a `.toolbar` or `.page-header`), that
+       padding was zeroed so it aligns to the 10px gutter. (The estimate/
        invoice "wizard" is no longer a separate page — it's a mode of the
        estimate/invoice panel at the same route; see "Job workspace state"
-       below.)
+       below.) The overview's `.page-body` holds its six summary blocks
+       (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a) — a bespoke,
+       individualized body inside the shared `JobShell` chrome, not a kit
+       consumer; see `docs/designs/architecture-and-conventions.md` §5.5a for
+       the "hybrid" categorization this creates.
     3. **Everything else (whole content buffered):** all remaining list/form/
        detail/send pages, including search and the contacts/business list+form
        pages — wrapped in full.
 
-    The only route-level `.svelte` files without `.page-body` are the five
-    Category-1 pages above.
+    The only route-level `.svelte` files without `.page-body` are the four
+    Category-1 pages above (job board, schedule, login, shipment print).
 
 ### Routing
 
@@ -404,12 +414,13 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   serializer fields (no backend state): **Needs pricing / Needed / Ordered —
   PO-NNNN / Awaiting customer / On Hand / Consumed / Released** (precedence in
   that file), plus a `costUnconfirmed` ⚠ when `cost_source === 'estimated'`.
-- **Venue rule:** the job-overview pillar (`TaskTree`) shows these chips
-  passively — **no actions**. All per-material actions (Set pricing / Order /
-  Attach expense / Mark on-hand / Mark received / PO link) live on the task view
+- **Venue rule:** all per-material actions (Set pricing / Order / Attach
+  expense / Mark on-hand / Mark received / PO link) live on the task view
   page (`#/jobs/:id/tasks`, rendered by `TasksPanel.svelte` through the job
   workspace shell — see "Job workspace state" below), each gated on its
-  callback being wired.
+  callback being wired. The job overview doesn't render `TaskTree` (or any
+  material rows) at all — its Materials block is an aggregate Coverage stat
+  only (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a).
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
 ### Delete Flow

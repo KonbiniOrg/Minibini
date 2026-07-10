@@ -660,6 +660,20 @@ conversation; the UI shows the revision by displaying `{estimate_number}-{versio
 not the stored value. (The old `estimate_number_sequence` / `estimate_counter`
 Configuration keys are no longer used for estimates.)
 
+### 5.5 Serializer: computed `total`
+
+`EstimateSerializer` (`apps/api/estimates/serializers.py`) exposes a
+read-only `total` `SerializerMethodField` — `Σ line.qty × line.price`
+across the estimate's line items, quantized to cents. It is the
+authoritative document total the job-overview Scope block consumes
+(`frontend/src/lib/jobOverview.js`) rather than recomputing client-side
+(adjustment/percentage lines make a client-side `qty*price` walk
+fragile). `ChangeOrderSerializer` (`apps/api/change_orders/serializers.py`)
+exposes the same-named field but a different figure — see §14.2. Both
+are per-object `SerializerMethodField`s with no queryset annotation, so
+an unfiltered list view (e.g. the global estimates list) pays one extra
+query per row; see `docs/designs/LATER.md` for the N+1 note.
+
 ---
 
 ## 6. EstimateLineItem and EstimateLineItemSource
@@ -1187,23 +1201,27 @@ copies `description`, `units`, `selling_price`, `accounting_category`). Editing
 an existing line shows fields only. Bringing the invoice onto the same
 atoms-only projection is a deferred consolidation pass.
 
-### 11.4 Job overview — Create/View model
+### 11.4 Starting an estimate — Create/View model
 
-The Job overview page (job detail, estimate pillar) follows a
-Create/View model:
+**Superseded by the 2026-07-08 job-workspace restructure and the
+2026-07-09 overview redesign** (the "job detail, estimate pillar" this
+section used to describe no longer exists — the job overview has no
+authoring affordances at all; see `jobs-tasks-and-worksheets.md` §9).
+The Create/View model now lives entirely on `EstimatePanel.svelte`
+(the Estimates section page, `#/jobs/:jobId/estimate`):
 
-- **"Create Estimate"** — shown only when the job's status is `draft`
-  or `submitted` **and** no non-superseded estimate exists yet. POSTs
-  `{job}` to `/api/estimates/` (→ `EstimateService.create_for_job`,
-  always a new draft) and navigates to the new estimate detail page.
-  The UI enforces one active estimate tree per job; the backend permits
-  multiple estimates, but the button disappears once any live estimate
-  exists.
-- **"View Full Estimate"** (or equivalent) — shown whenever a
-  non-superseded estimate exists, regardless of job status. Can appear
-  alongside "Create Estimate" if the button hasn't been suppressed by
-  the rules above, but in practice only one state is active at a time:
-  once an estimate exists, the Create button no longer renders.
+- **"Start Estimate"** — shown only when the job has no non-superseded
+  estimate yet (job status is not itself gated in the panel — the
+  backend's `EstimateService.create_for_job` is the enforcement point).
+  POSTs `{job}` to `/api/estimates/` and reloads the panel onto the new
+  draft. The UI enforces one active estimate tree per job; the backend
+  permits multiple estimates, but the button disappears once any live
+  estimate exists.
+- **Viewing** — once an estimate exists, the panel simply renders it
+  (no separate "View" affordance needed — the Estimates section route
+  *is* the view). The overview's Scope block (§ jobs-tasks-and-worksheets.md
+  §9) shows a stat summary only, with no link into the panel (the rail
+  is the navigation).
 
 ---
 
@@ -1268,9 +1286,9 @@ atoms (snapshotted at mount) are left alone.
 
 ### 12.3 Reconcile-mode entry
 
-The estimate is reached from the Job overview's **Estimate** pillar (or
-the rail's Estimates link): "Start Estimate" creates the draft estimate
-directly on the job (`POST /api/estimates/` with `{job}`), landing on
+The estimate is reached from the rail's Estimates link (§11): "Start
+Estimate" creates the draft estimate directly on the job
+(`POST /api/estimates/` with `{job}`), landing on
 `#/jobs/:jobId/estimate/:newId`. "Show Tasks & Materials" / "Reconcile"
 (on the estimate panel, §11.2) flips that same page into reconcile
 mode. There is no longer a worksheet page, a worksheet-side wizard
@@ -1346,6 +1364,19 @@ A CO can only be created while the job is held (`job.on_hold` flag) —
 `ChangeOrderService.create` enforces this (see §14.5). The CO's
 `estimate` FK pins it to the accepted Estimate that was in force when
 the CO was opened; this is what `compose_agreement` walks.
+
+`ChangeOrderSerializer` also exposes a read-only `total`
+`SerializerMethodField` — **not** `Σ qty×price` of the CO's own
+add/remove/replace lines (a `remove` subtracts, a `replace` swaps), but
+the authoritative delta from `compose_change_order_diff(obj)['diff_total']`
+(the same figure the CO PDF and customer-portal diff use). The
+job-overview Scope block adds this delta onto the frozen estimate total
+when a draft/open CO re-activates the block. `change_order_id`,
+`change_order_number`, `version`, `estimate`, `created_date`,
+`sent_date`, `closed_date` are all in the serializer's
+`read_only_fields` — a bare PATCH cannot flip identity/timestamp fields
+(regression-tested; a prior pass had accidentally dropped this list,
+leaving them client-writable).
 
 ### 14.3 Status machine
 
