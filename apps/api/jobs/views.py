@@ -68,7 +68,7 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
-        read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement')
+        read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement', 'overview')
         # add-from-template and create_material are IsAuthenticated only (workers
         # can add tasks/materials). task_detail (GET/PATCH/DELETE of a task) is
         # also open: any authenticated user may edit/delete a task. Delete stays
@@ -442,6 +442,22 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             'lines': serialized_lines,
             'grand_total': str(result['grand_total']),
         })
+
+    @action(detail=True, methods=['get'], url_path='overview', url_name='overview')
+    def overview(self, request, pk=None):
+        """Aggregate read for the job overview page: due-date countdown,
+        labor/materials spend split, and task-progress aggregates. See
+        apps.jobs.overview.JobOverviewService."""
+        from django.utils import timezone as django_timezone
+        from apps.jobs.overview import JobOverviewService
+        from apps.schedule.services import load_shop_envelope
+        job = self.get_object()
+        result = JobOverviewService.summary(
+            job,
+            today=django_timezone.localdate(),
+            envelope=load_shop_envelope(),
+        )
+        return Response(result)
 
     @action(detail=True, methods=['post'], url_path='add-from-template')
     def add_from_template(self, request, pk=None):
