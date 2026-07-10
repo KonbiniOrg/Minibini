@@ -132,13 +132,18 @@ def spend_breakdown(job):
     labor_hours = _blep_hours(job)
     labor = labor_hours * _average_labor_cost()
 
-    total = materials_bought + labor
+    # Quantize parts first, then derive total as their sum.
+    # This ensures the displayed parts always sum to the displayed total,
+    # avoiding round-then-sum vs sum-then-round discrepancies (common with
+    # fractional-hour bleps and material calculations that produce sub-cent values).
+    labor_q = labor.quantize(CENTS)
+    materials_bought_q = materials_bought.quantize(CENTS)
 
     return {
-        'labor': labor.quantize(CENTS),
+        'labor': labor_q,
         'labor_hours': labor_hours,
-        'materials_bought': materials_bought.quantize(CENTS),
-        'total': total.quantize(CENTS),
+        'materials_bought': materials_bought_q,
+        'total': materials_bought_q + labor_q,
     }
 
 

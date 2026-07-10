@@ -118,3 +118,58 @@ class SpendBreakdownTests(FixtureTestCase):
         breakdown = spend_breakdown(self.job)
 
         self.assertEqual(breakdown['labor'], Decimal('0.00'))
+
+    def test_parts_sum_to_total_with_fractional_cents(self):
+        """Regression test: parts must sum to total after quantization.
+
+        Reproduces the round-then-sum vs sum-then-round issue: if we
+        quantize labor and materials independently, then sum, we may get
+        a different total than quantizing the unquantized sum first.
+
+        Case: 30 minutes at $60.01/h produces labor = 30.005 which rounds
+        to 30.00. Consumed material 1.01 qty * 0.50 cost = 0.505 rounds to
+        0.50. But the sum 30.005 + 0.505 = 30.510 rounds to 30.51, not to
+        30.50 + 0.50. The mismatch: 30.50 != 30.51.
+        """
+        from apps.jobs.financials import spend_breakdown, compute_job_financials
+
+        Configuration.objects.update_or_create(
+            key='average_labor_cost', defaults={'value': '60.01'})
+
+        # 30 minutes = 0.5 hours
+        # 0.5 * $60.01/h = $30.005 → quantizes to $30.00
+        scheme = RateScheme.objects.create(
+            name='Hr-fractional', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('50'), unit_label='hours', accounting_category=self.cat)
+        task = Task.objects.create(
+            job=self.job, name='t', status=Task.STATUS_IN_PROGRESS,
+            rate_scheme=scheme)
+        start = _aware(2026, 1, 15, 9, 0)
+        end = _aware(2026, 1, 15, 9, 30)  # 30 minutes
+        Blep.objects.create(
+            task=task, user=self.user, start_time=start, end_time=end)
+
+        # Material: 1.01 qty * 0.50 cost = 0.505
+        # This quantizes to 0.50, but when added to the unquantized labor
+        # (30.005 + 0.505 = 30.510) and quantized, it becomes 30.51
+        # So the invariant breaks: 30.00 + 0.50 = 30.50 != 30.51 (the total)
+        Material.objects.create(
+            job=self.job, accounting_category=self.cat, description='m',
+            quantity=Decimal('1.01'), unit_cost=Decimal('0.50'),
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED)
+
+        breakdown = spend_breakdown(self.job)
+        fin = compute_job_financials(self.job)
+
+        # The key invariant: parts must sum to the displayed total
+        # This fails with the current code where total is computed before
+        # quantizing the parts
+        self.assertEqual(
+            breakdown['labor'] + breakdown['materials_bought'],
+            breakdown['total'],
+            f"Parts ({breakdown['labor']} + {breakdown['materials_bought']}) "
+            f"do not sum to total ({breakdown['total']})"
+        )
+
+        # Total in breakdown must match the spent figure
+        self.assertEqual(breakdown['total'], fin['spent'])
