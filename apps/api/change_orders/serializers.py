@@ -45,6 +45,10 @@ class ChangeOrderSerializer(JobScopedCanManageMixin, serializers.ModelSerializer
             'status', 'created_date', 'sent_date', 'closed_date',
             'expiration_date', 'line_items', 'can_manage', 'total',
         ]
+        read_only_fields = [
+            'change_order_id', 'change_order_number', 'version',
+            'estimate', 'created_date', 'sent_date', 'closed_date',
+        ]
 
     def get_total(self, obj):
         # Authoritative CO delta: proposed − prior against the base estimate,
@@ -56,7 +60,3 @@ class ChangeOrderSerializer(JobScopedCanManageMixin, serializers.ModelSerializer
         from apps.estimates.agreement import compose_change_order_diff
         diff = compose_change_order_diff(obj)
         return str(diff['diff_total'].quantize(Decimal('0.01')))
-        read_only_fields = [
-            'change_order_id', 'change_order_number', 'version',
-            'estimate', 'created_date', 'sent_date', 'closed_date',
-        ]

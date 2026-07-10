@@ -204,6 +204,71 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
         row = next(r for r in results if r['change_order_id'] == self.co_id)
         self.assertEqual(str(row['total']), '250.00')
 
+    def test_total_present_and_read_only_on_get(self):
+        """Sanity check alongside the write-protection regression test below:
+        `total` is exposed on GET and is a SerializerMethodField (inherently
+        read-only) — attempting to PATCH it must not error and must not
+        change the computed value."""
+        self._add_line_item()
+        resp = self.client.get(f'/api/change-orders/{self.co_id}/')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertIn('total', resp.data)
+        original_total = resp.data['total']
+
+        resp2 = self.client.patch(
+            f'/api/change-orders/{self.co_id}/',
+            {'total': '999999.99'},
+            format='json',
+        )
+        self.assertEqual(resp2.status_code, 200, resp2.data)
+        self.assertEqual(resp2.data['total'], original_total)
+
+    def test_patch_ignores_writes_to_protected_fields(self):
+        """Task-6 regression: get_total() accidentally swallowed
+        read_only_fields (the list ended up as dead code after a `return`
+        inside get_total instead of living in class Meta), making
+        change_order_number, version, estimate, created_date, sent_date and
+        closed_date writable via PATCH. ChangeOrderService.update_fields has
+        no guards of its own (a plain setattr loop) and DRF read_only_fields
+        silently drops unknown-write attempts (200, not 400) — so this must
+        assert DB state, not response status code."""
+        # A second estimate row to attempt reassigning `estimate` onto —
+        # the job already has an accepted estimate (self.est), so this one
+        # is just a draft; its status is irrelevant, only its pk matters.
+        other_est = Estimate.objects.create(
+            job=self.job, estimate_number='EST-WF-OTHER', version=1,
+            status=Estimate.STATUS_DRAFT,
+        )
+        before = ChangeOrder.objects.get(pk=self.co_id)
+        original_number = before.change_order_number
+        original_version = before.version
+        original_estimate_id = before.estimate_id
+        original_sent_date = before.sent_date
+
+        resp = self.client.patch(
+            f'/api/change-orders/{self.co_id}/',
+            {
+                'version': 99,
+                'sent_date': '2020-01-01T00:00:00Z',
+                'estimate': other_est.pk,
+                'change_order_number': 'CO-HAX',
+                'expiration_date': '2030-06-15T00:00:00Z',
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        after = ChangeOrder.objects.get(pk=self.co_id)
+        self.assertEqual(after.change_order_number, original_number)
+        self.assertEqual(after.version, original_version)
+        self.assertEqual(after.estimate_id, original_estimate_id)
+        self.assertEqual(after.sent_date, original_sent_date)
+        # The legitimately-writable field did change, proving the PATCH
+        # itself was processed (not a no-op / rejected request).
+        self.assertEqual(
+            after.expiration_date.isoformat(), '2030-06-15T00:00:00+00:00',
+        )
+
 
 # ---------------------------------------------------------------------------
 # Delete (discard draft)
