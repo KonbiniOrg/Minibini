@@ -9,8 +9,13 @@
   let estimates = $state(null);
   let invoices = $state(null);
   let purchaseOrders = $state(null);
-  let emails = $state(null);
-  let expenses = $state(null);
+  let changeOrders = $state(null);
+  let shipments = $state(null);
+  let deliverableCount = $state(0);
+  let overview = $state(null);
+  // The overview clock: one instant per load, threaded into every block (the
+  // jobOverview lib is pure and never reads Date.now()).
+  let now = $state(new Date());
   let loading = $state(true);
   let loadError = $state(null);
 
@@ -19,20 +24,28 @@
     loadError = null;
     try {
       job = await api.get(`/api/jobs/${params.id}/`);
-      const [contactData, estimatesData, invoicesData, poData, emailData, expenseData] = await Promise.all([
+      now = new Date();
+      const [
+        contactData, estimatesData, invoicesData, poData,
+        changeOrderData, shipmentData, deliverableData, overviewData,
+      ] = await Promise.all([
         api.get(`/api/contacts/${job.contact}/`),
         api.get(`/api/estimates/?job=${params.id}`),
         api.get(`/api/invoices/?job=${params.id}`),
         api.get(`/api/purchase-orders/?job=${params.id}`),
-        api.get(`/api/emails/?job=${params.id}`),
-        api.get(`/api/expenses/?job=${params.id}`),
+        api.get(`/api/change-orders/?job=${params.id}`),
+        api.get(`/api/shipments/?job=${params.id}`),
+        api.get(`/api/jobs/${params.id}/deliverables/`),
+        api.get(`/api/jobs/${params.id}/overview/`),
       ]);
       contact = contactData;
       estimates = estimatesData;
       invoices = invoicesData;
       purchaseOrders = poData;
-      emails = emailData;
-      expenses = expenseData;
+      changeOrders = changeOrderData;
+      shipments = shipmentData;
+      deliverableCount = (deliverableData?.results ?? deliverableData ?? []).length;
+      overview = overviewData;
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -57,8 +70,11 @@
     {estimates}
     {invoices}
     {purchaseOrders}
-    {emails}
-    {expenses}
+    {changeOrders}
+    {shipments}
+    {deliverableCount}
+    {overview}
+    {now}
     onStatusChange={loadJob}
   />
 {/if}

@@ -186,6 +186,24 @@ class ChangeOrderWorkflowAPITest(FixtureTestCase):
         self.assertEqual(resp.status_code, 201, resp.data)
         return resp.data
 
+    def test_payload_carries_diff_total_as_total(self):
+        """The job-overview Scope block reads change_order.total as the net
+        delta against the base estimate. The serializer must expose the
+        authoritative compose_change_order_diff diff_total (not qty*price of
+        the CO's own add/remove/replace lines)."""
+        from apps.estimates.models import EstimateLineItem
+        # Base estimate line: $200. CO adds a $250 line → delta +250.00.
+        EstimateLineItem.objects.create(
+            estimate=self.est, description='Base', qty=Decimal('2'),
+            units='ea', price=Decimal('100.00'), line_number=1,
+        )
+        self._add_line_item()  # +1 * 250.00 = +250.00
+        resp = self.client.get(f'/api/change-orders/?job={self.job.pk}')
+        self.assertEqual(resp.status_code, 200)
+        results = resp.data['results'] if isinstance(resp.data, dict) else resp.data
+        row = next(r for r in results if r['change_order_id'] == self.co_id)
+        self.assertEqual(str(row['total']), '250.00')
+
 
 # ---------------------------------------------------------------------------
 # Delete (discard draft)

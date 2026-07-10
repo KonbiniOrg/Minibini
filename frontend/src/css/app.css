@@ -263,6 +263,12 @@ dd {
   min-width: 170px;
 }
 
+/* In an active card the title heads a block of stats — give it breathing room
+   above the stat spread (frozen/dormant lay the title inline instead). */
+.summary-block.active .summary-block-title {
+  margin-bottom: 14px;
+}
+
 /* The stat spread — the flex layout where all stats align at the top (labels
    form one line; sub-lines hang below). Critical alignment rule: flex-start
    ensures every label sits on the same line, with sub-content hanging below

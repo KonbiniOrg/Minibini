@@ -35,6 +35,7 @@ class ChangeOrderSerializer(JobScopedCanManageMixin, serializers.ModelSerializer
     line_items = ChangeOrderLineItemSerializer(
         source='changeorderlineitem_set', many=True, read_only=True
     )
+    total = serializers.SerializerMethodField()
 
     class Meta:
         model = ChangeOrder
@@ -42,8 +43,19 @@ class ChangeOrderSerializer(JobScopedCanManageMixin, serializers.ModelSerializer
             'change_order_id', 'job', 'estimate',
             'change_order_number', 'version', 'parent',
             'status', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items', 'can_manage',
+            'expiration_date', 'line_items', 'can_manage', 'total',
         ]
+
+    def get_total(self, obj):
+        # Authoritative CO delta: proposed − prior against the base estimate,
+        # from compose_change_order_diff (the same figure the CO PDF and
+        # portal diff use). NOT qty*price of the CO's own add/remove/replace
+        # lines — a remove subtracts, a replace swaps. The job-overview Scope
+        # block adds this delta onto the frozen estimate total.
+        from decimal import Decimal
+        from apps.estimates.agreement import compose_change_order_diff
+        diff = compose_change_order_diff(obj)
+        return str(diff['diff_total'].quantize(Decimal('0.01')))
         read_only_fields = [
             'change_order_id', 'change_order_number', 'version',
             'estimate', 'created_date', 'sent_date', 'closed_date',
