@@ -207,7 +207,18 @@
     // released_qty; the row's own quantity is 0.
     return mat.consumption_state === 'released';
   }
+
+  function matQtyAvail(mat) {
+    if (!mat.inventory_item || mat.qty_available === null || mat.qty_available === undefined) return null;
+    return Number(mat.qty_available);
+  }
 </script>
+
+{#snippet availBadge(mat)}
+  {#if matQtyAvail(mat) !== null}
+    <span class={matQtyAvail(mat) >= 0 ? 'avail-ok' : 'avail-short'}>({mat.qty_available} avail)</span>
+  {/if}
+{/snippet}
 
 {#snippet matStatusChip(mat)}
   {@const s = materialStatus(mat)}
@@ -335,7 +346,7 @@
             <td class="move-cell">{#if onMoveMaterial && isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'} {@render availBadge(mat)}
             {#if !showStatus}{@render matStatusChip(mat)}{/if}
           </td>
           {#if showAssignee}<td></td>{/if}
@@ -405,7 +416,7 @@
               <td class="move-cell">{#if onMoveMaterial && isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
             {/if}
             <td class="indent-2">
-              <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+              {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'} {@render availBadge(mat)}
               {#if !showStatus}{@render matStatusChip(mat)}{/if}
             </td>
             {#if showAssignee}<td></td>{/if}
@@ -445,7 +456,7 @@
             <td class="move-cell">{#if onMoveMaterial && isMaterialPending(mat) && !isMaterialFinalized(mat) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(mat, selectedTaskId)}>Move</button>{/if}</td>
           {/if}
           <td class="indent">
-            <span class="material-marker">&#9679;</span> {mat.description || '(no description)'}
+            {#if mat.inventory_item_is_inventoried}<span class="inv-badge" title="inventoried">&#128230;</span>{/if}<span class="material-marker">&#9679;</span> {mat.description || '(no description)'} {@render availBadge(mat)}
             {#if !showStatus}{@render matStatusChip(mat)}{/if}
           </td>
           {#if showAssignee}<td></td>{/if}
@@ -607,4 +618,8 @@
     cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
   }
   .small-btn:hover { background: #f0f0f0; }
+
+  .avail-ok { font-size: 11px; color: #166534; margin-left: 4px; }
+  .avail-short { font-size: 11px; color: #991b1b; margin-left: 4px; }
+  .order-link { font-size: 11px; margin: 0 2px; }
 </style>

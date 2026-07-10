@@ -2,7 +2,7 @@
   import FullOnly from '../FullOnly.svelte';
   import HistoryPanel from '../HistoryPanel.svelte';
   import TagEditor from '../TagEditor.svelte';
-  import { canManageJobs } from '../../stores/permissions.js';
+  import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
   import { viewMode } from '../../stores/viewMode.js';
   import { pageFromUrl, pageRange } from '../../lib/pagination.js';
   const {
@@ -217,7 +217,11 @@
   <p>No {$viewMode === 'lite' ? 'open ' : ''}invoices.</p>
 {/if}
 
-<h3>Purchase Orders</h3>
+<h3>Purchase Orders
+  {#if $canManageFinancials && contact.business}
+    — <a href="#/purchase-orders/new?business={contact.business.business_id}&contact={contact.contact_id}">New Purchase Order</a>
+  {/if}
+</h3>
 {#if visiblePOs.length > 0}
   <table class="data-table">
     <thead>

@@ -1,4 +1,7 @@
+from decimal import Decimal
 from django.core.exceptions import ValidationError
+from django.db.models import OuterRef, Subquery, Sum, DecimalField, Value
+from django.db.models.functions import Coalesce
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -7,11 +10,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.jobs.models import Task
-from apps.inventory.models import Material
+from apps.inventory.models import Material, Earmark
 from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
 from apps.api.mixins import JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobOrPM
+
+_inv_earmarked_subq = Coalesce(
+    Subquery(
+        Earmark.objects.filter(inventory_item_id=OuterRef('inventory_item_id'))
+        .values('inventory_item_id')
+        .annotate(total=Sum('quantity'))
+        .values('total')
+    ),
+    Value(Decimal('0.00')),
+    output_field=DecimalField(max_digits=10, decimal_places=2),
+)
 
 
 class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.GenericViewSet):
@@ -77,7 +91,9 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         task = self.get_object()
         if request.method == 'GET':
             from apps.invoicing.claims import InvoiceClaimService
-            materials = Material.objects.filter(task=task).select_related('inventory_item')
+            materials = Material.objects.filter(task=task).select_related(
+                'inventory_item'
+            ).annotate(_inv_earmarked=_inv_earmarked_subq)
             serializer = MaterialSerializer(
                 materials, many=True,
                 context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
