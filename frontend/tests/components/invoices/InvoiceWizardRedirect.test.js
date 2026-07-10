@@ -21,7 +21,7 @@ describe('InvoiceWizardRedirect shim', () => {
     render(InvoiceWizardRedirect, { props: { params: { id: '1' } } });
 
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/invoices/1/'));
-    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 1, 'reconcile'));
+    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 'inv:1', 'reconcile'));
     await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/invoice/1'));
   });
 

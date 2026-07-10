@@ -797,9 +797,13 @@ class JobService:
             JobService._copy_deliverables(source_job, new_job)
             if path == 'approved':
                 JobService._copy_work_to_job(source_job, new_job)
-                from apps.inventory.services import InventoryService
-                InventoryService.create_earmarks_for_job(new_job)
                 JobService._advance_to_approved(new_job, source_job)
+                # Earmark AFTER the status walk: create_earmarks_for_job
+                # no-ops on pre-approval jobs (the committed-jobs-only
+                # invariant), and the new job is draft until just above.
+                from apps.inventory.services import InventoryService
+                new_job.refresh_from_db()
+                InventoryService.create_earmarks_for_job(new_job)
             else:
                 # Estimate path: copy work onto the new (draft) job. Estimates
                 # project from the Job's atoms, so no worksheet is created and the

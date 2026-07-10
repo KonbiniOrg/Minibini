@@ -342,21 +342,33 @@ describe('EstimatePanel reconcile mode', () => {
     const { findByRole, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
     expect(await findByText('Source pool (job atoms)')).toBeInTheDocument();
-    expect(getJobWs(9).modes['7']).toBe('reconcile');
+    expect(getJobWs(9).modes['est:7']).toBe('reconcile');
     expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
   });
 
   it('restores reconcile mode on mount for a draft doc when remembered', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    rememberMode(9, 7, 'reconcile');
+    rememberMode(9, 'est:7', 'reconcile');
     mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
     const { findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     expect(await findByText('Source pool (job atoms)')).toBeInTheDocument();
   });
 
+  it('does NOT restore reconcile from an INVOICE with the same numeric id (namespaced keys)', async () => {
+    // Regression: modes were once keyed by bare docId, so invoice #7 in
+    // reconcile bled into estimate #7 on the same job. Keys are namespaced
+    // (est:/inv:) — the invoice memory must not open the estimate in reconcile.
+    user.set({ permissions: ['can_manage_jobs'] });
+    rememberMode(9, 'inv:7', 'reconcile');
+    mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'draft' }));
+    const { findByText, queryByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Line Items');
+    expect(queryByText('Source pool (job atoms)')).toBeNull();
+  });
+
   it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
     user.set({ permissions: ['can_manage_jobs'] });
-    rememberMode(9, 7, 'reconcile');
+    rememberMode(9, 'est:7', 'reconcile');
     mockReconcile(makeEstimate({ estimate_id: 7, can_manage: true, status: 'open' }));
     const { findByText, queryByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
     await findByText('Line Items');
@@ -374,7 +386,7 @@ describe('EstimatePanel reconcile mode', () => {
     const before = api.get.mock.calls.filter(([u]) => u === '/api/estimates/7/').length;
     await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
     expect(api.get.mock.calls.filter(([u]) => u === '/api/estimates/7/').length).toBeGreaterThan(before);
-    expect(getJobWs(9).modes['7']).toBe('lines');
+    expect(getJobWs(9).modes['est:7']).toBe('lines');
   });
 });
 

@@ -406,13 +406,13 @@ describe('InvoicePanel reconcile mode', () => {
     const { findByRole, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await fireEvent.click(await findByRole('button', { name: 'Reconcile' }));
     expect(await findByText('Send all to Invoice')).toBeInTheDocument();
-    expect(getJobWs(9).modes['5']).toBe('reconcile');
+    expect(getJobWs(9).modes['inv:5']).toBe('reconcile');
     expect(await findByRole('button', { name: 'Back to lines' })).toBeInTheDocument();
   });
 
   it('restores reconcile mode on mount for a draft doc when remembered', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    rememberMode(9, 5, 'reconcile');
+    rememberMode(9, 'inv:5', 'reconcile');
     mockReconcile(makeInvoice({ invoice_id: 5, status: 'draft' }));
     const { findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     expect(await findByText('Send all to Invoice')).toBeInTheDocument();
@@ -420,7 +420,7 @@ describe('InvoicePanel reconcile mode', () => {
 
   it('restores lines (not reconcile) for a SENT doc even when reconcile was remembered', async () => {
     user.set({ permissions: ['can_manage_financials'] });
-    rememberMode(9, 5, 'reconcile');
+    rememberMode(9, 'inv:5', 'reconcile');
     mockReconcile(makeInvoice({ invoice_id: 5, status: 'open' }));
     const { findByText, queryByText, queryByRole } = render(InvoicePanel, { props: { job: JOB, invoiceId: 5 } });
     await findByText('Line Items');
@@ -438,7 +438,7 @@ describe('InvoicePanel reconcile mode', () => {
     const before = api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length;
     await fireEvent.click(await findByRole('button', { name: 'Back to lines' }));
     expect(api.get.mock.calls.filter(([u]) => u === '/api/invoices/5/').length).toBeGreaterThan(before);
-    expect(getJobWs(9).modes['5']).toBe('lines');
+    expect(getJobWs(9).modes['inv:5']).toBe('lines');
   });
 });
 

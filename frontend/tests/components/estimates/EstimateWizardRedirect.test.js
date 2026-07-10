@@ -21,7 +21,7 @@ describe('EstimateWizardRedirect shim', () => {
     render(EstimateWizardRedirect, { props: { params: { id: '11' } } });
 
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/estimates/11/'));
-    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 11, 'reconcile'));
+    await waitFor(() => expect(rememberMode).toHaveBeenCalledWith(9, 'est:11', 'reconcile'));
     await waitFor(() => expect(window.location.hash).toBe('#/jobs/9/estimate/11'));
   });
 

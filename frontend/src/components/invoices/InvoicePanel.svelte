@@ -47,7 +47,7 @@
   $effect(() => {
     if (invoice && String(invoice.invoice_id) === String(invoiceId)
         && modeInitializedFor !== String(invoiceId)) {
-      const remembered = getJobWs(job?.job_id).modes[String(invoiceId)] ?? 'lines';
+      const remembered = getJobWs(job?.job_id).modes[`inv:${invoiceId}`] ?? 'lines';
       mode = (remembered === 'reconcile' && canEditLineItems) ? 'reconcile' : 'lines';
       modeInitializedFor = String(invoiceId);
     }
@@ -55,7 +55,7 @@
 
   function setMode(next) {
     mode = next;
-    rememberMode(job?.job_id, invoiceId, next);
+    rememberMode(job?.job_id, `inv:${invoiceId}`, next);
     // Returning to lines must show fresh data — reconcile mode may have mutated
     // the invoice's line items.
     if (next === 'lines') loadInvoice();

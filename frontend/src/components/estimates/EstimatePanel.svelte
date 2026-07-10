@@ -124,7 +124,7 @@
   $effect(() => {
     if (estimate && String(estimate.estimate_id) === String(estimateId)
         && modeInitializedFor !== String(estimateId)) {
-      const remembered = getJobWs(job?.job_id).modes[String(estimateId)] ?? 'lines';
+      const remembered = getJobWs(job?.job_id).modes[`est:${estimateId}`] ?? 'lines';
       mode = (remembered === 'reconcile' && canEdit) ? 'reconcile' : 'lines';
       modeInitializedFor = String(estimateId);
     }
@@ -132,7 +132,7 @@
 
   function setMode(next) {
     mode = next;
-    rememberMode(job?.job_id, estimateId, next);
+    rememberMode(job?.job_id, `est:${estimateId}`, next);
     // Returning to lines must show fresh data — reconcile mode may have mutated
     // the estimate's line items.
     if (next === 'lines') loadEstimate();

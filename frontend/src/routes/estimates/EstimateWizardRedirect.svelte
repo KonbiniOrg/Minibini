@@ -9,7 +9,7 @@
     if (params.id) {
       api.get(`/api/estimates/${params.id}/`)
         .then((est) => {
-          rememberMode(est.job, est.estimate_id, 'reconcile');
+          rememberMode(est.job, `est:${est.estimate_id}`, 'reconcile');
           window.location.replace(`#/jobs/${est.job}/estimate/${est.estimate_id}`);
         })
         .catch(() => { window.location.replace('#/jobs'); });
