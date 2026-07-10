@@ -19,8 +19,14 @@ blocks in fixed order**, each with a **temperature** driven by job state:
 
 Where the heat sits on the page tells you the job's stage before you read a
 number. Blocks never list rows (tasks, line items, POs — the section pages
-do that); they show aggregates, clocks, and one-line facts. Every block
-carries an "open →" link to its rail section.
+do that); they show aggregates, clocks, and one-line facts.
+
+**No block-level links** (RM decision 2026-07-09): the rail sits directly
+above — corner "open →" links would duplicate it, and Spend has no honest
+destination at all. Deferred, deliberately: links on *specific documents
+inside* blocks (the PO number, an invoice number, the estimate version) —
+RM will feel out what wants to be clickable once the page is live. Build
+this pass with no anchors in the blocks.
 
 **No actions on the overview** (RM decision this pass): clocks and signals
 are display-only; if actions prove wanted, they come later once the layout
@@ -82,10 +88,16 @@ this block counts them).
   **Deliverables** (count). Clock: while open,
   `No customer response in N days` from `Estimate.sent_date` — quiet under
   7 days, red at ≥ 7.
-- **Frozen** — accepted (or rejected/expired, with that fact):
-  `$12,400 · v3 accepted 6/12 · CO-1 accepted 6/30 · 3 deliverables`.
-  An accepted CO doesn't reheat the block; it updates the frozen total and
-  appends its fact. A newly-drafted CO or revision reactivates it.
+- **Frozen** — accepted (or rejected/expired, with that fact), AND no CO is
+  draft or open: `$12,400 · v3 accepted 6/12 · CO-1 accepted 6/30 ·
+  3 deliverables`. An *accepted* CO doesn't reheat the block; it updates
+  the frozen total and appends its fact.
+- **A draft or open change order re-activates the block** (RM decision
+  2026-07-09): the active card then leads with the CO (number + status
+  pill + amount delta) alongside the settled estimate facts, and the
+  customer-response clock runs on the open CO's sent date exactly as it
+  does for an open estimate (same 7-day threshold). A revision
+  (new draft estimate version) re-activates likewise.
 
 ### 2. Work
 - **Dormant** — job not yet approved. If tasks already exist (planned ahead
