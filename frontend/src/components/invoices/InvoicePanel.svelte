@@ -197,6 +197,16 @@
     }))
   );
 
+  // A job can carry several invoices (progress billing), but only ONE draft at
+  // a time (unique_draft_invoice_per_job) and only while billable. So "+ New
+  // invoice" is offered only when the job is billable, no draft is open, and the
+  // user can manage financials — mirrors InvoiceWizardService.open_for_job.
+  const BILLABLE_JOB_STATUSES = ['approved', 'in_progress', 'work_complete', 'completed', 'cancelled'];
+  let hasOpenDraft = $derived((invoices || []).some((i) => i.status === 'draft'));
+  let canCreateInvoice = $derived(
+    $canManageFinancials && BILLABLE_JOB_STATUSES.includes(job?.status) && !hasOpenDraft
+  );
+
   let startingInvoice = $state(false);
   async function startInvoice() {
     startingInvoice = true;
@@ -211,8 +221,18 @@
   }
 </script>
 
+{#snippet newInvoiceAction()}
+  <button type="button" class="new-invoice-btn" onclick={startInvoice} disabled={startingInvoice}>
+    {startingInvoice ? 'Starting…' : '+ New invoice'}
+  </button>
+{/snippet}
+
 {#if subnavItems.length > 0}
-  <DocSubnav items={subnavItems} section="invoice" />
+  <DocSubnav
+    items={subnavItems}
+    section="invoice"
+    trailing={canCreateInvoice ? newInvoiceAction : null}
+  />
 {/if}
 
 {#if invoiceId}
@@ -355,6 +375,14 @@
 
 <style>
   .error { color: #a8071a; }
+  /* Trailing "+ New invoice" action on the version bar: a compact button that
+     reads as an action against the whole invoice set (sits in .doc-subnav-trailing). */
+  .new-invoice-btn {
+    font-size: 12px; padding: 3px 10px; border-radius: 4px;
+    border: 1px solid #cbd5e1; background: #fff; color: #1f2937; cursor: pointer;
+  }
+  .new-invoice-btn:hover:not(:disabled) { background: #f1f5f9; }
+  .new-invoice-btn:disabled { opacity: 0.6; cursor: default; }
   /* .toolbar / .action-link / .page-title come from app.css. */
   /* Status pill styling and colors come from the global .status-badge /
      .status-{status} classes (app.css). */

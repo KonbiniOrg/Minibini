@@ -468,3 +468,52 @@ describe('InvoicePanel line-item actions', () => {
     expect(queryByText('Delete')).toBeNull();
   });
 });
+
+describe('InvoicePanel "+ New invoice" (create a sibling invoice)', () => {
+  const billableJob = { ...JOB, status: 'in_progress' };
+
+  it('offers "+ New invoice" on the version bar when billable, no open draft, and financials', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, invoice_number: 'INV-5', status: 'sent' });
+    mockApi(sent, { invoices: [sent] });
+    const { findByRole } = render(InvoicePanel, { props: { job: billableJob, invoiceId: 5 } });
+    expect(await findByRole('button', { name: /New invoice/ })).toBeInTheDocument();
+  });
+
+  it('posts a new invoice for the job and navigates when clicked', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, status: 'sent' });
+    mockApi(sent, { invoices: [sent] });
+    api.post.mockResolvedValue({ invoice_id: 8 });
+    const { findByRole } = render(InvoicePanel, { props: { job: billableJob, invoiceId: 5 } });
+    await fireEvent.click(await findByRole('button', { name: /New invoice/ }));
+    expect(api.post).toHaveBeenCalledWith('/api/invoices/', { job: 9 });
+  });
+
+  it('hides "+ New invoice" while an open draft already exists', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const draft = makeInvoice({ invoice_id: 5, status: 'draft' });
+    mockApi(draft, { invoices: [draft] });
+    const { findByText, queryByRole } = render(InvoicePanel, { props: { job: billableJob, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(queryByRole('button', { name: /New invoice/ })).toBeNull();
+  });
+
+  it('hides "+ New invoice" when the job is not in a billable status', async () => {
+    user.set({ permissions: ['can_manage_financials'] });
+    const sent = makeInvoice({ invoice_id: 5, status: 'sent' });
+    mockApi(sent, { invoices: [sent] });
+    const { findByText, queryByRole } = render(InvoicePanel, { props: { job: { ...JOB, status: 'draft' }, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(queryByRole('button', { name: /New invoice/ })).toBeNull();
+  });
+
+  it('hides "+ New invoice" without the financials permission', async () => {
+    user.set({ permissions: [] });
+    const sent = makeInvoice({ invoice_id: 5, status: 'sent' });
+    mockApi(sent, { invoices: [sent] });
+    const { findByText, queryByRole } = render(InvoicePanel, { props: { job: billableJob, invoiceId: 5 } });
+    await findByText('Invoice: INV-5');
+    expect(queryByRole('button', { name: /New invoice/ })).toBeNull();
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import DocSubnav from '@/components/jobs/DocSubnav.svelte';
 
 describe('DocSubnav', () => {
@@ -63,6 +64,18 @@ describe('DocSubnav', () => {
     const { container } = render(DocSubnav, { props: { items: [] } });
     const links = container.querySelectorAll('a');
     expect(links).toHaveLength(0);
+  });
+
+  it('renders a trailing snippet when provided, and omits the area otherwise', () => {
+    const items = [{ id: 1, label: 'A', href: '#/a', current: true }];
+    const none = render(DocSubnav, { props: { items } });
+    expect(none.container.querySelector('.doc-subnav-trailing')).toBeNull();
+
+    const trailing = createRawSnippet(() => ({ render: () => '<button>+ New</button>' }));
+    const withAction = render(DocSubnav, { props: { items, trailing } });
+    const area = withAction.container.querySelector('.doc-subnav-trailing');
+    expect(area).not.toBeNull();
+    expect(area.textContent).toContain('+ New');
   });
 });
 

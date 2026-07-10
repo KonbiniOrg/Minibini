@@ -6,7 +6,10 @@
   // rail link and slides the document row so the current document sits under
   // the caret (clamped so nothing runs off the left). When the row is wider
   // than the band it wraps to further lines, pushing the page down.
-  let { items = [], section = null } = $props();
+  // `trailing` is an optional snippet pinned to the right of the bar (e.g. a
+  // "+ New invoice" action). It's absolutely positioned, so it stays out of the
+  // caret-centred document group.
+  let { items = [], section = null, trailing = null } = $props();
 
   // Caret triangle height — keep in sync with the border-bottom width in the
   // `.doc-subnav-caret` rule so the caret's base lands on the rail underline.
@@ -81,4 +84,7 @@
       </a>
     {/each}
   </div>
+  {#if trailing}
+    <div class="doc-subnav-trailing">{@render trailing()}</div>
+  {/if}
 </nav>

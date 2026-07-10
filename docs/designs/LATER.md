@@ -181,6 +181,19 @@ Status coupling, transitions, and what a job may do at each stage.
   pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
   that design's place.
 
+- **Job status pill jumped draft→Approved when "Submitted" was chosen (possible double-select).** — _added 2026-07-09_
+  Observed once on a job freshly created from an email: using the header status pill
+  (`JobHeader.svelte`'s `<select>` trigger pill) to set **Submitted** landed the job on
+  **Approved** instead. The transition graph is `draft → submitted → approved`, and the pill
+  re-renders its valid-next options after each change — so a stray second `change` (an
+  accidental double-click, or an event firing against the just-re-rendered option list) would
+  walk `draft → submitted → approved` in a single gesture. Not reproduced deliberately; may be a
+  pure double-click artifact or a real re-render/handler race in the trigger pill. Worth checking
+  `handleStatusChange` for whether a rapid second selection can chain past the intended status
+  (e.g. debounce, or ignore a change while a transition is in flight).
+  _Done when:_ reproduced and fixed (one selection = one transition), or confirmed a stray
+  double-click that can't reasonably recur.
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
@@ -254,6 +267,21 @@ The CO surface and its estimate-parallel code.
 ## Invoicing, expenses & payments
 
 Billing mechanics and money-record lifecycle.
+
+- **"Start Invoice" on a draft job errors with misleading wording — reword and reconsider the gate.** — _added 2026-07-09_
+  Clicking the lone **Start Invoice** button on a fresh (draft) job's invoice panel raises
+  `InvoiceWizardService.open_for_job`'s error (`apps/invoicing/services.py`): *"Cannot start
+  invoice wizard for job in status 'draft'. Job must be approved or completed."* Two problems:
+  - **Wording:** the UI button says "Start Invoice", not "invoice wizard"; and "approved or
+    completed" mislists the actual `BILLABLE_JOB_STATUSES` (approved, in_progress, work_complete,
+    completed, cancelled). At minimum reword to match the UI term and the real allowed set.
+  - **Gate placement:** the Start-Invoice button shows on a non-billable job at all, so the only
+    outcome of clicking it is an error. Reconsider — likely hide/disable it (with a hint) until
+    the job is billable, the way the estimate panel gates Create Change Order, so the error is
+    unreachable through the UI.
+  _Done when:_ the message is reworded (UI term + accurate status list) and the Start-Invoice
+  affordance is gated to billable jobs (or a decision is recorded that the raw error is the
+  intended UX).
 
 - **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
   Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
