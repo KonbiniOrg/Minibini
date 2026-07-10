@@ -15,6 +15,16 @@ from apps.inventory.services import MaterialService
 from apps.jobs.models import Job, RateScheme, Task
 
 
+def _approve(job):
+    """Walk a job to approved. Earmarks exist only for committed (approved+)
+    jobs — generated in bulk at estimate/CO acceptance, or immediately when a
+    material lands on an already-committed job (the path these fixtures use)."""
+    for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+        job.status = s
+        job.save()
+    return job
+
+
 def _setup_common():
     cat = AccountingCategory.objects.get_or_create(
         code='MAT_AVAIL', defaults={'name': 'Material Avail'},
@@ -44,8 +54,8 @@ class TaskMaterialQtyAvailableTest(TestCase):
         self.user = User.objects.create_user(username='u_tm', password='p')
         cat, c, self.item, scheme = _setup_common()
 
-        self.job1 = Job.objects.create(job_number='J-AV1', contact=c, description='j1')
-        self.job2 = Job.objects.create(job_number='J-AV2', contact=c, description='j2')
+        self.job1 = _approve(Job.objects.create(job_number='J-AV1', contact=c, description='j1'))
+        self.job2 = _approve(Job.objects.create(job_number='J-AV2', contact=c, description='j2'))
 
         # task for job1 — material to be tested
         self.task = Task.objects.create(job=self.job1, name='T', sort_order=0, rate_scheme=scheme)
@@ -102,8 +112,8 @@ class JobMaterialQtyAvailableTest(TestCase):
         self.user = User.objects.create_user(username='u_jm', password='p')
         cat, c, self.item, _scheme = _setup_common()
 
-        self.job1 = Job.objects.create(job_number='J-JAV1', contact=c, description='j1')
-        self.job2 = Job.objects.create(job_number='J-JAV2', contact=c, description='j2')
+        self.job1 = _approve(Job.objects.create(job_number='J-JAV1', contact=c, description='j1'))
+        self.job2 = _approve(Job.objects.create(job_number='J-JAV2', contact=c, description='j2'))
 
         # task-less materials on job1 (qty 4) and job2 (qty 8) → available = 10 - 12 = -2
         MaterialService.create_on_job(
@@ -130,4 +140,25 @@ class JobMaterialQtyAvailableTest(TestCase):
         mats = r.json()['materials']
         self.assertEqual(len(mats), 1)
         self.assertIn('qty_available', mats[0])
+        self.assertEqual(mats[0]['qty_available'], '-2.00')
+
+    def test_draft_job_materials_do_not_earmark(self):
+        """The other half of the design: a PRE-APPROVAL job's materials
+        reserve nothing (earmarks come at acceptance), so they don't dent
+        qty_available — it reads on_hand minus only the committed jobs'
+        earmarks."""
+        cat = AccountingCategory.objects.get(code='MAT_AVAIL')
+        draft_job = Job.objects.create(
+            job_number='J-JAV3', contact=self.job1.contact, description='draft')
+        MaterialService.create_on_job(
+            job=draft_job, task=None,
+            inventory_item=self.item,
+            description='widget', quantity=Decimal('5.00'),
+            units='none', unit_cost=Decimal('1.00'),
+            sell_price=Decimal('2.00'), accounting_category=cat,
+        )
+        r = self.client.get(f'/api/jobs/{self.job1.pk}/')
+        mats = r.json()['materials']
+        # Still -2.00: the two approved jobs' 12 against 10 on hand; the
+        # draft job's 5 is invisible until its estimate is accepted.
         self.assertEqual(mats[0]['qty_available'], '-2.00')
