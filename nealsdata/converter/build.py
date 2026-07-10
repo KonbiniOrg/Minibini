@@ -180,11 +180,24 @@ def build_configuration(c):
         c.add_fixture('core.appstate', key, {'value': '0'})
 
 
+# Anonymized emails route to a real catch-all test domain via plus-addressing
+# so nothing can leak to a real recipient. Every generated address is of the
+# form `test+<local>@robot-six.com`.
+_ANON_EMAIL_DOMAIN = 'robot-six.com'
+_ANON_EMAIL_PREFIX = 'test+'
+
+
+def _anon_email_from_local(local):
+    """Build an anonymized address from a local part."""
+    return f'{_ANON_EMAIL_PREFIX}{local}@{_ANON_EMAIL_DOMAIN}'
+
+
 def _anonymize_email(value):
-    """Replace an email address's domain with example.com, keeping the
-    local part. A value with no '@' is treated as the local part."""
+    """Replace an email address's domain and prefix the local part, yielding
+    `test+<local>@robot-six.com`. A value with no '@' is treated as the local
+    part."""
     local = (value or '').split('@', 1)[0].strip()
-    return f'{local}@example.com' if local else (value or '')
+    return _anon_email_from_local(local) if local else (value or '')
 
 
 def _anonymize_phone(value):
@@ -318,7 +331,7 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
 
     contact_pk = c.next_pk('contacts.contact')
     email = (_anonymize_email(email) if email
-             else f'noreply+{contact_pk}@example.com')
+             else _anon_email_from_local(f'noreply+{contact_pk}'))
     work = _anonymize_phone(work) if work else ''
     mobile = _anonymize_phone(mobile) if mobile else ''
     if not work and not mobile:
@@ -2007,7 +2020,7 @@ def _mint_user(c):
         'username':       username,
         'first_name':     username.capitalize(),
         'last_name':      'Worker',
-        'email':          f'{username}@example.com',
+        'email':          _anon_email_from_local(username),
         'is_staff':       False,
         'is_active':      True,
         'date_joined':    f'{_FALLBACK_YEAR}-01-01T00:00:00+00:00',

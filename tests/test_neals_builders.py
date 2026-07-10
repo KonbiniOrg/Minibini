@@ -784,9 +784,9 @@ class MaterialLineKindTest(unittest.TestCase):
 class AnonymizeTest(unittest.TestCase):
     def test_email_domain_replaced(self):
         self.assertEqual(build._anonymize_email('oomung@abinari.it'),
-                         'oomung@example.com')
+                         'test+oomung@robot-six.com')
         self.assertEqual(build._anonymize_email('noreply+5@example.com'),
-                         'noreply+5@example.com')
+                         'test+noreply+5@robot-six.com')
 
     def test_phone_prefix_replaced(self):
         self.assertEqual(build._anonymize_phone('408-323-3393'), '408-555-3393')
@@ -797,7 +797,7 @@ class AnonymizeTest(unittest.TestCase):
     def test_scrub_text(self):
         self.assertEqual(
             build._scrub_text('email john@neals.com or call 415-867-5309'),
-            'email john@example.com or call 415-555-5309')
+            'email test+john@robot-six.com or call 415-555-5309')
         # part-number-like sequences without the phone shape are untouched
         self.assertEqual(build._scrub_text('cut part A-109180-00 x10'),
                          'cut part A-109180-00 x10')
