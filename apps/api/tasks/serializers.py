@@ -16,6 +16,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     po_status = serializers.SerializerMethodField()
     qty_on_hand = serializers.SerializerMethodField()
     qty_on_order = serializers.SerializerMethodField()
+    qty_available = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
 
     class Meta:
@@ -27,7 +28,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'consumption_state', 'released_qty', 'cost_source',
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
-            'qty_on_hand', 'qty_on_order',
+            'qty_on_hand', 'qty_on_order', 'qty_available',
             'invoice',
         ]
         read_only_fields = fields
@@ -57,6 +58,16 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
     def get_qty_on_order(self, obj):
         from apps.inventory.serializer_helpers import material_qty_on_order
         return material_qty_on_order(obj)
+
+    def get_qty_available(self, obj):
+        if obj.consumption_state == Material.CONSUMPTION_STATE_CONSUMED:
+            return None
+        if not obj.inventory_item_id:
+            return None
+        earmarked = getattr(obj, '_inv_earmarked', None)
+        if earmarked is not None:
+            return str(obj.inventory_item.qty_on_hand - earmarked)
+        return str(obj.inventory_item.qty_available)
 
 
 class MaterialWriteSerializer(serializers.ModelSerializer):

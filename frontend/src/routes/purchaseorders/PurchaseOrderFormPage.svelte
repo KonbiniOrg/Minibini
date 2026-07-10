@@ -18,6 +18,9 @@
   const initialParams = new URLSearchParams($querystring);
   const contextJobId = initialParams.get('job');
   const contextMaterialId = initialParams.get('material');
+  const contextInventoryItemId = initialParams.get('inventory_item');
+  const contextBusinessId = initialParams.get('business') ? Number(initialParams.get('business')) : null;
+  const contextContactId = initialParams.get('contact') ? Number(initialParams.get('contact')) : null;
   let contextJob = $state(null);
   let contextMaterial = $state(null);
 
@@ -110,6 +113,8 @@
     errors={fieldErrs}
     {formError}
     {contextJob}
+    defaultBusinessId={contextBusinessId}
+    defaultContactId={contextContactId}
     onSubmit={handleSubmit}
     onCancel={handleCancel}
   />
