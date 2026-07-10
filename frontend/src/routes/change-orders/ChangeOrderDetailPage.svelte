@@ -7,9 +7,7 @@
   import FormMessage from '../../components/FormMessage.svelte';
   import COAddLineForm from '../../components/changeorders/COAddLineForm.svelte';
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
-  import JobHeader from '../../components/jobs/JobHeader.svelte';
-  import JobNavRail from '../../components/jobs/JobNavRail.svelte';
-  import JobContextBand from '../../components/jobs/JobContextBand.svelte';
+  import JobShell from '../../components/jobs/JobShell.svelte';
   import DocSubnav from '../../components/jobs/DocSubnav.svelte';
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
   import PriceListPicker from '../../components/PriceListPicker.svelte';
@@ -680,11 +678,7 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if co}
-  {#if job}
-    <JobHeader {job} {contact} onStatusChange={loadCO} />
-    <JobContextBand {job} />
-    <JobNavRail {job} current="estimate" />
-  {/if}
+  <JobShell {job} {contact} current="estimate" onJobChange={loadCO}>
   {#if subnavItems.length > 0}
     <DocSubnav items={subnavItems} section="estimate" />
   {/if}
@@ -1051,6 +1045,7 @@
     onClose={() => { addLineFormOpen = false; addLineChoice = null; }}
   />
   </div>
+  </JobShell>
 {/if}
 
 <style>
