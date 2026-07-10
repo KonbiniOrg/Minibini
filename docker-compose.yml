@@ -14,8 +14,6 @@ services:
       dockerfile: Dockerfile.vite
     #volumes:
     #  - '/home/slee/git/konbini/Minibini:/minibini'
-    ports:
-      - '9001:9000'
     restart: always
     depends_on:
       mysql:
@@ -35,8 +33,6 @@ services:
       dockerfile: Dockerfile.django
     #volumes:
     #  - '/home/slee/git/konbini/Minibini:/minibini'
-    ports:
-      - '9000:9000'
     restart: always
     depends_on:
       mysql:
