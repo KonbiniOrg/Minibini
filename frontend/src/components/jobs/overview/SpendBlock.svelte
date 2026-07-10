@@ -10,4 +10,4 @@
   let model = $derived(spendBlock({ job, overview, scopeTotal }));
 </script>
 
-<SummaryBlock title="Spend" {model} />
+<SummaryBlock title="Spend" {model} accent="spend" />

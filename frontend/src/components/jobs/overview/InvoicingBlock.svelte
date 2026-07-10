@@ -10,4 +10,4 @@
   let model = $derived(invoicingBlock({ invoices, scopeTotal, now }));
 </script>
 
-<SummaryBlock title="Invoicing" {model} />
+<SummaryBlock title="Invoicing" {model} accent="invoicing" />

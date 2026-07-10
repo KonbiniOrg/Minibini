@@ -10,4 +10,4 @@
   let model = $derived(deliveryBlock({ shipments, deliverableCount, job, now }));
 </script>
 
-<SummaryBlock title="Delivery" {model} />
+<SummaryBlock title="Delivery" {model} accent="delivery" />

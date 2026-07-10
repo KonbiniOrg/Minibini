@@ -10,4 +10,4 @@
   let model = $derived(scopeBlock({ estimates, changeOrders, deliverableCount, now }));
 </script>
 
-<SummaryBlock title="Scope" {model} />
+<SummaryBlock title="Scope" {model} accent="scope" />

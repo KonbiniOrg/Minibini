@@ -5,7 +5,11 @@
   // no fetching, no business rules, no anchors. See frontend/src/lib/jobOverview.js
   // for the return shape and frontend/src/css/app.css (grep "summary-block")
   // for the CSS vocabulary this renders into.
-  const { title, model } = $props();
+  // `accent` names the block's identity color (accent-<name> class in
+  // app.css) — the active card's left edge + softened 1px ring. Optional;
+  // without it the vocabulary's default blue applies.
+  const { title, model, accent = null } = $props();
+  const accentClass = $derived(accent ? `accent-${accent}` : '');
 
   // Only bad/warn/good carry a color class (app.css has no .clock-neutral —
   // neutral tones render in the vocabulary's default ink).
@@ -15,7 +19,7 @@
 </script>
 
 {#if model.state === 'active'}
-  <div class="summary-block active">
+  <div class="summary-block active {accentClass}">
     <div class="summary-block-title">{title}</div>
     <div class="stat-spread">
       {#each model.stats as stat}
@@ -43,12 +47,12 @@
     {/if}
   </div>
 {:else if model.state === 'frozen'}
-  <div class="summary-block frozen">
+  <div class="summary-block frozen {accentClass}">
     <span class="summary-block-title">{title}</span>
     <span>{model.frozenText}</span>
   </div>
 {:else}
-  <div class="summary-block dormant">
+  <div class="summary-block dormant {accentClass}">
     <span class="summary-block-title">{title}</span>
     <span>{model.dormantText}</span>
   </div>

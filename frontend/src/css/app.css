@@ -212,13 +212,27 @@ dd {
    Dormant: dashed ghost, awaiting activation. */
 .summary-block {
   border-radius: 8px;
+  /* Per-block identity color: drives the active card's thick left edge and,
+     softened, its 1px ring. Set via an accent-<name> class; defaults to the
+     original blue so accent-less consumers look unchanged. */
+  --block-accent: #1d4ed8;
 }
 
-/* Active block: rich card with blue left border and shadow. Full stat layout. */
+/* Block accents — six distinguishable mid-saturation hues. Deliberately not
+   the clock palette (red/amber/green stay signals; a border is identity). */
+.summary-block.accent-scope     { --block-accent: #7c3aed; } /* violet */
+.summary-block.accent-work      { --block-accent: #2563eb; } /* blue */
+.summary-block.accent-materials { --block-accent: #0d9488; } /* teal */
+.summary-block.accent-spend     { --block-accent: #db2777; } /* pink */
+.summary-block.accent-invoicing { --block-accent: #059669; } /* emerald */
+.summary-block.accent-delivery  { --block-accent: #ea580c; } /* orange */
+
+/* Active block: rich card, accent left edge carried (softened) around the
+   1px ring, shadow. Full stat layout. */
 .summary-block.active {
   background: #fff;
-  border: 1px solid #e2e8f0;
-  border-left: 5px solid #1d4ed8;
+  border: 1px solid color-mix(in srgb, var(--block-accent) 45%, #fff);
+  border-left: 5px solid var(--block-accent);
   box-shadow: 0 1px 4px rgba(0,0,0,0.07);
   padding: 18px 26px 20px;
 }

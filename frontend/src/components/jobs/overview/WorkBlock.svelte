@@ -10,4 +10,4 @@
   let model = $derived(workBlock({ job, overview, tasksPlanned }));
 </script>
 
-<SummaryBlock title="Work" {model} />
+<SummaryBlock title="Work" {model} accent="work" />

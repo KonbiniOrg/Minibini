@@ -66,6 +66,21 @@ describe('SummaryBlock', () => {
     expect(getByText('Scope')).toBeInTheDocument();
   });
 
+  it('applies the accent identity class in every temperature; none without the prop', () => {
+    for (const [model, temp] of [[activeModel, 'active'], [frozenModel, 'frozen'], [dormantModel, 'dormant']]) {
+      const { container } = render(SummaryBlock, {
+        props: { title: 'Scope', model, accent: 'scope' },
+      });
+      const block = container.querySelector(`.summary-block.${temp}`);
+      expect(block).toHaveClass('accent-scope');
+    }
+    const { container } = render(SummaryBlock, {
+      props: { title: 'Scope', model: activeModel },
+    });
+    const bare = container.querySelector('.summary-block');
+    expect([...bare.classList].some((c) => c.startsWith('accent-'))).toBe(false);
+  });
+
   it('renders each stat label, value, and unit', () => {
     const { container } = render(SummaryBlock, { props: { title: 'Work', model: activeModel } });
     const stats = container.querySelectorAll('.stat');

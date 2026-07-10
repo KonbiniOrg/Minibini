@@ -100,7 +100,9 @@
 </JobShell>
 
 <style>
-  .summary-blocks { padding: 18px 0 40px; }
+  /* 10px here + .page-body's 10px = 20px — the blocks' left/right edges line
+     up with the context band's panels above (.context-band-grid's 20px). */
+  .summary-blocks { padding: 18px 10px 40px; }
 
   .change-request-banner {
     background: #ffedd5;

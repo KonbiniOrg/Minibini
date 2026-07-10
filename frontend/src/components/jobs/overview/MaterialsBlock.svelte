@@ -10,4 +10,4 @@
   let model = $derived(materialsBlock({ pos, coverage, now }));
 </script>
 
-<SummaryBlock title="Materials" {model} />
+<SummaryBlock title="Materials" {model} accent="materials" />
