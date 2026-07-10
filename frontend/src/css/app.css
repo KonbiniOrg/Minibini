@@ -190,6 +190,161 @@ dd {
 .row-actions button:hover { background: #f0f0f0; }
 .row-actions button:disabled { opacity: 0.4; cursor: default; }
 
+/*
+ * Lifecycle-summary vocabulary — the summary-block + stat-spread family used
+ * to tile a job's lifecycle (Scope, Work, Materials, Spend, Invoicing,
+ * Delivery) on the job overview. Each summary-block exists in one of three
+ * temperatures: active (fully rendered stat spread), frozen (minimal accept-only
+ * line), or dormant (ghost, awaiting prior stage). Generic on purpose — used by
+ * job overview first; adaptable to other summaries.
+ */
+
+/* The container: vertical list of summary blocks with consistent spacing. */
+.summary-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Base summary block — styled by variant (active/frozen/dormant).
+   Active: white card with left blue border, shadow, full stat spread.
+   Frozen: light grey, single-line flex, minimal space-saving.
+   Dormant: dashed ghost, awaiting activation. */
+.summary-block {
+  border-radius: 8px;
+}
+
+/* Active block: rich card with blue left border and shadow. Full stat layout. */
+.summary-block.active {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 5px solid #1d4ed8;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  padding: 18px 26px 20px;
+}
+
+/* Frozen block: compact line, space-efficient (used when scope is locked).
+   Single-line flex with baseline alignment. */
+.summary-block.frozen {
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  padding: 14px 26px;
+  color: #64748b;
+  font-size: 17px;
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+}
+
+/* Dormant block: ghost state (awaiting prior stage). Dashed border, muted text. */
+.summary-block.dormant {
+  border: 1.5px dashed #e2e8f0;
+  padding: 14px 26px;
+  color: #b6bec9;
+  font-size: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+}
+
+/* Block title/header — used in frozen and dormant blocks. Inside active blocks,
+   use the .stat-spread instead. */
+.summary-block-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #475569;
+  min-width: 170px;
+}
+
+/* The stat spread — the flex layout where all stats align at the top (labels
+   form one line; sub-lines hang below). Critical alignment rule: flex-start
+   ensures every label sits on the same line, with sub-content hanging below
+   without pushing neighbors. */
+.stat-spread {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+/* Individual stat block (label + value + optional sub-line). */
+.stat {
+  min-width: 110px;
+}
+
+/* Stat label (uppercase micro text). */
+.stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  margin-bottom: 3px;
+}
+
+/* Stat value (large, bold). The .unit inside is de-emphasized. */
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.1;
+}
+
+.stat-value .unit {
+  font-size: 15px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+/* Stat sub-line (small text below the value, e.g. context, footnotes). */
+.stat-sub {
+  font-size: 14px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+/* Progress bar (used in stat context, e.g. "Progress · by estimated time"). */
+.stat-progress {
+  height: 12px;
+  background: #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.stat-progress-fill {
+  display: block;
+  height: 100%;
+  background: #1d4ed8;
+}
+
+/* Timeline / clock line — separates the stat spread from a trailing status line.
+   Hairline top border; carries color variants for good/warn/bad states. */
+.clock-line {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 16px;
+}
+
+/* Clock line color variants. */
+.clock-bad {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.clock-warn {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.clock-good {
+  color: #15803d;
+  font-weight: 600;
+}
+
 /* Global feedback overlays (rendered by MessageOverlay.svelte). */
 .error-overlay,
 .success-overlay {
