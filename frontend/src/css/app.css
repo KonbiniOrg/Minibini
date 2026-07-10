@@ -255,6 +255,11 @@ dd {
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: #475569;
+}
+
+/* Scope min-width to frozen and dormant states only. */
+.summary-block.frozen .summary-block-title,
+.summary-block.dormant .summary-block-title {
   min-width: 170px;
 }
 
@@ -308,7 +313,7 @@ dd {
 /* Progress bar (used in stat context, e.g. "Progress · by estimated time"). */
 .stat-progress {
   height: 12px;
-  background: #e5e7eb;
+  background: var(--border-subtle);
   border-radius: 6px;
   overflow: hidden;
   margin-top: 8px;
