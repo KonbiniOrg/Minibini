@@ -107,8 +107,7 @@ function fmtMoney(v) {
 
 // "64" from "64.0", "41.5" from "41.5" — drop a trailing .0.
 function fmtHours(v) {
-  const n = num(v);
-  return Number.isInteger(n) ? String(n) : String(n);
+  return String(num(v));
 }
 
 function pct(part, whole) {
@@ -236,6 +235,10 @@ function responseClock(sentDate, status, now) {
 // ===========================================================================
 const PRE_APPROVAL_JOB_STATUSES = ['draft', 'submitted'];
 const WORK_DONE_JOB_STATUSES = ['work_complete', 'completed'];
+// Work freezes on completion AND on the terminal statuses that stop work for
+// good (cancelled/rejected) — those get the same settled facts line as
+// work_complete, not the active in-progress rendering.
+const WORK_FROZEN_JOB_STATUSES = [...WORK_DONE_JOB_STATUSES, 'cancelled', 'rejected'];
 
 export function workBlock({ job, overview, tasksPlanned = 0 }) {
   const work = (overview && overview.work) || {};
@@ -250,8 +253,8 @@ export function workBlock({ job, overview, tasksPlanned = 0 }) {
     return { state: 'dormant', dormantText: text };
   }
 
-  // Frozen — work complete.
-  if (WORK_DONE_JOB_STATUSES.includes(status)) {
+  // Frozen — work complete, or the job stopped for good.
+  if (WORK_FROZEN_JOB_STATUSES.includes(status)) {
     const hours = fmtHours((overview.spend && overview.spend.labor_hours) || 0);
     return { state: 'frozen', frozenText: `${num(work.tasks_total)} tasks · ${hours}h logged` };
   }
@@ -331,23 +334,27 @@ function dueStatOf(due) {
 
 // ===========================================================================
 // 3. MATERIALS — POs touching the job + coverage signal.
-// materialsBlock takes no `now` (the brief signature) — PO due dates are shown
-// but not toned, since pressure needs a clock reference the block isn't given.
+// materialsBlock takes `now` so each open PO's Due value can carry the same
+// calendar-day pressure signal as the pickup clock (header comment above):
+// amber within DUE_PRESSURE_WORKING_DAYS calendar days of `now` (including
+// due-today), red once the due date is in the past. A PO with no due date,
+// or one farther out than the pressure window, gets no tone.
 // ===========================================================================
 const OPEN_PO_STATUSES = ['draft', 'issued', 'partly_received'];
 
-export function materialsBlock({ pos = [], coverage = null }) {
+export function materialsBlock({ pos = [], coverage = null, now }) {
   const openPOs = pos.filter((p) => OPEN_PO_STATUSES.includes(p.status));
   const receivedPOs = pos.filter((p) => p.status === 'received_in_full');
   const coverageShort = coverage && coverage.tone === 'bad';
 
-  // Dormant — no POs and no shortfall.
-  if (!pos.length && !coverageShort) {
+  // Dormant — no open/received POs (e.g. none at all, or only cancelled ones)
+  // and no shortfall.
+  if (!openPOs.length && !receivedPOs.length && !coverageShort) {
     return { state: 'dormant', dormantText: 'nothing on order' };
   }
 
-  // Frozen — POs exist, none open, coverage not short.
-  if (!openPOs.length && !coverageShort) {
+  // Frozen — at least one received PO, none open, coverage not short.
+  if (!openPOs.length && receivedPOs.length && !coverageShort) {
     const n = receivedPOs.length;
     return { state: 'frozen', frozenText: `${n} ${n === 1 ? 'PO' : 'POs'}, all received` };
   }
@@ -362,7 +369,10 @@ export function materialsBlock({ pos = [], coverage = null }) {
       sub: `${po.business_name}${sent ? ` · sent ${fmtSlash(sent)}` : ''}`,
     });
     if (po.requested_date) {
-      stats.push({ label: 'Due', value: fmtSlash(po.requested_date) });
+      const dueStat = { label: 'Due', value: fmtSlash(po.requested_date) };
+      const tone = poDueTone(po.requested_date, now);
+      if (tone) dueStat.valueTone = tone;
+      stats.push(dueStat);
     }
   }
   if (receivedPOs.length) {
@@ -378,6 +388,18 @@ export function materialsBlock({ pos = [], coverage = null }) {
     stats.push(cov);
   }
   return { state: 'active', stats };
+}
+
+// PO due-date pressure tone: red once past due, amber within the pressure
+// window (including due-today), no tone otherwise. Same calendar-day
+// approximation as the pickup clock (header comment).
+function poDueTone(dueDate, now) {
+  if (!dueDate || now == null) return null;
+  const days = calendarDaysBetween(now, dueDate);
+  if (days == null) return null;
+  if (days < 0) return 'bad';
+  if (days <= DUE_PRESSURE_WORKING_DAYS) return 'warn';
+  return null;
 }
 
 // ===========================================================================
@@ -492,6 +514,10 @@ function invoiceStat(inv, now) {
   if (inv.status === 'paid' && inv.sent_date && inv.closed_date) {
     const days = calendarDaysBetween(inv.sent_date, inv.closed_date);
     s.sub = `paid in ${days} days`;
+    s.subTone = 'good';
+  } else if (inv.status === 'paid') {
+    // Paid but missing sent_date/closed_date — no latency to report.
+    s.sub = 'paid';
     s.subTone = 'good';
   } else if (inv.sent_date && inv.status !== 'draft') {
     const days = calendarDaysBetween(inv.sent_date, now);

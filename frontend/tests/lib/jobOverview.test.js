@@ -147,6 +147,38 @@ describe('scopeBlock', () => {
     });
     expect(b.clock).toEqual({ tone: 'neutral', lines: ['No customer response in 6 days'] });
   });
+
+  it('a draft CO reactivates a frozen scope with no response clock (not yet sent)', () => {
+    const b = scopeBlock({
+      estimates: [{ version: 3, status: 'accepted', closed_date: '2025-06-12', total: '12000.00' }],
+      changeOrders: [
+        { change_order_number: 'CO-3', status: 'draft', total: '250.00' },
+      ],
+      deliverableCount: 0,
+      now: '2025-07-09',
+    });
+    expect(b.state).toBe('active');
+    const co = stat(b, 'Change order');
+    expect(co.value).toBe('CO-3');
+    expect(co.pill).toEqual({ text: 'DRAFT', tone: 'draft' });
+    expect(b.clock).toBeUndefined();
+  });
+
+  it('a new higher-version draft (revision) reactivates a frozen scope', () => {
+    const b = scopeBlock({
+      estimates: [
+        { version: 1, status: 'accepted', closed_date: '2025-06-01', total: '9000.00' },
+        { version: 2, status: 'draft', total: '9500.00' },
+      ],
+      changeOrders: [],
+      deliverableCount: 0,
+      now: '2025-07-09',
+    });
+    expect(b.state).toBe('active');
+    const est = stat(b, 'Estimate');
+    expect(est.value).toBe('v2');
+    expect(est.pill).toEqual({ text: 'DRAFT', tone: 'draft' });
+  });
 });
 
 // ===========================================================================
@@ -227,6 +259,22 @@ describe('workBlock', () => {
     expect(d.valueTone).toBe('bad');
   });
 
+  it('active — due pressure boundary: exactly 5 working days left is amber', () => {
+    const ov = { ...overviewMid, due: { date: '2025-07-16', working_days_left: 5 } };
+    const b = workBlock({ job: { status: 'in_progress' }, overview: ov, tasksPlanned: 0 });
+    const d = stat(b, 'Due');
+    expect(d.subTone).toBe('warn');
+    expect(d.valueTone).toBe('warn');
+  });
+
+  it('active — due pressure boundary: due today (0 working days left) is amber, not red', () => {
+    const ov = { ...overviewMid, due: { date: '2025-07-09', working_days_left: 0 } };
+    const b = workBlock({ job: { status: 'in_progress' }, overview: ov, tasksPlanned: 0 });
+    const d = stat(b, 'Due');
+    expect(d.subTone).toBe('warn');
+    expect(d.valueTone).toBe('warn');
+  });
+
   it('active — due stat omitted without a due date', () => {
     const ov = { ...overviewMid, due: null };
     const b = workBlock({ job: { status: 'in_progress' }, overview: ov, tasksPlanned: 0 });
@@ -276,6 +324,34 @@ describe('workBlock', () => {
       },
     };
     const b = workBlock({ job: { status: 'work_complete' }, overview: ov, tasksPlanned: 0 });
+    expect(b.state).toBe('frozen');
+    expect(b.frozenText).toBe('14 tasks · 64h logged');
+  });
+
+  it('frozen — cancelled job renders the same facts line as work_complete', () => {
+    const ov = {
+      due: null,
+      spend: { labor: '2340.00', labor_hours: '64.0', materials_bought: '0', total: '2340.00' },
+      work: {
+        tasks_total: 14, tasks_complete: 14, tasks_blocked: 0, tasks_terminal: 14,
+        est_time_total_hours: '64.0', est_time_complete_hours: '64.0', working_now: [],
+      },
+    };
+    const b = workBlock({ job: { status: 'cancelled' }, overview: ov, tasksPlanned: 0 });
+    expect(b.state).toBe('frozen');
+    expect(b.frozenText).toBe('14 tasks · 64h logged');
+  });
+
+  it('frozen — rejected job renders the same facts line as work_complete', () => {
+    const ov = {
+      due: null,
+      spend: { labor: '2340.00', labor_hours: '64.0', materials_bought: '0', total: '2340.00' },
+      work: {
+        tasks_total: 14, tasks_complete: 14, tasks_blocked: 0, tasks_terminal: 14,
+        est_time_total_hours: '64.0', est_time_complete_hours: '64.0', working_now: [],
+      },
+    };
+    const b = workBlock({ job: { status: 'rejected' }, overview: ov, tasksPlanned: 0 });
     expect(b.state).toBe('frozen');
     expect(b.frozenText).toBe('14 tasks · 64h logged');
   });
@@ -341,6 +417,64 @@ describe('materialsBlock', () => {
       coverage: null,
     });
     expect(b.frozenText).toBe('1 PO, all received');
+  });
+
+  it('dormant — only cancelled POs, no received, no shortfall', () => {
+    const b = materialsBlock({
+      pos: [{ po_number: 'PO-0099', status: 'cancelled' }],
+      coverage: null,
+    });
+    expect(b.state).toBe('dormant');
+    expect(b.dormantText).toBe('nothing on order');
+  });
+
+  it('PO due pressure — due tomorrow is amber', () => {
+    const b = materialsBlock({
+      pos: [
+        { po_number: 'PO-0031', status: 'issued', business_name: 'Plywood Supply Co', issued_date: '2025-06-28', requested_date: '2025-07-10' },
+      ],
+      coverage: null,
+      now: '2025-07-09',
+    });
+    const due = stat(b, 'Due');
+    expect(due.value).toBe('7/10');
+    expect(due.valueTone).toBe('warn');
+  });
+
+  it('PO due pressure — past due is red', () => {
+    const b = materialsBlock({
+      pos: [
+        { po_number: 'PO-0031', status: 'issued', business_name: 'Plywood Supply Co', issued_date: '2025-06-28', requested_date: '2025-07-05' },
+      ],
+      coverage: null,
+      now: '2025-07-09',
+    });
+    const due = stat(b, 'Due');
+    expect(due.valueTone).toBe('bad');
+  });
+
+  it('PO due pressure — due in 10 days has no tone', () => {
+    const b = materialsBlock({
+      pos: [
+        { po_number: 'PO-0031', status: 'issued', business_name: 'Plywood Supply Co', issued_date: '2025-06-28', requested_date: '2025-07-19' },
+      ],
+      coverage: null,
+      now: '2025-07-09',
+    });
+    const due = stat(b, 'Due');
+    expect(due.valueTone).toBeUndefined();
+  });
+
+  it('PO due pressure — boundary exactly 5 days out is amber', () => {
+    const b = materialsBlock({
+      pos: [
+        { po_number: 'PO-0031', status: 'issued', business_name: 'Plywood Supply Co', issued_date: '2025-06-28', requested_date: '2025-07-14' },
+      ],
+      coverage: null,
+      now: '2025-07-09',
+    });
+    const due = stat(b, 'Due');
+    expect(due.valueTone).toBe('warn');
   });
 });
 
@@ -421,6 +555,34 @@ describe('invoicingBlock', () => {
     expect(inv.subTone).toBe('bad');
   });
 
+  it('active — paid invoice with no closed_date reads just "paid", not aged-unpaid', () => {
+    const b = invoicingBlock({
+      invoices: [
+        { invoice_number: 'INV-0091', status: 'paid', sent_date: '2025-06-20', total: '2000.00' },
+      ],
+      scopeTotal: 12400,
+      now: '2025-07-09',
+    });
+    const inv = stat(b, 'INV-0091');
+    expect(inv.sub).toBe('paid');
+    expect(inv.subTone).toBe('good');
+  });
+
+  it('active — exactly 4 invoices does not collapse', () => {
+    const invoices = [
+      { invoice_number: 'INV-01', status: 'paid', sent_date: '2025-01-01', closed_date: '2025-01-05', total: '100.00' },
+      { invoice_number: 'INV-02', status: 'paid', sent_date: '2025-02-01', closed_date: '2025-02-05', total: '100.00' },
+      { invoice_number: 'INV-03', status: 'open', sent_date: '2025-03-01', total: '100.00' },
+      { invoice_number: 'INV-04', status: 'open', sent_date: '2025-04-01', total: '100.00' },
+    ];
+    const b = invoicingBlock({ invoices, scopeTotal: 12400, now: '2025-07-09' });
+    expect(stat(b, 'INV-01')).toBeTruthy();
+    expect(stat(b, 'INV-02')).toBeTruthy();
+    expect(stat(b, 'INV-03')).toBeTruthy();
+    expect(stat(b, 'INV-04')).toBeTruthy();
+    expect(b.stats.some((s) => s.label.includes('earlier invoices'))).toBe(false);
+  });
+
   it('active — >4 invoices collapse oldest paid into one group', () => {
     const invoices = [
       { invoice_number: 'INV-01', status: 'paid', sent_date: '2025-01-01', closed_date: '2025-01-05', total: '100.00' },
@@ -480,6 +642,26 @@ describe('deliveryBlock', () => {
     expect(b.state).toBe('active');
     // 07-01 is a Tuesday; 8 days ago > 3 → red
     expect(b.clock).toEqual({ tone: 'bad', lines: ['ready since Tue, not picked up'] });
+  });
+
+  it('active — prepared exactly 3 calendar days ago is NOT red (boundary)', () => {
+    const b = deliveryBlock({
+      shipments: [{ sequence: 1, status: 'prepared', prepared_date: '2025-07-06' }],
+      deliverableCount: 1,
+      job: { status: 'in_progress' },
+      now: '2025-07-09',
+    });
+    expect(b.clock.tone).toBe('neutral');
+  });
+
+  it('active — prepared exactly 4 calendar days ago IS red (boundary)', () => {
+    const b = deliveryBlock({
+      shipments: [{ sequence: 1, status: 'prepared', prepared_date: '2025-07-05' }],
+      deliverableCount: 1,
+      job: { status: 'in_progress' },
+      now: '2025-07-09',
+    });
+    expect(b.clock.tone).toBe('bad');
   });
 
   it('active — prepared within threshold is not red', () => {
