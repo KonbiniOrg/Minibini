@@ -158,3 +158,40 @@ describe('ChangeOrderDetailPage error display', () => {
     }));
   });
 });
+
+describe('ChangeOrderDetailPage in the job workspace', () => {
+  it('shows the version subnav with this CO active and job-scoped links', async () => {
+    user.set({ permissions: [] });
+    const co = makeCO({ change_order_id: 3, change_order_number: 'CO-3', status: 'open', job: 9 });
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/change-orders/3/') return Promise.resolve({ ...co });
+      if (url.includes('deliverables-baseline')) return Promise.resolve({ baseline: [] });
+      if (url.startsWith('/api/change-orders/?job=')) return Promise.resolve({ results: [co] });
+      if (url.startsWith('/api/jobs/') && url.includes('/deliverables/')) return Promise.resolve([]);
+      if (url.startsWith('/api/jobs/')) return Promise.resolve({ job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null });
+      if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: [{ estimate_id: 7, version: 1, status: 'accepted' }] });
+      if (url.startsWith('/api/estimates/')) return Promise.resolve({ line_items: [] });
+      return Promise.resolve({});
+    });
+
+    // Rendered under the job-scoped route params.
+    const { container } = render(ChangeOrderDetailPage, {
+      props: { params: { jobId: '9', coId: '3' } },
+    });
+
+    let coLink;
+    await waitFor(() => {
+      const links = Array.from(container.querySelectorAll('.doc-subnav a'));
+      coLink = links.find((l) => l.textContent.includes('CO-3'));
+      expect(coLink).toBeTruthy();
+    });
+    const links = Array.from(container.querySelectorAll('.doc-subnav a'));
+    const estLink = links.find((l) => l.textContent.includes('v1'));
+    expect(estLink.getAttribute('href')).toBe('#/jobs/9/estimate/7');
+    expect(coLink.getAttribute('href')).toBe('#/jobs/9/change-order/3');
+    expect(coLink).toHaveClass('active');
+    // The hidable job context band is present too.
+    expect(container.querySelector('.context-band')).not.toBeNull();
+  });
+});

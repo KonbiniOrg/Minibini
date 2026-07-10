@@ -98,8 +98,38 @@ describe('EstimatePanel version subnav', () => {
     await findByText('Estimate: EST-7');
     const links = Array.from(container.querySelectorAll('.doc-subnav a'));
     expect(links).toHaveLength(2);
-    expect(links[1]).toHaveAttribute('href', '#/change-orders/3');
+    expect(links[1]).toHaveAttribute('href', '#/jobs/9/change-order/3');
     expect(links[1]).toHaveTextContent('CO-3');
+  });
+});
+
+describe('EstimatePanel toolbar actions', () => {
+  it('offers Revise on a submitted (open) estimate', async () => {
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    expect(await findByRole('button', { name: /revise estimate/i })).toBeInTheDocument();
+  });
+
+  it('offers Create Change Order on an accepted estimate and posts it for the job', async () => {
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'accepted' });
+    mockApi(est, { versions: [est] });
+    api.post.mockResolvedValue({ change_order_id: 42 });
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const btn = await findByRole('button', { name: /create change order/i });
+    await fireEvent.click(btn);
+    expect(api.post).toHaveBeenCalledWith('/api/change-orders/', { job: 9 });
+  });
+
+  it('does not offer Create Change Order on a non-accepted estimate', async () => {
+    user.set({ permissions: [] });
+    const est = makeEstimate({ estimate_id: 7, status: 'open' });
+    mockApi(est, { versions: [est] });
+    const { findByText, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText('Estimate: EST-7');
+    expect(queryByRole('button', { name: /create change order/i })).toBeNull();
   });
 });
 

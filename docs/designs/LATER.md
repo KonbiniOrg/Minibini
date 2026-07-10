@@ -36,10 +36,12 @@ wrap a 1000-line page in heavy mocks; extract first.
 **Primary (≥ 400 lines, as of 2026-06-04):**
 
 - `change-orders/ChangeOrderDetailPage.svelte` — **1038**, now **1117** (by far the largest; top
-  priority). Deliberately **not** extracted by the 2026-07-08 job-workspace restructure — it
-  stays a standalone route reached from the estimate panel's subnav (see
-  `docs/plans/2026-07-08-job-workspace-restructure-design.md`); sequenced last once the shell
-  pattern is boring on simpler documents.
+  priority). As of 2026-07-09 it's pulled **into** the job workspace: it lives at the job-scoped
+  route `/jobs/:jobId/change-order/:coId` (old `/change-orders/:id` redirects via
+  `ChangeOrderRedirect.svelte`) and renders JobHeader + JobContextBand + JobNavRail (current
+  "estimate") + the shared estimate/CO version subnav inline — but it is **not yet extracted**
+  into a panel component hosted by `JobShell` the way estimates/invoices are. That extraction is
+  the remaining work; sequenced last once the shell pattern is boring on simpler documents.
 - `jobs/TaskDetailPage.svelte` — 527
 - `Search.svelte` — 499
 - `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
@@ -226,6 +228,28 @@ The CO surface and its estimate-parallel code.
   lockstep until/unless the shop view reads the server composer too.)
   _Done when:_ the shared paths live in one place (or we record why the duplication
   is acceptable).
+
+- **Hide "Create Change Order" on the estimate once a CO exists — further COs chain off the prior CO.** — _added 2026-07-09_
+  The estimate panel's Create Change Order button (offered on an accepted estimate,
+  restored temporarily this session) should disappear once the job already has a
+  change order. The *first* CO is created from the accepted estimate; every
+  subsequent CO is seeded from the previous one via the CO page's "Start new change
+  order" (`seed-new`) flow, so COs chain off one another rather than each branching
+  fresh from the estimate. Gate the estimate-panel button on "no CO exists yet" and
+  rely on `seed-new` for the rest.
+  _Done when:_ the estimate's Create Change Order button is hidden once any CO exists
+  on the job, and additional COs are created only via the seed-new chain.
+
+- **Change order with only deliverable changes (no line items) is refused at Send.** — _added 2026-07-09_
+  A change order that changes only deliverables — no line-item edits — can't be
+  sent to the customer; the send path treats a CO with no line items as empty
+  and refuses it. But a deliverables-only amendment (e.g. quantity/spec change
+  with no price impact) is a legitimate thing to send for sign-off. Decide
+  whether this is correct (a CO must carry a line-item change to be sendable) or
+  whether deliverable-only COs should be sendable, and adjust the send gate
+  accordingly.
+  _Done when:_ the deliverables-only-CO send behaviour is decided and either the
+  refusal is kept with a recorded reason or the send gate accepts them.
 
 ## Invoicing, expenses & payments
 

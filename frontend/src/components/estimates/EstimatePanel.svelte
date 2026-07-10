@@ -7,8 +7,8 @@
   import LineItemModal from '../LineItemModal.svelte';
   import PriceListPicker from '../PriceListPicker.svelte';
   import EstimateAddLineForm from './EstimateAddLineForm.svelte';
-  import DeliverablesSection from '../jobs/DeliverablesSection.svelte';
   import DocSubnav from '../jobs/DocSubnav.svelte';
+  import { buildEstimateDocItems } from '../../lib/estimateDocs.js';
   import ReconcileMode from '../wizards/ReconcileMode.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
 
@@ -78,6 +78,21 @@
     } catch (e) {
       showError(errorMessage(e, 'Could not revise estimate.'));
       revising = false;
+    }
+  }
+
+  // Temporary: restore the create-change-order affordance to the estimate
+  // toolbar (offered on an accepted estimate) until the workspace restructure
+  // gives change orders their own home.
+  let creatingChangeOrder = $state(false);
+  async function handleCreateChangeOrder() {
+    creatingChangeOrder = true;
+    try {
+      const co = await api.post('/api/change-orders/', { job: job.job_id });
+      window.location.hash = `/jobs/${job.job_id}/change-order/${co.change_order_id}`;
+    } catch (e) {
+      showError(errorMessage(e, 'Failed to create change order.'));
+      creatingChangeOrder = false;
     }
   }
 
@@ -241,56 +256,16 @@
     return Math.abs((parseFloat(li.price) || 0) - expected) > 0.001;
   }
 
-  // Version subnav: estimate versions (oldest→newest) then this job's change
-  // orders. CO entries link to the (still top-level, unchanged this pass)
-  // /change-orders/:id route.
-  let sortedEstimates = $derived(
-    [...(estimates || [])].sort((a, b) => a.version - b.version)
-  );
-  let sortedChangeOrders = $derived(
-    [...(changeOrders || [])].sort((a, b) => {
-      if (a.change_order_number && b.change_order_number) {
-        return a.change_order_number.localeCompare(b.change_order_number);
-      }
-      return (a.change_order_id ?? 0) - (b.change_order_id ?? 0);
+  // Version subnav: estimate versions then this job's change orders, active on
+  // the shown estimate. Shared with the change-order page via lib/estimateDocs.
+  let subnavItems = $derived(
+    buildEstimateDocItems({
+      estimates,
+      changeOrders,
+      jobId: job.job_id,
+      currentKey: `est-${estimateId}`,
     })
   );
-
-  // Display status for estimates: show "amended" instead of "accepted" when the
-  // estimate has been amended by an accepted change order. Derived server-side
-  // (EstimateSerializer.is_amended); the stored status stays "accepted".
-  function estimateDisplayStatus(est) {
-    return est?.is_amended ? 'amended' : est?.status;
-  }
-
-  // Display status for change orders: show "amended" instead of "accepted" when
-  // a later accepted CO exists on the same job (ordered by change_order_id).
-  function changeOrderDisplayStatus(co, allCosForJob) {
-    if (co?.status === 'accepted' && (allCosForJob || []).some(
-      other => other.change_order_id > co.change_order_id
-               && other.status === 'accepted'
-    )) {
-      return 'amended';
-    }
-    return co?.status;
-  }
-
-  let subnavItems = $derived([
-    ...sortedEstimates.map((e) => ({
-      id: `est-${e.estimate_id}`,
-      label: `v${e.version}`,
-      status: estimateDisplayStatus(e),
-      href: `#/jobs/${job.job_id}/estimate/${e.estimate_id}`,
-      current: String(e.estimate_id) === String(estimateId),
-    })),
-    ...sortedChangeOrders.map((co) => ({
-      id: `co-${co.change_order_id}`,
-      label: co.change_order_number || `CO #${co.change_order_id}`,
-      status: changeOrderDisplayStatus(co, changeOrders),
-      href: `#/change-orders/${co.change_order_id}`,
-      current: false,
-    })),
-  ]);
 
   let startingEstimate = $state(false);
   async function startEstimate() {
@@ -346,6 +321,11 @@
     {#if canManageJobs && estimate.status === 'open'}
       <button type="button" onclick={handleRevise} disabled={revising}>
         {revising ? 'Revising...' : 'Revise Estimate'}
+      </button>
+    {/if}
+    {#if canManageJobs && estimate.status === 'accepted'}
+      <button type="button" onclick={handleCreateChangeOrder} disabled={creatingChangeOrder}>
+        {creatingChangeOrder ? 'Creating…' : 'Create Change Order'}
       </button>
     {/if}
     {#if canEdit}
@@ -421,10 +401,6 @@
     canEdit={canEdit}
     actions={canEdit ? actionsSnippet : null}
   />
-
-  {#if estimate.job}
-    <DeliverablesSection jobId={estimate.job} canManage={estimate.can_manage} />
-  {/if}
 
   <PriceListPicker open={pickerOpen} onChoose={handleChoose} onclose={() => { pickerOpen = false; }} />
 

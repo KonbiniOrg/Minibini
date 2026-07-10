@@ -303,7 +303,7 @@
     creatingCo = true;
     try {
       const co = await api.post('/api/change-orders/', { job: job.job_id });
-      window.location.hash = `/change-orders/${co.change_order_id}`;
+      window.location.hash = `/jobs/${job.job_id}/change-order/${co.change_order_id}`;
     } catch (e) {
       showError(errorMessage(e, 'Failed to create change order.'));
     } finally {
@@ -509,7 +509,7 @@
             </button>
           {/if}
           {#if displayedVersion?.kind === 'co'}
-            <a href="#/change-orders/{displayedVersion.co.change_order_id}">Open →</a>
+            <a href="#/jobs/{job.job_id}/change-order/{displayedVersion.co.change_order_id}">Open →</a>
           {:else if displayedEstimate}
             <a href="#/estimates/{displayedEstimate.estimate_id}">Open →</a>
           {/if}
@@ -537,7 +537,7 @@
             {:else}
               <a
                 class="est-tab est-tab-co"
-                href={`/change-orders/${ver.co.change_order_id}`}
+                href={`/jobs/${job.job_id}/change-order/${ver.co.change_order_id}`}
                 use:link
               >
                 {ver.co.change_order_number || `CO #${ver.co.change_order_id}`} <span class="est-tab-status">({changeOrderDisplayStatus(ver.co, changeOrders)})</span>

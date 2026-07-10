@@ -148,6 +148,8 @@ dd {
 .status-issued { background: #dbeafe; color: #1e40af; }
 .status-approved { background: #dcfce7; color: #166534; }
 .status-accepted { background: #dcfce7; color: #166534; }
+/* An estimate/CO amended by an accepted change order — same green as Approved. */
+.status-amended { background: #dcfce7; color: #166534; }
 .status-paid { background: #dcfce7; color: #166534; }
 .status-in_progress { background: #fef3c7; color: #92400e; }
 .status-partly_received { background: #fef3c7; color: #92400e; }

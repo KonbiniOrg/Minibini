@@ -9,15 +9,24 @@
   import COLineItemModal from '../../components/changeorders/COLineItemModal.svelte';
   import JobHeader from '../../components/jobs/JobHeader.svelte';
   import JobNavRail from '../../components/jobs/JobNavRail.svelte';
+  import JobContextBand from '../../components/jobs/JobContextBand.svelte';
+  import DocSubnav from '../../components/jobs/DocSubnav.svelte';
+  import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
   import PriceListPicker from '../../components/PriceListPicker.svelte';
   import UnitsSelect from '../../components/UnitsSelect.svelte';
 
   let { params = {} } = $props();
 
+  // The CO now lives inside the job workspace at /jobs/:jobId/change-order/:coId;
+  // the retired top-level /change-orders/:id route redirects here. Accept either
+  // param name so a direct render still works.
+  const coId = $derived(params.coId ?? params.id);
+
   let co = $state(null);
   let job = $state(null);
   let contact = $state(null);
   let estimateLines = $state([]);  // lines from the accepted estimate for target picking
+  let estimatesForNav = $state([]); // all estimate versions for this job (version subnav)
   let siblingCOs = $state([]);     // all COs for this job (used for display-status relabelling)
   let loading = $state(true);
   let error = $state('');
@@ -202,7 +211,7 @@
     loading = true;
     error = '';
     try {
-      co = await api.get(`/api/change-orders/${params.id}/`);
+      co = await api.get(`/api/change-orders/${coId}/`);
       if (co?.job) {
         try {
           job = await api.get(`/api/jobs/${co.job}/`);
@@ -213,6 +222,7 @@
           try {
             const estResp = await api.get(`/api/estimates/?job=${co.job}`);
             const estList = estResp?.results || estResp || [];
+            estimatesForNav = estList;
             // Use accepted or the most recent non-superseded estimate for target picking
             const accepted = estList.find(e => e.status === 'accepted');
             const source = accepted || estList.findLast(e => e.status !== 'superseded') || estList[estList.length - 1];
@@ -234,7 +244,7 @@
           try {
             const [liveDel, baselineResp] = await Promise.all([
               api.get(`/api/jobs/${co.job}/deliverables/`),
-              api.get(`/api/change-orders/${params.id}/deliverables-baseline/`),
+              api.get(`/api/change-orders/${coId}/deliverables-baseline/`),
             ]);
             liveDeliverables = liveDel || [];
             delivBaseline = baselineResp?.baseline || [];
@@ -273,7 +283,7 @@
   }
 
   $effect(() => {
-    if (params.id) {
+    if (coId) {
       loadCO();
       loadCategories();
       loadSettings();
@@ -512,7 +522,7 @@
   async function handleStatusChange(newStatus) {
     const labels = { accepted: 'Accept', rejected: 'Reject' };
     const label = labels[newStatus] || newStatus;
-    if (!confirm(`${label} this change order?${newStatus === 'accepted' ? ' This will move the job to approved so you can verify the details before releasing it to the floor.' : ''}`)) return;
+    if (!confirm(`${label} this change order?${newStatus === 'accepted' ? ' Only confirm if the customer has definitely approved it.' : ''}`)) return;
     actionBusy = true;
     try {
       await api.patch(`/api/change-orders/${co.change_order_id}/`, { status: newStatus });
@@ -541,7 +551,7 @@
     actionBusy = true;
     try {
       const newCo = await api.post(`/api/change-orders/${co.change_order_id}/seed-new/`);
-      window.location.hash = `/change-orders/${newCo.change_order_id}`;
+      window.location.hash = `/jobs/${co.job}/change-order/${newCo.change_order_id}`;
     } catch (e) {
       showError(errorMessage(e, 'Could not create new change order.'));
       actionBusy = false;
@@ -643,18 +653,19 @@
 
   // --------------------------------------------------------------------------
 
-  // Display status for change orders: show "amended" instead of "accepted" when
-  // a later accepted CO exists on the same job (ordered by change_order_id).
-  // Only an accepted later CO triggers the relabel — draft/open/rejected/etc. do not.
-  function changeOrderDisplayStatus(co, allCosForJob) {
-    if (co?.status === 'accepted' && (allCosForJob || []).some(
-      other => other.change_order_id > co.change_order_id
-               && other.status === 'accepted'
-    )) {
-      return 'amended';
-    }
-    return co?.status;
-  }
+  // Version subnav: estimate versions then this job's change orders, with this
+  // CO marked active. Shares the estimate panel's builder so the two stay in
+  // lockstep (changeOrderDisplayStatus is imported from the same module).
+  let subnavItems = $derived(
+    job
+      ? buildEstimateDocItems({
+          estimates: estimatesForNav,
+          changeOrders: siblingCOs,
+          jobId: job.job_id,
+          currentKey: `co-${coId}`,
+        })
+      : []
+  );
 
   function fmtMoney(n) { return `$${Number(n ?? 0).toFixed(2)}`; }
   function fmtDiff(n) {
@@ -671,7 +682,11 @@
 {:else if co}
   {#if job}
     <JobHeader {job} {contact} onStatusChange={loadCO} />
+    <JobContextBand {job} />
     <JobNavRail {job} current="estimate" />
+  {/if}
+  {#if subnavItems.length > 0}
+    <DocSubnav items={subnavItems} section="estimate" />
   {/if}
 
   <div class="page-body">
@@ -1054,7 +1069,9 @@
   .btn-accept { background: #dcfce7; color: #166534; border-color: #86efac; }
   .btn-accept:hover { background: #bbf7d0; }
 
-  .section { padding: 16px 24px; }
+  /* Vertical rhythm only — no horizontal inset, so the diff tables align to the
+     .page-body gutter like the estimate panel's tables (not indented 24px). */
+  .section { padding: 16px 0; }
   .section-head {
     display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
   }
@@ -1065,9 +1082,13 @@
   .diff-table {
     width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px;
   }
+  /* Adopt the house .data-table teal header band for consistency with the
+     estimate's tables — but keep the diff's compact sizing, and deliberately
+     NOT the house zebra striping (it would fight the semantic row tints below)
+     nor the generous house cell padding (this diff is intentionally dense). */
   .diff-table th {
-    text-align: left; color: #6b7280; font-size: 12px; font-weight: 600;
-    padding: 5px 8px; border-bottom: 1px solid #e5e7eb;
+    text-align: left; color: #115e59; font-size: 12px; font-weight: 600;
+    padding: 5px 8px; background: #f0fdfa; border-bottom: 2px solid #99f6e4;
   }
   .diff-table td { padding: 6px 8px; vertical-align: middle; }
   .diff-table tbody tr { border-bottom: 1px solid #f3f4f6; }
