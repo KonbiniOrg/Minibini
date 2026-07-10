@@ -2,6 +2,9 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import FormMessage from '../FormMessage.svelte';
+  import Modal from '../Modal.svelte';
+  import JobEditModal from './JobEditModal.svelte';
+  import DuplicateJobModal from './DuplicateJobModal.svelte';
 
   const {
     job,
@@ -22,12 +25,13 @@
 
   // The transitions the status pill offers — a subset of the Job model's
   // VALID_TRANSITIONS (the pill deliberately omits some, e.g. work_complete's
-  // →completed/→cancelled). on_hold is a flag, not a status — the hold/release
-  // buttons drive it, so it never appears here.
+  // →completed/→cancelled). The pill also carries *trigger* options that are
+  // not statuses (values prefixed __): "Hold…" opens the reason modal and
+  // "Release hold" posts the release — on_hold stays a flag, never a status.
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
-    approved: ['cancelled'],
+    approved: ['in_progress', 'cancelled'],
     in_progress: ['work_complete', 'cancelled'],
     work_complete: ['in_progress'],
     rejected: [],
@@ -50,6 +54,13 @@
     return STATUS_LABELS[s] || s;
   }
 
+  // Trigger labels: the pill names the *act*, not the resulting status, where
+  // the act is the clearer read (releasing an approved job to the floor).
+  function transitionLabel(next) {
+    if (job.status === 'approved' && next === 'in_progress') return 'Release to floor';
+    return statusLabel(next);
+  }
+
   // While held the backend parks the status (cancel excepted).
   let validNextStatuses = $derived(
     job.on_hold ? ['cancelled'] : (VALID_TRANSITIONS[job.status] || [])
@@ -60,17 +71,47 @@
     !job.on_hold && (job.status === 'approved' || job.status === 'in_progress')
   );
 
-  // Inline hold-reason field state
-  let showHoldReason = $state(false);
-  let holdReasonInput = $state('');
-  let holdReasonBusy = $state(false);
-  let holdError = $state('');
+  // Held jobs hide their true status: the pill just says HOLD.
+  let pillLabel = $derived(job.on_hold ? 'HOLD' : statusLabel(job.status));
+
+  let showStatusSelect = $derived(
+    canManageJobs && (validNextStatuses.length > 0 || canHold || job.on_hold)
+  );
+
+  let titleText = $derived(`JOB #${job.job_number.replace(/^JOB-/, '')}: ${job.name || '(untitled)'}`);
+
+  // Right-column facts line: dates + customer PO as one dot-joined string;
+  // the PM link renders separately so it can stay an <a>.
+  let factsText = $derived([
+    job.start_date ? `Started ${new Date(job.start_date).toLocaleDateString()}` : null,
+    job.due_date ? `Due ${new Date(job.due_date).toLocaleDateString()}` : null,
+    job.completed_date ? `Completed ${new Date(job.completed_date).toLocaleDateString()}` : null,
+    job.customer_po_number ? `PO: ${job.customer_po_number}` : null,
+  ].filter(Boolean).join(' · '));
+
+  // Edit / Duplicate modals — openable from any job page (the header is the
+  // one place both are always mounted). History moved to the rail.
+  let editOpen = $state(false);
+  let dupOpen = $state(false);
 
   async function handleStatusChange(e) {
-    const newStatus = e.target.value;
-    if (newStatus === job.status) return;
+    const picked = e.target.value;
+    if (picked === job.status) return;
+    // Trigger options aren't statuses: snap the pill back to the current
+    // value immediately — the trigger's own flow (modal / API + reload)
+    // decides what actually happens.
+    if (picked === '__hold') {
+      e.target.value = job.status;
+      openHoldModal();
+      return;
+    }
+    if (picked === '__release_hold') {
+      e.target.value = job.status;
+      releaseHold();
+      return;
+    }
     try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: newStatus });
+      await api.patch(`/api/jobs/${job.job_id}/`, { status: picked });
       if (onStatusChange) onStatusChange();
     } catch (err) {
       e.target.value = job.status;
@@ -78,10 +119,16 @@
     }
   }
 
-  function openHoldForm() {
+  // Hold-reason modal state
+  let holdModalOpen = $state(false);
+  let holdReasonInput = $state('');
+  let holdReasonBusy = $state(false);
+  let holdError = $state('');
+
+  function openHoldModal() {
     holdReasonInput = '';
     holdError = '';
-    showHoldReason = true;
+    holdModalOpen = true;
   }
 
   async function confirmHold() {
@@ -93,7 +140,7 @@
     holdError = '';
     try {
       await api.post(`/api/jobs/${job.job_id}/hold/`, { reason: holdReasonInput.trim() });
-      showHoldReason = false;
+      holdModalOpen = false;
       holdReasonInput = '';
       if (onStatusChange) onStatusChange();
     } catch (e) {
@@ -104,156 +151,140 @@
   }
 
   function cancelHold() {
-    showHoldReason = false;
+    holdModalOpen = false;
     holdReasonInput = '';
     holdError = '';
   }
 
-  let releasingHold = $state(false);
-
   async function releaseHold() {
     // No confirm: exactly undoable by holding again.
-    releasingHold = true;
     try {
       await api.post(`/api/jobs/${job.job_id}/release/`, {});
       if (onStatusChange) onStatusChange();
     } catch (e) {
       showError(errorMessage(e, 'Failed to release the hold.'));
-    } finally {
-      releasingHold = false;
-    }
-  }
-
-  let releasingToFloor = $state(false);
-
-  async function releaseToFloor() {
-    // No confirm: reversible via a hold.
-    releasingToFloor = true;
-    try {
-      await api.patch(`/api/jobs/${job.job_id}/`, { status: 'in_progress' });
-      if (onStatusChange) onStatusChange();
-    } catch (e) {
-      showError(errorMessage(e, 'Failed to release to floor.'));
-    } finally {
-      releasingToFloor = false;
     }
   }
 </script>
 
 <div class="job-header">
   <div class="titleblock">
-    <h1>
-      JOB #{job.job_number.replace(/^JOB-/, '')}: {job.name || '(untitled)'}
-      {#if canManageJobs}<a href="#/jobs/{job.job_id}/edit" class="edit-link">edit</a>{/if}
-      {#if canManageJobs}<a href="#/jobs/{job.job_id}/duplicate" class="edit-link">duplicate…</a>{/if}
-      <a href="#/jobs/{job.job_id}/history" class="edit-link">history</a>
-    </h1>
+    <h1 title={titleText}>{titleText}</h1>
     <p class="customer-line">
       {#if contact}
         for <a href="#/contacts/{contact.contact_id}">{contact.name}</a>{#if contact.business}, at <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>{/if}
       {/if}
     </p>
-    {#if job.project_manager_name}
-      <p class="pm-line">Project manager: <a href="#/jobs?pm={job.project_manager}">{job.project_manager_name}</a></p>
-    {/if}
     <div class="status-row">
-      {#if canManageJobs && validNextStatuses.length > 0}
+      {#if canManageJobs}
+        <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
+        <button type="button" class="edit-link header-action" onclick={() => { dupOpen = true; }}>Duplicate…</button>
+      {/if}
+      {#if showStatusSelect}
         <span class="status-select-wrapper">
-          <select class="status-select status-{job.status}" onchange={handleStatusChange}>
-            <option value={job.status} selected>{statusLabel(job.status)}</option>
+          <select
+            class="status-select {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}"
+            onchange={handleStatusChange}
+          >
+            <option value={job.status} selected>{pillLabel}</option>
+            {#if job.on_hold}
+              <option value="__release_hold">Release hold</option>
+            {/if}
             {#each validNextStatuses as nextStatus}
-              <option value={nextStatus}>{statusLabel(nextStatus)}</option>
+              <option value={nextStatus}>{transitionLabel(nextStatus)}</option>
             {/each}
+            {#if canHold}
+              <option value="__hold">Hold…</option>
+            {/if}
           </select>
         </span>
       {:else}
-        <span class="status-badge status-{job.status}">{statusLabel(job.status)}</span>
+        <span class="status-badge {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}">{pillLabel}</span>
       {/if}
-      {#if job.on_hold}
-        <span class="status-badge on-hold-badge">On Hold</span>
-      {/if}
-      <span class="dates">
-        {#if job.start_date}Started {new Date(job.start_date).toLocaleDateString()}{/if}
-        {#if job.due_date}{job.start_date ? ' · ' : ''}Due {new Date(job.due_date).toLocaleDateString()}{/if}
-        {#if job.completed_date}{(job.start_date || job.due_date) ? ' · ' : ''}Completed {new Date(job.completed_date).toLocaleDateString()}{/if}
-        {#if job.customer_po_number}{(job.start_date || job.due_date || job.completed_date) ? ' · ' : ''}PO: {job.customer_po_number}{/if}
-      </span>
-      {#if job.status === 'approved' && !job.on_hold && canManageJobs}
-        <button class="release-btn" onclick={releaseToFloor} disabled={releasingToFloor}>
-          {releasingToFloor ? 'Releasing…' : 'Release to floor'}
-        </button>
-      {/if}
-      {#if canHold && canManageJobs}
-        <button class="release-btn" onclick={openHoldForm}>Put on hold</button>
-      {/if}
-      {#if job.on_hold && canManageJobs}
-        <button class="release-btn" onclick={releaseHold} disabled={releasingHold}>
-          {releasingHold ? 'Releasing…' : 'Release hold'}
-        </button>
+      {#if job.on_hold && job.hold_reason}
+        <span class="hold-reason" title={job.hold_reason}>
+          <span class="hold-reason-label">Why:</span> {job.hold_reason}
+        </span>
       {/if}
     </div>
-    {#if job.on_hold && job.hold_reason}
-      <div class="hold-reason-display">
-        <span class="hold-reason-label">Hold reason:</span>
-        <span class="hold-reason-text">{job.hold_reason}</span>
-      </div>
-    {/if}
-    {#if showHoldReason}
-      <div class="hold-reason-form">
-        <label for="hold-reason-input"><strong>Reason for hold *</strong></label>
-        <input
-          id="hold-reason-input"
-          type="text"
-          bind:value={holdReasonInput}
-          placeholder="Describe why this job is being put on hold"
-          disabled={holdReasonBusy}
-        />
-        <button type="button" onclick={confirmHold} disabled={holdReasonBusy || !holdReasonInput.trim()}>
-          {holdReasonBusy ? 'Saving…' : 'Confirm Hold'}
-        </button>
-        <button type="button" onclick={cancelHold} disabled={holdReasonBusy}>Cancel</button>
-        <FormMessage error={holdError} />
-      </div>
-    {/if}
   </div>
-  <div class="pl-grid">
-    <div class="pl-item"><div class="pl-label">Estimate</div><div class="pl-value">{formatAmount(job.estimated_amount)}</div></div>
-    <div class="pl-item"><div class="pl-label">Spent</div><div class="pl-value pl-spent">{formatAmount(job.spent_amount)}</div></div>
-    <div class="pl-item"><div class="pl-label">Invoiced</div><div class="pl-value pl-invoiced">{formatAmount(job.invoiced_amount)}</div></div>
-    <div class="pl-item"><div class="pl-label">Profit</div><div class="pl-value" class:pl-profit-pos={profitNum != null && profitNum >= 0} class:pl-profit-neg={profitNum != null && profitNum < 0}>{formatAmount(job.profit_amount)}</div></div>
+  <div class="factblock">
+    <div class="facts-line">
+      {factsText}{#if job.project_manager_name}{factsText ? ' · ' : ''}PM: <a href="#/jobs?pm={job.project_manager}">{job.project_manager_name}</a>{/if}
+    </div>
+    <div class="pl-grid">
+      <div class="pl-item"><div class="pl-label">Estimate</div><div class="pl-value">{formatAmount(job.estimated_amount)}</div></div>
+      <div class="pl-item"><div class="pl-label">Spent</div><div class="pl-value pl-spent">{formatAmount(job.spent_amount)}</div></div>
+      <div class="pl-item"><div class="pl-label">Invoiced</div><div class="pl-value pl-invoiced">{formatAmount(job.invoiced_amount)}</div></div>
+      <div class="pl-item"><div class="pl-label">Profit</div><div class="pl-value" class:pl-profit-pos={profitNum != null && profitNum >= 0} class:pl-profit-neg={profitNum != null && profitNum < 0}>{formatAmount(job.profit_amount)}</div></div>
+    </div>
   </div>
 </div>
 
+<Modal open={holdModalOpen} onSave={confirmHold} onCancel={cancelHold} busy={holdReasonBusy} maxWidth="520px" label="Put job on hold">
+  <h3 class="hold-modal-title">Put job on hold</h3>
+  <label class="hold-modal-label" for="hold-reason-input">Reason for hold *</label>
+  <input
+    id="hold-reason-input"
+    type="text"
+    bind:value={holdReasonInput}
+    placeholder="Describe why this job is being put on hold"
+    disabled={holdReasonBusy}
+  />
+  <div class="hold-modal-actions">
+    <button type="button" onclick={confirmHold} disabled={holdReasonBusy || !holdReasonInput.trim()}>
+      {holdReasonBusy ? 'Saving…' : 'Confirm Hold'}
+    </button>
+    <button type="button" onclick={cancelHold} disabled={holdReasonBusy}>Cancel</button>
+  </div>
+  <FormMessage error={holdError} />
+</Modal>
+
+<JobEditModal
+  {job}
+  open={editOpen}
+  onSaved={() => { editOpen = false; if (onStatusChange) onStatusChange(); }}
+  onClose={() => { editOpen = false; }}
+/>
+
+<DuplicateJobModal
+  {job}
+  open={dupOpen}
+  onClose={() => { dupOpen = false; }}
+/>
+
 <style>
+  /* Fixed-height banner: the left titleblock is a hard three-line budget
+     (truncating title / customer / status row) and the right factblock is
+     facts line + money grid, so nothing optional can grow the header. */
   .job-header {
     background: #1f2937;
     color: #fff;
     padding: 14px 24px;
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 24px;
     align-items: center;
     height: 110px;
     box-sizing: border-box;
     flex: 0 0 auto;
-    /* Establish a stacking context above the page body so the hold-reason
-       form (which overflows the fixed 110px height) paints on top and stays
-       clickable, instead of being covered by the content below. */
-    position: relative;
-    z-index: 30;
   }
+
   .titleblock { padding-left: 52px; min-width: 0; }
-  .titleblock h1 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; }
-  .edit-link { font-size: 12px; font-weight: 400; opacity: 0.6; margin-left: 10px; color: #fff; text-decoration: none; }
-  .edit-link:hover { opacity: 1; text-decoration: underline; }
-  .customer-line, .pm-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
-  .customer-line a, .pm-line a { color: #fff; text-decoration: underline; }
-  .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; }
-  .status-badge {
-    padding: 3px 10px; border-radius: 10px; font-size: 12px;
-    font-weight: 600; text-transform: capitalize;
+  .titleblock h1 {
+    font-size: 22px; font-weight: 700; margin: 0; color: #fff;
+    /* The title may never wrap: it truncates, full name on hover. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .status-select-wrapper { position: relative; display: inline-block; }
+
+  .customer-line { font-size: 13px; opacity: 0.85; margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .customer-line a { color: #fff; text-decoration: underline; }
+
+  .status-row { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 12px; min-width: 0; }
+  /* Colors come from the global .status-{status} classes (app.css); only the
+     compact sizing for this dense band is local. */
+  .status-badge { padding: 3px 10px; border-radius: 10px; font-size: 12px; flex: 0 0 auto; }
+  .status-select-wrapper { position: relative; display: inline-block; flex: 0 0 auto; }
   .status-select {
     appearance: none; -webkit-appearance: none;
     padding: 3px 26px 3px 10px; border-radius: 10px;
@@ -267,53 +298,33 @@
     content: '\25BE'; position: absolute; right: 9px; top: 50%;
     transform: translateY(-50%); font-size: 10px; pointer-events: none; opacity: 0.6;
   }
-  .status-draft { background: #f3f4f6; color: #374151; }
-  .status-submitted { background: #dbeafe; color: #1e40af; }
-  .status-approved { background: #dcfce7; color: #166534; }
-  .status-in_progress { background: #fef3c7; color: #92400e; }
-  .on-hold-badge {
+  /* Held jobs: the pill (select or read-only badge) wears the hold stripes
+     and says HOLD — the true status is deliberately not visible. */
+  .on-hold-pill {
     background: repeating-linear-gradient(
       -45deg, #fde68a, #fde68a 6px, #fcd34d 6px, #fcd34d 12px
     );
     color: #92400e;
   }
-  .status-work_complete { background: #e0e7ff; color: #3730a3; }
-  .status-completed { background: #dbeafe; color: #1e40af; }
-  .status-rejected { background: #fee2e2; color: #991b1b; }
-  .status-cancelled { background: #fef3c7; color: #92400e; }
-  .dates { opacity: 0.7; }
-  .release-btn { font-size: 12px; padding: 3px 10px; margin-left: 4px; }
-
-  .hold-reason-display {
-    margin-top: 4px; font-size: 12px; opacity: 0.9;
-    display: flex; gap: 6px; align-items: baseline;
+  .hold-reason {
+    font-style: italic; opacity: 0.9;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0; flex: 0 1 auto;
   }
-  .hold-reason-label { font-weight: 600; opacity: 0.7; text-transform: uppercase; font-size: 10px; letter-spacing: 0.4px; }
-  .hold-reason-text { font-style: italic; }
-
-  .hold-reason-form {
-    position: relative; z-index: 1;
-    margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    /* Solid dark background (not translucent) so the form is legible where it
-       overflows the header onto the light page body below; the shadow reads it
-       as a popover floating over that content. */
-    background: #1f2937; border: 1px solid rgba(255,255,255,0.18);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
-    border-radius: 6px; padding: 8px 12px;
+  .hold-reason-label {
+    font-style: normal; font-weight: 600; opacity: 0.7;
+    text-transform: uppercase; font-size: 10px; letter-spacing: 0.4px;
   }
-  .hold-reason-form label { font-size: 12px; white-space: nowrap; }
-  .hold-reason-form input {
-    font-size: 12px; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.4);
-    background: rgba(255,255,255,0.9); color: #1f2937; flex: 1 1 200px;
-  }
-  .hold-reason-form button { font-size: 12px; padding: 3px 10px; }
+  .factblock { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .facts-line { font-size: 14px; opacity: 0.9; white-space: nowrap; position: relative; top: -3px; }
+  .facts-line a { color: #fff; text-decoration: underline; }
 
   .pl-grid {
     display: grid;
     grid-template-columns: repeat(4, auto);
     gap: 22px;
     background: rgba(255,255,255,0.06);
-    padding: 10px 18px;
+    padding: 8px 18px;
     border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.08);
   }
@@ -324,4 +335,10 @@
   .pl-invoiced { color: #86efac; }
   .pl-profit-pos { color: #86efac; }
   .pl-profit-neg { color: #fca5a5; }
+
+  /* Hold modal content (shell geometry comes from Modal.svelte) */
+  .hold-modal-title { margin: 0 0 12px; font-size: 16px; }
+  .hold-modal-label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  #hold-reason-input { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; }
+  .hold-modal-actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

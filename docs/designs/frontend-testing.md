@@ -47,7 +47,7 @@ Import source via the `@` → `src/` alias: `import { linkify } from '@/lib/link
 
 Node 22+ ships an **experimental built-in `localStorage` global** that is only functional when Node is launched with `--localstorage-file`. Under the test runner it isn't, so Node's stub *shadows* jsdom's working `localStorage`, and any code calling `localStorage.getItem(...)` throws `localStorage.getItem is not a function` — failing the whole test file at import time.
 
-Rather than depend on Node/jsdom version quirks, `tests/setup.js` installs a small deterministic in-memory `Storage` (a `Map` behind `getItem`/`setItem`/`removeItem`/`clear`) on `globalThis.localStorage` and `globalThis.sessionStorage`, cleared after each test. This unblocks every component touching storage (view-mode lives in `localStorage`; `JobDetail` keeps accordion state in `sessionStorage`). It is shared harness setup, not per-test boilerplate.
+Rather than depend on Node/jsdom version quirks, `tests/setup.js` installs a small deterministic in-memory `Storage` (a `Map` behind `getItem`/`setItem`/`removeItem`/`clear`) on `globalThis.localStorage` and `globalThis.sessionStorage`, cleared after each test. This unblocks every component touching storage — view-mode and the job workspace's per-job position (`stores/jobWorkspace.js`, §9.6 of `jobs-tasks-and-worksheets.md`) both live in `localStorage`. (`JobDetail`'s accordion `sessionStorage` state — the reason `sessionStorage` was shimmed alongside `localStorage` — was retired with the accordion pillars, 2026-07-09; the shim covers both storages regardless in case a future component needs `sessionStorage`.) It is shared harness setup, not per-test boilerplate.
 
 ## What we test, and what we don't (triage)
 

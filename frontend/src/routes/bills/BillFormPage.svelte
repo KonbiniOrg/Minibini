@@ -205,6 +205,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>{isEdit ? 'Edit Bill' : 'New Bill'}</h2>
 
 {#if loading}
@@ -288,6 +289,7 @@
     <FormMessage error={formError} />
   </form>
 {/if}
+</div>
 
 <style>
   .warn { background: #fff3cd; border: 1px solid #e0a800; padding: 8px; border-radius: 4px; }

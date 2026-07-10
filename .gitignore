@@ -19,4 +19,8 @@ runserver_commands.txt
 .worktrees/
 media/
 nealsdata/datasets/
-.claude/
+# Claude Code scratch stays ignored, but the team-shared config
+# (hooks + project settings) is committed so it applies on every machine.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/

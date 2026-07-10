@@ -67,6 +67,7 @@
   });
 </script>
 
+<div class="page-body">
 <p><a href="#/estimates/{params.id}">&larr; Cancel and return to Estimate</a></p>
 
 <h2>Send Estimate</h2>
@@ -116,6 +117,7 @@
     </table>
   </section>
 {/if}
+</div>
 
 <style>
   .doc-ref { color: #555; }

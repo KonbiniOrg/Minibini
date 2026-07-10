@@ -144,6 +144,62 @@ class TaskLifecycleAPITest(BaseTestCase):
         resp = self.client.post(url, {'reason': 'Waiting on parts'}, format='json')
         self.assertEqual(resp.data['blocked_reason'], 'Waiting on parts')
 
+    def test_block_with_own_open_session_closes_it_and_blocks(self):
+        """The requester's own session never vetoes a block (elapsed-time:
+        no settle prompt, the blep just closes)."""
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        blep = Blep.objects.create(
+            task=self.task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        resp = self.client.post(
+            f'/api/tasks/{self.task.pk}/block/',
+            {'reason': 'saw down'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('conflict', resp.data)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_BLOCKED)
+        blep.refresh_from_db()
+        self.assertIsNotNone(blep.end_time)
+
+    def test_block_own_entered_qty_session_settles_first(self):
+        eq_task = Task.objects.create(
+            job=self.job, name='CNC', rate_scheme_id=2,
+        )
+        Task.objects.filter(pk=eq_task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        Blep.objects.create(
+            task=eq_task, user=self.user,
+            start_time=timezone.now() - timedelta(minutes=30),
+        )
+        url = f'/api/tasks/{eq_task.pk}/block/'
+        resp = self.client.post(url, {'reason': 'jam'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get('conflict'), 'prior_session_qty')
+        eq_task.refresh_from_db()
+        self.assertEqual(eq_task.status, Task.STATUS_IN_PROGRESS)
+        # Flagged re-post proceeds.
+        resp = self.client.post(
+            url, {'reason': 'jam', 'prior_qty_handled': True}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        eq_task.refresh_from_db()
+        self.assertEqual(eq_task.status, Task.STATUS_BLOCKED)
+        self.assertEqual(eq_task.blocked_reason, 'jam')
+
+    def test_block_with_other_workers_session_returns_conflict(self):
+        Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_IN_PROGRESS)
+        other = self._create_user('blk_other')
+        Blep.objects.create(
+            task=self.task, user=other,
+            start_time=timezone.now() - timedelta(minutes=5),
+        )
+        resp = self.client.post(
+            f'/api/tasks/{self.task.pk}/block/', {'reason': 'x'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get('conflict'), 'active_workers')
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_IN_PROGRESS)
+
     def test_unblock_task(self):
         Task.objects.filter(pk=self.task.pk).update(status=Task.STATUS_BLOCKED)
         url = f'/api/tasks/{self.task.pk}/unblock/'

@@ -62,6 +62,7 @@
   });
 </script>
 
+<div class="page-body">
 <p><a href="#/purchase-orders/{params.id}">&larr; Cancel and return to Purchase Order</a></p>
 
 <h2>Send Purchase Order</h2>
@@ -109,6 +110,7 @@
     </table>
   </section>
 {/if}
+</div>
 
 <style>
   .doc-ref { color: #555; }

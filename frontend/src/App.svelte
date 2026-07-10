@@ -15,8 +15,7 @@
   import BusinessFormPage from './routes/contacts/BusinessFormPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
   import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
-  import JobEditPage from './routes/jobs/JobEditPage.svelte';
-  import DuplicateJobPage from './routes/jobs/DuplicateJobPage.svelte';
+  import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
   import CatalogInventoryPage from './routes/catalog/CatalogInventoryPage.svelte';
@@ -25,7 +24,7 @@
   import InvoiceDetailPage from './routes/invoices/InvoiceDetailPage.svelte';
   import InvoiceListPage from './routes/invoices/InvoiceListPage.svelte';
   import InvoiceSendPage from './routes/invoices/InvoiceSendPage.svelte';
-  import InvoiceWizardPage from './routes/invoices/InvoiceWizardPage.svelte';
+  import InvoiceWizardRedirect from './routes/invoices/InvoiceWizardRedirect.svelte';
   import BillListPage from './routes/bills/BillListPage.svelte';
   import BillFormPage from './routes/bills/BillFormPage.svelte';
   import BillDetailPage from './routes/bills/BillDetailPage.svelte';
@@ -35,10 +34,14 @@
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
-  import EstimateWizardPage from './routes/estimates/EstimateWizardPage.svelte';
+  import EstimateWizardRedirect from './routes/estimates/EstimateWizardRedirect.svelte';
   import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
   import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
+  import JobEstimatePage from './routes/jobs/JobEstimatePage.svelte';
+  import JobInvoicePage from './routes/jobs/JobInvoicePage.svelte';
   import JobHistoryPage from './routes/jobs/JobHistoryPage.svelte';
+  import JobPOsPage from './routes/jobs/JobPOsPage.svelte';
+  import JobEmailsPage from './routes/jobs/JobEmailsPage.svelte';
   import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
@@ -59,6 +62,7 @@
   import EmailAssociateBillPage from './routes/email/EmailAssociateBillPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import ChangeOrderDetailPage from './routes/change-orders/ChangeOrderDetailPage.svelte';
+  import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
   import ChangeOrderSendPage from './routes/change-orders/ChangeOrderSendPage.svelte';
 
   const routes = {
@@ -77,14 +81,22 @@
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
     '/jobs/:id': JobDetailPage,
-    '/jobs/:id/edit': JobEditPage,
-    '/jobs/:id/duplicate': DuplicateJobPage,
-    '/jobs/:id/tasklist': JobTaskListPage,
+    '/jobs/:id/edit': JobRedirectToOverview,
+    '/jobs/:id/duplicate': JobRedirectToOverview,
     '/jobs/:id/history': JobHistoryPage,
     '/jobs/:jobId/shipments': JobShipmentsPage,
+    '/jobs/:jobId/estimate': JobEstimatePage,
+    '/jobs/:jobId/estimate/:docId': JobEstimatePage,
+    '/jobs/:jobId/change-order/:coId': ChangeOrderDetailPage,
+    '/jobs/:jobId/invoice': JobInvoicePage,
+    '/jobs/:jobId/invoice/:docId': JobInvoicePage,
+    '/jobs/:jobId/tasks': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
+    '/jobs/:jobId/pos': JobPOsPage,
+    '/jobs/:jobId/emails': JobEmailsPage,
+    '/jobs/:id/tasklist': JobTaskListPage,
     '/shipments/:sid/print': PackingListPrint,
-    '/estimates/:id/wizard': EstimateWizardPage,
+    '/estimates/:id/wizard': EstimateWizardRedirect,
     '/estimates/:id/send': EstimateSendPage,
     '/estimates/:id': EstimateDetailPage,
     '/purchase-orders': PurchaseOrderListPage,
@@ -93,7 +105,7 @@
     '/purchase-orders/:id/send': PurchaseOrderSendPage,
     '/purchase-orders/:id': PurchaseOrderDetailPage,
     '/invoices': InvoiceListPage,
-    '/invoices/:id/wizard': InvoiceWizardPage,
+    '/invoices/:id/wizard': InvoiceWizardRedirect,
     '/invoices/:id/send': InvoiceSendPage,
     '/invoices/:id': InvoiceDetailPage,
     '/bills': BillListPage,
@@ -119,7 +131,7 @@
     '/email/:id': EmailDetailPage,
     '/profile': ProfilePage,
     '/change-orders/:id/send': ChangeOrderSendPage,
-    '/change-orders/:id': ChangeOrderDetailPage,
+    '/change-orders/:id': ChangeOrderRedirect,
   };
 
   checkAuth();

@@ -86,6 +86,7 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     job_number = serializers.SerializerMethodField()
     job_name = serializers.SerializerMethodField()
     is_amended = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
 
     class Meta:
         model = Estimate
@@ -93,7 +94,7 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
             'estimate_id', 'job', 'job_number', 'job_name',
             'estimate_number', 'version', 'status', 'is_amended',
             'parent', 'created_date', 'sent_date', 'closed_date',
-            'expiration_date', 'line_items', 'can_manage',
+            'expiration_date', 'line_items', 'can_manage', 'total',
         ]
         read_only_fields = [
             'estimate_id', 'estimate_number', 'version',
@@ -110,3 +111,15 @@ class EstimateSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
 
     def get_job_name(self, obj):
         return obj.job.name if obj.job_id else ''
+
+    def get_total(self, obj):
+        # Authoritative document total: summed line qty*price, the same figure
+        # the PDF (apps/estimates/pdf.py) and financials._estimated use. The
+        # job-overview Scope block consumes this rather than recomputing on the
+        # client (adjustment/percentage lines make client qty*price fragile).
+        from decimal import Decimal
+        total = sum(
+            (li.qty * li.price for li in obj.estimatelineitem_set.all()),
+            Decimal('0'),
+        )
+        return str(total.quantize(Decimal('0.01')))

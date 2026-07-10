@@ -56,6 +56,7 @@
   });
 </script>
 
+<div class="page-body">
 <p><a href="#/change-orders/{params.id}">&larr; Cancel and return to change order</a></p>
 
 <h2>Send change order to customer</h2>
@@ -82,6 +83,7 @@
       plus a PDF of the change order.</p>
   </section>
 {/if}
+</div>
 
 <style>
   .doc-ref { color: #555; }

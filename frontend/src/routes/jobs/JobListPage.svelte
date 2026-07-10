@@ -45,6 +45,7 @@
   });
 </script>
 
+<div class="page-body">
 {#if pmId}
   <h2>Jobs managed by {pmName || 'selected manager'} ({count})</h2>
 {:else}
@@ -72,3 +73,4 @@
     </p>
   {/if}
 {/if}
+</div>

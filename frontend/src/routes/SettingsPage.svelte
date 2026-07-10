@@ -55,9 +55,10 @@
   loadSaved();
 </script>
 
+<div class="page-body">
 <h2>Settings</h2>
 
-<nav class="settings-tabs">
+<nav class="page-tabs">
   <button class:active={tab === 'accounting'} onclick={() => tab = 'accounting'}>Accounting</button>
   <button class:active={tab === 'setup'} onclick={() => tab = 'setup'}>Setup</button>
   <button class:active={tab === 'pricing'} onclick={() => tab = 'pricing'}>Pricing</button>
@@ -132,25 +133,8 @@
 {:else if tab === 'business'}
   <BusinessSettings />
 {/if}
+</div>
 
 <style>
-  .settings-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 2px solid #ccc;
-    margin-bottom: 1em;
-  }
-  .settings-tabs button {
-    padding: 0.4em 1.2em;
-    border: 2px solid #ccc;
-    border-bottom: none;
-    background: #f5f5f5;
-    cursor: pointer;
-    margin-bottom: -2px;
-  }
-  .settings-tabs button.active {
-    background: white;
-    border-bottom: 2px solid white;
-    font-weight: bold;
-  }
+  /* Tab strip is the shared .page-tabs (app.css). */
 </style>

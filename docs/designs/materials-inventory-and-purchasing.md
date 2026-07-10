@@ -1369,14 +1369,24 @@ regardless of how it was going to be sourced.
 small warning mark next to the cost, coexisting with any pending-phase status,
 cleared when a PO/expense supplies a real cost.
 
-### Venue rule: pillar is passive; actions live on the task view page
+### Venue rule: actions live on the task view page only
 
-The job-overview pillar (`TaskTree.svelte`) shows each material's status chip and
-consumed/released styling **only** — no buttons, no links. **All** per-material
-actions (Set pricing / Order dialog / Attach expense / Mark on-hand / Mark
-received / PO link) live on the task view page (`JobTaskListPage`). The presence
-of each action is gated on a callback being wired, so a read-only surface renders
-the same chips without actions.
+**All** per-material actions (Set pricing / Order dialog / Attach expense / Mark on-hand / Mark
+received / PO link) live on the task view page (`#/jobs/:id/tasks`, rendered by
+`TasksPanel.svelte` through the job workspace shell), which renders
+`TaskTree.svelte` with each material's status chip and
+consumed/released styling. The presence of each action is gated on a
+callback being wired, so a read-only surface (should one ever mount
+`TaskTree` elsewhere) renders the same chips without actions.
+
+The job overview (2026-07-09 six-block redesign; `jobs-tasks-and-worksheets.md`
+§9) does **not** mount `TaskTree` at all — it never lists rows. Its
+Materials block (`MaterialsBlock.svelte` → `materialsBlock()` in
+`lib/jobOverview.js`) shows a **Coverage** stat instead: `SHORT` (red)
+when any job material's `materialStatus(m).key === 'needed'`, else `OK`
+(green). This coverage signal only counts the **Needed** status —
+**Needs pricing** and **Awaiting customer** materials are short of
+stock too but are not counted as `SHORT`; see `docs/designs/LATER.md`.
 
 ### `MaterialModal` — create / edit / set-pricing
 

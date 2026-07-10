@@ -97,6 +97,30 @@ class InvoiceAPITest(BaseTestCase):
         }, format='json')
         self.assertIn(response.status_code, [200, 201])
 
+    def test_invoice_payload_carries_authoritative_total(self):
+        """The job-overview Invoicing block reads invoice.total; the full
+        (non-summary) list/detail serializer must supply the summed line total
+        (qty*price, matching InvoiceSummarySerializer.total_anno and
+        financials._invoiced), not leave the SPA to recompute from line items
+        (adjustment/percentage lines make client qty*price fragile)."""
+        job = Job.objects.first()
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-TOTAL-001', status=Invoice.STATUS_DRAFT,
+        )
+        InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=1, qty=Decimal('2'),
+            units='hours', description='Labor', price=Decimal('100.00'),
+        )
+        InvoiceLineItem.objects.create(
+            invoice=invoice, line_number=2, qty=Decimal('1'),
+            units='ea', description='Part', price=Decimal('50.00'),
+        )
+        response = self.client.get(f'/api/invoices/?job={job.pk}')
+        self.assertEqual(response.status_code, 200)
+        results = response.data['results'] if isinstance(response.data, dict) else response.data
+        row = next(r for r in results if r['invoice_id'] == invoice.pk)
+        self.assertEqual(str(row['total']), '250.00')
+
     def test_cancel_invoice_requires_reason(self):
         invoice = Invoice.objects.first()
         if invoice:

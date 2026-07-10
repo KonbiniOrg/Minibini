@@ -59,6 +59,48 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
         JobService.populate_from_template(self.job, self.template)
         self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
 
+    def _add_material_to_template(self):
+        from apps.core.models import AccountingCategory
+        cat = AccountingCategory.objects.get_or_create(
+            code='TMPL_MAT', defaults={'name': 'Template Material'},
+        )[0]
+        item = InventoryItem.objects.create(
+            code='TMPL-ITEM', description='sheet',
+            accounting_category=cat, qty_on_hand=Decimal('10.00'),
+        )
+        from apps.inventory.models import TemplateMaterialAssociation
+        TemplateMaterialAssociation.objects.create(
+            work_template=self.template,
+            inventory_item=item,
+            quantity=Decimal('2.00'),
+        )
+        return item
+
+    def test_template_on_draft_job_creates_no_earmarks(self):
+        """Materials landed by a template on a PRE-APPROVAL job must not
+        reserve stock — earmarks are generated at estimate (or CO)
+        acceptance, never at plan-population time (RM design,
+        confirmed 2026-07-10)."""
+        self._add_material_to_template()
+        JobService.populate_from_template(self.job, self.template)  # job is draft
+        self.assertGreater(
+            Material.objects.filter(job=self.job).count(), 0,
+            'fixture must actually land a material',
+        )
+        self.assertEqual(Earmark.objects.filter(job=self.job).count(), 0)
+
+    def test_template_on_committed_job_earmarks(self):
+        """A template applied to an already-approved job reserves stock
+        immediately (same rule as ad-hoc material creation)."""
+        item = self._add_material_to_template()
+        for s in (Job.STATUS_SUBMITTED, Job.STATUS_APPROVED):
+            self.job.status = s
+            self.job.save()
+        JobService.populate_from_template(self.job, self.template)
+        em = Earmark.objects.filter(job=self.job, inventory_item=item)
+        self.assertEqual(em.count(), 1)
+        self.assertEqual(em.first().quantity, Decimal('2.00'))
+
 
 class EstimateAcceptanceCreatesEarmarksTest(TestCase):
     """Accepting an estimate earmarks the job's inventoried materials.

@@ -7,5 +7,7 @@
   let canEdit = $derived($canManageJobs || $canManageFinancials || $canManageConfig);
 </script>
 
+<div class="page-body">
 <CatalogTabs />
 <ServiceItemManager {canEdit} />
+</div>

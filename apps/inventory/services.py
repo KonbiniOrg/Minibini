@@ -408,8 +408,19 @@ class InventoryService:
         (both task-attached and task-less), then upserts Earmark records for the
         job. Called as a hook after each job-population path (estimate,
         template, duplication).
+
+        Pre-approval jobs (draft/submitted) never reserve stock — earmarks are
+        generated at estimate/CO acceptance (which approves the job first) or
+        immediately for materials landing on an already-committed job. The
+        guard lives HERE, at the single bulk entry point, so every population
+        path inherits the invariant (a template applied to a draft job was
+        silently earmarking before this).
         """
         from apps.inventory.models import Material
+        from apps.jobs.models import Job as _Job
+
+        if job.status in (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED):
+            return
 
         # Exclude already-consumed materials: a material consumed pre-approval
         # already drew down QOH and needs no reservation — re-earmarking it here

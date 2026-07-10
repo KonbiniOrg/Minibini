@@ -40,27 +40,218 @@ function mockApi(taskOverrides = {}) {
   });
 }
 
+const findTitle = (f) => f('heading', { name: 'Mill' });
+
 beforeEach(() => {
   // Worker (no atom): proves gating is driven by task.can_manage, not the atom.
   user.set({ id: 99, permissions: [] });
 });
 
-describe('TaskDetailPage per-job can_manage', () => {
-  it('shows edit/assign affordances when task.can_manage is true (atom absent)', async () => {
-    mockApi({ can_manage: true });
-    const { getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await waitFor(() => expect(getByRole('button', { name: /edit task/i })).toBeInTheDocument());
-    expect(getByRole('button', { name: 'assign' })).toBeInTheDocument();
+describe('TaskDetailPage header', () => {
+  it('leads the title row with the task name and an activity pill', async () => {
+    mockApi({ status: 'in_progress' });
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const pill = container.querySelector('.title-row .status-badge');
+    expect(pill).toBeInTheDocument();
+    expect(pill).toHaveClass('status-ongoing');
+    expect(pill).toHaveTextContent('Ongoing');
   });
 
-  it('shows edit task even when task.can_manage is false (edit is open to all)', async () => {
+  it('links to the parent task when this is a subtask', async () => {
+    mockApi({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText(/subtask of/)).toBeInTheDocument();
+    const parentLink = getByText('Build shelving unit');
+    expect(parentLink.tagName).toBe('A');
+    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
+  });
+
+  it('shows no parent crumb on a top-level task', async () => {
+    mockApi({ parent_task: null, parent_task_name: null });
+    const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByText(/subtask of/)).toBeNull();
+  });
+
+  it('renders the blocked reason as a full-width line under the title row', async () => {
+    mockApi({ status: 'blocked', blocked_reason: 'waiting on hardware delivery' });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText(/waiting on hardware delivery/)).toBeInTheDocument();
+  });
+
+  it('shows the INVOICED badge instead of the pill when the task is billed', async () => {
+    mockApi({ status: 'complete', invoice: { id: 12, invoice_number: 'INV-12' } });
+    const { findByRole, getByTitle, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByTitle(/billed on this invoice/i)).toBeInTheDocument();
+    expect(container.querySelector('.title-row .status-badge')).toBeNull();
+  });
+});
+
+describe('TaskDetailPage materials', () => {
+  function mockWithMaterial(mat, taskOverrides = {}) {
+    const task = {
+      task_id: 7, name: 'Mill', status: 'complete', job: { id: 3 },
+      ...taskOverrides,
+    };
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/tasks/7/')) {
+        if (url.includes('/materials')) return Promise.resolve([mat]);
+        if (url.includes('/subtasks')) return Promise.resolve([]);
+        return Promise.resolve(task);
+      }
+      if (url.startsWith('/api/jobs/3/')) return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress' });
+      return Promise.resolve([]);
+    });
+  }
+
+  it("puts a billed material's INVOICED badge in the trailing actions column, not the description", async () => {
+    mockWithMaterial({
+      material_id: 1, description: 'Steel plate', quantity: '2', units: 'ea',
+      invoice: { id: 12, invoice_number: 'INV-12' },
+    });
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByRole('heading', { name: 'Mill' });
+    await waitFor(() => expect(container.querySelector('.materials-table tbody tr')).not.toBeNull());
+    const cells = container.querySelectorAll('.materials-table tbody tr td');
+    const descCell = cells[0];
+    const lastCell = cells[cells.length - 1];
+    expect(descCell).toHaveTextContent('Steel plate');
+    expect(descCell.querySelector('.badge-invoiced')).toBeNull();
+    expect(lastCell.querySelector('.badge-invoiced')).not.toBeNull();
+  });
+
+  it('keeps the header and body column counts aligned when a completed task has an invoiced material', async () => {
+    mockWithMaterial({
+      material_id: 1, description: 'Steel plate', quantity: '2', units: 'ea',
+      invoice: { id: 12, invoice_number: 'INV-12' },
+    });
+    const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findByRole('heading', { name: 'Mill' });
+    await waitFor(() => expect(container.querySelector('.materials-table tbody tr')).not.toBeNull());
+    const headCols = container.querySelectorAll('.materials-table thead th').length;
+    const bodyCols = container.querySelectorAll('.materials-table tbody tr:first-child td').length;
+    expect(bodyCols).toBe(headCols);
+  });
+});
+
+describe('TaskDetailPage stat chips', () => {
+  it('renders assignee, est time, est qty, actual, rate and charge chips', async () => {
+    mockApi({
+      status: 'in_progress', assignee_name: 'Dana',
+      est_worker_time: '6:00:00', est_qty: '240',
+      scheme_name: 'CNC', scheme_algorithm: 'entered_qty',
+      scheme_unit_label: 'minute', actual_qty: '150',
+      effective_rate: '2.50', computed_charge: '375.00',
+    });
+    const { findByRole, getByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Assignee')).toBeInTheDocument();
+    expect(getByText('Dana')).toBeInTheDocument();
+    expect(getByText('Est Time')).toBeInTheDocument();
+    expect(getByText('6h 0m')).toBeInTheDocument();
+    expect(getByText('Est Qty')).toBeInTheDocument();
+    expect(getByText(/240 minute/)).toBeInTheDocument();
+    expect(getByText('Actual')).toBeInTheDocument();
+    expect(getByText(/150 minute/)).toBeInTheDocument();
+    expect(getByText('Rate')).toBeInTheDocument();
+    expect(getByText('$2.50/minute')).toBeInTheDocument();
+    expect(getByText('Charge')).toBeInTheDocument();
+    expect(getByText('$375.00')).toBeInTheDocument();
+    expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(2);
+  });
+
+  it('renders no money chips when the task has no rate scheme', async () => {
+    mockApi({ scheme_name: null, scheme_algorithm: null, effective_rate: null, scheme_unit_label: null, est_qty: null });
+    const { findByRole, queryByText, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByText('Rate')).toBeNull();
+    expect(queryByText('Charge')).toBeNull();
+    expect(queryByText('Est Qty')).toBeNull();
+    expect(container.querySelectorAll('.stat-chip.money')).toHaveLength(0);
+  });
+
+  it('opens the assign modal from the assignee name when can_manage', async () => {
+    mockApi({ can_manage: true });
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const btn = getByRole('button', { name: 'Unassigned' });
+    await fireEvent.click(btn);
+    expect(getByRole('heading', { name: /assign/i })).toBeInTheDocument();
+  });
+
+  it('renders the assignee as plain text without can_manage', async () => {
+    mockApi({ can_manage: false, assignee_name: 'Dana' });
+    const { findByRole, getByText, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Dana')).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Dana' })).toBeNull();
+  });
+});
+
+describe('TaskDetailPage action band', () => {
+  it('shows Edit Task as a band button for any authenticated user', async () => {
     mockApi({ can_manage: false });
-    const { findByText, getByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findByText('Task: Mill');
-    // edit task is now open to any authenticated user
-    expect(getByRole('button', { name: /edit task/i })).toBeInTheDocument();
-    // assign remains manager/PM-only
-    expect(queryByRole('button', { name: 'assign' })).toBeNull();
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByRole('button', { name: 'Edit Task' })).toBeInTheDocument();
+  });
+
+  it('hides Edit Task on a terminal task', async () => {
+    mockApi({ status: 'complete' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Edit Task' })).toBeNull();
+  });
+
+  it('starts work from the action band', async () => {
+    mockApi({ status: 'pending' });
+    api.post.mockReset();
+    api.post.mockResolvedValue({ status: 'ok', blep_id: 1 });
+    const { findByRole, getByRole } = render(TaskDetailPage, {
+      props: { params: { id: 3, taskId: 7 } },
+    });
+    await findTitle(findByRole);
+    await fireEvent.click(getByRole('button', { name: 'Start Work' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/7/start-work/', {});
+  });
+
+  it('shows no start/stop controls while the user bleps this task — the band is the stop surface', async () => {
+    const { currentBlep } = await import('@/stores/currentBlep.js');
+    currentBlep.set({
+      id: 9, task: { id: 7, name: 'Mill' },
+      start_time: new Date(Date.now() - 30 * 60000).toISOString(),
+      blep_minimum_minutes: 1,
+    });
+    mockApi({ status: 'in_progress' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, {
+      props: { params: { id: 3, taskId: 7 } },
+    });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+    expect(queryByRole('button', { name: 'Stop Work' })).toBeNull();
+    currentBlep.set(null);
+  });
+});
+
+describe('TaskDetailPage section order', () => {
+  it('runs Description → Subtasks → Materials → Work Sessions, with Add Entry available', async () => {
+    mockApi({ description: 'Cut the panels' });
+    const { findByRole, getByText, getByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const headings = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent);
+    const idx = (t) => headings.findIndex((h) => h.includes(t));
+    expect(idx('Description')).toBeGreaterThanOrEqual(0);
+    expect(idx('Description')).toBeLessThan(idx('Subtasks'));
+    expect(idx('Subtasks')).toBeLessThan(idx('Materials'));
+    expect(idx('Materials')).toBeLessThan(idx('Work Sessions'));
+    expect(getByText('Cut the panels')).toBeInTheDocument();
+    // Logging forgotten historical time stays possible from this page.
+    expect(getByRole('button', { name: 'Add Entry' })).toBeInTheDocument();
   });
 });
 
@@ -75,18 +266,18 @@ describe('TaskDetailPage entered-qty add field', () => {
     api.post.mockResolvedValue({ actual_qty: '14.00' });
   });
 
-  it('shows the running total with units', async () => {
+  it('shows the running total with units in the Actual chip', async () => {
     mockApi(enteredQty);
-    const { findByText, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findByText('Task: Mill');
-    expect(getByText(/Actual so far/)).toBeInTheDocument();
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(getByText('Actual')).toBeInTheDocument();
     expect(getByText(/9.00 pcs/)).toBeInTheDocument();
   });
 
-  it('posts a signed add and clears the input', async () => {
+  it('posts a signed add, clears the input and flashes the chip header', async () => {
     mockApi(enteredQty);
-    const { findByText, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findByText('Task: Mill');
+    const { findByRole, getByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
     const input = getByRole('spinbutton', { name: /add/i });
     await fireEvent.input(input, { target: { value: '-2' } });
     await fireEvent.click(getByRole('button', { name: 'Add' }));
@@ -94,12 +285,13 @@ describe('TaskDetailPage entered-qty add field', () => {
       expect(api.post).toHaveBeenCalledWith('/api/tasks/7/actual-qty/add/', { actual_qty: -2 });
     });
     await waitFor(() => expect(input.value).toBe(''));
+    expect(getByText(/added/)).toBeInTheDocument();
   });
 
   it('never saves on blur — adds are not idempotent', async () => {
     mockApi(enteredQty);
-    const { findByText, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findByText('Task: Mill');
+    const { findByRole, getByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
     const input = getByRole('spinbutton', { name: /add/i });
     await fireEvent.input(input, { target: { value: '5' } });
     await fireEvent.blur(input);
@@ -109,13 +301,21 @@ describe('TaskDetailPage entered-qty add field', () => {
 
   it('rejects a zero delta without posting', async () => {
     mockApi(enteredQty);
-    const { findByText, getByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findByText('Task: Mill');
+    const { findByRole, getByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
     await fireEvent.input(getByRole('spinbutton', { name: /add/i }), { target: { value: '0' } });
     await fireEvent.click(getByRole('button', { name: 'Add' }));
     expect(getByText(/non-zero/i)).toBeInTheDocument();
     const addCalls = api.post.mock.calls.filter(([url]) => url.includes('actual-qty/add'));
     expect(addCalls).toHaveLength(0);
+  });
+
+  it('hides the add widget on a blocked task', async () => {
+    mockApi({ ...enteredQty, status: 'blocked', blocked_reason: 'waiting' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('spinbutton', { name: /add/i })).toBeNull();
+    expect(queryByRole('button', { name: 'Add' })).toBeNull();
   });
 });
 
@@ -132,48 +332,17 @@ describe('TaskDetailPage prompt modals vs background refetch', () => {
     api.post.mockReset();
     api.post.mockResolvedValue({ needs_actual_qty: true,
                                  unit_label: 'pcs', current_qty: '9.00' });
-    const { findByText, getByRole, findByRole, queryByText } = render(TaskDetailPage, {
+    const { findByRole, getByRole, findByRole: fbr, queryByText } = render(TaskDetailPage, {
       props: { params: { id: 3, taskId: 7 } },
     });
-    await findByText('Task: Mill');
+    await findTitle(findByRole);
     await fireEvent.click(getByRole('button', { name: 'Complete' }));
-    await findByRole('heading', { name: 'Settle up quantity' });
+    await fbr('heading', { name: 'Settle up quantity' });
     const { notifyBlepChanged } = await import('@/stores/blepActivity.js');
     await notifyBlepChanged();
     await new Promise((r) => setTimeout(r, 100));
     expect(queryByText('Loading…')).toBeNull();
     expect(getByRole('heading', { name: 'Settle up quantity' })).toBeInTheDocument();
-  });
-});
-
-describe('TaskDetailPage toolbar Start Work', () => {
-  it('starts work from the toolbar button (relocated next to edit task)', async () => {
-    mockApi({ status: 'pending' });
-    api.post.mockReset();
-    api.post.mockResolvedValue({ status: 'ok', blep_id: 1 });
-    const { findByText, getByRole } = render(TaskDetailPage, {
-      props: { params: { id: 3, taskId: 7 } },
-    });
-    await findByText('Task: Mill');
-    await fireEvent.click(getByRole('button', { name: 'Start Work' }));
-    expect(api.post).toHaveBeenCalledWith('/api/tasks/7/start-work/', {});
-  });
-
-  it('shows no start/stop controls while the user bleps this task — the band is the stop surface', async () => {
-    const { currentBlep } = await import('@/stores/currentBlep.js');
-    currentBlep.set({
-      id: 9, task: { id: 7, name: 'Mill' },
-      start_time: new Date(Date.now() - 30 * 60000).toISOString(),
-      blep_minimum_minutes: 1,
-    });
-    mockApi({ status: 'in_progress' });
-    const { findByText, queryByRole } = render(TaskDetailPage, {
-      props: { params: { id: 3, taskId: 7 } },
-    });
-    await findByText('Task: Mill');
-    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
-    expect(queryByRole('button', { name: 'Stop Work' })).toBeNull();
-    currentBlep.set(null);
   });
 });
 
@@ -194,8 +363,8 @@ describe('TaskDetailPage does not refetch in a loop', () => {
       }
       return inner(url);
     });
-    const { findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
-    await findByText('Task: Mill');
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
     await new Promise((r) => setTimeout(r, 250));
     expect(taskFetches).toBeLessThan(5);
   });

@@ -101,6 +101,7 @@
   });
 </script>
 
+<div class="page-body">
 <h2>{isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}</h2>
 
 {#if loading}
@@ -118,3 +119,4 @@
     onCancel={handleCancel}
   />
 {/if}
+</div>

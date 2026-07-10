@@ -65,6 +65,45 @@ describe('TaskActions', () => {
     confirmSpy.mockRestore();
   });
 
+  it('hideStop still offers Start Work when no own session runs here', () => {
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 }, hideStop: true },
+    });
+    expect(getByRole('button', { name: 'Start Work' })).toBeInTheDocument();
+  });
+
+  it('hideStop renders neither Stop Work nor the under-minimum Cancel while own session runs', () => {
+    const overMinimum = {
+      start_time: new Date(Date.now() - 30 * 60000).toISOString(),
+      blep_minimum_minutes: 1,
+    };
+    const { queryByRole } = render(TaskActions, {
+      props: {
+        task: { task_id: 5, status: 'in_progress' },
+        user: { id: 1 },
+        activeBlepOnThisTask: overMinimum,
+        hideStop: true,
+      },
+    });
+    expect(queryByRole('button', { name: 'Stop Work' })).toBeNull();
+    // Start Work also absent — there's already an active session here.
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+
+    const underMinimum = {
+      start_time: new Date().toISOString(),
+      blep_minimum_minutes: 60,
+    };
+    const { queryByRole: q2 } = render(TaskActions, {
+      props: {
+        task: { task_id: 6, status: 'in_progress' },
+        user: { id: 1 },
+        activeBlepOnThisTask: underMinimum,
+        hideStop: true,
+      },
+    });
+    expect(q2('button', { name: 'Cancel' })).toBeNull();
+  });
+
   it('raises the global error overlay when an action fails', async () => {
     api.post.mockRejectedValue(Object.assign(new Error('Request failed'), {
       status: 400,
@@ -253,6 +292,74 @@ describe('TaskActions — settle-first task cancel', () => {
       ([, body]) => body?.prior_qty_handled);
     expect(flagged).toHaveLength(0);
     window.confirm.mockRestore();
+  });
+});
+
+describe('TaskActions — settle-first block', () => {
+  const blockConflict = {
+    conflict: 'prior_session_qty',
+    prior_task: { task_id: 5, name: 'Press parts' },
+    unit_label: 'pcs', current_qty: '9',
+  };
+
+  it('offers the session count before blocking, then re-posts with the flag and reason', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('saw down');
+    api.post.mockImplementation((url, body) => {
+      if (url.endsWith('/block/') && !body?.prior_qty_handled) {
+        return Promise.resolve(blockConflict);
+      }
+      return Promise.resolve({ status: 'blocked' });
+    });
+    const { getByRole, getByText } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 } },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Block' }));
+    expect(getByText(/Press parts/)).toBeInTheDocument();
+    await fireEvent.input(getByRole('spinbutton'), { target: { value: '5' } });
+    await fireEvent.click(getByRole('button', { name: 'Add' }));
+    await vi.waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/actual-qty/add/',
+                                            { actual_qty: 5 });
+      expect(api.post).toHaveBeenCalledWith('/api/tasks/5/block/',
+                                            { reason: 'saw down', prior_qty_handled: true });
+    });
+    promptSpy.mockRestore();
+  });
+
+  it('modal Cancel aborts the block entirely', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('saw down');
+    api.post.mockResolvedValue(blockConflict);
+    const { getByRole, getAllByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 } },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Block' }));
+    const cancels = getAllByRole('button', { name: 'Cancel' });
+    await fireEvent.click(cancels[cancels.length - 1]);
+    const flagged = api.post.mock.calls.filter(
+      ([, body]) => body?.prior_qty_handled);
+    expect(flagged).toHaveLength(0);
+    promptSpy.mockRestore();
+  });
+
+  it('active_workers refusal raises the overlay naming the workers — never the start-work conflict modal', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('saw down');
+    api.post.mockResolvedValue({
+      conflict: 'active_workers',
+      workers: [{ user_id: 2, name: 'Dana Smith' }, { user_id: 3, name: 'Marcus' }],
+    });
+    const onConflict = vi.fn();
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'in_progress' }, user: { id: 1 }, onConflict },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Block' }));
+    await vi.waitFor(() => {
+      expect(get(overlayMessage)?.text).toMatch(/Dana Smith, Marcus/);
+    });
+    expect(get(overlayMessage)?.kind).toBe('error');
+    // The join/takeover chooser is a start-work affordance — a block
+    // refusal must never route there.
+    expect(onConflict).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
   });
 });
 

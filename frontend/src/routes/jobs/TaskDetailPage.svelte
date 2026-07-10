@@ -15,7 +15,7 @@
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
-  import JobHeader from '../../components/jobs/JobHeader.svelte';
+  import JobShell from '../../components/jobs/JobShell.svelte';
   import { formatQtyUnits, formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
@@ -37,11 +37,6 @@
   let matModalOpen = $state(false);
   let matModalMode = $state('create');
   let matModalMaterial = $state(null);
-
-  // Ref to TaskActions so the toolbar's relocated Start Work button can
-  // trigger its exported startWork() (same flow: prior-session prompt,
-  // join/takeover conflicts).
-  let taskActionsRef = $state(null);
 
   // Subtasks state
   let subtasks = $state([]);
@@ -77,6 +72,14 @@
   const taskIsTerminal = $derived(
     task?.status === 'complete' || task?.status === 'cancelled'
   );
+  // The add-qty widget takes new production entries; a blocked task takes none.
+  const canAddQty = $derived(!taskIsTerminal && task?.status !== 'blocked');
+
+  // The materials table's trailing column holds row actions (edit/del) when the
+  // task is live, and the INVOICED badge for any billed material. Render it
+  // whenever either has something to show so the header and body stay aligned.
+  const anyMaterialInvoiced = $derived(materials.some((m) => m.invoice));
+  const showMaterialTrailingCol = $derived(!taskIsTerminal || anyMaterialInvoiced);
 
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
@@ -232,6 +235,16 @@
     }
   });
 
+  // The Rate chip's tooltip carries the estimating detail (scheme name,
+  // active modifiers) that used to occupy its own table rows.
+  const rateTooltip = $derived.by(() => {
+    if (!task?.scheme_name) return '';
+    const mods = Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0
+      ? ` · Modifiers: ${task.active_modifiers.join(', ')}`
+      : '';
+    return `Scheme: ${task.scheme_name}${mods}`;
+  });
+
   // Material modal handlers
   function openAddMaterial() {
     matModalMaterial = null;
@@ -322,43 +335,122 @@
   }
 </script>
 
+{#snippet invoicedLink(inv)}
+  <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
+     title="Billed on this invoice">INVOICED</a>
+{/snippet}
+
 {#if loading}
   <p>Loading…</p>
 {:else if error}
   <p class="error">{error}</p>
 {:else if task}
-  {#if job}
-    <JobHeader {job} {contact} onStatusChange={refresh} />
-  {/if}
-  {#if task.job}
-    <div class="toolbar">
-      <a href={`/jobs/${task.job.id}`} use:link class="back-link">&laquo; back to overview</a>
-      <a href={`/jobs/${task.job.id}/tasklist`} use:link class="back-link">task list</a>
-      {#if !taskIsTerminal}
-        <button type="button" onclick={() => { editTaskOpen = true; }}>edit task</button>
-      {/if}
-      <!-- Start Work lives here, next to edit task; while the user's own
-           blep runs, NOTHING renders here — the yellow band is the only
-           stop/cancel surface. Avoids the two-Cancel row (blep-cancel
-           next to task-cancel). To be refined with the task-page design
-           pass. -->
-      {#if (task.status === 'pending' || task.status === 'in_progress') && !activeBlepOnThisTask}
-        <button type="button" onclick={() => taskActionsRef?.startWork()}>Start Work</button>
-      {/if}
-      <h2 class="task-title">Task: {task.name}</h2>
+  <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
+  <!-- Task header: crumbs, pill + title left, stat chips right -->
+  <div class="task-head">
+    {#if task.job}
+      <div class="crumbs">
+        <a href={`/jobs/${task.job.id}/tasklist`} use:link>task list</a>
+        {#if task.parent_task}
+          <span class="crumb-sep">·</span>
+          subtask of <a href={`/jobs/${task.job.id}/tasks/${task.parent_task}`} use:link>{task.parent_task_name}</a>
+        {/if}
+      </div>
+    {/if}
+    <div class="title-row">
+      <div class="title-cluster">
+        {#if task.invoice}
+          {@render invoicedLink(task.invoice)}
+        {:else}
+          <TaskActivityIndicator {task} pill />
+        {/if}
+        <h1 class="task-title">{task.name}</h1>
+      </div>
+      <div class="stat-chips">
+        <div class="stat-chip">
+          <div class="stat-chip-header">Assignee</div>
+          <div class="stat-chip-body">
+            {#if task.can_manage}
+              <button type="button" class="chip-link" class:muted={!task.assignee_name}
+                onclick={() => { assignModalOpen = true; }}>{task.assignee_name || 'Unassigned'}</button>
+            {:else}
+              <span class:muted={!task.assignee_name}>{task.assignee_name || 'Unassigned'}</span>
+            {/if}
+          </div>
+        </div>
+        {#if task.est_worker_time}
+          <div class="stat-chip">
+            <div class="stat-chip-header">Est Time</div>
+            <div class="stat-chip-body">{formatDuration(task.est_worker_time)}</div>
+          </div>
+        {/if}
+        {#if task.scheme_name && task.est_qty}
+          <div class="stat-chip">
+            <div class="stat-chip-header">Est Qty</div>
+            <div class="stat-chip-body">{task.est_qty} {task.scheme_unit_label}</div>
+          </div>
+        {/if}
+        {#if task.scheme_algorithm === 'entered_qty'}
+          <div class="stat-chip">
+            <div class="stat-chip-header">{addQtyAdded ? 'added ✓' : 'Actual'}</div>
+            <div class="stat-chip-body">
+              {task.actual_qty ?? 0} {task.scheme_unit_label}
+              {#if canAddQty}
+                <label class="add-qty">
+                  <span class="sr-only">Add ({task.scheme_unit_label})</span>
+                  <input
+                    type="number" step="any" placeholder="+ / −"
+                    bind:value={addQtyInput}
+                    onkeydown={(e) => { if (e.key === 'Enter') addActualQty(); }}>
+                </label>
+                <button type="button" class="chip-add" onclick={addActualQty} disabled={addQtySaving}>
+                  {addQtySaving ? 'Adding…' : 'Add'}
+                </button>
+              {/if}
+            </div>
+          </div>
+        {:else if task.scheme_algorithm === 'elapsed_time'}
+          <div class="stat-chip">
+            <div class="stat-chip-header">Actual</div>
+            <div class="stat-chip-body">{Number(task.actual_hours) || 0} {task.scheme_unit_label || 'hour'}</div>
+          </div>
+        {/if}
+        {#if task.scheme_name && task.effective_rate}
+          <div class="stat-chip money">
+            <div class="stat-chip-header">Rate</div>
+            <div class="stat-chip-body" title={rateTooltip}>${task.effective_rate}/{task.scheme_unit_label}</div>
+          </div>
+        {/if}
+        {#if task.scheme_name && task.computed_charge}
+          <div class="stat-chip money">
+            <div class="stat-chip-header">Charge</div>
+            <div class="stat-chip-body">${task.computed_charge}</div>
+          </div>
+        {/if}
+      </div>
     </div>
-  {/if}
+    {#if addQtyError}
+      <div class="field-error">{addQtyError}</div>
+    {/if}
+    {#if task.status === 'blocked' && task.blocked_reason}
+      <div class="blocked-line preserve-breaks">Blocked: {task.blocked_reason}</div>
+    {/if}
+  </div>
 
-  <TaskActions
-    bind:this={taskActionsRef}
-    {task}
-    user={$userStore}
-    canManage={task?.can_manage}
-    {activeBlepOnThisTask}
-    hideStartStop={true}
-    onChanged={refresh}
-    onConflict={handleConflict}
-  />
+  <div class="action-band">
+    <TaskActions
+      {task}
+      user={$userStore}
+      canManage={task?.can_manage}
+      {activeBlepOnThisTask}
+      hideStop={true}
+      onChanged={refresh}
+      onConflict={handleConflict}
+    />
+    {#if !taskIsTerminal}
+      <button type="button" class="quiet" onclick={() => { editTaskOpen = true; }}>Edit Task</button>
+    {/if}
+  </div>
 
   <StartWorkConflictModal
     {conflict}
@@ -367,115 +459,10 @@
     onCancel={handleCancel}
   />
 
-  {#snippet invoicedLink(inv)}
-    <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
-       title="Billed on this invoice">INVOICED</a>
-  {/snippet}
+  <div class="page-body">
 
-  <table class="data-table">
-    <tbody>
-      <tr><td>Status</td><td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason} — {task.blocked_reason}{/if}{/if}</td></tr>
-      <tr><td>Description</td><td class="preserve-breaks"><LinkifiedText text={task.description || '-'} /></td></tr>
-      <tr><td>Assignee</td><td>{task.assignee_name || 'Unassigned'} {#if task?.can_manage}<button type="button" onclick={() => { assignModalOpen = true; }}>assign</button>{/if}</td></tr>
-      <tr><td>Est. quantity</td><td>{task.est_qty || '-'} {task.scheme_unit_label || ''}</td></tr>
-      <tr><td>Est. worker time</td><td>{formatDuration(task.est_worker_time)}</td></tr>
-      <tr><td>Rate</td><td>{task.effective_rate ? `$${task.effective_rate}` : '-'}</td></tr>
-    </tbody>
-  </table>
-
-  <!-- Charge section -->
-  {#if task && task.scheme_name}
-    <h3>Charge</h3>
-    <table class="data-table"><tbody>
-      <tr><td><strong>Scheme</strong></td><td>{task.scheme_name}</td></tr>
-      <tr><td><strong>Rate</strong></td><td>${task.effective_rate}/{task.scheme_unit_label}</td></tr>
-      {#if Array.isArray(task.active_modifiers) && task.active_modifiers.length > 0}
-        <tr><td><strong>Modifiers</strong></td>
-          <td>{task.active_modifiers.join(', ')}</td></tr>
-      {/if}
-      {#if task.scheme_algorithm === 'entered_qty'}
-        <tr><td><strong>Actual {task.scheme_unit_label}s</strong></td>
-          <td>
-            Actual so far: <strong>{task.actual_qty ?? 0} {task.scheme_unit_label}</strong>
-            {#if !taskIsTerminal}
-              <label class="add-qty">
-                <span class="sr-only">Add ({task.scheme_unit_label})</span>
-                <input
-                  type="number" step="any" placeholder="+ / −"
-                  bind:value={addQtyInput}
-                  onkeydown={(e) => { if (e.key === 'Enter') addActualQty(); }}>
-              </label>
-              <button type="button" onclick={addActualQty} disabled={addQtySaving}>
-                {addQtySaving ? 'Adding…' : 'Add'}
-              </button>
-            {/if}
-            <!-- Always-present feedback slot: transient "added"/error text
-                 must not resize the table column (visible layout jump). -->
-            <span class="add-feedback">
-              {#if addQtyAdded}<span class="saved-flash">added</span>{/if}
-              {#if addQtyError}<span class="field-error">{addQtyError}</span>{/if}
-            </span>
-          </td></tr>
-      {:else if task.scheme_algorithm === 'elapsed_time'}
-        <tr><td><strong>Actual {task.scheme_unit_label || 'hour'}s</strong></td>
-          <td>{Number(task.actual_hours) || 0}</td></tr>
-      {/if}
-      {#if task.computed_charge}
-        <tr><td><strong>Charge</strong></td><td>${task.computed_charge}</td></tr>
-      {/if}
-    </tbody></table>
-  {/if}
-
-  <!-- Materials section -->
-  <h3>Materials</h3>
-  {#if materials.length > 0}
-    <table class="materials-table">
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th class="text-right">Qty</th>
-          <th class="text-right">Unit Cost</th>
-          <th class="text-right">Sell Price</th>
-          <th class="text-right">Total</th>
-          {#if !taskIsTerminal}<th>Actions</th>{/if}
-        </tr>
-      </thead>
-      <tbody>
-        {#each materials as mat}
-          <tr>
-            <td class="preserve-breaks">{mat.description || '(no description)'}{#if mat.invoice} {@render invoicedLink(mat.invoice)}{/if}</td>
-            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
-            <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
-            <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
-            <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
-            {#if !taskIsTerminal}
-              <td>
-                <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
-                <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
-              </td>
-            {:else}
-              <td></td>
-            {/if}
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else}
-    <p>No materials.</p>
-  {/if}
-  {#if !taskIsTerminal}
-    <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
-  {/if}
-
-  <MaterialModal
-    open={matModalOpen}
-    mode={matModalMode}
-    material={matModalMaterial}
-    taskId={effectiveMatTaskId}
-    {categories}
-    onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
-    onClose={handleMatModalClose}
-  />
+  <h3>Description</h3>
+  <div class="description preserve-breaks"><LinkifiedText text={task.description || '-'} /></div>
 
   <!-- Subtasks section -->
   <h3>Subtasks</h3>
@@ -502,6 +489,58 @@
   {#if !taskIsTerminal}
     <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
   {/if}
+
+  <!-- Materials section -->
+  <h3>Materials</h3>
+  {#if materials.length > 0}
+    <table class="materials-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Qty</th>
+          <th class="text-right">Unit Cost</th>
+          <th class="text-right">Sell Price</th>
+          <th class="text-right">Total</th>
+          {#if showMaterialTrailingCol}<th>Actions</th>{/if}
+        </tr>
+      </thead>
+      <tbody>
+        {#each materials as mat}
+          <tr>
+            <td class="preserve-breaks">{mat.description || '(no description)'}</td>
+            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
+            <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
+            <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
+            <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
+            {#if showMaterialTrailingCol}
+              <td class="row-actions">
+                {#if !taskIsTerminal}
+                  <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
+                  <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
+                {/if}
+                {#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}
+              </td>
+            {/if}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {:else}
+    <p>No materials.</p>
+  {/if}
+  {#if !taskIsTerminal}
+    <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
+  {/if}
+
+  <MaterialModal
+    open={matModalOpen}
+    mode={matModalMode}
+    material={matModalMaterial}
+    taskId={effectiveMatTaskId}
+    {categories}
+    onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
+    onClose={handleMatModalClose}
+  />
 
   <WorkItemForm
     open={subtaskModalOpen}
@@ -549,37 +588,54 @@
     onSaved={() => { assignModalOpen = false; refresh(); }}
     onClose={() => { assignModalOpen = false; }}
   />
+  </div>
+  </JobShell>
 {/if}
 
 <style>
   .error { color: #a8071a; }
-  .field-error { color: #a8071a; font-size: 13px; margin-left: 6px; }
-  .saved-flash { color: #166534; font-size: 12px; margin-left: 6px; }
-  .add-qty { margin-left: 10px; }
-  .add-qty input { width: 90px; }
-  .add-feedback { display: inline-block; min-width: 14em; }
+  .field-error { color: #a8071a; font-size: 13px; margin-top: 6px; }
+
+  .task-head {
+    padding: 10px 20px 12px;
+    background: #fafafa;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .crumbs { font-size: 12px; color: #6b7280; }
+  .crumb-sep { margin: 0 4px; }
+  .title-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 18px; margin-top: 6px; flex-wrap: wrap;
+  }
+  .title-cluster { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .task-title { font-size: 22px; margin: 0; }
+  .blocked-line { margin-top: 6px; font-size: 13px; color: #991b1b; }
+
+  /* Assignee opens a modal — an action, so a button — but reads as a link. */
+  .chip-link {
+    border: none; background: none; padding: 0; cursor: pointer;
+    font: inherit; color: inherit; text-decoration: underline;
+  }
+  .add-qty input { width: 70px; font-size: 12px; padding: 2px 6px; }
+  .chip-add {
+    font-size: 11px; font-weight: 600; border: 1px solid #94a3b8;
+    background: #f1f5f9; border-radius: 4px; padding: 3px 10px; cursor: pointer;
+  }
+  .chip-add:hover { background: #e2e8f0; }
+
+  /* TaskActions renders its own .actions flex row; flatten it so its buttons
+     sit as direct band items with uniform gap. */
+  .action-band :global(.actions) { display: contents; }
+
+  .description { font-size: 14px; line-height: 1.6; max-width: 900px; }
+
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
-  .toolbar {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
-    padding: 8px 24px;
-  }
-  .back-link { font-size: 13px; }
-  .task-title { font-size: 18px; margin: 0; margin-left: auto; }
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
   .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
-  .materials-table button {
-    font-size: 11px; padding: 2px 6px; margin-right: 2px;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
-  }
-  .materials-table button:hover { background: #f0f0f0; }
-  .badge-invoiced {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.3px; color: #047857; text-decoration: none;
-  }
-  .badge-invoiced:hover { text-decoration: underline; }
+  /* Row buttons use .row-actions, INVOICED uses .badge-invoiced (app.css). */
 </style>

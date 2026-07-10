@@ -11,12 +11,11 @@
     user,
     canManage = false,
     activeBlepOnThisTask = null,
-    // TaskDetailPage relocates Start Work to its toolbar (via the
-    // exported startWork()) and relies on the yellow band as the only
+    // Stop/blep-cancel suppressed while Start still renders: the task
+    // detail page passes this because the global yellow band is its only
     // stop/cancel surface while a session runs — avoids two Cancel
-    // buttons in one row (blep-cancel beside task-cancel). Direction
-    // to be refined with the task-page design pass.
-    hideStartStop = false,
+    // buttons in one row (blep-cancel beside task-cancel).
+    hideStop = false,
     onChanged = () => {},
     onConflict = () => {},
   } = $props();
@@ -26,6 +25,8 @@
   let sessionModal = $state(null); // conflict dict — settle before own Stop
   let priorModal = $state(null);   // conflict dict — settle before Start
   let cancelModal = $state(null);  // conflict dict — settle before task-Cancel
+  let blockModal = $state(null);   // conflict dict — settle before Block
+  let pendingBlockReason = $state(''); // reason carried across the settle prompt
   let modalError = $state('');     // server error shown inside the open modal
   let blepModal = $state(false);   // true while the historical-time prompt is open
 
@@ -261,9 +262,60 @@
   }
 
   const cancelWork = () => call(`/api/tasks/${task.task_id}/cancel-work/`);
+
+  // Settle-first block: the requester's own open session never vetoes the
+  // block — an ENTERED_QTY session gets one skippable count prompt first
+  // (server mutates nothing until the flagged re-post). OTHER workers'
+  // open sessions refuse the block outright (`active_workers`) — that's a
+  // coordination message, NOT a start-work join/takeover conflict, so it
+  // must never route through onConflict.
+  async function postBlock(reason, priorQtyHandled) {
+    busy = true;
+    try {
+      const body = { reason };
+      if (priorQtyHandled) body.prior_qty_handled = true;
+      const resp = await api.post(`/api/tasks/${task.task_id}/block/`, body);
+      if (resp && resp.conflict === 'prior_session_qty') {
+        modalError = '';
+        pendingBlockReason = reason;
+        blockModal = resp;
+        return;
+      }
+      if (resp && resp.conflict === 'active_workers') {
+        const names = (resp.workers || []).map((w) => w.name).join(', ');
+        showError(`Can't block this task while someone is working on it: ${names}. They need to stop first.`);
+        return;
+      }
+      blockModal = null;
+      await notifyBlepChanged();
+      onChanged();
+    } catch (e) {
+      showError(errorMessage(e, 'Action failed.'));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function submitBlock(qty) {
+    modalError = '';
+    busy = true;
+    try {
+      if (qty != null) {
+        await api.post(`/api/tasks/${task.task_id}/actual-qty/add/`, { actual_qty: qty });
+      }
+    } catch (e) {
+      modalError = errorMessage(e, 'Could not save the quantity.');
+      busy = false;
+      return;
+    }
+    busy = false;
+    blockModal = null;
+    await postBlock(pendingBlockReason, true);
+  }
+
   const block = () => {
     const reason = prompt('Reason for blocking?');
-    if (reason) call(`/api/tasks/${task.task_id}/block/`, { reason });
+    if (reason) postBlock(reason, false);
   };
   const unblock = () => call(`/api/tasks/${task.task_id}/unblock/`);
   const cancel = () => {
@@ -272,8 +324,8 @@
 </script>
 
 <div class="actions">
-  {#if show.startWork && !hideStartStop}<button type="button" onclick={startWork} disabled={busy}>Start Work</button>{/if}
-  {#if show.stopWork && !hideStartStop}
+  {#if show.startWork}<button type="button" class="primary" onclick={startWork} disabled={busy}>Start Work</button>{/if}
+  {#if show.stopWork && !hideStop}
     {#if underMinimum}
       <button type="button" class="cancel-work" onclick={cancelWork} disabled={busy}>Cancel</button>
     {:else}
@@ -318,6 +370,19 @@
     serverError={modalError}
     onSubmit={submitCancel}
     onClose={() => { cancelModal = null; modalError = ''; }}
+  />
+{/if}
+
+{#if blockModal}
+  <ActualQtyModal
+    mode="session"
+    unitLabel={blockModal.unit_label || ''}
+    currentQty={blockModal.current_qty ?? null}
+    priorTaskName={blockModal.prior_task?.name || ''}
+    allowComplete={false}
+    serverError={modalError}
+    onSubmit={submitBlock}
+    onClose={() => { blockModal = null; modalError = ''; pendingBlockReason = ''; }}
   />
 {/if}
 

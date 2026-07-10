@@ -85,6 +85,7 @@
   load();
 </script>
 
+<div class="page-body">
 <h2>Expenses</h2>
 
 {#snippet invoicedLink(inv)}
@@ -229,13 +230,10 @@
     </tbody>
   </table>
 {/if}
+</div>
 
 <style>
-  .badge-invoiced {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.3px; color: #047857; text-decoration: none;
-  }
-  .badge-invoiced:hover { text-decoration: underline; }
+  /* .badge-invoiced comes from app.css. */
   .locked-note { font-size: 11px; color: #888; font-style: italic; }
   .synced-badge { font-size: 11px; color: #047857; font-weight: 600; }
   .sync-failed-badge { font-size: 11px; color: #b91c1c; font-weight: 600; }

@@ -208,7 +208,10 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
         from apps.jobs.services import TaskLifecycleService
         task = self._get_task_or_404(pk)
         reason = request.data.get('reason', '').strip() if request.data else ''
-        result = TaskLifecycleService.block_task(task.pk, reason=reason)
+        result = TaskLifecycleService.block_task(
+            task.pk, reason=reason, user=request.user,
+            prior_qty_handled=bool(request.data.get('prior_qty_handled')),
+        )
         if isinstance(result, dict) and 'conflict' in result:
             return Response(result)
         return Response({

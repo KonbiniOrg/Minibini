@@ -633,29 +633,138 @@ Svelte scopes component `<style>` blocks per component. Class selectors
 defined in one component's `<style>` are silently invisible to the DOM
 rendered by another component, even when the class name matches.
 
-Concrete example we hit: `JobDetail.svelte` defines `.panel`,
+Concrete example we hit: `JobDetail.svelte` defined `.panel`,
 `.panel-head`, `.panel-scroll` for the Description / History card
 chrome. When `DeliverablesSection.svelte` was added as a sibling card,
 its outer element used `class="panel deliverables-panel"`, but the
 panel chrome did not render — the white card, border, rounded corners,
 and uppercase header treatment all came from JobDetail's scoped
 classes, which don't reach a child component's elements. Result: a
-borderless, unstyled list.
+borderless, unstyled list. (For a while the fix was a copied rule
+block in each component — which promptly drifted.)
 
-Workaround in place today: copy the relevant rules into the child
-component's own `<style>` block (`DeliverablesSection.svelte` now owns
-its own `.panel` / `.panel-head` / `.panel-scroll` rules). This works
-but duplicates the styling, so the components can drift.
+**Resolved (2026-07-08):** the CSS reorg pass audited every component
+`<style>` block and promoted all shared chrome — the `.panel` family
+included — into `app.css` (§5.5a); the per-component copies are gone.
 
-Better long-term fix (deferred): extract shared UI chrome (panel
-shapes, common section heads, etc.) into a global stylesheet, or use
-`:global(.panel) { ... }` once in a "host" component. We have not
-audited which selectors deserve this treatment yet. When the styling
-layer is reorganized, this is the first item on the list.
+The gotcha itself is permanent Svelte behavior, so the rule of thumb
+stands: if you reuse a class name from another component and the
+styling vanishes, this is the cause. **Promote the rule to `app.css`**
+— never copy it into your component; the copy is how the pre-reorg
+drift started.
 
-Rule of thumb when working on a new SPA component: if you reuse a
-class name from another component and the styling vanishes, this is
-the cause. Either copy the rule in, or promote it to global.
+### 5.5a Shared UI families in `app.css`
+
+`frontend/src/css/app.css` is the single global stylesheet (imported by
+both the app and portal entries) and is organized in three sections:
+BASE (tokens, element defaults, utilities, page frame), SHARED
+(cross-page families), and PAGE KINDS (vocabulary keyed to the three
+page categories of the `.page-body` rollout — fully-individualized,
+banner pages, plain pages; `frontend/README.md` § CSS). The 2026-07
+consolidation promoted every rule that existed as copies in two or more
+components: `.toolbar` (+ buttons), `.back-link`, `.page-title`,
+`.action-link`, `.edit-link`, `.panel`/`.panel-head`/`.panel-scroll`,
+`.badge-invoiced`, `.row-actions button`, and `.page-tabs`, alongside
+the families below. Rule of the road: page styles arrange and tune;
+copying a rule between components means it should be promoted instead;
+local overrides may resize a family for dense contexts but never
+recolor it.
+
+#### The page-styling pipeline
+
+The three page categories of the `.page-body` rollout
+(`frontend/README.md` § CSS) are not a fixed taxonomy — they are
+**stations a page moves through**, on two independent axes:
+
+1. **Kit consumer** (the starting state). Category III pages and
+   not-yet-detailed Category II pages are the same thing in different
+   clothes: their entire look comes from the shared vocabulary in
+   `app.css`. Improving the kit (form kit, tab strips, tables,
+   toolbars) improves every page at this station for free. Generic
+   styling sweeps target exactly this pool.
+2. **Banner promotion** (III → II). A page moves under a full-bleed
+   area header when its *area's* header grouping is finalized — an
+   area decision, not a page redesign. Groupings so far: **job**
+   (gray-800 `#1f2937` — the 2026-07-08 job workspace restructure
+   formalized this into a reusable shell, `JobShell.svelte`:
+   `JobHeader` + `JobNavRail` + a collapsible `JobContextBand`, with one
+   section panel hosted per page; see `jobs-tasks-and-worksheets.md`
+   §9.6) and **customer** (`CustomerHeader`, red-950 `#450a0a`, no rail
+   yet). More areas are planned; as each lands, its pages move from III
+   to II without other change. `JobShell`'s header+rail+band+panel
+   shape is the pattern to reuse when a future area needs the same
+   kind of always-present chrome around several document/list sections
+   — the section pages themselves stay ordinary kit consumers (or get
+   their own detail pass later); only the *shell* is shared.
+3. **Detail pass** (the terminal station). A page graduates out of
+   the sweep pool when it gets a deliberate, one-by-one design pass —
+   a layout built *out of* the shared vocabulary but no longer
+   *defined by* the generic defaults. A detailed page still consumes
+   the kit (its pills, chips, action band track global changes), but
+   generic kit-rollout work **skips it**; subsequent changes to it are
+   page-specific decisions.
+
+Category I (fully individualized: board, schedule) is a separate track —
+those pages use only the BASE layer and get bespoke passes on their own
+schedule. **The job overview is no longer purely Category I** (2026-07-09):
+it mounts `JobShell` like every other job page (header + rail + context
+band are the shared chrome, banner-promoted per the "job" area entry
+above), but its `.page-body` content — the six `.summary-block` lifecycle
+blocks — is still a fully individualized, bespoke layout, not a kit-consumer
+body. So the page is a hybrid: shell chrome from the II/banner track, body
+from the I/bespoke track.
+
+**Detailed pages** (the skip-list for generic sweeps — keep current as
+passes complete):
+
+| Page | Detail pass |
+|---|---|
+| Task Detail (`#/jobs/:jobId/tasks/:taskId`) | 2026-07-07 (spec `docs/plans/2026-07-07-task-detail-page-redesign.md`) |
+
+#### The founding families
+
+The founding three families (promoted global per §5.5's "better
+long-term fix"; 2026-07). They are generic on purpose — no
+page-specific names or references:
+
+- **`.status-badge` + `.status-{status}`** — THE status pill. One base
+  pill class plus per-status color modifiers keyed by status name
+  (document statuses *and* the task-activity keys from
+  `lib/taskActivity.js`: working/ongoing/unstarted/blocked/complete/
+  cancelled). The former per-component copies (JobHeader, JobDetail,
+  PurchaseOrderDetail, EstimateDetailPage, InvoiceDetailPage,
+  ChangeOrderDetailPage) are gone; change orders' `status-co-*` names
+  were folded into the plain names. Components may locally override
+  base *sizing* for dense contexts (JobHeader/JobDetail do) but never
+  colors — a shared status name shares its color everywhere. The header
+  status `<select>`s reuse the same color classes. Tasks join via
+  `TaskActivityIndicator`'s `pill` prop; the board's `TaskCard` reads
+  `activity.color` inline rather than keeping a parallel palette.
+- **`.stat-chips` / `.stat-chip`** — a strip of small labeled value
+  cards (the job-board chip look): each chip is a card whose shaded
+  header bar (`.stat-chip-header`) carries an uppercase label, bodies
+  (`.stat-chip-body`) size to content so header bars stay uniform
+  across the strip. `money` on a chip tints its header green to group
+  financial chips into a family. First consumer: the task detail
+  header (jobs-tasks-and-worksheets §10.2).
+- **`.action-band`** — a full-width strip of the actions operating on
+  the entity above it; buttons inside get consistent sizing, with
+  `primary` (the one most-expected action) and `quiet` (housekeeping,
+  e.g. an Edit button riding along) modifiers.
+- **`.summary-block` + `.stat-spread`** — the lifecycle-summary family
+  (2026-07-09, job overview redesign): tiles a subject's lifecycle into
+  fixed-order blocks, each in one of three temperatures —
+  `.summary-block.active` (white card, blue left edge, shadow, full
+  `.stat-spread` of `.stat` groups top-aligned so label rows form one
+  line), `.summary-block.frozen` (flat grey one-liner), `.summary-block.dormant`
+  (dashed ghost one-liner). `.stat` holds `.stat-label` / `.stat-value`
+  (with an optional `.unit` suffix and a `.status-badge` pill) /
+  `.stat-sub` / an optional `.stat-progress` bar. `.clock-line` (+
+  `.clock-good` / `.clock-warn` / `.clock-bad`) is a hairline-topped
+  trailing status line inside an active block. First (and so far only)
+  consumer: the job overview's six blocks (`jobs-tasks-and-worksheets.md`
+  §9) — generic on purpose, named for reuse by other lifecycle
+  summaries.
 
 ### 5.6 Preserving line breaks in free-text fields
 
@@ -764,10 +873,14 @@ descriptions (`LineItemTable`, `JobDetail` invoice + PO lines,
 descriptions) get the §5.6 wrap but are not linkified.
 
 **Layout note:** a long unbreakable token (URL) in a CSS grid/flex column
-won't shrink the track unless the item has `min-width: 0`. The job-overview
-midband sets `.midband > * { min-width: 0 }` for this; pair `overflow-wrap:
-anywhere` (now part of `.preserve-breaks`) with `min-width: 0` anywhere a
-free-text field sits in a grid/flex track.
+won't shrink the track unless the item has `min-width: 0`. Pair
+`overflow-wrap: anywhere` (now part of `.preserve-breaks`) with
+`min-width: 0` anywhere a free-text field sits in a grid/flex track. (The
+`.midband` class this note used to reference was retired with the
+accordion-pillar overview — 2026-07-09; `app.css` currently has no
+`min-width: 0` rule for the context band's `.context-band-grid`, which
+replaced it. Verify before relying on this if a long-URL overflow bug
+turns up in `JobContextBand`.)
 
 ### 5.9 Time-edit modal (shifts + bleps)
 

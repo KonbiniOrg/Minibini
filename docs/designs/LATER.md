@@ -35,26 +35,41 @@ wrap a 1000-line page in heavy mocks; extract first.
 
 **Primary (≥ 400 lines, as of 2026-06-04):**
 
-- `change-orders/ChangeOrderDetailPage.svelte` — **1038** (by far the largest; top priority)
+- `change-orders/ChangeOrderDetailPage.svelte` — **1038**, now **1117** (by far the largest; top
+  priority). As of 2026-07-09 it's pulled **into** the job workspace: it lives at the job-scoped
+  route `/jobs/:jobId/change-order/:coId` (old `/change-orders/:id` redirects via
+  `ChangeOrderRedirect.svelte`) and renders JobHeader + JobContextBand + JobNavRail (current
+  "estimate") + the shared estimate/CO version subnav inline — but it is **not yet extracted**
+  into a panel component hosted by `JobShell` the way estimates/invoices are. That extraction is
+  the remaining work; sequenced last once the shell pattern is boring on simpler documents.
 - `jobs/TaskDetailPage.svelte` — 527
 - `Search.svelte` — 499
 - `purchaseorders/PurchaseOrderDetailPage.svelte` — 461
-- `jobs/JobTaskListPage.svelte` — 427
-- `jobs/JobShipmentsPage.svelte` — 418
 - `worksheets/WorksheetDetailPage.svelte` — 407
 
+**Extracted by the 2026-07-08 job-workspace restructure** (no longer oversized — thin route
+glue now hosts a tested panel component through `JobShell`):
+`jobs/JobTaskListPage.svelte` (was 427 → `TasksPanel.svelte`),
+`jobs/JobShipmentsPage.svelte` (was 418 → `ShipmentsPanel.svelte`),
+`estimates/EstimateDetailPage.svelte` (was 344 → `EstimatePanel.svelte`, and the route file
+itself is now a 12-line redirect shim), `invoices/InvoiceDetailPage.svelte` (→
+`InvoicePanel.svelte`, also now a 12-line redirect shim).
+
 **Watch list (300–365 lines):** `schedule/SchedulePage.svelte` (365),
-`estimates/EstimateDetailPage.svelte` (344), `users/UserDetailPage.svelte` (306),
-`contacts/ContactListPage.svelte` (301).
+`users/UserDetailPage.svelte` (306), `contacts/ContactListPage.svelte` (301).
 
 _Done when:_ each oversized route has had its UI pass with inline logic/sub-views
 extracted into (tested) components, or a deliberate note recorded for why a given
 page stays whole.
 
-> Related: `components/jobs/JobDetail.svelte` is a similarly oversized
-> **component** (not a route). It has a mount-only test today; its deep
-> derivations (version timeline, CO delta layering) warrant the same
-> extract-and-unit-test treatment. Noted in `docs/designs/frontend-testing.md`.
+> Resolved 2026-07-09: `components/jobs/JobDetail.svelte`'s deep
+> derivations (version timeline, CO delta layering, etc.) were the
+> accordion-pillar era's logic. The 2026-07-09 overview redesign
+> replaced the pillars with six summary blocks and extracted every rule
+> into `lib/jobOverview.js` (pure functions, unit-tested) + one dumb
+> renderer (`components/jobs/overview/SummaryBlock.svelte`) + six thin
+> wrapper components — `JobDetail.svelte` itself is now ~120 lines of
+> glue. No longer oversized; no longer carries untested deep logic.
 
 ---
 
@@ -143,13 +158,6 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ the consolidation design settles on user-facing names and the UI is
   relabeled (or the idea is explicitly dropped).
 
-- **Should a superseded estimate's tab navigate to the current estimate?** — _added 2026-06-03_
-  In job view, clicking a superseded estimate's tab shows that (old) estimate in the pillar, and
-  its "View Full Estimate" link correctly points to the old one. Open question: should clicking
-  the tab itself jump straight to the current live estimate instead of showing the superseded
-  one? Unsure which is less confusing. _Done when:_ the superseded-tab click behavior is decided
-  and consistent.
-
 - **`Fee.task` is a dormant field — decision record so nobody re-researches it.** — _added 2026-07-03_
   RM decision: **leave it alone** (keep the field; don't wire it, don't drop it). The research, so it
   never needs redoing:
@@ -176,6 +184,55 @@ Status coupling, transitions, and what a job may do at each stage.
   _Done when:_ fixed-price work gets designed as its own feature (Fee↔Task pairing + the
   pool-suppression rule, perhaps with the deferred `FeeItem` catalog) — or the field is dropped in
   that design's place.
+
+- **Job status pill jumped draft→Approved when "Submitted" was chosen (possible double-select).** — _added 2026-07-09_
+  Observed once on a job freshly created from an email: using the header status pill
+  (`JobHeader.svelte`'s `<select>` trigger pill) to set **Submitted** landed the job on
+  **Approved** instead. The transition graph is `draft → submitted → approved`, and the pill
+  re-renders its valid-next options after each change — so a stray second `change` (an
+  accidental double-click, or an event firing against the just-re-rendered option list) would
+  walk `draft → submitted → approved` in a single gesture. Not reproduced deliberately; may be a
+  pure double-click artifact or a real re-render/handler race in the trigger pill. Worth checking
+  `handleStatusChange` for whether a rapid second selection can chain past the intended status
+  (e.g. debounce, or ignore a change while a transition is in flight).
+  _Done when:_ reproduced and fixed (one selection = one transition), or confirmed a stray
+  double-click that can't reasonably recur.
+
+## Job overview (2026-07-09 six-block redesign)
+
+The overview replaced its accordion pillars with six lifecycle summary
+blocks this pass (`docs/plans/2026-07-09-job-overview-redesign.md`;
+durable reference `docs/designs/jobs-tasks-and-worksheets.md` §9). Debt
+and open questions specific to that redesign:
+
+- **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
+  `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
+  matrix that used to sit in the accordion between Invoices and
+  Purchase Orders) has zero importers now that the accordion pillars
+  are gone — the overview's Delivery block shows aggregate stats only,
+  and the full matrix already lives on the Shipments section page
+  (`ShipmentsPanel.svelte`). Same story one layer down:
+  `components/Accordion.svelte` (+ its private `css/accordion.css`) had
+  exactly one consumer, `JobDetail.svelte`'s pillar expand/collapse,
+  which is also gone — nothing else in the app imports `Accordion.svelte`
+  today (only its own test, `tests/components/Accordion.test.js`, still
+  references it directly). _Done when:_ RM confirms nothing planned
+  wants either component, then both (`ShipmentsPillar.svelte`,
+  `Accordion.svelte` + `accordion.css` + their tests) are deleted — or a
+  future reuse is identified and they stay.
+- **Overview Coverage stat counts only `materialStatus` "Needed" as SHORT.** — _added 2026-07-09_
+  The Materials block's Coverage signal (`JobDetail.svelte`'s `coverage`
+  derivation, consumed by `materialsBlock()` in `lib/jobOverview.js`)
+  flags `SHORT` only when a job material's status is exactly **Needed**
+  (established, stock short, no PO link). Materials in **Needs pricing**
+  or **Awaiting customer** are also short of stock with no incoming
+  supply lined up, but don't count toward `SHORT` — so a job stuck
+  waiting on pricing or a customer-supplied item can show a clean `OK`
+  Coverage stat while materials are, in practice, not covered. Revisit
+  if RM wants those statuses folded into the SHORT count (or a separate
+  signal for them) once the block has lived a while.
+  _Done when:_ RM has decided whether Needs-pricing/Awaiting-customer
+  materials should affect the Coverage stat, and the behavior matches.
 
 ## Change orders
 
@@ -225,9 +282,46 @@ The CO surface and its estimate-parallel code.
   _Done when:_ the shared paths live in one place (or we record why the duplication
   is acceptable).
 
+- **Hide "Create Change Order" on the estimate once a CO exists — further COs chain off the prior CO.** — _added 2026-07-09_
+  The estimate panel's Create Change Order button (offered on an accepted estimate,
+  restored temporarily this session) should disappear once the job already has a
+  change order. The *first* CO is created from the accepted estimate; every
+  subsequent CO is seeded from the previous one via the CO page's "Start new change
+  order" (`seed-new`) flow, so COs chain off one another rather than each branching
+  fresh from the estimate. Gate the estimate-panel button on "no CO exists yet" and
+  rely on `seed-new` for the rest.
+  _Done when:_ the estimate's Create Change Order button is hidden once any CO exists
+  on the job, and additional COs are created only via the seed-new chain.
+
+- **Change order with only deliverable changes (no line items) is refused at Send.** — _added 2026-07-09_
+  A change order that changes only deliverables — no line-item edits — can't be
+  sent to the customer; the send path treats a CO with no line items as empty
+  and refuses it. But a deliverables-only amendment (e.g. quantity/spec change
+  with no price impact) is a legitimate thing to send for sign-off. Decide
+  whether this is correct (a CO must carry a line-item change to be sendable) or
+  whether deliverable-only COs should be sendable, and adjust the send gate
+  accordingly.
+  _Done when:_ the deliverables-only-CO send behaviour is decided and either the
+  refusal is kept with a recorded reason or the send gate accepts them.
+
 ## Invoicing, expenses & payments
 
 Billing mechanics and money-record lifecycle.
+
+- **"Start Invoice" on a draft job errors with misleading wording — reword and reconsider the gate.** — _added 2026-07-09_
+  Clicking the lone **Start Invoice** button on a fresh (draft) job's invoice panel raises
+  `InvoiceWizardService.open_for_job`'s error (`apps/invoicing/services.py`): *"Cannot start
+  invoice wizard for job in status 'draft'. Job must be approved or completed."* Two problems:
+  - **Wording:** the UI button says "Start Invoice", not "invoice wizard"; and "approved or
+    completed" mislists the actual `BILLABLE_JOB_STATUSES` (approved, in_progress, work_complete,
+    completed, cancelled). At minimum reword to match the UI term and the real allowed set.
+  - **Gate placement:** the Start-Invoice button shows on a non-billable job at all, so the only
+    outcome of clicking it is an error. Reconsider — likely hide/disable it (with a hint) until
+    the job is billable, the way the estimate panel gates Create Change Order, so the error is
+    unreachable through the UI.
+  _Done when:_ the message is reworded (UI term + accurate status list) and the Start-Invoice
+  affordance is gated to billable jobs (or a decision is recorded that the raw error is the
+  intended UX).
 
 - **Re-billing Task actuals across multiple invoices.** — _added 2026-06-02_
   Invoices can be raised before a job is finished (e.g. progress billing). If invoice #1 is
@@ -307,23 +401,6 @@ Billing mechanics and money-record lifecycle.
 ## Wizard & line-item UX
 
 The atom-pull surfaces on estimates and invoices.
-
-- **Merge the source-pull ("wizard") view into the detail page as an in-place toggle.** — _added 2026-06-02_
-  The estimate/invoice detail pages link out to a separate `/…/:id/wizard` route for the
-  atom-pull view ("Show Worksheet" / "Show Billables"). That's approach (a): a rename + a
-  navigation. Approach (b) — deferred here — is to make the source-pull surface an in-place
-  *view toggle* on the detail page itself (no separate route), so the "normal" and "pull from
-  source" views share one page, one header, and one load. Bigger restructure (folds
-  `EstimateWizardPage`/`InvoiceWizardPage` into the detail components). Until then, the two
-  views' headers are kept visually matched so the navigation feels seamless.
-  _Done when:_ the detail page can switch between the line-item view and the atom-pull view
-  without a route change, and the standalone wizard routes are retired.
-
-- **Make the Estimate and Invoice atom/source-pull UIs consistent.** — _added 2026-06-03_
-  The atom-pull ("wizard") surfaces for Estimates and Invoices look noticeably different, so a
-  user who learns one doesn't recognize the other. They should share interaction vocabulary and
-  layout so the pattern transfers. _Done when:_ the Estimate and Invoice atom-pull views present
-  the same structure and controls (differing only where the domains genuinely differ).
 
 - **Wizard's by-hand line item uses an inline editor, not the LineItemModal.** — _added 2026-06-03_
   Adding a manual line item from the detail page uses the new `LineItemModal` (manual/catalog
@@ -600,11 +677,98 @@ IMAP-SMTP machinery and tend to be worked together.
 
 Cross-cutting UI/API conventions and shared components.
 
+- **Notes should come out of History as a first-class sub-object.** — _added 2026-07-08 (RM, during the job-workspace design)_
+  Notes today are just history entries (`entry_type='note'`, write-only via
+  `POST /{jobs,contacts,businesses}/{id}/notes/`, immutable, rendered inside
+  history feeds). But notes bridge two distinct uses: **live time-gapped
+  communication between workers during a job** and **after-the-fact review**
+  — bundling them inside History buries the live-communication half where
+  nobody looks until something goes wrong. Promote Notes to a first-class
+  sub-object with its own surface (likely its own panel or header-band slot
+  in the job workspace restructure; decide the model/API shape then).
+  _Done when:_ notes have their own UI surface (and whatever model/API
+  separation that requires), with the history feed still recording them (or
+  a recorded decision otherwise).
+
+- **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
+  Originally paired with `JobDetail.svelte`'s `.pill-*` palette, both
+  private re-implementations of the consolidated global `.status-{status}`
+  palette. **JobDetail's half is done**: the 2026-07-09 overview redesign
+  deleted the `.pill-*` palette along with the accordion pillars —
+  `SummaryBlock.svelte` renders document-status pills via the shared
+  `.status-badge status-{tone}` classes directly. `components/board/JobCard.svelte`
+  still carries its own `.doc-pill-*` set (`DOC_PILL_STYLES`,
+  draft/open/accepted/rejected/expired), untouched. _Done when:_
+  document-status colors on board cards come from the global classes too.
+- **In-content tab bars (history tablist) have no shared idiom.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
+  Originally three variants: JobDetail's `.est-tabs`/`.inv-tabs`/`.po-tabs`
+  plus `JobHistorySection.svelte`'s tablist. **JobDetail's three are gone**
+  — the 2026-07-09 overview redesign deleted them with the accordion
+  pillars, and the Estimates/Invoices sections' own in-content document
+  switcher is now the shared `DocSubnav.svelte` (one pill per version/
+  invoice, status badge inline) rather than a bespoke tab bar.
+  `JobHistorySection.svelte`'s `.tabs`/`role="tablist"` remains the one
+  outlier with its own underline weight, not yet reconciled with
+  `DocSubnav` or `.page-tabs`. _Done when:_ `JobHistorySection`'s tablist
+  adopts a shared idiom (`DocSubnav`-style or `.page-tabs`) or a
+  deliberate exception is recorded.
+- **No shared form-layout vocabulary.** — _added 2026-07-08 (CSS review pass); scoped 2026-07-08_
+  Zero `.form-row`/`fieldset`/label conventions exist; every form page and
+  modal lays out label+input rows ad hoc (the modal *shell* is shared via
+  `Modal.svelte`, the inner form styling is not). Worth defining a small
+  form kit in app.css before many more page passes touch forms.
+  **Scope (decided with RM):** the kit is for *record forms* — the
+  create/edit pages (contacts, businesses, jobs, expenses, users, settings)
+  and modal interiors — and it is **opt-in** (a class on the form, like
+  `.data-table`/`.page-body`), never default styling on bare
+  `<form>`/`<label>`. The app's inline-edit surfaces must NOT adopt it:
+  wizard line-item cards (`WizardLineItemCard`), the CO deliverables
+  drafting grid (`ChangeOrderDetailPage`), the shipment qty matrix
+  (`JobShipmentsPage`), and the small single-purpose widgets (hold-reason,
+  add-qty chip, note textareas, TagEditor, status selects, login). Those
+  three grid/card surfaces are a *separate* inline-edit vocabulary to
+  design during their own page passes — currently three unrelated
+  implementations. Mark each with a one-line "inline-edit surface,
+  deliberately not the form kit" comment when the kit lands.
+  _Done when:_ app.css has an opt-in form-row vocabulary, new/touched
+  record forms use it, and the inline-edit surfaces carry the
+  do-not-convert comment.
+- **Grey literals instead of text-color tokens.** — _added 2026-07-08 (CSS review pass)_
+  Secondary text is written as raw hexes across ~40 files (`#999` ×18,
+  `#888` ×16, `#666` ×15, `#6b7280` ×11, `#9ca3af` ×11 — five different
+  "muted"s). Border tokens now exist (`--border-control`, `--border-subtle`);
+  text-grey tokens should follow and be adopted opportunistically as pages
+  get their passes. _Done when:_ tokens exist and the design docs name them
+  as the way to write muted text.
+- **Bespoke table headers drift (teal vs yellow vs bare).** — _added 2026-07-08 (CSS review pass)_
+  `.data-table`'s teal band is the house style, but `.materials-table`
+  (task page) uses yellow, ChangeOrder's `.diff-table` and JobDetail's
+  inline tables use their own `th` treatments. Decide per page-pass whether
+  each opts into `.data-table` or records why not.
+  _Done when:_ each bespoke table either adopts the house style or carries
+  a comment naming the reason.
+
+- **Four schedule tests are midnight-flaky.** — _added 2026-07-08 (found running the full suite just after midnight)_
+  `tests.test_api_schedule`: `test_lane_bar_carries_job_number_and_name`,
+  `test_work_complete_task_present_in_worker_lane`,
+  `test_blocked_task_with_history_shows_actual_not_forecast`,
+  `test_held_job_history_renders_but_never_forecasts`. Each seeds bleps at
+  `now − 1..2h` and asserts the worker lane renders them — run shortly after
+  midnight, that history lands on *yesterday* and falls outside the schedule
+  window, so the lane is empty/absent (3 FAIL + 1 StopIteration ERROR).
+  Reproduced on a clean tree (unrelated to any pending change); green again
+  later in the day. Fix shape: pass a fixed `now` (mid-afternoon) into
+  `ScheduleService.get_schedule` / seed times relative to that fixed point
+  instead of wall-clock `timezone.now()`.
+  _Done when:_ the schedule suite passes at any time of day (spot-check by
+  passing a just-past-midnight `now`).
+
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
   back-button land on the right tab; the tab strip is `<a use:link>`). Settings
-  (`SettingsPage.svelte`, six tabs) and the job history page
-  (`JobHistoryPage.svelte`) still use local `$state` tabs under a single URL.
+  (`SettingsPage.svelte`, six tabs) and the job history section
+  (`JobHistorySection.svelte`, formerly `JobHistoryPage.svelte`) still use
+  local `$state` tabs under a single URL.
   _Done when:_ those pages' tabs are routes (or a deliberate exception is
   recorded for them).
 
@@ -652,14 +816,44 @@ Cross-cutting UI/API conventions and shared components.
   risky, and leaves parent docs inconsistent unless they're renamed too.
   _Done when:_ we've picked one and either applied it or recorded the decision.
 
-- **Job header is cramped for the on-hold reason capture; revisit the fixed 110px height.** — _added 2026-05-26_
-  The on-hold reason form now pops over the page (commit `270c79d`), but the job header
-  is a fixed `height: 110px` grid with vertically-centered content, so the form has to
-  *overflow* the header rather than the header accommodating it. It works, but a
-  transient form escaping its container is a layout smell.
-  _Done when:_ either the header accommodates the reason capture cleanly (a proper
-  modal/popover, or a header that can grow), or we've decided the overflow-popover is
-  fine and noted why.
+- **Remove "Edit" from the job header for closed jobs.** — _added 2026-07-08_
+  The JobHeader's Edit button (opens `JobEditModal.svelte`) shows regardless of
+  status; a closed job (completed/rejected/cancelled) shouldn't offer it.
+  _Done when:_ the Edit button is hidden (or disabled with a reason) for terminal-status
+  jobs in `JobHeader.svelte`, with a component test.
+
+- **`TaskTree`'s `showStatus={false}` branch is dead code — drop it.** — _added 2026-07-09_
+  `TaskTree.svelte`'s `showStatus` prop defaults to `true`, and both render
+  sites resolve to `true` (`TaskDetailPage` passes it explicitly;
+  `TasksPanel` omits it and takes the default). So the `{#if !showStatus}`
+  branches never execute — including the fallback at `TaskTree.svelte:339`,
+  `:409`, `:449` that appends `matStatusChip` into the *description* cell
+  when there's no Status column. RM: likely leftover from when the worksheet
+  object was torn out. Remove the prop and all `!showStatus` branches (or,
+  if a status-less compact rendering is ever wanted, add a caller + a test
+  that pins it — but RM doesn't expect to use it).
+  _Done when:_ the unused `showStatus` prop and its `{#if !showStatus}`
+  branches are removed from `TaskTree.svelte`, or a caller + test exercise
+  the compact mode.
+
+- **Per-row `total` on the unfiltered estimate/CO/invoice list serializers is an N+1.** — _added 2026-07-09_
+  `EstimateSerializer.get_total`, `ChangeOrderSerializer.get_total`, and
+  `InvoiceSerializer.get_total` (all added/extended 2026-07-09 for the
+  job-overview redesign — `docs/designs/estimates-and-prices.md` §5.5,
+  §14.2; `docs/designs/invoicing-and-expenses.md`) are per-object
+  `SerializerMethodField`s: each re-queries its line items (or, for
+  `ChangeOrderSerializer`, calls `compose_change_order_diff`) with no
+  queryset-level annotation. Fine for the job-overview fetch (page-sized:
+  the current estimate + a handful of COs/invoices for one job), but
+  a genuinely unfiltered list (e.g. `GET /api/estimates/`,
+  `GET /api/invoices/` without `?job=` or `?summary=true`) pays one extra
+  query per row. `InvoiceSummarySerializer` (the `?summary=true` path)
+  already avoids this via `InvoiceViewSet.get_queryset` annotations
+  (`total_anno`) — the same `prefetch_related`/annotation treatment is
+  the candidate fix for the other list paths, if/when one of them is
+  used at real scale unfiltered. _Done when:_ the unfiltered list
+  endpoints' `total` computation is annotated/prefetched (or a decision
+  is recorded that current call sites never hit this at scale).
 
 - **`TagViewSet` implicit CRUD — the last `serializer.save()` bypass, left for its original author.** — _added 2026-05-27; narrowed 2026-07-04_
   Sole remainder of the three-layer bypass sweep (A holes, B metadata

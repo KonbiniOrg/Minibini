@@ -797,9 +797,13 @@ class JobService:
             JobService._copy_deliverables(source_job, new_job)
             if path == 'approved':
                 JobService._copy_work_to_job(source_job, new_job)
-                from apps.inventory.services import InventoryService
-                InventoryService.create_earmarks_for_job(new_job)
                 JobService._advance_to_approved(new_job, source_job)
+                # Earmark AFTER the status walk: create_earmarks_for_job
+                # no-ops on pre-approval jobs (the committed-jobs-only
+                # invariant), and the new job is draft until just above.
+                from apps.inventory.services import InventoryService
+                new_job.refresh_from_db()
+                InventoryService.create_earmarks_for_job(new_job)
             else:
                 # Estimate path: copy work onto the new (draft) job. Estimates
                 # project from the Job's atoms, so no worksheet is created and the
@@ -1288,9 +1292,18 @@ class TaskLifecycleService:
                 pass  # Pending task-less materials block auto-advance; task completion itself succeeds.
 
     @staticmethod
-    def block_task(task_pk, reason=''):
+    def block_task(task_pk, reason='', user=None, prior_qty_handled=False):
         """Transition task from pending/in_progress -> blocked.
-        Returns conflict dict if open Bleps exist."""
+
+        Blocking is usually discovered mid-session, so the requester's OWN
+        open blep never vetoes the block: it resolves settle-first (a
+        `prior_session_qty` conflict on an ENTERED_QTY task, mutating
+        nothing until the flagged re-post) and then closes via the shared
+        `_close_open` (sub-minimum ⇒ cancel with undo). Only OTHER
+        workers' open sessions refuse the block (`active_workers` — no
+        override; coordinate before retrying). Callers passing no `user`
+        can't claim any session as their own, so any open blep refuses.
+        """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
             _assert_job_not_on_hold(task.job, 'block this task')
@@ -1300,9 +1313,10 @@ class TaskLifecycleService:
                     f"must be 'pending' or 'in_progress'."
                 )
             open_bleps = Blep.objects.filter(task=task, end_time__isnull=True)
-            if open_bleps.exists():
+            others = open_bleps if user is None else open_bleps.exclude(user=user)
+            if others.exists():
                 workers = []
-                for b in open_bleps:
+                for b in others:
                     workers.append({
                         'user_id': b.user_id,
                         'name': b.user.get_full_name() or b.user.username,
@@ -1310,6 +1324,20 @@ class TaskLifecycleService:
                         'started_at': b.start_time,
                     })
                 return {'conflict': 'active_workers', 'workers': workers}
+            if (user is not None and not prior_qty_handled
+                    and task.rate_scheme.algorithm == RateScheme.ENTERED_QTY
+                    and open_bleps.filter(user=user).exists()):
+                return {
+                    'conflict': 'prior_session_qty',
+                    'prior_task': {'task_id': task.pk, 'name': task.name},
+                    'unit_label': task.rate_scheme.unit_label,
+                    'current_qty': (
+                        str(task.actual_qty)
+                        if task.actual_qty is not None else None
+                    ),
+                }
+            if user is not None:
+                BlepService._close_open(user=user, task=task)
             Task.objects.filter(pk=task.pk).update(
                 status=Task.STATUS_BLOCKED, blocked_reason=reason,
             )
