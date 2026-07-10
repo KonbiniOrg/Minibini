@@ -451,7 +451,7 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
 // ===========================================================================
 const INVOICE_DEAD_STATUSES = ['cancelled', 'superseded'];
 
-export function invoicingBlock({ invoices = [], scopeTotal = 0, now }) {
+export function invoicingBlock({ invoices = [], scopeTotal = 0, invoicedTotal = 0, now }) {
   const live = invoices.filter((i) => !INVOICE_DEAD_STATUSES.includes(i.status));
 
   // Dormant — no live invoices.
@@ -459,7 +459,12 @@ export function invoicingBlock({ invoices = [], scopeTotal = 0, now }) {
     return { state: 'dormant', dormantText: 'none yet' };
   }
 
-  const billed = live.reduce((s, i) => s + invoiceTotal(i), 0);
+  // Billed/Remaining come from the server's authoritative figure — the same
+  // job.invoiced_amount the header's P&L shows (financials._invoiced:
+  // draft/cancelled/superseded excluded). The lib never re-decides which
+  // invoices count, so this block and the header agree by construction; the
+  // only arithmetic here is presentation.
+  const billed = num(invoicedTotal);
   const remaining = Math.max(scopeTotal - billed, 0);
   const allPaid = live.every((i) => i.status === 'paid');
   const fullyBilled = scopeTotal > 0 && billed >= scopeTotal;
@@ -519,7 +524,12 @@ function invoiceStat(inv, now) {
     // Paid but missing sent_date/closed_date — no latency to report.
     s.sub = 'paid';
     s.subTone = 'good';
-  } else if (inv.sent_date && inv.status !== 'draft') {
+  } else if (inv.status === 'draft') {
+    // A draft is real state worth showing, but it isn't billed yet — no
+    // clock, and its amount is excluded from Billed/Remaining (which come
+    // from the server's draft-excluding invoiced_amount).
+    s.sub = 'draft';
+  } else if (inv.sent_date) {
     const days = calendarDaysBetween(inv.sent_date, now);
     s.sub = `sent ${days} days ago, unpaid`;
     s.subTone = 'bad';

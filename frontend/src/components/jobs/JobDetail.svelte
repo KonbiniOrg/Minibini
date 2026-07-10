@@ -48,6 +48,11 @@
   // Invoicing's "billed %".
   let scopeTotal = $derived(Number(job?.estimated_amount) || 0);
 
+  // Billed total = the job's authoritative invoiced amount (financials
+  // `_invoiced`: draft/cancelled/superseded excluded), same figure as the
+  // header's P&L — the block never re-decides which invoices count.
+  let invoicedTotal = $derived(Number(job?.invoiced_amount) || 0);
+
   // Tasks planned ahead of approval (drives the Work-dormant copy). The overview
   // endpoint counts tasks regardless of job status.
   let tasksPlanned = $derived(Number(overview?.work?.tasks_total) || 0);
@@ -93,7 +98,7 @@
       <WorkBlock {job} {overview} {tasksPlanned} />
       <MaterialsBlock pos={poList} {coverage} {now} />
       <SpendBlock {job} {overview} {scopeTotal} />
-      <InvoicingBlock invoices={invoiceList} {scopeTotal} {now} />
+      <InvoicingBlock invoices={invoiceList} {scopeTotal} {invoicedTotal} {now} />
       <DeliveryBlock shipments={shipmentList} {deliverableCount} {job} {now} />
     </div>
   </div>

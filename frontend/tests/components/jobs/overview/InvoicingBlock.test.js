@@ -10,6 +10,7 @@ describe('InvoicingBlock', () => {
         { invoice_number: 'INV-0088', status: 'paid', total: 3000, sent_date: '2025-06-24', closed_date: '2025-06-28' },
       ],
       scopeTotal: 12400,
+      invoicedTotal: 3000,
       now: '2025-07-09',
     };
     const expected = invoicingBlock(props);

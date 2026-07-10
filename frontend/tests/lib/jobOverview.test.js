@@ -529,6 +529,7 @@ describe('invoicingBlock', () => {
         { invoice_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '3000.00' },
       ],
       scopeTotal: 12400,
+      invoicedTotal: 3000,
       now: '2025-07-09',
     });
     expect(b.state).toBe('active');
@@ -540,6 +541,41 @@ describe('invoicingBlock', () => {
     const billed = stat(b, 'Billed');
     expect(billed.value).toBe('24%');
     expect(billed.sub).toBe('of $12,400');
+  });
+
+  it('draft invoices display but stay OUT of the billed math (header parity)', () => {
+    // financials._invoiced excludes draft (and cancelled/superseded)
+    // invoices, so the header's Invoiced figure and this block's Billed %
+    // must agree: a draft's amount is not billed yet.
+    const b = invoicingBlock({
+      invoices: [
+        { invoice_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '3000.00' },
+        { invoice_number: 'INV-0092', status: 'draft', total: '9400.00' },
+      ],
+      scopeTotal: 12400,
+      invoicedTotal: 3000, // the server's figure already excludes the draft
+      now: '2025-07-09',
+    });
+    expect(b.state).toBe('active');
+    // The draft still shows as a row (it's real state)…
+    const draft = stat(b, 'INV-0092');
+    expect(draft.value).toBe('$9,400');
+    expect(draft.sub).toBe('draft');
+    // …but Billed/Remaining count only the sent-or-later invoices.
+    expect(stat(b, 'Billed').value).toBe('24%');
+    expect(stat(b, 'Remaining to bill').value).toBe('$9,400');
+  });
+
+  it('a draft invoice alone never reads fully-billed/frozen', () => {
+    const b = invoicingBlock({
+      invoices: [{ invoice_number: 'INV-0093', status: 'draft', total: '12400.00' }],
+      scopeTotal: 12400,
+      invoicedTotal: 0, // draft-only job: nothing invoiced yet, server-side
+      now: '2025-07-09',
+    });
+    expect(b.state).toBe('active');
+    expect(stat(b, 'Billed').value).toBe('0%');
+    expect(stat(b, 'Remaining to bill').value).toBe('$12,400');
   });
 
   it('active — unpaid aging clock', () => {
@@ -609,6 +645,7 @@ describe('invoicingBlock', () => {
         { invoice_number: 'INV-0088', status: 'paid', sent_date: '2025-06-20', closed_date: '2025-06-24', total: '12400.00' },
       ],
       scopeTotal: 12400,
+      invoicedTotal: 12400,
       now: '2025-07-09',
     });
     expect(b.state).toBe('frozen');
