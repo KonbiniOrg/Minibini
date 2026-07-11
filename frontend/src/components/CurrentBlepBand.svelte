@@ -172,13 +172,13 @@
 {/if}
 
 <style>
+  /* Sticky positioning lives on App.svelte's .app-bands wrapper (shared
+     with the shift strip above). The 120px left padding keeps text clear
+     of the fixed hamburger expander in the top-left corner. */
   .blep-band {
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
     background: #fffbe6;
     border-bottom: 2px solid #d4b106;
-    padding: 8px 12px;
+    padding: 8px 12px 8px 120px;
     display: flex;
     align-items: center;
     gap: 12px;

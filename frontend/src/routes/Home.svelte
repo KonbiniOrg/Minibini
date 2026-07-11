@@ -11,7 +11,6 @@
   import MyShiftsList from '../components/home/MyShiftsList.svelte';
   import MyChangeRequestsList from '../components/home/MyChangeRequestsList.svelte';
   import MyEnvelopeEditor from '../components/home/MyEnvelopeEditor.svelte';
-  import ClockBand from '../components/home/ClockBand.svelte';
 
   let loading = $state(true);
   let error = $state('');
@@ -48,8 +47,6 @@
 <h2>Home</h2>
 
 <SearchBox />
-
-<ClockBand />
 
 <nav class="page-tabs">
   <button class:active={tab === 'work'} onclick={() => tab = 'work'}>Work</button>
