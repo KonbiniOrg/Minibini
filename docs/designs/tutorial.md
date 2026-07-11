@@ -48,24 +48,33 @@ separately — they're two views of the same work.
    which also creates the contact and business if they're new). The job
    starts in **draft**.
 2. **Add the work.** On the job, add tasks, materials, and fees by hand,
-   pick single services from the catalog, or apply a **work template** —
-   a saved bundle of tasks and materials for work you do repeatedly.
-   Give each task an estimated quantity and an estimated worker time
-   (the schedule uses the latter).
+   or pick from **Service Items** — reusable, pre-priced task
+   definitions kept in the Catalog. Give each task an estimated
+   quantity and an estimated worker time (the schedule uses the
+   latter). Also list the job's **Deliverables** — the customer-facing
+   "what you get" list — since an estimate can't be sent without at
+   least one.
 3. **Build the estimate.** Start an estimate and pull the job's atoms
    onto customer-facing line items (the estimate's **Reconcile** view
    shows the unclaimed atoms on one side and the line items on the
    other) — one line per atom, or several atoms bundled into one line
    the customer will understand. You can also type hand lines and
    percentage adjustments (rush fee, discount) directly.
-4. **Send it.** Sending emails the customer a PDF and moves the job to
-   **submitted**. Estimates expire automatically after a configurable
-   number of days. If the customer wants changes, revise the estimate —
-   the old version is kept and marked superseded, and the customer sees
-   one estimate number throughout.
+4. **Send it.** Sending emails the customer a PDF plus a **portal
+   link** where they can accept, reject, or request changes — no login
+   required on their end. The job moves to **submitted**. Estimates
+   expire automatically after a configurable number of days. If the
+   customer wants changes, the estimate revises — the old version is
+   kept and marked superseded, and the customer sees one estimate
+   number throughout.
 5. **Acceptance.** When the estimate is accepted the job becomes
    **approved**: hand-written lines crystallize into real Fee and
    Material atoms, and stock is earmarked for the job.
+
+After acceptance, scope changes go through a **Change Order**: put the
+job on hold (holding pauses new work but keeps history), draft the CO,
+and send it through the same portal. Accepting it updates the agreement
+and releases the hold automatically.
 
 ## Doing the work
 
@@ -90,15 +99,33 @@ at a live "now" line. Drag bars to reorder a queue. When every task on a
 job is complete or cancelled, the job advances to **work_complete** by
 itself.
 
-## Materials and purchasing
+## Materials, inventory, and purchasing
 
-The **Catalog** is the shop's item list — every physical thing, with
-cost, sell price, and quantity on hand. Putting a catalog material on a
-job **earmarks** stock (visible as "available" vs. "on hand"); starting
-the task consumes it. Need to buy? Raise a **Purchase Order** under
-Purchasing — PO lines attributed to a job create that job's materials
-automatically — email it to the vendor as a PDF, receive it to bump
-stock, then record the vendor's **Bill** against it.
+The **Catalog** is the shop's item list — every physical thing, one row
+per item, with a code, cost, sell price, and quantity on hand. It has
+three tabs: **Inventory** (the items), **Service Items** (the reusable
+task definitions), and **Earmarks** (every active stock reservation,
+shop-wide). Things worth knowing about inventory:
+
+- Each item shows **on hand**, **earmarked** (reserved by jobs),
+  **available** (the difference), and **on order** (outstanding PO
+  quantity). Putting a catalog material on a job earmarks stock the
+  moment it's added; starting the task consumes it.
+- Sell price defaults from cost via a configurable **markup percent**
+  at creation; after that, the stored price is what you edit.
+- Items are never auto-hidden or deleted — a zero-stock item stays
+  findable as history ("what did we pay last time"). Retire one by
+  deactivating it; **write off** spoiled stock; **merge** accidental
+  duplicates.
+- A one-off material typed freeform on a job gets its own `LOT-` item
+  behind the scenes once it's costed and purchased, so even one-time
+  buys are tracked stock — and next year's search can find and reuse
+  the lot.
+
+Need to buy? Raise a **Purchase Order** under Purchasing — PO lines
+attributed to a job create that job's materials automatically — email
+it to the vendor as a PDF, receive it to bump stock, then record the
+vendor's **Bill** against it and log payments on the bill.
 
 ## Getting paid
 
@@ -107,12 +134,69 @@ and progress billing are fine), open an invoice and build it exactly the
 way you built the estimate: its Reconcile view offers the job's billable
 atoms — completed tasks at their actual quantities, consumed materials,
 fees, loose expenses — and each atom can only ever be claimed by one
-invoice, so double-billing is structurally impossible. Send it (PDF email
-again),
-and it's pushed to QuickBooks Online; Minibini polls QBO and flips the
+invoice, so double-billing is structurally impossible. Send it (PDF
+email again), and it's pushed to QuickBooks Online; Minibini polls QBO
+and flips the
 invoice to partly-paid/paid as payments land. When all invoices are
 resolved and all deliverables picked up, the job closes itself:
 **completed**.
+
+## Shop configuration (Settings)
+
+The **Settings** page (config permission required) is where the shop is
+tuned, in six tabs:
+
+- **Accounting** — the QuickBooks Online connection, accounting
+  categories (every billable thing carries one; they drive taxability
+  and QBO income mapping), which QBO payment accounts to poll, and any
+  sync failures needing attention.
+- **Setup** — document numbering patterns (job, invoice, PO numbers),
+  estimate expiry days, how long closed jobs linger on the board, and
+  the list of measurement units the whole system validates against.
+- **Pricing** — the **service price list** (rate schemes: name, rate,
+  billing algorithm, percent modifiers like "messy materials +10%") and
+  the default material markup. One rule to internalize: once a service
+  price has been used by real work it is **frozen** — changing the
+  price means creating a new version, and existing work keeps billing
+  at the rate it was sold at.
+- **Schedule** — the shop's default work week (days, hours, breaks)
+  that drives the schedule's forecasting.
+- **Email** — subject/body templates for outbound estimates, invoices,
+  and POs.
+- **Business** — your notification email, public site URL, and email
+  domain.
+
+## Your own settings
+
+Everyone has a **Profile** page (click your name at the bottom of the
+sidebar) with account info and a password change. The **FULL / LITE**
+toggle in the sidebar switches view modes — lite pares pages down to
+the essentials. Your personal **work week** — if it differs from the
+shop's — is set on Home → Time, and the schedule forecasts your queue
+inside those hours. Admins manage accounts, permissions, and other
+people's schedules on the **Users** page.
+
+## A few more things worth knowing
+
+- **Everything is logged.** Jobs, estimates, and invoices keep a full
+  history — status changes, edits, and freeform notes anyone can add.
+  Look for the History panel on a record's page.
+- **Email is a workspace, not just an inbox.** The Email page shows the
+  shop's mailbox; from a message you can create a job (with the contact
+  and business created along the way), or link it to an existing job,
+  PO, or bill. Documents Minibini sends are recorded too and show up on
+  the job's own Email panel.
+- **Search** (the box at the bottom of the sidebar) finds jobs,
+  contacts, businesses, documents, and catalog items in one query.
+- **Expenses** — workers submit expenses from Home → Expenses (tied to
+  a job or standalone), managers approve reimbursements, and job-tied
+  expenses show up as billable atoms in invoicing.
+- **Activity** shows who's clocked in and working on what right now,
+  plus recent sessions and document events — the shop's live pulse.
+- **Deliverables and shipments.** The deliverables list you wrote at
+  quoting time becomes the fulfillment checklist: prepare shipments,
+  print packing lists, and record pick-ups. A job only closes when
+  everything is picked up.
 
 ## Who can do what
 
