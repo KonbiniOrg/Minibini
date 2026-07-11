@@ -840,7 +840,7 @@ class InvoiceWizardService(BaseWizardService):
     @classmethod
     def _validate_draft(cls, container):
         if container.status != Invoice.STATUS_DRAFT:
-            raise ValidationError('Wizard can only modify draft invoices.')
+            raise ValidationError('Can only modify draft invoices.')
 
     @classmethod
     def _assert_atom_billable(cls, instance):

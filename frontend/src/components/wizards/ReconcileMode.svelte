@@ -126,7 +126,7 @@
   let loading = $state(true);
   let error = $state(null);
   // Set when an add bounced off the atoms-claimed 409 — the message under the
-  // add controls then offers "Reload wizard" (the conflict's next step).
+  // add controls then offers "Reload" (the conflict's next step).
   let conflictError = $state('');
 
   const canAddHere = $derived(selectedAtoms.length > 0);
@@ -190,7 +190,7 @@
       sourcePool = pool;
       reconcileAtomStates();
     } catch (e) {
-      error = e.message || 'Failed to load wizard';
+      error = e.message || 'Failed to load';
     } finally {
       loading = false;
     }
@@ -276,7 +276,7 @@
         >Add Here</button>
       </div>
       <FormMessage error={conflictError}>
-        <button type="button" onclick={reloadFromConflict}>Reload wizard</button>
+        <button type="button" onclick={reloadFromConflict}>Reload</button>
       </FormMessage>
       {#if cfg.hasManualLine}
         <button type="button" onclick={addManualLineItem}>+ Manual</button>

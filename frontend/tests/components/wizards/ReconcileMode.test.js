@@ -62,7 +62,7 @@ describe('ReconcileMode — estimate config', () => {
     expect(api.post).toHaveBeenCalledWith('/api/estimates/11/line-items-from-atoms/', { atoms: [{ type: 'task', id: 3 }] });
   });
 
-  it('renders the 409 atoms-claimed conflict as a form message with a Reload wizard affordance', async () => {
+  it('renders the 409 atoms-claimed conflict as a form message with a Reload affordance', async () => {
     mockEstimate({ atoms: [EST_ATOM] });
     api.post.mockRejectedValue(Object.assign(new Error('Conflict'), {
       status: 409,
@@ -76,7 +76,7 @@ describe('ReconcileMode — estimate config', () => {
     expect(get(overlayMessage)).toBeNull();
 
     const poolCallsBefore = api.get.mock.calls.filter(([u]) => u.includes('/source-pool/')).length;
-    await fireEvent.click(screen.getByRole('button', { name: 'Reload wizard' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
     expect(api.get.mock.calls.filter(([u]) => u.includes('/source-pool/')).length)
       .toBe(poolCallsBefore + 1);
     expect(screen.queryByRole('alert')).toBeNull();
@@ -171,7 +171,7 @@ describe('ReconcileMode — invoice config', () => {
     expect(await screen.findByText('Agreement Adjustments')).toBeInTheDocument();
   });
 
-  it('renders the 409 atoms-claimed conflict as a form message with a Reload wizard affordance', async () => {
+  it('renders the 409 atoms-claimed conflict as a form message with a Reload affordance', async () => {
     mockInvoice();
     api.post.mockRejectedValue(Object.assign(new Error('Conflict'), {
       status: 409,
@@ -188,7 +188,7 @@ describe('ReconcileMode — invoice config', () => {
     expect(get(overlayMessage)).toBeNull();
 
     const poolCallsBefore = api.get.mock.calls.filter(([u]) => u.includes('/source-pool/')).length;
-    await fireEvent.click(screen.getByRole('button', { name: 'Reload wizard' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
     expect(api.get.mock.calls.filter(([u]) => u.includes('/source-pool/')).length)
       .toBe(poolCallsBefore + 1);
     expect(screen.queryByRole('alert')).toBeNull();
