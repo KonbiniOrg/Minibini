@@ -63,10 +63,10 @@
   <RecentTimeList />
   <RecentJobsList jobs={recentJobs} />
 {:else if tab === 'shifts'}
+  <MyEnvelopeEditor />
   <MyShiftsList />
   <MyChangeRequestsList />
   <RecentLoginsList />
-  <MyEnvelopeEditor />
 {:else if tab === 'expenses'}
   <ExpensesList />
 {/if}
