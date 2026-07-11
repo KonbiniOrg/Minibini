@@ -213,7 +213,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
-| `POST` | `/api/auth/login/` | `AllowAny` | Authenticate; sets session cookie; returns `UserSerializer` body. 400 on invalid credentials with `{"detail": "Invalid credentials."}`. |
+| `POST` | `/api/auth/login/` | `AllowAny` | Authenticate; sets session cookie; returns `UserSerializer` body plus `first_login` (true iff `User.last_login` was NULL at authentication — i.e. this is the user's first login ever; the SPA lands them on the Help tab). 400 on invalid credentials with `{"detail": "Invalid credentials."}`. |
 | `POST` | `/api/auth/logout/` | `IsAuthenticated` | Clears session; returns `{"detail": "Logged out."}`. |
 | `GET` | `/api/auth/me/` | `IsAuthenticated` | Returns the current user as `UserSerializer`. |
 | `PATCH` | `/api/auth/me/` | `IsAuthenticated` | Updates own profile (`email`, `first_name`, `last_name`). Returns `UserSerializer` shape. |
@@ -229,7 +229,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 1. `frontend/src/components/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
 2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
 3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
-4. After login the SPA lands on **Home** (`#/`), where the Shifts tab lives (the Clock In / Out strip is now the global header) — the worker's first action on arrival is typically to clock in.
+4. After login the SPA lands on **Home** (`#/`), where the Shifts tab lives (the Clock In / Out strip is now the global header) — the worker's first action on arrival is typically to clock in. A user's **first login ever** (`first_login` in the login response) lands on the Help tab (`#/help`, the tutorial) instead.
 
 ## User admin
 

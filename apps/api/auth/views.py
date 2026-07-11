@@ -28,8 +28,13 @@ def login_view(request):
             {'detail': 'Invalid credentials.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    # Read before login() stamps last_login: NULL means this user has never
+    # logged in. The SPA lands first-time users on the Help tab.
+    first_login = user.last_login is None
     login(request, user)
-    return Response(UserSerializer(user).data)
+    data = UserSerializer(user).data
+    data['first_login'] = first_login
+    return Response(data)
 
 
 @api_view(['POST'])

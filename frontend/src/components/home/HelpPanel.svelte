@@ -319,9 +319,11 @@ job, one set of atoms, start to finish.</p>
 </div>
 
 <style>
-  /* Prose width for readability; everything else inherits app styles. */
+  /* Prose width for readability, centered on the page; everything else
+     inherits app styles. */
   .help {
     max-width: 46em;
+    margin: 0 auto;
   }
   .help h3 {
     margin-top: 1.5em;
