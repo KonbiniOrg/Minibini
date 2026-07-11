@@ -8,7 +8,7 @@
 
 <WorkSessionsList
   userId="me"
-  title="Completed Tasks"
+  title="Ongoing and Completed Tasks"
   sinceDays={7}
   paginate={false}
   emptyText="No recent time entries."
