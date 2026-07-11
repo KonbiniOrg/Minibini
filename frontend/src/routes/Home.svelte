@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { blepActivityVersion } from '../stores/blepActivity.js';
-  import SearchBox from '../components/home/SearchBox.svelte';
   import AssignedTaskList from '../components/home/AssignedTaskList.svelte';
   import RecentJobsList from '../components/home/RecentJobsList.svelte';
   import ExpensesList from '../components/home/ExpensesList.svelte';
@@ -45,8 +44,6 @@
 
 <div class="page-body">
 <h2>Home</h2>
-
-<SearchBox />
 
 <nav class="page-tabs">
   <button class:active={tab === 'work'} onclick={() => tab = 'work'}>Work</button>
