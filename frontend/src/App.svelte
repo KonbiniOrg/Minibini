@@ -130,8 +130,10 @@
     '/email/:id/associate-po': EmailAssociatePOPage,
     '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
-    // Home with the Profile tab active (tab derived from location in Home).
+    // Home with the Profile / Help tab active (tab derived from location
+    // in Home).
     '/profile': Home,
+    '/help': Home,
     '/change-orders/:id/send': ChangeOrderSendPage,
     '/change-orders/:id': ChangeOrderRedirect,
   };

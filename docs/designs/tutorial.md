@@ -198,7 +198,7 @@ toggle in the sidebar switches view modes — lite pares pages down to
 the essentials. Your personal **work week** — if it differs from the
 shop's — is set on Home → Shifts, and the schedule forecasts your queue
 inside those hours.  You can review your recent Shifts and time slips,
-make adjustements for recent errors or request adjustments for older
+make adjustments for recent errors or request adjustments for older
 ones.  You also have a list of assigned tasks, and you can submit
 **Expenses** if you bought something for the shop on your own dime.
 

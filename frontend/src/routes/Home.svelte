@@ -12,17 +12,21 @@
   import MyChangeRequestsList from '../components/home/MyChangeRequestsList.svelte';
   import MyEnvelopeEditor from '../components/home/MyEnvelopeEditor.svelte';
   import ProfilePanel from '../components/home/ProfilePanel.svelte';
+  import HelpPanel from '../components/home/HelpPanel.svelte';
 
   let loading = $state(true);
   let error = $state('');
   let assignedTasks = $state([]);
   let recentJobs = $state([]);
 
-  // Most tabs are plain local state, but Profile is also route-addressable:
-  // #/profile renders Home with this tab active (the sidebar username link
-  // targets it). Follow route changes without clobbering in-page tab clicks.
+  // Most tabs are plain local state, but Profile and Help are also
+  // route-addressable: #/profile and #/help render Home with that tab
+  // active (the sidebar username link and in-app help links target them).
+  // Follow route changes without clobbering in-page tab clicks.
   function tabForLocation(loc) {
-    return loc === '/profile' ? 'profile' : 'work';
+    if (loc === '/profile') return 'profile';
+    if (loc === '/help') return 'help';
+    return 'work';
   }
   let tab = $state(tabForLocation($location));
   let lastLocation = $state($location);
@@ -66,10 +70,13 @@
   <button class:active={tab === 'shifts'} onclick={() => tab = 'shifts'}>Shifts</button>
   <button class:active={tab === 'expenses'} onclick={() => tab = 'expenses'}>Expenses</button>
   <button class:active={tab === 'profile'} onclick={() => tab = 'profile'}>Profile</button>
+  <button class:active={tab === 'help'} onclick={() => tab = 'help'}>Help</button>
 </nav>
 
 {#if tab === 'profile'}
   <ProfilePanel />
+{:else if tab === 'help'}
+  <HelpPanel />
 {:else if loading}
   <p>Loading...</p>
 {:else if error}
