@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { location } from 'svelte-spa-router';
   import { api } from '../lib/api.js';
   import { blepActivityVersion } from '../stores/blepActivity.js';
   import AssignedTaskList from '../components/home/AssignedTaskList.svelte';
@@ -10,12 +11,27 @@
   import MyShiftsList from '../components/home/MyShiftsList.svelte';
   import MyChangeRequestsList from '../components/home/MyChangeRequestsList.svelte';
   import MyEnvelopeEditor from '../components/home/MyEnvelopeEditor.svelte';
+  import ProfilePanel from '../components/home/ProfilePanel.svelte';
 
   let loading = $state(true);
   let error = $state('');
   let assignedTasks = $state([]);
   let recentJobs = $state([]);
-  let tab = $state('work');
+
+  // Most tabs are plain local state, but Profile is also route-addressable:
+  // #/profile renders Home with this tab active (the sidebar username link
+  // targets it). Follow route changes without clobbering in-page tab clicks.
+  function tabForLocation(loc) {
+    return loc === '/profile' ? 'profile' : 'work';
+  }
+  let tab = $state(tabForLocation($location));
+  let lastLocation = $state($location);
+  $effect(() => {
+    if ($location !== lastLocation) {
+      lastLocation = $location;
+      tab = tabForLocation($location);
+    }
+  });
 
   async function loadHome() {
     try {
@@ -49,9 +65,12 @@
   <button class:active={tab === 'work'} onclick={() => tab = 'work'}>Work</button>
   <button class:active={tab === 'shifts'} onclick={() => tab = 'shifts'}>Shifts</button>
   <button class:active={tab === 'expenses'} onclick={() => tab = 'expenses'}>Expenses</button>
+  <button class:active={tab === 'profile'} onclick={() => tab = 'profile'}>Profile</button>
 </nav>
 
-{#if loading}
+{#if tab === 'profile'}
+  <ProfilePanel />
+{:else if loading}
   <p>Loading...</p>
 {:else if error}
   <p>{error}</p>

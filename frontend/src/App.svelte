@@ -32,7 +32,6 @@
   import BillDetailPage from './routes/bills/BillDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
-  import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
@@ -131,7 +130,8 @@
     '/email/:id/associate-po': EmailAssociatePOPage,
     '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
-    '/profile': ProfilePage,
+    // Home with the Profile tab active (tab derived from location in Home).
+    '/profile': Home,
     '/change-orders/:id/send': ChangeOrderSendPage,
     '/change-orders/:id': ChangeOrderRedirect,
   };

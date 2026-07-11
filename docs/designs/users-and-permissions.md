@@ -351,7 +351,7 @@ After `serializer.save()`, the view calls `update_session_auth_hash(request, use
 
 ### Frontend
 
-`frontend/src/routes/ProfilePage.svelte` — two independent forms (account info, change password) plus the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
+`frontend/src/components/home/ProfilePanel.svelte` — the Profile tab of the Home page (route `#/profile` renders Home with this tab active; the sidebar username link targets it). Two independent forms (account info, change password) plus the view-mode toggle. Initializes from the `$user` store on first render; updates the store after a successful profile PATCH so the sidebar username stays in sync.
 
 - Account form fields: `email`, `first_name`, `last_name`. Username is shown read-only.
 - Password form fields: `current_password` (autocomplete `current-password`), `new_password` and `new_password_confirm` (both `new-password`).

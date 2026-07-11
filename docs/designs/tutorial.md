@@ -192,8 +192,8 @@ tuned, in six tabs:
 
 ## Your own settings
 
-Everyone has a **Profile** page (click your name at the bottom of the
-sidebar) with account info and a password change. The **FULL / LITE**
+Everyone has a **Profile** tab on Home (click your name at the bottom of
+the sidebar) with account info and a password change. The **FULL / LITE**
 toggle in the sidebar switches view modes — lite pares pages down to
 the essentials. Your personal **work week** — if it differs from the
 shop's — is set on Home → Shifts, and the schedule forecasts your queue
