@@ -229,7 +229,7 @@ All live under `/api/auth/` (`apps/api/auth/`):
 1. `frontend/src/components/LoginPage.svelte` is shown when `$user` is `null` after the initial `checkAuth()` mount probe.
 2. The form posts to `/api/auth/login/` via `frontend/src/stores/auth.js`'s `login(username, password)`. Success sets the `user` store; the SPA re-renders into the authenticated tree.
 3. `checkAuth()` on subsequent loads calls `GET /api/auth/me/` to populate the store from the existing session.
-4. After login the SPA lands on **Home** (`#/`), where the Clock In / Out band and the Time tab live — the worker's first action on arrival is typically to clock in.
+4. After login the SPA lands on **Home** (`#/`), where the Shifts tab lives (the Clock In / Out strip is now the global header) — the worker's first action on arrival is typically to clock in.
 
 ## User admin
 
@@ -347,7 +347,7 @@ After `serializer.save()`, the view calls `update_session_auth_hash(request, use
 
 ### `PUT /api/auth/me/schedule-envelope/`
 
-`me_schedule_envelope_view` (`IsAuthenticated`, self only). Body `{"schedule_envelope": {...}}` or `{"schedule_envelope": null}` (null resets to the shop default). `ScheduleEnvelopeSerializer` validates the payload via `apps.schedule.calendar_arithmetic.validate_week_envelope` and the view writes `request.user.schedule_envelope`. The editing surface is the bottom of the Home → Time tab (`MyEnvelopeEditor`, wrapping the shared `EnvelopeEditor` component that Settings → Schedule and the user-admin profile page also use). See `schedule.md` §2.
+`me_schedule_envelope_view` (`IsAuthenticated`, self only). Body `{"schedule_envelope": {...}}` or `{"schedule_envelope": null}` (null resets to the shop default). `ScheduleEnvelopeSerializer` validates the payload via `apps.schedule.calendar_arithmetic.validate_week_envelope` and the view writes `request.user.schedule_envelope`. The editing surface is the bottom of the Home → Shifts tab (`MyEnvelopeEditor`, wrapping the shared `EnvelopeEditor` component that Settings → Schedule and the user-admin profile page also use). See `schedule.md` §2.
 
 ### Frontend
 

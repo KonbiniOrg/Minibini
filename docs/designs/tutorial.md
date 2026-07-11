@@ -10,8 +10,8 @@ you know how a job shop runs but have never seen Minibini.
 ## Finding your way around
 
 Minibini runs in your browser. After you log in, the sidebar on the left
-is the whole map: **Home** (your clock-in band, your work, your time,
-your expenses), **Jobs** (the board), **Schedule**, **Activity** (who's
+is the whole map: **Home** (your work, your shifts, your expenses),
+**Jobs** (the board), **Schedule**, **Activity** (who's
 working right now), **Contacts**, **Email**, **Purchasing**, **Catalog**
 (inventory and service items), and — depending on your permissions —
 **Invoices**, **Bills**, **Expenses**, **Users**, and **Settings**.  The
@@ -196,7 +196,7 @@ Everyone has a **Profile** page (click your name at the bottom of the
 sidebar) with account info and a password change. The **FULL / LITE**
 toggle in the sidebar switches view modes — lite pares pages down to
 the essentials. Your personal **work week** — if it differs from the
-shop's — is set on Home → Time, and the schedule forecasts your queue
+shop's — is set on Home → Shifts, and the schedule forecasts your queue
 inside those hours.  You can review your recent Shifts and time slips,
 make adjustements for recent errors or request adjustments for older
 ones.  You also have a list of assigned tasks, and you can submit

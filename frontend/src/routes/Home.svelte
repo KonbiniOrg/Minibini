@@ -50,7 +50,7 @@
 
 <nav class="page-tabs">
   <button class:active={tab === 'work'} onclick={() => tab = 'work'}>Work</button>
-  <button class:active={tab === 'time'} onclick={() => tab = 'time'}>Time</button>
+  <button class:active={tab === 'shifts'} onclick={() => tab = 'shifts'}>Shifts</button>
   <button class:active={tab === 'expenses'} onclick={() => tab = 'expenses'}>Expenses</button>
 </nav>
 
@@ -60,10 +60,10 @@
   <p>{error}</p>
 {:else if tab === 'work'}
   <AssignedTaskList tasks={assignedTasks} />
-  <RecentJobsList jobs={recentJobs} />
-{:else if tab === 'time'}
-  <MyShiftsList />
   <RecentTimeList />
+  <RecentJobsList jobs={recentJobs} />
+{:else if tab === 'shifts'}
+  <MyShiftsList />
   <MyChangeRequestsList />
   <RecentLoginsList />
   <MyEnvelopeEditor />
