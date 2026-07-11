@@ -32,7 +32,7 @@
 
   onMount(loadHome);
 
-  // Refresh "My Tasks" activity markers when a blep changes anywhere.
+  // Refresh "Assigned Tasks" activity markers when a blep changes anywhere.
   let lastBlepVersion = $state(0);
   $effect(() => {
     const v = $blepActivityVersion;

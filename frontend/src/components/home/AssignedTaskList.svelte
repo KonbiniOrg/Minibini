@@ -100,7 +100,7 @@
 </script>
 
 <section>
-  <h3>My Tasks</h3>
+  <h3>Assigned Tasks</h3>
   {#if items.length === 0}
     <p>No assigned tasks.</p>
   {:else}
