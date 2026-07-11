@@ -652,6 +652,12 @@ RateScheme algorithm.
 user, start_time, end_time)`. `end_time` is null while the session is
 active. The FK to Task is `PROTECT` to preserve the audit trail.
 
+> **User-facing name: "timeslip."** "Blep" is the internal model/code
+> name only — it must never appear in UI text, API error messages, or
+> other user-visible strings. Displayed text says **timeslip** (or, where
+> established, "time entry" / "work session"). Code identifiers, API
+> routes (`/api/bleps/`), and this doc keep using Blep.
+
 ### 5.1 Active vs historical
 
 Two Bleps are conceptually distinct:

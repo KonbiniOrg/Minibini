@@ -499,7 +499,7 @@ class WizardAtomLabels:
         scheme = task.rate_scheme
         if scheme.algorithm == RateScheme.ELAPSED_TIME:
             qty = scheme.get_actual_qty(task)
-            return f'{qty:.2f} {scheme.unit_label} from bleps'
+            return f'{qty:.2f} {scheme.unit_label} from timeslips'
         if scheme.algorithm == RateScheme.ENTERED_QTY:
             qty = scheme.get_actual_qty(task)
             return f'{qty} {scheme.unit_label} entered'

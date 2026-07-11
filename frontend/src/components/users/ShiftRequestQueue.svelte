@@ -82,7 +82,7 @@
               {#if r.kind === 'Shift' && r.shift}
                 <button type="button" onclick={() => openTarget(r)}>Open shift</button>
               {:else if r.kind === 'Time' && r.blep}
-                <button type="button" onclick={() => openTarget(r)}>Open blep{#if r.task_name} ({r.task_name}){/if}</button>
+                <button type="button" onclick={() => openTarget(r)}>Open timeslip{#if r.task_name} ({r.task_name}){/if}</button>
               {:else}
                 <em>new {r.kind === 'Shift' ? 'shift' : 'entry'}</em>
               {/if}
@@ -93,7 +93,7 @@
               {#if r.conflicts && r.conflicts.length}
                 ⚠
                 {#each r.conflicts as c}
-                  <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type} ({c.label})</button>
+                  <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type === 'shift' ? 'shift' : 'timeslip'} ({c.label})</button>
                 {/each}
               {:else if r.has_known_conflict}
                 ⚠ no covering shift
@@ -107,8 +107,8 @@
         {/each}
       </tbody>
     </table>
-    <p><em>If Approve is blocked by a conflict, open the relevant shift/blep here, adjust
-      it so the shift encloses the blep, then approve.</em></p>
+    <p><em>If Approve is blocked by a conflict, open the relevant shift/timeslip here, adjust
+      it so the shift encloses the timeslip, then approve.</em></p>
   {/if}
 </section>
 
