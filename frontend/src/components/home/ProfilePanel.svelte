@@ -1,8 +1,8 @@
 <script>
-  import { api } from '../lib/api.js';
-  import { fieldErrors } from '../lib/formErrors.js';
-  import { user } from '../stores/auth.js';
-  import { viewMode, toggleViewMode } from '../stores/viewMode.js';
+  import { api } from '../../lib/api.js';
+  import { fieldErrors } from '../../lib/formErrors.js';
+  import { user } from '../../stores/auth.js';
+  import { viewMode, toggleViewMode } from '../../stores/viewMode.js';
 
   let profileForm = $state({
     email: '',
@@ -80,9 +80,6 @@
   }
 
 </script>
-
-<div class="page-body">
-<h2>Profile</h2>
 
 <h3>Account info</h3>
 
@@ -207,4 +204,3 @@
     Switch to {$viewMode === 'full' ? 'lite' : 'full'} view
   </button>
 </p>
-</div>

@@ -91,7 +91,7 @@ affordance) — mounted three ways:
 | Surface | Who | Route |
 |---|---|---|
 | Settings → Schedule (shop week) | `can_manage_config` | `PATCH /api/settings/` (`schedule_week_envelope`) |
-| Home → Time tab, bottom (`MyEnvelopeEditor`) | any authenticated user, self | `PUT /api/auth/me/schedule-envelope/` (`{"schedule_envelope": {...}\|null}`, null = reset) |
+| Home → Shifts tab, top (`MyEnvelopeEditor`) | any authenticated user, self | `PUT /api/auth/me/schedule-envelope/` (`{"schedule_envelope": {...}\|null}`, null = reset) |
 | Users → user profile page | `can_manage_time` **or** `can_manage_config` | `PUT /api/users/{id}/schedule-envelope/` |
 
 Saves are explicit (Save buttons; the editor only reports changes). The

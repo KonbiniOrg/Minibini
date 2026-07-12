@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { formatSessionDateTime } from '../../lib/format.js';
   import { shiftActivityVersion } from '../../stores/shift.js';
   import { blepActivityVersion } from '../../stores/blepActivity.js';
 
@@ -35,7 +36,7 @@
         {#each rows as r (r.kind + r.request_id)}
           <tr>
             <td>{r.kind}</td>
-            <td>{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}</td>
+            <td>{formatSessionDateTime(r.requested_start)} → {r.requested_end ? formatSessionDateTime(r.requested_end) : '—'}</td>
             <td>{r.status}{#if r.has_known_conflict && r.status === 'pending'} ⚠{/if}</td>
             <td>{r.reason}</td>
           </tr>

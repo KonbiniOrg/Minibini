@@ -22,6 +22,31 @@ class AuthAPITest(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['username'], 'admin')
 
+    def test_login_first_login_flag(self):
+        """A user whose last_login is NULL gets first_login=True exactly once.
+
+        The SPA uses the flag to land brand-new users on the Help tab.
+        (There is no LoginEvent table yet — Django's last_login, stamped by
+        login(), is the record of "has ever logged in".)
+        """
+        self.user.last_login = None
+        self.user.save(update_fields=['last_login'])
+
+        response = self.client.post('/api/auth/login/', {
+            'username': 'admin',
+            'password': 'testpass123',
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['first_login'])
+
+        # Second login: last_login was stamped by the first, flag drops.
+        response = self.client.post('/api/auth/login/', {
+            'username': 'admin',
+            'password': 'testpass123',
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['first_login'])
+
     def test_login_bad_credentials(self):
         response = self.client.post('/api/auth/login/', {
             'username': 'admin',

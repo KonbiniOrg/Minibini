@@ -4,15 +4,16 @@
 
   let { notice = '' } = $props();
 
-  let username = '';
-  let password = '';
-  let error = '';
+  let username = $state('');
+  let password = $state('');
+  let error = $state('');
 
   async function handleSubmit() {
     error = '';
     try {
-      await login(username, password);
-      push('/');
+      const data = await login(username, password);
+      // A user's very first login ever lands on the Help tab (the tutorial).
+      push(data.first_login ? '/help' : '/');
     } catch (e) {
       error = e.message || 'Login failed';
     }

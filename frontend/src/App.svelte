@@ -2,9 +2,11 @@
   import Router, { location } from 'svelte-spa-router';
   import Sidebar from './components/Sidebar.svelte';
   import CurrentBlepBand from './components/CurrentBlepBand.svelte';
+  import ShiftBand from './components/ShiftBand.svelte';
   import MessageOverlay from './components/MessageOverlay.svelte';
   import { user, authChecked, checkAuth } from './stores/auth.js';
   import { refreshCurrentBlep, currentBlep } from './stores/currentBlep.js';
+  import { refreshCurrentShift, currentShift } from './stores/shift.js';
   import LoginPage from './routes/LoginPage.svelte';
   import Home from './routes/Home.svelte';
   import ContactListPage from './routes/contacts/ContactListPage.svelte';
@@ -30,7 +32,6 @@
   import BillDetailPage from './routes/bills/BillDetailPage.svelte';
   import JobBoardPage from './routes/jobs/JobBoardPage.svelte';
   import SchedulePage from './routes/schedule/SchedulePage.svelte';
-  import ProfilePage from './routes/ProfilePage.svelte';
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateSendPage from './routes/estimates/EstimateSendPage.svelte';
@@ -129,7 +130,10 @@
     '/email/:id/associate-po': EmailAssociatePOPage,
     '/email/:id/associate-bill': EmailAssociateBillPage,
     '/email/:id': EmailDetailPage,
-    '/profile': ProfilePage,
+    // Home with the Profile / Help tab active (tab derived from location
+    // in Home).
+    '/profile': Home,
+    '/help': Home,
     '/change-orders/:id/send': ChangeOrderSendPage,
     '/change-orders/:id': ChangeOrderRedirect,
   };
@@ -154,14 +158,17 @@
     if ($user) sessionExpired = false;
   });
 
-  // Refresh the global current-Blep band on auth + every SPA route change.
+  // Refresh the global shift + current-Blep bands on auth + every SPA
+  // route change.
   $effect(() => {
     if ($user) {
       // Touch $location so this effect re-runs on navigation.
       $location;
       refreshCurrentBlep();
+      refreshCurrentShift();
     } else {
       currentBlep.set(null);
+      currentShift.set(null);
     }
   });
 </script>
@@ -171,7 +178,12 @@
 {:else if !$user}
   <LoginPage notice={sessionExpired ? 'Your session expired — please log in again.' : ''} />
 {:else}
-  <CurrentBlepBand />
+  <!-- Permanent shift strip; the timeslip band slides in beneath it while a
+       session runs. One sticky wrapper so the pair pins as a unit. -->
+  <header class="app-bands">
+    <ShiftBand />
+    <CurrentBlepBand />
+  </header>
   <Sidebar />
   <!--
     Overlay behavior: the sidebar is position:fixed at the --z-sidebar tier
@@ -183,3 +195,11 @@
   </div>
   <MessageOverlay />
 {/if}
+
+<style>
+  .app-bands {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+  }
+</style>

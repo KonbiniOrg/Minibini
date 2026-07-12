@@ -619,6 +619,10 @@ the same `/api` proxy covers its requests.
 - `viewMode.js` — see §6.
 - `currentBlep.js` — currently-running time entry, polled and shown in
   the `CurrentBlepBand`.
+- `shift.js` — the worker's open shift, shown in the permanent
+  `ShiftBand` header strip (Clock In / Clock Out; the `CurrentBlepBand`
+  slides in beneath it while a session runs — both in `App.svelte`'s
+  sticky `.app-bands` wrapper).
 
 ### 5.4 Routing
 

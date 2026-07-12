@@ -692,7 +692,9 @@ bleps:
 - **Auto-clock-in.** Starting a live blep (`TaskLifecycleService.start_work`)
   calls `ShiftService.ensure_open_shift(target)` — if the worker has no open
   shift, one is opened at `now` so the new blep is enclosed. Workers normally
-  clock in from the Home band, but starting work clocks them in implicitly.
+  clock in from the global header strip (`ShiftBand.svelte`, mounted in
+  `App.svelte` above the `CurrentBlepBand` in the sticky `.app-bands`
+  wrapper), but starting work clocks them in implicitly.
 - **Clock-out settles first.** An own explicit `POST /api/shifts/clock-out`
   with an open Blep on an ENTERED_QTY task returns a `prior_session_qty`
   conflict (mutating nothing) so the SPA can prompt for that session's
@@ -1414,7 +1416,7 @@ mount.
 | `BlepList.svelte` | Table of bleps with edit / delete buttons gated by `isBlepEditable(blep, user, perms)` |
 | `BlepEditModal.svelte` | Create or edit a Blep — `start_time` / `end_time` always; `user` dropdown only when actor has `can_manage_time` |
 | `StartWorkConflictModal.svelte` | Shown when `start-work` returns an `active_worker` conflict; offers Join / Take over / Cancel. Its re-posts carry `prior_qty_handled: true` (the prior-session prompt already ran on the first post) |
-| `ActualQtyModal.svelte` | Quantity entry for ENTERED_QTY tasks — `complete` mode (settle-up: running total + "any more to add?", signed, final must be > 0) and `session` mode (per-session count; `priorTaskName` names the old task in switch/clock-out context; "This completes the task" checkbox = one atomic complete with `add_qty`). Shared by `TaskActions`, `CurrentBlepBand`, `AssignedTaskList`, `ClockBand` |
+| `ActualQtyModal.svelte` | Quantity entry for ENTERED_QTY tasks — `complete` mode (settle-up: running total + "any more to add?", signed, final must be > 0) and `session` mode (per-session count; `priorTaskName` names the old task in switch/clock-out context; "This completes the task" checkbox = one atomic complete with `add_qty`). Shared by `TaskActions`, `CurrentBlepBand`, `AssignedTaskList`, `ShiftBand` |
 
 ### 10.1a Settle-first prompts and the blep-change broadcast
 
