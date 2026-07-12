@@ -1,6 +1,9 @@
 """Service for building the user home page data payload."""
 
+from datetime import timedelta
+
 from django.db.models import Max
+from django.utils import timezone
 
 from apps.activity.services import load_recent_days
 from apps.jobs.models import Blep, Job, Task
@@ -14,12 +17,13 @@ class HomeService:
 
     @classmethod
     def get_home_data(cls, user):
+        # Look-back window (days) for the home page's recent lists —
+        # shared with the Activity page via activity_recent_days.
+        recent_days = load_recent_days()
         return {
             'assigned_tasks': cls._assigned_tasks(user),
-            'recent_jobs': cls._recent_jobs(user),
-            # Look-back window (days) for the home page's recent lists —
-            # shared with the Activity page via activity_recent_days.
-            'recent_days': load_recent_days(),
+            'recent_jobs': cls._recent_jobs(user, recent_days),
+            'recent_days': recent_days,
         }
 
     @classmethod
@@ -56,12 +60,17 @@ class HomeService:
         }
 
     @classmethod
-    def _recent_jobs(cls, user):
-        # Find distinct jobs the user has any Blep on, ordered by the user's
-        # most recent Blep start_time on that job, limited.
+    def _recent_jobs(cls, user, recent_days):
+        # Find distinct jobs the user has a Blep on within the look-back
+        # window, ordered by the user's most recent Blep start_time on that
+        # job, limited. Both conditions in ONE filter() call so they share
+        # the join — the Max annotation then ranges over exactly the
+        # user's in-window bleps.
+        cutoff = timezone.now() - timedelta(days=recent_days)
         job_rows = (
             Job.objects
-            .filter(tasks__blep__user=user)
+            .filter(tasks__blep__user=user,
+                    tasks__blep__start_time__gte=cutoff)
             .annotate(last_worked_at=Max('tasks__blep__start_time'))
             .order_by('-last_worked_at')
             .distinct()

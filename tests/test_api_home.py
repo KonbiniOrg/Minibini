@@ -245,6 +245,25 @@ class HomeEndpointTest(FixtureTestCase):
         self.assertEqual(jobs[0]['job_number'], 'JOB-HOME-B')  # most recent first
         self.assertEqual(jobs[1]['job_number'], 'JOB-HOME-A')
 
+    def test_recent_jobs_windowed_by_activity_recent_days(self):
+        """Jobs whose last work by the user is older than the configured
+        look-back drop out; widening the window brings them back."""
+        task = self._make_task('T', assignee=self.user, worker_queue=1)
+        Blep.objects.create(user=self.user, task=task,
+                            start_time=timezone.now() - timedelta(days=10))
+
+        Configuration.objects.filter(key='activity_recent_days').delete()
+        response = self.client.get('/api/home/')
+        self.assertEqual(response.json()['recent_jobs'], [])  # default 5 days
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '30'},
+        )
+        response = self.client.get('/api/home/')
+        jobs = response.json()['recent_jobs']
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]['id'], self.job.pk)
+
     def test_recent_jobs_limited_to_10(self):
         now = timezone.now()
         for i in range(12):

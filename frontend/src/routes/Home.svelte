@@ -86,7 +86,7 @@
 {:else if tab === 'work'}
   <AssignedTaskList tasks={assignedTasks} />
   <RecentTimeList sinceDays={recentDays} />
-  <RecentJobsList jobs={recentJobs} />
+  <RecentJobsList jobs={recentJobs} sinceDays={recentDays} />
 {:else if tab === 'shifts'}
   <MyEnvelopeEditor />
   <MyShiftsList sinceDays={recentDays} />
