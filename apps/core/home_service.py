@@ -2,6 +2,7 @@
 
 from django.db.models import Max
 
+from apps.activity.services import load_recent_days
 from apps.jobs.models import Blep, Job, Task
 
 
@@ -16,6 +17,9 @@ class HomeService:
         return {
             'assigned_tasks': cls._assigned_tasks(user),
             'recent_jobs': cls._recent_jobs(user),
+            # Look-back window (days) for the home page's recent lists —
+            # shared with the Activity page via activity_recent_days.
+            'recent_days': load_recent_days(),
         }
 
     @classmethod

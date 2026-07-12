@@ -28,4 +28,15 @@ describe('MyShiftsList', () => {
     const { findByText } = render(MyShiftsList);
     expect(await findByText('8h 0m')).toBeInTheDocument();
   });
+
+  it('sizes the look-back window from the sinceDays prop', async () => {
+    api.get.mockResolvedValue({ results: [] });
+    const { findByText } = render(MyShiftsList, { props: { sinceDays: 3 } });
+    await findByText('No recent shifts.');
+    const url = api.get.mock.calls[0][0];
+    const since = new Date(decodeURIComponent(url.match(/since=([^&]+)/)[1]));
+    const days = (Date.now() - since.getTime()) / 86400000;
+    expect(days).toBeGreaterThan(2.9);
+    expect(days).toBeLessThan(3.1);
+  });
 });

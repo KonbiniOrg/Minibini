@@ -6,6 +6,8 @@
   import ShiftLogTable from '../time/ShiftLogTable.svelte';
   import TimeEditModal from '../time/TimeEditModal.svelte';
 
+  let { sinceDays = 7 } = $props();
+
   let shifts = $state([]);
   let loading = $state(true);
   let modalOpen = $state(false);
@@ -20,7 +22,7 @@
   async function load() {
     loading = true;
     try {
-      const since = new Date(Date.now() - 7 * 86400000).toISOString();
+      const since = new Date(Date.now() - sinceDays * 86400000).toISOString();
       const resp = await api.get(`/api/shifts/?user=me&since=${encodeURIComponent(since)}`);
       shifts = resp.results || resp;
     } finally { loading = false; }

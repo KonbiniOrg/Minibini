@@ -78,10 +78,12 @@ envelope replaces them.)
 
 Activity page: `activity_recent_days` (`5`) — integer ≥ 1; the backward
 "recent" look-back window (in days) governing the whole Activity dashboard
-(completed bleps, job/PO/invoice events). Distinct from the *forward*
-`schedule_horizon_days`. Missing or unparseable falls back to `5`; the settings
-API (`PATCH /api/settings/`) rejects non-int and `< 1` values. See
-`schedule.md` §7.
+(completed bleps, job/PO/invoice events) **and the Home page's recent lists**
+(the Work tab's session list and the Shifts tab's My Shifts list — delivered
+to the SPA as `recent_days` on the `/api/home/` payload). Distinct from the
+*forward* `schedule_horizon_days`. Missing or unparseable falls back to `5`;
+the settings API (`PATCH /api/settings/`) rejects non-int and `< 1` values.
+See `schedule.md` §7.
 
 Job financials: `average_labor_cost` (`0`) — approximate labor cost in dollars
 per hour, applied to every logged blep hour when computing a job's **Spent**

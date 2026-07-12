@@ -133,6 +133,20 @@ class HomeEndpointTest(FixtureTestCase):
         data = response.json()
         self.assertIn('assigned_tasks', data)
         self.assertIn('recent_jobs', data)
+        self.assertIn('recent_days', data)
+
+    def test_recent_days_reads_activity_recent_days(self):
+        """The home lists' look-back window comes from activity_recent_days
+        (same key as the Activity page; default 5 when unset)."""
+        Configuration.objects.filter(key='activity_recent_days').delete()
+        response = self.client.get('/api/home/')
+        self.assertEqual(response.json()['recent_days'], 5)
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '3'},
+        )
+        response = self.client.get('/api/home/')
+        self.assertEqual(response.json()['recent_days'], 3)
 
     def test_assigned_tasks_includes_job_tasks(self):
         self._make_task('WO task', assignee=self.user, worker_queue=1)

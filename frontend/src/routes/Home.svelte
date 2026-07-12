@@ -18,6 +18,7 @@
   let error = $state('');
   let assignedTasks = $state([]);
   let recentJobs = $state([]);
+  let recentDays = $state(7);
 
   // Most tabs are plain local state, but Profile and Help are also
   // route-addressable: #/profile and #/help render Home with that tab
@@ -42,6 +43,7 @@
       const data = await api.get('/api/home/');
       assignedTasks = data.assigned_tasks || [];
       recentJobs = data.recent_jobs || [];
+      recentDays = data.recent_days ?? 7;
     } catch (e) {
       error = e.message || 'Could not load home page.';
     } finally {
@@ -83,11 +85,11 @@
   <p>{error}</p>
 {:else if tab === 'work'}
   <AssignedTaskList tasks={assignedTasks} />
-  <RecentTimeList />
+  <RecentTimeList sinceDays={recentDays} />
   <RecentJobsList jobs={recentJobs} />
 {:else if tab === 'shifts'}
   <MyEnvelopeEditor />
-  <MyShiftsList />
+  <MyShiftsList sinceDays={recentDays} />
   <MyChangeRequestsList />
   <RecentLoginsList />
 {:else if tab === 'expenses'}
