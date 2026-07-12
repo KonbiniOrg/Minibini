@@ -95,6 +95,7 @@
 
 <section>
   {#if title}<h3>{title}</h3>{/if}
+  {#if sinceDays != null}<p class="window-note">(past {sinceDays} days)</p>{/if}
   {#if loading && bleps.length === 0}
     <p>Loading…</p>
   {:else if loadError}
@@ -138,4 +139,5 @@
 <style>
   .pager { display: flex; gap: 8px; align-items: center; }
   .error { color: #a8071a; }
+  .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
 </style>

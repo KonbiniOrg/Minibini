@@ -38,6 +38,7 @@
 
 <section>
   <h3>My Shifts</h3>
+  <p class="window-note">(past {sinceDays} days)</p>
   {#if loading}<p>Loading…</p>
   {:else if shifts.length === 0}<p>No recent shifts.</p>
   {:else}
@@ -55,3 +56,7 @@
 
 <TimeEditModal open={modalOpen} recordType="shift" action={modalAction} record={editing}
   currentUser={$userStore} onSaved={onSaved} onClose={() => { modalOpen = false; editing = null; }} />
+
+<style>
+  .window-note { color: #6b7280; font-size: 0.85em; margin: -0.5em 0 0.5em; }
+</style>
