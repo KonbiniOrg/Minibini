@@ -204,12 +204,6 @@ to a database. Tests load it into the auto-created test DB via
     next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
     own line-item total; `draft` invoices stay null-dated — §8).
-11. **`build_invoice_line_item_sources`**: heuristic source-link wiring
-    — for each Invoice, claim Tasks/Materials on the Job in deterministic
-    order against the invoice's line items so the SPA shows them as
-    "billed" rather than orphaned. Honours the model's global
-    `unique_together(source_type, source_pk)`. Leftover lines stay
-    freeform.
 12. **`reconcile`**: cross-model fixups in a fixed order — see §5.
 13. **`build_shipments`**: runs *after* reconcile so it can see final Job
     status / dates. Builds a Shipment + ShipmentItems for any card whose
@@ -229,6 +223,16 @@ to a database. Tests load it into the auto-created test DB via
 14b. **`build_purchasing`**: runs *after* reconcile (needs final job/task status)
     and *before* `build_history`. Reconciles the **inventory side of Materials**
     and synthesizes **POs/Bills** — see §4a.
+14c. **`build_invoice_line_item_sources`**: heuristic source-link wiring
+    — for each Invoice, claim Tasks/Materials on the Job in deterministic
+    order against the invoice's line items so the SPA shows them as
+    "billed" rather than orphaned. Runs *after* reconcile AND
+    `build_purchasing`: **only settled work links to an invoice** — the
+    task pool is `complete` tasks only, the material pool `consumed`
+    materials only (the app's terminal-billability line; converter
+    cancelled tasks carry no actuals, so they never claim). Honours the
+    model's global `unique_together(source_type, source_pk)`. Leftover
+    lines stay freeform.
 15. **`build_history`**: last — emits a created/transition entry per tracked
     object. (Reads each Material's `consumption_state`, set in 14b, to narrate
     the consume event.)
@@ -540,7 +544,13 @@ Deliverables default to `units='ea'` (canon form of `each`).
    `work_complete` and clears `completed_date`. Must run before
    `build_shipments` so the synthesis branch doesn't fake-ship the
    downgraded job.
-7. **Task status from job** — cancel tasks on cancelled/rejected jobs.
+7. **Task status from job** — cancel ALL tasks on cancelled/rejected jobs;
+   cancel still-PENDING tasks on work_complete/completed jobs (the app's
+   work-complete gate forbids a non-terminal task on a closed job; checked
+   items stay complete). Every cancelled task then detaches its materials
+   to the job as loose rows (task=None), mirroring the app's cancel_task —
+   `build_purchasing`'s job-status rule later consumes loose materials on
+   worked jobs, keeping closed jobs free of pending materials.
    Otherwise the per-checklist `[X]`/`[ ]` state is preserved.
 8. **Document counters** — Configuration counters for jobs/invoices/POs
    are set to the number of emitted records so the next number generated

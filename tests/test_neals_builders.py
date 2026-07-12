@@ -1170,14 +1170,22 @@ class InvoiceLineItemSourceWiringTest(unittest.TestCase):
         c.add_fixture('jobs.job', pk, {'job_number': '00001', 'status': 'completed'})
         return pk
 
-    def _add_task(self, c, job_pk, name='cut sheet'):
+    def _add_task(self, c, job_pk, name='cut sheet', status='complete'):
+        # Runs post-reconcile in the pipeline, so tasks carry final statuses;
+        # 'complete' is the billable default the claimer accepts.
         pk = c.next_pk('jobs.task')
-        c.add_fixture('jobs.task', pk, {'job': job_pk, 'name': name})
+        c.add_fixture('jobs.task', pk, {
+            'job': job_pk, 'name': name, 'status': status})
         return pk
 
-    def _add_material(self, c, job_pk, desc='plywood sheet'):
+    def _add_material(self, c, job_pk, desc='plywood sheet',
+                      consumption_state='consumed'):
+        # Runs post-purchasing in the pipeline, so materials carry final
+        # consumption states; only 'consumed' is billable.
         pk = c.next_pk('inventory.material')
-        c.add_fixture('inventory.material', pk, {'job': job_pk, 'description': desc})
+        c.add_fixture('inventory.material', pk, {
+            'job': job_pk, 'description': desc,
+            'consumption_state': consumption_state})
         return pk
 
     def _add_invoice(self, c, job_pk):
@@ -1262,6 +1270,54 @@ class InvoiceLineItemSourceWiringTest(unittest.TestCase):
         build.build_invoice_line_item_sources(c)
         self.assertEqual(self._sources(c), [])
 
+    # --- billability filters (only settled work links to an invoice) ------
+
+    def test_pending_task_is_never_claimed(self):
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_task(c, jp, status='pending')
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'task', 'cut and assemble')
+        build.build_invoice_line_item_sources(c)
+        self.assertEqual(self._sources(c), [])
+
+    def test_cancelled_task_is_never_claimed(self):
+        # The app's billability line is terminal (complete OR cancelled), but
+        # converter-cancelled tasks never carry actuals (bleps only attach to
+        # complete tasks), so claiming one would put a zero-work task on a
+        # paid invoice. Only 'complete' claims.
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_task(c, jp, status='cancelled')
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'task', 'cut and assemble')
+        build.build_invoice_line_item_sources(c)
+        self.assertEqual(self._sources(c), [])
+
+    def test_pending_material_is_never_claimed(self):
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_material(c, jp, consumption_state='pending')
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'material', 'maple plywood sheet')
+        build.build_invoice_line_item_sources(c)
+        self.assertEqual(self._sources(c), [])
+
+    def test_fallthrough_skips_non_final_atoms(self):
+        # A task-classified line whose job has only a pending task falls
+        # through to a consumed material — never to the pending task.
+        c = self._make_converter()
+        jp = self._add_job(c)
+        self._add_task(c, jp, status='pending')
+        mat_pk = self._add_material(c, jp)
+        inv_pk = self._add_invoice(c, jp)
+        self._add_line(c, inv_pk, 1, 'task', 'cut and assemble')
+        build.build_invoice_line_item_sources(c)
+        srcs = self._sources(c)
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(srcs[0]['fields']['source_type'], 'material')
+        self.assertEqual(srcs[0]['fields']['source_pk'], mat_pk)
+
 
 class ConvertEndToEndTest(unittest.TestCase):
     @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -1283,6 +1339,97 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertIn('jobs.blep', models)
         self.assertIn('core.shift', models)
         self.assertNotIn('jobs.workorder', models)
+
+
+@unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                     'datasets not present')
+class ConvertedStateInvariantsTest(unittest.TestCase):
+    """Full-pipeline invariants the running app enforces and the converted
+    fixture must therefore satisfy (2026-07-12 tasks refinements):
+
+    - only settled work links to an invoice (complete tasks / consumed
+      materials — the app's billability line is terminal, and converter
+      cancelled tasks carry no actuals);
+    - work_complete/completed means every task terminal and no pending
+      material (the B4 work-complete gate in JobService.update_job);
+    - a cancelled task keeps no pending materials attached (the app's
+      cancel_task detaches them to the job as loose rows).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40)
+        c.convert()
+        os.unlink(path)
+        cls.data = c.fixture_data
+        cls.tasks = {f['pk']: f['fields'] for f in cls.data
+                     if f['model'] == 'jobs.task'}
+        cls.materials = {f['pk']: f['fields'] for f in cls.data
+                         if f['model'] == 'inventory.material'}
+        cls.jobs = {f['pk']: f['fields'] for f in cls.data
+                    if f['model'] == 'jobs.job'}
+        cls.sources = [f['fields'] for f in cls.data
+                       if f['model'] == 'invoicing.invoicelineitemsource']
+
+    def test_invoice_sources_only_link_complete_tasks(self):
+        offenders = [
+            (s['source_pk'], self.tasks[s['source_pk']].get('status'))
+            for s in self.sources if s['source_type'] == 'task'
+            and self.tasks[s['source_pk']].get('status') != 'complete'
+        ]
+        self.assertEqual(offenders, [],
+                         f'non-complete tasks linked to invoices: {offenders}')
+
+    def test_invoice_sources_only_link_consumed_materials(self):
+        offenders = [
+            (s['source_pk'],
+             self.materials[s['source_pk']].get('consumption_state'))
+            for s in self.sources if s['source_type'] == 'material'
+            and self.materials[s['source_pk']].get('consumption_state')
+            != 'consumed'
+        ]
+        self.assertEqual(offenders, [],
+                         f'unconsumed materials linked to invoices: {offenders}')
+
+    def test_work_complete_jobs_have_only_terminal_tasks(self):
+        closed = {pk for pk, jf in self.jobs.items()
+                  if jf.get('status') in ('work_complete', 'completed')}
+        offenders = [
+            (pk, tf.get('status'), tf.get('job'))
+            for pk, tf in self.tasks.items()
+            if tf.get('job') in closed
+            and tf.get('status') not in ('complete', 'cancelled')
+        ]
+        self.assertEqual(offenders, [],
+                         f'open tasks on closed jobs: {offenders}')
+
+    def test_work_complete_jobs_have_no_pending_materials(self):
+        closed = {pk for pk, jf in self.jobs.items()
+                  if jf.get('status') in ('work_complete', 'completed')}
+        offenders = [
+            (pk, mf.get('job'))
+            for pk, mf in self.materials.items()
+            if mf.get('job') in closed
+            and mf.get('consumption_state') == 'pending'
+            and Decimal(mf.get('quantity') or '0') > 0
+        ]
+        self.assertEqual(offenders, [],
+                         f'pending materials on closed jobs: {offenders}')
+
+    def test_cancelled_tasks_keep_no_pending_materials_attached(self):
+        cancelled = {pk for pk, tf in self.tasks.items()
+                     if tf.get('status') == 'cancelled'}
+        offenders = [
+            (pk, mf.get('task'))
+            for pk, mf in self.materials.items()
+            if mf.get('task') in cancelled
+            and mf.get('consumption_state') == 'pending'
+        ]
+        self.assertEqual(offenders, [],
+                         f'pending materials still on cancelled tasks: {offenders}')
 
 
 class BuildHistoryUnitTest(unittest.TestCase):

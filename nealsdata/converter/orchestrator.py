@@ -109,13 +109,16 @@ class NealsDataConverter:
         build.assign_worker_times(self)  # per-task random est_worker_time
         build.assign_est_quantities(self)  # real-task est_qty heuristic (needs worker times)
         build.build_invoices(self)
-        build.build_invoice_line_item_sources(self)
         reconcile.reconcile(self)
         build.assign_project_managers(self)  # after reconcile: needs final job status
         build.build_shipments(self)   # after reconcile: needs final job dates
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
         build.assign_current_work(self)  # after bleps: assign pending in_progress tasks
         build.build_purchasing(self)  # after reconcile: consumption, earmarks, QOH, POs/Bills
+        # After reconcile AND purchasing: claiming filters on FINAL task
+        # statuses and consumption states (only settled work links to an
+        # invoice — the app's billability line).
+        build.build_invoice_line_item_sources(self)
         # Test-data synthesis (late, after atoms/bleps/purchasing are settled):
         # round-robin assign each job's unclaimed Tasks as synthetic sources of
         # its estimate lines so the Client View projects atoms.

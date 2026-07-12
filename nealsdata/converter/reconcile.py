@@ -269,21 +269,46 @@ def _pass_downgrade_completed_with_unpaid_invoices(c, index):
 
 
 def _pass_task_status_from_job(c):
-    """Pass 5: cancel tasks on cancelled/rejected jobs.
+    """Pass 5: reconcile task statuses with closed jobs.
+
+    - Cancelled/rejected jobs cancel ALL their tasks (nothing on a dead
+      job was or will be worked).
+    - work_complete/completed jobs cancel their still-PENDING tasks
+      (checked checklist items stay complete): the app's work-complete
+      gate (JobService.update_job, plan B4) forbids a non-terminal task
+      on a closed job — the shop finished the job, so unchecked items are
+      work that never happened.
+    - Every cancelled task then DETACHES its materials to the job as
+      loose rows (task=None), mirroring the app's cancel_task semantics —
+      a cancelled task never keeps pending materials attached. Loose
+      materials on worked jobs are consumed later by build_purchasing's
+      job-status rule, which is what keeps closed jobs free of pending
+      materials (the other half of the B4 gate).
 
     Task status is otherwise left as the builder set it — for checklist-
     derived tasks that is the per-item [X]/[ ] state, which must be
-    preserved. Only a cancelled or rejected job overrides its tasks.
+    preserved.
     """
     job_status = {
         f['pk']: f['fields']['status']
         for f in c.fixture_data if f['model'] == 'jobs.job'
     }
+    cancelled_task_pks = set()
     for f in c.fixture_data:
         if f['model'] != 'jobs.task':
             continue
-        if job_status.get(f['fields']['job']) in ('cancelled', 'rejected'):
+        st = job_status.get(f['fields']['job'])
+        if st in ('cancelled', 'rejected'):
             f['fields']['status'] = 'cancelled'
+        elif (st in ('work_complete', 'completed')
+                and f['fields']['status'] == 'pending'):
+            f['fields']['status'] = 'cancelled'
+        if f['fields']['status'] == 'cancelled':
+            cancelled_task_pks.add(f['pk'])
+    for f in c.fixture_data:
+        if (f['model'] == 'inventory.material'
+                and f['fields'].get('task') in cancelled_task_pks):
+            f['fields']['task'] = None
 
 
 def _pass_document_counters(c, index):

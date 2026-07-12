@@ -1757,6 +1757,13 @@ def build_invoice_line_item_sources(c):
         are inherently freeform).
       - Leftover lines stay freeform.
 
+    **Only settled work may link to an invoice** (the app's billability
+    line, plan C3): the task pool is 'complete' tasks only — pending/
+    in_progress/blocked are not billable, and converter-cancelled tasks
+    carry no actuals so claiming them would put zero-work tasks on paid
+    invoices — and the material pool is 'consumed' materials only. Runs
+    AFTER reconcile and build_purchasing so both filters see final states.
+
     The model's global ``unique_together(source_type, source_pk)`` prevents
     double-claim, so once an atom is claimed by one Invoice it stays claimed
     across the whole fixture.
@@ -1773,11 +1780,13 @@ def build_invoice_line_item_sources(c):
                 f['fields']['invoice'], []).append(f)
     tasks_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'jobs.task':
+        if (f['model'] == 'jobs.task'
+                and f['fields'].get('status') == 'complete'):
             tasks_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     materials_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'inventory.material':
+        if (f['model'] == 'inventory.material'
+                and f['fields'].get('consumption_state') == 'consumed'):
             materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     fees_by_job = {}
     for f in c.fixture_data:
