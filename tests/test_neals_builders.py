@@ -1365,7 +1365,10 @@ class ConvertedStateInvariantsTest(unittest.TestCase):
         super().setUpClass()
         fd, path = tempfile.mkstemp(suffix='.json')
         os.close(fd)
-        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40)
+        # limit=100: the exact parameters that generate the shipped
+        # fixtures/large_datasets/nealsmall.json, so these invariants hold
+        # for the artifact users actually load.
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=100)
         c.convert()
         os.unlink(path)
         cls.data = c.fixture_data
@@ -1434,6 +1437,34 @@ class ConvertedStateInvariantsTest(unittest.TestCase):
         ]
         self.assertEqual(offenders, [],
                          f'pending materials still on cancelled tasks: {offenders}')
+
+    def test_no_invoice_on_pre_approval_job(self):
+        pre = {pk for pk, jf in self.jobs.items()
+               if jf.get('status') in ('draft', 'submitted', 'rejected')}
+        offenders = [
+            (f['pk'], f['fields']['job'])
+            for f in self.data if f['model'] == 'invoicing.invoice'
+            and f['fields']['job'] in pre
+        ]
+        self.assertEqual(offenders, [],
+                         f'invoices on pre-approval jobs: {offenders}')
+
+    def test_earmarks_covered_by_qty_on_hand(self):
+        items = {f['pk']: f['fields'] for f in self.data
+                 if f['model'] == 'inventory.inventoryitem'}
+        earmarked = {}
+        for f in self.data:
+            if f['model'] == 'inventory.earmark':
+                item = f['fields']['inventory_item']
+                earmarked[item] = (earmarked.get(item, Decimal('0'))
+                                   + Decimal(f['fields']['quantity']))
+        offenders = [
+            (item, str(total), items[item].get('qty_on_hand'))
+            for item, total in earmarked.items()
+            if total > Decimal(items[item].get('qty_on_hand') or '0')
+        ]
+        self.assertEqual(offenders, [],
+                         f'earmarks exceed QOH: {offenders}')
 
 
 class DocumentCounterReconcileTest(unittest.TestCase):
@@ -2110,3 +2141,59 @@ class PurchasingBuilderTest(unittest.TestCase):
         self.assertNotEqual(ac_pk, 'None')
         ac_pks = {str(r['pk']) for r in self._m('core.accountingcategory')}
         self.assertIn(ac_pk, ac_pks)
+
+
+class InvoicedJobStatusReconcileTest(unittest.TestCase):
+    """Dataset-independent: a draft/submitted job carrying any invoice is an
+    app-unreachable state (BILLABLE_JOB_STATUSES guards every invoice path),
+    so reconcile bumps it to 'approved' — the minimal billable status (a
+    deposit invoice on an approved job is legal)."""
+
+    def _converter(self):
+        return NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+
+    def _job(self, c, status):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {'job_number': f'RJ{pk}', 'status': status})
+        return pk
+
+    def _invoice(self, c, job_pk, status='paid'):
+        pk = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', pk, {'job': job_pk, 'status': status})
+        return pk
+
+    def _run_pass(self, c):
+        index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
+        reconcile._pass_invoiced_jobs_are_started(c, index)
+
+    def _status(self, c, job_pk):
+        return next(f['fields']['status'] for f in c.fixture_data
+                    if f['model'] == 'jobs.job' and f['pk'] == job_pk)
+
+    def test_draft_job_with_invoice_bumps_to_approved(self):
+        c = self._converter()
+        jp = self._job(c, 'draft')
+        self._invoice(c, jp)
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'approved')
+
+    def test_submitted_job_with_draft_invoice_bumps_to_approved(self):
+        # Even a draft invoice can't exist on a pre-approval job in the app.
+        c = self._converter()
+        jp = self._job(c, 'submitted')
+        self._invoice(c, jp, status='draft')
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'approved')
+
+    def test_started_job_with_invoice_untouched(self):
+        c = self._converter()
+        jp = self._job(c, 'in_progress')
+        self._invoice(c, jp)
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'in_progress')
+
+    def test_draft_job_without_invoice_untouched(self):
+        c = self._converter()
+        jp = self._job(c, 'draft')
+        self._run_pass(c)
+        self.assertEqual(self._status(c, jp), 'draft')

@@ -2585,6 +2585,18 @@ def build_purchasing(c):
     for item_pk, d in sold_delta.items():
         items[item_pk]['qty_sold'] = f"{Decimal(items[item_pk]['qty_sold']) + d:.2f}"
 
+    # Reserved stock is physically on the shelf: an Earmark is a claim
+    # against qty_on_hand, so raise QOH to cover each item's accumulated
+    # earmarks (an earmark exceeding QOH reads as data drift in the app —
+    # negative availability — and validate_data flags it).
+    earmarked_totals = defaultdict(lambda: Decimal('0'))
+    for (item_pk, _job_pk), qty in earmarks.items():
+        if qty > 0:
+            earmarked_totals[item_pk] += qty
+    for item_pk, total in earmarked_totals.items():
+        if total > Decimal(items[item_pk]['qty_on_hand']):
+            items[item_pk]['qty_on_hand'] = f'{total:.2f}'
+
     for (item_pk, job_pk), qty in earmarks.items():
         if qty <= 0:
             continue

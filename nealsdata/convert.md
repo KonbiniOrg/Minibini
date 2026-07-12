@@ -512,6 +512,11 @@ Deliverables default to `units='ea'` (canon form of `each`).
    versions, every version below the highest is marked `superseded` and
    linked to the previous via `parent`. The highest keeps the builder's
    status.
+1.4. **Invoiced jobs are started** — a draft/submitted Job carrying ANY
+   invoice bumps to `approved` (the minimal billable status): the app's
+   `BILLABLE_JOB_STATUSES` guard means even a draft invoice can't exist
+   pre-approval, so the FreeAgent invoice outranks a stale Kanban Stage.
+   Runs before the accept-estimate and expiry passes.
 2. **Started jobs accept their estimate** — a Job in `approved`,
    `in_progress`, `work_complete`, or `completed` couldn't have got there
    without an accepted estimate, so its latest estimate is forced to
@@ -583,7 +588,7 @@ nealsdata/
     parsing.py            pure helpers: dates, decimals, names, references,
                           checklist parser, classification of line items
     build.py              all builders; the bulk of the code
-    reconcile.py          cross-model fixups (the 8 passes above)
+    reconcile.py          cross-model fixups (the 9 passes above)
     orchestrator.py       NealsDataConverter — phase wiring + state container
 ```
 

@@ -60,6 +60,7 @@ def reconcile(c):
     # pk; key those as (model, None). Reconcile never looks them up by pk.
     index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
     _pass_estimate_version_chains(c, index)
+    _pass_invoiced_jobs_are_started(c, index)
     _pass_started_jobs_accept_estimate(c, index)
     _pass_estimate_expiry(c, index)
     _pass_estimate_dates(c, index)
@@ -95,6 +96,27 @@ def _pass_estimate_version_chains(c, index):
                 closed = entry['created_date'] or highest_created
                 fixture['fields']['closed_date'] = _as_dt_field(closed)
             prev_pk = entry['est_pk']
+
+
+def _pass_invoiced_jobs_are_started(c, index):
+    """Pass 1.4: a job carrying ANY invoice must be at least 'approved'.
+
+    The app's BILLABLE_JOB_STATUSES guard means even a draft invoice cannot
+    exist on a draft/submitted job, so the FreeAgent invoice is authoritative
+    that the job really went ahead, whatever its Kanban Stage says. Bump such
+    jobs to 'approved' — the minimal billable status (a deposit invoice on an
+    approved job is legal). Runs before the accept-estimate pass so the
+    bumped job gets an accepted estimate and (pass 5) a start_date, and
+    before expiry so it can't be estimate-rejected.
+    """
+    invoiced_jobs = {
+        f['fields']['job'] for f in c.fixture_data
+        if f['model'] == 'invoicing.invoice'
+    }
+    for f in c.fixture_data:
+        if (f['model'] == 'jobs.job' and f['pk'] in invoiced_jobs
+                and f['fields']['status'] in ('draft', 'submitted')):
+            f['fields']['status'] = 'approved'
 
 
 def _pass_started_jobs_accept_estimate(c, index):
