@@ -1326,7 +1326,11 @@ class ConvertEndToEndTest(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix='.json')
         os.close(fd)
         self.addCleanup(os.unlink, path)
-        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=10)
+        # limit=40, not 10: the newest cards can be all-fresh draft jobs with
+        # unchecked checklists (zero complete tasks → zero bleps/shifts, as in
+        # the 2026-07-12 re-export). 40 reaches far enough back for real
+        # completed work — same reasoning as InvoiceBuilderTest's limit.
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40)
         c.convert()
         with open(path) as f:
             data = json.load(f)
@@ -1430,6 +1434,30 @@ class ConvertedStateInvariantsTest(unittest.TestCase):
         ]
         self.assertEqual(offenders, [],
                          f'pending materials still on cancelled tasks: {offenders}')
+
+
+class DocumentCounterReconcileTest(unittest.TestCase):
+    """Dataset-independent: _pass_document_counters writes emitted record
+    counts onto the core.APPSTATE counter rows — migration 0018 moved the
+    machine counters out of Configuration, and the pass silently no-opped
+    while it still looked them up under core.configuration."""
+
+    def test_counters_land_on_appstate(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        for key in ('job_counter', 'invoice_counter', 'po_counter'):
+            c.add_fixture('core.appstate', key, {'value': '0'})
+        for _ in range(3):
+            c.add_fixture('jobs.job', c.next_pk('jobs.job'), {'status': 'draft'})
+        c.add_fixture('invoicing.invoice', c.next_pk('invoicing.invoice'), {})
+        index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
+        reconcile._pass_document_counters(c, index)
+        appstate = {f['pk']: f['fields']['value'] for f in c.fixture_data
+                    if f['model'] == 'core.appstate'}
+        self.assertEqual(appstate['job_counter'], '3')
+        self.assertEqual(appstate['invoice_counter'], '1')
+        # No POs emitted at reconcile time (build_purchasing runs later and
+        # advances po_counter itself) — the pass writes the honest zero.
+        self.assertEqual(appstate['po_counter'], '0')
 
 
 class BuildHistoryUnitTest(unittest.TestCase):

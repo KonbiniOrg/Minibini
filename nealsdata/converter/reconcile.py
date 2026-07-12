@@ -312,12 +312,15 @@ def _pass_task_status_from_job(c):
 
 
 def _pass_document_counters(c, index):
-    """Pass 7: set document-numbering counters to emitted record counts.
+    """Pass 8: set document-numbering counters to emitted record counts.
 
-    estimate_counter is intentionally excluded — estimate numbers now derive
-    from job_number ({job_number}-{version}), not from a counter, so
-    back-filling estimate_counter would be misleading. The key stays at
-    its initial value (0).
+    The counters are machine state in core.APPSTATE (core migration 0018
+    moved them out of Configuration; this pass silently no-opped while it
+    still looked them up under core.configuration). po_counter is counted
+    honestly here (zero — build_purchasing runs later and advances it past
+    the POs it synthesizes). estimate_counter is intentionally excluded —
+    estimate numbers derive from job_number ({job_number}-{version}), not
+    from a counter, so back-filling it would be misleading.
     """
     counts = {
         'job_counter':      'jobs.job',
@@ -326,6 +329,6 @@ def _pass_document_counters(c, index):
     }
     for key, model in counts.items():
         n = sum(1 for f in c.fixture_data if f['model'] == model)
-        fixture = _find(index, 'core.configuration', key)
+        fixture = _find(index, 'core.appstate', key)
         if fixture is not None:
             fixture['fields']['value'] = str(n)
