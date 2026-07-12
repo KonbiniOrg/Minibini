@@ -78,7 +78,6 @@ Files:
 > catalog-*type*-vs-transient-*lot* distinction. An `InventoryItem` is just an
 > item; a frequently-reordered stock type and a one-off minted lot are the same
 > row at different usage frequencies. `is_active` is the only retirement flag.
-> See `docs/plans/2026-06-30-freeform-material-procurement-inventory.md`.
 
 Every physical item flows through this one table — items that estimates,
 invoices, POs, bills, and Materials reference, and the `LOT-{pk}` lots minted

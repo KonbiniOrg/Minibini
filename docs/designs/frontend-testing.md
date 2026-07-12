@@ -59,7 +59,7 @@ Each file is classified once:
 
 The tiebreaker for the boundary cases: **is there a branch or an async call that could silently break?** If yes, it's Behavior.
 
-The full per-file classification of the whole SPA lives in the (disposable) sweep plan: `docs/plans/2026-06-04-frontend-test-coverage-sweep-plan.md`.
+The original whole-SPA per-file classification lived in a disposable sweep plan (2026-06-04, since deleted); classify new or changed components with the triage above.
 
 ## Adding tests as you work
 

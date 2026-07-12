@@ -457,7 +457,6 @@ Paths that close bleps without a prompt (on-behalf gestures, takeover,
 admin closes, `complete_task` closing teammates' bleps, historical
 entry) just leave the running total short; the completion settle-up is
 the backstop, so the billed number is always one a human confirmed.
-Spec: `docs/plans/2026-07-06-entered-qty-per-session-add.md`.
 
 ### 4.3 est_qty semantics
 

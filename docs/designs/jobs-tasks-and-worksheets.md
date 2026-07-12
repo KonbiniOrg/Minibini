@@ -1031,10 +1031,8 @@ the job's **summary, not a work surface**: it answers "where does this
 job stand?" through **six lifecycle blocks in fixed order** (§9.1a), each
 carrying aggregates/clocks/one-line facts and never a list of rows —
 authoring and detail-browsing happen on the section pages the rail links
-to. Full design record:
-`docs/plans/2026-07-08-job-workspace-restructure-design.md` (steps 1–3,
-the shell itself) and `docs/plans/2026-07-09-job-overview-redesign.md`
-(step 4, this page's content — shipped 2026-07-09 on `feature/job-overview`).
+to. (Designed in two passes: the shell 2026-07-08, this page's content
+2026-07-09, shipped on `feature/job-overview`.)
 
 ### 9.1 Layout
 
@@ -1462,14 +1460,13 @@ test in `frontend/tests/components/jobs/TaskDetailPage.test.js`:
 
 Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 
-Detail-page layout (worker-first redesign, 2026-07-07; spec
-`docs/plans/2026-07-07-task-detail-page-redesign.md`), top to bottom:
+Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
 
 1. **JobHeader** (shared, unchanged).
-2. **Task header strip** (`.task-head`) — a crumbs line («&nbsp;job
-   overview · task list · *subtask of &lt;parent&gt;* when
-   `parent_task` is set, linked via the serializer's
-   `parent_task_name`), then the title row: the **activity pill**
+2. **Task header strip** (`.task-head`) — a crumbs line (task list ·
+   *subtask of &lt;parent&gt;* when `parent_task` is set, linked via
+   the serializer's `parent_task_name`; no separate job-overview crumb —
+   the nav rail's Overview link covers that), then the title row: the **activity pill**
    (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
    when `task.invoice` is set) to the **left** of the `<h1>` task name,
    with the **stat-chip strip** right-aligned. Chips (shared
@@ -1599,7 +1596,7 @@ atom). This is intentional, not an oversight: fulfillment is shop-floor work —
 any authenticated user must be able to create a shipment, add items, and mark
 it picked up — so shipment management is purposely *not* parallel to deliverable
 management. (The frontend's Shipments page is correspondingly ungated; flagged
-and confirmed-intentional in `docs/plans/2026-06-06-gating-parity-audit.md`.)
+and confirmed-intentional in the 2026-06-06 gating-parity audit.)
 
 ### 12.2 Editability of the Deliverables list
 

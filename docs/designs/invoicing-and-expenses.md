@@ -589,7 +589,7 @@ The model is **not** decorated with `@history` — Expense changes do not write 
 
 A Job is the cost anchor (`Expense.job`; `null` = overhead). A single `amount`;
 **expenses never link to an existing material** — they only create their own. An
-expense is one of two modes (see `docs/plans/2026-06-14-expenses-cost-model-redesign.md`):
+expense is one of two modes:
 
 - **Cost expense** — optionally creates ONE consumable **material** (freeform or
   non-inventoried PLI) at the user-entered `unit_cost` (no division, no recost).

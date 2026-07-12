@@ -718,12 +718,27 @@ blocks — is still a fully individualized, bespoke layout, not a kit-consumer
 body. So the page is a hybrid: shell chrome from the II/banner track, body
 from the I/bespoke track.
 
+**Job-page taxonomy (the seam test).** `JobShell` pages come in three
+kinds, separated by asking *does any interaction cross the seam?* (from
+the 2026-07-08 workspace-restructure design):
+
+1. **Section page** — shell + one panel. The shipped norm.
+2. **Combo page** (future, none built) — shell + two *independent*,
+   read-mostly panels side by side; zero cross-pane coupling. First
+   candidate when the time comes: **estimate|invoice** (RM compares
+   these daily today via two browser windows); also plausible:
+   invoice|shipments, tasks|POs.
+3. **Reconciliation surface** — shell + one *composite* panel with an
+   internal two-column layout and owned cross-column state
+   (`ReconcileMode`). The wizard composed itself; it is never a pane in
+   a combo, and it needs full width.
+
 **Detailed pages** (the skip-list for generic sweeps — keep current as
 passes complete):
 
 | Page | Detail pass |
 |---|---|
-| Task Detail (`#/jobs/:jobId/tasks/:taskId`) | 2026-07-07 (spec `docs/plans/2026-07-07-task-detail-page-redesign.md`) |
+| Task Detail (`#/jobs/:jobId/tasks/:taskId`) | 2026-07-07 |
 
 #### The founding families
 

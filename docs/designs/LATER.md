@@ -153,8 +153,8 @@ Status coupling, transitions, and what a job may do at each stage.
   the current frozen **Estimate → "Customer View"**, and the **wizard →
   "Consolidate Lines"** (its actual job is grouping atoms into lines). UI
   labels/terminology only — internal model names can stay. Revisit with
-  `docs/plans/2026-06-24-planning-billing-consolidation-draft.md` (§11 already flags
-  the worksheet-naming question).
+  the planning-billing consolidation design (2026-06-24 draft, since
+  deleted; its §11 already flagged the worksheet-naming question).
   _Done when:_ the consolidation design settles on user-facing names and the UI is
   relabeled (or the idea is explicitly dropped).
 
@@ -201,9 +201,18 @@ Status coupling, transitions, and what a job may do at each stage.
 ## Job overview (2026-07-09 six-block redesign)
 
 The overview replaced its accordion pillars with six lifecycle summary
-blocks this pass (`docs/plans/2026-07-09-job-overview-redesign.md`;
-durable reference `docs/designs/jobs-tasks-and-worksheets.md` §9). Debt
-and open questions specific to that redesign:
+blocks this pass (2026-07-09 redesign; durable reference
+`docs/designs/jobs-tasks-and-worksheets.md` §9). Debt and open
+questions specific to that redesign:
+
+- **Block-internal specific-document links.** — _added 2026-07-12 (from the 2026-07-09 design's deferred list)_
+  The blocks deliberately shipped with no links or actions (the rail
+  sits directly above; Spend has no honest destination). Linking a
+  *specific document* mentioned inside a block — a PO number, an
+  invoice number, an estimate version — is a separate, plausible
+  refinement RM wants to feel out with the page live. _Done when:_ RM
+  decides which in-block document mentions (if any) become links, and
+  they're implemented — or the idea is dropped.
 
 - **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
   `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
@@ -366,7 +375,7 @@ Billing mechanics and money-record lifecycle.
   M2M set applied twice); (c) whether the value is simply stale vs. the displayed lines. Capture
   est 110 / 116's line items + the adjustment's `adjustment_service.rate` and target categories
   when investigating. NOTE: this whole area is slated to change in **Phase 8** (job-scoped,
-  auto-applied adjustments — `docs/plans/2026-06-26-phase8-job-scoped-adjustments.md`); decide
+  auto-applied adjustments — 2026-06-26 plan, since deleted); decide
   whether to fix the document-scoped bug now or fold the check into that rework.
   _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
   with the doubling explained.
