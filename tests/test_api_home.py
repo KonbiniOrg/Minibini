@@ -264,6 +264,33 @@ class HomeEndpointTest(FixtureTestCase):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]['id'], self.job.pk)
 
+    def test_recent_logins_scoped_windowed_ordered(self):
+        """recent_logins: own events only, inside activity_recent_days,
+        newest first. (setUp's client.login records one live event.)"""
+        from apps.core.models import LoginEvent
+        now = timezone.now()
+        old = LoginEvent.objects.create(user=self.user)
+        LoginEvent.objects.filter(pk=old.pk).update(
+            timestamp=now - timedelta(days=10))
+        LoginEvent.objects.create(user=self.other)  # not ours
+
+        response = self.client.get('/api/home/')
+        data = response.json()
+        logins = data['recent_logins']
+        # Only the live setUp login survives: the 10-day-old event is outside
+        # the default 5-day window, the other user's event is not ours.
+        self.assertEqual(len(logins), 1)
+        self.assertIn('timestamp', logins[0])
+        self.assertIn('ip_address', logins[0])
+
+        Configuration.objects.update_or_create(
+            key='activity_recent_days', defaults={'value': '30'},
+        )
+        logins = self.client.get('/api/home/').json()['recent_logins']
+        self.assertEqual(len(logins), 2)
+        stamps = [l['timestamp'] for l in logins]
+        self.assertEqual(stamps, sorted(stamps, reverse=True))
+
     def test_recent_jobs_limited_to_10(self):
         now = timezone.now()
         for i in range(12):

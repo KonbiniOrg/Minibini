@@ -666,3 +666,27 @@ class QBOSyncable(models.Model):
         self.qbo_sync_error = str(error)
         self.qbo_pending_op = op
         self.save(update_fields=['qbo_sync_status', 'qbo_sync_error', 'qbo_pending_op'])
+
+
+class LoginEvent(models.Model):
+    """One successful login. Written by the user_logged_in signal handler
+    (apps/core/signals.py) for every auth path that goes through
+    django.contrib.auth.login(). Personal history, not an admin audit log —
+    CASCADE takes it with the user."""
+    user = models.ForeignKey(
+        'core.User', on_delete=models.CASCADE,
+        related_name='login_events',
+    )
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True, default='')
+
+    class Meta:
+        db_table = 'login_events'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['user', '-timestamp']),
+        ]
+
+    def __str__(self):
+        return f"LoginEvent {self.pk} for {self.user_id} at {self.timestamp}"

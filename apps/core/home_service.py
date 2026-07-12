@@ -23,6 +23,7 @@ class HomeService:
         return {
             'assigned_tasks': cls._assigned_tasks(user),
             'recent_jobs': cls._recent_jobs(user, recent_days),
+            'recent_logins': cls._recent_logins(user, recent_days),
             'recent_days': recent_days,
         }
 
@@ -84,4 +85,24 @@ class HomeService:
                 'last_worked_at': j.last_worked_at.isoformat() if j.last_worked_at else None,
             }
             for j in job_rows
+        ]
+
+    @classmethod
+    def _recent_logins(cls, user, recent_days):
+        # user_agent is kept in the DB for support investigation but omitted
+        # from the payload — long, uninformative, privacy-adjacent.
+        from apps.core.models import LoginEvent
+
+        cutoff = timezone.now() - timedelta(days=recent_days)
+        events = (
+            LoginEvent.objects
+            .filter(user=user, timestamp__gte=cutoff)
+            .order_by('-timestamp')
+        )
+        return [
+            {
+                'timestamp': e.timestamp.isoformat(),
+                'ip_address': e.ip_address,
+            }
+            for e in events
         ]
