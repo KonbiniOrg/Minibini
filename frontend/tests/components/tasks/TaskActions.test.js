@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { post: vi.fn() },
@@ -46,19 +46,10 @@ describe('TaskActions', () => {
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/unblock/', {});
   });
 
-  it('hides Cancel for a non-manager even on a cancel-eligible status', () => {
-    // Cancel is manager/PM-only now (per-object can_manage). Without it, the
-    // Cancel button is not rendered even though 'blocked' is cancel-eligible.
-    const { queryByRole } = render(TaskActions, {
-      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 }, userPermissions: [], canManage: false },
-    });
-    expect(queryByRole('button', { name: 'Cancel' })).toBeNull();
-  });
-
-  it('shows and fires Cancel when canManage is true', async () => {
+  it('shows and fires Cancel on a cancel-eligible status (open to all workers, C2)', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { getByRole } = render(TaskActions, {
-      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 }, userPermissions: [], canManage: true },
+      props: { task: { task_id: 5, status: 'blocked' }, user: { id: 1 } },
     });
     await fireEvent.click(getByRole('button', { name: 'Cancel' }));
     expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel/', {});
@@ -93,7 +84,7 @@ describe('TaskActions', () => {
       start_time: new Date().toISOString(),
       blep_minimum_minutes: 60,
     };
-    const { queryByRole: q2 } = render(TaskActions, {
+    const { queryByRole: q2, container: c2 } = render(TaskActions, {
       props: {
         task: { task_id: 6, status: 'in_progress' },
         user: { id: 1 },
@@ -101,7 +92,10 @@ describe('TaskActions', () => {
         hideStop: true,
       },
     });
-    expect(q2('button', { name: 'Cancel' })).toBeNull();
+    // The under-minimum blep-cancel (.cancel-work) is suppressed; the
+    // task-level Cancel (open to all workers, C2) is a different control.
+    expect(q2('button', { name: 'Stop Work' })).toBeNull();
+    expect(c2.querySelector('.cancel-work')).toBeNull();
   });
 
   it('raises the global error overlay when an action fails', async () => {
@@ -183,7 +177,8 @@ describe('TaskActions — settle-first stop', () => {
                activeBlepOnThisTask: activeBlep() },
     });
     await fireEvent.click(getByRole('button', { name: 'Stop Work' }));
-    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    await fireEvent.click(
+      within(getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
     const flagged = api.post.mock.calls.filter(
       ([, body]) => body?.prior_qty_handled);
     expect(flagged).toHaveLength(0);
@@ -436,9 +431,22 @@ describe('TaskActions — prior-session prompt on start', () => {
       props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 } },
     });
     await fireEvent.click(getByRole('button', { name: 'Start Work' }));
-    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    await fireEvent.click(
+      within(getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
     const flagged = api.post.mock.calls.filter(
       ([, body]) => body?.prior_qty_handled);
     expect(flagged).toHaveLength(0);
+  });
+});
+
+describe('TaskActions cancel permissions (C2)', () => {
+  it('offers task-cancel to non-managers', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { getByRole } = render(TaskActions, {
+      props: { task: { task_id: 5, status: 'pending' }, user: { id: 1 }, canManage: false },
+    });
+    await fireEvent.click(getByRole('button', { name: 'Cancel' }));
+    expect(api.post).toHaveBeenCalledWith('/api/tasks/5/cancel/', {});
+    confirmSpy.mockRestore();
   });
 });

@@ -1,5 +1,10 @@
 # Tasks & Subtasks refinements — integrated plan
 
+> **STATUS: IMPLEMENTED 2026-07-12** on `feature/tasks` (all of A1–A4,
+> B1–B5, C1–C3; TDD throughout). Full suites green: backend 4211 tests
+> (+60 new), frontend 1163 (+25 new). Durable docs updated in the same
+> pass. Awaiting RM browser review; delete this plan once reviewed.
+
 Combined list: Claude's 2026-07-12 code/doc read-through findings + RM's
 notes, integrated after a second code pass. RM ruled on the Part B items
 2026-07-12 (B1–B5 decided below; the blocked-task-visibility item was

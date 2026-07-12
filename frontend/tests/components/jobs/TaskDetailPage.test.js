@@ -369,3 +369,108 @@ describe('TaskDetailPage does not refetch in a loop', () => {
     expect(taskFetches).toBeLessThan(5);
   });
 });
+
+// Local mock allowing job overrides (on_hold) and subtasks.
+function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = []) {
+  const task = {
+    task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
+    assignee_name: null, est_qty: '2', effective_rate: '25', scheme_unit_label: 'hr',
+    ...taskOverrides,
+  };
+  api.get.mockReset();
+  api.get.mockImplementation((url) => {
+    if (url.startsWith('/api/tasks/7/')) {
+      if (url.includes('/materials')) return Promise.resolve([]);
+      if (url.includes('/subtasks')) return Promise.resolve(subtasks);
+      return Promise.resolve(task);
+    }
+    if (url.startsWith('/api/tasks/')) {
+      if (url.includes('/materials')) return Promise.resolve([]);
+      return Promise.resolve({});
+    }
+    if (url.startsWith('/api/jobs/3/')) {
+      return Promise.resolve({
+        job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',
+        ...jobOverrides,
+      });
+    }
+    if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
+    return Promise.resolve([]);
+  });
+}
+
+describe('TaskDetailPage on-hold gating (B2)', () => {
+  it('hides the action band, Edit Task, Add Subtask, and Add Material while held', async () => {
+    mockApiWithJob({ can_manage: true, can_edit: true }, { on_hold: true, hold_reason: 'CO pending' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+    expect(queryByRole('button', { name: /edit task/i })).toBeNull();
+    expect(queryByRole('button', { name: /add subtask/i })).toBeNull();
+    expect(queryByRole('button', { name: /add material/i })).toBeNull();
+  });
+});
+
+describe('TaskDetailPage subtask tree (A3/B3)', () => {
+  const subs = [
+    { task_id: 8, name: 'Sub A', status: 'pending', parent_task: 7 },
+    { task_id: 9, name: 'Sub B', status: 'pending', parent_task: 7 },
+  ];
+
+  it('offers no edit/del/cancel buttons on subtask rows', async () => {
+    mockApiWithJob({ can_manage: true }, {}, subs);
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await findByText('Sub A');
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByText('del')).toBeNull();
+    expect(queryByText('cancel')).toBeNull();
+  });
+
+  it('reorders subtasks via arrows posting to the job reorder endpoint', async () => {
+    mockApiWithJob({ can_manage: true }, {}, subs);
+    api.post.mockReset();
+    api.post.mockResolvedValue({});
+    const { findByRole, findByText, queryAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await findByText('Sub A');
+    const downArrows = queryAllByText('▼');
+    expect(downArrows.length).toBeGreaterThan(0);
+    await fireEvent.click(downArrows[0]);
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/3/reorder-tasks/', {
+      task_id: 8, direction: 'down',
+    });
+  });
+});
+
+describe('TaskDetailPage can_edit gating (C1)', () => {
+  it('hides Edit Task when can_edit is false', async () => {
+    mockApiWithJob({ status: 'in_progress', can_manage: false, can_edit: false });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: /edit task/i })).toBeNull();
+  });
+
+  it('shows Edit Task when can_edit is true', async () => {
+    mockApiWithJob({ status: 'in_progress', can_edit: true });
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByRole('button', { name: /edit task/i })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage one-level subtask rule (B1)', () => {
+  it('hides Add Subtask on a subtask (one level only)', async () => {
+    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: /add subtask/i })).toBeNull();
+  });
+
+  it('offers Add Subtask on a top-level task', async () => {
+    mockApiWithJob({ parent_task: null });
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByRole('button', { name: /add subtask/i })).toBeInTheDocument();
+  });
+});

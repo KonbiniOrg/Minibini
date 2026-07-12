@@ -133,25 +133,30 @@ describe('TaskTree', () => {
     expect(onReorder).toHaveBeenCalledWith(1, 'down');
   });
 
-  it('shows management affordances when canManage is true', () => {
-    const { getByRole } = render(TaskTree, { props: { tasks: [task()], canManage: true } });
+  it('shows management affordances when canManage is true and callbacks are wired', () => {
+    const { getByRole } = render(TaskTree, {
+      props: { tasks: [task()], canManage: true,
+               onEditTask: vi.fn(), onReorder: vi.fn() },
+    });
     expect(getByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'assign' })).toBeInTheDocument();
     expect(getByRole('button', { name: '▼' })).toBeInTheDocument();
     expect(getByRole('button', { name: '▲' })).toBeInTheDocument();
   });
 
-  it('opens edit/del to everyone but gates cancel/assign/reorder on canManage', () => {
-    // A not-started task with no bleps. edit + del are open (any authenticated
-    // user); cancel/assign/reorder require per-job can_manage.
+  it('opens edit/del/cancel to everyone but gates assign/reorder on canManage', () => {
+    // A not-started task with no bleps. edit + del + cancel are open (any
+    // authenticated user, C2); assign/reorder require per-job can_manage.
     const { queryByRole } = render(TaskTree, {
-      props: { tasks: [task({ status: 'pending', has_bleps: false })], canManage: false },
+      props: { tasks: [task({ status: 'pending', has_bleps: false })], canManage: false,
+               onEditTask: vi.fn(), onDeleteTask: vi.fn(), onCancelTask: vi.fn(),
+               onAddMaterial: vi.fn(), onAddSubtask: vi.fn(), onReorder: vi.fn() },
     });
-    // edit/del now open
+    // edit/del/cancel open
     expect(queryByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'del' })).toBeInTheDocument();
-    // cancel/assign/reorder still manager-only
-    expect(queryByRole('button', { name: 'cancel' })).toBeNull();
+    expect(queryByRole('button', { name: 'cancel' })).toBeInTheDocument();
+    // assign/reorder still manager-only
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
     expect(queryByRole('button', { name: '▼' })).toBeNull();
     expect(queryByRole('button', { name: '▲' })).toBeNull();
@@ -163,7 +168,8 @@ describe('TaskTree', () => {
   it('shows cancel + assign + reorder when canManage is true (cancellable status)', () => {
     // 'blocked' is cancellable but NON_DELETABLE allows del (only in_progress/complete block del).
     const { getByRole } = render(TaskTree, {
-      props: { tasks: [task({ status: 'blocked', has_bleps: false })], canManage: true },
+      props: { tasks: [task({ status: 'blocked', has_bleps: false })], canManage: true,
+               onEditTask: vi.fn(), onCancelTask: vi.fn(), onReorder: vi.fn() },
     });
     expect(getByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'cancel' })).toBeInTheDocument();
@@ -175,7 +181,8 @@ describe('TaskTree', () => {
   it('hides del when the task has bleps, even though edit still shows', () => {
     // 'pending' is deletable by status, but has_bleps mirrors the backend no-Bleps rule.
     const { queryByRole } = render(TaskTree, {
-      props: { tasks: [task({ status: 'pending', has_bleps: true })], canManage: true },
+      props: { tasks: [task({ status: 'pending', has_bleps: true })], canManage: true,
+               onEditTask: vi.fn(), onDeleteTask: vi.fn() },
     });
     expect(queryByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'del' })).toBeNull();
@@ -215,14 +222,15 @@ describe('TaskTree', () => {
     expect(onEditExpense).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
   });
 
-  it('keeps cancel/assign/reorder hidden when canManage is omitted but edit/del open', () => {
+  it('keeps assign/reorder hidden when canManage is omitted but edit/del open', () => {
     const { queryByRole } = render(TaskTree, {
-      props: { tasks: [task({ status: 'pending', has_bleps: false })] },
+      props: { tasks: [task({ status: 'pending', has_bleps: false })],
+               onEditTask: vi.fn(), onDeleteTask: vi.fn(), onReorder: vi.fn() },
     });
     expect(queryByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'del' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
-    expect(queryByRole('button', { name: 'cancel' })).toBeNull();
+    expect(queryByRole('button', { name: '▼' })).toBeNull();
   });
 
   it('shows an INVOICED link instead of the status indicator on an invoiced task', () => {
@@ -454,5 +462,87 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     expect(container.querySelector('.material-row.released')).not.toBeNull();
     expect(queryByRole('button', { name: 'Order' })).toBeNull();
     expect(queryByRole('button', { name: 'Set pricing' })).toBeNull();
+  });
+});
+
+describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit (C1)', () => {
+  const wired = () => ({
+    onEditTask: vi.fn(), onDeleteTask: vi.fn(), onCancelTask: vi.fn(),
+    onAddSubtask: vi.fn(), onAddMaterial: vi.fn(), onReorder: vi.fn(),
+  });
+
+  it('renders no task-op buttons when their callbacks are not wired', () => {
+    const { queryByText } = render(TaskTree, { props: { tasks: [task()], canManage: true } });
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByText('del')).toBeNull();
+    expect(queryByText('cancel')).toBeNull();
+    expect(queryByText('+sub')).toBeNull();
+  });
+
+  it('renders the task-op buttons when wired', () => {
+    const { getByText } = render(TaskTree, { props: { tasks: [task()], canManage: true, ...wired() } });
+    expect(getByText('edit')).toBeInTheDocument();
+    expect(getByText('del')).toBeInTheDocument();
+    expect(getByText('cancel')).toBeInTheDocument();
+    expect(getByText('+sub')).toBeInTheDocument();
+  });
+
+  it('offers cancel to non-managers when wired (C2)', async () => {
+    const onCancelTask = vi.fn();
+    const { getByText } = render(TaskTree, {
+      props: { tasks: [task()], canManage: false, onCancelTask },
+    });
+    await fireEvent.click(getByText('cancel'));
+    expect(onCancelTask).toHaveBeenCalledWith(expect.objectContaining({ task_id: 1 }));
+  });
+
+  it('renders reorder arrows only when onReorder is wired', () => {
+    const two = [task(), task({ task_id: 2, name: 'Sand' })];
+    const without = render(TaskTree, { props: { tasks: two, canManage: true } });
+    expect(without.queryByText('▲')).toBeNull();
+    without.unmount();
+    const withReorder = render(TaskTree, {
+      props: { tasks: two, canManage: true, onReorder: vi.fn() },
+    });
+    expect(withReorder.queryAllByText('▲').length).toBeGreaterThan(0);
+  });
+
+  it('hides task-op buttons while the job is held but keeps procurement actions (B2)', () => {
+    const neededMat = {
+      material_id: 5, description: 'Ply', quantity: '3', sell_price: '5',
+      units: 'sheet', consumption_state: 'pending', inventory_item: 7,
+      qty_on_hand: '1.00',
+    };
+    const { queryByText, getByText } = render(TaskTree, {
+      props: {
+        tasks: [task({ materials: [neededMat] })], canManage: true,
+        jobOnHold: true, ...wired(),
+        onMarkOnHand: vi.fn(), onAttachExpense: vi.fn(),
+      },
+    });
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByText('del')).toBeNull();
+    expect(queryByText('cancel')).toBeNull();
+    expect(queryByText('+sub')).toBeNull();
+    expect(queryByText('+mat')).toBeNull();
+    // Procurement reality stays available on the held job.
+    expect(getByText('Mark on-hand')).toBeInTheDocument();
+    expect(getByText('Attach expense')).toBeInTheDocument();
+  });
+
+  it('honors per-task can_edit=false for the edit button (C1)', () => {
+    const locked = task({ status: 'in_progress', can_edit: false });
+    const { queryByText } = render(TaskTree, {
+      props: { tasks: [locked], canManage: false, onEditTask: vi.fn() },
+    });
+    expect(queryByText('edit')).toBeNull();
+  });
+
+  it('shows edit when can_edit is true or absent', () => {
+    const open = task({ status: 'in_progress', can_edit: true });
+    const { getByText } = render(TaskTree, {
+      props: { tasks: [open], canManage: false, onEditTask: vi.fn() },
+    });
+    expect(getByText('edit')).toBeInTheDocument();
   });
 });

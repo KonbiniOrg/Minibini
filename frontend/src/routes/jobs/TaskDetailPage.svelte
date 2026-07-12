@@ -300,13 +300,18 @@
     subtaskMatTaskId = parentTask.task_id;
   }
 
-  async function handleSubtaskDeleteMaterial(material, parentTask) {
-    if (!confirm('Delete this material?')) return;
+  // Subtasks reorder among their siblings here — the job task list page
+  // deliberately offers no subtask reordering (B3). Same endpoint as
+  // top-level reorder; the backend scopes the swap to the peer group.
+  async function handleSubtaskReorder(taskId, direction) {
     try {
-      await api.delete(`/api/tasks/${parentTask.task_id}/materials/${material.material_id}/`);
+      await api.post(`/api/jobs/${task.job.id}/reorder-tasks/`, {
+        task_id: taskId,
+        direction,
+      });
       await loadSubtasks();
     } catch (e) {
-      showError(errorMessage(e, 'Could not delete material.'));
+      showError(errorMessage(e, 'Could not reorder.'));
     }
   }
 
@@ -437,20 +442,21 @@
     {/if}
   </div>
 
-  <div class="action-band">
-    <TaskActions
-      {task}
-      user={$userStore}
-      canManage={task?.can_manage}
-      {activeBlepOnThisTask}
-      hideStop={true}
-      onChanged={refresh}
-      onConflict={handleConflict}
-    />
-    {#if !taskIsTerminal}
-      <button type="button" class="quiet" onclick={() => { editTaskOpen = true; }}>Edit Task</button>
-    {/if}
-  </div>
+  {#if !job?.on_hold}
+    <div class="action-band">
+      <TaskActions
+        {task}
+        user={$userStore}
+        {activeBlepOnThisTask}
+        hideStop={true}
+        onChanged={refresh}
+        onConflict={handleConflict}
+      />
+      {#if !taskIsTerminal && (task.can_edit ?? true)}
+        <button type="button" class="quiet" onclick={() => { editTaskOpen = true; }}>Edit Task</button>
+      {/if}
+    </div>
+  {/if}
 
   <StartWorkConflictModal
     {conflict}
@@ -467,6 +473,9 @@
   <!-- Subtasks section -->
   <h3>Subtasks</h3>
   {#if subtasks.length > 0}
+      <!-- Deliberately passive rows (A3): no edit/del/cancel here — a
+           subtask's own detail page is its editing surface. Wired: material
+           add/edit and sibling reorder (B3). -->
       <TaskTree
         tasks={subtasks}
         readonly={taskIsTerminal}
@@ -475,18 +484,15 @@
         showStatus={true}
         showAssignee={true}
         onTaskClick={handleSubtaskTaskClick}
-        onEditTask={(sub) => {}}
-        onDeleteTask={(sub) => {}}
         onAddMaterial={handleSubtaskAddMaterial}
         onEditMaterial={handleSubtaskEditMaterial}
-        onDeleteMaterial={handleSubtaskDeleteMaterial}
-        onAddSubtask={() => {}}
-        onReorder={() => {}}
+        onReorder={handleSubtaskReorder}
       />
     {:else}
       <p>No subtasks.</p>
     {/if}
-  {#if !taskIsTerminal}
+  <!-- One level of subtasks only (B1): a subtask never offers Add Subtask. -->
+  {#if !taskIsTerminal && !job?.on_hold && !task.parent_task}
     <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
   {/if}
 
@@ -528,7 +534,7 @@
   {:else}
     <p>No materials.</p>
   {/if}
-  {#if !taskIsTerminal}
+  {#if !taskIsTerminal && !job?.on_hold}
     <p><button type="button" onclick={openAddMaterial}>Add Material</button></p>
   {/if}
 

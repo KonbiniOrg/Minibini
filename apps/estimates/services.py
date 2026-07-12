@@ -1113,7 +1113,13 @@ class EstimateWizardService(BaseWizardService):
 
         atoms = []
 
-        for task in Task.objects.filter(job=job).select_related(
+        # Cancelled tasks stay OUT of the estimate pool: estimates project
+        # PLANNED work (est_qty), and a cancelled task is not planned work.
+        # (The invoice pool is the opposite — recorded actuals on a
+        # cancelled task remain billable. Plan C3.)
+        for task in Task.objects.filter(job=job).exclude(
+            status=Task.STATUS_CANCELLED,
+        ).select_related(
             'rate_scheme', 'rate_scheme__accounting_category',
         ):
             key = (EstimateLineItemSource.SOURCE_TASK, task.pk)

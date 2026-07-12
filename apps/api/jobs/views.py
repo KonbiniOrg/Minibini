@@ -78,9 +78,12 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             return [IsAuthenticated()]
         if self.action == 'tasks':
             # GET (list) and POST (add a task) are open to any authenticated
-            # user — anyone may add a task to a job. Editing/deleting a task
-            # (the task_detail action) and marking all the job's work complete
-            # stay manager-or-PM via the fall-through to CanManageJobOrPM below.
+            # user — anyone may add a task to a job. task_detail (edit /
+            # delete) is likewise open (listed above); the C1 editability
+            # matrix in TaskService.update_task and the delete guards in
+            # TaskService.delete_task decide. Marking all the job's work
+            # complete stays manager-or-PM via the CanManageJobOrPM
+            # fall-through below.
             return [IsAuthenticated()]
         if self.action == 'start_invoice_wizard':
             from apps.api.permissions import CanManageFinancials
@@ -191,6 +194,12 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='work-complete', url_name='work-complete')
     def work_complete(self, request, pk=None):
         job = self.get_object()
+        # B4: with anything not final, mutate nothing and answer with the
+        # blocker list (the SPA's "Check Complete" modal). No-mutation +
+        # structured-response follows the settle-first conflict precedent.
+        blockers = JobService.work_complete_blockers(job)
+        if blockers:
+            return Response({'blockers': blockers})
         try:
             # Walk approved → in_progress → work_complete if needed.
             if job.status == Job.STATUS_APPROVED:

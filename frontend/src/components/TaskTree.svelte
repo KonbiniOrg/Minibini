@@ -15,20 +15,20 @@
     canManage = false,
     showStatus = true,
     showAssignee = true,
-    onEditTask = () => {},
-    onDeleteTask = () => {},
-    onAddMaterial = () => {},
-    // Material-op callbacks default to NULL and each button renders only when
-    // its callback was actually wired (venue rule: JobTaskListPage is the
-    // actions venue). A surface that omits a callback gets a passive tree —
-    // never a dead button bound to a no-op default (TaskDetailPage's subtask
-    // tree wires only onEditMaterial, deliberately).
+    // Task-op AND material-op callbacks default to NULL and each button
+    // renders only when its callback was actually wired (venue rule). A
+    // surface that omits a callback gets a passive tree — never a dead
+    // button bound to a no-op default. (TaskDetailPage's subtask tree wires
+    // only material add/edit and reorder, deliberately.)
+    onEditTask = null,
+    onDeleteTask = null,
+    onAddMaterial = null,
     onEditMaterial = null,
-    onAddSubtask = () => {},
-    onReorder = () => {},
+    onAddSubtask = null,
+    onReorder = null,
     onTaskClick = () => {},
     onAssignTask = () => {},
-    onCancelTask = () => {},
+    onCancelTask = null,
     onConsumeMaterial = null,
     onRestockMaterial = null,
     onDrawMoreMaterial = null,
@@ -98,6 +98,10 @@
   function isTerminal(task) { return TERMINAL.includes(task.status); }
   function canDelete(task) { return !NON_DELETABLE.includes(task.status); }
   function canCancel(task) { return ['pending', 'in_progress', 'blocked'].includes(task.status); }
+  // Serializer-computed editability (C1 matrix: pending open to all;
+  // in_progress/blocked manager/PM/assignee). Absent field = older payload
+  // shape — default open and let the server enforce.
+  function canEditTask(task) { return task.can_edit ?? true; }
 
   function taskWithMaterialsTotal(task) {
     let total = taskTotal(task);
@@ -309,7 +313,7 @@
           <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
           {#if taskAwaitingMaterials(task)}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
         </td>
-        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
         <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
         {#if showStatus}<td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
         <td class="text-right">{task.est_qty ?? '-'}</td>
@@ -321,15 +325,15 @@
         {#if !readonly && !jobLocked}
           <td class="actions-cell row-actions">
             {#if !isTerminal(task)}
-              <button type="button" onclick={() => onEditTask(task)}>edit</button>
-              {#if canDelete(task) && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
-              {#if canCancel(task) && canManage}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
-              <button type="button" onclick={() => onAddMaterial(task)}>+mat</button>
-              <button type="button" onclick={() => onAddSubtask(task)}>+sub</button>
-            {:else if canDelete(task) && !task.has_bleps}
+              {#if onEditTask && !jobOnHold && canEditTask(task)}<button type="button" onclick={() => onEditTask(task)}>edit</button>{/if}
+              {#if onDeleteTask && !jobOnHold && canDelete(task) && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+              {#if onCancelTask && !jobOnHold && canCancel(task)}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
+              {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
+              {#if onAddSubtask && !jobOnHold}<button type="button" onclick={() => onAddSubtask(task)}>+sub</button>{/if}
+            {:else if onDeleteTask && !jobOnHold && canDelete(task) && !task.has_bleps}
               <button type="button" onclick={() => onDeleteTask(task)}>del</button>
             {/if}
-            {#if canManage}
+            {#if canManage && onReorder}
               <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
               <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
             {/if}
@@ -384,7 +388,7 @@
           <td class="indent">
             <button type="button" class="link-btn" onclick={() => onTaskClick(sub)}>{sub.name}</button>
           </td>
-          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub) && canManage}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
+          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub) && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
           <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
           {#if showStatus}<td>{#if sub.invoice}{@render invoicedLink(sub.invoice)}{:else}<TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}{/if}</td>{/if}
           <td class="text-right">{sub.est_qty ?? '-'}</td>
@@ -396,11 +400,11 @@
           {#if !readonly && !jobLocked}
             <td class="actions-cell row-actions">
               {#if !isTerminal(sub)}
-                <button type="button" onclick={() => onEditTask(sub)}>edit</button>
-                {#if canDelete(sub) && !sub.has_bleps}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
-                {#if canCancel(sub) && canManage}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
-                <button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>
-              {:else if canDelete(sub) && !sub.has_bleps}
+                {#if onEditTask && !jobOnHold && canEditTask(sub)}<button type="button" onclick={() => onEditTask(sub)}>edit</button>{/if}
+                {#if onDeleteTask && !jobOnHold && canDelete(sub) && !sub.has_bleps}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
+                {#if onCancelTask && !jobOnHold && canCancel(sub)}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
+                {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>{/if}
+              {:else if onDeleteTask && !jobOnHold && canDelete(sub) && !sub.has_bleps}
                 <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
               {/if}
             </td>

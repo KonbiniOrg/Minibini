@@ -129,6 +129,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
     has_bleps = serializers.SerializerMethodField()
     invoice = serializers.SerializerMethodField()
     claimed = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -143,7 +144,7 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
             'effective_rate', 'computed_charge',
             'actual_hours',
             'has_active_blep', 'active_worker_count', 'has_bleps',
-            'can_manage',
+            'can_manage', 'can_edit',
             'invoice',
             'claimed',
         ]
@@ -195,6 +196,24 @@ class TaskSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.Model
         """True iff a non-superseded estimate on this job has claimed this task."""
         claims = self.context.get('estimate_claims') or frozenset()
         return ('task', obj.pk) in claims
+
+    def get_can_edit(self, obj):
+        """The C1 editability matrix, precomputed for the SPA: pending is
+        open to any authenticated user; in_progress/blocked to the manager
+        atom, the job's PM, or the task's assignee; terminal is frozen.
+        False without a request in context (nested render) — the tree
+        falls back to hiding edit affordances, never showing dead ones."""
+        request = self.context.get('request')
+        if request is None or not getattr(request, 'user', None) \
+                or not request.user.is_authenticated:
+            return False
+        if obj.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
+            return False
+        if obj.status == Task.STATUS_PENDING:
+            return True
+        from apps.jobs.services import JobService
+        return (obj.assignee_id == request.user.pk
+                or JobService.user_can_manage(request.user, obj.job))
 
 
 class TaskDetailSerializer(TaskSerializer):

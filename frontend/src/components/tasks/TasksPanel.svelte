@@ -62,6 +62,26 @@
 
   // Status action state
   let statusBusy = $state(false);
+  // Blocker list returned by a Check Complete post (B4) — non-null opens
+  // the "resolve these first" modal.
+  let wcBlockers = $state(null);
+
+  // Anything not final blocks work-complete: a non-terminal task, or a
+  // pending material (on a task or loose). Drives the button label —
+  // "Check Complete" (produces the list) vs "Mark Work Complete".
+  const TERMINAL_TASK_STATUSES = ['complete', 'cancelled'];
+  const hasWcBlockers = $derived.by(() => {
+    const allTasks = [];
+    for (const t of enrichedTasks) {
+      allTasks.push(t);
+      for (const s of (t.subtasks || [])) allTasks.push(s);
+    }
+    if (allTasks.some((t) => !TERMINAL_TASK_STATUSES.includes(t.status))) return true;
+    const mats = [...jobMaterials];
+    for (const t of allTasks) mats.push(...(t.materials || []));
+    return mats.some(
+      (m) => m.consumption_state === 'pending' && Number(m.quantity) > 0);
+  });
 
   // Order flow — draft-PO chooser dialog
   let orderDialogOpen = $state(false);
@@ -469,12 +489,18 @@
     }
   }
 
-  // Mark all work complete
+  // Mark all work complete — or, with blockers, fetch the list of what
+  // still needs attention (the server mutates nothing and answers with
+  // `blockers`; the client-side label is a hint, the server is the truth).
   async function handleWorkComplete() {
-    if (!confirm('Mark all work complete on this job?')) return;
+    if (!hasWcBlockers && !confirm('Mark all work complete on this job?')) return;
     statusBusy = true;
     try {
-      await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
+      const resp = await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
+      if (resp && resp.blockers) {
+        wcBlockers = resp.blockers;
+        return;
+      }
       await reload();
     } catch (e) {
       showError(errorMessage(e, 'Could not mark work complete.'));
@@ -490,11 +516,15 @@
   <div class="page-body">
   <div class="toolbar">
     {#if !jobLocked}
-      <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
+      {#if !job?.on_hold}
+        <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
+      {/if}
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
-    {#if job?.can_manage && canMarkWorkComplete(job.status)}
-      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
+    {#if job?.can_manage && canMarkWorkComplete(job)}
+      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>
+        {hasWcBlockers ? 'Check Complete' : 'Mark Work Complete'}
+      </button>
     {/if}
   </div>
 
@@ -617,6 +647,35 @@
     </p>
   </Modal>
 
+  <!-- Work-complete blockers (B4): informational list, no bulk actions —
+       each task/material resolves through its normal flow. -->
+  <Modal open={wcBlockers != null} onCancel={() => { wcBlockers = null; }} maxWidth="480px" label="Not ready to complete">
+    <h3>Not ready to complete</h3>
+    <p class="dialog-hint">
+      Resolve these first — complete or cancel the open tasks, and consume
+      or release the pending materials.
+    </p>
+    {#if wcBlockers?.tasks?.length}
+      <h4>Open tasks</h4>
+      <ul class="blocker-list">
+        {#each wcBlockers.tasks as t (t.task_id)}
+          <li>{t.name} <small class="blocker-status">({t.status})</small></li>
+        {/each}
+      </ul>
+    {/if}
+    {#if wcBlockers?.materials?.length}
+      <h4>Pending materials</h4>
+      <ul class="blocker-list">
+        {#each wcBlockers.materials as m (m.material_id)}
+          <li>{m.description || `Material ${m.material_id}`}</li>
+        {/each}
+      </ul>
+    {/if}
+    <p class="dialog-actions">
+      <button type="button" onclick={() => { wcBlockers = null; }}>Close</button>
+    </p>
+  </Modal>
+
   <!-- Receipt qty prompt: native <form> owns Enter (Modal omits onSave). -->
   <Modal open={receiptDialogOpen} onCancel={closeReceiptDialog} busy={receiptBusy} maxWidth="420px" label="Mark received">
     <form onsubmit={(e) => { e.preventDefault(); submitReceipt(); }}>
@@ -646,6 +705,9 @@
   /* .toolbar (and its buttons) come from app.css. */
 
   .dialog-hint { color: #555; font-size: 13px; }
+  .blocker-list { margin: 4px 0 12px; padding-left: 20px; }
+  .blocker-list li { margin: 2px 0; }
+  .blocker-status { color: #888; }
   .draft-list { list-style: none; padding: 0; margin: 8px 0; max-height: 40vh; overflow-y: auto; }
   .draft-list li { margin: 0 0 4px; }
   .draft-list button {

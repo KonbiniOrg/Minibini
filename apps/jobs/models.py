@@ -244,7 +244,10 @@ class TaskBase(models.Model):
         )
 
 
-@history(exclude=['task_id'])
+# worker_queue is excluded from history: board-queue position is cosmetic
+# (same class as sort_order's freeze exemption), and the bump-to-front on
+# every clock-in would spam the audit trail.
+@history(exclude=['task_id', 'worker_queue'])
 class Task(TaskBase):
     """Work task on a Job. Has lifecycle, hierarchy, bleps."""
     STATUS_PENDING = 'pending'
@@ -310,15 +313,11 @@ class Task(TaskBase):
                     raise ValidationError(
                         {'status': f"Cannot transition from '{old_status}' to '{self.status}'."}
                     )
-        # An assigned task must carry an estimated worker time: assigned work
-        # has to be schedulable, and it can't be scheduled without a duration.
-        # TaskService.assign enforces the same rule on the board's update()
-        # path, which bypasses full_clean().
-        if self.assignee_id and not self.est_worker_time:
-            raise ValidationError({
-                'est_worker_time':
-                    'An assigned task must have an estimated worker time.',
-            })
+        # The "assigned work needs an estimated worker time" invariant lives
+        # on the EXPLICIT assign gestures (TaskService.assign / create_direct
+        # / update_task), NOT here: auto-assign on start_work deliberately
+        # claims a task for its first worker without demanding a duration
+        # mid-clock-in, so assignee-without-est-time is a legal model state.
         # charge guard removed in B4. rate_scheme is NOT NULL at DB level (B8).
 
     def save(self, *args, **kwargs):
