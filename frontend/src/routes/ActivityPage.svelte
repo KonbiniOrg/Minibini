@@ -68,7 +68,7 @@
 {:else if error}
   <p class="error">{error}</p>
 {:else if data}
-  <h2>Recent activity (last {data.recent_days} days)</h2>
+  <h2>Recent activity</h2>
 
   <section class="on-shift">
     <h3>On shift</h3>
