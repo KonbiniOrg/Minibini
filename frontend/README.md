@@ -414,13 +414,18 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   serializer fields (no backend state): **Needs pricing / Needed / Ordered —
   PO-NNNN / Awaiting customer / On Hand / Consumed / Released** (precedence in
   that file), plus a `costUnconfirmed` ⚠ when `cost_source === 'estimated'`.
-- **Venue rule:** all per-material actions (Set pricing / Order / Attach
-  expense / Mark on-hand / Mark received / PO link) live on the task view
-  page (`#/jobs/:id/tasks`, rendered by `TasksPanel.svelte` through the job
-  workspace shell — see "Job workspace state" below), each gated on its
-  callback being wired. The job overview doesn't render `TaskTree` (or any
-  material rows) at all — its Materials block is an aggregate Coverage stat
-  only (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a).
+- **One row fragment, full actions everywhere** (the old task-view-page-only
+  venue rule was retired 2026-07-13): material rows render through the shared
+  `components/materials/MaterialRow.svelte` on every surface (job task list,
+  task detail page, parent-task subtask tree), task rows through
+  `components/tasks/TaskRow.svelte`, with row math in `lib/taskTotals.js`.
+  The full per-material action set is available wherever rows render —
+  gating is by material status, permissions, and job state only (each button
+  still renders only when its callback is wired). Handler halves are shared
+  too: `lib/materialOps.js` and the Order / Mark-received dialogs in
+  `components/materials/MaterialFulfillmentModals.svelte`. The job overview
+  doesn't render material rows at all — its Materials block is an aggregate
+  Coverage stat only (`docs/designs/jobs-tasks-and-worksheets.md` §9.1a).
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
 
 ### Delete Flow

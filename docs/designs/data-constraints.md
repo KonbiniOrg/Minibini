@@ -408,8 +408,13 @@ Valid transitions:
 cancel), gated by `can_manage_jobs` at the API layer.
 
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
-WorkOrder was removed). `work_complete` = all tasks terminal and earmarks
-released. `completed` = fully closed; gated on **both** all invoices
+WorkOrder was removed). `work_complete` = every task terminal AND no
+pending material (task-attached or loose) with quantity still committed —
+enforced as a hard gate in `JobService.update_job` on EVERY path into the
+status (the B4 work-complete gate, 2026-07-12;
+`JobService.work_complete_blockers` computes the offending list, and
+`validate_data` errors on violations); earmarks release on entry.
+`completed` = fully closed; gated on **both** all invoices
 resolved **and** all deliverables shipped (see "Implied state" below and
 §2.5).
 
