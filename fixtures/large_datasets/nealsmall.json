@@ -56417,21 +56417,6 @@
 },
 {
   "model": "jobs.ratescheme",
-  "pk": 6,
-  "fields": {
-    "name": "Delivery1",
-    "description": "Local delivery in the East Bay",
-    "algorithm": "entered_qty",
-    "rate": "100.00",
-    "unit_label": "ea",
-    "modifiers": [],
-    "accounting_category": 4,
-    "replaced_by": null,
-    "replaced_at": null
-  }
-},
-{
-  "model": "jobs.ratescheme",
   "pk": 7,
   "fields": {
     "name": "Shop labor",
