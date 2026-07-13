@@ -1379,9 +1379,10 @@ class ConvertedStateInvariantsTest(unittest.TestCase):
         super().setUpClass()
         fd, path = tempfile.mkstemp(suffix='.json')
         os.close(fd)
-        # limit=100: the exact parameters that generate the shipped
-        # fixtures/large_datasets/nealsmall.json, so these invariants hold
-        # for the artifact users actually load.
+        # limit=100 (the CLI default): a wide-enough slice that the
+        # invariants sweep old finished jobs too, not just the recent
+        # all-draft tail. (Tests exercise the conversion itself, against
+        # datasets/ inputs — never any shipped fixture artifact.)
         c = NealsDataConverter(XLSX, CSV, output_path=path, limit=100)
         c.convert()
         os.unlink(path)
