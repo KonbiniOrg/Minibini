@@ -491,3 +491,21 @@ describe('TaskDetailPage subtask section suppression (one-level rule)', () => {
     expect(await findByRole('heading', { name: /subtasks/i })).toBeInTheDocument();
   });
 });
+
+describe('TaskDetailPage crumbs', () => {
+  it('offers no task-list link — the job nav rail covers it', async () => {
+    mockApiWithJob({ parent_task: null });
+    const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByText('task list')).toBeNull();
+  });
+
+  it('still links the parent from a subtask crumb', async () => {
+    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const parentLink = getByText('Build shelving unit');
+    expect(parentLink.tagName).toBe('A');
+    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
+  });
+});

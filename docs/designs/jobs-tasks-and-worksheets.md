@@ -1531,10 +1531,10 @@ Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
 
 1. **JobHeader** (shared, unchanged).
-2. **Task header strip** (`.task-head`) — a crumbs line (task list ·
-   *subtask of &lt;parent&gt;* when `parent_task` is set, linked via
-   the serializer's `parent_task_name`; no separate job-overview crumb —
-   the nav rail's Overview link covers that), then the title row: the **activity pill**
+2. **Task header strip** (`.task-head`) — a crumbs line shown only on a
+   subtask (*subtask of &lt;parent&gt;*, linked via the serializer's
+   `parent_task_name`); no job-overview or task-list crumbs — the nav
+   rail's Overview and Tasks links cover those. Then the title row: the **activity pill**
    (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
    when `task.invoice` is set) to the **left** of the `<h1>` task name,
    with the **stat-chip strip** right-aligned. Chips (shared

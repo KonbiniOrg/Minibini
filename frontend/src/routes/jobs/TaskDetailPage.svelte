@@ -353,13 +353,11 @@
   <JobShell {job} {contact} current="tasks" onJobChange={refresh}>
   <!-- Task header: crumbs, pill + title left, stat chips right -->
   <div class="task-head">
-    {#if task.job}
+    <!-- No task-list crumb: the nav rail's Tasks link covers it. The only
+         crumb is the parent link on a subtask. -->
+    {#if task.job && task.parent_task}
       <div class="crumbs">
-        <a href={`/jobs/${task.job.id}/tasklist`} use:link>task list</a>
-        {#if task.parent_task}
-          <span class="crumb-sep">·</span>
-          subtask of <a href={`/jobs/${task.job.id}/tasks/${task.parent_task}`} use:link>{task.parent_task_name}</a>
-        {/if}
+        subtask of <a href={`/jobs/${task.job.id}/tasks/${task.parent_task}`} use:link>{task.parent_task_name}</a>
       </div>
     {/if}
     <div class="title-row">
@@ -610,7 +608,6 @@
     border-bottom: 1px solid #e5e7eb;
   }
   .crumbs { font-size: 12px; color: #6b7280; }
-  .crumb-sep { margin: 0 4px; }
   .title-row {
     display: flex; justify-content: space-between; align-items: center;
     gap: 18px; margin-top: 6px; flex-wrap: wrap;
