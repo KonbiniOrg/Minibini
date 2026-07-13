@@ -529,6 +529,32 @@ The atom-pull surfaces on estimates and invoices.
   _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
   directly from the review flow.
 
+- **Shift self-delete: UI offers a Delete button the server refuses (decide the rule, then align).** — _added 2026-07-13_
+  A worker (`IsAuthenticated` only) is shown Delete on their own fully-today
+  shift, but `ShiftService.delete` requires `can_manage_time` — which is the
+  DOCUMENTED rule (`users-and-permissions.md` twice; `data-constraints.md`
+  §1.2a's self-edit window deliberately says edit/create only). This is a
+  documented **asymmetry with bleps**, where own create/edit/**delete** is
+  allowed within the 30h window (`jobs-tasks-and-worksheets.md` §5.2). RM's
+  expectation was symmetric self-service. Decide: (a) open shift deletion to
+  the own-30h-window rule (service + docs + tests change; the orphaned-bleps
+  guard stays for everyone), or (b) keep manager-only and hide the worker's
+  Delete button (`TimeEditModal.svelte` shows it ungated). Deliberately not
+  fixed on `feature/tasks`.
+  _Done when:_ the rule is decided and UI, service, docs, and tests agree.
+
+- **BUG: a `can_manage_time` holder can't edit their own OPEN (in-progress) shift.** — _added 2026-07-13_
+  Observed in browser review: editing an in-progress shift within the 30h
+  window fails even for a time manager. NOT doc-sanctioned — §1.2a says
+  managers "edit any shift at any time" and documents no open-shift
+  restriction; the only edit constraints are end ≥ start and the enclosure
+  check. Suspects: `_assert_encloses` / the edit path mishandling a null
+  `end_time`, or the edit modal demanding one. Root-cause before fixing.
+  Deliberately not fixed on `feature/tasks`.
+  _Done when:_ an open shift is editable per the documented rules (self
+  within 30h, manager any time), with a regression test covering the
+  null-`end_time` edit.
+
 - **BUG (investigate): Shift & Blep start times display ~1 hour early, unmodified.** — _added 2026-06-25_
   Observed in browser review: a Shift's and a Blep's `start_time` came through about
   **one hour earlier** than the actual time, with no edit made to the record. A
