@@ -95,12 +95,11 @@ when the actives alone do. The output is `nealsdata/datasets/converted.json`
 (the file is git-ignored — regenerate it whenever inputs change).
 
 Loading the result into Minibini is the user's job — the script never writes
-to a database. Tests load it into the auto-created test DB via
-`call_command('loaddata', ...)`. Optionally, `core.configuration` +
-`core.shift` records may be split out into a load-after companion file
-(`datasets/config_and_shifts.json`) for independent tweaking — when that
-file exists, `tests/test_neals_fixture.py` loads the pair as one dataset
-(bleps need the shifts for the enclosure invariant).
+to a database, and it always emits **one** self-contained dataset file.
+Tests load it into the auto-created test DB via
+`call_command('loaddata', ...)`. (Hand-curated extras — config, catalog
+service items, manual shifts — live in separate RM-managed fixture files
+loaded after the dataset; they are not the converter's concern.)
 
 ## 3. Pipeline at a glance
 
