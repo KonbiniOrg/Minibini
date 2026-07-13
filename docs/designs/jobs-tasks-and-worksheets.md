@@ -1563,8 +1563,9 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    page is its editing surface. Wired: material add/edit, and the
    sibling **reorder arrows** (B3 — subtasks reorder here, not on the
    job task list; same `reorder-tasks` endpoint, peer-scoped
-   server-side). A subtask's detail page hides Add Subtask (one-level
-   rule, §4).
+   server-side). A subtask's detail page renders **no Subtasks section
+   at all** (one-level rule, §4 — no header, no empty-state, no Add
+   Subtask).
 
 The old toolbar row, details table, and Charge table are gone. The
 table below still governs which controls *exist*.

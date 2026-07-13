@@ -470,9 +470,11 @@
   <h3>Description</h3>
   <div class="description preserve-breaks"><LinkifiedText text={task.description || '-'} /></div>
 
-  <!-- Subtasks section -->
-  <h3>Subtasks</h3>
-  {#if subtasks.length > 0}
+  <!-- Subtasks section — only on top-level tasks: one level of subtasks
+       (B1), so a subtask has no subtasks of its own and no section at all. -->
+  {#if !task.parent_task}
+    <h3>Subtasks</h3>
+    {#if subtasks.length > 0}
       <!-- Deliberately passive rows (A3): no edit/del/cancel here — a
            subtask's own detail page is its editing surface. Wired: material
            add/edit and sibling reorder (B3). -->
@@ -491,9 +493,9 @@
     {:else}
       <p>No subtasks.</p>
     {/if}
-  <!-- One level of subtasks only (B1): a subtask never offers Add Subtask. -->
-  {#if !taskIsTerminal && !job?.on_hold && !task.parent_task}
-    <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
+    {#if !taskIsTerminal && !job?.on_hold}
+      <p><button type="button" onclick={openAddSubtask}>Add Subtask</button></p>
+    {/if}
   {/if}
 
   <!-- Materials section -->

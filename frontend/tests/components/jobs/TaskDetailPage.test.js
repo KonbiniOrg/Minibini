@@ -474,3 +474,20 @@ describe('TaskDetailPage one-level subtask rule (B1)', () => {
     expect(await findByRole('button', { name: /add subtask/i })).toBeInTheDocument();
   });
 });
+
+describe('TaskDetailPage subtask section suppression (one-level rule)', () => {
+  it('shows no Subtasks section at all on a subtask', async () => {
+    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, queryByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('heading', { name: /subtasks/i })).toBeNull();
+    expect(queryByText('No subtasks.')).toBeNull();
+  });
+
+  it('keeps the Subtasks section on a top-level task', async () => {
+    mockApiWithJob({ parent_task: null });
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByRole('heading', { name: /subtasks/i })).toBeInTheDocument();
+  });
+});
