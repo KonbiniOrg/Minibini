@@ -17,6 +17,17 @@ _DEFAULT_SEED_PATH = (Path(__file__).resolve().parents[2]
 # (invented worker times and blep lengths/placement draw from random).
 _RNG_SEED = 20260612
 
+# Kanban stages whose non-archived cards are ALWAYS selected, whatever
+# their age: live board work must never silently age out of the dataset
+# (lowercased 'Stage' values; mirrors _STAGE_TO_JOB_STATUS in build.py).
+_ACTIVE_STAGES = {'in progress', 'invoice'}
+
+
+def _is_active_card(card):
+    stage = (card.get('Stage') or '').strip().lower()
+    archived = (card.get('Archived at') or '').strip()
+    return stage in _ACTIVE_STAGES and not archived
+
 
 class NealsDataConverter:
     def __init__(self, excel_path, csv_path, output_path,
@@ -67,7 +78,12 @@ class NealsDataConverter:
         """Match recent Kanban cards to Estimate Reference groups.
 
         Returns a list of {'card', 'base_ref', 'estimate_rows'} dicts,
-        newest card first, capped at self.limit successful matches.
+        newest card first. Non-archived cards in an ACTIVE stage
+        (`_ACTIVE_STAGES`) are always selected — live board work never
+        ages out (2026-07-13; the Barbara Freeman regression) — and the
+        remaining slots up to self.limit fill with the newest other
+        matches. The result can exceed self.limit only when the active
+        cards alone do.
         """
         est_by_base = defaultdict(list)
         for row in self.loader.sheets_data.get('Estimates', []):
@@ -79,17 +95,23 @@ class NealsDataConverter:
         cards.sort(key=lambda c: P.to_datetime(c.get('Created at')) or datetime.min,
                    reverse=True)
 
-        spine, seen = [], set()
+        matched, seen = [], set()
         for card in cards:
             base = P.base_reference(card['External ID'])
             if base in seen or base not in est_by_base:
                 continue
             seen.add(base)
-            spine.append({'card': card, 'base_ref': base,
-                          'estimate_rows': est_by_base[base]})
-            if len(spine) >= self.limit:
-                break
-        return spine
+            matched.append({'card': card, 'base_ref': base,
+                            'estimate_rows': est_by_base[base]})
+
+        active = [e for e in matched if _is_active_card(e['card'])]
+        rest = [e for e in matched if not _is_active_card(e['card'])]
+        fill = max(0, self.limit - len(active))
+        chosen = active + rest[:fill]
+        chosen.sort(key=lambda e: (P.to_datetime(e['card'].get('Created at'))
+                                   or datetime.min),
+                    reverse=True)
+        return chosen
 
     def convert(self):
         from nealsdata.converter import build, reconcile

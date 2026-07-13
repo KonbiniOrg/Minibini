@@ -87,12 +87,20 @@ python nealsdata/convert_neals_data.py [--limit N] [--verbose]
 ```
 
 The default `--limit 100` caps how many Jobs are built from the most recent
-matched Kanban cards. The output is `nealsdata/datasets/converted.json` (the
-file is git-ignored — regenerate it whenever inputs change).
+matched Kanban cards — except that **non-archived cards in an active stage
+(In Progress / Invoice) are always included**, whatever their age (live
+board work must never silently age out; the 2026-07-13 Barbara Freeman
+regression). Actives consume limit slots; the total exceeds the limit only
+when the actives alone do. The output is `nealsdata/datasets/converted.json`
+(the file is git-ignored — regenerate it whenever inputs change).
 
 Loading the result into Minibini is the user's job — the script never writes
 to a database. Tests load it into the auto-created test DB via
-`call_command('loaddata', ...)`.
+`call_command('loaddata', ...)`. Optionally, `core.configuration` +
+`core.shift` records may be split out into a load-after companion file
+(`datasets/config_and_shifts.json`) for independent tweaking — when that
+file exists, `tests/test_neals_fixture.py` loads the pair as one dataset
+(bleps need the shifts for the enclosure invariant).
 
 ## 3. Pipeline at a glance
 
@@ -100,8 +108,9 @@ to a database. Tests load it into the auto-created test DB via
 
 1. **Load**: Excel sheets into memory; Kanban CSV into a list of dicts.
 2. **Select spine**: pair each recent Kanban card with the Estimates-sheet
-   rows whose `Reference` base matches the card's `External ID`. The
-   newest `--limit` matched cards become the Jobs we'll build.
+   rows whose `Reference` base matches the card's `External ID`. All
+   non-archived active-stage matches plus the newest other matches (up to
+   `--limit` total) become the Jobs we'll build (§2).
 3. **`build_seed`**: copies users, accounting categories and rate schemes
    verbatim from `fixtures/large_datasets/nealseed.json`. (Fixed charges no
    longer need a "Flat Fee" scheme — they become `jobs.fee` atoms in

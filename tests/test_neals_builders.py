@@ -25,12 +25,26 @@ class SpineTest(unittest.TestCase):
         c.loader.load()
         c.csv_cards = c.csv_loader.load()
         spine = c.select_spine()
-        self.assertLessEqual(len(spine), 20)
+        # Active-stage cards are always included, so the spine may exceed a
+        # small limit; the fill portion is still capped.
         self.assertGreater(len(spine), 0)
         for entry in spine:
             self.assertIn('card', entry)
             self.assertIn('estimate_rows', entry)
             self.assertTrue(entry['estimate_rows'])
+
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_active_board_cards_survive_the_limit(self):
+        # Regression (2026-07-13): the two Barbara Freeman jobs — in-progress
+        # cards created in 2025 — silently aged out of the newest-100 window
+        # even though their FreeAgent estimates matched.
+        c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=100)
+        c.loader.load()
+        c.csv_cards = c.csv_loader.load()
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertIn('07724', bases)
+        self.assertIn('07725', bases)
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -2197,3 +2211,77 @@ class InvoicedJobStatusReconcileTest(unittest.TestCase):
         jp = self._job(c, 'draft')
         self._run_pass(c)
         self.assertEqual(self._status(c, jp), 'draft')
+
+
+class SpineActiveCardPolicyTest(unittest.TestCase):
+    """Dataset-independent: non-archived cards in an ACTIVE stage (in
+    progress / invoice) are always selected, whatever their age — live
+    board work must never silently age out of the dataset. Remaining
+    slots fill newest-first as before."""
+
+    def _converter(self, cards, refs, limit):
+        c = NealsDataConverter('/dev/null', '/dev/null',
+                               output_path='/tmp/x.json', limit=limit)
+        class FakeLoader:
+            sheets_data = {'Estimates': [{'Reference': r} for r in refs]}
+        c.loader = FakeLoader()
+        c.csv_cards = cards
+        return c
+
+    def _card(self, ext, created, stage='estimate', archived=''):
+        return {'External ID': ext, 'Created at': created,
+                'Stage': stage, 'Archived at': archived}
+
+    def test_old_active_card_survives_the_limit(self):
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00002', '2026-07-02'),
+            self._card('00003', '2026-07-03'),
+            self._card('00009', '2025-01-01', stage='In Progress'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00003', '00009'], limit=3)
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertIn('00009', bases)
+        self.assertEqual(len(bases), 3)  # active + the 2 newest others
+        self.assertNotIn('00001', bases)  # oldest non-active aged out
+
+    def test_archived_active_stage_card_ages_out_normally(self):
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00002', '2026-07-02'),
+            self._card('00009', '2025-01-01', stage='In Progress',
+                       archived='2025-06-01'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00009'], limit=2)
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertNotIn('00009', bases)
+
+    def test_old_done_card_ages_out_normally(self):
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00002', '2026-07-02'),
+            self._card('00009', '2025-01-01', stage='Done or Rejected'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00009'], limit=2)
+        bases = {e['base_ref'] for e in c.select_spine()}
+        self.assertNotIn('00009', bases)
+
+    def test_spine_stays_newest_first_overall(self):
+        # Actives consume limit slots (total = max(limit, actives)): with
+        # limit=2, the active card plus ONE newest fill — ordered newest
+        # first overall.
+        cards = [
+            self._card('00001', '2026-07-01'),
+            self._card('00009', '2025-01-01', stage='Invoice'),
+            self._card('00002', '2026-07-02'),
+        ]
+        c = self._converter(cards, ['00001', '00002', '00009'], limit=2)
+        spine = c.select_spine()
+        self.assertEqual([e['base_ref'] for e in spine],
+                         ['00002', '00009'])
+
+    def test_limit_never_cuts_active_cards(self):
+        cards = [self._card('0000%d' % i, '2025-01-0%d' % i,
+                            stage='In Progress') for i in range(1, 5)]
+        c = self._converter(cards, [f['External ID'] for f in cards], limit=2)
+        self.assertEqual(len(c.select_spine()), 4)

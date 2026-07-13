@@ -24,3 +24,6 @@ nealsdata/datasets/
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+
+# Local temp DB dumps (may contain tokens/sessions)
+tempfixture.json

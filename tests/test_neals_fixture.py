@@ -8,6 +8,16 @@ from apps.estimates.models import Estimate
 from apps.deliverables.models import Deliverable
 
 FIXTURE = 'nealsdata/datasets/converted.json'
+# Optional load-after companion: RM sometimes splits configuration + shifts
+# out of converted.json to tweak them independently before loading. When the
+# split file exists, the pair is the complete dataset — load both.
+EXTRAS = 'nealsdata/datasets/config_and_shifts.json'
+
+
+def _load_dataset():
+    call_command('loaddata', FIXTURE, verbosity=0)
+    if os.path.exists(EXTRAS):
+        call_command('loaddata', EXTRAS, verbosity=0)
 
 
 @unittest.skipUnless(os.path.exists(FIXTURE), 'converted.json not generated')
@@ -15,7 +25,7 @@ class NealsFixtureLoadTest(TestCase):
     def test_fixture_loads_into_test_db(self):
         # Loads into the auto-created TEST database; raises on any
         # FK / field / schema mismatch.
-        call_command('loaddata', FIXTURE, verbosity=0)
+        _load_dataset()
         self.assertGreater(Job.objects.count(), 0)
         # every Task has a rate_scheme (it is a NOT NULL FK)
         self.assertEqual(Task.objects.filter(rate_scheme__isnull=True).count(), 0)
@@ -30,7 +40,7 @@ class NealsFixtureLoadTest(TestCase):
         # The validate_data command must run to completion against the
         # generated fixture (it reports issues, it does not raise on them) —
         # this exercises every check_* method against real converter output.
-        call_command('loaddata', FIXTURE, verbosity=0)
+        _load_dataset()
         out = StringIO()
         call_command('validate_data', stdout=out)
         # It always prints an error summary line ('N error(s)' or 'No errors').
@@ -41,7 +51,7 @@ class NealsFixtureLoadTest(TestCase):
         # (enclosure / no per-user overlap / task-not-pending) report no errors.
         from apps.jobs.models import Blep
         from apps.core.models import Shift
-        call_command('loaddata', FIXTURE, verbosity=0)
+        _load_dataset()
         self.assertGreater(Blep.objects.count(), 0)
         self.assertGreater(Shift.objects.count(), 0)
         out = StringIO()
