@@ -135,7 +135,7 @@
 <table class="data-table task-tree-table">
   <thead>
     <tr>
-      {#if !readonly && !jobLocked}<th>Move Material</th>{/if}
+      {#if !readonly && !jobLocked}<th class="move-cell" aria-label="Move target"></th>{/if}
       <th>Name</th>
       {#if showAssignee}<th>Assignee</th>{/if}
       <th class="text-right">Scheduled Time</th>
@@ -258,7 +258,8 @@
   .dim { color: #888; font-size: 13px; }
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 48px; }
-  .move-cell { text-align: center; width: 40px; }
+  /* Headerless radio column — just wide enough for the radio button. */
+  .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   /* Fees are billable but not a task/material — tint them so they read distinctly. */
   .fee-row { background: #f3e8ff; }
   .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }

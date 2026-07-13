@@ -157,9 +157,12 @@
      strike the row through so it reads as a tombstone. */
   .material-row.released { color: #9ca3af; text-decoration: line-through; }
   .material-marker { color: #aaa; font-size: 8px; vertical-align: middle; margin-right: 4px; }
+  /* Nesting ladder: parent task 0 → its materials 28 → subtask names 40
+     (TaskRow) → subtask materials 60. */
   .indent { padding-left: 28px; }
-  .indent-2 { padding-left: 48px; }
-  .move-cell { text-align: center; width: 40px; }
+  .indent-2 { padding-left: 60px; }
+  /* Headerless radio column — just wide enough for the radio button. */
+  .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
 

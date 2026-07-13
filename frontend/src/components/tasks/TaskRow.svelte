@@ -103,8 +103,9 @@
 <style>
   /* Top-level rows ride the shared .data-table zebra stripe. */
   .subtask-row { background: #f0f9ff; }
-  .indent { padding-left: 28px; }
-  .move-cell { text-align: center; width: 40px; }
+  .indent { padding-left: 40px; }
+  /* Headerless radio column — just wide enough for the radio button. */
+  .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
   .est-total { color: #888; }

@@ -532,7 +532,7 @@
     <table class="materials-table">
       <thead>
         <tr>
-          {#if !taskIsTerminal && !jobLocked}<th>Move</th>{/if}
+          {#if !taskIsTerminal && !jobLocked}<th class="move-col" aria-label="Move target"></th>{/if}
           <th>Description</th>
           <th>Status</th>
           <th class="text-right">Qty</th>
@@ -675,6 +675,8 @@
     overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
   }
   .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px; }
+  /* Headerless radio column — just wide enough for the radio button. */
+  .move-col { width: 24px; }
   .materials-table th { padding: 6px 10px; text-align: left; background: #fefce8; }
   .materials-table td { padding: 6px 10px; }
   .text-right { text-align: right; }
