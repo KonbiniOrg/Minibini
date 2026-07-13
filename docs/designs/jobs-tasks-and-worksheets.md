@@ -180,7 +180,7 @@ instant and lossless:
   `TasksPanel` hides Add Work and the work-complete button
   (`canMarkWorkComplete(job)` reads the flag), and `TaskDetailPage`
   hides its action band, Edit Task, Add Subtask, and Add Material while
-  held. The venue rule stated precisely: **plan edits freeze;
+  held. The hold rule stated precisely: **plan edits freeze;
   procurement reality stays** — Order, Attach expense, Mark
   on-hand/received (and Add Expense) remain available on a held job.
 - **Status changes are blocked** (`JobService.update_job` raises) —
@@ -1189,7 +1189,7 @@ health*, not documents (the rail names the surfaces).
 |---|---|---|---|
 | **Scope** | no estimate exists yet | current estimate is draft/open, **or** a draft/open change order re-activates a settled estimate (customer-response clock, 7 days) | estimate terminal and no live CO — total, version, accepted/CO dates, deliverable count |
 | **Work** | job not yet approved | approved/in_progress with non-terminal tasks — progress (by estimated worker time, falling back to task count), task counts + blocked pill, Due stat (working-day countdown, omitted with no due date), "working now" clock | all tasks terminal / job `work_complete`+ (or stopped for good: cancelled/rejected) — task count + hours logged |
-| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` § Venue rule, and LATER.md) | POs exist, all received |
+| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` §16, and LATER.md) | POs exist, all received |
 | **Spend** | nothing spent | anything spent, job not terminal — Labor ($ + hours), Materials ($ bought), Total spent (% of scope) | job terminal — same three figures as settled facts |
 | **Invoicing** | no invoices | anything unbilled/unpaid — one stat group per invoice (payment-latency clock: green "paid in N days" / red "sent N days ago, unpaid"), Remaining to bill, Billed % (collapses oldest paid invoices past 4 rows) | fully billed and paid |
 | **Delivery** | nothing prepared yet | a prepared shipment awaits pickup (red past 3 working days), or work is done with nothing shipped | everything picked up |
@@ -1338,18 +1338,19 @@ affordances:
 mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
-**Per-material status & actions (freeform-materials venue rule).** Each material
-row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-NNNN
-/ Awaiting customer / On Hand / Consumed / Released** (`materialStatus`,
+**Per-material status & actions.** Each material row carries a derived
+status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
+customer / On Hand / Consumed / Released** (`materialStatus`,
 `frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
-`cost_source === 'estimated'`. **All per-material actions live here on the task
-view page only** — Set pricing (establishes a provisional material), the Order
-dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
-quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
-job overview shows no material rows at all — its Materials block is an
-aggregate Coverage stat only (§9.1a; `materials-inventory-and-purchasing.md`
-§ Venue rule). Full vocabulary and action table:
-`materials-inventory-and-purchasing.md` §16.
+`cost_source === 'estimated'`. Rows render through the shared
+`MaterialRow.svelte` fragment, and the **full per-material action set is
+available on every surface that lists materials** (this page, the task
+detail page, the parent-task subtask tree) — the old
+actions-on-this-page-only venue rule was retired 2026-07-13; gating is by
+material status / permissions / job state only. The job overview still
+shows no material rows at all — its Materials block is an aggregate
+Coverage stat only (§9.1a). Full vocabulary, action table, and the shared
+fragment/flow components: `materials-inventory-and-purchasing.md` §16.
 
 **Start Estimate** (creates a draft estimate directly — `POST /api/estimates/`
 with `{job}`) and, while the job is held (`on_hold` flag), **Create Change
@@ -1556,11 +1557,15 @@ Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
    terminal).
 4. Sections: **Description → Subtasks → Materials → Work Sessions**
    (BlepList, whose **Add Entry** button stays — it is the only way to
-   log forgotten historical time from this page). The subtask tree is
-   deliberately **passive for task ops** (A3: `TaskTree` renders a
-   button only when its callback is wired — never a dead no-op button):
-   no edit/del/cancel on subtask rows here — a subtask's own detail
-   page is its editing surface. Wired: material add/edit, and the
+   log forgotten historical time from this page). The **Materials
+   section renders the shared `MaterialRow` fragment with the full
+   action set** (chips, tombstones, Order/receipt dialogs, Move — the
+   subtask rows' radios are the move targets; removal is the release
+   action, not a raw delete). The subtask tree is deliberately
+   **passive for task ops** (A3: `TaskTree` renders a button only when
+   its callback is wired — never a dead no-op button): no
+   edit/del/cancel on subtask rows here — a subtask's own detail page
+   is its editing surface. Wired: the full material action set, and the
    sibling **reorder arrows** (B3 — subtasks reorder here, not on the
    job task list; same `reorder-tasks` endpoint, peer-scoped
    server-side). A subtask's detail page renders **no Subtasks section

@@ -12,11 +12,16 @@
   import BlepEditModal from '../../components/tasks/BlepEditModal.svelte';
   import TaskTree from '../../components/TaskTree.svelte';
   import LinkifiedText from '../../components/LinkifiedText.svelte';
+  import MaterialRow from '../../components/materials/MaterialRow.svelte';
+  import MaterialFulfillmentModals from '../../components/materials/MaterialFulfillmentModals.svelte';
+  import ExpenseModal from '../../components/expenses/ExpenseModal.svelte';
+  import { consumeMaterial, restockMaterial, drawMoreMaterial, moveMaterial }
+    from '../../lib/materialOps.js';
   import MaterialModal from '../../components/MaterialModal.svelte';
   import WorkItemForm from '../../components/WorkItemForm.svelte';
   import AssignModal from '../../components/AssignModal.svelte';
   import JobShell from '../../components/jobs/JobShell.svelte';
-  import { formatQtyUnits, formatDuration } from '../../lib/format.js';
+  import { formatDuration } from '../../lib/format.js';
 
   let { params = {} } = $props();
 
@@ -75,11 +80,35 @@
   // The add-qty widget takes new production entries; a blocked task takes none.
   const canAddQty = $derived(!taskIsTerminal && task?.status !== 'blocked');
 
-  // The materials table's trailing column holds row actions (edit/del) when the
-  // task is live, and the INVOICED badge for any billed material. Render it
-  // whenever either has something to show so the header and body stay aligned.
-  const anyMaterialInvoiced = $derived(materials.some((m) => m.invoice));
-  const showMaterialTrailingCol = $derived(!taskIsTerminal || anyMaterialInvoiced);
+  // Same lock the job task list uses: terminal jobs freeze everything.
+  const jobLocked = $derived(
+    job != null && ['completed', 'cancelled', 'rejected'].includes(job.status)
+  );
+
+  // Material rows here are the same shared fragment (MaterialRow) the job
+  // task list renders, with the same full action set — gating is by
+  // material status / permissions / job state, never by which page this is.
+  let selectedTaskId = $state(null);          // Move-target radio (subtask rows)
+  let attachExpenseMaterial = $state(null);
+  let fulfillModals = $state(null);           // Order + Mark-received dialogs
+
+  const handleConsumeMaterial = (material) => consumeMaterial(material, refresh);
+  const handleRestockMaterial = (material) => restockMaterial(material, refresh);
+  const handleDrawMoreMaterial = (material) => drawMoreMaterial(material, refresh);
+  async function handleMoveMaterial(material, targetTaskId) {
+    await moveMaterial(material, targetTaskId, refresh);
+    selectedTaskId = null;
+  }
+
+  const materialCallbacks = $derived({
+    onConsumeMaterial: handleConsumeMaterial,
+    onRestockMaterial: handleRestockMaterial,
+    onDrawMoreMaterial: handleDrawMoreMaterial,
+    onMoveMaterial: handleMoveMaterial,
+    onOrderMaterial: (m) => fulfillModals?.startOrder(m),
+    onMarkOnHand: (m) => fulfillModals?.startReceipt(m),
+    onAttachExpense: (m) => { attachExpenseMaterial = m; },
+  });
 
   function handleConflict(c) { conflict = c; }
   function handleResolved() { conflict = null; refresh(); }
@@ -256,16 +285,6 @@
     matModalMaterial = material;
     matModalMode = 'edit';
     matModalOpen = true;
-  }
-
-  async function handleDeleteMaterial(material) {
-    if (!confirm('Delete this material?')) return;
-    try {
-      await api.delete(`/api/tasks/${params.taskId}/materials/${material.material_id}/`);
-      await loadMaterials();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not delete material.'));
-    }
   }
 
   function handleMaterialSaved() {
@@ -479,6 +498,7 @@
       <TaskTree
         tasks={subtasks}
         readonly={taskIsTerminal}
+        {jobLocked}
         jobOnHold={job?.on_hold ?? false}
         canManage={task?.can_manage}
         showStatus={true}
@@ -487,6 +507,14 @@
         onAddMaterial={handleSubtaskAddMaterial}
         onEditMaterial={handleSubtaskEditMaterial}
         onReorder={handleSubtaskReorder}
+        onConsumeMaterial={materialCallbacks.onConsumeMaterial}
+        onRestockMaterial={materialCallbacks.onRestockMaterial}
+        onDrawMoreMaterial={materialCallbacks.onDrawMoreMaterial}
+        onMoveMaterial={materialCallbacks.onMoveMaterial}
+        onOrderMaterial={materialCallbacks.onOrderMaterial}
+        onMarkOnHand={materialCallbacks.onMarkOnHand}
+        onAttachExpense={materialCallbacks.onAttachExpense}
+        bind:selectedTaskId
       />
     {:else}
       <p>No subtasks.</p>
@@ -496,38 +524,35 @@
     {/if}
   {/if}
 
-  <!-- Materials section -->
+  <!-- Materials section — the shared MaterialRow fragment, same status
+       vocabulary and full action set as the job task list (Move targets are
+       the subtask radios above; removal is the release action). -->
   <h3>Materials</h3>
   {#if materials.length > 0}
     <table class="materials-table">
       <thead>
         <tr>
+          {#if !taskIsTerminal && !jobLocked}<th>Move</th>{/if}
           <th>Description</th>
+          <th>Status</th>
           <th class="text-right">Qty</th>
+          <th class="text-right">Units</th>
           <th class="text-right">Unit Cost</th>
           <th class="text-right">Sell Price</th>
           <th class="text-right">Total</th>
-          {#if showMaterialTrailingCol}<th>Actions</th>{/if}
+          {#if !taskIsTerminal}<th>Actions</th>{/if}
         </tr>
       </thead>
       <tbody>
-        {#each materials as mat}
-          <tr>
-            <td class="preserve-breaks">{mat.description || '(no description)'}</td>
-            <td class="text-right">{formatQtyUnits(mat.quantity, mat.units)}</td>
-            <td class="text-right">{mat.unit_cost ? `$${Number(mat.unit_cost).toFixed(2)}` : '-'}</td>
-            <td class="text-right">{mat.sell_price ? `$${Number(mat.sell_price).toFixed(2)}` : '-'}</td>
-            <td class="text-right">{(Number(mat.quantity) && Number(mat.sell_price)) ? `$${(Number(mat.quantity) * Number(mat.sell_price)).toFixed(2)}` : '-'}</td>
-            {#if showMaterialTrailingCol}
-              <td class="row-actions">
-                {#if !taskIsTerminal}
-                  <button type="button" onclick={() => openEditMaterial(mat)}>edit</button>
-                  <button type="button" onclick={() => handleDeleteMaterial(mat)}>del</button>
-                {/if}
-                {#if mat.invoice}{@render invoicedLink(mat.invoice)}{/if}
-              </td>
-            {/if}
-          </tr>
+        {#each materials as mat (mat.material_id)}
+          <MaterialRow
+            material={mat} ownerTask={task} ownerTerminal={taskIsTerminal}
+            indentClass="" taskAligned={false} showAssignee={false}
+            showStatus={true} readonly={taskIsTerminal} {jobLocked}
+            jobOnHold={job?.on_hold ?? false} {selectedTaskId}
+            onEditMaterial={(m) => openEditMaterial(m)}
+            {...materialCallbacks}
+          />
         {/each}
       </tbody>
     </table>
@@ -546,6 +571,17 @@
     {categories}
     onSaved={subtaskMatTaskId ? handleMaterialSavedForSubtask : handleMaterialSaved}
     onClose={handleMatModalClose}
+  />
+
+  <!-- Order chooser + Mark-received receipt dialogs (shared component). -->
+  <MaterialFulfillmentModals bind:this={fulfillModals} onDone={refresh} />
+
+  <ExpenseModal
+    open={attachExpenseMaterial != null}
+    initialJob={job ? { job_id: job.job_id, job_number: job.job_number } : null}
+    initialMaterial={attachExpenseMaterial}
+    onSaved={() => { attachExpenseMaterial = null; refresh(); }}
+    onClose={() => { attachExpenseMaterial = null; }}
   />
 
   <WorkItemForm

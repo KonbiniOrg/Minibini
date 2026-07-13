@@ -109,9 +109,12 @@ describe('TaskDetailPage materials', () => {
     });
   }
 
-  it("puts a billed material's INVOICED badge in the trailing actions column, not the description", async () => {
+  it("puts a billed material's INVOICED badge in the status cell, not the description", async () => {
+    // Shared MaterialRow contract: the badge rides the Status cell, same as
+    // the job task list — never glued to the description text.
     mockWithMaterial({
       material_id: 1, description: 'Steel plate', quantity: '2', units: 'ea',
+      consumption_state: 'consumed',
       invoice: { id: 12, invoice_number: 'INV-12' },
     });
     const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
@@ -119,10 +122,10 @@ describe('TaskDetailPage materials', () => {
     await waitFor(() => expect(container.querySelector('.materials-table tbody tr')).not.toBeNull());
     const cells = container.querySelectorAll('.materials-table tbody tr td');
     const descCell = cells[0];
-    const lastCell = cells[cells.length - 1];
     expect(descCell).toHaveTextContent('Steel plate');
     expect(descCell.querySelector('.badge-invoiced')).toBeNull();
-    expect(lastCell.querySelector('.badge-invoiced')).not.toBeNull();
+    const badgeCell = container.querySelector('.materials-table .badge-invoiced');
+    expect(badgeCell).not.toBeNull();
   });
 
   it('keeps the header and body column counts aligned when a completed task has an invoiced material', async () => {
@@ -507,5 +510,89 @@ describe('TaskDetailPage crumbs', () => {
     const parentLink = getByText('Build shelving unit');
     expect(parentLink.tagName).toBe('A');
     expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
+  });
+});
+
+describe('TaskDetailPage materials use the shared task-list row (full action set)', () => {
+  function mockMats(mats, taskOverrides = {}, jobOverrides = {}) {
+    const task = {
+      task_id: 7, name: 'Mill', status: 'in_progress', job: { id: 3 },
+      can_manage: true, assignee_name: null, est_qty: '2',
+      effective_rate: '25', scheme_unit_label: 'hr',
+      ...taskOverrides,
+    };
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/tasks/7/')) {
+        if (url.includes('/materials')) return Promise.resolve(mats);
+        if (url.includes('/subtasks')) return Promise.resolve([]);
+        return Promise.resolve(task);
+      }
+      if (url.startsWith('/api/jobs/3/')) {
+        return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'W',
+                                 status: 'in_progress', ...jobOverrides });
+      }
+      return Promise.resolve([]);
+    });
+  }
+
+  const needed = {
+    material_id: 5, description: 'Baltic birch', quantity: '3',
+    units: 'sheet', unit_cost: '40.00', sell_price: '55.00',
+    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '1.00',
+    qty_available: '1.00', cost_source: 'entered',
+  };
+
+  it('renders the derived status chip on a material row', async () => {
+    mockMats([needed]);
+    const { findByRole, findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByText('Needed')).toBeInTheDocument();
+  });
+
+  it('offers the fulfillment actions (venue rule removed)', async () => {
+    mockMats([needed]);
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByText('Mark on-hand')).toBeInTheDocument();
+    expect(queryByText('Attach expense')).toBeInTheDocument();
+    expect(queryByText('draw more')).toBeInTheDocument();
+    expect(queryByText('restock')).toBeInTheDocument();
+    // Raw delete is gone — release (full-qty restock) is the removal path,
+    // same vocabulary as the task list.
+    expect(queryByText('del')).toBeNull();
+  });
+
+  it('shows a consumed material as finalized: Used chip, no actions', async () => {
+    mockMats([{ ...needed, consumption_state: 'consumed' }]);
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByText('Used')).toBeInTheDocument();
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByText('restock')).toBeNull();
+    expect(queryByText('mark used')).toBeNull();
+  });
+
+  it('restock prompts for a quantity and posts to the restock endpoint', async () => {
+    mockMats([needed]);
+    api.post.mockReset();
+    api.post.mockResolvedValue({});
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('3');
+    const { findByRole, findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await fireEvent.click(await findByText('restock'));
+    expect(api.post).toHaveBeenCalledWith('/api/materials/5/restock/', { quantity: '3' });
+    promptSpy.mockRestore();
+  });
+
+  it('freeze-plan-not-procurement still applies on a held job', async () => {
+    mockMats([needed], {}, { on_hold: true, hold_reason: 'CO' });
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    // Procurement reality stays; plan edits freeze.
+    expect(await findByText('Mark on-hand')).toBeInTheDocument();
+    expect(queryByText('Attach expense')).toBeInTheDocument();
+    expect(queryByText('restock')).toBeNull();
+    expect(queryByText('edit')).toBeNull();
   });
 });
