@@ -1338,6 +1338,17 @@ affordances:
 mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
+**Row fragments.** `TaskTree` renders no task or material row markup of
+its own: task rows (top-level AND subtask — `isSubtask` carries the
+nested styling and the deliberate no-+sub/no-arrows omissions) come from
+the shared `components/tasks/TaskRow.svelte`, material rows from
+`components/materials/MaterialRow.svelte`, and the row math/formatting
+both share with the grand-total footer lives in `lib/taskTotals.js` —
+so a row's total and the table's sum cannot diverge, and a subtask row
+is pixel-identical wherever it renders (the old duplicated subtask block
+had already dropped the waiting-on-materials badge). TaskTree itself
+keeps only the fee/expense rows, section headers, and the footer.
+
 **Per-material status & actions.** Each material row carries a derived
 status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
 customer / On Hand / Consumed / Released** (`materialStatus`,

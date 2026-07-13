@@ -7,6 +7,7 @@
   // status, permissions, and the job's held/locked state only.
   import { link } from 'svelte-spa-router';
   import { materialStatus, costUnconfirmed } from '../../lib/materialStatus.js';
+  import { fmtMoney as fmt, materialTotal } from '../../lib/taskTotals.js';
   import { canManageFinancials } from '../../stores/permissions.js';
 
   let {
@@ -38,14 +39,6 @@
     onMarkOnHand = null,
     onAttachExpense = null,
   } = $props();
-
-  function fmt(n) {
-    return n ? `$${Number(n).toFixed(2)}` : '-';
-  }
-
-  function materialTotal(mat) {
-    return (Number(mat.quantity) || 0) * (Number(mat.sell_price) || 0);
-  }
 
   function isMaterialPending(mat) {
     return mat.consumption_state === 'pending';

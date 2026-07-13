@@ -1,7 +1,9 @@
 <script>
   import { link } from 'svelte-spa-router';
-  import TaskActivityIndicator from './tasks/TaskActivityIndicator.svelte';
+  import TaskRow from './tasks/TaskRow.svelte';
   import MaterialRow from './materials/MaterialRow.svelte';
+  import { fmtMoney as fmt, taskTotal, materialTotal, feeTotal }
+    from '../lib/taskTotals.js';
 
   let {
     tasks = [],
@@ -55,54 +57,12 @@
   });
   const looseExpenses = $derived((expenses || []).filter((e) => !e.material));
 
-  function taskTotalInfo(task) {
-    // Prefer the live computed_charge (driven by actuals: bleps for elapsed_time,
-    // actual_qty for entered_qty). When actuals are absent
-    // the computed charge is 0 — fall back to est_qty * effective_rate as the
-    // estimated total, marked so the UI can render it in grey.
-    const actual = Number(task.computed_charge) || 0;
-    if (actual > 0) return { value: actual, isEstimate: false };
-    const est = (Number(task.est_qty) || 0) * (Number(task.effective_rate) || 0);
-    if (est > 0) return { value: est, isEstimate: true };
-    return { value: 0, isEstimate: false };
+  // Row math/formatting comes from lib/taskTotals.js — the same source the
+  // shared TaskRow/MaterialRow fragments use, so rows and this footer's
+  // grand total cannot diverge.
+  function isTerminal(task) {
+    return task.status === 'complete' || task.status === 'cancelled';
   }
-
-  function taskTotal(task) {
-    return taskTotalInfo(task).value;
-  }
-
-  function taskActual(task) {
-    // ELAPSED_TIME → hours from bleps. ENTERED_QTY → worker-entered qty.
-    // Unset/other → no actual to display.
-    if (task.scheme_algorithm === 'elapsed_time') {
-      const h = Number(task.actual_hours) || 0;
-      return h > 0 ? h : null;
-    }
-    if (task.scheme_algorithm === 'entered_qty') {
-      return task.actual_qty != null && task.actual_qty !== '' ? task.actual_qty : null;
-    }
-    return null;
-  }
-
-  function materialTotal(mat) {
-    const qty = Number(mat.quantity) || 0;
-    const price = Number(mat.sell_price) || 0;
-    return qty * price;
-  }
-
-  function feeTotal(fee) {
-    return (Number(fee.quantity) || 0) * (Number(fee.unit_rate) || 0);
-  }
-
-  const TERMINAL = ['complete', 'cancelled'];
-  const NON_DELETABLE = ['in_progress', 'complete'];
-  function isTerminal(task) { return TERMINAL.includes(task.status); }
-  function canDelete(task) { return !NON_DELETABLE.includes(task.status); }
-  function canCancel(task) { return ['pending', 'in_progress', 'blocked'].includes(task.status); }
-  // Serializer-computed editability (C1 matrix: pending open to all;
-  // in_progress/blocked manager/PM/assignee). Absent field = older payload
-  // shape — default open and let the server enforce.
-  function canEditTask(task) { return task.can_edit ?? true; }
 
   function taskWithMaterialsTotal(task) {
     let total = taskTotal(task);
@@ -129,59 +89,14 @@
     return total;
   });
 
-  function fmt(n) {
-    return n ? `$${Number(n).toFixed(2)}` : '-';
-  }
-
-  function fmtWorkerTime(value) {
-    // Server returns DurationField as either "HH:MM:SS" / "DD HH:MM:SS"
-    // or ISO 8601 ("PT1H30M"). Render as "Hh Mm" or "Mm" for compactness.
-    if (!value) return '-';
-    const str = String(value);
-    const iso = str.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
-    if (iso) {
-      const days = parseInt(iso[1] || '0', 10);
-      const h = parseInt(iso[2] || '0', 10) + days * 24;
-      const m = parseInt(iso[3] || '0', 10);
-      if (h && m) return `${h}h ${m}m`;
-      if (h) return `${h}h`;
-      if (m) return `${m}m`;
-      return '-';
-    }
-    const hms = str.match(/^(?:(\d+) )?(\d+):(\d+):(\d+)/);
-    if (hms) {
-      const days = parseInt(hms[1] || '0', 10);
-      const h = parseInt(hms[2], 10) + days * 24;
-      const m = parseInt(hms[3], 10);
-      if (h && m) return `${h}h ${m}m`;
-      if (h) return `${h}h`;
-      if (m) return `${m}m`;
-      return '-';
-    }
-    return str;
-  }
-
   const colCount = $derived(8 + (showAssignee ? 1 : 0) + (showStatus ? 1 : 0) + (readonly ? 0 : 1) + (readonly || jobLocked ? 0 : 1));
 
-  function isMaterialAwaitingStock(mat) {
-    // Mirrors MaterialService.consume's stock check: only an inventory-item-
-    // backed material can be short; a freeform one consumes unconditionally.
-    return mat.consumption_state === 'pending'
-      && mat.inventory_item != null
-      && Number(mat.qty_on_hand) < Number(mat.quantity);
-  }
-
-  function taskAwaitingMaterials(task) {
-    // Derived, never stored (same doctrine as is_amended): an in-progress
-    // task with a pending understocked material refuses further bleps until
-    // the stock arrives — surface that here instead of auto-setting the
-    // human-owned `blocked` status.
-    return task.status === 'in_progress'
-      && (task.materials || []).some(isMaterialAwaitingStock);
-  }
-
-  // Material row rendering (chips, tombstones, the full action set) lives in
-  // the shared MaterialRow component — the same fragment every surface uses.
+  // Row rendering lives in the shared TaskRow / MaterialRow fragments —
+  // the same components every surface uses.
+  const taskCallbacks = $derived({
+    onTaskClick, onAssignTask, onEditTask, onDeleteTask, onCancelTask,
+    onAddMaterial, onAddSubtask,
+  });
   const materialCallbacks = $derived({
     onMoveMaterial, onEditMaterial, onConsumeMaterial, onRestockMaterial,
     onDrawMoreMaterial, onOrderMaterial, onMarkOnHand, onAttachExpense,
@@ -237,43 +152,13 @@
   <tbody>
     {#each tasks as task, taskIdx}
       <!-- Task row -->
-      <tr class="task-row">
-        {#if !readonly && !jobLocked}
-          <td class="move-cell">{#if !isTerminal(task)}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
-        {/if}
-        <td>
-          <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
-          {#if taskAwaitingMaterials(task)}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
-        </td>
-        {#if showAssignee}<td>{task.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(task) && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
-        <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
-        {#if showStatus}<td>{#if task.invoice}{@render invoicedLink(task.invoice)}{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-        <td class="text-right">{task.est_qty ?? '-'}</td>
-        <td class="text-right">{taskActual(task) ?? '-'}</td>
-        <td class="text-right">{task.scheme_unit_label || '-'}</td>
-        <td class="text-right">-</td>
-        <td class="text-right">{fmt(task.effective_rate)}</td>
-        <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmt(taskTotal(task))}</td>
-        {#if !readonly && !jobLocked}
-          <td class="actions-cell row-actions">
-            {#if !isTerminal(task)}
-              {#if onEditTask && !jobOnHold && canEditTask(task)}<button type="button" onclick={() => onEditTask(task)}>edit</button>{/if}
-              {#if onDeleteTask && !jobOnHold && canDelete(task) && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
-              {#if onCancelTask && !jobOnHold && canCancel(task)}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
-              {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
-              {#if onAddSubtask && !jobOnHold}<button type="button" onclick={() => onAddSubtask(task)}>+sub</button>{/if}
-            {:else if onDeleteTask && !jobOnHold && canDelete(task) && !task.has_bleps}
-              <button type="button" onclick={() => onDeleteTask(task)}>del</button>
-            {/if}
-            {#if canManage && onReorder}
-              <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
-              <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === tasks.length - 1}>&#9660;</button>
-            {/if}
-          </td>
-        {:else if !readonly}
-          <td class="actions-cell row-actions"></td>
-        {/if}
-      </tr>
+      <TaskRow
+        {task} {taskIdx} taskCount={tasks.length}
+        {readonly} {jobLocked} {jobOnHold} {canManage}
+        {showAssignee} {showStatus}
+        bind:selectedTaskId {onReorder}
+        {...taskCallbacks}
+      />
 
       <!-- Materials for this task -->
       {#each (task.materials || []) as mat}
@@ -287,37 +172,13 @@
 
       <!-- Subtasks for this task -->
       {#each (task.subtasks || []) as sub}
-        <tr class="subtask-row">
-          {#if !readonly && !jobLocked}
-            <td class="move-cell">{#if !isTerminal(sub)}<input type="radio" name="move-target" value={sub.task_id} bind:group={selectedTaskId}>{/if}</td>
-          {/if}
-          <td class="indent">
-            <button type="button" class="link-btn" onclick={() => onTaskClick(sub)}>{sub.name}</button>
-          </td>
-          {#if showAssignee}<td>{sub.assignee_name || 'Unassigned'} {#if !readonly && !isTerminal(sub) && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(sub)}>assign</button>{/if}</td>{/if}
-          <td class="text-right">{fmtWorkerTime(sub.est_worker_time)}</td>
-          {#if showStatus}<td>{#if sub.invoice}{@render invoicedLink(sub.invoice)}{:else}<TaskActivityIndicator task={sub} />{#if sub.status === 'blocked' && sub.blocked_reason}<br><span class="blocked-reason preserve-breaks">{sub.blocked_reason}</span>{/if}{/if}</td>{/if}
-          <td class="text-right">{sub.est_qty ?? '-'}</td>
-          <td class="text-right">{taskActual(sub) ?? '-'}</td>
-          <td class="text-right">{sub.scheme_unit_label || '-'}</td>
-          <td class="text-right">-</td>
-          <td class="text-right">{fmt(sub.effective_rate)}</td>
-          <td class="text-right" class:est-total={taskTotalInfo(sub).isEstimate}>{fmt(taskTotal(sub))}</td>
-          {#if !readonly && !jobLocked}
-            <td class="actions-cell row-actions">
-              {#if !isTerminal(sub)}
-                {#if onEditTask && !jobOnHold && canEditTask(sub)}<button type="button" onclick={() => onEditTask(sub)}>edit</button>{/if}
-                {#if onDeleteTask && !jobOnHold && canDelete(sub) && !sub.has_bleps}<button type="button" onclick={() => onDeleteTask(sub)}>del</button>{/if}
-                {#if onCancelTask && !jobOnHold && canCancel(sub)}<button type="button" onclick={() => onCancelTask(sub)}>cancel</button>{/if}
-                {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(sub)}>+mat</button>{/if}
-              {:else if onDeleteTask && !jobOnHold && canDelete(sub) && !sub.has_bleps}
-                <button type="button" onclick={() => onDeleteTask(sub)}>del</button>
-              {/if}
-            </td>
-          {:else if !readonly}
-            <td class="actions-cell row-actions"></td>
-          {/if}
-        </tr>
+        <TaskRow
+          task={sub} isSubtask={true}
+          {readonly} {jobLocked} {jobOnHold} {canManage}
+          {showAssignee} {showStatus}
+          bind:selectedTaskId
+          {...taskCallbacks}
+        />
 
         <!-- Materials for this subtask -->
         {#each (sub.materials || []) as mat}
@@ -394,7 +255,6 @@
   .task-tree-table td { padding: 6px 10px; vertical-align: top; }
   .text-right { text-align: right; }
   .est-label { color: #888; font-size: 11px; font-weight: normal; }
-  .est-total { color: #888; }
   .dim { color: #888; font-size: 13px; }
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 48px; }
@@ -404,42 +264,16 @@
   .fee-marker { color: #9333ea; font-weight: bold; margin-right: 4px; }
   /* .badge-invoiced comes from app.css. */
 
-  /* Top-level task rows use the shared .data-table zebra stripe.
-     Material rows (background, chips, tombstones) style themselves in the
-     shared MaterialRow component. */
-  .subtask-row { background: #f0f9ff; }
+  /* Task and material rows style themselves in the shared TaskRow /
+     MaterialRow fragments; the rules here cover only the rows TaskTree
+     still renders itself (fees, expenses, section headers, footer). */
   .expense-row { background: #f0fdf4; }
   .expense-marker { color: #166534; font-weight: 600; margin-right: 4px; }
   .grand-total-row { background: #ecfdf5; border-top: 2px solid #99f6e4; }
   .job-materials-header td { background: #fef9c3; padding-top: 8px; }
 
-  .badge-awaiting {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 1px 6px;
-    font-size: 11px;
-    border-radius: 3px;
-    background: #fef3c7;
-    border: 1px solid #d97706;
-    color: #92400e;
-    white-space: nowrap;
-  }
-  .blocked-reason { font-size: 11px; color: #991b1b; }
-
   .actions-cell {
     max-width: 12em;
   }
   /* Buttons in the cell get the shared .row-actions look (app.css). */
-
-  .link-btn {
-    background: none; border: none; padding: 0; margin: 0;
-    color: #1d4ed8; cursor: pointer; font-size: inherit;
-    text-decoration: underline; text-align: left;
-  }
-  .link-btn:hover { color: #1e40af; }
-  .small-btn {
-    font-size: 11px; padding: 1px 5px; margin-left: 4px;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
-  }
-  .small-btn:hover { background: #f0f0f0; }
 </style>

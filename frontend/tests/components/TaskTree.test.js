@@ -546,3 +546,38 @@ describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit 
     expect(getByText('edit')).toBeInTheDocument();
   });
 });
+
+describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
+  it('badges a subtask waiting on understocked material, same as a top-level task', () => {
+    // Drift symptom of the old duplicated subtask-row block: the badge only
+    // rendered on top-level rows, so the same subtask told different
+    // stories on the job list vs its parent's detail page.
+    const parent = task({
+      task_id: 21, name: 'Parent', status: 'in_progress',
+      subtasks: [{
+        task_id: 22, name: 'Starving sub', status: 'in_progress',
+        est_qty: '1', effective_rate: '10', computed_charge: '0',
+        materials: [{ description: 'Ply', quantity: '3', sell_price: '5',
+                      units: 'sheet', consumption_state: 'pending',
+                      inventory_item: 7, qty_on_hand: '1.00' }],
+      }],
+    });
+    const { queryAllByText } = render(TaskTree, { props: { tasks: [parent], canManage: true } });
+    // Parent has no starving materials of its own; the badge must come
+    // from the SUBTASK row.
+    expect(queryAllByText('waiting on materials').length).toBe(1);
+  });
+
+  it('keeps the deliberate subtask omissions: no +sub, no reorder arrows', () => {
+    const parent = task({
+      task_id: 21, name: 'Parent',
+      subtasks: [task({ task_id: 22, name: 'Sub' })],
+    });
+    const { queryAllByText } = render(TaskTree, {
+      props: { tasks: [parent], canManage: true,
+               onAddSubtask: vi.fn(), onReorder: vi.fn() },
+    });
+    expect(queryAllByText('+sub').length).toBe(1);   // parent row only
+    expect(queryAllByText('▲').length).toBe(1);      // parent row only
+  });
+});
