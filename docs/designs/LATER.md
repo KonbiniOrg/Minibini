@@ -555,6 +555,23 @@ The atom-pull surfaces on estimates and invoices.
   within 30h, manager any time), with a regression test covering the
   null-`end_time` edit.
 
+- **Shifts can overlap: an edit made one shift fully enclose another of the same user.** — _added 2026-07-13_
+  Observed in browser review: editing a shift (the enclosing one was
+  in-progress/open — possibly the same null-`end_time` blind spot as the
+  open-shift-edit bug above) produced two shifts for one user where one
+  fully contains the other. Unlike bleps — which have a DOCUMENTED per-user
+  no-overlap rule (`jobs-tasks-and-worksheets.md` §5.3 rule 2) — the shift
+  docs (`data-constraints.md` §1.2a) state no overlap constraint at all:
+  only one-OPEN-shift-per-user, blep enclosure, and multiple-shifts-per-day
+  (split shifts). So this is a **validation/doc gap**, not a contradicted
+  rule: decide whether per-user shift overlap is illegal (it double-counts
+  attendance — check the payroll report's hours math), then enforce it in
+  `ShiftService` create/edit/clock-in and the change-request approve path,
+  and document it in §1.2a. Deliberately not fixed on `feature/tasks`.
+  _Done when:_ the overlap rule is decided, enforced on every shift write
+  path, documented, and regression-tested (including the open-shift edit
+  case).
+
 - **BUG (investigate): Shift & Blep start times display ~1 hour early, unmodified.** — _added 2026-06-25_
   Observed in browser review: a Shift's and a Blep's `start_time` came through about
   **one hour earlier** than the actual time, with no edit made to the record. A
