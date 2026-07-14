@@ -153,8 +153,8 @@ Status coupling, transitions, and what a job may do at each stage.
   the current frozen **Estimate → "Customer View"**, and the **wizard →
   "Consolidate Lines"** (its actual job is grouping atoms into lines). UI
   labels/terminology only — internal model names can stay. Revisit with
-  `docs/plans/2026-06-24-planning-billing-consolidation-draft.md` (§11 already flags
-  the worksheet-naming question).
+  the planning-billing consolidation design (2026-06-24 draft, since
+  deleted; its §11 already flagged the worksheet-naming question).
   _Done when:_ the consolidation design settles on user-facing names and the UI is
   relabeled (or the idea is explicitly dropped).
 
@@ -201,9 +201,18 @@ Status coupling, transitions, and what a job may do at each stage.
 ## Job overview (2026-07-09 six-block redesign)
 
 The overview replaced its accordion pillars with six lifecycle summary
-blocks this pass (`docs/plans/2026-07-09-job-overview-redesign.md`;
-durable reference `docs/designs/jobs-tasks-and-worksheets.md` §9). Debt
-and open questions specific to that redesign:
+blocks this pass (2026-07-09 redesign; durable reference
+`docs/designs/jobs-tasks-and-worksheets.md` §9). Debt and open
+questions specific to that redesign:
+
+- **Block-internal specific-document links.** — _added 2026-07-12 (from the 2026-07-09 design's deferred list)_
+  The blocks deliberately shipped with no links or actions (the rail
+  sits directly above; Spend has no honest destination). Linking a
+  *specific document* mentioned inside a block — a PO number, an
+  invoice number, an estimate version — is a separate, plausible
+  refinement RM wants to feel out with the page live. _Done when:_ RM
+  decides which in-block document mentions (if any) become links, and
+  they're implemented — or the idea is dropped.
 
 - **`ShipmentsPillar.svelte` and `Accordion.svelte` are orphaned.** — _added 2026-07-09_
   `components/jobs/ShipmentsPillar.svelte` (the read-only shipments
@@ -366,7 +375,7 @@ Billing mechanics and money-record lifecycle.
   M2M set applied twice); (c) whether the value is simply stale vs. the displayed lines. Capture
   est 110 / 116's line items + the adjustment's `adjustment_service.rate` and target categories
   when investigating. NOTE: this whole area is slated to change in **Phase 8** (job-scoped,
-  auto-applied adjustments — `docs/plans/2026-06-26-phase8-job-scoped-adjustments.md`); decide
+  auto-applied adjustments — 2026-06-26 plan, since deleted); decide
   whether to fix the document-scoped bug now or fold the check into that rework.
   _Done when:_ the superseded-estimate adjustment is confirmed correct (or root-caused + fixed),
   with the doubling explained.
@@ -519,6 +528,49 @@ The atom-pull surfaces on estimates and invoices.
   no manager UI to create/edit an arbitrary worker's shift outside this queue's modal.
   _Done when:_ a manager can resolve a blep request that needs a brand-new shift (create one)
   directly from the review flow.
+
+- **Shift self-delete: UI offers a Delete button the server refuses (decide the rule, then align).** — _added 2026-07-13_
+  A worker (`IsAuthenticated` only) is shown Delete on their own fully-today
+  shift, but `ShiftService.delete` requires `can_manage_time` — which is the
+  DOCUMENTED rule (`users-and-permissions.md` twice; `data-constraints.md`
+  §1.2a's self-edit window deliberately says edit/create only). This is a
+  documented **asymmetry with bleps**, where own create/edit/**delete** is
+  allowed within the 30h window (`jobs-tasks-and-worksheets.md` §5.2). RM's
+  expectation was symmetric self-service. Decide: (a) open shift deletion to
+  the own-30h-window rule (service + docs + tests change; the orphaned-bleps
+  guard stays for everyone), or (b) keep manager-only and hide the worker's
+  Delete button (`TimeEditModal.svelte` shows it ungated). Deliberately not
+  fixed on `feature/tasks`.
+  _Done when:_ the rule is decided and UI, service, docs, and tests agree.
+
+- **BUG: a `can_manage_time` holder can't edit their own OPEN (in-progress) shift.** — _added 2026-07-13_
+  Observed in browser review: editing an in-progress shift within the 30h
+  window fails even for a time manager. NOT doc-sanctioned — §1.2a says
+  managers "edit any shift at any time" and documents no open-shift
+  restriction; the only edit constraints are end ≥ start and the enclosure
+  check. Suspects: `_assert_encloses` / the edit path mishandling a null
+  `end_time`, or the edit modal demanding one. Root-cause before fixing.
+  Deliberately not fixed on `feature/tasks`.
+  _Done when:_ an open shift is editable per the documented rules (self
+  within 30h, manager any time), with a regression test covering the
+  null-`end_time` edit.
+
+- **Shifts can overlap: an edit made one shift fully enclose another of the same user.** — _added 2026-07-13_
+  Observed in browser review: editing a shift (the enclosing one was
+  in-progress/open — possibly the same null-`end_time` blind spot as the
+  open-shift-edit bug above) produced two shifts for one user where one
+  fully contains the other. Unlike bleps — which have a DOCUMENTED per-user
+  no-overlap rule (`jobs-tasks-and-worksheets.md` §5.3 rule 2) — the shift
+  docs (`data-constraints.md` §1.2a) state no overlap constraint at all:
+  only one-OPEN-shift-per-user, blep enclosure, and multiple-shifts-per-day
+  (split shifts). So this is a **validation/doc gap**, not a contradicted
+  rule: decide whether per-user shift overlap is illegal (it double-counts
+  attendance — check the payroll report's hours math), then enforce it in
+  `ShiftService` create/edit/clock-in and the change-request approve path,
+  and document it in §1.2a. Deliberately not fixed on `feature/tasks`.
+  _Done when:_ the overlap rule is decided, enforced on every shift write
+  path, documented, and regression-tested (including the open-shift edit
+  case).
 
 - **BUG (investigate): Shift & Blep start times display ~1 hour early, unmodified.** — _added 2026-06-25_
   Observed in browser review: a Shift's and a Blep's `start_time` came through about

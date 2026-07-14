@@ -424,15 +424,17 @@ class TaskModelTest(TestCase):
         self.assertEqual(task.job, self.job)
         self.assertEqual(task.name, "Installation Task")
 
-    def test_assigned_task_requires_est_worker_time(self):
-        """An assigned task must carry an estimated worker time — assigned
-        work has to be schedulable."""
-        with self.assertRaises(ValidationError) as ctx:
-            Task.objects.create(
-                job=self.job, name="Assigned, no estimate",
-                rate_scheme=self.scheme, assignee=self.user,
-            )
-        self.assertIn('est_worker_time', ctx.exception.message_dict)
+    def test_assigned_task_without_est_worker_time_is_legal_model_state(self):
+        """The assigned⇒est_worker_time invariant lives on the explicit
+        assign GESTURES (TaskService.assign / create_direct / update_task —
+        see tests/test_task_lifecycle_history.py), not Task.clean():
+        auto-assign on a worker's first blep deliberately skips it, so the
+        model must accept this state."""
+        task = Task.objects.create(
+            job=self.job, name="Assigned, no estimate",
+            rate_scheme=self.scheme, assignee=self.user,
+        )
+        self.assertIsNone(task.est_worker_time)
 
     def test_assigned_task_with_est_worker_time_allowed(self):
         task = Task.objects.create(

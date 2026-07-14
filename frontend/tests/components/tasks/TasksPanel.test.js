@@ -290,3 +290,82 @@ describe('TasksPanel — job-change coupling', () => {
     confirmSpy.mockRestore();
   });
 });
+
+describe('TasksPanel on-hold gating (B2)', () => {
+  it('hides Add Work while the job is held, keeps Add Expense', async () => {
+    mockApi();
+    const { findByRole, queryByRole } = render(TasksPanel, {
+      props: { job: makeJob({ on_hold: true }) },
+    });
+    await findByRole('button', { name: /add expense/i });
+    expect(queryByRole('button', { name: /add work/i })).toBeNull();
+  });
+
+  it('hides the work-complete button while held, even for managers', async () => {
+    mockApi();
+    const { findByRole, queryByRole } = render(TasksPanel, {
+      props: { job: makeJob({ can_manage: true, on_hold: true }) },
+    });
+    await findByRole('button', { name: /add expense/i });
+    expect(queryByRole('button', { name: /work complete|check complete/i })).toBeNull();
+  });
+});
+
+describe('TasksPanel Check Complete (B4)', () => {
+  it('labels the button Check Complete when an open task exists', async () => {
+    mockApi();
+    const job = makeJob({
+      can_manage: true,
+      tasks: [{ task_id: 1, name: 'Open', status: 'pending', parent_task: null }],
+    });
+    const { findByRole, queryByRole } = render(TasksPanel, { props: { job } });
+    await findByRole('button', { name: /check complete/i });
+    expect(queryByRole('button', { name: /mark work complete/i })).toBeNull();
+  });
+
+  it('labels the button Check Complete when a loose pending material exists', async () => {
+    mockApi();
+    const job = makeJob({
+      can_manage: true,
+      tasks: [{ task_id: 1, name: 'Done', status: 'complete', parent_task: null }],
+      materials: [{ material_id: 5, description: 'Loose', quantity: '2',
+                    consumption_state: 'pending', task: null }],
+    });
+    const { findByRole } = render(TasksPanel, { props: { job } });
+    await findByRole('button', { name: /check complete/i });
+  });
+
+  it('labels the button Mark Work Complete when everything is final', async () => {
+    mockApi();
+    const job = makeJob({
+      can_manage: true,
+      tasks: [{ task_id: 1, name: 'Done', status: 'complete', parent_task: null }],
+    });
+    const { findByRole } = render(TasksPanel, { props: { job } });
+    await findByRole('button', { name: /mark work complete/i });
+  });
+
+  it('Check Complete posts without confirm and lists the blockers', async () => {
+    mockApi();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post.mockReset();
+    api.post.mockResolvedValue({
+      blockers: {
+        tasks: [{ task_id: 1, name: 'Open', status: 'pending' }],
+        materials: [{ material_id: 5, description: 'Loose stock', task_id: null }],
+      },
+    });
+    const job = makeJob({
+      can_manage: true,
+      tasks: [{ task_id: 1, name: 'Open', status: 'pending', parent_task: null }],
+    });
+    const { findByRole, findByText } = render(TasksPanel, { props: { job } });
+    const button = await findByRole('button', { name: /check complete/i });
+    await fireEvent.click(button);
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/3/work-complete/', {});
+    expect(confirmSpy).not.toHaveBeenCalled();
+    await findByText(/resolve/i);
+    await findByText('Loose stock');
+    confirmSpy.mockRestore();
+  });
+});

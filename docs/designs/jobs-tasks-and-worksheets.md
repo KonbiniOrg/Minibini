@@ -175,6 +175,14 @@ instant and lossless:
 - **Task, material, and fee mutations** are blocked by
   `_assert_job_not_on_hold` in `JobService` (create/edit/delete tasks,
   change assignment, complete/block/unblock/cancel, edit materials).
+  The SPA **suppresses the affordances** rather than letting them 400
+  (B2, 2026-07-12): `TaskTree` hides edit/del/cancel/+mat/+sub/assign,
+  `TasksPanel` hides Add Work and the work-complete button
+  (`canMarkWorkComplete(job)` reads the flag), and `TaskDetailPage`
+  hides its action band, Edit Task, Add Subtask, and Add Material while
+  held. The hold rule stated precisely: **plan edits freeze;
+  procurement reality stays** — Order, Attach expense, Mark
+  on-hand/received (and Add Expense) remain available on a held job.
 - **Status changes are blocked** (`JobService.update_job` raises) —
   **except cancellation**, which runs the same live-CO guard as release
   and drops the flag as part of the transition.
@@ -259,11 +267,22 @@ the state machine forbids a direct DRAFT/SUBMITTED jump).
   respect the state machine.
 - Then advances to `work_complete`.
 
-If `JobService._loose_pending_materials(job)` finds task-less materials
-in pending consumption state, the auto-advance silently fails (the task
-status update itself succeeds; the Job stays one rung lower). The same
-guard runs inside `JobService.update_job` whenever a Job is moved to
-`work_complete` — it raises `ValidationError`.
+**The work-complete gate (B4, 2026-07-12):** entering `work_complete` by
+ANY path requires everything final — no non-terminal task and no PENDING
+material (task-attached or loose) with quantity still committed.
+`JobService.work_complete_blockers(job)` computes the offending list;
+`update_job` enforces it as a hard `ValidationError` gate (covering the
+status pill too), and the auto-advance above silently no-ops when it
+trips (the task status update itself succeeds; the Job stays one rung
+lower). The dedicated endpoint (`POST /api/jobs/{id}/work-complete/`,
+manager-or-PM) pre-checks the blockers and — mutating nothing — returns
+`{'blockers': {tasks: [...], materials: [...]}}` so the SPA can render
+the list. The Tasks-page button reads **"Mark Work Complete"** when the
+loaded tree shows no blockers (confirm + advance) and **"Check
+Complete"** when it does (no confirm; the POST returns the list, shown
+as a "resolve these first" modal — deliberate affordance: on a large
+job the button is how you *find* what's still open). Nothing is
+bulk-resolved; each task/material settles through its normal flow.
 
 Entry to `work_complete`, `cancelled`, or `rejected` triggers
 `InventoryService.release_earmarks_for_job(job)` (see
@@ -412,37 +431,74 @@ history entries, and bleps are never carried over to the new Job.
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job
 via `Task.job = FK('jobs.Job', related_name='tasks')`. Hierarchy is via
-`parent_task` (self-FK; subtasks emerge during work, not planning).
+`parent_task` (self-FK; subtasks emerge during work, not planning) and is
+capped at **one level**: a subtask can never itself have subtasks —
+`TaskService.create_direct` rejects a parent that has a parent (and a
+parent from a different job), and the subtask detail page hides its Add
+Subtask affordance. Both creation surfaces (`POST /api/tasks/{id}/subtasks/`
+and the job-nested create with `parent_task`) route through
+`create_direct`, so the on-hold, superseded-scheme, depth, and assignee
+guards — and `mark_work_reopened` — apply identically; pinned by
+`tests/test_subtask_service_guards.py`.
 
-`Task` is **not** decorated with `@history` — see Unfinished Work.
+`Task` IS decorated with `@history(exclude=['task_id', 'worker_queue'])`,
+and every lifecycle transition is history-visible: block / unblock /
+complete / cancel and the pending→in_progress promotion go through
+`task.save()` under the row lock, producing audit diffs (status,
+blocked_reason, actual_qty, auto-assign). `worker_queue` is excluded —
+board-queue position is cosmetic and the bump-to-front on every clock-in
+would spam the trail. The one deliberate `update()` remaining is
+`cancel_work`'s in_progress→pending revert (inside
+`BlepService._cancel_blep`, service layer only): the reverse transition
+stays out of `VALID_TRANSITIONS`, so the revert bypasses `clean()` — and
+writes an explicit **action** history row ("Accidental start cancelled —
+reverted to pending") so the trail stays truthful.
 
 ### 4.0 Write permissions
 
 Task work is worker-driven, so most task writes are open to **any
-authenticated user**:
+authenticated user** — with a per-status editability matrix (the C1
+redesign, 2026-07-12):
 
-- **Add, edit, delete** a task (`POST /api/jobs/{id}/tasks/`,
-  `PATCH`/`DELETE /api/jobs/{id}/tasks/{task_pk}/`) — `IsAuthenticated`.
-  Delete is still refused by `TaskService.delete_task` when the task is
-  `in_progress`/`complete`, has any Bleps, is claimed by a **non-draft**
+- **Add** a task (`POST /api/jobs/{id}/tasks/`, the subtasks endpoint) —
+  `IsAuthenticated`.
+- **Edit** (`PATCH /api/jobs/{id}/tasks/{task_pk}/`) — enforced in
+  `TaskService.update_task`, surfaced as the serializer's computed
+  `can_edit` flag:
+  - `pending` — anyone (qty, rate scheme, description — everything).
+  - `in_progress` / `blocked` — the `can_manage_jobs` atom, the job's
+    PM, **or the task's assignee** (assignee is an object-scoped
+    permission principal, unique to tasks). Others get 403
+    (`TaskPermissionError`).
+  - `complete` / `cancelled` — frozen (no reopen; see the freeze below).
+- **Delete** — `IsAuthenticated`; the guards decide (B5): refused when
+  the job is held or terminal, the task is `in_progress`/`complete`, has
+  any Bleps, has a **consumed material** (consumption history must keep
+  its anchor; pending materials detach to the job as loose rows —
+  `Material.task` is SET_NULL), is claimed by a **non-draft**
   estimate/change order, or is on a live invoice (→ 400, "cancel it
-  instead") — those guards apply to everyone. Draft-estimate claims stay
-  deletable (remove the line/atoms first). See the deletion doctrine
-  (`data-constraints.md` §1.11).
+  instead"). Draft-estimate claims stay deletable. See the deletion
+  doctrine (`data-constraints.md` §1.11).
+- **Cancel** (`POST /api/tasks/{id}/cancel/`) — `IsAuthenticated`
+  (opened to all workers 2026-07-12, plan C2: cancel shares delete's
+  principal set — it is the exit from a task that can no longer be
+  deleted). A task with bleps is cancellable; recorded time survives.
 - **Lifecycle** — complete / block / unblock / start-work / stop-work /
   cancel-work / actual-qty/add are `IsAuthenticated` (worker operations).
 
 Manager-or-PM only (`CanManageJobOrPM` — `can_manage_jobs` atom **or** the
 job's `project_manager`):
 
-- **Cancel** a task (`POST /api/tasks/{id}/cancel/`), **reorder** tasks, and
-  **mark all the job's work complete** (`POST /api/jobs/{id}/work-complete/`).
+- **Reorder** tasks and **mark all the job's work complete**
+  (`POST /api/jobs/{id}/work-complete/` — see §3.3's blockers gate).
 - **Assign** a task to a worker (the SPA "assign" affordance).
 
 The SPA mirrors this: `TaskTree`/`TaskActions`/`TaskDetailPage` show
-add/edit/delete/complete to everyone, and gate cancel/assign/reorder/
-work-complete on the per-object `can_manage` flag. See
-`docs/designs/users-and-permissions.md` for the full mapping.
+add/delete/complete/cancel to everyone, gate edit on the per-task
+`can_edit` flag, and gate assign/reorder/work-complete on the per-object
+`can_manage` flag. While the job is **held**, every plan-edit affordance
+is suppressed (see §3.1). See `docs/designs/users-and-permissions.md`
+for the full mapping.
 
 ### 4.1 Status machine
 
@@ -471,7 +527,9 @@ without round-tripping through `in_progress`.
 `in_progress → pending` is **not** a forward transition (and `clean()`
 rejects it). `TaskLifecycleService.cancel_work` (§4.5) performs it as a
 deliberate *undo* via a bulk `update()` that bypasses `clean()`,
-restoring an oops-started task to its pre-Start state.
+restoring an oops-started task to its pre-Start state — and records an
+explicit action-type HistoryEntry so the trail explains the return to
+pending (the promotion itself is an audit diff).
 
 `Task.clean()` enforces transitions on save. `Task.save()` auto-assigns
 `sort_order` to the next available slot for the Job if unset.
@@ -505,7 +563,7 @@ clears.
 | `rate_scheme` | FK to `RateScheme` (PROTECT). Required at the DB level on Task. Algorithms: `elapsed_time` / `entered_qty` / `percentage` (no `flat_fee` — fixed charges are the `Fee` atom, §4.7). |
 | `active_modifiers` | JSON list of modifier keys (subset of the scheme's `modifiers`); always a list, never a dict |
 | `est_qty` | Estimated billable quantity in the rate scheme's units. Nullable on Task. Drives `compute_estimate_amount` (the estimate lens). |
-| `est_worker_time` | DurationField — estimated worker time for scheduling. Required (and non-zero) once the Task has an `assignee`: assigned work must be schedulable. Enforced by `Task.clean()` and re-checked by `TaskService.assign`. |
+| `est_worker_time` | DurationField — estimated worker time for scheduling. Required once the Task is **explicitly assigned**: assigned work must be schedulable. Enforced on the assign gestures (`TaskService.assign` / `create_direct`-with-assignee / `update_task`-setting-assignee), **not** `Task.clean()` — auto-assign on start (`start_work` / `create_historical` claiming an unassigned task for its first worker) deliberately skips it, so assignee-without-est-time is a legal model state the schedule must tolerate. |
 | `actual_qty` | Running total of worker-entered increments for `ENTERED_QTY` schemes (every write is an add via `add_actual_qty` — signed, locked, floored at zero; settled at completion via `complete_task(add_qty=...)`); null for `ELAPSED_TIME` (derived from bleps). Drives `compute_amount` (the invoice lens). Entry surfaces + prompt flows: estimates-and-prices.md §4.2. |
 
 `Task.compute_amount()` resolves the actual quantity per scheme algorithm
@@ -541,17 +599,19 @@ pending→in_progress promotion, not of every clock-in.
 `reorder_tasks`. Deletion is rejected for `in_progress` / `complete`
 tasks and for any task with at least one Blep — cancel instead.
 
-#### Task freeze on `complete`
+#### Task freeze on `complete` (and `cancelled`)
 
-`complete` is a **terminal** state: once a task is complete, its work and
-billing inputs are settled.
+`complete` and `cancelled` are **terminal** states: once a task is
+terminal, its work and billing inputs are settled. (Reopening was
+considered and rejected 2026-07-12 — a task needing more work after
+completion gets a new sibling task.)
 
 - **All fields are frozen** except `sort_order`. `TaskService.update_task`
   raises `ValidationError` if any field other than `sort_order` is included
-  in an update for a complete task:
+  in an update for a terminal task:
 
   ```
-  "Cannot edit a complete task. Its work and billing are settled;
+  "Cannot edit a {status} task. Its work and billing are settled;
   corrections belong on the invoice."
   ```
 
@@ -1012,6 +1072,14 @@ added via the "+" button. Tasks within a column are sorted by
   duration field. Unassigning never requires a duration.
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
+(Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
+different axis: it swaps `sort_order` within the task's **peer group**
+(top-level tasks among top-level tasks; subtasks among their siblings —
+the group falls out of `task.parent_task`). The job task list page
+offers arrows on top-level rows only; sibling reordering lives on the
+parent task's detail page, both hitting this same endpoint. B3,
+2026-07-12; pinned by `tests/test_task_reorder_peer_scope.py`.)
+
 ### 8.5 Card composition
 
 | Card | Component | Shows |
@@ -1031,10 +1099,8 @@ the job's **summary, not a work surface**: it answers "where does this
 job stand?" through **six lifecycle blocks in fixed order** (§9.1a), each
 carrying aggregates/clocks/one-line facts and never a list of rows —
 authoring and detail-browsing happen on the section pages the rail links
-to. Full design record:
-`docs/plans/2026-07-08-job-workspace-restructure-design.md` (steps 1–3,
-the shell itself) and `docs/plans/2026-07-09-job-overview-redesign.md`
-(step 4, this page's content — shipped 2026-07-09 on `feature/job-overview`).
+to. (Designed in two passes: the shell 2026-07-08, this page's content
+2026-07-09, shipped on `feature/job-overview`.)
 
 ### 9.1 Layout
 
@@ -1123,7 +1189,7 @@ health*, not documents (the rail names the surfaces).
 |---|---|---|---|
 | **Scope** | no estimate exists yet | current estimate is draft/open, **or** a draft/open change order re-activates a settled estimate (customer-response clock, 7 days) | estimate terminal and no live CO — total, version, accepted/CO dates, deliverable count |
 | **Work** | job not yet approved | approved/in_progress with non-terminal tasks — progress (by estimated worker time, falling back to task count), task counts + blocked pill, Due stat (working-day countdown, omitted with no due date), "working now" clock | all tasks terminal / job `work_complete`+ (or stopped for good: cancelled/rejected) — task count + hours logged |
-| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` § Venue rule, and LATER.md) | POs exist, all received |
+| **Materials** | no POs touch the job, no shortfall | any open PO (number/vendor/due, amber pressure within 5 working days) or coverage short — Coverage stat (`OK`/`SHORT`, counting only `materialStatus` **Needed**, not Needs-pricing/Awaiting-customer — see `materials-inventory-and-purchasing.md` §16, and LATER.md) | POs exist, all received |
 | **Spend** | nothing spent | anything spent, job not terminal — Labor ($ + hours), Materials ($ bought), Total spent (% of scope) | job terminal — same three figures as settled facts |
 | **Invoicing** | no invoices | anything unbilled/unpaid — one stat group per invoice (payment-latency clock: green "paid in N days" / red "sent N days ago, unpaid"), Remaining to bill, Billed % (collapses oldest paid invoices past 4 rows) | fully billed and paid |
 | **Delivery** | nothing prepared yet | a prepared shipment awaits pickup (red past 3 working days), or work is done with nothing shipped | everything picked up |
@@ -1272,18 +1338,30 @@ affordances:
 mount and passed to `MaterialModal` so freeform material lines default to the
 shop's configured material category.
 
-**Per-material status & actions (freeform-materials venue rule).** Each material
-row carries a derived status chip — **Needs pricing / Needed / Ordered — PO-NNNN
-/ Awaiting customer / On Hand / Consumed / Released** (`materialStatus`,
+**Row fragments.** `TaskTree` renders no task or material row markup of
+its own: task rows (top-level AND subtask — `isSubtask` carries the
+nested styling and the deliberate no-+sub/no-arrows omissions) come from
+the shared `components/tasks/TaskRow.svelte`, material rows from
+`components/materials/MaterialRow.svelte`, and the row math/formatting
+both share with the grand-total footer lives in `lib/taskTotals.js` —
+so a row's total and the table's sum cannot diverge, and a subtask row
+is pixel-identical wherever it renders (the old duplicated subtask block
+had already dropped the waiting-on-materials badge). TaskTree itself
+keeps only the fee/expense rows, section headers, and the footer.
+
+**Per-material status & actions.** Each material row carries a derived
+status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
+customer / On Hand / Consumed / Released** (`materialStatus`,
 `frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
-`cost_source === 'estimated'`. **All per-material actions live here on the task
-view page only** — Set pricing (establishes a provisional material), the Order
-dialog (append-to-draft-or-create, `CanManageFinancials`), Attach expense, the
-quiet Mark on-hand link, Mark received (customer-supplied), and the PO link. The
-job overview shows no material rows at all — its Materials block is an
-aggregate Coverage stat only (§9.1a; `materials-inventory-and-purchasing.md`
-§ Venue rule). Full vocabulary and action table:
-`materials-inventory-and-purchasing.md` §16.
+`cost_source === 'estimated'`. Rows render through the shared
+`MaterialRow.svelte` fragment, and the **full per-material action set is
+available on every surface that lists materials** (this page, the task
+detail page, the parent-task subtask tree) — the old
+actions-on-this-page-only venue rule was retired 2026-07-13; gating is by
+material status / permissions / job state only. The job overview still
+shows no material rows at all — its Materials block is an aggregate
+Coverage stat only (§9.1a). Full vocabulary, action table, and the shared
+fragment/flow components: `materials-inventory-and-purchasing.md` §16.
 
 **Start Estimate** (creates a draft estimate directly — `POST /api/estimates/`
 with `{job}`) and, while the job is held (`on_hold` flag), **Create Change
@@ -1462,14 +1540,13 @@ test in `frontend/tests/components/jobs/TaskDetailPage.test.js`:
 
 Worker = any authenticated user. Manager = user with `can_manage_jobs`.
 
-Detail-page layout (worker-first redesign, 2026-07-07; spec
-`docs/plans/2026-07-07-task-detail-page-redesign.md`), top to bottom:
+Detail-page layout (worker-first redesign, 2026-07-07), top to bottom:
 
 1. **JobHeader** (shared, unchanged).
-2. **Task header strip** (`.task-head`) — a crumbs line («&nbsp;job
-   overview · task list · *subtask of &lt;parent&gt;* when
-   `parent_task` is set, linked via the serializer's
-   `parent_task_name`), then the title row: the **activity pill**
+2. **Task header strip** (`.task-head`) — a crumbs line shown only on a
+   subtask (*subtask of &lt;parent&gt;*, linked via the serializer's
+   `parent_task_name`); no job-overview or task-list crumbs — the nav
+   rail's Overview and Tasks links cover those. Then the title row: the **activity pill**
    (`TaskActivityIndicator` with `pill` — INVOICED badge replaces it
    when `task.invoice` is set) to the **left** of the `<h1>` task name,
    with the **stat-chip strip** right-aligned. Chips (shared
@@ -1491,29 +1568,46 @@ Detail-page layout (worker-first redesign, 2026-07-07; spec
    terminal).
 4. Sections: **Description → Subtasks → Materials → Work Sessions**
    (BlepList, whose **Add Entry** button stays — it is the only way to
-   log forgotten historical time from this page).
+   log forgotten historical time from this page). The **Materials
+   section renders the shared `MaterialRow` fragment with the full
+   action set** (chips, tombstones, Order/receipt dialogs, Move — the
+   subtask rows' radios are the move targets; removal is the release
+   action, not a raw delete). The subtask tree is deliberately
+   **passive for task ops** (A3: `TaskTree` renders a button only when
+   its callback is wired — never a dead no-op button): no
+   edit/del/cancel on subtask rows here — a subtask's own detail page
+   is its editing surface. Wired: the full material action set, and the
+   sibling **reorder arrows** (B3 — subtasks reorder here, not on the
+   job task list; same `reorder-tasks` endpoint, peer-scoped
+   server-side). A subtask's detail page renders **no Subtasks section
+   at all** (one-level rule, §4 — no header, no empty-state, no Add
+   Subtask).
 
 The old toolbar row, details table, and Charge table are gone. The
 table below still governs which controls *exist*.
 
 | Status | Worker sees | Manager additionally sees |
 |---|---|---|
-| pending | Start Work, Complete, Block | Cancel |
-| in_progress, user is active worker | Stop Work, Complete, Block | Cancel |
-| in_progress, user is not active worker | Start Work, Complete, Block | Cancel |
-| blocked | Unblock | Cancel |
+| pending | Start Work, Complete, Block, Cancel | — |
+| in_progress, user is active worker | Stop Work, Complete, Block, Cancel | — |
+| in_progress, user is not active worker | Start Work, Complete, Block, Cancel | — |
+| blocked | Unblock, Cancel | — |
 | complete | (read-only) | (read-only) |
 | cancelled | (read-only) | (read-only) |
 
-Worker access to Complete/Block/Unblock is intentional — workers are
-the ones who discover these conditions. Cancel stays manager-only.
+Worker access to Complete/Block/Unblock/Cancel is intentional — workers
+are the ones who discover these conditions, and cancel is the exit from
+a task that can no longer be deleted (C2, 2026-07-12). **Edit Task** is
+gated on the per-task `can_edit` flag (the C1 matrix, §4.0), and the
+whole action band is hidden while the job is held (§3.1).
 
 While the active session is under `blep_minimum_minutes` (compared in whole
 minutes), the "Stop Work" button instead reads "Cancel" and deletes the
 just-started Blep (undoing the Start) rather than closing it — see §5.5. The
 backend enforces the same rule on every close path, so even a Stop on a
-sub-minimum session is converted to a cancel server-side. This is distinct
-from the manager-only task **Cancel** above.
+sub-minimum session is converted to a cancel server-side. This blep-cancel
+is distinct from the task-level **Cancel** above (which kills the task,
+keeping its recorded time).
 
 ### 10.3 Recent Time list (home page)
 
@@ -1599,7 +1693,7 @@ atom). This is intentional, not an oversight: fulfillment is shop-floor work —
 any authenticated user must be able to create a shipment, add items, and mark
 it picked up — so shipment management is purposely *not* parallel to deliverable
 management. (The frontend's Shipments page is correspondingly ungated; flagged
-and confirmed-intentional in `docs/plans/2026-06-06-gating-parity-audit.md`.)
+and confirmed-intentional in the 2026-06-06 gating-parity audit.)
 
 ### 12.2 Editability of the Deliverables list
 
@@ -1897,11 +1991,6 @@ the job stays held.
   through `in_progress → work_complete` in one step. Hook into the
   relevant `TaskLifecycleService` transitions.
 
-- **`@history` decorator on `Task`.** Block, unblock, complete, cancel,
-  and assignment changes don't surface in the Job HistoryPanel. Adding
-  it requires converting the `Task.objects.filter(pk=...).update(...)`
-  calls in `TaskLifecycleService` to `task.save()` so the change-tracker
-  can capture old/new values.
 - **Workflow routing soft warnings.** `populate-from-template` doesn't
   warn when the Job already has atoms. Hard prerequisite gates exist;
   soft steering does not.

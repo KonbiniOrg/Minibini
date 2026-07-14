@@ -342,3 +342,148 @@ class ValidateDataSourceJobConsistencyTest(TestCase):
         output = self._run()
         self.assertNotIn('does not match invoice job_id', output)
         self.assertNotIn('atom not found', output)
+
+
+class ValidateDataStateInvariantsTest(TestCase):
+    """2026-07-12 tasks-refinements invariants: invoice-on-unapproved-job is
+    an ERROR (was a warning), work_complete/completed jobs carry only final
+    work, subtasks are one level deep, and invoice sources only point at
+    terminal (billable) tasks."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='Inv', code='INVAR')
+        self.contact = Contact.objects.create(first_name='St', last_name='Inv')
+        self.rs = RateScheme.objects.create(
+            name='RS-Invar', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('45.00'), unit_label='hour', accounting_category=self.ac,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _job(self, number, status=None):
+        job = Job.objects.create(
+            job_number=number, name='Invariant Job', contact=self.contact,
+        )
+        if status:
+            Job.objects.filter(pk=job.pk).update(status=status)
+            job.refresh_from_db()
+        return job
+
+    def _task(self, job, status=Task.STATUS_PENDING, parent=None, name='T'):
+        task = Task.objects.create(
+            name=name, job=job, rate_scheme=self.rs, parent_task=parent,
+        )
+        if status != Task.STATUS_PENDING:
+            Task.objects.filter(pk=task.pk).update(status=status)
+            task.refresh_from_db()
+        return task
+
+    # ── invoice on an unapproved job is an ERROR ─────────────────
+
+    def test_invoice_on_draft_job_is_an_error(self):
+        job = self._job('J-VST-001')
+        Invoice.objects.create(job=job, invoice_number='INV-VST-001')
+        output = self._run()
+        line = next(l for l in output.splitlines()
+                    if 'expected approved or later' in l)
+        self.assertIn('[ERROR]', line)
+
+    def test_invoice_on_approved_job_not_flagged(self):
+        job = self._job('J-VST-002', status=Job.STATUS_APPROVED)
+        Invoice.objects.create(job=job, invoice_number='INV-VST-002')
+        output = self._run()
+        self.assertNotIn('expected approved or later', output)
+
+    # ── work-complete gate (B4) ──────────────────────────────────
+
+    def test_pending_task_on_work_complete_job_is_an_error(self):
+        job = self._job('J-VST-003', status=Job.STATUS_WORK_COMPLETE)
+        self._task(job, status=Task.STATUS_PENDING)
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('non-terminal task', output)
+
+    def test_terminal_tasks_on_work_complete_job_not_flagged(self):
+        job = self._job('J-VST-004', status=Job.STATUS_WORK_COMPLETE)
+        self._task(job, status=Task.STATUS_COMPLETE)
+        self._task(job, status=Task.STATUS_CANCELLED, name='T2')
+        output = self._run()
+        self.assertNotIn('non-terminal task', output)
+
+    def test_pending_material_on_completed_job_is_an_error(self):
+        job = self._job('J-VST-005', status=Job.STATUS_COMPLETED)
+        Material.objects.create(
+            job=job, description='Leftover', quantity=Decimal('2.00'),
+            accounting_category=self.ac,
+        )
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('pending material', output)
+
+    def test_consumed_material_on_completed_job_not_flagged(self):
+        job = self._job('J-VST-006', status=Job.STATUS_COMPLETED)
+        Material.objects.create(
+            job=job, description='Used up', quantity=Decimal('2.00'),
+            accounting_category=self.ac,
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
+        )
+        output = self._run()
+        self.assertNotIn('pending material', output)
+
+    # ── one level of subtasks ────────────────────────────────────
+
+    def test_grandchild_task_is_an_error(self):
+        job = self._job('J-VST-007')
+        parent = self._task(job, name='Parent')
+        child = self._task(job, parent=parent, name='Child')
+        self._task(job, parent=child, name='Grandchild')
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('subtask of a subtask', output)
+
+    def test_one_level_subtask_not_flagged(self):
+        job = self._job('J-VST-008')
+        parent = self._task(job, name='Parent')
+        self._task(job, parent=parent, name='Child')
+        output = self._run()
+        self.assertNotIn('subtask of a subtask', output)
+
+    # ── invoice sources bill only terminal tasks ─────────────────
+
+    def _invoice_source_for(self, task, number):
+        invoice = Invoice.objects.create(job=task.job, invoice_number=number)
+        ili = InvoiceLineItem.objects.create(invoice=invoice)
+        InvoiceLineItemSource.objects.create(
+            invoice_line_item=ili,
+            source_type=InvoiceLineItemSource.SOURCE_TASK,
+            source_pk=task.pk,
+        )
+
+    def test_invoice_source_on_pending_task_is_an_error(self):
+        job = self._job('J-VST-009', status=Job.STATUS_IN_PROGRESS)
+        task = self._task(job, status=Task.STATUS_PENDING)
+        self._invoice_source_for(task, 'INV-VST-009')
+        output = self._run()
+        self.assertIn('[ERROR]', output)
+        self.assertIn('not billable', output)
+
+    def test_invoice_source_on_terminal_tasks_not_flagged(self):
+        # One invoice, two lines: complete AND cancelled tasks both bill
+        # (terminal is the billability line). Two invoices won't do — only
+        # one draft invoice may exist per job.
+        job = self._job('J-VST-010', status=Job.STATUS_IN_PROGRESS)
+        done = self._task(job, status=Task.STATUS_COMPLETE)
+        killed = self._task(job, status=Task.STATUS_CANCELLED, name='K')
+        invoice = Invoice.objects.create(job=job, invoice_number='INV-VST-010')
+        for task in (done, killed):
+            ili = InvoiceLineItem.objects.create(invoice=invoice)
+            InvoiceLineItemSource.objects.create(
+                invoice_line_item=ili,
+                source_type=InvoiceLineItemSource.SOURCE_TASK,
+                source_pk=task.pk,
+            )
+        output = self._run()
+        self.assertNotIn('not billable', output)

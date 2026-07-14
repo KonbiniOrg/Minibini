@@ -1,9 +1,10 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
-  import { showError, showSuccess } from '../../stores/messages.js';
-  import { triageError } from '../../lib/errorTriage.js';
-  import { orderPrefillQty } from '../../lib/materials.js';
+  import { showError } from '../../stores/messages.js';
   import { canMarkWorkComplete } from '../../lib/jobActions.js';
+  import { consumeMaterial, restockMaterial, drawMoreMaterial, moveMaterial }
+    from '../../lib/materialOps.js';
+  import MaterialFulfillmentModals from '../materials/MaterialFulfillmentModals.svelte';
   import TaskTree from '../TaskTree.svelte';
   import WorkItemForm from '../WorkItemForm.svelte';
   import MaterialModal from '../MaterialModal.svelte';
@@ -62,19 +63,30 @@
 
   // Status action state
   let statusBusy = $state(false);
+  // Blocker list returned by a Check Complete post (B4) — non-null opens
+  // the "resolve these first" modal.
+  let wcBlockers = $state(null);
 
-  // Order flow — draft-PO chooser dialog
-  let orderDialogOpen = $state(false);
-  let orderMaterial = $state(null);
-  let orderDrafts = $state([]);
-  let orderBusy = $state(false);
+  // Anything not final blocks work-complete: a non-terminal task, or a
+  // pending material (on a task or loose). Drives the button label —
+  // "Check Complete" (produces the list) vs "Mark Work Complete".
+  const TERMINAL_TASK_STATUSES = ['complete', 'cancelled'];
+  const hasWcBlockers = $derived.by(() => {
+    const allTasks = [];
+    for (const t of enrichedTasks) {
+      allTasks.push(t);
+      for (const s of (t.subtasks || [])) allTasks.push(s);
+    }
+    if (allTasks.some((t) => !TERMINAL_TASK_STATUSES.includes(t.status))) return true;
+    const mats = [...jobMaterials];
+    for (const t of allTasks) mats.push(...(t.materials || []));
+    return mats.some(
+      (m) => m.consumption_state === 'pending' && Number(m.quantity) > 0);
+  });
 
-  // Receipt qty prompt — shared by "Mark on-hand" (quiet) and "Mark received"
-  // (customer-supplied), both hitting the mark-on-hand endpoint.
-  let receiptDialogOpen = $state(false);
-  let receiptMaterial = $state(null);
-  let receiptQty = $state('');
-  let receiptBusy = $state(false);
+  // Order + Mark-received flows live in the shared MaterialFulfillmentModals
+  // component (bind:this exposes startOrder/startReceipt).
+  let fulfillModals = $state(null);
 
   // Attach-expense against an existing pending material
   let attachExpenseMaterial = $state(null);
@@ -284,132 +296,13 @@
     materialModalOpen = true;
   }
 
-  async function handleConsumeMaterial(material, _task) {
-    // No confirm: reversible via the sibling Restock action.
-    try {
-      await api.post(`/api/materials/${material.material_id}/consume/`, {});
-      await reload();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not consume.'));
-    }
-  }
-
-  async function handleRestockMaterial(material, _task) {
-    // Same predicate as TaskTree.restockLabel: with stock on hand this reads
-    // as returning it; otherwise it's a release of the planned quantity.
-    const verb = material.inventory_item != null && Number(material.qty_on_hand) > 0
-      ? 'Restock' : 'Release';
-    const raw = window.prompt(`${verb} quantity (max ${material.quantity}):`, material.quantity);
-    if (raw === null) return;
-    const quantity = raw.trim();
-    if (!quantity) return;
-    try {
-      await api.post(`/api/materials/${material.material_id}/restock/`, { quantity });
-      await reload();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not restock.'));
-    }
-  }
-
-  async function handleDrawMoreMaterial(material, _task) {
-    const raw = window.prompt('Draw more quantity:', '1');
-    if (raw === null) return;
-    const quantity = raw.trim();
-    if (!quantity) return;
-    try {
-      await api.post(`/api/materials/${material.material_id}/draw-more/`, { quantity });
-      await reload();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not draw more.'));
-    }
-  }
-
+  // Per-material handlers — shared lib functions (lib/materialOps.js).
+  const handleConsumeMaterial = (material) => consumeMaterial(material, reload);
+  const handleRestockMaterial = (material) => restockMaterial(material, reload);
+  const handleDrawMoreMaterial = (material) => drawMoreMaterial(material, reload);
   async function handleMoveMaterial(material, taskId) {
-    try {
-      await api.post(`/api/materials/${material.material_id}/assign-task/`, { task: taskId });
-      selectedTaskId = null;
-      await reload();
-    } catch (e) {
-      showError(errorMessage(e, 'Could not move material.'));
-    }
-  }
-
-  // Order flow. Zero open drafts → POST immediately (starts a new PO). One or
-  // more → open the chooser so the user can append to an existing draft or
-  // start a new one. Reversible process step: no confirm() dialog.
-  async function startOrder(material) {
-    try {
-      const resp = await api.get('/api/purchase-orders/?status=draft&page_size=100');
-      const drafts = resp.results || resp;
-      if (!drafts.length) {
-        await submitOrder(material, null);
-        return;
-      }
-      orderMaterial = material;
-      orderDrafts = drafts;
-      orderDialogOpen = true;
-    } catch (e) {
-      const t = triageError(e);
-      showError(t.overlay || t.message || 'Could not load draft purchase orders.');
-    }
-  }
-
-  async function submitOrder(material, poId) {
-    orderBusy = true;
-    try {
-      const resp = await api.post(`/api/materials/${material.material_id}/order/`,
-        poId ? { po_id: poId } : {});
-      orderDialogOpen = false;
-      orderMaterial = null;
-      if (resp.po_id && resp.po_number) {
-        showSuccess('Added to', {
-          href: `#/purchase-orders/${resp.po_id}`, label: resp.po_number,
-        });
-      } else {
-        showSuccess(`Added to ${resp.po_number || 'a new purchase order'}.`);
-      }
-      await reload();
-    } catch (e) {
-      const t = triageError(e);
-      showError(t.overlay || t.message || 'Could not order material.');
-    } finally {
-      orderBusy = false;
-    }
-  }
-
-  function closeOrderDialog() {
-    orderDialogOpen = false;
-    orderMaterial = null;
-  }
-
-  // Receipt prompt (Mark on-hand / Mark received) — quantity input, not a
-  // confirmation. Defaults to the outstanding shortfall.
-  function startReceipt(material) {
-    receiptMaterial = material;
-    receiptQty = orderPrefillQty(material);
-    receiptDialogOpen = true;
-  }
-
-  async function submitReceipt() {
-    const quantity = String(receiptQty).trim();
-    if (!quantity) return;
-    receiptBusy = true;
-    try {
-      await api.post(`/api/materials/${receiptMaterial.material_id}/mark-on-hand/`, { quantity });
-      receiptDialogOpen = false;
-      receiptMaterial = null;
-      await reload();
-    } catch (e) {
-      const t = triageError(e);
-      showError(t.overlay || t.message || 'Could not mark received.');
-    } finally {
-      receiptBusy = false;
-    }
-  }
-
-  function closeReceiptDialog() {
-    receiptDialogOpen = false;
-    receiptMaterial = null;
+    await moveMaterial(material, taskId, reload);
+    selectedTaskId = null;
   }
 
   function openAttachExpense(material) {
@@ -469,12 +362,18 @@
     }
   }
 
-  // Mark all work complete
+  // Mark all work complete — or, with blockers, fetch the list of what
+  // still needs attention (the server mutates nothing and answers with
+  // `blockers`; the client-side label is a hint, the server is the truth).
   async function handleWorkComplete() {
-    if (!confirm('Mark all work complete on this job?')) return;
+    if (!hasWcBlockers && !confirm('Mark all work complete on this job?')) return;
     statusBusy = true;
     try {
-      await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
+      const resp = await api.post(`/api/jobs/${job.job_id}/work-complete/`, {});
+      if (resp && resp.blockers) {
+        wcBlockers = resp.blockers;
+        return;
+      }
       await reload();
     } catch (e) {
       showError(errorMessage(e, 'Could not mark work complete.'));
@@ -490,11 +389,15 @@
   <div class="page-body">
   <div class="toolbar">
     {#if !jobLocked}
-      <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
+      {#if !job?.on_hold}
+        <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
+      {/if}
       <button type="button" onclick={() => { editingExpense = null; expenseModalOpen = true; }}>Add Expense</button>
     {/if}
-    {#if job?.can_manage && canMarkWorkComplete(job.status)}
-      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>Mark Work Complete</button>
+    {#if job?.can_manage && canMarkWorkComplete(job)}
+      <button type="button" onclick={handleWorkComplete} disabled={statusBusy}>
+        {hasWcBlockers ? 'Check Complete' : 'Mark Work Complete'}
+      </button>
     {/if}
   </div>
 
@@ -512,8 +415,8 @@
     onConsumeMaterial={handleConsumeMaterial}
     onRestockMaterial={handleRestockMaterial}
     onDrawMoreMaterial={handleDrawMoreMaterial}
-    onOrderMaterial={startOrder}
-    onMarkOnHand={startReceipt}
+    onOrderMaterial={(m) => fulfillModals?.startOrder(m)}
+    onMarkOnHand={(m) => fulfillModals?.startReceipt(m)}
     onAttachExpense={openAttachExpense}
     onAddSubtask={openAddSubtask}
     onReorder={handleReorder}
@@ -597,39 +500,36 @@
     onClose={() => { assignModalOpen = false; assignModalTask = null; }}
   />
 
-  <!-- Order chooser: Esc-only (no onSave) — with drafts present, Enter has no
-       unambiguous primary action; the user picks a draft or "Start new PO". -->
-  <Modal open={orderDialogOpen} onCancel={closeOrderDialog} busy={orderBusy} maxWidth="480px" label="Order material">
-    <h3>Order — {orderMaterial?.description || '(material)'}</h3>
-    <p class="dialog-hint">Add this material to an open draft purchase order, or start a new one.</p>
-    <ul class="draft-list">
-      {#each orderDrafts as po (po.po_id)}
-        <li>
-          <button type="button" disabled={orderBusy} onclick={() => submitOrder(orderMaterial, po.po_id)}>
-            {po.po_number} — {po.business_name || 'no vendor'}
-          </button>
-        </li>
-      {/each}
-    </ul>
-    <p class="dialog-actions">
-      <button type="button" disabled={orderBusy} onclick={() => submitOrder(orderMaterial, null)}>Start new PO</button>
-      <button type="button" disabled={orderBusy} onclick={closeOrderDialog}>Cancel</button>
-    </p>
-  </Modal>
+  <!-- Order chooser + Mark-received receipt dialogs (shared component). -->
+  <MaterialFulfillmentModals bind:this={fulfillModals} onDone={reload} />
 
-  <!-- Receipt qty prompt: native <form> owns Enter (Modal omits onSave). -->
-  <Modal open={receiptDialogOpen} onCancel={closeReceiptDialog} busy={receiptBusy} maxWidth="420px" label="Mark received">
-    <form onsubmit={(e) => { e.preventDefault(); submitReceipt(); }}>
-      <h3>Mark received — {receiptMaterial?.description || '(material)'}</h3>
-      <p>
-        <label for="receipt-qty"><strong>Quantity received</strong></label><br>
-        <input id="receipt-qty" type="number" step="0.01" min="0" bind:value={receiptQty} required>
-      </p>
-      <p class="dialog-actions">
-        <button type="submit" disabled={receiptBusy}>Mark received</button>
-        <button type="button" disabled={receiptBusy} onclick={closeReceiptDialog}>Cancel</button>
-      </p>
-    </form>
+  <!-- Work-complete blockers (B4): informational list, no bulk actions —
+       each task/material resolves through its normal flow. -->
+  <Modal open={wcBlockers != null} onCancel={() => { wcBlockers = null; }} maxWidth="480px" label="Not ready to complete">
+    <h3>Not ready to complete</h3>
+    <p class="dialog-hint">
+      Resolve these first — complete or cancel the open tasks, and consume
+      or release the pending materials.
+    </p>
+    {#if wcBlockers?.tasks?.length}
+      <h4>Open tasks</h4>
+      <ul class="blocker-list">
+        {#each wcBlockers.tasks as t (t.task_id)}
+          <li>{t.name} <small class="blocker-status">({t.status})</small></li>
+        {/each}
+      </ul>
+    {/if}
+    {#if wcBlockers?.materials?.length}
+      <h4>Pending materials</h4>
+      <ul class="blocker-list">
+        {#each wcBlockers.materials as m (m.material_id)}
+          <li>{m.description || `Material ${m.material_id}`}</li>
+        {/each}
+      </ul>
+    {/if}
+    <p class="dialog-actions">
+      <button type="button" onclick={() => { wcBlockers = null; }}>Close</button>
+    </p>
   </Modal>
 
   <ExpenseModal
@@ -646,13 +546,9 @@
   /* .toolbar (and its buttons) come from app.css. */
 
   .dialog-hint { color: #555; font-size: 13px; }
-  .draft-list { list-style: none; padding: 0; margin: 8px 0; max-height: 40vh; overflow-y: auto; }
-  .draft-list li { margin: 0 0 4px; }
-  .draft-list button {
-    width: 100%; text-align: left; padding: 8px 10px;
-    border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer;
-  }
-  .draft-list button:hover { background: #f3f4f6; }
+  .blocker-list { margin: 4px 0 12px; padding-left: 20px; }
+  .blocker-list li { margin: 2px 0; }
+  .blocker-status { color: #888; }
   .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
   .dialog-actions button {
     padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 4px;

@@ -222,10 +222,11 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
 
     # ── Job task sub-resource + population writes (replaces WO endpoints) ──
     # Note: editing/deleting a task (PATCH/DELETE /api/jobs/1/tasks/1/) is now
-    # IsAuthenticated (see TestAuthenticatedOnlyAPI.WRITE_ENDPOINTS). Cancelling
-    # a task (/api/tasks/1/cancel/) requires the atom-or-PM gate.
+    # IsAuthenticated (see TestAuthenticatedOnlyAPI.WRITE_ENDPOINTS), and so is
+    # cancelling a task (/api/tasks/1/cancel/ — opened to all workers
+    # 2026-07-12, plan C2; covered in tests/test_api_tasks.py and
+    # tests/test_task_edit_permissions.py).
     WORK_ORDER_WRITE_ENDPOINTS = [
-        ('post', '/api/tasks/1/cancel/', {}),
         ('post', '/api/jobs/1/work-complete/', {}),
         ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
         ('post', '/api/jobs/1/reorder-tasks/', {'task_id': 1, 'direction': 'up'}),

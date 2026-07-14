@@ -78,7 +78,6 @@ Files:
 > catalog-*type*-vs-transient-*lot* distinction. An `InventoryItem` is just an
 > item; a frequently-reordered stock type and a one-off minted lot are the same
 > row at different usage frequencies. `is_active` is the only retirement flag.
-> See `docs/plans/2026-06-30-freeform-material-procurement-inventory.md`.
 
 Every physical item flows through this one table — items that estimates,
 invoices, POs, bills, and Materials reference, and the `LOT-{pk}` lots minted
@@ -1355,7 +1354,7 @@ awaiting-customer → ordered → needed**. "On-hand" is checked **before** the
 procurement states, so a material the shelf already covers reads **On Hand**
 regardless of how it was going to be sourced.
 
-| Status | Condition | Actions (task view page only) |
+| Status | Condition | Actions |
 |---|---|---|
 | **Needs pricing** | provisional — no `inventory_item` | *Set pricing* (opens `MaterialModal` in set-pricing mode — establishment on save), *Attach expense* (establishes + receives) |
 | **Needed** | established, stock short, no PO link | **Order** (dialog), *Attach expense*, *Mark on-hand* (quiet text link) |
@@ -1369,15 +1368,28 @@ regardless of how it was going to be sourced.
 small warning mark next to the cost, coexisting with any pending-phase status,
 cleared when a PO/expense supplies a real cost.
 
-### Venue rule: actions live on the task view page only
+### One row fragment, full actions everywhere (the old venue rule is gone)
 
-**All** per-material actions (Set pricing / Order dialog / Attach expense / Mark on-hand / Mark
-received / PO link) live on the task view page (`#/jobs/:id/tasks`, rendered by
-`TasksPanel.svelte` through the job workspace shell), which renders
-`TaskTree.svelte` with each material's status chip and
-consumed/released styling. The presence of each action is gated on a
-callback being wired, so a read-only surface (should one ever mount
-`TaskTree` elsewhere) renders the same chips without actions.
+Material rows render through ONE shared fragment —
+`components/materials/MaterialRow.svelte` (extracted 2026-07-13 from
+`TaskTree`'s triplicated blocks) — on every surface that lists materials:
+the job task list's task/subtask/loose rows (`TaskTree` inside
+`TasksPanel`), the task detail page's Materials section, and the parent
+task's subtask tree. The **full action set** (Set pricing / Order dialog /
+Attach expense / Mark on-hand / Mark received / mark used / restock–release
+/ draw more / edit / Move–detach / PO link) is available on ALL of those
+surfaces — the old "actions live on the task view page only" venue rule
+was retired 2026-07-13. Gating is by **material status, permissions, and
+job state only**: the per-status action table above, `can_manage_financials`
+for Order, and the held-job freeze-plan-not-procurement rule. (Mechanically,
+each button still renders only when its callback prop is wired — a
+deliberately read-only mount stays passive — but every current surface
+wires everything.) The handler halves are shared too: prompt-based ops in
+`lib/materialOps.js`, and the Order / Mark-received dialogs in
+`components/materials/MaterialFulfillmentModals.svelte`
+(`startOrder`/`startReceipt` via `bind:this`). Note the task detail page
+has no raw material-delete button — removal is the **release** action
+(full-quantity restock), the same vocabulary as everywhere else.
 
 The job overview (2026-07-09 six-block redesign; `jobs-tasks-and-worksheets.md`
 §9) does **not** mount `TaskTree` at all — it never lists rows. Its

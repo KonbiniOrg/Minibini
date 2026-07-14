@@ -127,8 +127,9 @@ class ActualQtyAddActionTest(TestCase):
 
 
 class CancelTaskPermissionTest(TestCase):
-    """POST /api/tasks/{id}/cancel/ requires CanManageJobOrPM (atom-holder OR
-    the task's job's project_manager). A plain worker is denied (403)."""
+    """POST /api/tasks/{id}/cancel/ is open to any authenticated user
+    (plan C2, 2026-07-12: cancel shares delete's principal set — it is the
+    worker's exit from a task that can no longer be deleted)."""
 
     def setUp(self):
         from apps.core.models import AccountingCategory
@@ -170,10 +171,12 @@ class CancelTaskPermissionTest(TestCase):
     def _url(self):
         return f'/api/tasks/{self.task.pk}/cancel/'
 
-    def test_cancel_denied_for_worker(self):
+    def test_cancel_allowed_for_worker(self):
         self.client.force_login(self.worker)
         resp = self.client.post(self._url(), data={}, content_type='application/json')
-        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.STATUS_CANCELLED)
 
     def test_cancel_allowed_for_atom_holder(self):
         # Resolves the target job via JobScopedPermissionMixin — must not 403.

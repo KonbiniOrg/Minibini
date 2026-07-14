@@ -82,7 +82,7 @@ Minibini/
 ├── tests/          # Test suite
 ├── scripts/        # Utility scripts (seed_data.sh)
 ├── docs/designs/   # Topic reference docs (nine consolidated areas — see below)
-├── docs/plans/     # Working directory for short-lived implementation plans (currently empty)
+├── docs/plans/     # Working directory for short-lived implementation plans (disposable; deleted once shipped)
 ├── minibini/       # Project configuration (settings, urls)
 └── manage.py
 ```
@@ -395,4 +395,4 @@ See `docs/designs/quickbooks-integration.md` for the full reference, including O
 - QBO OAuth (browser redirects, not the deleted HTML layer): `apps/qbo/views.py`
 - Frontend: `frontend/src/` — `App.svelte`, `routes/`, `components/`, `stores/`, `lib/api.js`
 - Topic reference docs: `docs/designs/` (nine files; see "Topic reference docs" above)
-- Implementation plans (temporary working files): `docs/plans/` (currently empty)
+- Implementation plans (temporary working files): `docs/plans/` (disposable; deleted once shipped)

@@ -109,9 +109,12 @@ describe('TaskDetailPage materials', () => {
     });
   }
 
-  it("puts a billed material's INVOICED badge in the trailing actions column, not the description", async () => {
+  it("puts a billed material's INVOICED badge in the status cell, not the description", async () => {
+    // Shared MaterialRow contract: the badge rides the Status cell, same as
+    // the job task list — never glued to the description text.
     mockWithMaterial({
       material_id: 1, description: 'Steel plate', quantity: '2', units: 'ea',
+      consumption_state: 'consumed',
       invoice: { id: 12, invoice_number: 'INV-12' },
     });
     const { findByRole, container } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
@@ -119,10 +122,10 @@ describe('TaskDetailPage materials', () => {
     await waitFor(() => expect(container.querySelector('.materials-table tbody tr')).not.toBeNull());
     const cells = container.querySelectorAll('.materials-table tbody tr td');
     const descCell = cells[0];
-    const lastCell = cells[cells.length - 1];
     expect(descCell).toHaveTextContent('Steel plate');
     expect(descCell.querySelector('.badge-invoiced')).toBeNull();
-    expect(lastCell.querySelector('.badge-invoiced')).not.toBeNull();
+    const badgeCell = container.querySelector('.materials-table .badge-invoiced');
+    expect(badgeCell).not.toBeNull();
   });
 
   it('keeps the header and body column counts aligned when a completed task has an invoiced material', async () => {
@@ -367,5 +370,229 @@ describe('TaskDetailPage does not refetch in a loop', () => {
     await findTitle(findByRole);
     await new Promise((r) => setTimeout(r, 250));
     expect(taskFetches).toBeLessThan(5);
+  });
+});
+
+// Local mock allowing job overrides (on_hold) and subtasks.
+function mockApiWithJob(taskOverrides = {}, jobOverrides = {}, subtasks = []) {
+  const task = {
+    task_id: 7, name: 'Mill', status: 'pending', job: { id: 3 },
+    assignee_name: null, est_qty: '2', effective_rate: '25', scheme_unit_label: 'hr',
+    ...taskOverrides,
+  };
+  api.get.mockReset();
+  api.get.mockImplementation((url) => {
+    if (url.startsWith('/api/tasks/7/')) {
+      if (url.includes('/materials')) return Promise.resolve([]);
+      if (url.includes('/subtasks')) return Promise.resolve(subtasks);
+      return Promise.resolve(task);
+    }
+    if (url.startsWith('/api/tasks/')) {
+      if (url.includes('/materials')) return Promise.resolve([]);
+      return Promise.resolve({});
+    }
+    if (url.startsWith('/api/jobs/3/')) {
+      return Promise.resolve({
+        job_id: 3, job_number: 'JOB-3', name: 'Widget', status: 'in_progress',
+        ...jobOverrides,
+      });
+    }
+    if (url.startsWith('/api/bleps/')) return Promise.resolve([]);
+    return Promise.resolve([]);
+  });
+}
+
+describe('TaskDetailPage on-hold gating (B2)', () => {
+  it('hides the action band, Edit Task, Add Subtask, and Add Material while held', async () => {
+    mockApiWithJob({ can_manage: true, can_edit: true }, { on_hold: true, hold_reason: 'CO pending' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: 'Start Work' })).toBeNull();
+    expect(queryByRole('button', { name: /edit task/i })).toBeNull();
+    expect(queryByRole('button', { name: /add subtask/i })).toBeNull();
+    expect(queryByRole('button', { name: /add material/i })).toBeNull();
+  });
+});
+
+describe('TaskDetailPage subtask tree (A3/B3)', () => {
+  const subs = [
+    { task_id: 8, name: 'Sub A', status: 'pending', parent_task: 7 },
+    { task_id: 9, name: 'Sub B', status: 'pending', parent_task: 7 },
+  ];
+
+  it('offers no edit/del/cancel buttons on subtask rows', async () => {
+    mockApiWithJob({ can_manage: true }, {}, subs);
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await findByText('Sub A');
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByText('del')).toBeNull();
+    expect(queryByText('cancel')).toBeNull();
+  });
+
+  it('reorders subtasks via arrows posting to the job reorder endpoint', async () => {
+    mockApiWithJob({ can_manage: true }, {}, subs);
+    api.post.mockReset();
+    api.post.mockResolvedValue({});
+    const { findByRole, findByText, queryAllByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await findByText('Sub A');
+    const downArrows = queryAllByText('▼');
+    expect(downArrows.length).toBeGreaterThan(0);
+    await fireEvent.click(downArrows[0]);
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/3/reorder-tasks/', {
+      task_id: 8, direction: 'down',
+    });
+  });
+});
+
+describe('TaskDetailPage can_edit gating (C1)', () => {
+  it('hides Edit Task when can_edit is false', async () => {
+    mockApiWithJob({ status: 'in_progress', can_manage: false, can_edit: false });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: /edit task/i })).toBeNull();
+  });
+
+  it('shows Edit Task when can_edit is true', async () => {
+    mockApiWithJob({ status: 'in_progress', can_edit: true });
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByRole('button', { name: /edit task/i })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage one-level subtask rule (B1)', () => {
+  it('hides Add Subtask on a subtask (one level only)', async () => {
+    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, queryByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('button', { name: /add subtask/i })).toBeNull();
+  });
+
+  it('offers Add Subtask on a top-level task', async () => {
+    mockApiWithJob({ parent_task: null });
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByRole('button', { name: /add subtask/i })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage subtask section suppression (one-level rule)', () => {
+  it('shows no Subtasks section at all on a subtask', async () => {
+    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, queryByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByRole('heading', { name: /subtasks/i })).toBeNull();
+    expect(queryByText('No subtasks.')).toBeNull();
+  });
+
+  it('keeps the Subtasks section on a top-level task', async () => {
+    mockApiWithJob({ parent_task: null });
+    const { findByRole } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByRole('heading', { name: /subtasks/i })).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPage crumbs', () => {
+  it('offers no task-list link — the job nav rail covers it', async () => {
+    mockApiWithJob({ parent_task: null });
+    const { findByRole, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(queryByText('task list')).toBeNull();
+  });
+
+  it('still links the parent from a subtask crumb', async () => {
+    mockApiWithJob({ parent_task: 4, parent_task_name: 'Build shelving unit' });
+    const { findByRole, getByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    const parentLink = getByText('Build shelving unit');
+    expect(parentLink.tagName).toBe('A');
+    expect(parentLink.getAttribute('href')).toBe('/jobs/3/tasks/4');
+  });
+});
+
+describe('TaskDetailPage materials use the shared task-list row (full action set)', () => {
+  function mockMats(mats, taskOverrides = {}, jobOverrides = {}) {
+    const task = {
+      task_id: 7, name: 'Mill', status: 'in_progress', job: { id: 3 },
+      can_manage: true, assignee_name: null, est_qty: '2',
+      effective_rate: '25', scheme_unit_label: 'hr',
+      ...taskOverrides,
+    };
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/tasks/7/')) {
+        if (url.includes('/materials')) return Promise.resolve(mats);
+        if (url.includes('/subtasks')) return Promise.resolve([]);
+        return Promise.resolve(task);
+      }
+      if (url.startsWith('/api/jobs/3/')) {
+        return Promise.resolve({ job_id: 3, job_number: 'JOB-3', name: 'W',
+                                 status: 'in_progress', ...jobOverrides });
+      }
+      return Promise.resolve([]);
+    });
+  }
+
+  const needed = {
+    material_id: 5, description: 'Baltic birch', quantity: '3',
+    units: 'sheet', unit_cost: '40.00', sell_price: '55.00',
+    consumption_state: 'pending', inventory_item: 7, qty_on_hand: '1.00',
+    qty_available: '1.00', cost_source: 'entered',
+  };
+
+  it('renders the derived status chip on a material row', async () => {
+    mockMats([needed]);
+    const { findByRole, findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByText('Needed')).toBeInTheDocument();
+  });
+
+  it('offers the fulfillment actions (venue rule removed)', async () => {
+    mockMats([needed]);
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByText('Mark on-hand')).toBeInTheDocument();
+    expect(queryByText('Attach expense')).toBeInTheDocument();
+    expect(queryByText('draw more')).toBeInTheDocument();
+    expect(queryByText('restock')).toBeInTheDocument();
+    // Raw delete is gone — release (full-qty restock) is the removal path,
+    // same vocabulary as the task list.
+    expect(queryByText('del')).toBeNull();
+  });
+
+  it('shows a consumed material as finalized: Used chip, no actions', async () => {
+    mockMats([{ ...needed, consumption_state: 'consumed' }]);
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    expect(await findByText('Used')).toBeInTheDocument();
+    expect(queryByText('edit')).toBeNull();
+    expect(queryByText('restock')).toBeNull();
+    expect(queryByText('mark used')).toBeNull();
+  });
+
+  it('restock prompts for a quantity and posts to the restock endpoint', async () => {
+    mockMats([needed]);
+    api.post.mockReset();
+    api.post.mockResolvedValue({});
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('3');
+    const { findByRole, findByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    await fireEvent.click(await findByText('restock'));
+    expect(api.post).toHaveBeenCalledWith('/api/materials/5/restock/', { quantity: '3' });
+    promptSpy.mockRestore();
+  });
+
+  it('freeze-plan-not-procurement still applies on a held job', async () => {
+    mockMats([needed], {}, { on_hold: true, hold_reason: 'CO' });
+    const { findByRole, findByText, queryByText } = render(TaskDetailPage, { props: { params: { id: 3, taskId: 7 } } });
+    await findTitle(findByRole);
+    // Procurement reality stays; plan edits freeze.
+    expect(await findByText('Mark on-hand')).toBeInTheDocument();
+    expect(queryByText('Attach expense')).toBeInTheDocument();
+    expect(queryByText('restock')).toBeNull();
+    expect(queryByText('edit')).toBeNull();
   });
 });

@@ -14,7 +14,6 @@ from apps.inventory.models import Material, Earmark
 from apps.inventory.services import MaterialService
 from apps.core.services import NotFoundError, ServiceError
 from apps.api.mixins import JobScopedPermissionMixin
-from apps.api.permissions import CanManageJobOrPM
 
 _inv_earmarked_subq = Coalesce(
     Subquery(
@@ -35,20 +34,15 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
     /api/tasks/{task_id}/... (tasks are job-scoped via Task.job).
 
     Any authenticated user can drive task lifecycle (start, complete,
-    block, unblock) and their own time tracking (start-work, stop-work).
-    These are worker operations, not manager-only. Cancelling a task is
-    the exception: it requires CanManageJobOrPM (atom-holder or the task's
-    job's project_manager).
+    block, unblock, cancel) and their own time tracking (start-work,
+    stop-work). These are worker operations, not manager-only — cancel
+    opened to all workers 2026-07-12 (plan C2: same principal set as
+    delete; it is the exit from a task that can no longer be deleted).
     """
     queryset = Task.objects.all()
     lookup_field = 'pk'
     job_object_path = 'job'
     permission_classes = [IsAuthenticated]
-
-    def get_permissions(self):
-        if self.action == 'cancel':
-            return [IsAuthenticated(), CanManageJobOrPM()]
-        return [IsAuthenticated()]
 
     def get_serializer_class(self):
         from apps.api.tasks.serializers import TaskDetailSerializer
@@ -160,17 +154,36 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             children = Task.objects.filter(parent_task=task).order_by('sort_order')
             serializer = TaskSerializer(
                 children, many=True,
-                context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+                context={**self.get_serializer_context(),
+                         'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
             )
             return Response(serializer.data)
 
         err = self._check_task_mutable(task)
         if err:
             return err
+        # Validate the input via the serializer, but CREATE through
+        # TaskService.create_direct — the single gate that enforces the
+        # on-hold, superseded-scheme, depth, and assignee guards and fires
+        # mark_work_reopened (plan A2/B1). Never serializer.save() here.
+        from apps.jobs.services import TaskService
         serializer = TaskSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(parent_task=task, job=task.job)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        data = serializer.validated_data
+        new_task = TaskService.create_direct(
+            task.job,
+            name=data.get('name', ''),
+            rate_scheme_id=data['rate_scheme'].pk if data.get('rate_scheme') else None,
+            active_modifiers=data.get('active_modifiers') or [],
+            est_qty=data.get('est_qty'),
+            est_worker_time=data.get('est_worker_time'),
+            actual_qty=data.get('actual_qty'),
+            description=data.get('description', ''),
+            assignee_id=data['assignee'].pk if data.get('assignee') else None,
+            parent_task_id=task.pk,
+        )
+        out = TaskSerializer(new_task, context=self.get_serializer_context())
+        return Response(out.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

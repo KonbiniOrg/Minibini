@@ -1757,6 +1757,13 @@ def build_invoice_line_item_sources(c):
         are inherently freeform).
       - Leftover lines stay freeform.
 
+    **Only settled work may link to an invoice** (the app's billability
+    line, plan C3): the task pool is 'complete' tasks only — pending/
+    in_progress/blocked are not billable, and converter-cancelled tasks
+    carry no actuals so claiming them would put zero-work tasks on paid
+    invoices — and the material pool is 'consumed' materials only. Runs
+    AFTER reconcile and build_purchasing so both filters see final states.
+
     The model's global ``unique_together(source_type, source_pk)`` prevents
     double-claim, so once an atom is claimed by one Invoice it stays claimed
     across the whole fixture.
@@ -1773,11 +1780,13 @@ def build_invoice_line_item_sources(c):
                 f['fields']['invoice'], []).append(f)
     tasks_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'jobs.task':
+        if (f['model'] == 'jobs.task'
+                and f['fields'].get('status') == 'complete'):
             tasks_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     materials_by_job = {}
     for f in c.fixture_data:
-        if f['model'] == 'inventory.material':
+        if (f['model'] == 'inventory.material'
+                and f['fields'].get('consumption_state') == 'consumed'):
             materials_by_job.setdefault(f['fields']['job'], []).append(f['pk'])
     fees_by_job = {}
     for f in c.fixture_data:
@@ -2575,6 +2584,18 @@ def build_purchasing(c):
         items[item_pk]['qty_on_hand'] = f"{Decimal(items[item_pk]['qty_on_hand']) + d:.2f}"
     for item_pk, d in sold_delta.items():
         items[item_pk]['qty_sold'] = f"{Decimal(items[item_pk]['qty_sold']) + d:.2f}"
+
+    # Reserved stock is physically on the shelf: an Earmark is a claim
+    # against qty_on_hand, so raise QOH to cover each item's accumulated
+    # earmarks (an earmark exceeding QOH reads as data drift in the app —
+    # negative availability — and validate_data flags it).
+    earmarked_totals = defaultdict(lambda: Decimal('0'))
+    for (item_pk, _job_pk), qty in earmarks.items():
+        if qty > 0:
+            earmarked_totals[item_pk] += qty
+    for item_pk, total in earmarked_totals.items():
+        if total > Decimal(items[item_pk]['qty_on_hand']):
+            items[item_pk]['qty_on_hand'] = f'{total:.2f}'
 
     for (item_pk, job_pk), qty in earmarks.items():
         if qty <= 0:

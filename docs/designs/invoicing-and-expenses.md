@@ -266,9 +266,9 @@ The line-items-from-atoms logic (`add_atoms_to_new_line_item`, `add_atoms_to_lin
 
 | Method | Responsibility |
 |---|---|
-| `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done; the wizard pool draws from non-cancelled Tasks, whose actuals stay billable. |
+| `open_for_job(job)` | Returns the job's draft `Invoice`. Creates one if none exists. Raises `ValidationError` if the job's status is not in `BILLABLE_JOB_STATUSES = {APPROVED, IN_PROGRESS, WORK_COMPLETE, COMPLETED, CANCELLED}`. `CANCELLED` is included so a job stopped early ("stop and bill") can still be invoiced for work done. |
 | `send_all_atoms(invoice)` | One-click "send all": one new line item per `available` atom in the pool. Claimed atoms are skipped, so it composes with existing lines — unlike `seed_all_atoms` (the fresh-document "Apply everything"), which requires an empty invoice. `POST /api/invoices/{id}/send-all-atoms/` → `{'created': N}`; the wizard's "Send all to Invoice" button. |
-| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — non-cancelled tasks for the job, plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. Atom keys are normalized to match the estimate wizard so the frontend `WizardAtomRow` component is shared. |
+| `get_source_pool(invoice)` | Returns `{'tasks': [...]}` — ALL of the job's tasks (cancelled included since 2026-07-12, plan C3), plus a synthetic "Materials (no task)" group for task-less materials with `quantity > 0`. Each atom carries `type`/`id`/`description`, the `qty`/`rate`/`units`/`amount` breakdown (from the shared `BaseWizardService._atom_detail`), state (`available` / `claimed_by_current` / `claimed_by_other`), and (for claimed atoms) the claiming line item or invoice. **Terminal — not complete — is the task billability line**: `complete` and `cancelled` tasks are billable (the same doctrine that keeps cancelled *jobs* in `BILLABLE_JOB_STATUSES`); anything else is `not_billable` (`task_incomplete`). A cancelled task's atom carries `task_cancelled: true`, which `WizardAtomRow` renders as an amber "cancelled — work done" badge so the biller makes a conscious choice; a cancelled task with zero actuals is simply a $0 row. The *estimate* pool is the opposite — cancelled tasks are excluded there (estimates project planned work). Atom keys are normalized to match the estimate wizard so the frontend `WizardAtomRow` component is shared. |
 | `add_atoms_to_new_line_item(invoice, atoms)` | Creates a new `InvoiceLineItem` plus N `InvoiceLineItemSource` rows in one transaction. Defaults table below. |
 | `add_atoms_to_line_item(line_item, atoms)` | Appends source rows. Recomputes per the in-sync rule. |
 | `remove_atoms_from_line_item(line_item, source_ids)` | Removes the matching source rows. Recomputes per the in-sync rule. Returns `{'line_item_deleted': bool}`. If the removal empties the source list, the line item is hard-deleted (via `LineItemService.delete_line_item_with_renumber`) regardless of override state. |
@@ -589,7 +589,7 @@ The model is **not** decorated with `@history` — Expense changes do not write 
 
 A Job is the cost anchor (`Expense.job`; `null` = overhead). A single `amount`;
 **expenses never link to an existing material** — they only create their own. An
-expense is one of two modes (see `docs/plans/2026-06-14-expenses-cost-model-redesign.md`):
+expense is one of two modes:
 
 - **Cost expense** — optionally creates ONE consumable **material** (freeform or
   non-inventoried PLI) at the user-entered `unit_cost` (no division, no recost).
@@ -655,9 +655,10 @@ type, and `InvoiceLineItemSource` gained `SOURCE_EXPENSE`.
   also exactly what freezes the expense (see above).
 - **Billability gate:** expenses have **no readiness gate** in the wizard pool —
   they are always selectable as long as they are not already claimed. (Tasks
-  require `complete`; Materials require `consumed`; Expenses are billable from
-  the moment they are submitted.) See `docs/designs/estimates-and-prices.md` §7
-  for the wizard-pool billability rules.
+  require a **terminal** status — `complete` or `cancelled`; Materials require
+  `consumed`; Expenses are billable from the moment they are submitted.) See
+  `docs/designs/estimates-and-prices.md` §7 for the wizard-pool billability
+  rules.
 
 ### Status machine
 

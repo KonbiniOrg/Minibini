@@ -167,7 +167,6 @@
         <TaskActions
           {task}
           user={$userStore}
-          canManage={task?.can_manage}
           {activeBlepOnThisTask}
           onChanged={handleActionChanged}
           onConflict={handleConflict}

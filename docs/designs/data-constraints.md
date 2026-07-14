@@ -408,8 +408,13 @@ Valid transitions:
 cancel), gated by `can_manage_jobs` at the API layer.
 
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
-WorkOrder was removed). `work_complete` = all tasks terminal and earmarks
-released. `completed` = fully closed; gated on **both** all invoices
+WorkOrder was removed). `work_complete` = every task terminal AND no
+pending material (task-attached or loose) with quantity still committed —
+enforced as a hard gate in `JobService.update_job` on EVERY path into the
+status (the B4 work-complete gate, 2026-07-12;
+`JobService.work_complete_blockers` computes the offending list, and
+`validate_data` errors on violations); earmarks release on entry.
+`completed` = fully closed; gated on **both** all invoices
 resolved **and** all deliverables shipped (see "Implied state" below and
 §2.5).
 
@@ -574,39 +579,49 @@ Valid transitions:
 
   In practice a null `est_qty` can only arise on a task **added directly to
   the Job with the quantity left blank** — specifically the two manual
-  direct-create routes, both of which send `est_qty` through unguarded:
-    - top-level task — `POST /api/jobs/{id}/tasks/` → `TaskService.create_direct`
-    - subtask — `POST /api/tasks/{id}/subtasks/` → `TaskSerializer.save()`
-      (the serializer treats `est_qty` as `required=False`)
+  direct-create routes, both of which send `est_qty` through unguarded and
+  both of which route through `TaskService.create_direct` (since
+  2026-07-12 the subtasks endpoint no longer bypasses the service):
+    - top-level task — `POST /api/jobs/{id}/tasks/`
+    - subtask — `POST /api/tasks/{id}/subtasks/`
 
   Template-generation routes guarantee a non-null value:
     - `TaskService.create_from_template` defaults to `Decimal('1')`
     - the job-side `add-from-template` API defaults a blank to `Decimal('1')`;
       bulk template expansion uses `TemplateTaskAssociation.est_qty`
       (`default=1`)
-- **est_worker_time**: optional Duration — but **required (and must be > 0)
-  once `assignee` is set**; assigned work has to be schedulable
+- **est_worker_time**: optional Duration — **required when explicitly
+  assigning** (the invariant lives on the assign gestures, not
+  `Task.clean()`; auto-assign on start is exempt — see
+  `jobs-tasks-and-worksheets.md` §4.4)
 - **actual_qty**: optional decimal — running total of worker-entered increments for `entered_qty`
   schemes. Null for `elapsed_time` (derived from Bleps). Drives the
   **invoice** lens (`Task.compute_amount`).
 - **status**: default `pending`
-- **blocked_reason**: text, default '' — set by `block_task(reason=...)`, cleared by `unblock_task`/`complete_task`/`cancel_task`. The previous reason is overwritten and not preserved anywhere; once `@history` is added to Task (see `jobs-tasks-and-worksheets.md` §13), each block/unblock will surface in the HistoryPanel
-- **worker_queue**: optional integer — position in assignee's queue
-- **assignee** (optional FK → User, SET_NULL): setting it requires a
-  non-zero `est_worker_time` (see that field)
-- **parent_task** (optional FK → self, CASCADE)
+- **blocked_reason**: text, default '' — set by `block_task(reason=...)`, cleared by `unblock_task`/`complete_task`/`cancel_task`. The previous reason is overwritten as current state, but every set/clear lands in Task history as an audit diff (lifecycle transitions save() through the tracker since 2026-07-12)
+- **worker_queue**: optional integer — position in assignee's queue; excluded from history (cosmetic)
+- **assignee** (optional FK → User, SET_NULL): explicit assignment requires
+  a non-zero `est_worker_time` (see that field); auto-assign on first
+  blep does not
+- **parent_task** (optional FK → self, CASCADE): **one level only** — a
+  task whose `parent_task` is set can never itself be a parent
+  (`TaskService.create_direct` rejects grandchildren and cross-job
+  parents)
 - **sort_order**: auto-assigned per Job on save
 - **name** / **description**: text
 
 #### Implied state from other models
 
-- An assigned Task (`assignee` set) must carry a non-zero `est_worker_time`
-  — assigned work has to be schedulable. Enforced by `Task.clean()` on
-  every save. `TaskService.assign` additionally pre-checks before saving
-  and raises `TaskWorkerTimeRequired`, so the assign endpoint can answer
-  `{needs_worker_time: true}` and have the UI prompt for an estimate
-  instead of surfacing a generic validation error. Unassigning has no
-  such requirement.
+- An **explicitly** assigned Task must carry a non-zero `est_worker_time`
+  — assigned work has to be schedulable. Enforced on the assign gestures:
+  `TaskService.assign` pre-checks and raises `TaskWorkerTimeRequired` (so
+  the assign endpoint can answer `{needs_worker_time: true}` and the UI
+  prompts for a duration), and `create_direct` / `update_task` reject an
+  assignee without an estimate. **Not** enforced by `Task.clean()`:
+  auto-assign on a worker's first blep (`start_work` /
+  `create_historical`) deliberately claims the task without demanding a
+  duration mid-clock-in, so assignee-without-est-time is a legal state.
+  Unassigning has no requirement.
 - A Task with any Bleps must not be in `pending`. Validator-enforced.
 - Task → terminal auto-closes any open Bleps (end_time := now).
 - **Deletion (Rule 1)**: `TaskService.delete_task` refuses when the task is
