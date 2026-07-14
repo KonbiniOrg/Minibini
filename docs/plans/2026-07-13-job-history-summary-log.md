@@ -53,18 +53,49 @@ For each history entry, in priority order:
 
 ### Verb mapping
 
-No per-type spec lists. One small exceptions map keyed by
-`object_type:status` (fall back to a status-only key, then to humanized raw):
+A **full** verb table keyed by `object_type:status` — every status explicitly
+mapped even when the humanized status already reads fine, so either side can
+be changed independently later. Change orders duplicate the estimate rows.
 
-| key | verb |
-|---|---|
-| `estimate:open` | sent |
-| `invoice:open` | sent |
-| `task:in_progress` | started |
+| object_type | status | verb |
+|---|---|---|
+| job | draft | reverted to draft |
+| job | submitted | submitted |
+| job | approved | approved |
+| job | in_progress | started |
+| job | work_complete | work completed |
+| job | rejected | rejected |
+| job | completed | completed |
+| job | cancelled | cancelled |
+| task | pending | reopened |
+| task | in_progress | started |
+| task | blocked | blocked |
+| task | complete | completed |
+| task | cancelled | cancelled |
+| estimate / changeorder | draft | reverted to draft |
+| estimate / changeorder | open | sent |
+| estimate / changeorder | accepted | accepted |
+| estimate / changeorder | rejected | rejected |
+| estimate / changeorder | expired | expired |
+| estimate / changeorder | superseded | superseded |
+| invoice | draft | reverted to draft |
+| invoice | open | sent |
+| invoice | partly-paid | partly paid |
+| invoice | paid | paid |
+| invoice | defaulted | defaulted |
+| invoice | cancelled | cancelled |
+| invoice | superseded | superseded |
+| material | pending | reset to pending |
+| material | consumed | consumed |
+| material | released | released |
+| shipment | prepared | prepared |
+| shipment | picked_up | picked up |
 
-Everything else humanizes cleanly (`accepted`, `paid`, `work_complete` →
-"work complete", `picked_up` → "picked up", ...). Unknown statuses must never
-drop the row — always fall back to the humanized raw value.
+(Deliverables have no status field — they only produce creation rows.)
+
+A status **not** in the table must never drop the row — fall back to the
+humanized raw value (underscores → spaces) so new statuses degrade gracefully
+instead of vanishing.
 
 ### Actor column
 
