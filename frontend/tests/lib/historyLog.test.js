@@ -72,13 +72,23 @@ describe('milestoneRows', () => {
     expect(rows[0].text).toBe('consumed');
   });
 
-  it('skips field edits, notes, and standalone actions', () => {
+  it('skips field edits and standalone actions', () => {
     const rows = milestoneRows([
       entry({ id: 1, changes: { name: { old: 'a', new: 'b' } } }),
-      entry({ id: 2, entry_type: 'note', changes: null, text: 'Customer called' }),
       entry({ id: 3, entry_type: 'action', changes: { _action: 'PO emailed to x@y.z' } }),
     ]);
     expect(rows).toEqual([]);
+  });
+
+  it('turns notes into flagged rows carrying their text', () => {
+    const rows = milestoneRows([
+      entry({ id: 2, entry_type: 'note', changes: null, text: 'Customer called',
+        object_type: 'job', object_id: 5, source_label: 'Job JOB-2025-0005', source_link: '#/jobs/5' }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      text: 'Customer called', note: true, actor: 'rae', label: 'Job JOB-2025-0005',
+    });
   });
 
   it('nulls the actor for system entries', () => {

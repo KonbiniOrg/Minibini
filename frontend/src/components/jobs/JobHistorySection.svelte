@@ -179,12 +179,6 @@
     </header>
 
     <div class="body">
-      <nav class="page-tabs">
-        <button class:active={activeTab === 'summary'} onclick={() => (activeTab = 'summary')}>Summary</button>
-        <button class:active={activeTab === 'timeline'} onclick={() => (activeTab = 'timeline')}>Timeline</button>
-      </nav>
-
-      {#if activeTab === 'timeline'}
       <div class="add-note">
         <textarea bind:value={noteText} rows="2" placeholder="Add a note…"></textarea>
         <button onclick={addNote} disabled={saving || !noteText.trim()}>Add Note</button>
@@ -192,6 +186,12 @@
       <FieldError errors={noteFields} field="text" />
       <FormMessage error={noteError} />
 
+      <nav class="page-tabs">
+        <button class:active={activeTab === 'summary'} onclick={() => (activeTab = 'summary')}>Summary</button>
+        <button class:active={activeTab === 'timeline'} onclick={() => (activeTab = 'timeline')}>Timeline</button>
+      </nav>
+
+      {#if activeTab === 'timeline'}
       {#if groups.length > 0}
         <ul class="timeline">
           {#each groups as group (group[0].id)}
@@ -274,7 +274,7 @@
                     <td>{row.actor ?? '—'}</td>
                     <td>
                       {#if row.link}<a href={row.link}>{row.label}</a>{:else}<span>{row.label}</span>{/if}
-                      {row.text}
+                      {#if row.note}<em class="preserve-breaks">{row.text}</em>{:else}{row.text}{/if}
                     </td>
                   </tr>
                 {/each}

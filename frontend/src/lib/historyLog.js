@@ -59,7 +59,8 @@ export function statusVerb(objectType, status) {
 }
 
 // One log row per creation or status transition; null for everything else
-// (field edits, notes, standalone actions).
+// (field edits, standalone actions). Notes get a `note: true` flag so the
+// renderer can set them apart.
 function milestoneRow(entry) {
   const c = entry.changes || {};
   const base = {
@@ -69,6 +70,9 @@ function milestoneRow(entry) {
     label: entry.source_label || entry.object_type,
     link: entry.source_link || null,
   };
+  if (entry.entry_type === 'note') {
+    return { ...base, text: entry.text, note: true };
+  }
   if (c._created) {
     return { ...base, text: CREATED_TYPES.has(entry.object_type) ? 'created' : 'added' };
   }

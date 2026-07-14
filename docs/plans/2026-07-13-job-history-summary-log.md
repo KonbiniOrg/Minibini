@@ -19,7 +19,8 @@ All of the current Summary implementation in
 ## New Summary tab
 
 A single table, newest-first (same order the history feed already arrives in),
-built from the same already-fetched `entries` — **no backend changes**.
+built from the same already-fetched `entries` — **no backend changes**. The
+add-note box sits above the tab strip, available from both tabs.
 
 ### Layout
 
@@ -47,8 +48,11 @@ For each history entry, in priority order:
    - Otherwise: "**{label}** {verb}" where *verb* = exceptions map lookup on
      the new status, falling back to the humanized raw status
      (underscores → spaces).
-3. Anything else (plain field edits, notes, standalone `_action` entries with
-   no status diff) → **no row**. Excluded for now; widening this filter later
+3. `entry_type == 'note'` → a row whose action text is the note's own text,
+   rendered in italics (multiline preserved). Hand-written notes are
+   milestones too.
+4. Anything else (plain field edits, standalone `_action` entries with no
+   status diff) → **no row**. Excluded for now; widening this filter later
    is the designed extension point.
 
 Live backend flows sometimes record one status transition as two entries: an
@@ -125,4 +129,5 @@ TDD, Vitest, `frontend/tests/`. Cover the row-derivation logic:
 ## Out of scope
 
 - Timeline tab, note box, backend, serializers, history recording.
-- Notes / receipts / payment actions in the log (possible later widening).
+- Receipts / payment actions in the log (possible later widening; notes were
+  added 2026-07-13).

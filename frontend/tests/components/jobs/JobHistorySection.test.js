@@ -184,12 +184,14 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole, queryByPlaceholderText } =
+    const { container, findByRole, getByPlaceholderText, queryByText } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    // milestone log renders with no tab click; Timeline content (note box) does not
+    // milestone log renders with no tab click; Timeline's feed does not
     expect(container.querySelectorAll('tr.log-row').length).toBe(1);
-    expect(queryByPlaceholderText('Add a note…')).toBeNull();
+    expect(queryByText('pending')).toBeNull();
+    // the add-note box sits above the tabs, available on both
+    expect(getByPlaceholderText('Add a note…')).toBeInTheDocument();
     // Summary is the leftmost tab in the shared .page-tabs strip
     const tabs = container.querySelectorAll('.page-tabs button');
     expect(tabs[0]).toHaveTextContent('Summary');
@@ -237,11 +239,26 @@ describe('JobHistorySection', () => {
     expect(getByText('—')).toBeInTheDocument();
   });
 
-  it('shows an empty state on the Summary tab when no milestones exist', async () => {
+  it('shows hand-written notes as italic rows in the Summary log', async () => {
     api.get.mockResolvedValue({ results: [
       { id: 1, entry_type: 'note', object_type: 'job', object_id: 5,
         username: 'rae', timestamp: '2026-01-05T09:00:00', text: 'Customer called',
         changes: null, source_label: 'Job JOB-2025-0005', source_link: null },
+    ] });
+    const { container, findByRole, getByText } =
+      render(JobHistorySection, { props: { job: JOB } });
+    await findByRole('heading', { name: 'History' });
+    expect(container.querySelectorAll('tr.log-row').length).toBe(1);
+    const note = getByText('Customer called');
+    expect(note).toBeInTheDocument();
+    expect(note.closest('em')).not.toBeNull();
+  });
+
+  it('shows an empty state on the Summary tab when no milestones exist', async () => {
+    api.get.mockResolvedValue({ results: [
+      { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5,
+        username: 'rae', timestamp: '2026-01-05T09:00:00', text: '',
+        changes: { name: { old: 'a', new: 'b' } }, source_label: 'Job JOB-2025-0005', source_link: null },
     ] });
     const { findByRole, getByText } =
       render(JobHistorySection, { props: { job: JOB } });
@@ -255,7 +272,6 @@ describe('JobHistorySection', () => {
     const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/notes/', { text: 'Hello' });
@@ -268,7 +284,6 @@ describe('JobHistorySection', () => {
     const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB, onJobChange } });
     await findByRole('heading', { name: 'History' });
-    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     await waitFor(() => { expect(onJobChange).toHaveBeenCalled(); });
@@ -282,7 +297,6 @@ describe('JobHistorySection', () => {
     const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(await findByRole('alert')).toHaveTextContent('Notes are locked.');
@@ -296,7 +310,6 @@ describe('JobHistorySection', () => {
     const { findByRole, findByText, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(await findByText('This field is too long.')).toBeInTheDocument();
