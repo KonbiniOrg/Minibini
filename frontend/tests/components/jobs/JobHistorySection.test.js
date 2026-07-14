@@ -167,38 +167,57 @@ describe('JobHistorySection', () => {
     expect(api.get).toHaveBeenCalledWith('/api/jobs/5/history/?page=2&page_size=100');
   });
 
-  it('rolls events up per object on the Summary tab', async () => {
-    const JOB2 = { ...JOB, tasks: [{ task_id: 7, name: 'Cutting', assignee_name: 'Rae', actual_hours: 3 }] };
+  it('renders the Summary tab as a day-grouped milestone log', async () => {
     api.get.mockImplementation((url) => {
       if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
-        { id: 1, entry_type: 'audit', object_type: 'job', object_id: 5, username: 'a',
-          timestamp: '2026-01-01T00:00:00Z', changes: { _created: true },
-          source_label: 'Job J', source_link: null },
-        { id: 2, entry_type: 'action', object_type: 'job', object_id: 5, username: 'a',
-          timestamp: '2026-01-05T00:00:00Z',
-          changes: { status: { old: 'submitted', new: 'approved' }, _action: 'Approved' },
-          source_label: 'Job J', source_link: null },
-        { id: 3, entry_type: 'audit', object_type: 'estimate', object_id: 9, username: 'a',
-          timestamp: '2026-01-02T00:00:00Z', changes: { _created: true },
-          source_label: 'Estimate E1', source_link: null },
-        { id: 4, entry_type: 'action', object_type: 'estimate', object_id: 9, username: 'a',
-          timestamp: '2026-01-04T00:00:00Z',
-          changes: { status: { old: 'open', new: 'accepted' }, _action: 'Accepted' },
-          source_label: 'Estimate E1', source_link: null },
-        { id: 5, entry_type: 'audit', object_type: 'task', object_id: 7, username: 'a',
-          timestamp: '2026-01-06T00:00:00Z', changes: { _created: true },
-          source_label: 'Task: Cutting', source_link: null },
+        { id: 4, entry_type: 'action', object_type: 'job', object_id: 5,
+          username: null, timestamp: '2026-01-06T09:30:00',
+          changes: { status: { old: 'submitted', new: 'approved' }, _action: 'Approved via customer link' },
+          source_label: 'Job JOB-2025-0005', source_link: '#/jobs/5' },
+        { id: 3, entry_type: 'audit', object_type: 'estimate', object_id: 9,
+          username: 'rae', timestamp: '2026-01-05T14:00:00',
+          changes: { status: { old: 'draft', new: 'open' } },
+          source_label: 'Estimate EST-2025-0001', source_link: null },
+        { id: 2, entry_type: 'audit', object_type: 'job', object_id: 5,
+          username: 'rae', timestamp: '2026-01-05T10:00:00',
+          changes: { name: { old: 'a', new: 'b' } },
+          source_label: 'Job JOB-2025-0005', source_link: '#/jobs/5' },
+        { id: 1, entry_type: 'audit', object_type: 'estimate', object_id: 9,
+          username: 'rae', timestamp: '2026-01-05T09:00:00',
+          changes: { _created: true },
+          source_label: 'Estimate EST-2025-0001', source_link: null },
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByRole, getByText } = render(JobHistorySection, { props: { job: JOB2 } });
+    const { container, findByRole, getByRole, getByText, queryByText } =
+      render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     await fireEvent.click(getByRole('button', { name: 'Summary' }));
-    expect(getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
-    expect(getByText(/Current estimate Estimate E1/)).toBeInTheDocument();
-    expect(getByText(/approved/)).toBeInTheDocument();
-    expect(getByText(/Cutting/)).toBeInTheDocument();
-    expect(getByText(/assigned to Rae/)).toBeInTheDocument();
+    // three milestone rows; the name edit contributes none
+    expect(container.querySelectorAll('tr.log-row').length).toBe(3);
+    expect(queryByText('name')).toBeNull();
+    // day-break rows (regex so a future non-current-year suffix still matches)
+    expect(getByText(/Tuesday, January 6/)).toBeInTheDocument();
+    expect(getByText(/Monday, January 5/)).toBeInTheDocument();
+    // verb table ("sent"), _action preference, and a creation row
+    expect(getByText('sent')).toBeInTheDocument();
+    expect(getByText('Approved via customer link')).toBeInTheDocument();
+    expect(getByText('created')).toBeInTheDocument();
+    // system entry renders an em-dash actor
+    expect(getByText('—')).toBeInTheDocument();
+  });
+
+  it('shows an empty state on the Summary tab when no milestones exist', async () => {
+    api.get.mockResolvedValue({ results: [
+      { id: 1, entry_type: 'note', object_type: 'job', object_id: 5,
+        username: 'rae', timestamp: '2026-01-05T09:00:00', text: 'Customer called',
+        changes: null, source_label: 'Job JOB-2025-0005', source_link: null },
+    ] });
+    const { findByRole, getByRole, getByText } =
+      render(JobHistorySection, { props: { job: JOB } });
+    await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Summary' }));
+    expect(getByText('No milestones yet.')).toBeInTheDocument();
   });
 
   it('posts a note then reloads', async () => {
