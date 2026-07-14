@@ -50,7 +50,7 @@
 
   let entries = $derived((history?.results || []).map(h => ({ ...h, when: new Date(h.timestamp) })));
 
-  let activeTab = $state('timeline'); // 'timeline' | 'summary'
+  let activeTab = $state('summary'); // 'summary' | 'timeline'
 
   // --- Summary tab: milestone log (creations + status changes only) ---
   let logDays = $derived(groupRowsByDay(milestoneRows(history?.results || [])));
@@ -179,10 +179,10 @@
     </header>
 
     <div class="body">
-      <div class="tabs" role="tablist">
-        <button class:active={activeTab === 'timeline'} onclick={() => (activeTab = 'timeline')}>Timeline</button>
+      <nav class="page-tabs">
         <button class:active={activeTab === 'summary'} onclick={() => (activeTab = 'summary')}>Summary</button>
-      </div>
+        <button class:active={activeTab === 'timeline'} onclick={() => (activeTab = 'timeline')}>Timeline</button>
+      </nav>
 
       {#if activeTab === 'timeline'}
       <div class="add-note">
@@ -264,15 +264,15 @@
 
       {#if activeTab === 'summary'}
         {#if logDays.length > 0}
-          <table class="log">
+          <table class="data-table">
             {#each logDays as day (day.key)}
               <tbody>
-                <tr class="day-break"><th colspan="3">{day.label}</th></tr>
+                <tr><th colspan="3">{day.label}</th></tr>
                 {#each day.rows as row (row.id)}
                   <tr class="log-row">
-                    <td class="log-time">{timeLabel(row.when)}</td>
-                    <td class="log-actor">{row.actor ?? '—'}</td>
-                    <td class="log-action">
+                    <td>{timeLabel(row.when)}</td>
+                    <td>{row.actor ?? '—'}</td>
+                    <td>
                       {#if row.link}<a href={row.link}>{row.label}</a>{:else}<span>{row.label}</span>{/if}
                       {row.text}
                     </td>
@@ -295,22 +295,7 @@
   .page-header { padding: 0; }
   .page-header h2 { margin-top: 16px; margin-bottom: 4px; }
   .body { max-width: 820px; padding: 0 24px; }
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid #d1d5db; margin: 12px 0 16px; }
-  .tabs button {
-    border: 1px solid transparent; border-bottom: none; background: none;
-    padding: 6px 14px; cursor: pointer; font-size: 14px; color: #555;
-    border-radius: 6px 6px 0 0; margin-bottom: -1px;
-  }
-  .tabs button.active {
-    color: #1f2937; font-weight: 600;
-    border-color: #d1d5db; background: #fff; border-bottom: 1px solid #fff;
-  }
-
-  .log { border-collapse: collapse; width: 100%; }
-  .log td, .log th { padding: 3px 12px 3px 0; text-align: left; font-size: 14px; vertical-align: baseline; }
-  .log .day-break th { padding-top: 16px; padding-bottom: 4px; border-bottom: 1px solid #d1d5db; color: #374151; font-size: 13px; }
-  .log-time { white-space: nowrap; color: #6b7280; width: 1%; }
-  .log-actor { white-space: nowrap; color: #374151; width: 1%; }
+  /* Tabs are the shared .page-tabs; the log table is the shared .data-table (app.css). */
 
   .add-note { margin: 12px 0 20px; }
   .add-note textarea { width: 100%; box-sizing: border-box; }

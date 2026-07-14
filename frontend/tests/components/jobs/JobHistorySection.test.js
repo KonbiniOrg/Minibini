@@ -28,8 +28,9 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
+    const { findByRole, getByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     // Up-navigation now lives in the shared JobNavRail, not a per-panel back link.
     expect(getByText('Estimate EST-2025-0001')).toBeInTheDocument();
     expect(getByText('Sent to customer')).toBeInTheDocument();
@@ -51,8 +52,9 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole } = render(JobHistorySection, { props: { job: JOB } });
+    const { container, findByRole, getByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     // estimate + changeorder both carry ot-estimate
     expect(container.querySelectorAll('li.ot-estimate').length).toBe(2);
     // task is its own group
@@ -74,6 +76,7 @@ describe('JobHistorySection', () => {
     });
     const { findByRole, getByRole, queryByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     // full content suppressed until expanded
     expect(queryByText(longOld)).toBeNull();
     await fireEvent.click(getByRole('button', { name: 'Show full' }));
@@ -91,8 +94,9 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { findByRole, getByText, queryByRole } = render(JobHistorySection, { props: { job: JOB } });
+    const { findByRole, getByRole, getByText, queryByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     expect(getByText('pending')).toBeInTheDocument();
     expect(getByText('complete')).toBeInTheDocument();
     expect(queryByRole('button', { name: 'Show full' })).toBeNull();
@@ -114,8 +118,9 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
+    const { container, findByRole, getByRole, getByText } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     expect(container.querySelectorAll('li.entry').length).toBe(1);
     expect(getByText('Work started')).toBeInTheDocument();
     expect(getByText('name')).toBeInTheDocument();
@@ -134,8 +139,9 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole } = render(JobHistorySection, { props: { job: JOB } });
+    const { container, findByRole, getByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     expect(container.querySelectorAll('li.entry').length).toBe(2);
   });
 
@@ -151,8 +157,9 @@ describe('JobHistorySection', () => {
       ] });
       return Promise.resolve({ results: [] });
     });
-    const { container, findByRole } = render(JobHistorySection, { props: { job: JOB } });
+    const { container, findByRole, getByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     expect(container.querySelectorAll('li.entry').length).toBe(2);
   });
 
@@ -165,6 +172,30 @@ describe('JobHistorySection', () => {
     const { findByRole } = render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
     expect(api.get).toHaveBeenCalledWith('/api/jobs/5/history/?page=2&page_size=100');
+  });
+
+  it('defaults to the Summary tab, listed first with house tab styling', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.startsWith('/api/jobs/5/history/')) return Promise.resolve({ results: [
+        { id: 1, entry_type: 'audit', object_type: 'task', object_id: 7,
+          username: 'rae', timestamp: '2026-01-05T09:00:00',
+          changes: { status: { old: 'pending', new: 'complete' } },
+          source_label: 'Task: Cutting', source_link: null },
+      ] });
+      return Promise.resolve({ results: [] });
+    });
+    const { container, findByRole, queryByPlaceholderText } =
+      render(JobHistorySection, { props: { job: JOB } });
+    await findByRole('heading', { name: 'History' });
+    // milestone log renders with no tab click; Timeline content (note box) does not
+    expect(container.querySelectorAll('tr.log-row').length).toBe(1);
+    expect(queryByPlaceholderText('Add a note…')).toBeNull();
+    // Summary is the leftmost tab in the shared .page-tabs strip
+    const tabs = container.querySelectorAll('.page-tabs button');
+    expect(tabs[0]).toHaveTextContent('Summary');
+    expect(tabs[1]).toHaveTextContent('Timeline');
+    // the log uses the house data-table style
+    expect(container.querySelector('table.data-table')).toBeTruthy();
   });
 
   it('renders the Summary tab as a day-grouped milestone log', async () => {
@@ -192,7 +223,6 @@ describe('JobHistorySection', () => {
     const { container, findByRole, getByRole, getByText, queryByText } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    await fireEvent.click(getByRole('button', { name: 'Summary' }));
     // three milestone rows; the name edit contributes none
     expect(container.querySelectorAll('tr.log-row').length).toBe(3);
     expect(queryByText('name')).toBeNull();
@@ -213,10 +243,9 @@ describe('JobHistorySection', () => {
         username: 'rae', timestamp: '2026-01-05T09:00:00', text: 'Customer called',
         changes: null, source_label: 'Job JOB-2025-0005', source_link: null },
     ] });
-    const { findByRole, getByRole, getByText } =
+    const { findByRole, getByText } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
-    await fireEvent.click(getByRole('button', { name: 'Summary' }));
     expect(getByText('No milestones yet.')).toBeInTheDocument();
   });
 
@@ -226,6 +255,7 @@ describe('JobHistorySection', () => {
     const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(api.post).toHaveBeenCalledWith('/api/jobs/5/notes/', { text: 'Hello' });
@@ -238,6 +268,7 @@ describe('JobHistorySection', () => {
     const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB, onJobChange } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     await waitFor(() => { expect(onJobChange).toHaveBeenCalled(); });
@@ -251,6 +282,7 @@ describe('JobHistorySection', () => {
     const { findByRole, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(await findByRole('alert')).toHaveTextContent('Notes are locked.');
@@ -264,6 +296,7 @@ describe('JobHistorySection', () => {
     const { findByRole, findByText, getByPlaceholderText, getByRole } =
       render(JobHistorySection, { props: { job: JOB } });
     await findByRole('heading', { name: 'History' });
+    await fireEvent.click(getByRole('button', { name: 'Timeline' }));
     await fireEvent.input(getByPlaceholderText('Add a note…'), { target: { value: 'Hello' } });
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(await findByText('This field is too long.')).toBeInTheDocument();
