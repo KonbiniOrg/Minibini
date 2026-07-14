@@ -79,8 +79,38 @@ function milestoneRow(entry) {
   return null;
 }
 
+const statusOf = (e) => e.changes?.status?.new ?? e.changes?.consumption_state?.new;
+
+// Live backend flows sometimes record one status transition as two entries:
+// an automatic audit entry (status diff, no `_action`) plus a service-written
+// action entry for the same object carrying the same status diff and
+// `changes._action`. Drop the audit-flavored row when an action-flavored
+// twin exists for the same object and new status within a 60s window — the
+// action row (richer text) wins. Creation rows and action rows themselves
+// are never dropped; two audit rows with no action twin both survive.
 export function milestoneRows(entries) {
-  return (entries || []).map(milestoneRow).filter(Boolean);
+  const pairs = (entries || [])
+    .map((entry) => ({ entry, row: milestoneRow(entry) }))
+    .filter((p) => p.row);
+
+  const actionTwins = pairs.filter((p) => {
+    const c = p.entry.changes || {};
+    return !c._created && statusOf(p.entry) != null && c._action;
+  });
+
+  return pairs
+    .filter((p) => {
+      const c = p.entry.changes || {};
+      const isAuditStatus = !c._created && statusOf(p.entry) != null && !c._action;
+      if (!isAuditStatus) return true;
+      return !actionTwins.some((t) => (
+        t.entry.object_type === p.entry.object_type
+        && t.entry.object_id === p.entry.object_id
+        && statusOf(t.entry) === statusOf(p.entry)
+        && Math.abs(new Date(t.entry.timestamp) - new Date(p.entry.timestamp)) <= 60000
+      ));
+    })
+    .map((p) => p.row);
 }
 
 export function dayLabel(d, today = new Date()) {

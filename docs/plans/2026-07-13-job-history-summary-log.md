@@ -51,6 +51,14 @@ For each history entry, in priority order:
    no status diff) → **no row**. Excluded for now; widening this filter later
    is the designed extension point.
 
+Live backend flows sometimes record one status transition as two entries: an
+automatic audit entry (status diff, no `_action`) plus a service-written
+action entry for the same object carrying the same status diff and
+`changes._action`. After the per-entry mapping above, a status-transition row
+derived from an audit entry (no `_action`) is dropped when an action-flavored
+row exists for the same `object_type` + `object_id` and the same new status,
+timestamped within 60 seconds — the action row wins.
+
 ### Verb mapping
 
 A **full** verb table keyed by `object_type:status` — every status explicitly

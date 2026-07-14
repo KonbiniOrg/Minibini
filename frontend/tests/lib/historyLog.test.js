@@ -87,6 +87,59 @@ describe('milestoneRows', () => {
   });
 });
 
+describe('milestoneRows dedup (audit/action twins)', () => {
+  it('drops the audit row when an action twin shares object + new status within 60s', () => {
+    const rows = milestoneRows([
+      entry({
+        id: 1, object_type: 'estimate', object_id: 3, timestamp: '2026-01-05T09:00:00',
+        changes: { status: { old: 'open', new: 'accepted' } },
+      }),
+      entry({
+        id: 2, object_type: 'estimate', object_id: 3, timestamp: '2026-01-05T09:00:01',
+        changes: { status: { old: 'open', new: 'accepted' }, _action: 'Accepted via customer link' },
+      }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toBe('Accepted via customer link');
+  });
+
+  it('keeps an audit status row with no action twin', () => {
+    const rows = milestoneRows([
+      entry({ object_type: 'estimate', object_id: 3, changes: { status: { old: 'open', new: 'accepted' } } }),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text).toBe('accepted');
+  });
+
+  it('keeps both when the audit/action pair is more than 60s apart', () => {
+    const rows = milestoneRows([
+      entry({
+        id: 1, object_type: 'estimate', object_id: 3, timestamp: '2026-01-05T09:00:00',
+        changes: { status: { old: 'open', new: 'accepted' } },
+      }),
+      entry({
+        id: 2, object_type: 'estimate', object_id: 3, timestamp: '2026-01-05T09:05:00',
+        changes: { status: { old: 'open', new: 'accepted' }, _action: 'Accepted via customer link' },
+      }),
+    ]);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('keeps both when the audit/action pair have different object_ids', () => {
+    const rows = milestoneRows([
+      entry({
+        id: 1, object_type: 'estimate', object_id: 3, timestamp: '2026-01-05T09:00:00',
+        changes: { status: { old: 'open', new: 'accepted' } },
+      }),
+      entry({
+        id: 2, object_type: 'estimate', object_id: 4, timestamp: '2026-01-05T09:00:01',
+        changes: { status: { old: 'open', new: 'accepted' }, _action: 'Accepted via customer link' },
+      }),
+    ]);
+    expect(rows).toHaveLength(2);
+  });
+});
+
 describe('dayLabel', () => {
   const today = new Date('2026-07-13T12:00:00');
 
